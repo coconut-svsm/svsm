@@ -1,0 +1,7 @@
+*.o
+*.bin
+*.elf
+*.swp
+*~
+target/
+gen_meta
