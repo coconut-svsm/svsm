@@ -137,7 +137,7 @@ void parse_boot_block(void *data)
 	printf("	cpuid_len           : 0x%08x\n", bb->cpuid_len);
 }
 
-void parse_sev_meta_data(void *data, char *buffer, size_t size)
+void parse_sev_meta_data(void *data, uint8_t *buffer, size_t size)
 {
 	uint32_t *d = data;
 	struct sev_meta_data *meta;
@@ -158,7 +158,7 @@ void parse_sev_meta_data(void *data, char *buffer, size_t size)
 	}
 }
 
-uint8_t *parse_inner_table(uint8_t *ptr, char *buffer, size_t size)
+uint8_t *parse_inner_table(uint8_t *ptr, uint8_t *buffer, size_t size)
 {
 	struct UUID *entry_uuid, meta_uuid, info_uuid, hash_table_uuid, secret_uuid, boot_block_uuid;
 	int len;
@@ -204,7 +204,7 @@ uint8_t *parse_inner_table(uint8_t *ptr, char *buffer, size_t size)
 	return ptr - len;
 }
 
-void parse_table(char *buffer, size_t size)
+void parse_table(uint8_t *buffer, size_t size)
 {
 	struct UUID uuid;
 	uint8_t *ptr;
@@ -234,7 +234,7 @@ void parse_table(char *buffer, size_t size)
 int main(int argc, char **argv)
 {
 	struct stat statbuf;
-	char *buffer;
+	uint8_t *buffer;
 	size_t size;
 	int fd;
 
