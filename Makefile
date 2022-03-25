@@ -15,7 +15,10 @@ all: svsm.bin
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
 
-stage1/meta.bin: utils/gen_meta
+utils/print-meta: utils/print-meta.c
+	cc -O3 -Wall -o $@ $<
+
+stage1/meta.bin: utils/gen_meta utils/print-meta
 	./utils/gen_meta $@
 
 stage1/stage2.bin:
