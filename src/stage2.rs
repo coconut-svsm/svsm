@@ -1,25 +1,30 @@
 #![no_std]
 #![no_main]
+#![feature(const_mut_refs)]
 
 pub mod allocator;
 pub mod pagetable;
 pub mod locking;
+pub mod console;
 pub mod string;
 pub mod serial;
 pub mod fw_cfg;
 pub mod cpuid;
 pub mod util;
+pub mod boot;
 pub mod msr;
 pub mod sev;
 pub mod io;
-pub mod boot;
 
-use pagetable::{PageTable};
-use core::panic::PanicInfo;
+use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, GHCBIOPort};
+use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use allocator::{init_heap, print_heap_info};
-use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled};
-use fw_cfg::fw_cfg_read_e820;
 use cpuid::dump_cpuid_table;
+use core::panic::PanicInfo;
+use pagetable::PageTable;
+use core::cell::RefCell;
+use console::WRITER;
+use fw_cfg::FwCfg;
 use util::halt;
 
 #[macro_use]
@@ -28,48 +33,43 @@ extern crate memoffset;
 
 extern "C" {
 	pub static mut pgtable : PageTable;
+	pub static mut boot_ghcb : GHCB;
 }
 
-static mut GHCB: Option<&mut GHCB> = None;
+static SEV_ES_IO : GHCBIOPort = GHCBIOPort { ghcb : unsafe { RefCell::new(&mut boot_ghcb) } };
+static mut SEV_ES_SERIAL : SerialPort = SerialPort { driver : &SEV_ES_IO, port : SERIAL_PORT };
 
-fn init_ghcb() {
+fn setup_env() {
+	sev_status_init();
+	init_heap();
+
+	if !sev_es_enabled() {
+		unsafe { DEFAULT_SERIAL_PORT.init(); }
+		panic!("SEV-ES not available");
+	}
+
 	unsafe {
-		GHCB = GHCB::create();
-		if let None = &mut GHCB {
-			loop {};
+		if let Err(_e) = boot_ghcb.init() {
+			halt();
 		}
 	}
+
+	unsafe { WRITER.lock().set(&mut SEV_ES_SERIAL); }
 }
 
 #[no_mangle]
 pub extern "C" fn stage2_main() {
-	sev_status_init();
-	init_heap();
-	if sev_es_enabled() {
-		init_ghcb();
-	}
-	println!("SVSM Stage2 Loader");
+	setup_env();
 	print_heap_info();
 	sev_init();
-	fw_cfg_read_e820();
-	dump_cpuid_table();
-	/*
-	unsafe {
-		let mapping = pgtable.walk_addr(0);
-		match PageTable::split_4k(mapping) {
-			Ok(_r) => println!("Split successfull"),
-			Err(_r) => println!("Split failed"),
-		}
 
-		match pgtable.walk_addr(0) {
-			Mapping::Level0(entry) => println!("Address mapped at Level 0 (entry: {:#016x})", entry.0),
-			Mapping::Level1(entry) => println!("Address mapped at Level 1 (entry: {:#016x})", entry.0),
-			Mapping::Level2(entry) => println!("Address mapped at Level 2 (entry: {:#016x})", entry.0),
-			Mapping::Level3(entry) => println!("Address mapped at Level 3 (entry: {:#016x})", entry.0),
-		}
+	let fw_cfg = FwCfg::new(&SEV_ES_IO);
 
+	if let Err(_e) = fw_cfg.read_e820() {
+		println!("Failed to read E820 table from fw_cfg");
 	}
-	*/
+	dump_cpuid_table();
+
 	panic!("Road ends here!");
 }
 
@@ -78,4 +78,3 @@ fn panic(info : &PanicInfo) -> ! {
 	println!("Panic: {}", info);
 	loop { halt(); }
 }
-

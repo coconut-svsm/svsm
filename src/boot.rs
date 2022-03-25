@@ -146,6 +146,12 @@ global_asm!(r#"
 		.word gdt64_end - gdt64 - 1
 		.quad gdt64
 
+
+		.align 4096
+		.globl boot_ghcb
+	boot_ghcb:
+		.fill 4096, 1, 0
+
 		.align 4096
 		.globl pgtable
 	pgtable:

@@ -3,6 +3,8 @@ use super::pagetable::{VirtAddr, PAGE_SIZE, flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};
 use super::allocator::ALLOCATOR;
 use core::arch::asm;
+use core::cell::RefCell;
+use crate::io::IOPort;
 use super::pgtable;
 
 use crate::{print};
@@ -336,6 +338,36 @@ impl GHCB {
 		}
 	}
 
+	pub fn init(&mut self) -> Result<(),()> {
+		let addr = (self as *const GHCB) as VirtAddr;
+
+		// Make page invalid
+		if let Err(_e) = pvalidate(addr, false, false) {
+			return Err(());
+		}
+
+		// Let the Hypervisor take the page back
+		if let Err(_e) = invalidate_page_msr(addr) {
+			return Err(());
+		}
+
+		// Register GHCB GPA
+		if let Err(_e) = register_ghcb_gpa_msr(addr) {
+			return Err(());
+		}
+
+		// Map page unencrypted
+		unsafe {
+			if let Err(_e) = pgtable.set_shared_4k(addr) {
+				return Err(());
+			}
+		}
+
+		flush_tlb_global();
+
+		Ok(())
+	}
+
 	pub fn clear(&mut self) {
 		// Clear valid bitmap
 		self.valid_bitmap[0] = 0;
@@ -486,6 +518,54 @@ impl GHCB {
 		match self.vmgexit(GHCBExitCode::IOIO, info, 0) {
 			Ok(()) => Ok(()),
 			Err(()) => Err(()),
+		}
+	}
+}
+
+
+pub struct GHCBIOPort<'a> {
+	pub ghcb: RefCell<&'a mut GHCB>,
+}
+
+impl<'a> GHCBIOPort<'a> {
+	pub fn new(ghcb : RefCell<&'a mut GHCB>) -> Self {
+		GHCBIOPort { ghcb : ghcb }
+	}
+}
+unsafe impl<'a> Sync for GHCBIOPort<'a> { }
+
+impl<'a> IOPort for GHCBIOPort<'a> {
+	fn outb(&self, port: u16, value : u8) {
+		let mut g = self.ghcb.borrow_mut();
+		let ret = g.ioio_out(port, GHCBIOSize::Size8, value as u64);
+		if let Err(()) = ret {
+			request_termination_msr();
+		}
+	}
+
+	fn inb(&self, port : u16) -> u8 {
+		let mut g = self.ghcb.borrow_mut();
+		let ret = g.ioio_in(port, GHCBIOSize::Size8);
+		match ret {
+			Ok(v)   => (v & 0xff) as u8,
+			Err(_e) => { request_termination_msr(); 0},
+		}
+	}
+
+	fn outw(&self, port: u16, value : u16) {
+		let mut g = self.ghcb.borrow_mut();
+		let ret = g.ioio_out(port, GHCBIOSize::Size16, value as u64);
+		if let Err(()) = ret {
+			request_termination_msr();
+		}
+	}
+
+	fn inw(&self, port : u16) -> u16 {
+		let mut g = self.ghcb.borrow_mut();
+		let ret = g.ioio_in(port, GHCBIOSize::Size16);
+		match ret {
+			Ok(v)   => (v & 0xffff) as u16,
+			Err(_e) => { request_termination_msr(); 0},
 		}
 	}
 }
