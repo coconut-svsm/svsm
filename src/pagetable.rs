@@ -1,14 +1,10 @@
-use core::ops::{Index, IndexMut};
+use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use core::alloc::{GlobalAlloc, Layout};
+use core::ops::{Index, IndexMut};
 use super::ALLOCATOR;
 use super::util::*;
 
-pub const PAGE_SIZE		: usize = 4096;
-//const PAGE_SIZE_2M	: usize = 1024 * PAGE_SIZE;
 const ENTRY_COUNT	: usize = 512;
-
-pub type PhysAddr	= usize;
-pub type VirtAddr	= usize;
 
 pub fn flush_tlb() {
 	write_cr3(read_cr3());
