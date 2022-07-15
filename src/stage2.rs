@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(const_mut_refs)]
 
+pub mod boot_stage2;
 pub mod allocator;
 pub mod pagetable;
 pub mod locking;
@@ -11,7 +12,6 @@ pub mod serial;
 pub mod fw_cfg;
 pub mod cpuid;
 pub mod util;
-pub mod boot;
 pub mod msr;
 pub mod sev;
 pub mod io;
