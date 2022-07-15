@@ -2,9 +2,9 @@
 #![no_main]
 #![feature(const_mut_refs)]
 
+pub mod allocator_stage2;
 pub mod kernel_launch;
 pub mod boot_stage2;
-pub mod allocator;
 pub mod pagetable;
 pub mod locking;
 pub mod console;
@@ -17,14 +17,15 @@ pub mod msr;
 pub mod sev;
 pub mod io;
 
-use kernel_launch::KernelLaunchInfo;
 use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
+use allocator_stage2::{Stage2Allocator, init_heap, print_heap_info};
+use pagetable::{VirtAddr, PhysAddr, PageTable, PTEntryFlags};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
-use allocator::{init_heap, print_heap_info};
+use kernel_launch::KernelLaunchInfo;
 use cpuid::dump_cpuid_table;
 use core::panic::PanicInfo;
-use pagetable::{VirtAddr, PhysAddr, PageTable, PTEntryFlags};
 use core::cell::RefCell;
+use locking::SpinLock;
 use core::arch::asm;
 use console::WRITER;
 use fw_cfg::{FwCfg, KernelRegion};
@@ -33,6 +34,9 @@ use util::halt;
 #[macro_use]
 extern crate bitflags;
 extern crate memoffset;
+
+#[global_allocator]
+pub static ALLOCATOR: SpinLock<Stage2Allocator> = SpinLock::new(Stage2Allocator::new());
 
 extern "C" {
 	pub static mut pgtable : PageTable;

@@ -1,6 +1,6 @@
 use core::ops::{Index, IndexMut};
 use core::alloc::{GlobalAlloc, Layout};
-use super::allocator::ALLOCATOR;
+use super::ALLOCATOR;
 use super::util::*;
 
 pub const PAGE_SIZE		: usize = 4096;

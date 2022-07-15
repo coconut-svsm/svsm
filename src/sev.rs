@@ -1,7 +1,7 @@
 use super::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
 use super::pagetable::{PhysAddr, VirtAddr, PAGE_SIZE, flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};
-use super::allocator::ALLOCATOR;
+use super::ALLOCATOR;
 use core::arch::asm;
 use core::cell::RefCell;
 use crate::io::IOPort;

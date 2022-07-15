@@ -1,6 +1,7 @@
-use super::util::align_up;
-use super::locking::SpinLock;
 use core::alloc::{GlobalAlloc, Layout};
+use super::locking::SpinLock;
+use super::util::align_up;
+use super::ALLOCATOR;
 use core::ptr;
 
 use crate::println;
@@ -9,16 +10,16 @@ extern "C" {
 	static heap_start: u8;
 }
 
-pub struct SvsmAllocator {
+pub struct Stage2Allocator {
 	heap_start : usize,
 	heap_end : usize,
 	next : usize,
 }
 
-impl SvsmAllocator {
+impl Stage2Allocator {
 
 	pub const fn new() -> Self {
-		SvsmAllocator {
+		Stage2Allocator {
 			heap_start: 0,
 			heap_end: 0,
 			next: 0,
@@ -33,7 +34,7 @@ impl SvsmAllocator {
 }
 
 
-unsafe impl GlobalAlloc for SpinLock<SvsmAllocator> {
+unsafe impl GlobalAlloc for SpinLock<Stage2Allocator> {
 	unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
 		let mut heap = self.lock();
 
@@ -55,9 +56,6 @@ unsafe impl GlobalAlloc for SpinLock<SvsmAllocator> {
 		// No de-allocation support yet
 	}
 }
-
-#[global_allocator]
-pub static ALLOCATOR: SpinLock<SvsmAllocator> = SpinLock::new(SvsmAllocator::new());
 
 pub fn init_heap() {
 	unsafe {
