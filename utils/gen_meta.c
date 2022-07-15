@@ -210,7 +210,9 @@ void fill_buffer(struct meta_buffer *meta)
 	uint32_t meta_offset;
 	struct sev_secret secret;
 	struct svsm_meta_data sev_meta;
+#if 0
 	struct snp_boot_block boot_block;
+#endif
 	struct svsm_info_block svsm_info;
 	char *ptr;
 
