@@ -7,6 +7,8 @@
 /* Stage2 is loaded at 64kb */
 #define STAGE2_START		0x10000
 
+#define STAGE1_STACK		0x10000
+
 .text
 	.section ".startup.text","ax"
 	.code32
@@ -17,12 +19,28 @@ startup_32:
 	cld
 	cli
 
-	/* Copy stage2 code to destination address */
-	movl	$stage2_bin, %esi
+	/* Enable caches */
+	movl	%cr0, %eax
+	andl	$~((1 << 30) | (1 << 29)), %eax
+	mov	%eax, %cr0
+
+	/* Setup Stack */
+	movl	$STAGE1_STACK, %esp
+
+	/* Store run-offset to %ebp */
+	call	2f
+2:	popl	%ebp
+	leal	2b, %eax
+	subl	%eax, %ebp
+
+	leal	stage2_bin(%ebp), %esi
 	movl	$STAGE2_START, %edi
-	movl	stage2_size, %ecx
+	movl	stage2_size(%ebp), %ecx
 	shrl	$2, %ecx
 	rep movsl
+
+	leal	kernel_bin(%ebp), %edi
+	leal	kernel_bin_end(%ebp), %esi
 
 	/* Setup stack for stage 2*/
 	movl	$STAGE2_START, %esp
@@ -30,13 +48,18 @@ startup_32:
 	/* Jump to stage 2 */
 	movl	$STAGE2_START, %eax
 	jmp	*%eax
-	
 .data
 
+	.align	4
 stage2_bin:
-	.align	4
 	.incbin "stage1/stage2.bin"
-	.align	4
+	.align 4
 stage2_bin_end:
+
+kernel_bin:
+	.incbin "stage1/kernel.bin"
+	.align 4
+kernel_bin_end:
+
 stage2_size:
 	.long	stage2_bin_end - stage2_bin

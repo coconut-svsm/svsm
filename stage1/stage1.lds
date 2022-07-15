@@ -2,7 +2,7 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	. = 0xffe00000;
+	. = 0x00000000;
 	.stext = .;
 	.text : { *(.startup.*) *(.text) *(.text.*) }
 	. = ALIGN(16);
@@ -13,7 +13,7 @@ SECTIONS
 	.bss : { *(.bss) }
 	. = ALIGN(16);
 	edata = .;
-	. = 0xfffffe00;
+	. = 0x000ffe00;
 	.sinit = .;
 	.init : {
 		*(.init);

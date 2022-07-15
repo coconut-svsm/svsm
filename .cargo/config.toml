@@ -4,4 +4,5 @@ build-std-features = ["compiler-builtins-mem"]
 
 [build]
 target = "svsm-target.json"
+#rustflags = ["-C", "code-model=large"]
 

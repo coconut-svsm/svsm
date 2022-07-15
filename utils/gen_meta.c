@@ -73,6 +73,7 @@ int uuid_cmp(const struct UUID *u1, const struct UUID *u2)
 #define SEV_HASH_TABLE_RV_GUID		"7255371f-3a3b-4b04-927b-1da6efa8d454"
 #define SEV_SECRET_GUID			"4c2eb361-7d9b-4cc3-8081-127c90d3d294"
 #define SEV_SNP_BOOT_BLOCK_GUID		"bd39c0c2-2f8e-4243-83e8-1b74cebcb7d9"
+#define SVSM_INFO_GUID			"a789a612-0597-4c4b-a49f-cbb1fe9d1ddd"
 
 struct __attribute__((__packed__)) snp_boot_block {
     /* Prevalidate range address */
@@ -112,6 +113,10 @@ struct __attribute__((__packed__)) sev_meta_data {
 	struct meta_data_desc descs[];
 };
 
+struct __attribute__((__packed__)) svsm_info_block {
+	uint32_t launch_offset;
+};
+
 #define META_SIZE	256
 
 struct meta_buffer {
@@ -119,8 +124,6 @@ struct meta_buffer {
 	uint16_t *len;
 	char *end;
 };
-
-#define META_SIZE	256
 
 void init_buffer(struct meta_buffer *meta)
 {
@@ -184,14 +187,14 @@ void init_sev_meta(struct svsm_meta_data *svsm_meta)
 	svsm_meta->num_desc = NUM_DESCS;
 
 	svsm_meta->descs[0].base = 0;
-	svsm_meta->descs[0].len  = 636 * 1024;
+	svsm_meta->descs[0].len  = 632 * 1024;
 	svsm_meta->descs[0].type = SEV_DESC_TYPE_SNP_SEC_MEM;
 
-	svsm_meta->descs[1].base = 636 * 1024;
+	svsm_meta->descs[1].base = 632 * 1024;
 	svsm_meta->descs[1].len  = 4096;
 	svsm_meta->descs[1].type = SEV_DESC_TYPE_SNP_SECRETS;
 
-	svsm_meta->descs[2].base = 632 * 1024;
+	svsm_meta->descs[2].base = 636 * 1024;
 	svsm_meta->descs[2].len  = 4096;
 	svsm_meta->descs[2].type = SEV_DESC_TYPE_CPUID;
 }
@@ -208,6 +211,7 @@ void fill_buffer(struct meta_buffer *meta)
 	struct sev_secret secret;
 	struct svsm_meta_data sev_meta;
 	struct snp_boot_block boot_block;
+	struct svsm_info_block svsm_info;
 	char *ptr;
 
 	init_buffer(meta);
@@ -218,6 +222,7 @@ void fill_buffer(struct meta_buffer *meta)
 	secret.size = 0;
 	add_table(meta, SEV_SECRET_GUID, (char *)&secret, sizeof(secret));
 
+#if 0
 	boot_block.pre_validated_start = 0;
 	boot_block.pre_validated_end   = 636 * 1024;
 	boot_block.secrets_addr        = 636 * 1024;
@@ -225,6 +230,10 @@ void fill_buffer(struct meta_buffer *meta)
 	boot_block.cpuid_addr          = 632 * 1024;
 	boot_block.cpuid_len           = 4096;
 	add_table(meta, SEV_SNP_BOOT_BLOCK_GUID, (char *)&boot_block, sizeof(boot_block));
+#endif
+
+	svsm_info.launch_offset = 0;
+	add_table(meta, SVSM_INFO_GUID, (char *)&svsm_info, sizeof(svsm_info));
 
 	/* OVMF_SEV_META_DATA_GUID must be last entry */
 	init_sev_meta(&sev_meta);

@@ -26,7 +26,7 @@ pub struct SnpCpuidTable {
 
 pub fn dump_cpuid_table() {
 	unsafe {
-		let cpuid : *const SnpCpuidTable = 0x9e000 as *const SnpCpuidTable;
+		let cpuid : *const SnpCpuidTable = 0x9f000 as *const SnpCpuidTable;
 		let count = (*cpuid).count as usize;
 
 		println!("CPUID Table entry count: {}", count);

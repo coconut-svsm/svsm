@@ -9,6 +9,10 @@ const FW_CFG_DATA	: u16 = 0x511;
 const FW_CFG_ID		: u16 = 0x01;
 const FW_CFG_FILE_DIR	: u16 = 0x19;
 
+// Must be a power-of-2
+const KERNEL_REGION_SIZE	: u64 = 16 * 1024 * 1024;
+const KERNEL_REGION_SIZE_MASK	: u64 = !(KERNEL_REGION_SIZE - 1);
+
 #[non_exhaustive]
 
 pub struct FwCfg<'a> {
@@ -20,6 +24,10 @@ struct FwCfgFile {
 	selector : u16,
 }
 
+pub struct KernelRegion {
+	pub start : u64,
+	pub end	  : u64,
+}
 
 impl<'a> FwCfg<'a> {
 	pub fn new(driver: &'a dyn IOPort) -> Self {
@@ -97,7 +105,8 @@ impl<'a> FwCfg<'a> {
 		Err(())
 	}
 
-	pub fn read_e820(&self) -> Result<(),()> {
+	pub fn find_kernel_region(&self) -> Result<KernelRegion,()> {
+		let mut region = KernelRegion { start : 0, end : 0 };
 		let result = self.file_selector("etc/e820");
 
 		if let Err(e) = result {
@@ -116,8 +125,26 @@ impl<'a> FwCfg<'a> {
 			let size  : u64 = self.read_le();
 			let t     : u32 = self.read_le();
 
-			println!("E820: start: {:#08x} size: {:#08x} type: {}", start, size, t);
+			println!("Region: start: {:#010x} size: {:#010x}", region.start, region.end);
+			println!("E820:   start: {:#010x} size: {:#010x} type: {:#010x}", start, size, t);
+
+			if (t == 1) && (start >= region.start) {
+				println!("Found RAM region");
+				region.start = start;
+				region.end   = start + size;
+			}
+			println!("Region: start: {:#010x} size: {:#010x}", region.start, region.end);
 		}
-		Ok(())
+
+		println!("Region from E820 start: {:#08x} end: {:#08x}", region.start, region.end);
+		let start = (region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
+
+		if start < region.start {
+			return Err(());
+		}
+
+		region.start = start;
+
+		Ok(region)
 	}
 }

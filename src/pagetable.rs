@@ -182,6 +182,89 @@ impl PageTable {
 		PageTable::walk_addr_lvl3(&mut self.root, vaddr)
 	}
 
+	fn alloc_pte_lvl3<'a>(entry : &'a mut PTEntry, vaddr : VirtAddr) -> Mapping<'a> {
+		let flags = entry.flags();
+
+		if flags.contains(PTEntryFlags::PRESENT) {
+			return Mapping::Level3(entry);
+		}
+
+		let page = PageTable::allocate_page_table();
+
+		if page.is_null() {
+			return Mapping::Level3(entry);
+		}
+
+		let addr = page as PhysAddr;
+		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
+			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
+		entry.clear();
+		entry.set(set_c_bit(addr), flags);
+
+		let idx = PageTable::index::<2>(vaddr);
+
+		unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr) }
+	}
+
+	fn alloc_pte_lvl2<'a>(entry : &'a mut PTEntry, vaddr : VirtAddr) -> Mapping<'a> {
+		let flags = entry.flags();
+
+		if flags.contains(PTEntryFlags::PRESENT) {
+			return Mapping::Level2(entry);
+		}
+
+		let page = PageTable::allocate_page_table();
+
+		if page.is_null() {
+			return Mapping::Level2(entry);
+		}
+
+		let addr = page as PhysAddr;
+		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
+			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
+		entry.clear();
+		entry.set(set_c_bit(addr), flags);
+
+		let idx = PageTable::index::<1>(vaddr);
+
+		unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr) }
+	}
+
+	fn alloc_pte_lvl1<'a>(entry : &'a mut PTEntry, vaddr : VirtAddr) -> Mapping<'a> {
+		let flags = entry.flags();
+
+		if flags.contains(PTEntryFlags::PRESENT) {
+			return Mapping::Level1(entry);
+		}
+
+		let page = PageTable::allocate_page_table();
+
+		if page.is_null() {
+			return Mapping::Level1(entry);
+		}
+
+		let addr = page as PhysAddr;
+		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
+			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
+		entry.clear();
+		entry.set(set_c_bit(addr), flags);
+
+		let idx = PageTable::index::<0>(vaddr);
+
+		unsafe { Mapping::Level0(&mut (*page)[idx]) }
+	}
+
+	pub fn alloc_pte_lvl0(&mut self, vaddr : VirtAddr) -> Mapping {
+		let m = self.walk_addr(vaddr);
+
+		match m {
+			Mapping::Level0(entry) => Mapping::Level0(entry),
+			Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr),
+			Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr),
+			Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr),
+		}
+	}
+
 	fn do_split_4k(entry : &mut PTEntry) -> Result<(), ()> {
 		let page = PageTable::allocate_page_table();
 		let mut flags = entry.flags();
@@ -262,6 +345,18 @@ impl PageTable {
 
 		if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
 			PageTable::set_c_bit(entry);
+			Ok(())
+		} else {
+			Err(())
+		}
+	}
+
+	pub fn map_4k(&mut self, vaddr : VirtAddr, paddr : PhysAddr, flags : &PTEntryFlags) -> Result<(), ()> {
+		let mapping = self.alloc_pte_lvl0(vaddr);
+
+		if let Mapping::Level0(entry) = mapping {
+			let f = flags.clone();
+			entry.set(set_c_bit(paddr), f);
 			Ok(())
 		} else {
 			Err(())

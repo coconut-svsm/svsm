@@ -1,5 +1,5 @@
 use super::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
-use super::pagetable::{VirtAddr, PAGE_SIZE, flush_tlb_global};
+use super::pagetable::{PhysAddr, VirtAddr, PAGE_SIZE, flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};
 use super::allocator::ALLOCATOR;
 use core::arch::asm;
@@ -199,7 +199,7 @@ pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(),()> {
 	}
 }
 
-fn set_page_valid_status_msr(addr : VirtAddr, valid : bool) -> Result<(),()> {
+fn set_page_valid_status_msr(addr : PhysAddr, valid : bool) -> Result<(),()> {
 	let mut info : u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
 
 	if valid {
@@ -224,11 +224,11 @@ fn set_page_valid_status_msr(addr : VirtAddr, valid : bool) -> Result<(),()> {
 	Ok(())
 }
 
-pub fn validate_page_msr(addr: VirtAddr) -> Result<(),()> {
+pub fn validate_page_msr(addr: PhysAddr) -> Result<(),()> {
 	set_page_valid_status_msr(addr, true)
 }
 
-pub fn invalidate_page_msr(addr: VirtAddr) -> Result<(),()> {
+pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(),()> {
 	set_page_valid_status_msr(addr, false)
 }
 
@@ -258,6 +258,32 @@ const OFF_X87_STATE_GPA		: u16 = 0x400;
 const _OFF_BUFFER		: u16 = 0x800;
 const OFF_VERSION		: u16 = 0xffa;
 const OFF_USAGE			: u16 = 0xffc;
+
+#[repr(C, packed)]
+pub struct PageStateChange {
+	cur_entry : u16,
+	end_entry : u16,
+	reserved  : u32,
+	entries   : [u64; 253],
+}
+
+pub enum PageStateChangeOp {
+	PscPrivate,
+	PscShared,
+	PscPsmash,
+	PscUnsmash,
+}
+
+const _PSC_GFN_MASK : u64 = ((1u64 << 52) - 1) & !0xfffu64;
+
+const _PSC_OP_SHIFT : u8 = 52;
+const _PSC_OP_PRIVATE : u64 = 1 << _PSC_OP_SHIFT;
+const _PSC_OP_SHARED  : u64 = 2 << _PSC_OP_SHIFT;
+const _PSC_OP_PSMASH  : u64 = 3 << _PSC_OP_SHIFT;
+const _PSC_OP_UNSMASH : u64 = 4 << _PSC_OP_SHIFT;
+
+const _PSC_FLAG_HUGE_SHIFT : u8 = 56;
+const _PSC_FLAG_HUGE  : u64 = 1 << _PSC_FLAG_HUGE_SHIFT;
 
 #[repr(C, packed)]
 pub struct GHCB {

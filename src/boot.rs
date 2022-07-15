@@ -25,6 +25,9 @@ global_asm!(r#"
 		lret
 
 	.Lon_svsm32_cs:
+		push	%esi
+		push	%edi
+
 		movl $pgtable_end, %ecx
 		subl $pgtable, %ecx
 		shrl $2, %ecx
@@ -54,7 +57,6 @@ global_asm!(r#"
 		jnz 1b
 		andl $0xfffff000, %edi
 
-
 		addl $0x1000, %edi
 		movl $0x00000183, %eax
 		movl $2048, %ecx
@@ -77,10 +79,12 @@ global_asm!(r#"
 		movl $pgtable, %eax
 		movl %eax, %cr3
 
-
 		movl %cr0, %eax
 		bts $31, %eax
 		movl %eax, %cr0
+
+		popl	%edi
+		popl	%esi
 
 		pushl $0x18
 		movl $startup_64, %eax
@@ -89,7 +93,7 @@ global_asm!(r#"
 		lret
 
 	cpuid_ebx:
-		movl $0x9e000, %esi
+		movl $0x9f000, %esi
 		mov (%esi), %ecx
 		addl $0x10, %esi
 		xorl %ebx, %ebx
@@ -112,12 +116,14 @@ global_asm!(r#"
 		movw %ax, %gs
 		movw %ax, %ss
 
+		pushq	%rdi
 		xorq %rax, %rax
 		leaq _bss(%rip), %rdi
 		leaq _ebss(%rip), %rcx
 		subq %rdi, %rcx
 		shrq $3, %rcx
 		rep stosq
+		popq	%rdi
 
 		jmp stage2_main
 
