@@ -2,9 +2,21 @@
 #![no_main]
 #![feature(const_mut_refs)]
 
+pub mod kernel_launch;
+
+use kernel_launch::KernelLaunchInfo;
 use core::panic::PanicInfo;
 use core::arch::global_asm;
 
+/*
+ * Launch protocol:
+ *
+ * The stage2 loader will map and load the svsm binary image and jump to
+ * startup_64.
+ *
+ * %rdx will contain the offset from the phys->virt offset
+ * %r8  will contain a pointer to the KernelLaunchInfo structure
+ */
 global_asm!(r#"
 		.text
 		.section ".startup.text","ax"
@@ -23,6 +35,7 @@ global_asm!(r#"
 		leaq bsp_stack_end(%rip), %rsp
 
 		/* Jump to rust code */
+		movq	%r8, %rdi
 		jmp	svsm_main
 		
 		.data
@@ -43,7 +56,7 @@ extern "C" {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_main() {
+pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
 	panic!("Road ends here!");
 }
 

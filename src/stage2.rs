@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(const_mut_refs)]
 
+pub mod kernel_launch;
 pub mod boot_stage2;
 pub mod allocator;
 pub mod pagetable;
@@ -16,6 +17,7 @@ pub mod msr;
 pub mod sev;
 pub mod io;
 
+use kernel_launch::KernelLaunchInfo;
 use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use allocator::{init_heap, print_heap_info};
@@ -132,11 +134,21 @@ struct KernelMetaData {
 	entry		: VirtAddr,
 }
 
+static mut KERNEL_LAUNCH_INFO : KernelLaunchInfo =  KernelLaunchInfo {
+	kernel_start : 0,
+	kernel_end : 0,
+	virt_base : 0
+};
+
 unsafe fn copy_and_launch_kernel(kernel_start : PhysAddr, kernel_end : PhysAddr,
 				 vaddr : VirtAddr, entry : VirtAddr) {
 
 	let size = kernel_end - kernel_start;
 	let phys_offset = vaddr - kernel_start;
+
+	KERNEL_LAUNCH_INFO.kernel_start	= kernel_start as u64;
+	KERNEL_LAUNCH_INFO.kernel_end	= kernel_end as u64;
+	KERNEL_LAUNCH_INFO.virt_base	= vaddr as u64;
 
 	asm!("cld
 	      rep movsb
@@ -146,6 +158,7 @@ unsafe fn copy_and_launch_kernel(kernel_start : PhysAddr, kernel_end : PhysAddr,
 	      in("rcx") size,
 	      in("rax") entry,
 	      in("rdx") phys_offset,
+	      in("r8") &KERNEL_LAUNCH_INFO,
 	      options(att_syntax));
 }
 
