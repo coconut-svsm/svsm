@@ -34,6 +34,14 @@ global_asm!(r#"
 		/* Setup stack */
 		leaq bsp_stack_end(%rip), %rsp
 
+		/* Clear BSS */
+		xorq	%rax, %rax
+		leaq	_bss(%rip), %rdi
+		leaq	_ebss(%rip), %rcx
+		subq	%rdi, %rcx
+		shrq	$3, %rcx
+		rep stosq
+
 		/* Jump to rust code */
 		movq	%r8, %rdi
 		jmp	svsm_main
