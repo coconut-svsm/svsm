@@ -3,10 +3,20 @@
 #![feature(const_mut_refs)]
 
 pub mod kernel_launch;
+pub mod locking;
+pub mod memory;
+pub mod types;
+pub mod util;
+pub mod msr;
 
 use kernel_launch::KernelLaunchInfo;
 use core::panic::PanicInfo;
 use core::arch::global_asm;
+use memory::memory_init;
+
+#[macro_use]
+extern crate bitflags;
+
 
 /*
  * Launch protocol:
@@ -61,10 +71,12 @@ global_asm!(r#"
 
 extern "C" {
 	pub static PHYS_OFFSET : u64;
+	pub static heap_start : u8;
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
+pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
+	memory_init(launch_info);
 	panic!("Road ends here!");
 }
 
