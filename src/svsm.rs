@@ -94,6 +94,7 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
+	load_gdt();
 	memory_init(launch_info);
 	panic!("Road ends here!");
 }
