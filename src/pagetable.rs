@@ -1,7 +1,6 @@
+use super::{allocate_pt_page, virt_to_phys, phys_to_virt};
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use core::alloc::{GlobalAlloc, Layout};
 use core::ops::{Index, IndexMut};
-use super::ALLOCATOR;
 use super::util::*;
 
 const ENTRY_COUNT	: usize = 512;
@@ -111,12 +110,9 @@ pub struct PageTable {
 impl PageTable {
 
 	fn allocate_page_table() -> *mut PTPage {
-		let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+		let ptr = allocate_pt_page();
 
-		unsafe {
-			let ptr = ALLOCATOR.alloc(layout);
-			ptr as *mut PTPage
-		}
+		ptr as *mut PTPage
 	}
 
 	fn index<const L : usize>(vaddr : VirtAddr) -> usize {
@@ -130,7 +126,7 @@ impl PageTable {
 			    return None;
 		    }
 
-		let address = entry.address();
+		let address = phys_to_virt(entry.address());
 		Some(unsafe { &mut *(address as *mut PTPage) })
 
 	}
@@ -195,7 +191,7 @@ impl PageTable {
 		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
 			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
 		entry.clear();
-		entry.set(set_c_bit(addr), flags);
+		entry.set(set_c_bit(virt_to_phys(addr)), flags);
 
 		let idx = PageTable::index::<2>(vaddr);
 
@@ -219,7 +215,7 @@ impl PageTable {
 		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
 			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
 		entry.clear();
-		entry.set(set_c_bit(addr), flags);
+		entry.set(set_c_bit(virt_to_phys(addr)), flags);
 
 		let idx = PageTable::index::<1>(vaddr);
 
@@ -243,7 +239,7 @@ impl PageTable {
 		let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE |
 			    PTEntryFlags::USER | PTEntryFlags::ACCESSED;
 		entry.clear();
-		entry.set(set_c_bit(addr), flags);
+		entry.set(set_c_bit(virt_to_phys(addr)), flags);
 
 		let idx = PageTable::index::<0>(vaddr);
 
@@ -280,12 +276,12 @@ impl PageTable {
 			let addr_4k = addr_2m + (i * PAGE_SIZE);
 			unsafe {
 				(*page).entries[i].clear();
-				(*page).entries[i].set(set_c_bit(addr_4k), flags);
+				(*page).entries[i].set(set_c_bit(virt_to_phys(addr_4k)), flags);
 			}
 		}
 
 		let addr_2m = page as PhysAddr;
-		entry.set(set_c_bit(addr_2m), flags);
+		entry.set(set_c_bit(virt_to_phys(addr_2m)), flags);
 
 		flush_tlb();
 
@@ -306,7 +302,7 @@ impl PageTable {
 		let addr  = entry.address();
 
 		// entry.address() returned with c-bit clear already
-		entry.set(addr, flags);
+		entry.set(virt_to_phys(addr), flags);
 	}
 	
 	fn set_c_bit(entry : &mut PTEntry) {
@@ -314,7 +310,7 @@ impl PageTable {
 		let addr  = entry.address();
 
 		// entry.address() returned with c-bit clear already
-		entry.set(set_c_bit(addr), flags);
+		entry.set(set_c_bit(virt_to_phys(addr)), flags);
 	}
 
 	pub fn set_shared_4k(&mut self, vaddr : VirtAddr) -> Result<(), ()> {

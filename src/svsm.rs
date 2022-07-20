@@ -1,22 +1,26 @@
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
 
 pub mod kernel_launch;
+pub mod pagetable;
 pub mod locking;
 pub mod memory;
 pub mod types;
 pub mod util;
 pub mod msr;
+pub mod gdt;
 
 use kernel_launch::KernelLaunchInfo;
+use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
 use memory::memory_init;
+use locking::SpinLock;
+use pagetable::PageTable;
+use gdt::load_gdt;
 
 #[macro_use]
 extern crate bitflags;
-
 
 /*
  * Launch protocol:
@@ -72,6 +76,20 @@ global_asm!(r#"
 extern "C" {
 	pub static PHYS_OFFSET : u64;
 	pub static heap_start : u8;
+}
+
+pub fn allocate_pt_page() -> *mut u8 {
+	let pt_page : VirtAddr = memory::allocate_zeroed_page().expect("Failed to allocate pgtable page");
+
+	pt_page as *mut u8
+}
+
+pub fn virt_to_phys(vaddr : VirtAddr) -> PhysAddr {
+	memory::virt_to_phys(vaddr)
+}
+
+pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
+	memory::phys_to_virt(paddr)
 }
 
 #[no_mangle]

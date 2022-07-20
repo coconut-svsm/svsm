@@ -20,17 +20,19 @@ pub mod io;
 
 use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
 use allocator_stage2::{Stage2Allocator, init_heap, print_heap_info};
-use pagetable::{PageTable, PTEntryFlags};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
+use types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use pagetable::{PageTable, PTEntryFlags};
 use kernel_launch::KernelLaunchInfo;
-use types::{VirtAddr, PhysAddr};
+use fw_cfg::{FwCfg, KernelRegion};
+use core::alloc::GlobalAlloc;
 use cpuid::dump_cpuid_table;
 use core::panic::PanicInfo;
 use core::cell::RefCell;
+use core::alloc::Layout;
 use locking::SpinLock;
 use core::arch::asm;
 use console::WRITER;
-use fw_cfg::{FwCfg, KernelRegion};
 use util::halt;
 
 #[macro_use]
@@ -47,6 +49,23 @@ extern "C" {
 
 static SEV_ES_IO : GHCBIOPort = GHCBIOPort { ghcb : unsafe { RefCell::new(&mut boot_ghcb) } };
 static mut SEV_ES_SERIAL : SerialPort = SerialPort { driver : &SEV_ES_IO, port : SERIAL_PORT };
+
+pub fn allocate_pt_page() -> *mut u8 {
+	let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
+
+	unsafe {
+		let ptr = ALLOCATOR.alloc(layout);
+		ptr as *mut u8
+	}
+}
+
+pub fn virt_to_phys(vaddr : VirtAddr) -> PhysAddr {
+	vaddr as PhysAddr
+}
+
+pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
+	paddr as VirtAddr
+}
 
 fn setup_env() {
 	sev_status_init();

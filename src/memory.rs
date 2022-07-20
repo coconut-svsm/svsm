@@ -89,6 +89,30 @@ impl MemoryRegion {
 		}
 	}
 
+	pub fn phys_to_virt(&self, paddr : PhysAddr) -> Option<VirtAddr> {
+		let end_phys = self.start_phys + (self.nr_pages * PAGE_SIZE);
+
+		if paddr < self.start_phys || paddr >= end_phys {
+			return None;
+		}
+
+		let offset = paddr - self.start_phys;
+
+		Some((self.start_virt + offset) as VirtAddr)
+	}
+
+	pub fn virt_to_phys(&self, vaddr : VirtAddr) -> Option<PhysAddr> {
+		let end_virt = self.start_virt + (self.nr_pages * PAGE_SIZE);
+
+		if vaddr < self.start_virt || vaddr >= end_virt {
+			return None;
+		}
+
+		let offset = vaddr - self.start_virt;
+
+		Some((self.start_phys + offset) as PhysAddr)
+	}
+
 	fn page_info_virt_addr(&self, pfn : usize) -> VirtAddr {
 		let size = size_of::<PageStorageType>();
 		let virt = self.start_virt;
@@ -255,6 +279,20 @@ pub fn allocate_zeroed_page() -> Result<VirtAddr, ()> {
 
 pub fn free_page(vaddr : VirtAddr) {
 	ROOT_MEM.lock().free_page(vaddr)
+}
+
+pub fn virt_to_phys(vaddr : VirtAddr) -> PhysAddr {
+	match ROOT_MEM.lock().virt_to_phys(vaddr) {
+		None => { panic!("Invalid virtual address {:#018x}", vaddr); },
+		Some(v) => v,
+	}
+}
+
+pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
+	match ROOT_MEM.lock().phys_to_virt(paddr) {
+		None => { panic!("Invalid physical address {:#018x}", paddr); },
+		Some(p) => p,
+	}
 }
 
 struct SlabPage {
