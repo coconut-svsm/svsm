@@ -2,7 +2,7 @@ use super::{allocate_pt_page, virt_to_phys, phys_to_virt};
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use core::ops::{Index, IndexMut};
 use super::util::*;
-use crate::cpuid::cpuid_table;
+use crate::cpu::cpuid::cpuid_table;
 
 const ENTRY_COUNT	: usize = 512;
 pub static mut ENCRYPT_MASK : u64 = 0;
