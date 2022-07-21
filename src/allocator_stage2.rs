@@ -1,14 +1,11 @@
 use core::alloc::{GlobalAlloc, Layout};
 use super::locking::SpinLock;
 use super::util::align_up;
+use crate::heap_start;
 use super::ALLOCATOR;
 use core::ptr;
 
 use crate::println;
-
-extern "C" {
-	static heap_start: u8;
-}
 
 pub struct Stage2Allocator {
 	heap_start : usize,

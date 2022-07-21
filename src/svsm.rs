@@ -2,21 +2,20 @@
 #![no_main]
 
 pub mod kernel_launch;
-pub mod pagetable;
 pub mod locking;
-pub mod memory;
 pub mod types;
 pub mod util;
 pub mod cpu;
 pub mod msr;
+pub mod mm;
 
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
-use pagetable::paging_init;
-use memory::memory_init;
+use mm::pagetable::paging_init;
+use mm::alloc::memory_init;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
 
@@ -95,17 +94,17 @@ extern "C" {
 }
 
 pub fn allocate_pt_page() -> *mut u8 {
-	let pt_page : VirtAddr = memory::allocate_zeroed_page().expect("Failed to allocate pgtable page");
+	let pt_page : VirtAddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate pgtable page");
 
 	pt_page as *mut u8
 }
 
 pub fn virt_to_phys(vaddr : VirtAddr) -> PhysAddr {
-	memory::virt_to_phys(vaddr)
+	mm::alloc::virt_to_phys(vaddr)
 }
 
 pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
-	memory::phys_to_virt(paddr)
+	mm::alloc::phys_to_virt(paddr)
 }
 
 #[no_mangle]

@@ -1,9 +1,9 @@
-use super::{allocate_pt_page, virt_to_phys, phys_to_virt};
+use crate::{allocate_pt_page, virt_to_phys, phys_to_virt};
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use crate::cpu::cpuid::cpuid_table;
 use core::ops::{Index, IndexMut};
-use super::util::*;
+use crate::util::*;
 
 const ENTRY_COUNT	: usize = 512;
 static mut ENCRYPT_MASK : usize = 0;

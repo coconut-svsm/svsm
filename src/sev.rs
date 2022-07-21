@@ -1,6 +1,6 @@
 use super::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
 use super::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use super::pagetable::{flush_tlb_global};
+use crate::mm::pagetable::{flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};
 use super::ALLOCATOR;
 use core::arch::asm;

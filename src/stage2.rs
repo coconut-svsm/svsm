@@ -5,7 +5,6 @@
 pub mod allocator_stage2;
 pub mod kernel_launch;
 pub mod boot_stage2;
-pub mod pagetable;
 pub mod locking;
 pub mod console;
 pub mod string;
@@ -17,12 +16,13 @@ pub mod util;
 pub mod msr;
 pub mod sev;
 pub mod io;
+pub mod mm;
 
 use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
 use allocator_stage2::{Stage2Allocator, init_heap, print_heap_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use pagetable::{PageTable, PTEntryFlags, paging_init};
+use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
 use kernel_launch::KernelLaunchInfo;
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
@@ -44,6 +44,7 @@ extern crate memoffset;
 pub static ALLOCATOR: SpinLock<Stage2Allocator> = SpinLock::new(Stage2Allocator::new());
 
 extern "C" {
+	pub static heap_start: u8;
 	pub static mut pgtable : PageTable;
 	pub static mut boot_ghcb : GHCB;
 	pub static CPUID_PAGE : SnpCpuidTable;

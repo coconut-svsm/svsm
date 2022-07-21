@@ -27,7 +27,7 @@ stage1/stage2.bin:
 	objcopy -O binary ${STAGE2_ELF} $@
 
 stage1/kernel.bin:
-	cargo build ${CARGO_ARGS} --bin svsm
+	cargo build ${CARGO_ARGS} -F slab --bin svsm
 	objcopy -O binary ${KERNEL_ELF} $@
 
 stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/kernel.bin
