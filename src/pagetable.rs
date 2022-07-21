@@ -1,11 +1,13 @@
 use super::{allocate_pt_page, virt_to_phys, phys_to_virt};
+use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use crate::cpu::cpuid::cpuid_table;
 use core::ops::{Index, IndexMut};
 use super::util::*;
-use crate::cpu::cpuid::cpuid_table;
 
 const ENTRY_COUNT	: usize = 512;
-pub static mut ENCRYPT_MASK : u64 = 0;
+static mut ENCRYPT_MASK : usize = 0;
+static mut FEATURE_MASK : PTEntryFlags = PTEntryFlags::empty();
 
 pub fn paging_init() {
 	// Find C bit position
@@ -17,7 +19,19 @@ pub fn paging_init() {
 
 	let c_bit = res.unwrap().ebx & 0x3f;
 
-	unsafe { ENCRYPT_MASK = 1u64 << c_bit; }
+	unsafe {
+		ENCRYPT_MASK = 1usize << c_bit;
+
+		FEATURE_MASK = PTEntryFlags::all();
+
+		if !cpu_has_nx() {
+			FEATURE_MASK.remove(PTEntryFlags::NX);
+		}
+
+		if !cpu_has_pge() {
+			FEATURE_MASK.remove(PTEntryFlags::GLOBAL);
+		}
+	}
 }
 
 pub fn flush_tlb() {
@@ -39,8 +53,11 @@ pub fn flush_tlb_global() {
 }
 
 fn encrypt_mask() -> usize {
-	1 << 51
-	//0
+	unsafe { ENCRYPT_MASK  }
+}
+
+fn supported_flags(flags : PTEntryFlags) -> PTEntryFlags {
+	unsafe {flags & FEATURE_MASK }
 }
 
 fn strip_c_bit(paddr : PhysAddr) -> PhysAddr {
@@ -83,7 +100,7 @@ impl PTEntry {
 
 	pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
 		assert!(addr & !0x000f_ffff_ffff_f000 == 0);
-		self.0 = (addr as u64) | flags.bits();
+		self.0 = (addr as u64) | supported_flags(flags).bits();
 	}
 
 	pub fn address(&self) -> PhysAddr {

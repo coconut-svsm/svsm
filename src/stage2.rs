@@ -201,11 +201,10 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 
 #[no_mangle]
 pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
+	paging_init();
 	setup_env();
 	print_heap_info();
 	sev_init();
-
-	paging_init();
 
 	println!("Kernel start: {:#010x} end: {:#010x}", kernel_start, kernel_end);
 
