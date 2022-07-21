@@ -1,11 +1,11 @@
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use crate::kernel_launch::KernelLaunchInfo;
-use crate::locking::SpinLock;
-use core::mem::size_of;
-use core::arch::{global_asm, asm};
-use crate::util::align_up;
-use crate::heap_start;
 use core::alloc::{GlobalAlloc, Layout};
+use crate::locking::SpinLock;
+use crate::util::align_up;
+use core::mem::size_of;
+use crate::heap_start;
+use core::arch::asm;
 use core::ptr;
 
 type PageStorageType = u64;

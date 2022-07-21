@@ -12,15 +12,13 @@ pub mod msr;
 pub mod gdt;
 pub mod idt;
 
+use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
 use pagetable::paging_init;
-use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use memory::memory_init;
-use locking::SpinLock;
-use core::arch::asm;
 use gdt::load_gdt;
 use idt::idt_init;
 

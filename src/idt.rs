@@ -69,11 +69,6 @@ impl IdtEntry {
 	pub const fn no_handler() -> Self {
 		IdtEntry { low : 0, high : 0 }
 	}
-
-	pub fn clear(&mut self) {
-		self.low  = 0;
-		self.high = 0;
-	}
 }
 
 const IDT_ENTRIES : usize = 256;
