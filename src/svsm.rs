@@ -6,6 +6,7 @@ pub mod pagetable;
 pub mod locking;
 pub mod memory;
 pub mod types;
+pub mod cpuid;
 pub mod util;
 pub mod msr;
 pub mod gdt;
@@ -15,15 +16,20 @@ use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
-use core::arch::asm;
+use pagetable::paging_init;
+use cpuid::{SnpCpuidTable, copy_cpuid_table};
 use memory::memory_init;
 use locking::SpinLock;
-use pagetable::PageTable;
+use core::arch::asm;
 use gdt::load_gdt;
 use idt::idt_init;
 
 #[macro_use]
 extern crate bitflags;
+
+extern "C" {
+	pub static mut CPUID_PAGE : SnpCpuidTable;
+}
 
 /*
  * Launch protocol:
@@ -73,7 +79,18 @@ global_asm!(r#"
 	bsp_stack:
 		.fill 4096, 1, 0
 	bsp_stack_end:
-	
+
+		.bss
+
+		.align 4096
+		.globl CPUID_PAGE
+	CPUID_PAGE:
+		.fill 4096, 1, 0
+
+		.align 4096
+		.globl SECRETS_PAGE
+	SECRETS_PAGE:
+		.fill 4096, 1, 0
 		"#, options(att_syntax));
 
 extern "C" {
@@ -97,8 +114,16 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
+
 	load_gdt();
 	idt_init();
+
+	unsafe {
+		let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
+		copy_cpuid_table(&mut CPUID_PAGE, cpuid_table_virt);
+	}
+
+	paging_init();
 	memory_init(launch_info);
 	panic!("Road ends here!");
 }

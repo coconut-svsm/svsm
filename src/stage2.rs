@@ -22,12 +22,13 @@ use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pv
 use allocator_stage2::{Stage2Allocator, init_heap, print_heap_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use pagetable::{PageTable, PTEntryFlags};
+use pagetable::{PageTable, PTEntryFlags, paging_init};
 use kernel_launch::KernelLaunchInfo;
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
-use cpuid::dump_cpuid_table;
+//use cpuid::dump_cpuid_table;
 use core::panic::PanicInfo;
+use cpuid::SnpCpuidTable;
 use core::cell::RefCell;
 use core::alloc::Layout;
 use locking::SpinLock;
@@ -45,6 +46,7 @@ pub static ALLOCATOR: SpinLock<Stage2Allocator> = SpinLock::new(Stage2Allocator:
 extern "C" {
 	pub static mut pgtable : PageTable;
 	pub static mut boot_ghcb : GHCB;
+	pub static CPUID_PAGE : SnpCpuidTable;
 }
 
 static SEV_ES_IO : GHCBIOPort = GHCBIOPort { ghcb : unsafe { RefCell::new(&mut boot_ghcb) } };
@@ -171,10 +173,14 @@ struct KInfo {
 unsafe fn copy_and_launch_kernel(kli : KInfo) {
 	let image_size = kli.k_image_end - kli.k_image_start;
 	let phys_offset = kli.virt_base - kli.phys_base;
+	let ghcb : u64 = (&boot_ghcb as *const GHCB) as u64;
 	let kernel_launch_info = KernelLaunchInfo {
 		kernel_start : kli.phys_base as u64,
 		kernel_end   : kli.phys_end  as u64,
 		virt_base    : kli.virt_base as u64,
+		cpuid_page   : 0x9f000u64,
+		secrets_page : 0x9e000u64,
+		ghcb         : ghcb,
 	};
 
 	println!("KERNEL_LAUNCH_INFO.kernel_start = {:#018x}", kernel_launch_info.kernel_start);
@@ -199,9 +205,11 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 	print_heap_info();
 	sev_init();
 
+	paging_init();
+
 	println!("Kernel start: {:#010x} end: {:#010x}", kernel_start, kernel_end);
 
-	dump_cpuid_table();
+	//dump_cpuid_table();
 
 	let fw_cfg = FwCfg::new(&SEV_ES_IO);
 

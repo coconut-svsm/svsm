@@ -2,8 +2,23 @@ use super::{allocate_pt_page, virt_to_phys, phys_to_virt};
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use core::ops::{Index, IndexMut};
 use super::util::*;
+use crate::cpuid::cpuid_table;
 
 const ENTRY_COUNT	: usize = 512;
+pub static mut ENCRYPT_MASK : u64 = 0;
+
+pub fn paging_init() {
+	// Find C bit position
+	let res = cpuid_table(0x8000001f);
+
+	if let None = res {
+		panic!("Can not get C-Bit position from CPUID table");
+	}
+
+	let c_bit = res.unwrap().ebx & 0x3f;
+
+	unsafe { ENCRYPT_MASK = 1u64 << c_bit; }
+}
 
 pub fn flush_tlb() {
 	write_cr3(read_cr3());
