@@ -2,7 +2,7 @@ use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::SpinLock;
 use core::mem::size_of;
-use core::arch::asm;
+use core::arch::{global_asm, asm};
 use crate::util::align_up;
 use crate::heap_start;
 use core::alloc::{GlobalAlloc, Layout};
@@ -403,6 +403,7 @@ impl SlabPage {
 	}
 }
 
+#[repr(align(16))]
 struct Slab {
 	item_size  : u16,
 	capacity   : u32,
@@ -680,14 +681,15 @@ pub fn memory_init(launch_info : &KernelLaunchInfo) {
 	let heap_offset = vstart - launch_info.virt_base as VirtAddr;
 	let paddr = launch_info.kernel_start as PhysAddr + heap_offset;
 
-	let mut region = ROOT_MEM.lock();
-	region.start_phys = paddr;
-	region.start_virt = vstart;
-	region.nr_pages   = nr_pages;
+	{
+		let mut region = ROOT_MEM.lock();
+		region.start_phys = paddr;
+		region.start_virt = vstart;
+		region.nr_pages   = nr_pages;
+		region.init_memory();
+	}
 
 	if let Err(_e) = SLAB_PAGE_SLAB.lock().init() {
 		panic!("Failed to initialize SLAB_PAGE_SLAB");
 	}
-
-	region.init_memory();
 }
