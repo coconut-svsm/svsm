@@ -157,3 +157,4 @@ pub fn write_efer(efer : EFERFlags) {
 	let val = efer.bits();
 	write_msr(EFER, val);
 }
+

@@ -14,10 +14,13 @@ use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
-use mm::pagetable::paging_init;
+use mm::pagetable::{paging_init, PageTable};
 use mm::alloc::memory_init;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
+use locking::SpinLock;
+use core::ptr;
+use core::arch::asm;
 
 #[macro_use]
 extern crate bitflags;
@@ -54,8 +57,8 @@ global_asm!(r#"
 
 		/* Clear BSS */
 		xorq	%rax, %rax
-		leaq	_bss(%rip), %rdi
-		leaq	_ebss(%rip), %rcx
+		leaq	sbss(%rip), %rdi
+		leaq	ebss(%rip), %rcx
 		subq	%rdi, %rcx
 		shrq	$3, %rcx
 		rep stosq
@@ -107,6 +110,66 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 	mm::alloc::phys_to_virt(paddr)
 }
 
+pub static INIT_PGTABLE : SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
+
+extern "C" {
+	static stext	: u8;
+	static etext	: u8;
+	static sdata	: u8;
+	static edata	: u8;
+	static sdataro	: u8;
+	static edataro	: u8;
+	static sbss	: u8;
+	static ebss	: u8;
+}
+
+fn init_page_table(launch_info : &KernelLaunchInfo) {
+	let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
+	let mut ptr = INIT_PGTABLE.lock();
+	let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
+
+	*ptr = vaddr as *mut PageTable;
+
+	unsafe {
+		let pgtable = ptr.as_mut().unwrap();
+
+		/* Text segment */
+		let start : VirtAddr = (&stext as *const u8) as VirtAddr;
+		let end   : VirtAddr = (&etext as *const u8) as VirtAddr;
+		let phys  : PhysAddr = start - offset;
+
+		(*pgtable).map_region_4k(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
+
+		/* Writeble data */
+		let start : VirtAddr = (&sdata as *const u8) as VirtAddr;
+		let end   : VirtAddr = (&edata as *const u8) as VirtAddr;
+		let phys  : PhysAddr = start - offset;
+
+		(*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
+
+		/* Read-only data */
+		let start : VirtAddr = (&sdataro as *const u8) as VirtAddr;
+		let end   : VirtAddr = (&edataro as *const u8) as VirtAddr;
+		let phys  : PhysAddr = start - offset;
+
+		(*pgtable).map_region_4k(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
+
+		/* BSS */
+		let start : VirtAddr = (&sbss as *const u8) as VirtAddr;
+		let end   : VirtAddr = (&ebss as *const u8) as VirtAddr;
+		let phys  : PhysAddr = start - offset;
+
+		(*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
+
+		/* Heap */
+		let start : VirtAddr = (&heap_start as *const u8) as VirtAddr;
+		let end   : VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
+		let phys  : PhysAddr = start - offset;
+
+		(*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
+	}
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
@@ -119,7 +182,10 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 	}
 
 	paging_init();
-	memory_init(launch_info);
+	memory_init(&launch_info);
+	init_page_table(&launch_info);
+
+
 	panic!("Road ends here!");
 }
 

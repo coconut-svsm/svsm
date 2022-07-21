@@ -141,6 +141,22 @@ pub struct PageTable {
 
 impl PageTable {
 
+	pub fn exec_flags() -> PTEntryFlags {
+		PTEntryFlags::PRESENT  | PTEntryFlags::GLOBAL |
+		PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+	}
+
+	pub fn data_flags() -> PTEntryFlags {
+		PTEntryFlags::PRESENT  | PTEntryFlags::GLOBAL |
+		PTEntryFlags::WRITABLE | PTEntryFlags::NX     |
+		PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+	}
+
+	pub fn data_ro_flags() -> PTEntryFlags {
+		PTEntryFlags::PRESENT  | PTEntryFlags::GLOBAL | PTEntryFlags::NX |
+		PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+	}
+
 	fn allocate_page_table() -> *mut PTPage {
 		let ptr = allocate_pt_page();
 
@@ -385,5 +401,15 @@ impl PageTable {
 		} else {
 			Err(())
 		}
+	}
+
+	pub fn map_region_4k(&mut self, start : VirtAddr, end: VirtAddr, phys : PhysAddr, flags : PTEntryFlags) -> Result<(), ()> {
+		for addr in (start..end).step_by(PAGE_SIZE) {
+			let offset = addr - start;
+			if let Err(_e) = self.map_4k(addr, phys + offset, &flags) {
+				return Err(());
+			}
+		}
+		Ok(())
 	}
 }
