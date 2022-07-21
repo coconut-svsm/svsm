@@ -159,31 +159,37 @@ struct KernelMetaData {
 	entry		: VirtAddr,
 }
 
-static mut KERNEL_LAUNCH_INFO : KernelLaunchInfo =  KernelLaunchInfo {
-	kernel_start : 0,
-	kernel_end : 0,
-	virt_base : 0
-};
+struct KInfo {
+	k_image_start : PhysAddr,
+	k_image_end   : PhysAddr,
+	phys_base     : PhysAddr,
+	phys_end      : PhysAddr,
+	virt_base     : VirtAddr,
+	entry	      : VirtAddr,
+}
 
-unsafe fn copy_and_launch_kernel(kernel_start : PhysAddr, kernel_end : PhysAddr,
-				 vaddr : VirtAddr, entry : VirtAddr) {
+unsafe fn copy_and_launch_kernel(kli : KInfo) {
+	let image_size = kli.k_image_end - kli.k_image_start;
+	let phys_offset = kli.virt_base - kli.phys_base;
+	let kernel_launch_info = KernelLaunchInfo {
+		kernel_start : kli.phys_base as u64,
+		kernel_end   : kli.phys_end  as u64,
+		virt_base    : kli.virt_base as u64,
+	};
 
-	let size = kernel_end - kernel_start;
-	let phys_offset = vaddr - kernel_start;
-
-	KERNEL_LAUNCH_INFO.kernel_start	= kernel_start as u64;
-	KERNEL_LAUNCH_INFO.kernel_end	= kernel_end as u64;
-	KERNEL_LAUNCH_INFO.virt_base	= vaddr as u64;
+	println!("KERNEL_LAUNCH_INFO.kernel_start = {:#018x}", kernel_launch_info.kernel_start);
+	println!("KERNEL_LAUNCH_INFO.kernel_end   = {:#018x}", kernel_launch_info.kernel_end);
+	println!("KERNEL_LAUNCH_INFO.virt_base    = {:#018x}", kernel_launch_info.virt_base);
 
 	asm!("cld
 	      rep movsb
 	      jmp *%rax",
-	      in("rsi") kernel_start,
-	      in("rdi") vaddr,
-	      in("rcx") size,
-	      in("rax") entry,
+	      in("rsi") kli.k_image_start,
+	      in("rdi") kli.virt_base,
+	      in("rcx") image_size,
+	      in("rax") kli.entry,
 	      in("rdx") phys_offset,
-	      in("r8") &KERNEL_LAUNCH_INFO,
+	      in("r8") &kernel_launch_info,
 	      options(att_syntax));
 }
 
@@ -225,7 +231,13 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 
 		println!("Kernel Image Virtual Address: {:#018x} Entry Point: {:#018x}", vaddr, entry);
 		
-		copy_and_launch_kernel(kernel_start, kernel_end, vaddr, entry);
+		copy_and_launch_kernel( KInfo {
+						k_image_start	: kernel_start,
+						k_image_end	: kernel_end,
+						phys_base	: r.start as usize,
+						phys_end	: r.end as usize,
+						virt_base	: vaddr,
+						entry		: entry } );
 		// This should never return
 	}
 
