@@ -1,4 +1,4 @@
-use crate::types::VirtAddr;
+use crate::types::{VirtAddr, SVSM_CS, SVSM_DS};
 use core::arch::asm;
 
 #[repr(packed)]
@@ -8,8 +8,6 @@ pub struct GdtDesc {
 }
 
 const GDT_SIZE : u16 = 6;
-const SVSM_CS  : u16 = 8;
-const SVSM_DS  : u16 = 16;
 
 static GDT : [ u64; GDT_SIZE as usize] = [
 	0,

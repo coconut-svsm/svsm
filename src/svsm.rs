@@ -9,15 +9,18 @@ pub mod types;
 pub mod util;
 pub mod msr;
 pub mod gdt;
+pub mod idt;
 
 use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::global_asm;
+use core::arch::asm;
 use memory::memory_init;
 use locking::SpinLock;
 use pagetable::PageTable;
 use gdt::load_gdt;
+use idt::idt_init;
 
 #[macro_use]
 extern crate bitflags;
@@ -95,6 +98,7 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 	load_gdt();
+	idt_init();
 	memory_init(launch_info);
 	panic!("Road ends here!");
 }
