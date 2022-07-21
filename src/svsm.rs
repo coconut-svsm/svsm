@@ -9,8 +9,6 @@ pub mod types;
 pub mod util;
 pub mod cpu;
 pub mod msr;
-pub mod gdt;
-pub mod idt;
 
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use kernel_launch::KernelLaunchInfo;
@@ -19,8 +17,8 @@ use core::panic::PanicInfo;
 use core::arch::global_asm;
 use pagetable::paging_init;
 use memory::memory_init;
-use gdt::load_gdt;
-use idt::idt_init;
+use cpu::gdt::load_gdt;
+use cpu::idt::idt_init;
 
 #[macro_use]
 extern crate bitflags;
