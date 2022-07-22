@@ -111,14 +111,6 @@ fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Re
 	Ok(())
 }
 
-fn map_kernel_image(kernel_start : PhysAddr, kernel_end : PhysAddr) -> Result<(),()> {
-	let vaddr = kernel_start as VirtAddr;
-	let paddr = kernel_start;
-	let pend = kernel_end;
-
-	map_memory(paddr, pend, vaddr)
-}
-
 fn map_kernel_region(region : &KernelRegion) -> Result<(),()> {
 	let kaddr = KERNEL_VIRT_ADDR;
 	let paddr = region.start as PhysAddr;
@@ -215,11 +207,6 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 
 	let r = fw_cfg.find_kernel_region().unwrap();
 	println!("Found kernel region, start: {:#08x} end: {:#08x}", r.start, r.end);
-
-	match map_kernel_image(kernel_start, kernel_end) {
-		Ok(()) => println!("Mapped kernel image"),
-		Err(()) => println!("Mapping kernel image failed!"),
-	}
 
 	match map_kernel_region(&r) {
 		Ok(())  => println!("Mapped kernel region to virtual address {:#018x}", KERNEL_VIRT_ADDR),
