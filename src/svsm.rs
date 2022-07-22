@@ -8,12 +8,14 @@ pub mod util;
 pub mod cpu;
 pub mod mm;
 
+use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
+use mm::pagetable::{paging_init, PageTable};
 use kernel_launch::KernelLaunchInfo;
+use crate::cpu::efer::efer_init;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::{global_asm};
-use mm::pagetable::{paging_init, PageTable};
 use mm::alloc::memory_init;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
@@ -174,6 +176,9 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
 	load_gdt();
 	idt_init();
+	cr0_init();
+	cr4_init();
+	efer_init();
 
 	unsafe {
 		let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;

@@ -1,4 +1,27 @@
+use super::features::cpu_has_pge;
 use core::arch::asm;
+
+pub fn cr0_init() {
+	let mut cr0 = read_cr0();
+
+	cr0.insert(CR0Flags::WP); // Enable Write Protection
+	cr0.remove(CR0Flags::NW); // Enable caches ...
+	cr0.remove(CR0Flags::CD); // ... if not already happened
+
+	write_cr0(cr0);
+}
+
+pub fn cr4_init() {
+	let mut cr4 = read_cr4();
+
+	cr4.insert(CR4Flags::PSE); // Enable Page Size Extensions
+
+	if cpu_has_pge() {
+		cr4.insert(CR4Flags::PGE); // Enable Global Pages
+	}
+
+	write_cr4(cr4);
+}
 
 bitflags! {
 	pub struct CR0Flags: u64 {

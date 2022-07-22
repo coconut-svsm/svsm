@@ -1,4 +1,5 @@
 use super::msr::{read_msr, write_msr, EFER};
+use super::features::cpu_has_nx;
 
 bitflags! {
 	pub struct EFERFlags: u64 {
@@ -23,4 +24,14 @@ pub fn read_efer() -> EFERFlags {
 pub fn write_efer(efer : EFERFlags) {
 	let val = efer.bits();
 	write_msr(EFER, val);
+}
+
+pub fn efer_init() {
+	let mut efer = read_efer();
+
+	if cpu_has_nx() {
+		efer.insert(EFERFlags::NXE);
+	}
+
+	write_efer(efer);
 }
