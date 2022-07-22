@@ -1,3 +1,4 @@
+pub mod control_regs;
 pub mod features;
 pub mod cpuid;
 pub mod efer;
