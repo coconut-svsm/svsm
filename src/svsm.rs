@@ -13,14 +13,14 @@ use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use kernel_launch::KernelLaunchInfo;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
-use core::arch::global_asm;
+use core::arch::{global_asm};
 use mm::pagetable::{paging_init, PageTable};
 use mm::alloc::memory_init;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
 use locking::SpinLock;
 use core::ptr;
-use core::arch::asm;
+use core::fmt;
 
 #[macro_use]
 extern crate bitflags;
@@ -192,4 +192,20 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 #[panic_handler]
 fn panic(_info : &PanicInfo) -> ! {
 	loop { }
+}
+
+#[macro_export]
+macro_rules! print {
+	($($arg:tt)*) => ($crate::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+	() => ($crate::print!("\n"));
+	($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+#[doc(hidden)]
+pub fn _print(_args: fmt::Arguments) {
+	// Empty for now
 }
