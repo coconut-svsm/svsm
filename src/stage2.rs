@@ -13,7 +13,6 @@ pub mod fw_cfg;
 pub mod cpu;
 pub mod types;
 pub mod util;
-pub mod msr;
 pub mod sev;
 pub mod io;
 pub mod mm;

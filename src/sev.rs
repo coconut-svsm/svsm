@@ -1,4 +1,4 @@
-use super::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
+use crate::cpu::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
 use super::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::mm::pagetable::{flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};

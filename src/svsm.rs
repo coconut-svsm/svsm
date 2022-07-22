@@ -6,7 +6,6 @@ pub mod locking;
 pub mod types;
 pub mod util;
 pub mod cpu;
-pub mod msr;
 pub mod mm;
 
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
