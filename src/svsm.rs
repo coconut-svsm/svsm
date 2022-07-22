@@ -168,6 +168,8 @@ fn init_page_table(launch_info : &KernelLaunchInfo) {
 		let phys  : PhysAddr = start - offset;
 
 		(*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
+
+		(*pgtable).load();
 	}
 }
 

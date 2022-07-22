@@ -141,6 +141,12 @@ pub struct PageTable {
 
 impl PageTable {
 
+	pub fn load(&self) {
+		let pgtable : usize = (self as *const PageTable) as usize;
+		let cr3 = virt_to_phys(pgtable);
+		write_cr3(set_c_bit(cr3));
+	}
+
 	pub fn exec_flags() -> PTEntryFlags {
 		PTEntryFlags::PRESENT  | PTEntryFlags::GLOBAL |
 		PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
