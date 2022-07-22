@@ -167,6 +167,11 @@ impl MemoryRegion {
 			let pg = Page::Free( FreeInfo { next_page : i + 1 } );
 			self.write_page_info(i, pg);
 		}
+
+		/* Last Page */
+		let idx = self.nr_pages - 1;
+		let pg = Page::Free( FreeInfo { next_page : 0 } );
+		self.write_page_info(idx, pg);
 	}
 
 	pub fn get_page_info(&self, vaddr : VirtAddr) -> Result<Page, ()> {
@@ -190,7 +195,7 @@ impl MemoryRegion {
 
 		let new_next = match pg {
 			Page::Free(fi) => fi.next_page,
-			_ => panic!("Unexpected page type in MemoryRegion::allocate_page()"),
+			_ => panic!("Unexpected page type in MemoryRegion::get_next_page()"),
 		};
 
 		self.next_page = new_next;
@@ -202,7 +207,8 @@ impl MemoryRegion {
 		if let Ok(pfn) = self.get_next_page() {
 			let pg = Page::Allocated( AllocatedInfo { } );
 			self.write_page_info(pfn, pg);
-			return Ok(self.page_info_virt_addr(pfn));
+			let vaddr = self.start_virt + (pfn * PAGE_SIZE);
+			return Ok(vaddr);
 		} else {
 			return Err(());
 		}
@@ -231,7 +237,8 @@ impl MemoryRegion {
 			assert!(slab & (PAGE_TYPE_MASK as usize) == 0);
 			let pg = Page::SlabPage( SlabPageInfo { slab : slab } );
 			self.write_page_info(pfn, pg);
-			return Ok(self.page_info_virt_addr(pfn));
+			let vaddr = self.start_virt + (pfn * PAGE_SIZE);
+			return Ok(vaddr);
 		} else {
 			return Err(());
 		}
