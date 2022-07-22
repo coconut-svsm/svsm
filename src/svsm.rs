@@ -178,19 +178,19 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
 	load_gdt();
 	idt_init();
-	cr0_init();
-	cr4_init();
-	efer_init();
 
 	unsafe {
 		let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
 		copy_cpuid_table(&mut CPUID_PAGE, cpuid_table_virt);
 	}
 
-	paging_init();
-	memory_init(&launch_info);
-	init_page_table(&launch_info);
+	cr0_init();
+	cr4_init();
+	efer_init();
 
+	memory_init(&launch_info);
+	paging_init();
+	init_page_table(&launch_info);
 
 	panic!("Road ends here!");
 }
