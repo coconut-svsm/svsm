@@ -69,6 +69,14 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 	paddr as VirtAddr
 }
 
+pub fn map_page_shared(vaddr : VirtAddr) -> Result<(), ()> {
+	unsafe { pgtable.set_shared_4k(vaddr) }
+}
+
+pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
+	unsafe { pgtable.set_encrypted_4k(vaddr) }
+}
+
 fn setup_env() {
 	sev_status_init();
 	init_heap();

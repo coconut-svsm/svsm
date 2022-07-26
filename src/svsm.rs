@@ -111,6 +111,20 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 	mm::alloc::phys_to_virt(paddr)
 }
 
+pub fn map_page_shared(vaddr : VirtAddr) -> Result<(), ()> {
+	unsafe {
+		let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
+		(ptr).set_shared_4k(vaddr)
+	}
+}
+
+pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
+	unsafe {
+		let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
+		(*ptr).set_encrypted_4k(vaddr)
+	}
+}
+
 pub static INIT_PGTABLE : SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
 
 extern "C" {

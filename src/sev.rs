@@ -2,11 +2,11 @@ use crate::cpu::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
 use super::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::mm::pagetable::{flush_tlb_global};
 use core::alloc::{GlobalAlloc, Layout};
+use crate::map_page_shared;
 use super::ALLOCATOR;
 use core::arch::asm;
 use core::cell::RefCell;
 use crate::io::IOPort;
-use super::pgtable;
 
 use crate::{print};
 
@@ -355,7 +355,7 @@ impl GHCB {
 			}
 
 			// Map page unencrypted
-			if let Err(_e) = pgtable.set_shared_4k(addr) {
+			if let Err(_e) = map_page_shared(addr) {
 				return None;
 			}
 
@@ -384,10 +384,8 @@ impl GHCB {
 		}
 
 		// Map page unencrypted
-		unsafe {
-			if let Err(_e) = pgtable.set_shared_4k(addr) {
-				return Err(());
-			}
+		if let Err(_e) = map_page_shared(addr) {
+			return Err(());
 		}
 
 		flush_tlb_global();
