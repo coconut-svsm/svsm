@@ -1,13 +1,11 @@
 use crate::cpu::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
 use crate::mm::pagetable::{flush_tlb_global};
 use super::types::{PhysAddr, VirtAddr};
+use crate::{print, virt_to_phys};
 use crate::map_page_shared;
 use core::cell::RefCell;
 use crate::io::IOPort;
 use core::arch::asm;
-
-use crate::{print, virt_to_phys};
-
 
 bitflags! {
 	pub struct SEVStatusFlags: u64 {
@@ -405,8 +403,9 @@ impl GHCB {
 		self.set_valid(OFF_SW_EXIT_INFO_2);
 
 		unsafe {
-			let ghcb_address = (self as *const GHCB) as u64;
-			write_msr(SEV_GHCB, ghcb_address);
+			let ghcb_address = (self as *const GHCB) as VirtAddr;
+			let ghcb_pa : u64 = virt_to_phys(ghcb_address) as u64;
+			write_msr(SEV_GHCB, ghcb_pa);
 			asm!("rep; vmmcall", options(att_syntax));
 		}
 
