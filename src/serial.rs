@@ -5,19 +5,19 @@ pub const SERIAL_PORT : u16 =  0x3f8;
 const BAUD : u32 = 9600;
 const DLAB : u8 = 0x80;
 
-const  TXR : u16 = 0;	// Transmit register
-const _RXR : u16 = 0;	// Receive register
-const  IER : u16 = 1;	// Interrupt enable
-const _IIR : u16 = 2;	// Interrupt ID
-const  FCR : u16 = 2;	// FIFO Control
-const  LCR : u16 = 3;	// Line Control
-const  MCR : u16 = 4;	// Modem Control
-const  LSR : u16 = 5;	// Line Status
-const _MSR : u16 = 6;	// Modem Status
-const  DLL : u16 = 0;	// Divisor Latch Low
-const  DLH : u16 = 1;	// Divisor Latch High
+pub const  TXR : u16 = 0;	// Transmit register
+pub const _RXR : u16 = 0;	// Receive register
+pub const  IER : u16 = 1;	// Interrupt enable
+pub const _IIR : u16 = 2;	// Interrupt ID
+pub const  FCR : u16 = 2;	// FIFO Control
+pub const  LCR : u16 = 3;	// Line Control
+pub const  MCR : u16 = 4;	// Modem Control
+pub const  LSR : u16 = 5;	// Line Status
+pub const _MSR : u16 = 6;	// Modem Status
+pub const  DLL : u16 = 0;	// Divisor Latch Low
+pub const  DLH : u16 = 1;	// Divisor Latch High
 
-const XMTRDY : u8 = 0x20;
+pub const XMTRDY : u8 = 0x20;
 
 pub struct SerialPort<'a>
 {

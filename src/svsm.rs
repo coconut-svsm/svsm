@@ -1,8 +1,12 @@
 #![no_std]
 #![no_main]
 
+#![feature(const_mut_refs)]
 pub mod kernel_launch;
+pub mod svsm_console;
+pub mod console;
 pub mod locking;
+pub mod serial;
 pub mod types;
 pub mod util;
 pub mod cpu;
@@ -24,7 +28,12 @@ use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
 use locking::SpinLock;
 use core::ptr;
-use core::fmt;
+
+use crate::serial::SERIAL_PORT;
+use crate::svsm_console::SVSMIOPort;
+use crate::serial::SerialPort;
+use crate::console::WRITER;
+use crate::util::halt;
 
 #[macro_use]
 extern crate bitflags;
@@ -196,6 +205,9 @@ fn init_percpu() {
 	unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
 }
 
+static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
+static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
+
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
@@ -217,26 +229,16 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
 	init_percpu();
 
+	unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
+
+	println!("Hello World!");
+
 	panic!("Road ends here!");
 }
 
 #[panic_handler]
-fn panic(_info : &PanicInfo) -> ! {
-	loop { }
+fn panic(info : &PanicInfo) -> ! {
+	println!("Panic: {}", info);
+	loop { halt(); }
 }
 
-#[macro_export]
-macro_rules! print {
-	($($arg:tt)*) => ($crate::_print(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! println {
-	() => ($crate::print!("\n"));
-	($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
-
-#[doc(hidden)]
-pub fn _print(_args: fmt::Arguments) {
-	// Empty for now
-}
