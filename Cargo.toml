@@ -10,9 +10,6 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 
-[features]
-slab = []
-
 [[bin]]
 name = "stage2"
 path = "src/stage2.rs"
@@ -20,7 +17,6 @@ path = "src/stage2.rs"
 [[bin]]
 name = "svsm"
 path = "src/svsm.rs"
-required-features = ["slab"]
 
 [dependencies]
 bitflags = "1.3.2"

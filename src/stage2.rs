@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(const_mut_refs)]
 
-pub mod allocator_stage2;
 pub mod kernel_launch;
 pub mod boot_stage2;
 pub mod locking;
@@ -18,32 +17,28 @@ pub mod io;
 pub mod mm;
 
 use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
-use allocator_stage2::{Stage2Allocator, init_heap, print_heap_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
 use kernel_launch::KernelLaunchInfo;
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
-//use cpuid::dump_cpuid_table;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
 use core::cell::RefCell;
 use core::alloc::Layout;
-use locking::SpinLock;
 use core::arch::asm;
 use console::WRITER;
-use util::halt;
+use util::{page_align, page_align_up, halt};
+use mm::alloc::{root_mem_init, ALLOCATOR};
 
 #[macro_use]
 extern crate bitflags;
 extern crate memoffset;
 
-#[global_allocator]
-pub static ALLOCATOR: SpinLock<Stage2Allocator> = SpinLock::new(Stage2Allocator::new());
-
 extern "C" {
 	pub static heap_start: u8;
+	pub static heap_end: u8;
 	pub static mut pgtable : PageTable;
 	pub static mut boot_ghcb : GHCB;
 	pub static CPUID_PAGE : SnpCpuidTable;
@@ -77,9 +72,18 @@ pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
 	unsafe { pgtable.set_encrypted_4k(vaddr) }
 }
 
+fn setup_stage2_allocator() {
+	let vstart   = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
+	let vend     = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
+	let pstart   = virt_to_phys(vstart);
+	let nr_pages = (vend - vstart) / PAGE_SIZE;
+
+	root_mem_init(pstart, vstart, nr_pages);
+}
+
 fn setup_env() {
 	sev_status_init();
-	init_heap();
+	setup_stage2_allocator();
 
 	if !sev_es_enabled() {
 		unsafe { DEFAULT_SERIAL_PORT.init(); }
@@ -182,8 +186,6 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 		secrets_page : 0x9e000u64,
 		ghcb         : ghcb,
 	};
-
-	print_heap_info();
 
 	println!("  kernel_physical_start = {:#018x}", kernel_launch_info.kernel_start);
 	println!("  kernel_physical_end   = {:#018x}", kernel_launch_info.kernel_end);

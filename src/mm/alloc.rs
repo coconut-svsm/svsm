@@ -680,23 +680,28 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 #[global_allocator]
 pub static mut ALLOCATOR : SvsmAllocator = SvsmAllocator::new();
 
-pub fn memory_init(launch_info : &KernelLaunchInfo) {
-	let mem_size = launch_info.kernel_end - launch_info.kernel_start;
-	let vstart   = unsafe { (&heap_start as *const u8) as VirtAddr };
-	let vend     = (launch_info.virt_base + mem_size) as VirtAddr;
-	let nr_pages = (vend - vstart) / PAGE_SIZE;
-	let heap_offset = vstart - launch_info.virt_base as VirtAddr;
-	let paddr = launch_info.kernel_start as PhysAddr + heap_offset;
-
+pub fn root_mem_init(pstart : PhysAddr, vstart : VirtAddr, nr_pages : usize) {
 	{
 		let mut region = ROOT_MEM.lock();
-		region.start_phys = paddr;
+		region.start_phys = pstart;
 		region.start_virt = vstart;
 		region.nr_pages   = nr_pages;
 		region.init_memory();
+		// drop lock here so slab initialization does not deadlock
 	}
 
 	if let Err(_e) = SLAB_PAGE_SLAB.lock().init() {
 		panic!("Failed to initialize SLAB_PAGE_SLAB");
 	}
+}
+
+pub fn memory_init(launch_info : &KernelLaunchInfo) {
+	let mem_size    = launch_info.kernel_end - launch_info.kernel_start;
+	let vstart      = unsafe { (&heap_start as *const u8) as VirtAddr };
+	let vend        = (launch_info.virt_base + mem_size) as VirtAddr;
+	let nr_pages    = (vend - vstart) / PAGE_SIZE;
+	let heap_offset = vstart - launch_info.virt_base as VirtAddr;
+	let pstart      = launch_info.kernel_start as PhysAddr + heap_offset;
+
+	root_mem_init(pstart, vstart, nr_pages);
 }
