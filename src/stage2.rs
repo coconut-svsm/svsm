@@ -3,6 +3,7 @@
 #![feature(const_mut_refs)]
 
 pub mod kernel_launch;
+pub mod svsm_console;
 pub mod boot_stage2;
 pub mod locking;
 pub mod console;
@@ -16,7 +17,7 @@ pub mod sev;
 pub mod io;
 pub mod mm;
 
-use sev::{GHCB, sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate, GHCBIOPort};
+use sev::{sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
@@ -25,12 +26,13 @@ use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
-use core::cell::RefCell;
 use core::alloc::Layout;
 use core::arch::asm;
 use console::WRITER;
 use util::{page_align, page_align_up, halt};
 use mm::alloc::{root_mem_init, ALLOCATOR};
+use cpu::percpu::PerCpu;
+use crate::svsm_console::SVSMIOPort;
 
 #[macro_use]
 extern crate bitflags;
@@ -40,12 +42,8 @@ extern "C" {
 	pub static heap_start: u8;
 	pub static heap_end: u8;
 	pub static mut pgtable : PageTable;
-	pub static mut boot_ghcb : GHCB;
 	pub static CPUID_PAGE : SnpCpuidTable;
 }
-
-static SEV_ES_IO : GHCBIOPort = GHCBIOPort { ghcb : unsafe { RefCell::new(&mut boot_ghcb) } };
-static mut SEV_ES_SERIAL : SerialPort = SerialPort { driver : &SEV_ES_IO, port : SERIAL_PORT };
 
 pub fn allocate_pt_page() -> *mut u8 {
 	let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
@@ -81,22 +79,26 @@ fn setup_stage2_allocator() {
 	root_mem_init(pstart, vstart, nr_pages);
 }
 
+pub static mut PERCPU : PerCpu = PerCpu::new();
+
+fn init_percpu() {
+	unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
+}
+
+static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
+static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
+
 fn setup_env() {
 	sev_status_init();
 	setup_stage2_allocator();
+	init_percpu();
 
 	if !sev_es_enabled() {
 		unsafe { DEFAULT_SERIAL_PORT.init(); }
 		panic!("SEV-ES not available");
 	}
 
-	unsafe {
-		if let Err(_e) = boot_ghcb.init() {
-			halt();
-		}
-	}
-
-	unsafe { WRITER.lock().set(&mut SEV_ES_SERIAL); }
+	unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
 }
 
 const KERNEL_VIRT_ADDR : VirtAddr = 0xffff_ff80_0000_0000;
@@ -177,14 +179,13 @@ struct KInfo {
 unsafe fn copy_and_launch_kernel(kli : KInfo) {
 	let image_size = kli.k_image_end - kli.k_image_start;
 	let phys_offset = kli.virt_base - kli.phys_base;
-	let ghcb : u64 = (&boot_ghcb as *const GHCB) as u64;
 	let kernel_launch_info = KernelLaunchInfo {
 		kernel_start : kli.phys_base as u64,
 		kernel_end   : kli.phys_end  as u64,
 		virt_base    : kli.virt_base as u64,
 		cpuid_page   : 0x9f000u64,
 		secrets_page : 0x9e000u64,
-		ghcb         : ghcb,
+		ghcb         : 0,
 	};
 
 	println!("  kernel_physical_start = {:#018x}", kernel_launch_info.kernel_start);
@@ -212,7 +213,7 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 	setup_env();
 	sev_init();
 
-	let fw_cfg = FwCfg::new(&SEV_ES_IO);
+	let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
 	let r = fw_cfg.find_kernel_region().unwrap();
 

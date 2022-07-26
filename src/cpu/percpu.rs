@@ -30,19 +30,15 @@ impl PerCpu {
 
 unsafe impl Sync for PerCpu { }
 
-// The value doesn't matter much, as long as it is not zero
-const BASE : usize = 0xffff_ff80_0000_0000;
-
 pub fn this_cpu_ghcb() -> &'static mut GHCB {
-	// Get pointer offset
 	unsafe {
-		let offset = (((*(BASE as *const PerCpu)).ghcb) as *mut GHCB) as usize - BASE;
+		// FIXME: Implement proper offset calculation
+		let offset = 0;
+
 		let mut ghcb_addr : VirtAddr;
 
 		asm!("movq %gs:(%rax), %rdx", in("rax") offset, out("rdx") ghcb_addr, options(att_syntax));
 
 		(ghcb_addr as *mut GHCB).as_mut().unwrap()
 	}
-
-
 }
