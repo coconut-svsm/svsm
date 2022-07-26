@@ -356,7 +356,7 @@ impl PageTable {
 		let addr  = entry.address();
 
 		// entry.address() returned with c-bit clear already
-		entry.set(virt_to_phys(addr), flags);
+		entry.set(addr, flags);
 	}
 	
 	fn set_c_bit(entry : &mut PTEntry) {

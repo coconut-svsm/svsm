@@ -1,14 +1,13 @@
 use crate::cpu::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
-use super::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::mm::pagetable::{flush_tlb_global};
-use core::alloc::{GlobalAlloc, Layout};
+use super::types::{PhysAddr, VirtAddr};
 use crate::map_page_shared;
-use super::ALLOCATOR;
-use core::arch::asm;
 use core::cell::RefCell;
 use crate::io::IOPort;
+use core::arch::asm;
 
-use crate::{print};
+use crate::{print, virt_to_phys};
+
 
 bitflags! {
 	pub struct SEVStatusFlags: u64 {
@@ -332,59 +331,27 @@ pub enum GHCBIOSize {
 
 impl GHCB {
 	
-	pub fn create() -> Option<&'static mut GHCB> {
-		let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-
-		unsafe {
-			let ptr = ALLOCATOR.alloc(layout);
-			let addr = ptr as VirtAddr;
-
-			// Make page invalid
-			if let Err(_e) = pvalidate(addr, false, false) {
-				return None;
-			}
-
-			// Let the Hypervisor take the page back
-			if let Err(_e) = invalidate_page_msr(addr) {
-				return None;
-			}
-
-			// Register GHCB GPA
-			if let Err(_e) = register_ghcb_gpa_msr(addr) {
-				return None;
-			}
-
-			// Map page unencrypted
-			if let Err(_e) = map_page_shared(addr) {
-				return None;
-			}
-
-			flush_tlb_global();
-
-			Some(&mut *(ptr as *mut GHCB))
-		}
-	}
-
 	pub fn init(&mut self) -> Result<(),()> {
-		let addr = (self as *const GHCB) as VirtAddr;
+		let vaddr = (self as *const GHCB) as VirtAddr;
+		let paddr = virt_to_phys(vaddr);
 
 		// Make page invalid
-		if let Err(_e) = pvalidate(addr, false, false) {
+		if let Err(_e) = pvalidate(vaddr, false, false) {
 			return Err(());
 		}
 
 		// Let the Hypervisor take the page back
-		if let Err(_e) = invalidate_page_msr(addr) {
+		if let Err(_e) = invalidate_page_msr(paddr) {
 			return Err(());
 		}
 
 		// Register GHCB GPA
-		if let Err(_e) = register_ghcb_gpa_msr(addr) {
+		if let Err(_e) = register_ghcb_gpa_msr(paddr) {
 			return Err(());
 		}
 
 		// Map page unencrypted
-		if let Err(_e) = map_page_shared(addr) {
+		if let Err(_e) = map_page_shared(vaddr) {
 			return Err(());
 		}
 

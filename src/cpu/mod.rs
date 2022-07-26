@@ -5,3 +5,6 @@ pub mod efer;
 pub mod msr;
 pub mod gdt;
 pub mod idt;
+
+#[cfg(feature = "slab")]
+pub mod percpu;

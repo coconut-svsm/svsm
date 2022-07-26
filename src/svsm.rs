@@ -6,7 +6,9 @@ pub mod locking;
 pub mod types;
 pub mod util;
 pub mod cpu;
+pub mod sev;
 pub mod mm;
+pub mod io;
 
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
@@ -17,6 +19,7 @@ use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::{global_asm};
 use mm::alloc::memory_init;
+use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
 use locking::SpinLock;
@@ -114,7 +117,7 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 pub fn map_page_shared(vaddr : VirtAddr) -> Result<(), ()> {
 	unsafe {
 		let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-		(ptr).set_shared_4k(vaddr)
+		(*ptr).set_shared_4k(vaddr)
 	}
 }
 
@@ -187,6 +190,12 @@ fn init_page_table(launch_info : &KernelLaunchInfo) {
 	}
 }
 
+pub static mut PERCPU : PerCpu = PerCpu::new();
+
+fn init_percpu() {
+	unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
@@ -205,6 +214,8 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 	memory_init(&launch_info);
 	paging_init();
 	init_page_table(&launch_info);
+
+	init_percpu();
 
 	panic!("Road ends here!");
 }
