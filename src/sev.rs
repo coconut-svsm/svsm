@@ -30,7 +30,7 @@ fn read_sev_status() -> SEVStatusFlags {
 	SEVStatusFlags::from_bits_truncate(read_msr(SEV_STATUS))
 }
 
-fn print_sev_status(prefix : &str, status : SEVStatusFlags) {
+pub fn print_sev_status(prefix : &str, status : SEVStatusFlags) {
 
 	print!("{}", prefix);
 
@@ -100,8 +100,6 @@ pub fn sev_init() {
 	unsafe { status = SEV_FLAGS; }
 	let required_check  = status & required;
 	let supported_check = status & not_supported;
-
-	print_sev_status("SEV Flags:", status);
 
 	if required_check != required {
 		print_sev_status("Required features not available:", required & !required_check);

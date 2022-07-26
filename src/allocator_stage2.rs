@@ -65,7 +65,8 @@ pub fn init_heap() {
 pub fn print_heap_info() {
 	let heap = ALLOCATOR.lock();
 
-	println!("HEAP: initialized from {:#05x} to {:#05x})", heap.heap_start, heap.heap_end);
-	println!("HEAP: Total size: {}kb Free: {}kb",
-		 (heap.heap_end - heap.heap_start) / 1024, (heap.heap_end - heap.next) / 1024);
+	println!("HEAP: Total size: {}kb Used: {}kb Free: {}kb",
+		 (heap.heap_end  - heap.heap_start) / 1024,
+		 (heap.next      - heap.heap_start) / 1024,
+		 (heap.heap_end  - heap.next)       / 1024);
 }

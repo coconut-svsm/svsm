@@ -183,9 +183,14 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 		ghcb         : ghcb,
 	};
 
-	println!("KERNEL_LAUNCH_INFO.kernel_start = {:#018x}", kernel_launch_info.kernel_start);
-	println!("KERNEL_LAUNCH_INFO.kernel_end   = {:#018x}", kernel_launch_info.kernel_end);
-	println!("KERNEL_LAUNCH_INFO.virt_base    = {:#018x}", kernel_launch_info.virt_base);
+	print_heap_info();
+
+	println!("  kernel_physical_start = {:#018x}", kernel_launch_info.kernel_start);
+	println!("  kernel_physical_end   = {:#018x}", kernel_launch_info.kernel_end);
+	println!("  kernel_virtual_base   = {:#018x}", kernel_launch_info.virt_base);
+	println!("  cpuid_page            = {:#018x}", kernel_launch_info.cpuid_page);
+	println!("  secrets_page          = {:#018x}", kernel_launch_info.secrets_page);
+	println!("Launching SVSM kernel...");
 
 	asm!("cld
 	      rep movsb
@@ -203,36 +208,22 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 	paging_init();
 	setup_env();
-	print_heap_info();
 	sev_init();
-
-	println!("Kernel start: {:#010x} end: {:#010x}", kernel_start, kernel_end);
-
-	//dump_cpuid_table();
 
 	let fw_cfg = FwCfg::new(&SEV_ES_IO);
 
 	let r = fw_cfg.find_kernel_region().unwrap();
-	println!("Found kernel region, start: {:#08x} end: {:#08x}", r.start, r.end);
 
-	match map_kernel_region(&r) {
-		Ok(())  => println!("Mapped kernel region to virtual address {:#018x}", KERNEL_VIRT_ADDR),
-		Err(()) => println!("Error mapping kernel region"),
-	}
+	println!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-	match validate_kernel_region(&r) {
-		Ok(_e) => println!("Validated kernel region"),
-		Err(_e) => println!("Validating kernel region failed"),
-	}
-
+	map_kernel_region(&r).expect("Error mapping kernel region");
+	validate_kernel_region(&r).expect("Validating kernel region failed");
 
 	unsafe {
 		let kmd : *const KernelMetaData = kernel_start as *const KernelMetaData;
 		let vaddr = (*kmd).virt_addr as VirtAddr;
 		let entry = (*kmd).entry as VirtAddr;
 
-		println!("Kernel Image Virtual Address: {:#018x} Entry Point: {:#018x}", vaddr, entry);
-		
 		copy_and_launch_kernel( KInfo {
 						k_image_start	: kernel_start,
 						k_image_end	: kernel_end,
