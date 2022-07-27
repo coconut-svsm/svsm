@@ -22,6 +22,7 @@ pub mod sev;
 pub mod mm;
 pub mod io;
 
+use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
@@ -29,12 +30,12 @@ use mm::alloc::{memory_init, memory_info};
 use console::{WRITER, init_console};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
+use core::arch::{global_asm, asm};
 use crate::cpu::efer::efer_init;
 use types::{VirtAddr, PhysAddr};
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
-use core::arch::{global_asm};
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
@@ -86,7 +87,7 @@ global_asm!(r#"
 
         /* Jump to rust code */
         movq    %r8, %rdi
-        jmp svsm_main
+        jmp svsm_start
         
         .data
 
@@ -241,12 +242,12 @@ static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port
 pub fn boot_stack_info() {
     unsafe {
         let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
-        println!("Boot stack starts @ {:#018x}", vaddr);
+        println!("Boot stack starts        @ {:#018x}", vaddr);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
+pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
 
     load_gdt();
     idt_init();
@@ -276,6 +277,23 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
     boot_stack_info();
 
+    let stack = allocate_stack().expect("Failed to allocate runtime stack");
+    let bp = stack_base_pointer(stack);
+
+    println!("BSP Runtime stack starts @ {:#018x}", bp);
+
+    // Enable runtime stack and jump to main function
+    unsafe {
+        asm!("movq  %rax, %rsp
+              jmp   svsm_main",
+              in("rax") stack_base_pointer(stack),
+              in("rdi") &launch_info,
+              options(att_syntax));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
     panic!("Road ends here!");
 }
 
