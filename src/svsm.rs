@@ -47,6 +47,7 @@ extern crate bitflags;
 
 extern "C" {
     pub static mut CPUID_PAGE : SnpCpuidTable;
+    pub static bsp_stack_end : u8;
 }
 
 /*
@@ -215,6 +216,13 @@ fn init_percpu() {
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
+pub fn boot_stack_info() {
+    unsafe {
+        let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
+        println!("Boot stack starts @ {:#018x}", vaddr);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
@@ -243,6 +251,8 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
     let mem_info = memory_info();
     println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
+
+    boot_stack_info();
 
     panic!("Road ends here!");
 }
