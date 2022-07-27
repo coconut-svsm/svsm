@@ -72,11 +72,17 @@ impl Page {
 	}
 }
 
+pub struct MemInfo {
+	pub total_pages : usize,
+	pub free_pages : usize,
+}
+
 struct MemoryRegion {
 	start_phys	: PhysAddr,
 	start_virt	: VirtAddr,
 	nr_pages	: usize,
 	next_page	: usize,
+	free_pages	: usize,
 }
 
 impl MemoryRegion {
@@ -86,6 +92,7 @@ impl MemoryRegion {
 			start_virt : 0,
 			nr_pages   : 0,
 			next_page  : 0,
+			free_pages : 0,
 		}
 	}
 
@@ -161,6 +168,8 @@ impl MemoryRegion {
 			self.write_page_info(i, pg);
 		}
 
+		self.free_pages = self.nr_pages - meta_pages;
+
 		/* Initialize free list */
 		self.next_page = meta_pages;
 		for i in meta_pages..self.nr_pages - 1 {
@@ -199,6 +208,8 @@ impl MemoryRegion {
 		};
 
 		self.next_page = new_next;
+
+		self.free_pages -= 1;
 
 		Ok(pfn)
 	}
@@ -251,6 +262,8 @@ impl MemoryRegion {
 
 		self.write_page_info(pfn, pg);
 		self.next_page = pfn;
+
+		self.free_pages += 1;
 	}
 
 	pub fn free_page(&mut self, vaddr : VirtAddr) {
@@ -266,6 +279,13 @@ impl MemoryRegion {
 			Page::Allocated(_ai) => { self.free_page_raw(pfn); },
 			Page::SlabPage(_si)  => { self.free_page_raw(pfn); },
 			_ => { panic!("Unexpected page type in MemoryRegion::free_page()"); }
+		}
+	}
+
+	pub fn memory_info(&self) -> MemInfo {
+		MemInfo {
+			total_pages : self.nr_pages,
+			free_pages  : self.free_pages,
 		}
 	}
 }
@@ -300,6 +320,10 @@ pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
 		None => { panic!("Invalid physical address {:#018x}", paddr); },
 		Some(p) => p,
 	}
+}
+
+pub fn memory_info() -> MemInfo {
+	ROOT_MEM.lock().memory_info()
 }
 
 struct SlabPage {

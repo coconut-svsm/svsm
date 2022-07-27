@@ -30,7 +30,7 @@ use core::alloc::Layout;
 use core::arch::asm;
 use console::WRITER;
 use util::{page_align, page_align_up, halt};
-use mm::alloc::{root_mem_init, ALLOCATOR};
+use mm::alloc::{root_mem_init, memory_info, ALLOCATOR};
 use cpu::percpu::PerCpu;
 use crate::svsm_console::SVSMIOPort;
 
@@ -226,6 +226,9 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 		let kmd : *const KernelMetaData = kernel_start as *const KernelMetaData;
 		let vaddr = (*kmd).virt_addr as VirtAddr;
 		let entry = (*kmd).entry as VirtAddr;
+
+		let mem_info = memory_info();
+		println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
 
 		copy_and_launch_kernel( KInfo {
 						k_image_start	: kernel_start,

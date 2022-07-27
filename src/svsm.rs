@@ -17,12 +17,12 @@ pub mod io;
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
+use mm::alloc::{memory_init, memory_info};
 use kernel_launch::KernelLaunchInfo;
 use crate::cpu::efer::efer_init;
 use types::{VirtAddr, PhysAddr};
 use core::panic::PanicInfo;
 use core::arch::{global_asm};
-use mm::alloc::memory_init;
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
@@ -231,7 +231,8 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
 	unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
 
-	println!("Hello World!");
+	let mem_info = memory_info();
+	println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
 
 	panic!("Road ends here!");
 }
