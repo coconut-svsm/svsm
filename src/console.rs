@@ -40,10 +40,20 @@ impl fmt::Write for Console {
 }
 
 pub static mut WRITER: SpinLock<Console> = SpinLock::new(unsafe { Console { writer : &mut DEFAULT_SERIAL_PORT } } );
+static mut CONSOLE_INITIALIZED : bool = false;
+
+pub fn init_console() {
+    unsafe { CONSOLE_INITIALIZED = true; }
+}
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    unsafe { WRITER.lock().write_fmt(args).unwrap(); }
+    unsafe {
+        if !CONSOLE_INITIALIZED {
+            return;
+        }
+        WRITER.lock().write_fmt(args).unwrap();
+    }
 }
 

@@ -33,6 +33,7 @@ use util::{page_align, page_align_up, halt};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
+use console::{WRITER, init_console};
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
 use core::panic::PanicInfo;
@@ -40,7 +41,6 @@ use cpu::cpuid::SnpCpuidTable;
 use core::alloc::Layout;
 use cpu::percpu::PerCpu;
 use core::arch::asm;
-use console::WRITER;
 
 #[macro_use]
 extern crate bitflags;
@@ -111,6 +111,7 @@ fn setup_env() {
     }
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
+    init_console();
 }
 
 const KERNEL_VIRT_ADDR : VirtAddr = 0xffff_ff80_0000_0000;

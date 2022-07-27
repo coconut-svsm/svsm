@@ -26,6 +26,7 @@ use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
 use mm::alloc::{memory_init, memory_info};
+use console::{WRITER, init_console};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
 use crate::cpu::efer::efer_init;
@@ -34,7 +35,6 @@ use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
 use core::arch::{global_asm};
-use crate::console::WRITER;
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use cpu::idt::idt_init;
@@ -237,6 +237,7 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
     init_percpu();
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
+    init_console();
 
     println!("Secure Virtual Machine Service Module (SVSM)");
 
