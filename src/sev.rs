@@ -1,8 +1,8 @@
 use crate::cpu::msr::{read_msr, write_msr, SEV_STATUS, SEV_GHCB};
+use crate::{map_page_shared, map_page_encrypted};
 use crate::mm::pagetable::{flush_tlb_global};
 use super::types::{PhysAddr, VirtAddr};
 use crate::{print, virt_to_phys};
-use crate::map_page_shared;
 use core::cell::RefCell;
 use crate::io::IOPort;
 use core::arch::asm;
@@ -352,6 +352,27 @@ impl GHCB {
 		}
 
 		flush_tlb_global();
+
+		Ok(())
+	}
+
+	pub fn shutdown(&mut self) -> Result<(), ()> {
+		let vaddr = (self as *const GHCB) as VirtAddr;
+		let paddr = virt_to_phys(vaddr);
+
+		// Re-encrypt page
+		map_page_encrypted(vaddr)?;
+
+		// Unregister GHCB PA
+		register_ghcb_gpa_msr(0usize)?;
+
+		// Make page guest-invalid
+		validate_page_msr(paddr)?;
+
+		// Make page guest-valid
+		if pvalidate(vaddr, false, true).is_err() {
+			return Err(());
+		}
 
 		Ok(())
 	}

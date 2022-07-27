@@ -26,6 +26,14 @@ impl PerCpu {
 
 		unsafe { (*self.ghcb).init() }
 	}
+
+	pub fn shutdown(&mut self) -> Result<(), ()> {
+		if self.ghcb == ptr::null_mut() {
+			return Ok(());
+		}
+
+		unsafe { (*self.ghcb).shutdown() }
+	}
 }
 
 unsafe impl Sync for PerCpu { }

@@ -85,6 +85,10 @@ fn init_percpu() {
 	unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
 }
 
+fn shutdown_percpu() {
+	unsafe { PERCPU.shutdown().expect("Failed to shut down percpu data (including GHCB)"); }
+}
+
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
@@ -194,6 +198,9 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 	println!("  cpuid_page            = {:#018x}", kernel_launch_info.cpuid_page);
 	println!("  secrets_page          = {:#018x}", kernel_launch_info.secrets_page);
 	println!("Launching SVSM kernel...");
+
+	// Shut down the GHCB
+	shutdown_percpu();
 
 	asm!("cld
 	      rep movsb
