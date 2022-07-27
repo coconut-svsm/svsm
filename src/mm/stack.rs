@@ -17,11 +17,14 @@ use crate::util::ffs;
 const STACK_RANGE_START : VirtAddr = 0xffff_ff80_4000_0000;
 const STACK_RANGE_END   : VirtAddr = 0xffff_ff80_8000_0000;
 
-// Limit maximum number of stacks for now, address range support 131072 4k stacks
+// Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS	: usize = 1024;
 const BMP_QWORDS    : usize = MAX_STACKS / 64;
-const STACK_SIZE    : usize = PAGE_SIZE;
-const GUARD_SIZE    : usize = PAGE_SIZE;
+
+// Set stack size to 8k, certain macros can be very stack intensive (e.g. panic!)
+const STACK_SIZE    : usize = 2 * PAGE_SIZE;
+const GUARD_SIZE    : usize = 2 * PAGE_SIZE;
+const STACK_PAGES   : usize = STACK_SIZE / PAGE_SIZE;
 
 struct StackRange {
     start : VirtAddr,
@@ -81,10 +84,12 @@ static STACK_ALLOC : SpinLock<StackRange> = SpinLock::new(StackRange::new(STACK_
 pub fn allocate_stack() -> Result<VirtAddr, ()> {
 
     let stack = STACK_ALLOC.lock().alloc()?;
-    let page  = allocate_zeroed_page()?;
-    let paddr = virt_to_phys(page);
 
-    map_data_4k(stack, paddr)?;
+    for i in 0..STACK_PAGES {
+        let page  = allocate_zeroed_page()?;
+        let paddr = virt_to_phys(page);
+        map_data_4k(stack + (i * PAGE_SIZE), paddr)?;
+    }
 
     Ok(stack)
 }
@@ -94,11 +99,24 @@ pub fn stack_base_pointer(stack : VirtAddr) -> VirtAddr {
 }
 
 pub fn free_stack(stack : VirtAddr) {
-    let paddr = walk_addr(stack).expect("Failed to get stack physical address");
-    let vaddr = phys_to_virt(paddr);
 
-    unmap_4k(stack).expect("Failed to unmap stack");
+    let mut pages : [VirtAddr; STACK_PAGES] = [0; STACK_PAGES];
+
+    for i in 0..STACK_PAGES {
+        let addr = stack + (i * PAGE_SIZE);
+        let paddr = walk_addr(addr).expect("Failed to get stack physical address");
+        let vaddr = phys_to_virt(paddr);
+        unmap_4k(addr).expect("Failed to unmap stack");
+        pages[i] = vaddr;
+    }
+
+    // Pages are unmapped - flush TLB
     flush_tlb_global();
-    free_page(vaddr);
+
+    // Now free the stack pages
+    for i in 0..STACK_PAGES {
+        free_page(pages[i]);
+    }
+
     STACK_ALLOC.lock().dealloc(stack);
 }
