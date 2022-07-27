@@ -35,6 +35,7 @@ use crate::cpu::efer::efer_init;
 use types::{VirtAddr, PhysAddr};
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
+use cpu::tss::init_boot_tss;
 use core::panic::PanicInfo;
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
@@ -250,6 +251,7 @@ pub fn boot_stack_info() {
 pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
 
     load_gdt();
+    init_boot_tss();
     idt_init();
 
     unsafe {

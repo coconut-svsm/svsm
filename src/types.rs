@@ -9,8 +9,11 @@
 pub const PAGE_SIZE     : usize = 4096;
 pub const PAGE_SIZE_2M  : usize = PAGE_SIZE * 512;
 
-pub const SVSM_CS  : u16 = 8;
-pub const SVSM_DS  : u16 = 16;
+pub const SVSM_CS       : u16 = 1 * 8;
+pub const SVSM_DS       : u16 = 2 * 8;
+pub const SVSM_USER_CS  : u16 = 3 * 8;
+pub const SVSM_USER_DS  : u16 = 4 * 8;
+pub const SVSM_TSS      : u16 = 6 * 8;
 
 pub type PhysAddr   = usize;
 pub type VirtAddr   = usize;
