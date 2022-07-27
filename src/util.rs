@@ -21,6 +21,23 @@ pub fn page_align_up(addr : usize) -> usize {
     (addr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
 }
 
+#[inline(always)]
+pub fn ffs(val : u64) -> usize {
+    let mut ret : usize;
+
+    unsafe {
+        asm!("bsf   %rax, %rsi
+              jz    1f
+              jmp   2f
+        1:    xorq  %rsi, %rsi
+              not   %rsi
+        2:", in("rax") val, out("rsi") ret,
+        options(att_syntax));
+    }
+
+    ret
+}
+
 pub fn halt() {
     unsafe {
         asm!("hlt",

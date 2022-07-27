@@ -145,6 +145,28 @@ pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
     }
 }
 
+pub fn map_data_4k(vaddr : VirtAddr, paddr : PhysAddr) -> Result<(), ()> {
+    unsafe {
+        let ptr   = INIT_PGTABLE.lock().as_mut().unwrap();
+        let flags = PageTable::data_flags();
+        (*ptr).map_4k(vaddr, paddr, &flags)
+    }
+}
+
+pub fn unmap_4k(vaddr : VirtAddr) -> Result<(), ()> {
+    unsafe {
+        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
+        (*ptr).unmap_4k(vaddr)
+    }
+}
+
+pub fn walk_addr(vaddr : VirtAddr) -> Result<PhysAddr, ()> {
+    unsafe {
+        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
+        (*ptr).phys_addr(vaddr)
+    }
+}
+
 pub static INIT_PGTABLE : SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
 
 extern "C" {

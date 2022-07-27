@@ -7,9 +7,9 @@
 // vim: ts=4 sw=4 et
 
 use crate::cpu::control_regs::{read_cr3, write_cr3, read_cr4, write_cr4, CR4Flags};
+use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::{allocate_pt_page, virt_to_phys, phys_to_virt};
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
-use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use crate::cpu::cpuid::cpuid_table;
 use core::ops::{Index, IndexMut};
 
@@ -414,6 +414,42 @@ impl PageTable {
             Ok(())
         } else {
             Err(())
+        }
+    }
+
+    pub fn unmap_4k(&mut self, vaddr : VirtAddr) -> Result<(), ()> {
+        let mapping = self.walk_addr(vaddr);
+
+        if let Mapping::Level0(entry) = mapping {
+            entry.clear();
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn phys_addr(&mut self, vaddr : VirtAddr) -> Result<PhysAddr, ()> {
+        let mapping = self.walk_addr(vaddr);
+
+        match mapping {
+            Mapping::Level0( entry) => {
+                let offset = vaddr & (PAGE_SIZE - 1);
+                if !entry.flags().contains(PTEntryFlags::PRESENT) {
+                    return Err(());
+                }
+                Ok(entry.address() + offset)
+            },
+            Mapping::Level1( entry) => {
+                let offset = vaddr & (PAGE_SIZE_2M - 1);
+                if !entry.flags().contains(PTEntryFlags::PRESENT) ||
+                   !entry.flags().contains(PTEntryFlags::HUGE) {
+                    return Err(());
+                }
+
+                Ok(entry.address() + offset)
+            },
+            Mapping::Level2(_entry) => Err(()),
+            Mapping::Level3(_entry) => Err(()),
         }
     }
 

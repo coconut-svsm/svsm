@@ -78,6 +78,21 @@ pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
     unsafe { pgtable.set_encrypted_4k(vaddr) }
 }
 
+pub fn map_data_4k(vaddr : VirtAddr, paddr : PhysAddr) -> Result<(), ()> {
+    unsafe {
+        let flags = PageTable::data_flags();
+        pgtable.map_4k(vaddr, paddr, &flags)
+    }
+}
+
+pub fn unmap_4k(vaddr : VirtAddr) -> Result<(), ()> {
+    unsafe { pgtable.unmap_4k(vaddr) }
+}
+
+pub fn walk_addr(vaddr : VirtAddr) -> Result<PhysAddr, ()> {
+    unsafe { pgtable.phys_addr(vaddr) }
+}
+
 fn setup_stage2_allocator() {
     let vstart   = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
     let vend     = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
