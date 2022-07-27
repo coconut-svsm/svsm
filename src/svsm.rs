@@ -231,6 +231,8 @@ pub extern "C" fn svsm_main(launch_info : &KernelLaunchInfo) {
 
 	unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
 
+	println!("Secure Virtual Machine Service Module (SVSM)");
+
 	let mem_info = memory_info();
 	println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
 
@@ -243,3 +245,13 @@ fn panic(info : &PanicInfo) -> ! {
 	loop { halt(); }
 }
 
+#[macro_export]
+macro_rules! print {
+	($($arg:tt)*) => ($crate::console::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+	() => ($crate::print!("\n"));
+	($($arg:tt)*) => ($crate::print!("[SVSM] {}\n", format_args!($($arg)*)));
+}
