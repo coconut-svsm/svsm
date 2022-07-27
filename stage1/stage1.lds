@@ -1,3 +1,11 @@
+/* SPDX-License-Identifier: (GPL-2.0-or-later OR MIT) */
+
+/*
+ * Copyright (c) 2022 SUSE LLC
+ *
+ * Author: Joerg Roedel <jroedel@suse.de>
+ */
+
 OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS

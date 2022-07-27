@@ -1,63 +1,71 @@
+// SPDX-License-Identifier: (GPL-2.0-or-later OR MIT)
+//
+// Copyright (c) 2022 SUSE LLC
+//
+// Author: Joerg Roedel <jroedel@suse.de>
+//
+// vim: ts=4 sw=4 et
+
 use core::sync::atomic::{AtomicU64, Ordering};
 use core::ops::{Deref, DerefMut};
 use core::cell::UnsafeCell;
 
 pub struct LockGuard<'a, T> {
-	holder	: &'a AtomicU64,
-	data	: &'a mut T,
+    holder  : &'a AtomicU64,
+    data    : &'a mut T,
 }
 
 impl<'a, T> Drop for LockGuard<'a, T> {
-	fn drop(&mut self) {
-		self.holder.fetch_add(1, Ordering::Release);
-	}
+    fn drop(&mut self) {
+        self.holder.fetch_add(1, Ordering::Release);
+    }
 }
 
 pub struct SpinLock<T> {
-	current : AtomicU64,
-	holder  : AtomicU64,
-	data	: UnsafeCell<T>,
+    current : AtomicU64,
+    holder  : AtomicU64,
+    data    : UnsafeCell<T>,
 }
 
 unsafe impl<T> Sync for SpinLock<T> { }
 
 impl<T> SpinLock<T> {
-	pub const fn new(data: T) -> Self {
-		SpinLock {
-			current: AtomicU64::new(0),
-			holder:  AtomicU64::new(0),
-			data: UnsafeCell::new(data),
-		}
-	}
+    pub const fn new(data: T) -> Self {
+        SpinLock {
+            current: AtomicU64::new(0),
+            holder:  AtomicU64::new(0),
+            data: UnsafeCell::new(data),
+        }
+    }
 
-	pub fn lock(&self) -> LockGuard<T> {
-		let ticket = self.current.fetch_add(1, Ordering::Relaxed);
-		loop {
-			let h = self.holder.load(Ordering::Acquire);
-			if h == ticket {
-				break;
-			}
-		}
-		LockGuard {
-			holder	: &self.holder,
-			data : unsafe { &mut *self.data.get() },
-		}
-	}
+    pub fn lock(&self) -> LockGuard<T> {
+        let ticket = self.current.fetch_add(1, Ordering::Relaxed);
+        loop {
+            let h = self.holder.load(Ordering::Acquire);
+            if h == ticket {
+                break;
+            }
+        }
+        LockGuard {
+            holder  : &self.holder,
+            data : unsafe { &mut *self.data.get() },
+        }
+    }
 
-	pub fn unlock(&mut self) {
-		self.holder.fetch_add(1, Ordering::Release);
-	}
+    pub fn unlock(&mut self) {
+        self.holder.fetch_add(1, Ordering::Release);
+    }
 }
 
 impl <'a, T> Deref for LockGuard<'a, T> {
-	type Target = T;
-	fn deref(&self) -> &T {
-		self.data
-	}
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.data
+    }
 }
 
 impl <'a, T> DerefMut for LockGuard<'a, T> {
-	fn deref_mut(&mut self) -> &mut T {
-		self.data
-	}
+    fn deref_mut(&mut self) -> &mut T {
+        self.data
+    }
 }
