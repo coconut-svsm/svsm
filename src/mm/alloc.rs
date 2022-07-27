@@ -371,6 +371,7 @@ impl SlabPage {
             self.vaddr      = vaddr;
             self.item_size      = item_size;
             self.capacity       = (PAGE_SIZE as u16) / item_size;
+            self.free           = self.capacity;
         } else {
             return Err(());
         }
@@ -507,7 +508,7 @@ impl Slab {
         self.pages      += 1;
         self.free_pages += 1;
         self.capacity   += new_capacity;
-        self.free   += new_capacity;
+        self.free       += new_capacity;
 
         Ok(())
     }
@@ -544,6 +545,10 @@ impl Slab {
     }
 
     pub fn adjust_slab_size(&mut self) -> Result<(), ()> {
+        if self.capacity == 0 {
+            return unsafe { self.grow_slab() };
+        }
+
         let free : u64 = ((self.free as u64) * 100) / (self.capacity as u64);
 
         if free < 25 && self.free_pages < 2 {
