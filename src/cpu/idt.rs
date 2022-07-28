@@ -8,7 +8,10 @@
 
 use crate::types::{VirtAddr, SVSM_CS};
 use core::arch::{asm, global_asm};
+use super::control_regs::read_cr2;
 use super::tss::IST_DF;
+use crate::util::halt;
+use crate::println;
 
 pub const  _DE_VECTOR : usize = 0;
 pub const  _DB_VECTOR : usize = 1;
@@ -23,8 +26,8 @@ pub const _CSO_VECTOR : usize = 9;
 pub const  _TS_VECTOR : usize = 10;
 pub const  _NP_VECTOR : usize = 11;
 pub const  _SS_VECTOR : usize = 12;
-pub const  _GP_VECTOR : usize = 13;
-pub const  _PF_VECTOR : usize = 14;
+pub const   GP_VECTOR : usize = 13;
+pub const   PF_VECTOR : usize = 14;
 pub const  _MF_VECTOR : usize = 16;
 pub const  _AC_VECTOR : usize = 17;
 pub const _MCE_VECTOR : usize = 18;
@@ -36,28 +39,28 @@ pub const  _SX_VECTOR : usize = 30;
 
 #[repr(C, packed)]
 pub struct x86_regs {
-    r15     : u64,
-    r14     : u64,
-    r13     : u64,
-    r12     : u64,
-    r11     : u64,
-    r10     : u64,
-    r9      : u64,
-    r8      : u64,
-    rbp     : u64,
-    rdi     : u64,
-    rsi     : u64,
-    rdx     : u64,
-    rcx     : u64,
-    rbx     : u64,
-    rax     : u64,
-    vector      : u64,
-    error_code  : u64,
-    rip     : u64,
-    cs      : u64,
-    flags       : u64,
-    rsp     : u64,
-    ss      : u64,
+    r15         : usize,
+    r14         : usize,
+    r13         : usize,
+    r12         : usize,
+    r11         : usize,
+    r10         : usize,
+    r9          : usize,
+    r8          : usize,
+    rbp         : usize,
+    rdi         : usize,
+    rsi         : usize,
+    rdx         : usize,
+    rcx         : usize,
+    rbx         : usize,
+    rax         : usize,
+    vector      : usize,
+    error_code  : usize,
+    rip         : usize,
+    cs          : usize,
+    flags       : usize,
+    rsp         : usize,
+    ss          : usize,
 }
 
 #[derive(Copy, Clone)]
@@ -162,10 +165,28 @@ pub fn idt_init() {
 
 #[no_mangle]
 fn generic_idt_handler(regs : &mut x86_regs) {
-    unsafe {
-        asm!("12: jmp 12b", in("rax") regs.vector, in("rcx") regs.error_code, options(att_syntax));
+    if regs.vector == DF_VECTOR {
+        let cr2 = read_cr2();
+        let rip = regs.rip;
+        let rsp = regs.rsp;
+        println!("Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}", rip, rsp, cr2);
+    } else if regs.vector == GP_VECTOR {
+        let rip = regs.rip;
+        let err = regs.error_code;
+        println!("General-Protection-Fault at RIP {:#018x} error code: {:#018x}", rip, err);
+    } else if regs.vector == PF_VECTOR {
+        let cr2 = read_cr2();
+        let rip = regs.rip;
+        let err = regs.error_code;
+        println!("Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}", rip, cr2, err);
+    } else {
+        let err = regs.error_code;
+        let vec = regs.vector;
+        let rip = regs.rip;
+        panic!("Unhandled exception {} RIP {:#018x} error code: {:#018x}", vec, rip, err);
     }
-    loop { }
+
+    loop { halt(); }
 }
 
 // Entry Code
