@@ -105,7 +105,10 @@ fn setup_stage2_allocator() {
 pub static mut PERCPU : PerCpu = PerCpu::new();
 
 fn init_percpu() {
-    unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
+    unsafe {
+        PERCPU.setup_ghcb().expect("Failed to setup percpu data");
+        PERCPU.set_gs_base();
+    }
 }
 
 fn shutdown_percpu() {

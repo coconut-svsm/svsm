@@ -44,18 +44,26 @@ impl PerCpu {
         }
     }
 
-    pub fn setup(&mut self) -> Result<(), ()> {
-        // Setup GHCB
+    pub fn setup_ghcb(&mut self) -> Result<(), ()> {
         let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
         self.ghcb = ghcb_page as *mut GHCB;
-        unsafe { (*self.ghcb).init()?; }
+        unsafe { (*self.ghcb).init() }
+    }
+
+    pub fn set_gs_base(&self) {
+        let gs_base : u64 = (self as *const PerCpu) as u64;
+        write_msr(MSR_GS_BASE, gs_base);
+    }
+
+    pub fn setup(&mut self) -> Result<(), ()> {
+        // Setup GHCB
+        self.setup_ghcb()?;
 
         // Allocate IST stacks
         self.ist.allocate_stacks()?;
 
         // Write GS_BASE
-        let gs_base : u64 = (self as *const PerCpu) as u64;
-        write_msr(MSR_GS_BASE, gs_base);
+        self.set_gs_base();
 
         Ok(())
     }
