@@ -6,13 +6,15 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::msr::{write_msr, MSR_GS_BASE};
-use crate::mm::stack::allocate_stack;
 use crate::mm::alloc::allocate_page;
-use crate::sev::GHCB;
+use super::tss::{X86Tss, IST_DF};
 use crate::types::VirtAddr;
-use core::ptr;
+use super::gdt::load_tss;
+use crate::sev::GHCB;
 use core::arch::asm;
+use core::ptr;
 
 struct IstStacks {
     double_fault_stack : VirtAddr,
@@ -34,6 +36,7 @@ impl IstStacks {
 pub struct PerCpu {
     ghcb    : *mut GHCB,
     ist     : IstStacks,
+    tss     : X86Tss,
 }
 
 impl PerCpu {
@@ -41,6 +44,7 @@ impl PerCpu {
         PerCpu {
             ghcb    : ptr::null_mut(),
             ist     : IstStacks::new(),
+            tss     : X86Tss::new(),
         }
     }
 
@@ -48,6 +52,11 @@ impl PerCpu {
         let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
         self.ghcb = ghcb_page as *mut GHCB;
         unsafe { (*self.ghcb).init() }
+    }
+
+    fn setup_tss(&mut self) {
+        self.tss.ist_stacks[IST_DF] = stack_base_pointer(self.ist.double_fault_stack);
+        load_tss(&self.tss);
     }
 
     pub fn set_gs_base(&self) {
@@ -61,6 +70,9 @@ impl PerCpu {
 
         // Allocate IST stacks
         self.ist.allocate_stacks()?;
+
+        // Setup TSS
+        self.setup_tss();
 
         // Write GS_BASE
         self.set_gs_base();

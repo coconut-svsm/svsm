@@ -27,6 +27,7 @@ use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
 use mm::alloc::{memory_init, memory_info};
+use cpu::idt::{early_idt_init, idt_init};
 use console::{WRITER, init_console};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
@@ -35,11 +36,9 @@ use crate::cpu::efer::efer_init;
 use types::{VirtAddr, PhysAddr};
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
-use cpu::tss::init_boot_tss;
 use core::panic::PanicInfo;
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
-use cpu::idt::idt_init;
 use crate::util::halt;
 use locking::SpinLock;
 use core::ptr;
@@ -251,8 +250,7 @@ pub fn boot_stack_info() {
 pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
 
     load_gdt();
-    init_boot_tss();
-    idt_init();
+    early_idt_init();
 
     unsafe {
         let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
@@ -268,6 +266,7 @@ pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
     init_page_table(&launch_info);
 
     init_percpu();
+    idt_init();
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();

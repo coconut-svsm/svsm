@@ -8,6 +8,31 @@
 
 use crate::types::{VirtAddr, SVSM_CS};
 use core::arch::{asm, global_asm};
+use super::tss::IST_DF;
+
+pub const  _DE_VECTOR : usize = 0;
+pub const  _DB_VECTOR : usize = 1;
+pub const _NMI_VECTOR : usize = 2;
+pub const  _BP_VECTOR : usize = 3;
+pub const  _OF_VECTOR : usize = 4;
+pub const  _BR_VECTOR : usize = 5;
+pub const  _UD_VECTOR : usize = 6;
+pub const  _NM_VECTOR : usize = 7;
+pub const   DF_VECTOR : usize = 8;
+pub const _CSO_VECTOR : usize = 9;
+pub const  _TS_VECTOR : usize = 10;
+pub const  _NP_VECTOR : usize = 11;
+pub const  _SS_VECTOR : usize = 12;
+pub const  _GP_VECTOR : usize = 13;
+pub const  _PF_VECTOR : usize = 14;
+pub const  _MF_VECTOR : usize = 16;
+pub const  _AC_VECTOR : usize = 17;
+pub const _MCE_VECTOR : usize = 18;
+pub const  _XF_VECTOR : usize = 19;
+pub const  _CP_VECTOR : usize = 21;
+pub const  _HV_VECTOR : usize = 28;
+pub const  _VC_VECTOR : usize = 29;
+pub const  _SX_VECTOR : usize = 30;
 
 #[repr(C, packed)]
 pub struct x86_regs {
@@ -38,7 +63,7 @@ pub struct x86_regs {
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 struct IdtEntry {
-    low : u64,
+    low     : u64,
     high    : u64,
 }
 
@@ -51,7 +76,7 @@ const IDT_TARGET_MASK_2_SHIFT   : u64 = 48 - 16;
 const IDT_TARGET_MASK_3_SHIFT   : u64 = 32;
 
 const IDT_TYPE_MASK     : u64 = 0xeu64 << 40; // Only interrupt gates for now
-const IDT_PRESENT_MASK      : u64 = 1u64   << 47;
+const IDT_PRESENT_MASK  : u64 = 0x1u64 << 47;
 const IDT_CS_SHIFT      : u64 = 16;
 
 const IDT_IST_MASK      : u64 = 0x7;
@@ -72,6 +97,10 @@ impl IdtEntry {
 
     pub const fn entry(target : VirtAddr) -> Self {
         IdtEntry::create(target, SVSM_CS, 0)
+    }
+
+    pub const fn ist_entry(target : VirtAddr, ist : u8) -> Self {
+        IdtEntry::create(target, SVSM_CS, ist)
     }
 
     pub const fn no_handler() -> Self {
@@ -105,6 +134,11 @@ fn init_idt(idt : &mut Idt) {
     }
 }
 
+unsafe fn init_ist_vectors(idt : &mut Idt) {
+    let handler = ((&idt_handler_array as *const u8) as VirtAddr) + (32 * DF_VECTOR);
+    idt[DF_VECTOR] = IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap());
+}
+
 fn load_idt(idt : &Idt) {
     let desc : IdtDesc = IdtDesc {
         size    : (IDT_ENTRIES * 16) as u16,
@@ -114,11 +148,16 @@ fn load_idt(idt : &Idt) {
     unsafe { asm!("lidt (%rax)", in("rax") &desc, options(att_syntax)); }
 }
 
-pub fn idt_init() {
+pub fn early_idt_init() {
     unsafe {
         init_idt(&mut GLOBAL_IDT);
         load_idt(&GLOBAL_IDT);
     }
+}
+
+pub fn idt_init() {
+    // Set IST vectors
+    unsafe { init_ist_vectors(&mut GLOBAL_IDT); }
 }
 
 #[no_mangle]
