@@ -18,6 +18,9 @@ use core::ptr;
 
 struct PageStorageType (u64);
 
+// Support only order 0 allocations for now
+pub const MAX_ORDER : usize = 1;
+
 impl PageStorageType {
     pub const fn new(t : u64) -> Self {
         PageStorageType ( t )
@@ -176,9 +179,10 @@ pub struct MemInfo {
 struct MemoryRegion {
     start_phys  : PhysAddr,
     start_virt  : VirtAddr,
-    nr_pages    : usize,
-    next_page   : usize,
-    free_pages  : usize,
+    page_count  : usize,
+    nr_pages    : [usize; MAX_ORDER],
+    next_page   : [usize; MAX_ORDER],
+    free_pages  : [usize; MAX_ORDER],
 }
 
 impl MemoryRegion {
@@ -186,14 +190,15 @@ impl MemoryRegion {
         MemoryRegion {
             start_phys : 0,
             start_virt : 0,
-            nr_pages   : 0,
-            next_page  : 0,
-            free_pages : 0,
+            page_count : 0,
+            nr_pages   : [0; MAX_ORDER],
+            next_page  : [0; MAX_ORDER],
+            free_pages : [0; MAX_ORDER],
         }
     }
 
     pub fn phys_to_virt(&self, paddr : PhysAddr) -> Option<VirtAddr> {
-        let end_phys = self.start_phys + (self.nr_pages * PAGE_SIZE);
+        let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
         if paddr < self.start_phys || paddr >= end_phys {
             return None;
@@ -205,7 +210,7 @@ impl MemoryRegion {
     }
 
     pub fn virt_to_phys(&self, vaddr : VirtAddr) -> Option<PhysAddr> {
-        let end_virt = self.start_virt + (self.nr_pages * PAGE_SIZE);
+        let end_virt = self.start_virt + (self.page_count * PAGE_SIZE);
 
         if vaddr < self.start_virt || vaddr >= end_virt {
             return None;
@@ -223,14 +228,14 @@ impl MemoryRegion {
     }
 
     fn check_pfn(&self, pfn : usize) {
-        if pfn >= self.nr_pages {
+        if pfn >= self.page_count {
             panic!("Invalid Page Number {}", pfn);
         }
     }
 
     fn check_virt_addr(&self, vaddr : VirtAddr) -> bool {
         let start = self.start_virt;
-        let end   = self.start_virt + (self.nr_pages * PAGE_SIZE);
+        let end   = self.start_virt + (self.page_count * PAGE_SIZE);
 
         vaddr >= start && vaddr < end
     }
@@ -256,7 +261,7 @@ impl MemoryRegion {
 
     pub fn init_memory(&mut self) {
         let size = size_of::<PageStorageType>();
-        let meta_pages = align_up((self.nr_pages * size) as usize, PAGE_SIZE) / PAGE_SIZE;
+        let meta_pages = align_up((self.page_count * size) as usize, PAGE_SIZE) / PAGE_SIZE;
 
         /* Mark page storage as reserved */
         for i in 0..meta_pages {
@@ -264,17 +269,18 @@ impl MemoryRegion {
             self.write_page_info(i, pg);
         }
 
-        self.free_pages = self.nr_pages - meta_pages;
+        self.free_pages[0] = self.page_count - meta_pages;
+        self.nr_pages[0]   = self.page_count - meta_pages;
 
         /* Initialize free list */
-        self.next_page = meta_pages;
-        for i in meta_pages..self.nr_pages - 1 {
+        self.next_page[0] = meta_pages;
+        for i in meta_pages..self.page_count - 1 {
             let pg = Page::Free( FreeInfo { next_page : i + 1, order : 0 } );
             self.write_page_info(i, pg);
         }
 
         /* Last Page */
-        let idx = self.nr_pages - 1;
+        let idx = self.page_count - 1;
         let pg = Page::Free( FreeInfo { next_page : 0, order : 0 } );
         self.write_page_info(idx, pg);
     }
@@ -290,7 +296,7 @@ impl MemoryRegion {
     }
 
     fn get_next_page(&mut self) -> Result<usize, ()> {
-        let pfn = self.next_page;
+        let pfn = self.next_page[0];
 
         if pfn == 0 {
             return Err(());
@@ -303,9 +309,9 @@ impl MemoryRegion {
             _ => panic!("Unexpected page type in MemoryRegion::get_next_page()"),
         };
 
-        self.next_page = new_next;
+        self.next_page[0] = new_next;
 
-        self.free_pages -= 1;
+        self.free_pages[0] -= 1;
 
         Ok(pfn)
     }
@@ -353,13 +359,13 @@ impl MemoryRegion {
     }
 
     fn free_page_raw(&mut self, pfn : usize) {
-        let old_next = self.next_page;
+        let old_next = self.next_page[0];
         let pg = Page::Free( FreeInfo { next_page : old_next, order : 0 } );
 
         self.write_page_info(pfn, pg);
-        self.next_page = pfn;
+        self.next_page[0] = pfn;
 
-        self.free_pages += 1;
+        self.free_pages[0] += 1;
     }
 
     pub fn free_page(&mut self, vaddr : VirtAddr) {
@@ -380,8 +386,8 @@ impl MemoryRegion {
 
     pub fn memory_info(&self) -> MemInfo {
         MemInfo {
-            total_pages : self.nr_pages,
-            free_pages  : self.free_pages,
+            total_pages : self.page_count,
+            free_pages  : self.free_pages[0],
         }
     }
 }
@@ -805,12 +811,12 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 #[global_allocator]
 pub static mut ALLOCATOR : SvsmAllocator = SvsmAllocator::new();
 
-pub fn root_mem_init(pstart : PhysAddr, vstart : VirtAddr, nr_pages : usize) {
+pub fn root_mem_init(pstart : PhysAddr, vstart : VirtAddr, page_count : usize) {
     {
         let mut region = ROOT_MEM.lock();
         region.start_phys = pstart;
         region.start_virt = vstart;
-        region.nr_pages   = nr_pages;
+        region.page_count = page_count;
         region.init_memory();
         // drop lock here so slab initialization does not deadlock
     }
@@ -824,9 +830,9 @@ pub fn memory_init(launch_info : &KernelLaunchInfo) {
     let mem_size    = launch_info.kernel_end - launch_info.kernel_start;
     let vstart      = unsafe { (&heap_start as *const u8) as VirtAddr };
     let vend        = (launch_info.virt_base + mem_size) as VirtAddr;
-    let nr_pages    = (vend - vstart) / PAGE_SIZE;
+    let page_count  = (vend - vstart) / PAGE_SIZE;
     let heap_offset = vstart - launch_info.virt_base as VirtAddr;
     let pstart      = launch_info.kernel_start as PhysAddr + heap_offset;
 
-    root_mem_init(pstart, vstart, nr_pages);
+    root_mem_init(pstart, vstart, page_count);
 }
