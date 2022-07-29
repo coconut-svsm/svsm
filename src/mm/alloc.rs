@@ -16,64 +16,152 @@ use crate::heap_start;
 use core::arch::asm;
 use core::ptr;
 
-type PageStorageType = u64;
+struct PageStorageType (u64);
+
+impl PageStorageType {
+    pub const fn new(t : u64) -> Self {
+        PageStorageType ( t )
+    }
+
+    fn encode_order(&self, order : usize) -> PageStorageType {
+        PageStorageType ( self.0 | ((order as u64) & PAGE_ORDER_MASK) << PAGE_TYPE_SHIFT )
+    }
+
+    fn encode_next(&self, next_page : usize) -> PageStorageType {
+        PageStorageType ( self.0 | (next_page as u64) << PAGE_FREE_NEXT_SHIFT )
+    }
+
+    fn encode_slab(slab : VirtAddr) -> Self {
+        PageStorageType ( PAGE_TYPE_SLABPAGE | (slab as u64) & PAGE_TYPE_SLABPAGE_MASK )
+    }
+}
+
+const PAGE_TYPE_SHIFT       : u64 = 4;
+const PAGE_TYPE_MASK        : u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
+
+const PAGE_TYPE_FREE        : u64 = 0;
+const PAGE_FREE_NEXT_SHIFT  : u64 = 12;
+const PAGE_FREE_NEXT_MASK   : u64 = !((1u64 << PAGE_FREE_NEXT_SHIFT) - 1);
+
+const PAGE_TYPE_ALLOCATED   : u64 = 1;
+
+const PAGE_ORDER_MASK       : u64 = (1u64 << (PAGE_FREE_NEXT_SHIFT - PAGE_TYPE_SHIFT)) - 1;
+
+// SLAB pages are always order-0
+const PAGE_TYPE_SLABPAGE    : u64 = 2;
+const PAGE_TYPE_SLABPAGE_MASK   : u64 = !PAGE_TYPE_MASK;
+
+const PAGE_TYPE_COMPOUND    : u64 = 3;
+
+const PAGE_TYPE_RESERVED    : u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
 
 struct FreeInfo {
-    next_page : usize,
+    next_page   : usize,
+    order       : usize,
+}
+
+impl FreeInfo {
+    pub fn encode(&self) -> PageStorageType {
+        PageStorageType::new(PAGE_TYPE_FREE).encode_order(self.order).encode_next(self.next_page)
+    }
+
+    pub fn decode(mem : PageStorageType) -> Self {
+        let next  = ((mem.0 & PAGE_FREE_NEXT_MASK) >> PAGE_FREE_NEXT_SHIFT) as usize;
+        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
+        FreeInfo { next_page : next, order : order }
+    }
 }
 
 struct AllocatedInfo {
+    order       : usize,
+}
+
+impl AllocatedInfo {
+    pub fn encode(&self) -> PageStorageType {
+        PageStorageType::new(PAGE_TYPE_ALLOCATED).encode_order(self.order)
+    }
+
+    pub fn decode(mem : PageStorageType) -> Self {
+        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
+        AllocatedInfo { order : order }
+    }
 }
 
 struct SlabPageInfo {
     slab : VirtAddr,
 }
 
+impl SlabPageInfo {
+    pub fn encode(&self) -> PageStorageType {
+        PageStorageType::encode_slab(self.slab)
+    }
+
+    pub fn decode(mem : PageStorageType) -> Self {
+        SlabPageInfo { slab : (mem.0 & PAGE_TYPE_SLABPAGE_MASK) as VirtAddr }
+    }
+}
+
+struct CompoundInfo{
+    order       : usize,
+}
+
+impl CompoundInfo {
+    pub fn encode(&self) -> PageStorageType {
+        PageStorageType::new(PAGE_TYPE_COMPOUND).encode_order(self.order)
+    }
+
+    pub fn decode(mem : PageStorageType) -> Self {
+        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
+        CompoundInfo { order : order }
+    }
+}
+
+struct ReservedInfo {
+}
+
+impl ReservedInfo {
+    fn encode(&self) -> PageStorageType {
+        PageStorageType::new(PAGE_TYPE_RESERVED)
+    }
+
+    pub fn decode(_mem : PageStorageType) -> Self {
+         ReservedInfo { }
+    }
+}
+
 enum Page {
     Free(FreeInfo),
     Allocated(AllocatedInfo),
     SlabPage(SlabPageInfo),
-    Reserved,
+    CompoundPage(CompoundInfo),
+    Reserved(ReservedInfo),
 }
-
-const PAGE_TYPE_SHIFT       : PageStorageType = 4;
-const PAGE_TYPE_MASK        : PageStorageType = (1u64 << PAGE_TYPE_SHIFT) - 1;
-
-const PAGE_TYPE_FREE        : PageStorageType = 0;
-const PAGE_FREE_NEXT_SHIFT  : PageStorageType = 12;
-const PAGE_FREE_NEXT_MASK   : PageStorageType = !((1u64 << PAGE_FREE_NEXT_SHIFT) - 1);
-
-const PAGE_TYPE_ALLOCATED   : PageStorageType = 1;
-
-const PAGE_TYPE_SLABPAGE    : PageStorageType = 2;
-const PAGE_TYPE_SLABPAGE_MASK   : PageStorageType = !PAGE_TYPE_MASK;
-
-
-const PAGE_TYPE_RESERVED    : PageStorageType = 3;
 
 impl Page {
     pub fn to_mem(&self) -> PageStorageType {
         match self {
-            Page::Free(fi)      => { PAGE_TYPE_FREE | (fi.next_page as u64) << PAGE_FREE_NEXT_SHIFT }
-            Page::Allocated(_ai)    => { PAGE_TYPE_ALLOCATED }
-            Page::SlabPage(si)  => { PAGE_TYPE_SLABPAGE | (si.slab as u64) & PAGE_TYPE_SLABPAGE_MASK }
-            Page::Reserved      => { PAGE_TYPE_RESERVED }
+            Page::Free(fi)          => { fi.encode() }
+            Page::Allocated(ai)     => { ai.encode() }
+            Page::SlabPage(si)      => { si.encode() }
+            Page::CompoundPage(ci)  => { ci.encode() }
+            Page::Reserved(ri)      => { ri.encode() }
 
         }
     }
 
     pub fn from_mem(mem : PageStorageType) -> Self {
-        let page_type : PageStorageType = mem & PAGE_TYPE_MASK;
+        let page_type = mem.0 & PAGE_TYPE_MASK;
 
         if page_type == PAGE_TYPE_FREE {
-            let n = ((mem & PAGE_FREE_NEXT_MASK) >> PAGE_FREE_NEXT_SHIFT) as usize;
-            Page::Free ( FreeInfo { next_page : n } )
+            Page::Free(FreeInfo::decode(mem))
         } else if page_type == PAGE_TYPE_ALLOCATED {
-            Page::Allocated( AllocatedInfo {} )
+            Page::Allocated(AllocatedInfo::decode(mem))
         } else if page_type == PAGE_TYPE_SLABPAGE {
-            Page::SlabPage( SlabPageInfo { slab : (mem & PAGE_TYPE_SLABPAGE_MASK) as VirtAddr } ) 
+            Page::SlabPage(SlabPageInfo::decode(mem))
+        } else if page_type == PAGE_TYPE_COMPOUND {
+            Page::CompoundPage(CompoundInfo::decode(mem))
         } else if page_type == PAGE_TYPE_RESERVED {
-            Page::Reserved
+            Page::Reserved(ReservedInfo::decode(mem))
         } else {
             panic!("Unknown Page Type {}", page_type);
         }
@@ -82,7 +170,7 @@ impl Page {
 
 pub struct MemInfo {
     pub total_pages : usize,
-    pub free_pages : usize,
+    pub free_pages  : usize,
 }
 
 struct MemoryRegion {
@@ -153,7 +241,7 @@ impl MemoryRegion {
         let info : PageStorageType = pi.to_mem();
         unsafe {
             let ptr : *mut PageStorageType = self.page_info_virt_addr(pfn) as *mut PageStorageType;
-            *ptr = info;
+            (*ptr) = info;
         }
     }
 
@@ -161,7 +249,7 @@ impl MemoryRegion {
         self.check_pfn(pfn);
 
         let virt = self.page_info_virt_addr(pfn);
-        let info : PageStorageType = unsafe { *(virt as *const PageStorageType) };
+        let info : PageStorageType = PageStorageType ( unsafe { *(virt as *const u64) } );
 
         Page::from_mem(info)
     }
@@ -172,7 +260,7 @@ impl MemoryRegion {
 
         /* Mark page storage as reserved */
         for i in 0..meta_pages {
-            let pg : Page = Page::Reserved;
+            let pg : Page = Page::Reserved( ReservedInfo { } );
             self.write_page_info(i, pg);
         }
 
@@ -181,13 +269,13 @@ impl MemoryRegion {
         /* Initialize free list */
         self.next_page = meta_pages;
         for i in meta_pages..self.nr_pages - 1 {
-            let pg = Page::Free( FreeInfo { next_page : i + 1 } );
+            let pg = Page::Free( FreeInfo { next_page : i + 1, order : 0 } );
             self.write_page_info(i, pg);
         }
 
         /* Last Page */
         let idx = self.nr_pages - 1;
-        let pg = Page::Free( FreeInfo { next_page : 0 } );
+        let pg = Page::Free( FreeInfo { next_page : 0, order : 0 } );
         self.write_page_info(idx, pg);
     }
 
@@ -224,7 +312,7 @@ impl MemoryRegion {
 
     pub fn allocate_page(&mut self) -> Result<VirtAddr, ()> {
         if let Ok(pfn) = self.get_next_page() {
-            let pg = Page::Allocated( AllocatedInfo { } );
+            let pg = Page::Allocated( AllocatedInfo { order : 0 } );
             self.write_page_info(pfn, pg);
             let vaddr = self.start_virt + (pfn * PAGE_SIZE);
             return Ok(vaddr);
@@ -266,7 +354,7 @@ impl MemoryRegion {
 
     fn free_page_raw(&mut self, pfn : usize) {
         let old_next = self.next_page;
-        let pg = Page::Free( FreeInfo { next_page : old_next } );
+        let pg = Page::Free( FreeInfo { next_page : old_next, order : 0 } );
 
         self.write_page_info(pfn, pg);
         self.next_page = pfn;
