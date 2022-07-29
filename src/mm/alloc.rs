@@ -259,32 +259,6 @@ impl MemoryRegion {
         Page::from_mem(info)
     }
 
-    pub fn init_memory(&mut self) {
-        let size = size_of::<PageStorageType>();
-        let meta_pages = align_up((self.page_count * size) as usize, PAGE_SIZE) / PAGE_SIZE;
-
-        /* Mark page storage as reserved */
-        for i in 0..meta_pages {
-            let pg : Page = Page::Reserved( ReservedInfo { } );
-            self.write_page_info(i, pg);
-        }
-
-        self.free_pages[0] = self.page_count - meta_pages;
-        self.nr_pages[0]   = self.page_count - meta_pages;
-
-        /* Initialize free list */
-        self.next_page[0] = meta_pages;
-        for i in meta_pages..self.page_count - 1 {
-            let pg = Page::Free( FreeInfo { next_page : i + 1, order : 0 } );
-            self.write_page_info(i, pg);
-        }
-
-        /* Last Page */
-        let idx = self.page_count - 1;
-        let pg = Page::Free( FreeInfo { next_page : 0, order : 0 } );
-        self.write_page_info(idx, pg);
-    }
-
     pub fn get_page_info(&self, vaddr : VirtAddr) -> Result<Page, ()> {
         if vaddr == 0 || !self.check_virt_addr(vaddr) {
             return Err(());
@@ -295,8 +269,8 @@ impl MemoryRegion {
         Ok(self.read_page_info(pfn))
     }
 
-    fn get_next_page(&mut self) -> Result<usize, ()> {
-        let pfn = self.next_page[0];
+    fn get_next_page(&mut self, order : usize) -> Result<usize, ()> {
+        let pfn = self.next_page[order];
 
         if pfn == 0 {
             return Err(());
@@ -309,22 +283,77 @@ impl MemoryRegion {
             _ => panic!("Unexpected page type in MemoryRegion::get_next_page()"),
         };
 
-        self.next_page[0] = new_next;
+        self.next_page[order] = new_next;
 
-        self.free_pages[0] -= 1;
+        self.free_pages[order] -= 1;
 
         Ok(pfn)
     }
 
-    pub fn allocate_page(&mut self) -> Result<VirtAddr, ()> {
-        if let Ok(pfn) = self.get_next_page() {
-            let pg = Page::Allocated( AllocatedInfo { order : 0 } );
+    fn init_compound_page(&mut self, pfn : usize, order : usize, next_pfn : usize) {
+        let nr_pages : usize = 1 << order;
+
+        let head = Page::Free( FreeInfo { next_page : next_pfn, order : order } );
+        self.write_page_info(pfn, head);
+
+        for i in 1..nr_pages {
+            let compound = Page::CompoundPage( CompoundInfo { order : order } );
+            self.write_page_info(pfn + i, compound);
+        }
+    }
+
+    fn split_page(&mut self, pfn : usize, order : usize) -> Result<(), ()> {
+        if order < 1 || order >= MAX_ORDER {
+            return Err(());
+        }
+
+        let new_order = order - 1;
+        let pfn1 = pfn;
+        let pfn2 = pfn + (1usize << new_order);
+
+        let next_pfn = self.next_page[new_order];
+        self.init_compound_page(pfn1, new_order, pfn2);
+        self.init_compound_page(pfn2, new_order, next_pfn);
+        self.next_page[new_order] = pfn1;
+
+        // Do the accounting
+        self.nr_pages[order] -= 1;
+        self.nr_pages[new_order] += 2;
+        self.free_pages[new_order] += 2;
+
+        Ok(())
+    }
+
+    fn refill_page_list(&mut self, order : usize) -> Result<(), ()> {
+        if self.next_page[order] != 0 {
+            return Ok(())
+        }
+        
+        if order >= MAX_ORDER - 1 {
+            return Err(());
+        }
+
+        self.refill_page_list(order + 1)?;
+
+        let pfn = self.get_next_page(order + 1)?;
+
+        self.split_page(pfn, order + 1)
+    }
+
+    pub fn allocate_pages(&mut self, order : usize) -> Result<VirtAddr, ()> {
+        self.refill_page_list(order)?;
+        if let Ok(pfn) = self.get_next_page(order) {
+            let pg = Page::Allocated( AllocatedInfo { order : order } );
             self.write_page_info(pfn, pg);
             let vaddr = self.start_virt + (pfn * PAGE_SIZE);
             return Ok(vaddr);
         } else {
             return Err(());
         }
+    }
+
+    pub fn allocate_page(&mut self) -> Result<VirtAddr, ()> {
+        self.allocate_pages(0)
     }
 
     pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, ()> {
@@ -346,7 +375,8 @@ impl MemoryRegion {
     }
 
     pub fn allocate_slab_page(&mut self, slab : VirtAddr) -> Result<VirtAddr, ()> {
-        if let Ok(pfn) = self.get_next_page() {
+        self.refill_page_list(0)?;
+        if let Ok(pfn) = self.get_next_page(0) {
             assert!(slab & (PAGE_TYPE_MASK as usize) == 0);
             let pg = Page::SlabPage( SlabPageInfo { slab : slab } );
             self.write_page_info(pfn, pg);
@@ -358,14 +388,148 @@ impl MemoryRegion {
 
     }
 
-    fn free_page_raw(&mut self, pfn : usize) {
-        let old_next = self.next_page[0];
-        let pg = Page::Free( FreeInfo { next_page : old_next, order : 0 } );
+    fn order_mask(order : usize) -> usize {
+        !((PAGE_SIZE << order) - 1)
+    }
+
+    fn pfn_to_virt(&self, pfn : usize) -> VirtAddr {
+        self.start_virt + (pfn * PAGE_SIZE)
+    }
+
+    fn virt_to_pfn(&self, vaddr : VirtAddr) -> usize {
+        (vaddr - self.start_virt) / PAGE_SIZE
+    }
+
+    fn compound_neighbor(&self, pfn : usize, order : usize) -> Result<usize, ()> {
+        if order >= MAX_ORDER - 1 {
+            return Err(());
+        }
+
+		let vaddr = self.pfn_to_virt(pfn) & MemoryRegion::order_mask(order);
+		let neigh = vaddr ^ (PAGE_SIZE << order);
+
+		if vaddr < self.start_virt || neigh < self.start_virt {
+			return Err(());
+		}
+
+		let pfn = self.virt_to_pfn(neigh);
+		if pfn >= self.page_count {
+			return Err(());
+		}
+
+		Ok(pfn)
+    }
+
+    fn merge_pages(&mut self, pfn1 : usize, pfn2 : usize, order : usize) -> Result<usize, ()> {
+        if order >= MAX_ORDER - 1 {
+            return Err(());
+        }
+
+        let nr_pages : usize = 1 << order + 1;
+        let pfn = if pfn1 < pfn2 { pfn1 } else { pfn2 };
+
+        // Write new compound head
+        let pg = Page::Allocated( AllocatedInfo { order : order + 1 } );
+        self.write_page_info(pfn, pg);
+
+        // Write compound pages
+        for i in 1..nr_pages {
+            let pg = Page::CompoundPage( CompoundInfo { order : order + 1 } );
+            self.write_page_info(pfn + i, pg);
+        }
+
+        // Do the accounting - none of the pages is free yet, so free_pages is
+        // not updated here.
+        self.nr_pages[order]     -= 2;
+        self.nr_pages[order + 1] += 1;
+
+        Ok(pfn)
+    }
+
+    fn next_free_pfn(&self, pfn : usize, order : usize) -> usize {
+        let page = self.read_page_info(pfn);
+        match page {
+            Page::Free(fi)  => fi.next_page,
+            _               => { panic!("Unexpected page type in free-list for order {}", order); }
+        }
+    }
+
+
+    fn allocate_pfn(&mut self, pfn : usize, order : usize) -> bool {
+        let first_pfn = self.next_page[order];
+
+        // Handle special cases first
+        if first_pfn == 0 {
+            // No pages for that order
+            return false;
+        } else if first_pfn == pfn {
+            // Requested pfn is first in list
+            self.get_next_page(order).unwrap();
+            return true;
+        }
+
+        // Now walk the list
+        let mut old_pfn = first_pfn;
+        loop {
+            let current_pfn = self.next_free_pfn(old_pfn, order);
+            if current_pfn == 0 {
+                break;
+            } else if current_pfn == pfn {
+                let next_pfn = self.next_free_pfn(current_pfn, order);
+                let pg = Page::Free( FreeInfo { next_page : next_pfn, order : order } );
+                self.write_page_info(old_pfn, pg);
+
+                let pg = Page::Allocated( AllocatedInfo { order : order } );
+                self.write_page_info(current_pfn, pg);
+
+				self.free_pages[order] -= 1;
+
+                return true;
+            }
+
+            old_pfn = current_pfn;
+        }
+
+        return false;
+    }
+
+    fn free_page_raw(&mut self, pfn : usize, order : usize) {
+        let old_next = self.next_page[order];
+        let pg = Page::Free( FreeInfo { next_page : old_next, order : order } );
 
         self.write_page_info(pfn, pg);
-        self.next_page[0] = pfn;
+        self.next_page[order] = pfn;
 
-        self.free_pages[0] += 1;
+        self.free_pages[order] += 1;
+    }
+
+    fn free_page_order(&mut self, pfn : usize, order : usize) {
+        let neighbor = self.compound_neighbor(pfn, order);
+        if let Err(_e) = neighbor {
+            self.free_page_raw(pfn, order);
+            return;
+        }
+
+        let neighbor_pfn  = neighbor.unwrap();
+        let neighbor_page = self.read_page_info(neighbor_pfn);
+
+        if let Page::Free(fi) = neighbor_page {
+            if fi.order != order || !self.allocate_pfn(neighbor_pfn, order) {
+                self.free_page_raw(pfn, order);
+                return;
+            }
+
+            let new = self.merge_pages(pfn, neighbor_pfn, order);
+            if let Err(_e) = new {
+                self.free_page_raw(pfn, order);
+                return;
+            }
+
+            let new_pfn = new.unwrap();
+            self.free_page_order(new_pfn, order + 1);
+        } else {
+            self.free_page_raw(pfn, order);
+        }
     }
 
     pub fn free_page(&mut self, vaddr : VirtAddr) {
@@ -378,8 +542,8 @@ impl MemoryRegion {
         let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
 
         match res.unwrap() {
-            Page::Allocated(_ai) => { self.free_page_raw(pfn); },
-            Page::SlabPage(_si)  => { self.free_page_raw(pfn); },
+            Page::Allocated(ai)  => { self.free_page_order(pfn, ai.order); },
+            Page::SlabPage(_si)  => { self.free_page_order(pfn, 0); },
             _ => { panic!("Unexpected page type in MemoryRegion::free_page()"); }
         }
     }
@@ -388,6 +552,30 @@ impl MemoryRegion {
         MemInfo {
             total_pages : self.page_count,
             free_pages  : self.free_pages[0],
+        }
+    }
+    
+    pub fn init_memory(&mut self) {
+        let size = size_of::<PageStorageType>();
+        let meta_pages = align_up((self.page_count * size) as usize, PAGE_SIZE) / PAGE_SIZE;
+
+        /* Mark page storage as reserved */
+        for i in 0..meta_pages {
+            let pg : Page = Page::Reserved( ReservedInfo { } );
+            self.write_page_info(i, pg);
+        }
+
+        self.nr_pages[0]   = self.page_count - meta_pages;
+
+        /* Mark all pages as allocated */
+        for i in meta_pages..self.page_count {
+            let pg = Page::Allocated( AllocatedInfo { order : 0 } );
+            self.write_page_info(i, pg);
+        }
+
+        /* Now free all pages */
+        for i in meta_pages..self.page_count {
+            self.free_page_order(i, 0);
         }
     }
 }
@@ -823,6 +1011,16 @@ pub fn root_mem_init(pstart : PhysAddr, vstart : VirtAddr, page_count : usize) {
 
     if let Err(_e) = SLAB_PAGE_SLAB.lock().init() {
         panic!("Failed to initialize SLAB_PAGE_SLAB");
+    }
+}
+
+use crate::println;
+
+pub fn print_alloc_info() {
+    for i in 0..MAX_ORDER {
+        let nr_pages   = ROOT_MEM.lock().nr_pages[i];
+        let free_pages = ROOT_MEM.lock().free_pages[i];
+        println!("Order-{}: Pages: {:#04} Free Pages: {:#04}", i, nr_pages, free_pages);
     }
 }
 
