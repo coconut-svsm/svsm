@@ -6,7 +6,7 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SHIFT};
 use crate::kernel_launch::KernelLaunchInfo;
 use core::alloc::{GlobalAlloc, Layout};
 use crate::locking::SpinLock;
@@ -19,7 +19,7 @@ use core::ptr;
 struct PageStorageType (u64);
 
 // Support only order 0 allocations for now
-pub const MAX_ORDER : usize = 1;
+pub const MAX_ORDER : usize = 6;
 
 impl PageStorageType {
     pub const fn new(t : u64) -> Self {
@@ -586,6 +586,10 @@ pub fn allocate_page() -> Result<VirtAddr, ()> {
     ROOT_MEM.lock().allocate_page()
 }
 
+pub fn allocate_pages(order : usize) -> Result<VirtAddr, ()> {
+    ROOT_MEM.lock().allocate_pages(order)
+}
+
 pub fn allocate_slab_page(slab : VirtAddr) -> Result<VirtAddr, ()> {
     ROOT_MEM.lock().allocate_slab_page(slab)
 }
@@ -936,6 +940,22 @@ impl SvsmAllocator {
             slab_size_2048 : SpinLock::new(Slab::new(2048)),
         }
     }
+
+    fn get_order(size : usize) -> usize {
+        let mut val = size >> PAGE_SHIFT;
+        let mut order : usize = 0;
+
+        loop {
+            if val == 0 {
+                break;
+            }
+
+            order += 1;
+            val  >>= 1;
+        }
+
+        order
+    }
 }
 
 unsafe impl GlobalAlloc for SvsmAllocator {
@@ -963,7 +983,11 @@ unsafe impl GlobalAlloc for SvsmAllocator {
         } else if size <= 4096 {
             ret = allocate_page();
         } else {
-            panic!("Allocation attempt for unsupported size: {} bytes", size);
+            let order = SvsmAllocator::get_order(size);
+            if order >= MAX_ORDER {
+                return ptr::null_mut();
+            }
+            ret = allocate_pages(order);
         }
 
         if let Err(_e) = ret {

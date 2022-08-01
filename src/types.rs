@@ -6,7 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
-pub const PAGE_SIZE     : usize = 4096;
+pub const PAGE_SHIFT    : usize = 12;
+pub const PAGE_SIZE     : usize = 1 << PAGE_SHIFT;
 pub const PAGE_SIZE_2M  : usize = PAGE_SIZE * 512;
 
 pub const SVSM_CS       : u16 = 1 * 8;
