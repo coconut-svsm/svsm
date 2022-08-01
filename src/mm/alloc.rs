@@ -172,8 +172,8 @@ impl Page {
 }
 
 pub struct MemInfo {
-    pub total_pages : usize,
-    pub free_pages  : usize,
+    pub total_pages : [usize; MAX_ORDER],
+    pub free_pages  : [usize; MAX_ORDER],
 }
 
 struct MemoryRegion {
@@ -550,8 +550,8 @@ impl MemoryRegion {
 
     pub fn memory_info(&self) -> MemInfo {
         MemInfo {
-            total_pages : self.page_count,
-            free_pages  : self.free_pages[0],
+            total_pages : self.nr_pages,
+            free_pages  : self.free_pages,
         }
     }
     
@@ -578,6 +578,20 @@ impl MemoryRegion {
             self.free_page_order(i, 0);
         }
     }
+}
+
+pub fn print_memory_info(info : &MemInfo) {
+    let mut pages_4k        = 0;
+    let mut free_pages_4k   = 0;
+
+    for i in 0..MAX_ORDER {
+        let nr_4k_pages : usize = 1 << i;
+        println!("Order-{:#02}: total pages: {:#05} free pages: {:#5}", i, info.total_pages[i], info.free_pages[i]);
+        pages_4k        += info.total_pages[i]  * nr_4k_pages;
+        free_pages_4k   += info.free_pages[i]   * nr_4k_pages;
+    }
+
+    println!("Total memory: {}kb free memory: {}kb", (pages_4k * PAGE_SIZE) / 1024, (free_pages_4k * PAGE_SIZE) / 1024);
 }
 
 static ROOT_MEM : SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());

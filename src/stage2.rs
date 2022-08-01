@@ -26,9 +26,9 @@ pub mod io;
 pub mod mm;
 
 use sev::{sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate};
+use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
-use mm::alloc::{root_mem_init, memory_info, ALLOCATOR};
 use util::{page_align, page_align_up, halt};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use kernel_launch::KernelLaunchInfo;
@@ -262,7 +262,7 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
         let entry = (*kmd).entry as VirtAddr;
 
         let mem_info = memory_info();
-        println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
+        print_memory_info(&mem_info);
 
         copy_and_launch_kernel( KInfo {
                         k_image_start   : kernel_start,

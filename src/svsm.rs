@@ -22,11 +22,11 @@ pub mod sev;
 pub mod mm;
 pub mod io;
 
+use mm::alloc::{memory_init, memory_info, print_memory_info};
 use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
-use mm::alloc::{memory_init, memory_info};
 use cpu::idt::{early_idt_init, idt_init};
 use console::{WRITER, init_console};
 use crate::svsm_console::SVSMIOPort;
@@ -274,7 +274,7 @@ pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
     println!("Secure Virtual Machine Service Module (SVSM)");
 
     let mem_info = memory_info();
-    println!("Memory info: {} pages total, {} pages free", mem_info.total_pages, mem_info.free_pages);
+    print_memory_info(&mem_info);
 
     boot_stack_info();
 
