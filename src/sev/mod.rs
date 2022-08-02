@@ -7,6 +7,7 @@
 // vim: ts=4 sw=4 et
 
 pub mod status;
+mod utils;
 
 use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
 use crate::{map_page_shared, map_page_encrypted};
@@ -15,62 +16,15 @@ use super::types::{PhysAddr, VirtAddr};
 use status::{sev_status_init};
 use crate::virt_to_phys;
 use core::cell::RefCell;
+use utils::raw_vmgexit;
 use crate::io::IOPort;
 use core::arch::asm;
 
+pub use utils::{PValidateError, pvalidate};
 pub use status::sev_es_enabled;
 
 pub fn sev_init() {
     sev_status_init();
-}
-
-pub enum PValidateError {
-    FailInput,
-    FailSizeMismatch,
-    FailUnknown,
-    FailNotChanged,
-}
-
-pub fn pvalidate(vaddr : VirtAddr, huge_page: bool, valid : bool) -> Result<(),PValidateError> {
-    let rax = vaddr;
-    let rcx = { if huge_page { 1 } else { 0 } };
-    let rdx = { if valid { 1 } else { 0 } };
-    let ret : u64;
-    let cf : u64;
-
-    unsafe {
-        asm!(".byte 0xf2, 0x0f, 0x01, 0xff",
-             "xorq %rcx, %rcx",
-             "jnc 1f",
-             "incq %rcx",
-             "1:",
-             in("rax")  rax,
-             in("rcx")  rcx,
-             in("rdx")  rdx,
-             lateout("rax") ret,
-             lateout("rcx") cf,
-             options(att_syntax));
-    }
-
-    if cf == 1 {
-        return Err(PValidateError::FailNotChanged);
-    }
-
-    if ret == 0 {
-        Ok(())
-    } else if ret == 1 {
-        Err(PValidateError::FailInput)
-    } else if ret == 6 {
-        Err(PValidateError::FailSizeMismatch)
-    } else {
-        Err(PValidateError::FailUnknown)
-    }
-}
-
-fn raw_vmgexit() {
-    unsafe {
-        asm!("rep; vmmcall", options(att_syntax));
-    }
 }
 
 #[non_exhaustive]
