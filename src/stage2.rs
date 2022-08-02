@@ -25,8 +25,8 @@ pub mod sev;
 pub mod io;
 pub mod mm;
 
-use sev::{sev_status_init, sev_init, sev_es_enabled, validate_page_msr, pvalidate};
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
+use sev::{sev_init, sev_es_enabled, validate_page_msr, pvalidate};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
 use util::{page_align, page_align_up, halt};
@@ -119,7 +119,7 @@ static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
 fn setup_env() {
-    sev_status_init();
+    sev_init();
     setup_stage2_allocator();
     init_percpu();
 
