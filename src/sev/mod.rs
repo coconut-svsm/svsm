@@ -6,17 +6,18 @@
 //
 // vim: ts=4 sw=4 et
 
+pub mod msr_protocol;
 pub mod status;
 mod utils;
 
-use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
+use msr_protocol::{register_ghcb_gpa_msr, request_termination_msr, invalidate_page_msr, validate_page_msr};
 use crate::{map_page_shared, map_page_encrypted};
 use crate::mm::pagetable::{flush_tlb_global};
-use super::types::{PhysAddr, VirtAddr};
+use crate::cpu::msr::{write_msr, SEV_GHCB};
 use status::{sev_status_init};
+use super::types::{VirtAddr};
 use crate::virt_to_phys;
 use core::cell::RefCell;
-use utils::raw_vmgexit;
 use crate::io::IOPort;
 use core::arch::asm;
 
@@ -25,77 +26,6 @@ pub use status::sev_es_enabled;
 
 pub fn sev_init() {
     sev_status_init();
-}
-
-#[non_exhaustive]
-enum GHCBMsr {}
-
-impl GHCBMsr {
-    pub const SNP_REG_GHCB_GPA_REQ  : u64 = 0x12;
-    pub const SNP_REG_GHCB_GPA_RESP : u64 = 0x13;
-    pub const SNP_STATE_CHANGE_REQ  : u64 = 0x14;
-    pub const SNP_STATE_CHANGE_RESP : u64 = 0x15;
-    pub const TERM_REQ      : u64 = 0x100;
-}
-
-pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(),()> {
-    let mut info : u64 = addr as u64;
-
-    info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
-    write_msr(SEV_GHCB, info);
-    raw_vmgexit();
-    info = read_msr(SEV_GHCB);
-
-    if (info & 0xfffu64) != GHCBMsr::SNP_REG_GHCB_GPA_RESP {
-        return Err(());
-    }
-
-    if (info & !0xfffu64) == (addr as u64) {
-        Ok(())
-    } else {
-        Err(())
-    }
-}
-
-fn set_page_valid_status_msr(addr : PhysAddr, valid : bool) -> Result<(),()> {
-    let mut info : u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
-
-    if valid {
-        info |= 1u64 << 52;
-    } else {
-        info |= 2u64 << 52;
-    }
-
-    info |= GHCBMsr::SNP_STATE_CHANGE_REQ;
-    write_msr(SEV_GHCB, info);
-    raw_vmgexit();
-    let response = read_msr(SEV_GHCB);
-
-    if (response & !0xfffu64) != 0 {
-        return Err(());
-    }
-
-    if (response & 0xfffu64) != GHCBMsr::SNP_STATE_CHANGE_RESP {
-        return Err(());
-    }
-
-    Ok(())
-}
-
-pub fn validate_page_msr(addr: PhysAddr) -> Result<(),()> {
-    set_page_valid_status_msr(addr, true)
-}
-
-pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(),()> {
-    set_page_valid_status_msr(addr, false)
-}
-
-pub fn request_termination_msr() {
-    let info : u64 = GHCBMsr::TERM_REQ;
-
-    write_msr(SEV_GHCB, info);
-    raw_vmgexit();
-    loop {};
 }
 
 // TODO: Fix this when Rust gets decent compile time struct offset support

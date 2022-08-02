@@ -26,11 +26,12 @@ pub mod io;
 pub mod mm;
 
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
-use sev::{sev_init, sev_es_enabled, validate_page_msr, pvalidate};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
+use sev::{sev_init, sev_es_enabled, pvalidate};
 use util::{page_align, page_align_up, halt};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use sev::msr_protocol::validate_page_msr;
 use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
 use console::{WRITER, init_console};
