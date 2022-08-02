@@ -6,7 +6,7 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr};
+use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use core::arch::asm;
 
 pub enum PValidateError {
@@ -58,3 +58,64 @@ pub fn raw_vmgexit() {
     }
 }
 
+#[non_exhaustive]
+pub enum RMPFlags {}
+
+#[allow(dead_code)]
+impl RMPFlags {
+    const VMPL0     : u64 = 0;
+    const VMPL1     : u64 = 1;
+    const VMPL2     : u64 = 2;
+    const VMPL3     : u64 = 3;
+    const READ      : u64 = 1u64 << 8;
+    const WRITE     : u64 = 1u64 << 9;
+    const X_USER    : u64 = 1u64 << 10;
+    const X_SUPER   : u64 = 1u64 << 11;
+    const VMSA      : u64 = 1u64 << 16;
+
+    pub const VMPL0_RWX : u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
+    pub const VMPL1_RWX : u64 = RMPFlags::VMPL1 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
+    pub const VMPL2_RWX : u64 = RMPFlags::VMPL2 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
+    pub const VMPL3_RWX : u64 = RMPFlags::VMPL3 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
+
+    pub const VMPL0_VMSA : u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
+    pub const VMPL1_VMSA : u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
+    pub const VMPL2_VMSA : u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
+    pub const VMPL3_VMSA : u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
+}
+
+pub enum RMPAdjustError {
+    FailInput,
+    FailPermission,
+    FailSizeMismatch,
+    FailUnknown,
+}
+
+#[allow(dead_code)]
+pub fn rmp_adjust(addr : VirtAddr, flags : RMPFlags, huge : bool) -> Result<(), RMPAdjustError> {
+    let rcx : usize = if huge { PAGE_SIZE } else { PAGE_SIZE_2M };
+    let rax : u64 = addr as u64;
+    let rdx : u64 = flags as u64;
+    let mut result : u64;
+
+    unsafe {
+        asm!(".byte 0xf3, 0x0f, 0x01, 0xfe",
+                in("rax") rax,
+                in("rcx") rcx,
+                in("rdx") rdx,
+                lateout("rax") result,
+                options(att_syntax));
+    }
+
+    if result == 0 {
+        Ok(())
+    } else if result == 1 {
+        Err(RMPAdjustError::FailInput)
+    } else if result == 2 {
+        Err(RMPAdjustError::FailPermission)
+    } else if result == 6 {
+        Err(RMPAdjustError::FailSizeMismatch)
+    } else {
+        Err(RMPAdjustError::FailUnknown)
+    }
+}
