@@ -45,7 +45,6 @@ use core::arch::asm;
 
 #[macro_use]
 extern crate bitflags;
-extern crate memoffset;
 
 extern "C" {
     pub static heap_start: u8;
