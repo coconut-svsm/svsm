@@ -10,9 +10,9 @@ use crate::mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::msr::{write_msr, MSR_GS_BASE};
 use crate::mm::alloc::allocate_page;
 use super::tss::{X86Tss, IST_DF};
+use crate::sev::ghcb::GHCB;
 use crate::types::VirtAddr;
 use super::gdt::load_tss;
-use crate::sev::GHCB;
 use core::arch::asm;
 use core::ptr;
 

@@ -8,7 +8,7 @@
 
 use crate::sev::msr_protocol::request_termination_msr;
 use crate::cpu::percpu::this_cpu_ghcb;
-use crate::sev::{GHCBIOSize};
+use crate::sev::ghcb::GHCBIOSize;
 use crate::io::IOPort;
 
 pub struct SVSMIOPort {
