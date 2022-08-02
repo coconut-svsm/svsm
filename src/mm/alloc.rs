@@ -455,17 +455,17 @@ impl MemoryRegion {
     }
 
 
-    fn allocate_pfn(&mut self, pfn : usize, order : usize) -> bool {
+    fn allocate_pfn(&mut self, pfn : usize, order : usize) -> Result<(), ()> {
         let first_pfn = self.next_page[order];
 
         // Handle special cases first
         if first_pfn == 0 {
             // No pages for that order
-            return false;
+            return Err(());
         } else if first_pfn == pfn {
             // Requested pfn is first in list
             self.get_next_page(order).unwrap();
-            return true;
+            return Ok(());
         }
 
         // Now walk the list
@@ -484,13 +484,13 @@ impl MemoryRegion {
 
 				self.free_pages[order] -= 1;
 
-                return true;
+                return Ok(());
             }
 
             old_pfn = current_pfn;
         }
 
-        return false;
+        return Err(());
     }
 
     fn free_page_raw(&mut self, pfn : usize, order : usize) {
@@ -503,32 +503,29 @@ impl MemoryRegion {
         self.free_pages[order] += 1;
     }
 
-    fn free_page_order(&mut self, pfn : usize, order : usize) {
-        let neighbor = self.compound_neighbor(pfn, order);
-        if let Err(_e) = neighbor {
-            self.free_page_raw(pfn, order);
-            return;
-        }
-
-        let neighbor_pfn  = neighbor.unwrap();
+    fn try_to_merge_page(&mut self, pfn : usize, order : usize) -> Result<usize, ()> {
+        let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
 
         if let Page::Free(fi) = neighbor_page {
-            if fi.order != order || !self.allocate_pfn(neighbor_pfn, order) {
-                self.free_page_raw(pfn, order);
-                return;
+            if fi.order != order {
+                return Err(());
             }
 
-            let new = self.merge_pages(pfn, neighbor_pfn, order);
-            if let Err(_e) = new {
-                self.free_page_raw(pfn, order);
-                return;
-            }
+            self.allocate_pfn(neighbor_pfn, order)?;
 
-            let new_pfn = new.unwrap();
-            self.free_page_order(new_pfn, order + 1);
+            let new_pfn = self.merge_pages(pfn, neighbor_pfn, order)?;
+
+            Ok(new_pfn)
         } else {
-            self.free_page_raw(pfn, order);
+            Err(())
+        }
+    }
+
+    fn free_page_order(&mut self, pfn : usize, order : usize) {
+        match self.try_to_merge_page(pfn, order) {
+            Err(_e)     => { self.free_page_raw(pfn, order); },
+            Ok(new_pfn) => { self.free_page_order(new_pfn, order + 1); }
         }
     }
 
