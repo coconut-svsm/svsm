@@ -586,12 +586,12 @@ pub fn print_memory_info(info : &MemInfo) {
 
     for i in 0..MAX_ORDER {
         let nr_4k_pages : usize = 1 << i;
-        println!("Order-{:#02}: total pages: {:#05} free pages: {:#5}", i, info.total_pages[i], info.free_pages[i]);
+        println!("Order-{:#02}: total pages: {:#5} free pages: {:#5}", i, info.total_pages[i], info.free_pages[i]);
         pages_4k        += info.total_pages[i]  * nr_4k_pages;
         free_pages_4k   += info.free_pages[i]   * nr_4k_pages;
     }
 
-    println!("Total memory: {}kb free memory: {}kb", (pages_4k * PAGE_SIZE) / 1024, (free_pages_4k * PAGE_SIZE) / 1024);
+    println!("Total memory: {}KiB free memory: {}KiB", (pages_4k * PAGE_SIZE) / 1024, (free_pages_4k * PAGE_SIZE) / 1024);
 }
 
 static ROOT_MEM : SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());
