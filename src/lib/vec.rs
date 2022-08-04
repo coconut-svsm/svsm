@@ -89,6 +89,10 @@ impl <T> Vec<T> {
         self.buf.capacity
     }
 
+    pub fn size(&self) -> usize {
+        self.length
+    }
+
     pub const fn new() -> Self {
         assert!(mem::size_of::<T>() != 0, "No zero sized elements allowed");
         Vec {
