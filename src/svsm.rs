@@ -14,8 +14,11 @@ pub mod kernel_launch;
 pub mod svsm_console;
 pub mod console;
 pub mod locking;
+pub mod string;
+pub mod fw_cfg;
 pub mod serial;
 pub mod types;
+pub mod acpi;
 pub mod util;
 pub mod lib;
 pub mod cpu;
@@ -29,6 +32,7 @@ use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
 use cpu::idt::{early_idt_init, idt_init};
+use acpi::tables::load_acpi_cpu_info;
 use console::{WRITER, init_console};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
@@ -42,6 +46,7 @@ use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use crate::util::halt;
 use locking::SpinLock;
+use fw_cfg::FwCfg;
 use core::ptr;
 
 #[macro_use]
@@ -296,6 +301,17 @@ pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
+    let fw_cfg = FwCfg::new(&CONSOLE_IO);
+
+	let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
+    let mut nr_cpus = 0;
+
+    for i in 0..cpus.size() {
+        if cpus[i].enabled { nr_cpus += 1; }
+    }
+
+    println!("{} CPU(s) present", nr_cpus);
+
     panic!("Road ends here!");
 }
 
