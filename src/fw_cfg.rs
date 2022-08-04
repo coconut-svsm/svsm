@@ -20,15 +20,22 @@ const FW_CFG_FILE_DIR   : u16 = 0x19;
 const KERNEL_REGION_SIZE    : u64 = 16 * 1024 * 1024;
 const KERNEL_REGION_SIZE_MASK   : u64 = !(KERNEL_REGION_SIZE - 1);
 
+//use crate::println;
+
 #[non_exhaustive]
 
 pub struct FwCfg<'a> {
     driver : &'a dyn IOPort,
 }
 
-struct FwCfgFile {
+pub struct FwCfgFile {
     size     : u32,
     selector : u16,
+}
+
+impl FwCfgFile {
+    pub fn size(&self) -> u32 { self.size }
+    pub fn selector(&self) -> u16 { self.selector }
 }
 
 pub struct KernelRegion {
@@ -41,13 +48,13 @@ impl<'a> FwCfg<'a> {
         FwCfg { driver : driver }
     }
 
-    fn select(&self, cfg : u16) {
+    pub fn select(&self, cfg : u16) {
         let io = &self.driver;
 
         io.outw(FW_CFG_CTL, cfg);
     }
 
-    fn read_le<T>(&self) -> T
+    pub fn read_le<T>(&self) -> T
     where
         T : core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> +
             core::convert::From<u8> + core::convert::From<u8>,
@@ -61,7 +68,7 @@ impl<'a> FwCfg<'a> {
         val
     }
 
-    fn read_be<T>(&self) -> T
+    pub fn read_be<T>(&self) -> T
     where
         T : core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> +
             core::convert::From<u8> + core::convert::From<u8>,
@@ -75,13 +82,14 @@ impl<'a> FwCfg<'a> {
         val
     }
 
-    fn read_char(&self) -> char {
+    pub fn read_char(&self) -> char {
         let io = &self.driver;
 
         io.inb(FW_CFG_DATA) as char
     }
 
-    fn file_selector(&self, str : &str) -> Result<FwCfgFile,()> {
+    pub fn file_selector(&self, str : &str) -> Result<FwCfgFile,()> {
+        let mut ret : Result<FwCfgFile,()> = Err(());
         self.select(FW_CFG_FILE_DIR);
         let mut n : u32 = self.read_be();
 
@@ -95,12 +103,14 @@ impl<'a> FwCfg<'a> {
                 fs.push(c);
             }
 
+            //println!("FwCfg File: {} Size: {}", fs, size);
+
             if fs.equal_str(str) {
-                return Ok( FwCfgFile { size : size, selector : select } );
+                ret = Ok( FwCfgFile { size : size, selector : select } );
             }
             n -= 1;
         }
-        Err(())
+        ret
     }
 
     pub fn find_kernel_region(&self) -> Result<KernelRegion,()> {
