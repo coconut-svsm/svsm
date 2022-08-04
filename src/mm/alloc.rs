@@ -953,7 +953,7 @@ impl SvsmAllocator {
     }
 
     fn get_order(size : usize) -> usize {
-        let mut val = size >> PAGE_SHIFT;
+        let mut val = (size - 1) >> PAGE_SHIFT;
         let mut order : usize = 0;
 
         loop {
