@@ -17,6 +17,7 @@ pub mod locking;
 pub mod serial;
 pub mod types;
 pub mod util;
+pub mod lib;
 pub mod cpu;
 pub mod sev;
 pub mod mm;
