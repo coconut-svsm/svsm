@@ -27,7 +27,7 @@ unsafe impl<T : Send> Send for RawVec<T> {}
 unsafe impl<T : Sync> Sync for RawVec<T> {}
 
 impl<T> RawVec<T> {
-    fn new() -> Self {
+    const fn new() -> Self {
         assert!(mem::size_of::<T>() != 0, "Zero sized elements not supported in RawVec");
         RawVec {
             ptr      : ptr::NonNull::dangling(),
@@ -89,7 +89,7 @@ impl <T> Vec<T> {
         self.buf.capacity
     }
 
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         assert!(mem::size_of::<T>() != 0, "No zero sized elements allowed");
         Vec {
             buf     : RawVec::new(),
