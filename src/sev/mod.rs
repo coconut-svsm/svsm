@@ -6,6 +6,7 @@
 //
 // vim: ts=4 sw=4 et
 
+pub mod secrets_page;
 pub mod msr_protocol;
 pub mod status;
 pub mod ghcb;

@@ -27,6 +27,7 @@ pub mod mm;
 pub mod io;
 
 use mm::alloc::{memory_init, memory_info, print_memory_info};
+use sev::secrets_page::{SecretsPage, copy_secrets_page};
 use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
@@ -49,10 +50,12 @@ use locking::SpinLock;
 use fw_cfg::FwCfg;
 use core::ptr;
 
+
 #[macro_use]
 extern crate bitflags;
 
 extern "C" {
+    pub static mut SECRETS_PAGE : SecretsPage;
     pub static mut CPUID_PAGE : SnpCpuidTable;
     pub static bsp_stack_end : u8;
 }
@@ -261,6 +264,9 @@ pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
     unsafe {
         let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
         copy_cpuid_table(&mut CPUID_PAGE, cpuid_table_virt);
+
+        let secrets_page_virt = launch_info.secrets_page as VirtAddr;
+        copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
     }
 
     cr0_init();
