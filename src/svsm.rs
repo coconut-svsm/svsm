@@ -32,6 +32,8 @@ use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
+use sev::msr_protocol::invalidate_page_msr;
+use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use cpu::idt::{early_idt_init, idt_init};
 use acpi::tables::load_acpi_cpu_info;
 use console::{WRITER, init_console};
@@ -39,7 +41,6 @@ use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
 use core::arch::{global_asm, asm};
 use crate::cpu::efer::efer_init;
-use types::{VirtAddr, PhysAddr};
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
@@ -47,9 +48,9 @@ use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use crate::util::halt;
 use locking::SpinLock;
+use sev::pvalidate;
 use fw_cfg::FwCfg;
 use core::ptr;
-
 
 #[macro_use]
 extern crate bitflags;
@@ -255,6 +256,38 @@ pub fn boot_stack_info() {
     }
 }
 
+fn invalidate_stage2() -> Result<(), ()> {
+    let start : VirtAddr = 0;
+    let end   : VirtAddr = 640 * 1024;
+    let phys  : PhysAddr = 0;
+
+    // Stage2 memory must be invalidated when already on the SVSM page-table,
+    // because before that the stage2 page-table is still active, which is in
+    // stage2 memory, causing invalidation of page-table pages.
+    unsafe {
+        INIT_PGTABLE.lock().as_mut().unwrap().map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map stage2 memory");
+    }
+
+    let mut curr = start;
+    loop {
+        if curr >= end { break; }
+
+        pvalidate(curr, false, false).expect("PINVALIDATE failed");
+
+        let paddr = curr as PhysAddr;
+        invalidate_page_msr(paddr)?;
+
+        curr += PAGE_SIZE;
+    }
+
+    // Done - Unmap stage2 memory
+    unsafe {
+        INIT_PGTABLE.lock().as_mut().unwrap().unmap_region_4k(start, end)?;
+    }
+
+    Ok(())
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     let launch_info : KernelLaunchInfo = *li;
@@ -308,6 +341,9 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
+
+    invalidate_stage2().expect("Failed to invalidate Stage2 memory");
+
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
 	let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");

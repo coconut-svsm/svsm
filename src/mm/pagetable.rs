@@ -456,9 +456,14 @@ impl PageTable {
     pub fn map_region_4k(&mut self, start : VirtAddr, end: VirtAddr, phys : PhysAddr, flags : PTEntryFlags) -> Result<(), ()> {
         for addr in (start..end).step_by(PAGE_SIZE) {
             let offset = addr - start;
-            if let Err(_e) = self.map_4k(addr, phys + offset, &flags) {
-                return Err(());
-            }
+            self.map_4k(addr, phys + offset, &flags)?;
+        }
+        Ok(())
+    }
+
+    pub fn unmap_region_4k(&mut self, start : VirtAddr, end : VirtAddr) -> Result<(), ()> {
+        for addr in (start..end).step_by(PAGE_SIZE) {
+            self.unmap_4k(addr)?;
         }
         Ok(())
     }

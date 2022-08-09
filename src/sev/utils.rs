@@ -9,6 +9,7 @@
 use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use core::arch::asm;
 
+#[derive(Debug)]
 pub enum PValidateError {
     FailInput,
     FailSizeMismatch,
