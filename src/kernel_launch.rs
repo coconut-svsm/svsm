@@ -6,6 +6,7 @@
 //
 // vim: ts=4 sw=4 et
 
+#[derive(Copy, Clone)]
 pub struct KernelLaunchInfo {
     pub kernel_start : u64,
     pub kernel_end   : u64,

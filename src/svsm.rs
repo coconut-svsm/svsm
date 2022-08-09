@@ -256,7 +256,8 @@ pub fn boot_stack_info() {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
+pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
+    let launch_info : KernelLaunchInfo = *li;
 
     load_gdt();
     early_idt_init();
