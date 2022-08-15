@@ -7,9 +7,8 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use crate::mm::pagetable::PageTable;
+use crate::PTMappingGuard;
 use crate::lib::vec::Vec;
-use crate::INIT_PGTABLE;
 
 use core::fmt;
 use core::mem;
@@ -201,10 +200,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
-    // TODO: Wrap this mapping into a struct with automatic unmapping
-    unsafe {
-        INIT_PGTABLE.lock().as_mut().unwrap().map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to unmap FW meta-data");
-    }
+    let mapping_guard = PTMappingGuard::create(start, end, phys);
+    mapping_guard.check_mapping()?;
 
     let mut curr = end - 32;
 
@@ -269,11 +266,6 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
                 }
             }
         }
-    }
-
-    // Done - Unmap Meta-data
-    unsafe {
-        INIT_PGTABLE.lock().as_mut().unwrap().unmap_region_4k(start, end).expect("Failed to unmap FW meta-data");
     }
 
     Ok(meta_data)

@@ -56,7 +56,7 @@ use fw_cfg::FwCfg;
 
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
                       map_page_shared, map_page_encrypted, map_data_4k,
-                      unmap_4k, walk_addr, INIT_PGTABLE};
+                      unmap_4k, walk_addr, INIT_PGTABLE, PTMappingGuard};
 
 #[macro_use]
 extern crate bitflags;

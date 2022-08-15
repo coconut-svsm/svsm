@@ -12,6 +12,8 @@ use crate::locking::SpinLock;
 use crate::mm;
 use core::ptr;
 
+pub static INIT_PGTABLE : SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
+
 pub fn allocate_pt_page() -> *mut u8 {
     let pt_page : VirtAddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate pgtable page");
 
@@ -62,4 +64,47 @@ pub fn walk_addr(vaddr : VirtAddr) -> Result<PhysAddr, ()> {
     }
 }
 
-pub static INIT_PGTABLE : SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
+#[derive(Copy, Clone)]
+pub struct RawPTMappingGuard {
+    start : VirtAddr,
+    end   : VirtAddr,
+}
+
+impl RawPTMappingGuard {
+    pub const fn new(start : VirtAddr, end : VirtAddr) -> Self {
+        RawPTMappingGuard { start : start, end : end }
+    }
+}
+
+pub struct PTMappingGuard {
+    mapping : Option<RawPTMappingGuard>,
+}
+
+impl PTMappingGuard {
+    pub fn create(start : VirtAddr, end : VirtAddr, phys : PhysAddr) -> Self {
+        let raw_mapping = RawPTMappingGuard::new(start, end);
+        unsafe {
+            match INIT_PGTABLE.lock().as_mut().unwrap().map_region_4k(start, end, phys, PageTable::data_flags()) {
+                Ok(())  => PTMappingGuard { mapping : Some(raw_mapping) },
+                Err(()) => PTMappingGuard { mapping : None },
+            }
+        }
+    }
+
+    pub fn check_mapping(&self) -> Result<(), ()> {
+        match self.mapping {
+            Some(_) => Ok(()),
+            None    => Err(()),
+        }
+    }
+}
+
+impl Drop for PTMappingGuard {
+    fn drop(&mut self) {
+        if let Some(m) = self.mapping {
+            unsafe {
+                INIT_PGTABLE.lock().as_mut().unwrap().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
+            }
+        }
+    }
+}
