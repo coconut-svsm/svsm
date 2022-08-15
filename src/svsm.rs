@@ -26,6 +26,9 @@ pub mod sev;
 pub mod mm;
 pub mod io;
 
+pub mod fw_meta;
+use fw_meta::parse_fw_meta_data;
+
 use mm::alloc::{memory_init, memory_info, print_memory_info};
 use sev::secrets_page::{SecretsPage, copy_secrets_page};
 use mm::stack::{allocate_stack, stack_base_pointer};
@@ -354,6 +357,8 @@ pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
     }
 
     println!("{} CPU(s) present", nr_cpus);
+
+    let _ = parse_fw_meta_data();
 
     panic!("Road ends here!");
 }
