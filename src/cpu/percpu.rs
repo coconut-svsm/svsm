@@ -7,6 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::mm::stack::{allocate_stack, stack_base_pointer};
+use crate::sev::vmsa::{VMSA, VMPL_MAX, allocate_new_vmsa};
 use crate::cpu::msr::{write_msr, MSR_GS_BASE};
 use crate::types::{VirtAddr, MAX_CPUS};
 use crate::mm::alloc::allocate_page;
@@ -39,6 +40,7 @@ pub struct PerCpu {
     ghcb    : *mut GHCB,
     ist     : IstStacks,
     tss     : X86Tss,
+    vmsa    : [*mut VMSA; VMPL_MAX],
 }
 
 impl PerCpu {
@@ -47,6 +49,7 @@ impl PerCpu {
             ghcb    : ptr::null_mut(),
             ist     : IstStacks::new(),
             tss     : X86Tss::new(),
+            vmsa    : [ptr::null_mut(); VMPL_MAX],
         }
     }
 
@@ -84,6 +87,19 @@ impl PerCpu {
 
     pub fn ghcb(&mut self) -> &'static mut GHCB {
         unsafe { self.ghcb.as_mut().unwrap() }
+    }
+
+    pub fn alloc_vmsa(&mut self, level : u64) -> Result<(), ()> {
+        let l = level as usize;
+        assert!(l < VMPL_MAX);
+        self.vmsa[l] = allocate_new_vmsa()?;
+        Ok(())
+    }
+
+    pub fn vmsa(&mut self, level : usize) -> &'static mut VMSA {
+        let l = level as usize;
+        assert!(l < VMPL_MAX);
+        unsafe { self.vmsa[l].as_mut().unwrap() }
     }
 }
 

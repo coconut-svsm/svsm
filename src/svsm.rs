@@ -52,6 +52,7 @@ use cpu::gdt::load_gdt;
 use crate::util::halt;
 use types::VirtAddr;
 use fw_cfg::FwCfg;
+use sev::utils::{RMPFlags};
 
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
                       map_page_shared, map_page_encrypted, map_data_4k,
@@ -193,6 +194,8 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
 
     let stack = allocate_stack().expect("Failed to allocate runtime stack");
     let bp = stack_base_pointer(stack);
+
+    this_cpu_mut().alloc_vmsa(RMPFlags::VMPL0).expect("Failed to allocate VMSA page");
 
     println!("BSP Runtime stack starts @ {:#018x}", bp);
 

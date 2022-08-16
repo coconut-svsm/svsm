@@ -12,7 +12,7 @@ pub mod status;
 pub mod ghcb;
 pub mod vmsa;
 
-mod utils;
+pub mod utils;
 
 pub use utils::{PValidateError, pvalidate};
 pub use status::sev_es_enabled;

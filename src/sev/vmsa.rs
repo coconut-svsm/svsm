@@ -6,7 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::mm::alloc::allocate_zeroed_page;
+use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use super::utils::{RMPFlags, rmp_adjust};
+
+pub const VMPL_MAX  : usize = 4;
 
 #[repr(C, packed)]
 struct VMSASegment {
@@ -128,8 +131,11 @@ pub struct VMSA {
     reserved_670        : [u8; 2448],
 }
 
-fn _allocate_new_vmsa() -> Result<*mut VMSA, ()> {
+pub fn allocate_new_vmsa() -> Result<*mut VMSA, ()> {
     let vmsa_page = allocate_zeroed_page()?;
-
+    if let Err(_e) = rmp_adjust(vmsa_page, RMPFlags::VMPL1_VMSA, false) {
+        free_page(vmsa_page);
+        return Err(())
+    }
     Ok(vmsa_page as *mut VMSA)
 }
