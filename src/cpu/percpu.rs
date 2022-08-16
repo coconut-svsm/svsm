@@ -8,13 +8,15 @@
 
 use crate::mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::msr::{write_msr, MSR_GS_BASE};
+use crate::types::{VirtAddr, MAX_CPUS};
 use crate::mm::alloc::allocate_page;
 use super::tss::{X86Tss, IST_DF};
 use crate::sev::ghcb::GHCB;
-use crate::types::VirtAddr;
 use super::gdt::load_tss;
 use core::arch::asm;
 use core::ptr;
+
+static mut PER_CPU_PTRS : [usize; MAX_CPUS] = [0; MAX_CPUS];
 
 struct IstStacks {
     double_fault_stack : VirtAddr,
@@ -59,11 +61,6 @@ impl PerCpu {
         load_tss(&self.tss);
     }
 
-    pub fn set_gs_base(&self) {
-        let gs_base : u64 = (self as *const PerCpu) as u64;
-        write_msr(MSR_GS_BASE, gs_base);
-    }
-
     pub fn setup(&mut self) -> Result<(), ()> {
         // Setup GHCB
         self.setup_ghcb()?;
@@ -73,9 +70,6 @@ impl PerCpu {
 
         // Setup TSS
         self.setup_tss();
-
-        // Write GS_BASE
-        self.set_gs_base();
 
         Ok(())
     }
@@ -87,19 +81,48 @@ impl PerCpu {
 
         unsafe { (*self.ghcb).shutdown() }
     }
+
+    pub fn ghcb(&mut self) -> &'static mut GHCB {
+        unsafe { self.ghcb.as_mut().unwrap() }
+    }
 }
 
 unsafe impl Sync for PerCpu { }
 
-pub fn this_cpu_ghcb() -> &'static mut GHCB {
+pub fn register_per_cpu(cpu : usize, per_cpu : &PerCpu) {
     unsafe {
-        // FIXME: Implement proper offset calculation
-        let offset = 0;
+        assert!(PER_CPU_PTRS[cpu] == 0);
+        PER_CPU_PTRS[cpu] = (per_cpu as *const PerCpu) as usize;
+    }
+}
 
-        let mut ghcb_addr : VirtAddr;
+pub fn load_per_cpu(cpu : usize) {
+    unsafe {
+        assert!(PER_CPU_PTRS[cpu] != 0);
+        let gs_base = (&PER_CPU_PTRS[cpu] as *const usize) as u64;
+        write_msr(MSR_GS_BASE, gs_base);
+    }
+}
 
-        asm!("movq %gs:(%rax), %rdx", in("rax") offset, out("rdx") ghcb_addr, options(att_syntax));
+#[inline(always)]
+unsafe fn this_cpu_ptr() -> usize {
+    let ptr : usize;
 
-        (ghcb_addr as *mut GHCB).as_mut().unwrap()
+    asm!("movq %gs:0, %rax", out("rax") ptr, options(att_syntax));
+
+    ptr
+}
+
+pub fn this_cpu() -> &'static PerCpu {
+    unsafe {
+        let this_cpu_ptr = this_cpu_ptr();
+        (this_cpu_ptr as *mut PerCpu).as_ref().unwrap()
+    }
+}
+
+pub fn this_cpu_mut() -> &'static mut PerCpu {
+    unsafe {
+        let this_cpu_ptr = this_cpu_ptr();
+        (this_cpu_ptr as *mut PerCpu).as_mut().unwrap()
     }
 }

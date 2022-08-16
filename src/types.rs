@@ -19,3 +19,4 @@ pub const SVSM_TSS      : u16 = 6 * 8;
 pub type PhysAddr   = usize;
 pub type VirtAddr   = usize;
 
+pub const MAX_CPUS  : usize = 512;

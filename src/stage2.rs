@@ -107,12 +107,19 @@ pub static mut PERCPU : PerCpu = PerCpu::new();
 fn init_percpu() {
     unsafe {
         PERCPU.setup_ghcb().expect("Failed to setup percpu data");
-        PERCPU.set_gs_base();
     }
 }
 
 fn shutdown_percpu() {
     unsafe { PERCPU.shutdown().expect("Failed to shut down percpu data (including GHCB)"); }
+}
+
+pub fn this_cpu() -> &'static PerCpu {
+    unsafe { &PERCPU }
+}
+
+pub fn this_cpu_mut() -> &'static mut PerCpu {
+    unsafe { &mut PERCPU }
 }
 
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();

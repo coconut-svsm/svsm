@@ -31,6 +31,7 @@ pub mod fw_meta;
 use fw_meta::parse_fw_meta_data;
 
 use mm::alloc::{memory_init, memory_info, print_memory_info};
+use cpu::percpu::{PerCpu, register_per_cpu, load_per_cpu};
 use sev::secrets_page::{SecretsPage, copy_secrets_page};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use mm::stack::{allocate_stack, stack_base_pointer};
@@ -47,7 +48,6 @@ use mm::pagetable::paging_init;
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
-use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use crate::util::halt;
 use types::VirtAddr;
@@ -56,6 +56,8 @@ use fw_cfg::FwCfg;
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
                       map_page_shared, map_page_encrypted, map_data_4k,
                       unmap_4k, walk_addr, INIT_PGTABLE, PTMappingGuard};
+
+pub use cpu::percpu::{this_cpu, this_cpu_mut};
 
 #[macro_use]
 extern crate bitflags;
@@ -136,7 +138,11 @@ extern "C" {
 pub static mut PERCPU : PerCpu = PerCpu::new();
 
 fn init_percpu() {
-    unsafe { PERCPU.setup().expect("Failed to setup percpu data") }
+    unsafe {
+        register_per_cpu(0, &PERCPU);
+        PERCPU.setup().expect("Failed to setup percpu data");
+        load_per_cpu(0);
+    }
 }
 
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();

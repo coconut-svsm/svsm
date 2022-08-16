@@ -7,8 +7,8 @@
 // vim: ts=4 sw=4 et
 
 use crate::sev::msr_protocol::request_termination_msr;
-use crate::cpu::percpu::this_cpu_ghcb;
 use crate::sev::ghcb::GHCBIOSize;
+use crate::this_cpu_mut;
 use crate::io::IOPort;
 
 pub struct SVSMIOPort {
@@ -22,16 +22,14 @@ impl SVSMIOPort {
 
 impl IOPort for SVSMIOPort {
     fn outb(&self, port: u16, value : u8) {
-        let g = this_cpu_ghcb();
-        let ret = g.ioio_out(port, GHCBIOSize::Size8, value as u64);
+        let ret = this_cpu_mut().ghcb().ioio_out(port, GHCBIOSize::Size8, value as u64);
         if let Err(()) = ret {
             request_termination_msr();
         }
     }
 
     fn inb(&self, port : u16) -> u8 {
-        let g = this_cpu_ghcb();
-        let ret = g.ioio_in(port, GHCBIOSize::Size8);
+        let ret = this_cpu_mut().ghcb().ioio_in(port, GHCBIOSize::Size8);
         match ret {
             Ok(v)   => (v & 0xff) as u8,
             Err(_e) => { request_termination_msr(); 0},
@@ -39,16 +37,14 @@ impl IOPort for SVSMIOPort {
     }
 
     fn outw(&self, port: u16, value : u16) {
-        let g = this_cpu_ghcb();
-        let ret = g.ioio_out(port, GHCBIOSize::Size16, value as u64);
+        let ret = this_cpu_mut().ghcb().ioio_out(port, GHCBIOSize::Size16, value as u64);
         if let Err(()) = ret {
             request_termination_msr();
         }
     }
 
     fn inw(&self, port : u16) -> u16 {
-        let g = this_cpu_ghcb();
-        let ret = g.ioio_in(port, GHCBIOSize::Size16);
+        let ret = this_cpu_mut().ghcb().ioio_in(port, GHCBIOSize::Size16);
         match ret {
             Ok(v)   => (v & 0xffff) as u16,
             Err(_e) => { request_termination_msr(); 0},
