@@ -32,12 +32,10 @@ use fw_meta::parse_fw_meta_data;
 
 use mm::alloc::{memory_init, memory_info, print_memory_info};
 use sev::secrets_page::{SecretsPage, copy_secrets_page};
+use svsm_paging::{init_page_table, invalidate_stage2};
 use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
-use mm::pagetable::{paging_init, PageTable};
-use sev::msr_protocol::invalidate_page_msr;
-use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use cpu::idt::{early_idt_init, idt_init};
 use acpi::tables::load_acpi_cpu_info;
 use console::{WRITER, init_console};
@@ -45,13 +43,14 @@ use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
 use core::arch::{global_asm, asm};
 use crate::cpu::efer::efer_init;
+use mm::pagetable::paging_init;
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
 use cpu::percpu::PerCpu;
 use cpu::gdt::load_gdt;
 use crate::util::halt;
-use sev::pvalidate;
+use types::VirtAddr;
 use fw_cfg::FwCfg;
 
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
@@ -134,66 +133,6 @@ extern "C" {
     pub static heap_start : u8;
 }
 
-extern "C" {
-    static stext    : u8;
-    static etext    : u8;
-    static sdata    : u8;
-    static edata    : u8;
-    static sdataro  : u8;
-    static edataro  : u8;
-    static sbss : u8;
-    static ebss : u8;
-}
-
-fn init_page_table(launch_info : &KernelLaunchInfo) {
-    let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let mut ptr = INIT_PGTABLE.lock();
-    let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
-
-    *ptr = vaddr as *mut PageTable;
-
-    unsafe {
-        let pgtable = ptr.as_mut().unwrap();
-
-        /* Text segment */
-        let start : VirtAddr = (&stext as *const u8) as VirtAddr;
-        let end   : VirtAddr = (&etext as *const u8) as VirtAddr;
-        let phys  : PhysAddr = start - offset;
-
-        (*pgtable).map_region_4k(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
-
-        /* Writeble data */
-        let start : VirtAddr = (&sdata as *const u8) as VirtAddr;
-        let end   : VirtAddr = (&edata as *const u8) as VirtAddr;
-        let phys  : PhysAddr = start - offset;
-
-        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
-
-        /* Read-only data */
-        let start : VirtAddr = (&sdataro as *const u8) as VirtAddr;
-        let end   : VirtAddr = (&edataro as *const u8) as VirtAddr;
-        let phys  : PhysAddr = start - offset;
-
-        (*pgtable).map_region_4k(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
-
-        /* BSS */
-        let start : VirtAddr = (&sbss as *const u8) as VirtAddr;
-        let end   : VirtAddr = (&ebss as *const u8) as VirtAddr;
-        let phys  : PhysAddr = start - offset;
-
-        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
-
-        /* Heap */
-        let start : VirtAddr = (&heap_start as *const u8) as VirtAddr;
-        let end   : VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
-        let phys  : PhysAddr = start - offset;
-
-        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
-
-        (*pgtable).load();
-    }
-}
-
 pub static mut PERCPU : PerCpu = PerCpu::new();
 
 fn init_percpu() {
@@ -208,38 +147,6 @@ pub fn boot_stack_info() {
         let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
         println!("Boot stack starts        @ {:#018x}", vaddr);
     }
-}
-
-fn invalidate_stage2() -> Result<(), ()> {
-    let start : VirtAddr = 0;
-    let end   : VirtAddr = 640 * 1024;
-    let phys  : PhysAddr = 0;
-
-    // Stage2 memory must be invalidated when already on the SVSM page-table,
-    // because before that the stage2 page-table is still active, which is in
-    // stage2 memory, causing invalidation of page-table pages.
-    unsafe {
-        INIT_PGTABLE.lock().as_mut().unwrap().map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map stage2 memory");
-    }
-
-    let mut curr = start;
-    loop {
-        if curr >= end { break; }
-
-        pvalidate(curr, false, false).expect("PINVALIDATE failed");
-
-        let paddr = curr as PhysAddr;
-        invalidate_page_msr(paddr)?;
-
-        curr += PAGE_SIZE;
-    }
-
-    // Done - Unmap stage2 memory
-    unsafe {
-        INIT_PGTABLE.lock().as_mut().unwrap().unmap_region_4k(start, end)?;
-    }
-
-    Ok(())
 }
 
 #[no_mangle]

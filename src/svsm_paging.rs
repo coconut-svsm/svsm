@@ -6,9 +6,13 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr, PhysAddr};
+use crate::sev::msr_protocol::invalidate_page_msr;
+use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm::pagetable::PageTable;
 use crate::locking::SpinLock;
+use crate::sev::pvalidate;
+use crate::heap_start;
 use crate::mm;
 use core::ptr;
 
@@ -62,6 +66,92 @@ pub fn walk_addr(vaddr : VirtAddr) -> Result<PhysAddr, ()> {
         let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
         (*ptr).phys_addr(vaddr)
     }
+}
+
+extern "C" {
+    static stext    : u8;
+    static etext    : u8;
+    static sdata    : u8;
+    static edata    : u8;
+    static sdataro  : u8;
+    static edataro  : u8;
+    static sbss     : u8;
+    static ebss     : u8;
+}
+
+pub fn init_page_table(launch_info : &KernelLaunchInfo) {
+    let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
+    let mut ptr = INIT_PGTABLE.lock();
+    let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
+
+    *ptr = vaddr as *mut PageTable;
+
+    unsafe {
+        let pgtable = ptr.as_mut().unwrap();
+
+        /* Text segment */
+        let start : VirtAddr = (&stext as *const u8) as VirtAddr;
+        let end   : VirtAddr = (&etext as *const u8) as VirtAddr;
+        let phys  : PhysAddr = start - offset;
+
+        (*pgtable).map_region_4k(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
+
+        /* Writeble data */
+        let start : VirtAddr = (&sdata as *const u8) as VirtAddr;
+        let end   : VirtAddr = (&edata as *const u8) as VirtAddr;
+        let phys  : PhysAddr = start - offset;
+
+        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
+
+        /* Read-only data */
+        let start : VirtAddr = (&sdataro as *const u8) as VirtAddr;
+        let end   : VirtAddr = (&edataro as *const u8) as VirtAddr;
+        let phys  : PhysAddr = start - offset;
+
+        (*pgtable).map_region_4k(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
+
+        /* BSS */
+        let start : VirtAddr = (&sbss as *const u8) as VirtAddr;
+        let end   : VirtAddr = (&ebss as *const u8) as VirtAddr;
+        let phys  : PhysAddr = start - offset;
+
+        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
+
+        /* Heap */
+        let start : VirtAddr = (&heap_start as *const u8) as VirtAddr;
+        let end   : VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
+        let phys  : PhysAddr = start - offset;
+
+        (*pgtable).map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
+
+        (*pgtable).load();
+    }
+}
+
+pub fn invalidate_stage2() -> Result<(), ()> {
+    let start : VirtAddr = 0;
+    let end   : VirtAddr = 640 * 1024;
+    let phys  : PhysAddr = 0;
+
+    // Stage2 memory must be invalidated when already on the SVSM page-table,
+    // because before that the stage2 page-table is still active, which is in
+    // stage2 memory, causing invalidation of page-table pages.
+    let mapping_guard = PTMappingGuard::create(start, end, phys);
+    mapping_guard.check_mapping()?;
+
+    let mut curr = start;
+    loop {
+        if curr >= end { break; }
+
+        pvalidate(curr, false, false).expect("PINVALIDATE failed");
+
+        let paddr = curr as PhysAddr;
+        invalidate_page_msr(paddr)?;
+
+        curr += PAGE_SIZE;
+    }
+
+    Ok(())
 }
 
 #[derive(Copy, Clone)]
