@@ -48,11 +48,13 @@ use mm::pagetable::paging_init;
 use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
 use core::panic::PanicInfo;
+use sev::utils::{RMPFlags};
 use cpu::gdt::load_gdt;
 use crate::util::halt;
 use types::VirtAddr;
 use fw_cfg::FwCfg;
-use sev::utils::{RMPFlags};
+
+use cpu::vmsa::init_svsm_vmsa;
 
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
                       map_page_shared, map_page_encrypted, map_data_4k,
@@ -196,21 +198,27 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     let bp = stack_base_pointer(stack);
 
     this_cpu_mut().alloc_vmsa(RMPFlags::VMPL0).expect("Failed to allocate VMSA page");
+    init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
     println!("BSP Runtime stack starts @ {:#018x}", bp);
+
+    let rip = (svsm_main as extern "C" fn()) as u64;
+    let rsp = stack_base_pointer(stack) as u64;
+
+    this_cpu_mut().prepare_svsm_vmsa(rip, rsp);
+
 
     // Enable runtime stack and jump to main function
     unsafe {
         asm!("movq  %rax, %rsp
               jmp   svsm_main",
               in("rax") stack_base_pointer(stack),
-              in("rdi") &launch_info,
               options(att_syntax));
     }
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_main(_launch_info : &KernelLaunchInfo) {
+pub extern "C" fn svsm_main() {
 
     invalidate_stage2().expect("Failed to invalidate Stage2 memory");
 

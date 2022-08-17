@@ -9,6 +9,7 @@
 use crate::types::{VirtAddr, SVSM_CS, SVSM_DS, SVSM_TSS};
 use super::tss::{X86Tss, TSS_LIMIT};
 use core::arch::asm;
+use core::mem;
 
 
 #[repr(packed)]
@@ -64,6 +65,15 @@ static mut GDT_DESC : GdtDesc = GdtDesc {
     size : 0,
     addr : 0,
 };
+
+pub fn gdt_base_limit() -> (u64, u32) {
+    unsafe {
+        let gdt_entries = GDT_SIZE as usize;
+        let base = (&GDT as *const [u64; GDT_SIZE as usize]) as u64;
+        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
+        (base, limit)
+    }
+}
 
 pub fn load_gdt() {
     unsafe {

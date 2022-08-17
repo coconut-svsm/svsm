@@ -16,6 +16,10 @@ pub const SVSM_USER_CS  : u16 = 3 * 8;
 pub const SVSM_USER_DS  : u16 = 4 * 8;
 pub const SVSM_TSS      : u16 = 6 * 8;
 
+pub const SVSM_CS_FLAGS : u16 = 0x29b;
+pub const SVSM_DS_FLAGS : u16 = 0xc93;
+pub const SVSM_TR_FLAGS : u16 = 0x89;
+
 pub type PhysAddr   = usize;
 pub type VirtAddr   = usize;
 

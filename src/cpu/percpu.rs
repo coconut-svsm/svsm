@@ -6,9 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::sev::vmsa::{VMSA, VMPL_MAX, VMSASegment, allocate_new_vmsa};
 use crate::mm::stack::{allocate_stack, stack_base_pointer};
-use crate::sev::vmsa::{VMSA, VMPL_MAX, allocate_new_vmsa};
 use crate::cpu::msr::{write_msr, MSR_GS_BASE};
+use crate::types::{SVSM_TSS, SVSM_TR_FLAGS};
 use crate::types::{VirtAddr, MAX_CPUS};
 use crate::mm::alloc::allocate_page;
 use super::tss::{X86Tss, IST_DF};
@@ -16,6 +17,8 @@ use crate::sev::ghcb::GHCB;
 use super::gdt::load_tss;
 use core::arch::asm;
 use core::ptr;
+use crate::cpu::tss::TSS_LIMIT;
+
 
 static mut PER_CPU_PTRS : [usize; MAX_CPUS] = [0; MAX_CPUS];
 
@@ -96,10 +99,29 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn vmsa(&mut self, level : usize) -> &'static mut VMSA {
+    pub fn vmsa(&mut self, level : u64) -> &'static mut VMSA {
         let l = level as usize;
         assert!(l < VMPL_MAX);
         unsafe { self.vmsa[l].as_mut().unwrap() }
+    }
+
+    fn vmsa_tr_segment(&self) -> VMSASegment {
+        VMSASegment {
+            selector    : SVSM_TSS,
+            flags       : SVSM_TR_FLAGS,
+            limit       : TSS_LIMIT as u32,
+            base        : (&self.tss as *const X86Tss) as u64,
+        }
+    }
+
+    pub fn prepare_svsm_vmsa(&mut self, rip : u64, rsp : u64) {
+        let vmsa = unsafe { self.vmsa[0].as_mut().unwrap() };
+
+        vmsa.tr  = self.vmsa_tr_segment();
+        vmsa.rip = rip;
+        vmsa.rsp = rsp;
+
+        vmsa.gs.base = (self as *const PerCpu) as u64;
     }
 }
 

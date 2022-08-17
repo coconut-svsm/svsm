@@ -11,6 +11,7 @@ pub mod features;
 pub mod percpu;
 pub mod cpuid;
 pub mod efer;
+pub mod vmsa;
 pub mod msr;
 pub mod gdt;
 pub mod idt;

@@ -12,6 +12,7 @@ use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use crate::util::halt;
 use crate::println;
+use core::mem;
 
 pub const  _DE_VECTOR : usize = 0;
 pub const  _DB_VECTOR : usize = 1;
@@ -126,6 +127,14 @@ extern "C" {
 type Idt = [IdtEntry; IDT_ENTRIES];
 
 static mut GLOBAL_IDT : Idt = [IdtEntry::no_handler(); IDT_ENTRIES];
+
+pub fn idt_base_limit() -> (u64, u32) {
+    unsafe {
+        let base = (&GLOBAL_IDT as *const Idt) as u64;
+        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
+        (base, limit)
+    }
+}
 
 fn init_idt(idt : &mut Idt) {
     // Set IDT handlers
