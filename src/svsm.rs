@@ -70,10 +70,6 @@ global_asm!(r#"
         .text
         .section ".startup.text","ax"
         .code64
-        .quad   0xffffff8000000000
-        .quad   startup_64
-        
-        .org    0x80
 
         .globl  startup_64
     startup_64:
