@@ -206,7 +206,6 @@ struct KInfo {
 
 unsafe fn copy_and_launch_kernel(kli : KInfo) {
     let image_size = kli.k_image_end - kli.k_image_start;
-    let phys_offset = kli.virt_base - kli.phys_base;
     let kernel_launch_info = KernelLaunchInfo {
         kernel_start : kli.phys_base as u64,
         kernel_end   : kli.phys_end  as u64,
@@ -231,7 +230,6 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
                                    image_size);
     asm!("jmp *%rax",
           in("rax") kli.entry,
-          in("rdx") phys_offset,
           in("r8") &kernel_launch_info,
           options(att_syntax));
 }

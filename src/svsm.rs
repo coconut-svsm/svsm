@@ -63,7 +63,6 @@ extern "C" {
  * The stage2 loader will map and load the svsm binary image and jump to
  * startup_64.
  *
- * %rdx will contain the offset from the phys->virt offset
  * %r8  will contain a pointer to the KernelLaunchInfo structure
  */
 global_asm!(r#"
@@ -73,9 +72,6 @@ global_asm!(r#"
 
         .globl  startup_64
     startup_64:
-        /* Save PHYS_OFFSET */
-        movq    %rdx, PHYS_OFFSET(%rip)
-
         /* Setup stack */
         leaq bsp_stack_end(%rip), %rsp
 
@@ -90,12 +86,8 @@ global_asm!(r#"
         /* Jump to rust code */
         movq    %r8, %rdi
         jmp svsm_start
-        
-        .data
 
-        .globl PHYS_OFFSET
-    PHYS_OFFSET:
-        .quad 0
+        .data
 
         .align 4096
     bsp_stack:
@@ -116,7 +108,6 @@ global_asm!(r#"
         "#, options(att_syntax));
 
 extern "C" {
-    pub static PHYS_OFFSET : u64;
     pub static heap_start : u8;
 }
 
