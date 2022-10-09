@@ -72,9 +72,6 @@ global_asm!(r#"
 
         .globl  startup_64
     startup_64:
-        /* Setup stack */
-        leaq bsp_stack_end(%rip), %rsp
-
         /* Clear BSS */
         xorq    %rax, %rax
         leaq    sbss(%rip), %rdi
@@ -83,18 +80,19 @@ global_asm!(r#"
         shrq    $3, %rcx
         rep stosq
 
+        /* Setup stack */
+        leaq bsp_stack_end(%rip), %rsp
+
         /* Jump to rust code */
         movq    %r8, %rdi
         jmp svsm_start
 
-        .data
+        .bss
 
         .align 4096
     bsp_stack:
         .fill 8192, 1, 0
     bsp_stack_end:
-
-        .bss
 
         .align 4096
         .globl CPUID_PAGE
