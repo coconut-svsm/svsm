@@ -226,11 +226,13 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
     shutdown_percpu();
 
     asm!("cld
-          rep movsb
-          jmp *%rax",
+          rep movsb",
           in("rsi") kli.k_image_start,
           in("rdi") kli.virt_base,
           in("rcx") image_size,
+          options(att_syntax));
+
+    asm!("jmp *%rax",
           in("rax") kli.entry,
           in("rdx") phys_offset,
           in("r8") &kernel_launch_info,
