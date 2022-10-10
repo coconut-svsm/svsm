@@ -105,10 +105,6 @@ global_asm!(r#"
         .fill 4096, 1, 0
         "#, options(att_syntax));
 
-extern "C" {
-    pub static heap_start : u8;
-}
-
 pub fn allocate_pt_page() -> *mut u8 {
     let pt_page : VirtAddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate pgtable page");
 
@@ -170,6 +166,7 @@ extern "C" {
     static edataro  : u8;
     static sbss : u8;
     static ebss : u8;
+    pub static heap_start : u8;
 }
 
 fn init_page_table(launch_info : &KernelLaunchInfo) {
