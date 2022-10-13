@@ -858,6 +858,7 @@ impl Slab {
     }
 
     fn allocate_slot(&mut self) -> VirtAddr {
+        // Caller must make sure there's at least one free slot.
         assert_ne!(self.free, 0);
         let mut page =  &mut self.page as *mut SlabPage;
         unsafe { loop {
@@ -877,23 +878,13 @@ impl Slab {
             }
 
             let next_page = (*page).get_next_page();
-            assert_ne!(next_page, 0);
+            assert_ne!(next_page, 0); // Cannot happen with free slots on entry.
             page = next_page as *mut SlabPage;
         } }
     }
 
-    pub fn allocate(&mut self) -> Result<VirtAddr, ()> {
-
-        if let Err(_e) = self.adjust_slab_size() {
-            return Err(());
-        }
-
-        return Ok(self.allocate_slot());
-    }
-
-    pub fn deallocate(&mut self, vaddr : VirtAddr) {
+    fn deallocate_slot(&mut self, vaddr : VirtAddr) {
         let mut page =  &mut self.page as *mut SlabPage;
-
         unsafe { loop {
             let free = (*page).get_free();
 
@@ -907,21 +898,26 @@ impl Slab {
                     self. free_pages += 1;
                 }
 
-                self.adjust_slab_size().expect("Failed to adjust slab size in deallocation path");
-
                 return;
             }
 
             let next_page = (*page).get_next_page();
-
-            if next_page == 0 {
-                break;
-            }
-
+            assert_ne!(next_page, 0); // Object does not belong to this Slab.
             page = next_page as *mut SlabPage;
         } }
+    }
 
-        panic!("Address {} does not belong to this Slab", vaddr);
+    pub fn allocate(&mut self) -> Result<VirtAddr, ()> {
+        if let Err(_e) = self.adjust_slab_size() {
+            return Err(());
+        }
+
+        return Ok(self.allocate_slot());
+    }
+
+    pub fn deallocate(&mut self, vaddr : VirtAddr) {
+        self.deallocate_slot(vaddr);
+        self.adjust_slab_size().expect("Failed to adjust slab size in deallocation path");
     }
 }
 
