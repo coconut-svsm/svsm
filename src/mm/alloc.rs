@@ -784,6 +784,18 @@ impl Slab {
         Ok(())
     }
 
+    fn add_slab_page(&mut self, new_page : &mut SlabPage) {
+        let old_next_page = self.page.get_next_page();
+        new_page.set_next_page(old_next_page);
+        self.page.set_next_page((new_page as *mut SlabPage) as VirtAddr);
+
+        let capacity = new_page.get_capacity() as u32;
+        self.pages      += 1;
+        self.free_pages += 1;
+        self.capacity   += capacity;
+        self.free       += capacity;
+    }
+
     unsafe fn grow_slab(&mut self) -> Result<(), ()> {
         if self.capacity == 0 {
             if let Err(_e) = self.init() {
@@ -802,16 +814,7 @@ impl Slab {
             return Err(())
         }
 
-        let old_next_page = self.page.get_next_page();
-        (*slab_page).set_next_page(old_next_page);
-        self.page.set_next_page(page_vaddr);
-
-        let new_capacity = (*slab_page).get_capacity() as u32;
-        self.pages      += 1;
-        self.free_pages += 1;
-        self.capacity   += new_capacity;
-        self.free       += new_capacity;
-
+        self.add_slab_page(&mut *slab_page);
         Ok(())
     }
 
