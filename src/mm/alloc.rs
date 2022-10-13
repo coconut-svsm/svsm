@@ -808,12 +808,12 @@ impl SlabCommon {
     fn allocate_slot(&mut self) -> VirtAddr {
         // Caller must make sure there's at least one free slot.
         assert_ne!(self.free, 0);
-        let mut page =  &mut self.page as *mut SlabPage;
-        unsafe { loop {
-            let free = (*page).get_free();
+        let mut page =  &mut self.page;
+        loop {
+            let free = page.get_free();
 
-            if let Ok(vaddr) = (*page).allocate() {
-                let capacity = (*page).get_capacity();
+            if let Ok(vaddr) = page.allocate() {
+                let capacity = page.get_capacity();
                 self.free -= 1;
 
                 if free == capacity {
@@ -827,17 +827,17 @@ impl SlabCommon {
 
             let next_page = (*page).get_next_page();
             assert_ne!(next_page, 0); // Cannot happen with free slots on entry.
-            page = next_page as *mut SlabPage;
-        } }
+            page = unsafe{&mut *(next_page as *mut SlabPage)};
+        }
     }
 
     fn deallocate_slot(&mut self, vaddr : VirtAddr) {
-        let mut page =  &mut self.page as *mut SlabPage;
-        unsafe { loop {
-            let free = (*page).get_free();
+        let mut page =  &mut self.page;
+        loop {
+            let free = page.get_free();
 
-            if let Ok(_o) = (*page).free(vaddr) {
-                let capacity = (*page).get_capacity();
+            if let Ok(_o) = page.free(vaddr) {
+                let capacity = page.get_capacity();
                 self.free += 1;
 
                 if free == 0 {
@@ -849,10 +849,10 @@ impl SlabCommon {
                 return;
             }
 
-            let next_page = (*page).get_next_page();
+            let next_page = page.get_next_page();
             assert_ne!(next_page, 0); // Object does not belong to this Slab.
-            page = next_page as *mut SlabPage;
-        } }
+            page = unsafe{&mut *(next_page as *mut SlabPage)};
+        }
     }
 }
 
