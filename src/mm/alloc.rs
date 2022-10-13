@@ -374,11 +374,16 @@ impl MemoryRegion {
         vaddr
     }
 
-    pub fn allocate_slab_page(&mut self, slab : VirtAddr) -> Result<VirtAddr, ()> {
+    pub fn allocate_slab_page(&mut self, slab : Option<VirtAddr>) -> Result<VirtAddr, ()> {
         self.refill_page_list(0)?;
+
+        let slab_vaddr = match slab {
+            Some(slab_vaddr) => slab_vaddr,
+            None => 0,
+        };
         if let Ok(pfn) = self.get_next_page(0) {
-            assert!(slab & (PAGE_TYPE_MASK as usize) == 0);
-            let pg = Page::SlabPage( SlabPageInfo { slab : slab } );
+            assert!(slab_vaddr & (PAGE_TYPE_MASK as usize) == 0);
+            let pg = Page::SlabPage( SlabPageInfo { slab : slab_vaddr } );
             self.write_page_info(pfn, pg);
             let vaddr = self.start_virt + (pfn * PAGE_SIZE);
             return Ok(vaddr);
@@ -601,7 +606,7 @@ pub fn allocate_pages(order : usize) -> Result<VirtAddr, ()> {
     ROOT_MEM.lock().allocate_pages(order)
 }
 
-pub fn allocate_slab_page(slab : VirtAddr) -> Result<VirtAddr, ()> {
+pub fn allocate_slab_page(slab : Option<VirtAddr>) -> Result<VirtAddr, ()> {
     ROOT_MEM.lock().allocate_slab_page(slab)
 }
 
@@ -652,7 +657,7 @@ impl SlabPage {
         }
     }
 
-    pub fn init(&mut self, slab : VirtAddr, mut item_size : u16) -> Result<(), ()> {
+    pub fn init(&mut self, slab_vaddr : Option<VirtAddr>, mut item_size : u16) -> Result<(), ()> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -664,7 +669,7 @@ impl SlabPage {
             item_size = 32;
         }
         
-        if let Ok(vaddr) = allocate_slab_page(slab) {
+        if let Ok(vaddr) = allocate_slab_page(slab_vaddr) {
             self.vaddr      = vaddr;
             self.item_size      = item_size;
             self.capacity       = (PAGE_SIZE as u16) / item_size;
@@ -766,7 +771,7 @@ impl Slab {
 
     pub fn init(&mut self) -> Result<(), ()> {
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
-        if let Err(_e) = self.page.init(slab_vaddr, self.item_size) {
+        if let Err(_e) = self.page.init(Option::Some(slab_vaddr), self.item_size) {
             return Err(());
         }
 
@@ -792,7 +797,7 @@ impl Slab {
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
 
         *slab_page = SlabPage::new();
-        if let Err(_e) = (*slab_page).init(slab_vaddr, self.item_size) {
+        if let Err(_e) = (*slab_page).init(Option::Some(slab_vaddr), self.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(page_vaddr);
             return Err(())
         }
@@ -1016,6 +1021,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
         match info {
             Page::Allocated(_ai) => { free_page(virt_addr); },
             Page::SlabPage(si) => {
+                assert_ne!(si.slab, 0);
                 let slab = si.slab  as *mut Slab;
 
                 (*slab).deallocate(virt_addr);
