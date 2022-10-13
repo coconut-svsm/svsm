@@ -981,29 +981,30 @@ impl Slab {
         Ok(())
     }
 
-    unsafe fn shrink_slab(&mut self) {
+    fn shrink_slab(&mut self) {
         let mut last_page =  &mut self.common.page as *mut SlabPage;
-        let mut page_vaddr = self.common.page.get_next_page();
-
+        let mut next_page_vaddr = self.common.page.get_next_page();
+        let mut freed_one = false;
         loop {
-            if page_vaddr == 0 {
+            if next_page_vaddr == 0 {
                 break;
             }
+            let slab_page = unsafe {&mut *(next_page_vaddr as *mut SlabPage)};
+            next_page_vaddr = slab_page.get_next_page();
 
-            let slab_page = page_vaddr as *mut SlabPage;
-            let capacity = (*slab_page).get_capacity();
-            let free     = (*slab_page).get_free();
-
+            let capacity = slab_page.get_capacity();
+            let free     = slab_page.get_free();
             if free == capacity {
-                self.common.remove_slab_page(&mut *last_page, &mut *slab_page);
-                (*slab_page).destroy();
+                self.common.remove_slab_page(unsafe {&mut *last_page}, slab_page);
+                slab_page.destroy();
                 SLAB_PAGE_SLAB.lock().deallocate(slab_page);
-                return;
+                freed_one = true;
+                break;
+            } else {
+                last_page = slab_page;
             }
-
-            last_page = slab_page;
-            page_vaddr = (*slab_page).get_next_page();
         }
+        assert_eq!(freed_one, true);
     }
 
     fn adjust_slab_size(&mut self) -> Result<(), ()> {
@@ -1016,7 +1017,7 @@ impl Slab {
         if free < 25 && self.common.free_pages < 2 {
             return self.grow_slab();
         } else if self.common.free_pages > 1 && free >= 50 {
-            unsafe { self.shrink_slab(); }
+            self.shrink_slab();
         }
 
         Ok(())
