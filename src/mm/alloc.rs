@@ -796,6 +796,16 @@ impl Slab {
         self.free       += capacity;
     }
 
+    fn remove_slab_page(&mut self, prev_page : &mut SlabPage, old_page : &SlabPage) {
+        let capacity = old_page.get_capacity() as u32;
+        self.pages -= 1;
+        self.free_pages -= 1;
+        self.capacity -= capacity;
+        self.free -= capacity;
+
+        prev_page.set_next_page(old_page.get_next_page());
+    }
+
     unsafe fn grow_slab(&mut self) -> Result<(), ()> {
         if self.capacity == 0 {
             if let Err(_e) = self.init() {
@@ -832,13 +842,7 @@ impl Slab {
             let free     = (*slab_page).get_free();
 
             if free == capacity {
-                let capacity     = (*slab_page).get_capacity() as u32;
-                self.pages  -= 1;
-                self.free_pages -= 1;
-                self.capacity   -= capacity;
-                self.free   -= capacity;
-
-                (*last_page).set_next_page((*slab_page).get_next_page());
+                self.remove_slab_page(&mut *last_page, &mut *slab_page);
                 (*slab_page).destroy();
                 SLAB_PAGE_SLAB.lock().deallocate(page_vaddr);
                 return;
