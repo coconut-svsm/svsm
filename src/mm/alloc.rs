@@ -857,14 +857,9 @@ impl Slab {
         Ok(())
     }
 
-    pub fn allocate(&mut self) -> Result<VirtAddr, ()> {
-
-        if let Err(_e) = self.adjust_slab_size() {
-            return Err(());
-        }
-
+    fn allocate_slot(&mut self) -> VirtAddr {
+        assert_ne!(self.free, 0);
         let mut page =  &mut self.page as *mut SlabPage;
-
         unsafe { loop {
             let free = (*page).get_free();
 
@@ -878,19 +873,22 @@ impl Slab {
                     self.full_pages += 1;
                 }
 
-                return Ok(vaddr);
+                return vaddr;
             }
 
             let next_page = (*page).get_next_page();
-
-            if next_page == 0 {
-                break;
-            }
-
+            assert_ne!(next_page, 0);
             page = next_page as *mut SlabPage;
         } }
+    }
 
-        Err(())
+    pub fn allocate(&mut self) -> Result<VirtAddr, ()> {
+
+        if let Err(_e) = self.adjust_slab_size() {
+            return Err(());
+        }
+
+        return Ok(self.allocate_slot());
     }
 
     pub fn deallocate(&mut self, vaddr : VirtAddr) {
