@@ -856,6 +856,91 @@ impl SlabCommon {
     }
 }
 
+struct SlabPageSlab {
+    common : SlabCommon,
+}
+
+impl SlabPageSlab {
+    const fn new() -> Self {
+        SlabPageSlab {
+            common : SlabCommon::new(size_of::<SlabPage>() as u16),
+        }
+    }
+
+    fn init(&mut self) -> Result<(), ()> {
+        self.common.init(Option::None)
+    }
+
+    fn grow_slab(&mut self) -> Result<(), ()> {
+        if self.common.capacity == 0 {
+            if let Err(_e) = self.init() {
+                return Err(());
+            }
+            return Ok(());
+        }
+
+        // Make sure there's always at least one SlabPage slot left for extending the SlabPageSlab itself.
+        if self.common.free >= 2 {
+            return Ok(())
+        }
+        assert_ne!(self.common.free, 0);
+
+        let page_vaddr = self.common.allocate_slot();
+        let slab_page = unsafe {&mut *(page_vaddr as *mut SlabPage)};
+
+        *slab_page = SlabPage::new();
+        if let Err(_e) = slab_page.init(Option::None, self.common.item_size) {
+            self.common.deallocate_slot(page_vaddr);
+            return Err(());
+        }
+
+        self.common.add_slab_page(slab_page);
+
+        Ok(())
+    }
+
+    fn shrink_slab(&mut self) {
+        // The SlabPageSlab uses SlabPages on its own and freeing a SlabPage can empty another SlabPage.
+        while self.common.free_pages > 1 {
+            let mut last_page =  &mut self.common.page as *mut SlabPage;
+            let mut next_page_vaddr = self.common.page.get_next_page();
+            let mut freed_one = false;
+            loop {
+                if next_page_vaddr == 0 {
+                    break;
+                }
+                let slab_page = unsafe {&mut *(next_page_vaddr as *mut SlabPage)};
+                next_page_vaddr = slab_page.get_next_page();
+
+                let capacity = slab_page.get_capacity();
+                let free     = slab_page.get_free();
+                if free == capacity {
+                    self.common.remove_slab_page(unsafe {&mut *last_page}, slab_page);
+                    slab_page.destroy();
+                    self.common.deallocate_slot(slab_page as *mut SlabPage as VirtAddr);
+                    freed_one = true;
+                } else {
+                    last_page = slab_page;
+                }
+            }
+            assert_eq!(freed_one, true);
+        }
+    }
+
+    fn allocate(&mut self) -> Result<*mut SlabPage, ()> {
+        if let Err(_) = self.grow_slab() {
+            return Err(());
+        }
+
+        return Ok(unsafe{&mut *(self.common.allocate_slot() as *mut SlabPage)});
+    }
+
+    fn deallocate(&mut self, slab_page : *mut SlabPage) {
+        self.common.deallocate_slot(slab_page as VirtAddr);
+        self.shrink_slab();
+    }
+}
+
 struct Slab {
     common : SlabCommon,
 }
@@ -880,13 +965,11 @@ impl Slab {
             return Ok(());
         }
 
-        let page_vaddr = SLAB_PAGE_SLAB.lock().allocate().unwrap();
-        let slab_page  = page_vaddr as *mut SlabPage;
+        let slab_page = SLAB_PAGE_SLAB.lock().allocate().unwrap();
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
-
         *slab_page = SlabPage::new();
         if let Err(_e) = (*slab_page).init(Option::Some(slab_vaddr), self.common.item_size) {
-            SLAB_PAGE_SLAB.lock().deallocate(page_vaddr);
+            SLAB_PAGE_SLAB.lock().deallocate(slab_page);
             return Err(())
         }
 
@@ -910,7 +993,7 @@ impl Slab {
             if free == capacity {
                 self.common.remove_slab_page(&mut *last_page, &mut *slab_page);
                 (*slab_page).destroy();
-                SLAB_PAGE_SLAB.lock().deallocate(page_vaddr);
+                SLAB_PAGE_SLAB.lock().deallocate(slab_page);
                 return;
             }
 
@@ -949,7 +1032,7 @@ impl Slab {
     }
 }
 
-static SLAB_PAGE_SLAB : SpinLock<Slab> = SpinLock::new(Slab::new(size_of::<SlabPage>() as u16));
+static SLAB_PAGE_SLAB : SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
 pub struct SvsmAllocator {
     slab_size_32   : SpinLock<Slab>,
@@ -996,8 +1079,6 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ret : Result<VirtAddr, ()>;
         let size = layout.size();
-
-        SLAB_PAGE_SLAB.lock().adjust_slab_size().expect("Failed to adjust Slab size");
 
         if size <= 32 {
             ret = self.slab_size_32.lock().allocate();
