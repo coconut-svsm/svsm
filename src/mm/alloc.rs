@@ -957,7 +957,7 @@ impl Slab {
         self.common.init(Option::Some(slab_vaddr))
     }
 
-    unsafe fn grow_slab(&mut self) -> Result<(), ()> {
+    fn grow_slab(&mut self) -> Result<(), ()> {
         if self.common.capacity == 0 {
             if let Err(_e) = self.init() {
                 return Err(());
@@ -965,10 +965,14 @@ impl Slab {
             return Ok(());
         }
 
-        let slab_page = SLAB_PAGE_SLAB.lock().allocate().unwrap();
+        let slab_page =
+            match SLAB_PAGE_SLAB.lock().allocate() {
+                Ok(slab_page) => unsafe {&mut *slab_page},
+                Err(_) => return Err(()),
+            };
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
         *slab_page = SlabPage::new();
-        if let Err(_e) = (*slab_page).init(Option::Some(slab_vaddr), self.common.item_size) {
+        if let Err(_e) = slab_page.init(Option::Some(slab_vaddr), self.common.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(slab_page);
             return Err(())
         }
@@ -1004,13 +1008,13 @@ impl Slab {
 
     fn adjust_slab_size(&mut self) -> Result<(), ()> {
         if self.common.capacity == 0 {
-            return unsafe { self.grow_slab() };
+            return self.grow_slab();
         }
 
         let free : u64 = ((self.common.free as u64) * 100) / (self.common.capacity as u64);
 
         if free < 25 && self.common.free_pages < 2 {
-            unsafe { return self.grow_slab(); }
+            return self.grow_slab();
         } else if self.common.free_pages > 1 && free >= 50 {
             unsafe { self.shrink_slab(); }
         }
