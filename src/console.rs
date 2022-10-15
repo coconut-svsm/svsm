@@ -152,3 +152,9 @@ pub fn install_console_logger(component : &'static str) {
     // Log levels are to be configured via the log's library feature configuration.
     log::set_max_level(log::LevelFilter::Trace);
 }
+
+#[macro_export]
+macro_rules! println {
+    () => (log::info!(""));
+    ($($arg:tt)*) => (log::info!($($arg)*));
+}
