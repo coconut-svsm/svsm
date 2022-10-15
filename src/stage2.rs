@@ -28,7 +28,7 @@ pub mod mm;
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
-use sev::{sev_status_init, sev_es_enabled, pvalidate};
+use sev::{sev_status_init, sev_es_enabled, sev_status_verify, pvalidate};
 use util::{page_align, page_align_up, halt};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use sev::msr_protocol::validate_page_msr;
@@ -136,6 +136,7 @@ fn setup_env() {
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();
+    sev_status_verify();
 }
 
 const KERNEL_VIRT_ADDR : VirtAddr = 0xffff_ff80_0000_0000;

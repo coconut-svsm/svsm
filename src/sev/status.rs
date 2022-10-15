@@ -32,8 +32,8 @@ fn read_sev_status() -> SEVStatusFlags {
     SEVStatusFlags::from_bits_truncate(read_msr(SEV_STATUS))
 }
 
-pub fn sev_es_enabled() -> bool {
-    unsafe { SEV_FLAGS.contains(SEVStatusFlags::SEV_ES) }
+fn sev_flags() -> SEVStatusFlags {
+    unsafe {SEV_FLAGS}
 }
 
 pub fn print_sev_status(prefix : &str, status : SEVStatusFlags) {
@@ -93,13 +93,21 @@ pub fn print_sev_status(prefix : &str, status : SEVStatusFlags) {
 
 pub fn sev_status_init() {
     let status : SEVStatusFlags = read_sev_status();
+    unsafe { SEV_FLAGS = status; }
+}
+
+pub fn sev_es_enabled() -> bool {
+    sev_flags().contains(SEVStatusFlags::SEV_ES)
+}
+
+pub fn sev_status_verify() {
     let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
     let not_supported = SEVStatusFlags::VTOM | SEVStatusFlags::REFLECT_VC | SEVStatusFlags::REST_INJ |
                 SEVStatusFlags::ALT_INJ | SEVStatusFlags::DBGSWP | SEVStatusFlags::PREV_HOST_IBS |
                 SEVStatusFlags::BTB_ISOLATION | SEVStatusFlags::SECURE_TSC |
                 SEVStatusFlags::VMSA_REG_PROT;
-    
-    unsafe { SEV_FLAGS = status; }
+
+    let status = sev_flags();
     let required_check  = status & required;
     let supported_check = status & not_supported;
 
