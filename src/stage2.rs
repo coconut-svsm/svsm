@@ -283,8 +283,3 @@ fn panic(info : &PanicInfo) -> ! {
     println!("Panic: {}", info);
     loop { halt(); }
 }
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::console::_print(format_args!($($arg)*)));
-}
