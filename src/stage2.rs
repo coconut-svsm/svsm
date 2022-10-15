@@ -251,7 +251,6 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
     paging_init();
     setup_env();
-    sev_init();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
