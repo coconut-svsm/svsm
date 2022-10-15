@@ -131,6 +131,7 @@ fn setup_env() {
 
     if !sev_es_enabled() {
         unsafe { DEFAULT_SERIAL_PORT.init(); }
+        init_console();
         panic!("SEV-ES not available");
     }
 
