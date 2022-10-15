@@ -33,7 +33,7 @@ use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use mm::pagetable::{paging_init, PageTable};
 use cpu::idt::{early_idt_init, idt_init};
 use acpi::tables::load_acpi_cpu_info;
-use console::{WRITER, init_console};
+use console::{WRITER, init_console, install_console_logger};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
 use core::arch::{global_asm, asm};
@@ -276,6 +276,7 @@ pub extern "C" fn svsm_start(launch_info : &KernelLaunchInfo) {
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();
+    install_console_logger("SVSM");
 
     println!("Secure Virtual Machine Service Module (SVSM)");
 

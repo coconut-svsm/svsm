@@ -34,7 +34,7 @@ use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use sev::msr_protocol::validate_page_msr;
 use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
-use console::{WRITER, init_console};
+use console::{WRITER, init_console, install_console_logger};
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
 use core::panic::PanicInfo;
@@ -119,6 +119,7 @@ static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
 fn setup_env() {
+    install_console_logger("Stage2");
     sev_init();
     setup_stage2_allocator();
     init_percpu();
