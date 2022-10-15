@@ -7,7 +7,8 @@
 // vim: ts=4 sw=4 et
 
 use crate::cpu::msr::{read_msr, SEV_STATUS};
-use crate::print;
+use log;
+use core::fmt::{self, Write};
 
 bitflags! {
     pub struct SEVStatusFlags: u64 {
@@ -26,6 +27,85 @@ bitflags! {
     }
 }
 
+impl fmt::Display for SEVStatusFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut first = true;
+
+        if self.contains(SEVStatusFlags::SEV) {
+            f.write_str("SEV")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::SEV_ES) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("SEV-ES")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::SEV_SNP) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("SEV-SNP")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::VTOM) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("VTOM")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::REFLECT_VC) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("REFLECT_VC")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::REST_INJ) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("RESTRICTED_INJECTION")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::ALT_INJ) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("ALTERNATE_INJECTION")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::DBGSWP) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("DEBUG_SWAP")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::PREV_HOST_IBS) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("PREVENT_HOST_IBS")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::BTB_ISOLATION) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("SNP_BTB_ISOLATION")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::SECURE_TSC) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("SECURE_TSC")?;
+            first = false;
+        }
+
+        if self.contains(SEVStatusFlags::VMSA_REG_PROT) {
+            if first == false { f.write_char(' ')?; }
+            f.write_str("VMSA_REG_PROT")?;
+        }
+
+        fmt::Result::Ok(())
+    }
+
+}
+
 static mut SEV_FLAGS : SEVStatusFlags = SEVStatusFlags::empty();
 
 fn read_sev_status() -> SEVStatusFlags {
@@ -34,61 +114,6 @@ fn read_sev_status() -> SEVStatusFlags {
 
 pub fn sev_es_enabled() -> bool {
     unsafe { SEV_FLAGS.contains(SEVStatusFlags::SEV_ES) }
-}
-
-pub fn print_sev_status(prefix : &str, status : SEVStatusFlags) {
-
-    print!("{}", prefix);
-
-    if status.contains(SEVStatusFlags::SEV) {
-        print!(" SEV");
-    }
-
-    if status.contains(SEVStatusFlags::SEV_ES) {
-        print!(" SEV-ES");
-    }
-
-    if status.contains(SEVStatusFlags::SEV_SNP) {
-        print!(" SEV-SNP");
-    }
-
-    if status.contains(SEVStatusFlags::VTOM) {
-        print!(" VTOM");
-    }
-    
-    if status.contains(SEVStatusFlags::REFLECT_VC) {
-        print!(" REFLECT_VC");
-    }
-    
-    if status.contains(SEVStatusFlags::REST_INJ) {
-        print!(" RESTRICTED_INJECTION");
-    }
-    
-    if status.contains(SEVStatusFlags::ALT_INJ) {
-        print!(" ALTERNATE_INJECTION");
-    }
-    
-    if status.contains(SEVStatusFlags::DBGSWP) {
-        print!(" DEBUG_SWAP");
-    }
-
-    if status.contains(SEVStatusFlags::PREV_HOST_IBS) {
-        print!(" PREVENT_HOST_IBS");
-    }
-
-    if status.contains(SEVStatusFlags::BTB_ISOLATION) {
-        print!(" SNP_BTB_ISOLATION");
-    }
-
-    if status.contains(SEVStatusFlags::SECURE_TSC) {
-        print!(" SECURE_TSC");
-    }
-
-    if status.contains(SEVStatusFlags::VMSA_REG_PROT) {
-        print!(" VMSA_REG_PROT");
-    }
-    
-    print!("\n");
 }
 
 pub fn sev_status_init() {
@@ -104,12 +129,12 @@ pub fn sev_status_init() {
     let supported_check = status & not_supported;
 
     if required_check != required {
-        print_sev_status("Required features not available:", required & !required_check);
+        log::error!("Required features not available: {}", required & !required_check);
         panic!("Required SEV features not available");
     }
 
     if !supported_check.is_empty() {
-        print_sev_status("Unsupported features enabled:", supported_check);
+        log::error!("Unsupported features enabled: {}", supported_check);
         panic!("Unsupported SEV features enabled");
     }
 }
