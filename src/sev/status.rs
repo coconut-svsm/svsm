@@ -100,6 +100,10 @@ pub fn sev_es_enabled() -> bool {
     sev_flags().contains(SEVStatusFlags::SEV_ES)
 }
 
+pub fn sev_snp_enabled() -> bool {
+    sev_flags().contains(SEVStatusFlags::SEV_SNP)
+}
+
 pub fn sev_status_verify() {
     let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
     let not_supported = SEVStatusFlags::VTOM | SEVStatusFlags::REFLECT_VC | SEVStatusFlags::REST_INJ |

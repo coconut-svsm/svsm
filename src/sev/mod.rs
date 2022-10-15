@@ -15,5 +15,5 @@ mod utils;
 
 pub use utils::{PValidateError, pvalidate};
 pub use status::sev_status_init;
-pub use status::sev_es_enabled;
+pub use status::{sev_es_enabled, sev_snp_enabled};
 pub use status::sev_status_verify;

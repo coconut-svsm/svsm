@@ -11,6 +11,7 @@ use crate::mm::pagetable::{flush_tlb_global};
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::types::{VirtAddr};
 use crate::virt_to_phys;
+use crate::sev::sev_snp_enabled;
 use core::cell::RefCell;
 use crate::io::IOPort;
 use core::arch::asm;
@@ -113,14 +114,16 @@ impl GHCB {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
-        // Make page invalid
-        if let Err(_e) = pvalidate(vaddr, false, false) {
-            return Err(());
-        }
+        if sev_snp_enabled() {
+            // Make page invalid
+            if let Err(_e) = pvalidate(vaddr, false, false) {
+                return Err(());
+            }
 
-        // Let the Hypervisor take the page back
-        if let Err(_e) = invalidate_page_msr(paddr) {
-            return Err(());
+            // Let the Hypervisor take the page back
+            if let Err(_e) = invalidate_page_msr(paddr) {
+                return Err(());
+            }
         }
 
         // Register GHCB GPA
