@@ -126,14 +126,15 @@ extern "C" {
 
 fn setup_env() {
     sev_status_init();
-    setup_stage2_allocator();
-    init_percpu();
-
     if !sev_es_enabled() {
         unsafe { DEFAULT_SERIAL_PORT.init(); }
         init_console();
         panic!("SEV-ES not available");
     }
+
+    paging_init();
+    setup_stage2_allocator();
+    init_percpu();
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();
@@ -251,7 +252,6 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 
 #[no_mangle]
 pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
-    paging_init();
     setup_env();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
