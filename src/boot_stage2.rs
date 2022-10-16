@@ -40,6 +40,10 @@ global_asm!(r#"
         push    %esi
         push    %edi
 
+        /* Load the 32bit IDT. */
+        movl $idt32_desc, %eax
+        lidtl (%eax)
+
         /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
         subl $pgtable, %ecx
@@ -126,6 +130,15 @@ global_asm!(r#"
         jmp 1b
         3: ret
 
+    idt32_install_handler:
+       leal idt32(, %edi, 8), %edi
+       movw %si, (%edi)
+       movw $8, 2(%edi) /* 32 bit CS */
+       movw $0xef00, 4(%edi) /* type = 0xf, dpl = 0x3, p = 1 */
+       shrl $16, %esi
+       movw %si, 6(%edi)
+       ret
+
         .code64
 
     startup_64:
@@ -159,7 +172,7 @@ global_asm!(r#"
 
     idt32_desc:
         .word idt32_end - idt32 - 1
-        .long 0
+        .long idt32
 
         .align 256
     gdt64:
