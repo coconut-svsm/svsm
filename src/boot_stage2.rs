@@ -41,6 +41,10 @@ global_asm!(r#"
         push    %edi
 
         /* Prepare and load the 32bit IDT. */
+        movl $6, %edi /* #UD */
+        movl $ud_vmgexit_fixup_handler32, %esi
+        call idt32_install_handler
+
         movl $13, %edi /* #GP */
         movl $gp_msr_fixup_handler32, %esi
         call idt32_install_handler
@@ -152,6 +156,15 @@ global_asm!(r#"
         movl $-1, %ecx
         ret
 
+    __vmgexit_safe:
+    .Lvmgexit:
+        rep vmmcall
+        xorl %eax, %eax
+        ret
+    .Lvmgexit_fixup:
+        movl $-1, %eax
+        ret
+
     idt32_install_handler:
        leal idt32(, %edi, 8), %edi
        movw %si, (%edi)
@@ -181,6 +194,20 @@ global_asm!(r#"
         iretl
 
         3: ud2 /* Unexpected #GP, not much we can do about it. */
+
+    ud_vmgexit_fixup_handler32:
+        pushl %eax
+        movl 4(%esp), %eax /* saved %eip */
+
+        cmpl $.Lvmgexit, %eax
+        jne 1f
+        movl $.Lvmgexit_fixup, %eax
+        movl %eax, 4(%esp)
+
+        popl %eax
+        iretl
+
+        1: int $3 /* Unexpected UD, not much we can do about it */
 
         .code64
 
