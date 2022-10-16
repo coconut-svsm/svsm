@@ -369,21 +369,54 @@ global_asm!(r#"
         movw %ax, %gs
         movw %ax, %ss
 
-        /* Load the 64bit IDT. */
+        pushq   %rsi
+        pushq   %rdi
+
+        /* Prepare and load the 64bit IDT. */
+        movq $13, %rdi /* #GP */
+        movq $gp_msr_fixup_handler64, %rsi
+        call idt64_install_handler
+
         movq $idt64_desc, %rax
         lidtq (%rax)
 
         /* Clear out .bss and transfer control to the main stage2 code. */
-        pushq   %rdi
         xorq %rax, %rax
         leaq _bss(%rip), %rdi
         leaq _ebss(%rip), %rcx
         subq %rdi, %rcx
         shrq $3, %rcx
         rep stosq
-        popq    %rdi
 
+        popq    %rdi
+        popq    %rsi
         jmp stage2_main
+
+    /* Export of __rdmsr_safe for use from Rust stage2. */
+       .globl rdmsr_safe
+    rdmsr_safe:
+       movl %edi, %ecx
+       call __rdmsr_safe
+       movslq %ecx, %rcx
+       testq %rcx, %rcx
+       js 1f
+       movl %eax, (%rsi)
+       movl %edx, 4(%rsi)
+       xorq %rax, %rax
+       ret
+       1: movq %rcx, %rax
+       ret
+
+    /* Export of __wrmsr_safe for use from Rust stage2. */
+       .globl wrmsr_safe
+    wrmsr_safe:
+       movl %edi, %ecx
+       movl %esi, %eax
+       shrq $32, %rsi
+       movl %esi, %edx
+       call __wrmsr_safe
+       movslq %ecx, %rax
+       ret
 
     idt64_install_handler:
        shlq $4, %rdi
@@ -396,6 +429,27 @@ global_asm!(r#"
        shrq $16, %rsi
        movl %esi, 8(%rdi)
        ret
+
+    gp_msr_fixup_handler64:
+        pushq %rax
+        movq 8+8(%rsp), %rax /* saved %rip */
+
+        cmpq $.Lrdmsr, %rax
+        jne 1f
+        movq $.Lrdmsr_fixup, %rax
+        movq %rax, 8+8(%rsp)
+        jmp 2f
+
+        1:cmpq $.Lwrmsr, %rax
+        jne 3f
+        movq $.Lwrmsr_fixup, %rax
+        movq %rax, 8+8(%rsp)
+
+        2: popq %rax
+        addq $8, %rsp /* Pop off error code from the stack. */
+        iretq
+
+        3: ud2 /* Unexpected #GP, not much we can do about it. */
 
         .data
 

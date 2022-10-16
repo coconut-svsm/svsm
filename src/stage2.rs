@@ -118,6 +118,11 @@ fn shutdown_percpu() {
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
+extern "C" {
+    pub fn rdmsr_safe(msr : u32, dst : *mut u64) -> i64;
+    pub fn wrmsr_safe(msr : u32, val : u64) -> i64;
+}
+
 fn setup_env() {
     sev_init();
     setup_stage2_allocator();
