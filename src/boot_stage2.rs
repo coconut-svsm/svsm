@@ -373,6 +373,10 @@ global_asm!(r#"
         pushq   %rdi
 
         /* Prepare and load the 64bit IDT. */
+        movq $6, %rdi /* #UD */
+        movq $ud_vmgexit_fixup_handler64, %rsi
+        call idt64_install_handler
+
         movq $13, %rdi /* #GP */
         movq $gp_msr_fixup_handler64, %rsi
         call idt64_install_handler
@@ -418,6 +422,13 @@ global_asm!(r#"
        movslq %ecx, %rax
        ret
 
+    /* Export of __vmgexit_safe for use from Rust stage2. */
+       .globl vmgexit_safe
+    vmgexit_safe:
+       call __vmgexit_safe
+       movslq %eax, %rax
+       ret
+
     idt64_install_handler:
        shlq $4, %rdi
        leaq idt64(%rdi), %rdi
@@ -450,6 +461,20 @@ global_asm!(r#"
         iretq
 
         3: ud2 /* Unexpected #GP, not much we can do about it. */
+
+    ud_vmgexit_fixup_handler64:
+        pushq %rax
+        movq 8(%rsp), %rax /* saved %rip */
+
+        cmpq $.Lvmgexit, %rax
+        jne 1f
+        movq $.Lvmgexit_fixup, %rax
+        movq %rax, 8(%rsp)
+
+        popq %rax
+        iretq
+
+        1: int $3 /* Unexpected UD, not much we can do about it */
 
         .data
 

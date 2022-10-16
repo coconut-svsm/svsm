@@ -121,6 +121,7 @@ static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port
 extern "C" {
     pub fn rdmsr_safe(msr : u32, dst : *mut u64) -> i64;
     pub fn wrmsr_safe(msr : u32, val : u64) -> i64;
+    pub fn vmgexit_safe() -> i64;
 }
 
 fn setup_env() {
