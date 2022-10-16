@@ -61,12 +61,8 @@ global_asm!(r#"
         rep stosl
 
         /* Determine the C-bit position within PTEs. */
-        movl $0x8000001f, %eax
-        call cpuid_ebx
-        andl $0x3f, %ebx
-        subl $32, %ebx
-        xorl %edx, %edx
-        btsl %ebx, %edx
+        call get_pte_c_bit
+        movl %eax, %edx
 
         /* Populate the static page table pages with an identity mapping. */
         movl $pgtable, %edi
@@ -124,19 +120,172 @@ global_asm!(r#"
 
         lret
 
-    cpuid_ebx:
-        movl $0x9f000, %esi
-        mov (%esi), %ecx
-        addl $0x10, %esi
-        xorl %ebx, %ebx
-        1: cmpl %eax, (%esi)
-        jne 2f
-        movl 28(%esi), %ebx
-        jmp 3f
-        2: addl $0x30, %esi
-        decl %ecx
-        jmp 1b
-        3: ret
+    get_pte_c_bit:
+        /*
+         * Determine the PTE C-bit position. The user could mistakenly attempt
+         * to launch the SVSM in a non-SEV-SNP environment and we should handle
+         * this gracefully here, so that a meaningful error can be reported at a
+         * later stage when the console is functional. Ultimately, the C-bit
+         * is found from CPUID 0x8000001f[%ebx]. The cpuid insn cannot be used
+         * under SEV-ES or SEV-SNP, because the HV would fail to emulate it at
+         * this point. Under SEV-SNP, there is the CPUID page, but that's not
+         * available under either SEV or SEV-ES, where the C-bit would also
+         * strictly be needed to proceed. For SEV-ES, the GHCB MSR protocol can
+         * be used to retrieve the information, but not on plain SEV -- on the
+         * latter, we're left only with the cpuid insn. For code simplicity, this
+         * approach will also be used on SEV-SNP, the more secure CPUID page will
+         * be examined at a later stage. First read from the SEV_STATUS MSR
+         * to figure out whether any and which of SEV/SEV-ES/SEV-SNP is enabled.
+         * The MSR might not exist if SEV is not supported at all, but this
+         * will be handled gracefully by __rdmsr_safe.
+         */
+        movl $0xc0010131, %ecx
+        call __rdmsr_safe
+        testl %ecx, %ecx
+        js .Lno_sev
+
+        testl $0x01, %eax
+        jz .Lno_sev
+
+        testl $0x06, %eax
+        jz .Lsev_no_es
+
+        /*
+         * First check whether the GCHB MSR exists by reading from it. If not,
+         * that's inconsistent with the SEV_STATUS MSR from above, probably
+         * meaning there's no SEV at all.
+         */
+        movl $0xc0010130, %ecx
+        call __rdmsr_safe
+        testl %ecx, %ecx
+        js .Lno_sev
+
+        /*
+         * GHCB MSR protocol: the HV is required to put an
+         * unsolicited SEV Information response into the GHCB MSR, but
+         * don't rely on it for reliability reasons. Poke the HV anyway,
+         * which will confirm that the HV is actually implementing the
+         * GHCB MSR protocol as is mandatory for SEV-ES.
+         */
+        /* Save away original GHCB MSR value so that it can be restored later. */
+        pushl %edx
+        pushl %eax
+
+        movl $0x002, %edi /* SEV Information Request */
+        call __ghcb_msr_proto_safe
+        testl %ecx, %ecx
+        js .Lno_sev_restore_ghcb_msr
+
+        /*
+         * Bits 31:24 in an SEV Information Response contain the C-bit position.
+         * Save away for later.
+         */
+        movl %eax, %ebx
+
+        andl $0xfff, %eax
+        cmpl $0x001, %eax /* SEV Information Response? */
+        js .Lno_sev_restore_ghcb_msr
+
+        /*
+         * Check the announced min and max supported GHCB protocol version.
+         * Versions 1 and 2 have been published as of now, so
+         * min should be <= 2, max should be >= 1.
+         */
+        movl %edx, %eax
+        andl $0xffff, %eax
+        cmpl $2, %eax
+        ja .Lno_sev_restore_ghcb_msr
+
+        shrl $16, %edx
+        cmpl $1, %edx
+        jl .Lno_sev_restore_ghcb_msr
+
+        /*
+         * Alright, all evidence suggests that the HV is responding
+         * properly to GHCB MSR protocol requests. That's convincing
+         * enough that we're running under SEV-ES or SEV-SNP. As a last
+         * check verify that the announced C-bit position is within
+         * reasonable bounds: >= 32 and < 64.
+         */
+        shrl $24, %ebx
+        cmpl $32, %ebx
+        jl .Lno_sev_restore_ghcb_msr
+        cmpl $64, %ebx
+        jae .Lno_sev_restore_ghcb_msr
+
+        /* Restore the original GHCB MSR values. */
+        popl %eax
+        popl %edx
+        movl $0xc0010130, %ecx
+        call __wrmsr_safe
+
+        subl $32, %ebx
+        xorl %eax, %eax
+        btsl %ebx, %eax
+        ret
+
+    .Lno_sev_restore_ghcb_msr:
+        popl %eax
+        popl %edx
+        movl $0xc0010130, %ecx
+        call __wrmsr_safe
+        jmp .Lno_sev
+
+    .Lsev_no_es:
+        /*
+         * The SEV_STATUS MSR indicates SEV is enabled, but there is no
+         * confirmation the MSR is actually what we think it is, i.e.
+         * that we're running on SEV-capable HW. Confirm that now.
+         */
+        /*
+         * Vendor should indicate "AuthenticAMD", maximum supported
+         * extended cpuid function should cover
+         * 0x8000001f ("Encrypted Memory Capabilities")
+         */
+        movl $0x80000000, %eax
+        cpuid
+        cmpl $0x68747541, %ebx
+        jne .Lno_sev
+        cmpl $0x444d4163, %ecx
+        jne .Lno_sev
+        cmpl $0x69746e65, %edx
+        jne .Lno_sev
+        cmpl $0x8000001f, %eax
+        jl .Lno_sev
+
+        /* 0x8000001f[%eax] shall indicate SEV support. */
+        movl $0x8000001f, %eax
+        cpuid
+        testl $0x02, %eax
+        jz .Lno_sev
+
+        /* C-bit position is in %ebx' lowest 6 bits. */
+        andl $0x3f, %ebx
+        subl $32, %ebx
+        xorl %eax, %eax
+        btsl %ebx, %eax
+        ret
+
+    .Lno_sev:
+        xorl %eax, %eax
+        ret
+
+    __ghcb_msr_proto_safe:
+        movl %edi, %eax
+        xorl %edx, %edx
+        movl $0xc0010130, %ecx
+        call __wrmsr_safe
+        testl %ecx, %ecx
+        jns 1f
+        ret
+        1: call __vmgexit_safe
+        testl %eax, %eax
+        jns 2f
+        movl %eax, %ecx
+        ret
+        2: movl $0xc0010130, %ecx
+        call __rdmsr_safe
+        ret
 
     __rdmsr_safe:
     .Lrdmsr:
