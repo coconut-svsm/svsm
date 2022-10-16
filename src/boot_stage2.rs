@@ -17,6 +17,10 @@ global_asm!(r#"
         .globl startup_32
         startup_32:
 
+        /*
+         * Load a GDT. Despite the naming, it contains valid
+         * entries for both, "legacy" 32bit and long mode each.
+         */
         movl $gdt64_desc, %eax
         lgdt (%eax)
 
@@ -36,6 +40,7 @@ global_asm!(r#"
         push    %esi
         push    %edi
 
+        /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
         subl $pgtable, %ecx
         shrl $2, %ecx
@@ -43,12 +48,15 @@ global_asm!(r#"
         movl $pgtable, %edi
         rep stosl
 
+        /* Determine the C-bit position within PTEs. */
         movl $0x8000001f, %eax
         call cpuid_ebx
         andl $0x3f, %ebx
         subl $32, %ebx
         xorl %edx, %edx
         btsl %ebx, %edx
+
+        /* Populate the static page table pages with an identity mapping. */
         movl $pgtable, %edi
         leal 0x1007(%edi), %eax
         movl %eax, 0(%edi)
@@ -75,18 +83,22 @@ global_asm!(r#"
         decl %ecx
         jnz 1b
 
+        /* Enable 64bit PTEs, CR4.PAE. */
         movl %cr4, %eax
         bts $5, %eax
         movl %eax, %cr4
 
+        /* Enable long mode, EFER.LME. */
         movl $0xc0000080, %ecx
         rdmsr
         bts $8, %eax
         wrmsr
 
+        /* Load the static page table root. */
         movl $pgtable, %eax
         movl %eax, %cr3
 
+        /* Enable paging, CR0.PG. */
         movl %cr0, %eax
         bts $31, %eax
         movl %eax, %cr0
@@ -117,6 +129,7 @@ global_asm!(r#"
         .code64
 
     startup_64:
+        /* Reload the data segments with 64bit descriptors. */
         movw $0x20, %ax
         movw %ax, %ds
         movw %ax, %es
@@ -124,6 +137,7 @@ global_asm!(r#"
         movw %ax, %gs
         movw %ax, %ss
 
+        /* Clear out .bss and transfer control to the main stage2 code. */
         pushq   %rdi
         xorq %rax, %rax
         leaq _bss(%rip), %rdi
@@ -150,10 +164,10 @@ global_asm!(r#"
         .align 256
     gdt64:
         .quad 0
-        .quad 0x00cf9a000000ffff
-        .quad 0x00cf93000000ffff
-        .quad 0x00af9a000000ffff
-        .quad 0x00cf92000000ffff
+        .quad 0x00cf9a000000ffff /* 32 bit code segment */
+        .quad 0x00cf93000000ffff /* 32 bit data segment */
+        .quad 0x00af9a000000ffff /* 64 bit code segment */
+        .quad 0x00cf92000000ffff /* 64 bit data segment */
     gdt64_end:
 
     gdt64_desc:
