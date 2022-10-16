@@ -369,6 +369,10 @@ global_asm!(r#"
         movw %ax, %gs
         movw %ax, %ss
 
+        /* Load the 64bit IDT. */
+        movq $idt64_desc, %rax
+        lidtq (%rax)
+
         /* Clear out .bss and transfer control to the main stage2 code. */
         pushq   %rdi
         xorq %rax, %rax
@@ -381,6 +385,18 @@ global_asm!(r#"
 
         jmp stage2_main
 
+    idt64_install_handler:
+       shlq $4, %rdi
+       leaq idt64(%rdi), %rdi
+       movw %si, (%rdi)
+       movw $0x18, 2(%rdi) /* 64 bit CS */
+       movw $0xef00, 4(%rdi) /* type = 0xf, dpl = 0x3, p = 1 */
+       shrq $16, %rsi
+       movw %si, 6(%rdi)
+       shrq $16, %rsi
+       movl %esi, 8(%rdi)
+       ret
+
         .data
 
     idt32:
@@ -392,6 +408,16 @@ global_asm!(r#"
     idt32_desc:
         .word idt32_end - idt32 - 1
         .long idt32
+
+    idt64:
+        .rept 32
+        .octa 0
+        .endr
+    idt64_end:
+
+    idt64_desc:
+        .word idt64_end - idt64 - 1
+        .quad idt64
 
         .align 256
     gdt64:
