@@ -40,7 +40,11 @@ global_asm!(r#"
         push    %esi
         push    %edi
 
-        /* Load the 32bit IDT. */
+        /* Prepare and load the 32bit IDT. */
+        movl $13, %edi /* #GP */
+        movl $gp_msr_fixup_handler32, %esi
+        call idt32_install_handler
+
         movl $idt32_desc, %eax
         lidtl (%eax)
 
@@ -130,6 +134,24 @@ global_asm!(r#"
         jmp 1b
         3: ret
 
+    __rdmsr_safe:
+    .Lrdmsr:
+        rdmsr
+        xorl %ecx, %ecx
+        ret
+    .Lrdmsr_fixup:
+        movl $-1, %ecx
+        ret
+
+    __wrmsr_safe:
+    .Lwrmsr:
+        wrmsr
+        xorl %ecx, %ecx
+        ret
+    .Lwrmsr_fixup:
+        movl $-1, %ecx
+        ret
+
     idt32_install_handler:
        leal idt32(, %edi, 8), %edi
        movw %si, (%edi)
@@ -138,6 +160,27 @@ global_asm!(r#"
        shrl $16, %esi
        movw %si, 6(%edi)
        ret
+
+    gp_msr_fixup_handler32:
+        pushl %eax
+        movl 4+4(%esp), %eax /* saved %eip */
+
+        cmpl $.Lrdmsr, %eax
+        jne 1f
+        movl $.Lrdmsr_fixup, %eax
+        movl %eax, 4+4(%esp)
+        jmp 2f
+
+        1:cmpl $.Lwrmsr, %eax
+        jne 3f
+        movl $.Lwrmsr_fixup, %eax
+        movl %eax, 4+4(%esp)
+
+        2: popl %eax
+        addl $4, %esp /* Pop off error code from the stack. */
+        iretl
+
+        3: ud2 /* Unexpected #GP, not much we can do about it. */
 
         .code64
 
