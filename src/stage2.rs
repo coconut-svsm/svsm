@@ -27,7 +27,7 @@ pub mod mm;
 
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
-use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
+use mm::pagetable::{PageTable, PTEntryFlags, paging_init, paging_init_early};
 use sev::status::SEVStatusFlags;
 use sev::{sev_status_init, sev_status_verify, pvalidate};
 use util::{page_align, page_align_up, halt};
@@ -205,17 +205,20 @@ fn setup_env() {
     // SVSMIOPort console, which requires a functional GHCB protocol. If the
     // GHCB is not available, indicating that SEV-ES is probably not active, the
     // last resort is to print an error to the standard serial using emulated io
-    // insns and hope that it reaches the user.
-    if let Err(_) = sev_ghcb_msr_available() {
-        unsafe { DEFAULT_SERIAL_PORT.init(); }
-        init_console();
-        panic!("SEV-ES not available");
-    }
+    // insns and hope that it reaches the user. If SEV-ES is enabled, the
+    // SVSMIOPort needs the GHCB initialized, which in turn requires the paging
+    // subsystem to be in a tentative working state.
+    match sev_ghcb_msr_available() {
+        Ok(encrypt_mask) => paging_init_early(encrypt_mask),
+        Err(_) => {
+            unsafe { DEFAULT_SERIAL_PORT.init(); }
+            init_console();
+            panic!("SEV-ES not available");
+        },
+    };
 
-    // SEV-ES is enabled, we must use the SVSMIOPort console, because emulated IO
-    // would not work. The SVSMIOPort in turn needs the GHCB initialized.
+    // Bring up the GCHB for use from the SVSMIOPort console.
     sev_status_init();
-    paging_init();
     setup_stage2_allocator();
     init_percpu();
 
@@ -225,6 +228,12 @@ fn setup_env() {
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
     sev_status_verify();
+
+    // At this point SEV-SNP is confirmed to be active and the CPUID table
+    // should be available. Fully initialize the paging subsystem now. In
+    // particular this verifies that the C-bit from the CPUID table matches what
+    // has been obtained above.
+    paging_init();
 }
 
 const KERNEL_VIRT_ADDR : VirtAddr = 0xffff_ff80_0000_0000;
