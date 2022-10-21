@@ -8,7 +8,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
+#![feature(const_mut_refs,rustc_private)]
 
 pub mod kernel_launch;
 pub mod svsm_console;
@@ -25,6 +25,7 @@ pub mod sev;
 pub mod io;
 pub mod mm;
 
+extern crate compiler_builtins;
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
@@ -225,13 +226,9 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
     // Shut down the GHCB
     shutdown_percpu();
 
-    asm!("cld
-          rep movsb",
-          in("rsi") kli.k_image_start,
-          in("rdi") kli.virt_base,
-          in("rcx") image_size,
-          options(att_syntax));
-
+    compiler_builtins::mem::memcpy(kli.virt_base as *mut u8,
+                                   kli.k_image_start as *const u8,
+                                   image_size);
     asm!("jmp *%rax",
           in("rax") kli.entry,
           in("rdx") phys_offset,
