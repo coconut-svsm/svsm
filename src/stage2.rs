@@ -8,7 +8,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
+#![feature(const_mut_refs,rustc_private)]
 
 pub mod kernel_launch;
 pub mod svsm_console;
@@ -25,6 +25,7 @@ pub mod sev;
 pub mod io;
 pub mod mm;
 
+extern crate compiler_builtins;
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
 use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
@@ -132,8 +133,6 @@ fn setup_env() {
     init_console();
 }
 
-const KERNEL_VIRT_ADDR : VirtAddr = 0xffff_ff80_0000_0000;
-
 fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Result<(), ()> {
     let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY;
 
@@ -155,16 +154,14 @@ fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Re
     Ok(())
 }
 
-fn map_kernel_region(region : &KernelRegion) -> Result<(),()> {
-    let kaddr = KERNEL_VIRT_ADDR;
+fn map_kernel_region(vaddr: VirtAddr, region : &KernelRegion) -> Result<(),()> {
     let paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
 
-    map_memory(paddr, pend, kaddr)
+    map_memory(paddr, pend, vaddr)
 }
 
-fn validate_kernel_region(region : &KernelRegion) -> Result<(), ()> {
-    let mut kaddr = KERNEL_VIRT_ADDR;
+fn validate_kernel_region(mut vaddr: VirtAddr, region : &KernelRegion) -> Result<(), ()> {
     let mut paddr = region.start as PhysAddr;
     let pend  = region.end as PhysAddr;
 
@@ -175,12 +172,12 @@ fn validate_kernel_region(region : &KernelRegion) -> Result<(), ()> {
             return Err(());
         }
 
-        if let Err(_e) = pvalidate(kaddr, false, true) {
-            println!("Error: PVALIDATE failed for virtual address {:#018x}", kaddr);
+        if let Err(_e) = pvalidate(vaddr, false, true) {
+            println!("Error: PVALIDATE failed for virtual address {:#018x}", vaddr);
             return Err(());
         }
 
-        kaddr += 4096;
+        vaddr += 4096;
         paddr += 4096;
 
         if paddr >= pend {
@@ -209,7 +206,6 @@ struct KInfo {
 
 unsafe fn copy_and_launch_kernel(kli : KInfo) {
     let image_size = kli.k_image_end - kli.k_image_start;
-    let phys_offset = kli.virt_base - kli.phys_base;
     let kernel_launch_info = KernelLaunchInfo {
         kernel_start : kli.phys_base as u64,
         kernel_end   : kli.phys_end  as u64,
@@ -229,14 +225,11 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
     // Shut down the GHCB
     shutdown_percpu();
 
-    asm!("cld
-          rep movsb
-          jmp *%rax",
-          in("rsi") kli.k_image_start,
-          in("rdi") kli.virt_base,
-          in("rcx") image_size,
+    compiler_builtins::mem::memcpy(kli.virt_base as *mut u8,
+                                   kli.k_image_start as *const u8,
+                                   image_size);
+    asm!("jmp *%rax",
           in("rax") kli.entry,
-          in("rdx") phys_offset,
           in("r8") &kernel_launch_info,
           options(att_syntax));
 }
@@ -253,24 +246,25 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 
     println!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-    map_kernel_region(&r).expect("Error mapping kernel region");
-    validate_kernel_region(&r).expect("Validating kernel region failed");
+    let (kernel_virt_base, kernel_entry) = unsafe {
+        let kmd : *const KernelMetaData =  kernel_start as *const KernelMetaData;
+        ((*kmd).virt_addr, (*kmd).entry)
+    };
+
+    map_kernel_region(kernel_virt_base, &r).expect("Error mapping kernel region");
+    validate_kernel_region(kernel_virt_base, &r).expect("Validating kernel region failed");
+
+    let mem_info = memory_info();
+    print_memory_info(&mem_info);
 
     unsafe {
-        let kmd : *const KernelMetaData = kernel_start as *const KernelMetaData;
-        let vaddr = (*kmd).virt_addr as VirtAddr;
-        let entry = (*kmd).entry as VirtAddr;
-
-        let mem_info = memory_info();
-        print_memory_info(&mem_info);
-
         copy_and_launch_kernel( KInfo {
                         k_image_start   : kernel_start,
                         k_image_end : kernel_end,
                         phys_base   : r.start as usize,
                         phys_end    : r.end as usize,
-                        virt_base   : vaddr,
-                        entry       : entry } );
+                        virt_base   : kernel_virt_base,
+                        entry       : kernel_entry } );
         // This should never return
     }
 
