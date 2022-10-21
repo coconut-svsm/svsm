@@ -99,7 +99,7 @@ global_asm!(r#"
 
         .align 4096
     bsp_stack:
-        .fill 4096, 1, 0
+        .fill 8192, 1, 0
     bsp_stack_end:
 
         .bss
