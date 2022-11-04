@@ -53,7 +53,7 @@ use cpu::gdt::load_gdt;
 use crate::util::halt;
 use types::VirtAddr;
 use fw_cfg::FwCfg;
-
+use crate::sev::vmsa::VMSA;
 use cpu::vmsa::init_svsm_vmsa;
 
 pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
@@ -206,7 +206,15 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     let rsp = stack_base_pointer(stack) as u64;
 
     this_cpu_mut().prepare_svsm_vmsa(rip, rsp);
+    let sev_features = this_cpu_mut().vmsa(RMPFlags::VMPL0).sev_features;
 
+    let vmsa_addr : VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
+    let vmsa_pa = virt_to_phys(vmsa_addr);
+
+    println!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
+
+
+    this_cpu_mut().ghcb().ap_create(vmsa_pa, 0, 0, sev_features).expect("Failed to load boot CPU VMSA");
 
     // Enable runtime stack and jump to main function
     unsafe {

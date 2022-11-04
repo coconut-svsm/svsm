@@ -9,7 +9,7 @@
 use crate::{map_page_shared, map_page_encrypted};
 use crate::mm::pagetable::{flush_tlb_global};
 use crate::cpu::msr::{write_msr, SEV_GHCB};
-use crate::types::{VirtAddr};
+use crate::types::{VirtAddr, PhysAddr};
 use crate::virt_to_phys;
 use core::cell::RefCell;
 use crate::io::IOPort;
@@ -19,23 +19,23 @@ use super::msr_protocol::{register_ghcb_gpa_msr, request_termination_msr, invali
 use super::pvalidate;
 
 // TODO: Fix this when Rust gets decent compile time struct offset support
-const OFF_CPL           : u16 = 0xcb;
-const OFF_XSS           : u16 = 0x140;
-const OFF_DR7           : u16 = 0x160;
-const OFF_RAX           : u16 = 0x1f8;
-const OFF_RCX           : u16 = 0x308;
-const OFF_RDX           : u16 = 0x310;
-const OFF_RBX           : u16 = 0x318;
+const OFF_CPL               : u16 = 0xcb;
+const OFF_XSS               : u16 = 0x140;
+const OFF_DR7               : u16 = 0x160;
+const OFF_RAX               : u16 = 0x1f8;
+const OFF_RCX               : u16 = 0x308;
+const OFF_RDX               : u16 = 0x310;
+const OFF_RBX               : u16 = 0x318;
 const OFF_SW_EXIT_CODE      : u16 = 0x390;
 const OFF_SW_EXIT_INFO_1    : u16 = 0x398;
 const OFF_SW_EXIT_INFO_2    : u16 = 0x3a0;
 const OFF_SW_SCRATCH        : u16 = 0x3a8;
-const OFF_XCR0          : u16 = 0x3e8;
+const OFF_XCR0              : u16 = 0x3e8;
 const OFF_VALID_BITMAP      : u16 = 0x3f0;
 const OFF_X87_STATE_GPA     : u16 = 0x400;
-const _OFF_BUFFER       : u16 = 0x800;
-const OFF_VERSION       : u16 = 0xffa;
-const OFF_USAGE         : u16 = 0xffc;
+const _OFF_BUFFER           : u16 = 0x800;
+const OFF_VERSION           : u16 = 0xffa;
+const OFF_USAGE             : u16 = 0xffc;
 
 #[repr(C, packed)]
 pub struct PageStateChange {
@@ -99,6 +99,7 @@ enum GHCBExitCode {}
 
 impl GHCBExitCode {
     pub const IOIO : u64 = 0x7b;
+    pub const AP_CREATE : u64 = 0x80000013;
 }
 
 pub enum GHCBIOSize {
@@ -307,10 +308,15 @@ impl GHCB {
 
         self.set_rax(value);
 
-        match self.vmgexit(GHCBExitCode::IOIO, info, 0) {
-            Ok(()) => Ok(()),
-            Err(()) => Err(()),
-        }
+        self.vmgexit(GHCBExitCode::IOIO, info, 0)
+    }
+
+    pub fn ap_create(&mut self, vmsa_gpa : PhysAddr, apic_id : u64, vmpl : u64, sev_features : u64) -> Result<(), ()> {
+        self.clear();
+        let exit_info_1 : u64 = 1 | (vmpl & 0xf) << 16 | apic_id << 32;
+        let exit_info_2 : u64 = vmsa_gpa as u64;
+        self.set_rax(sev_features);
+        self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)
     }
 }
 
