@@ -12,7 +12,7 @@ use crate::mm::pagetable::flush_tlb_global;
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::{map_data_4k, unmap_4k};
 use crate::locking::SpinLock;
-use crate::util::ffs;
+use crate::utils::ffs;
 
 const STACK_RANGE_START : VirtAddr = 0xffff_ff80_4000_0000;
 const STACK_RANGE_END   : VirtAddr = 0xffff_ff80_8000_0000;

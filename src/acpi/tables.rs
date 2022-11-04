@@ -7,12 +7,12 @@
 // vim: ts=4 sw=4 et
 
 use crate::string::FixedString;
-use crate::lib::alloc::{alloc, dealloc, handle_alloc_error};
+use crate::utils::{alloc, dealloc, handle_alloc_error};
 use crate::fw_cfg::FwCfg;
 use core::ptr;
 use core::mem;
 use core::alloc::Layout;
-use crate::lib::vec::Vec;
+use crate::utils::vec::Vec;
 
 use crate::println;
 

@@ -10,7 +10,7 @@ use crate::types::{VirtAddr, SVSM_CS};
 use core::arch::{asm, global_asm};
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
-use crate::util::halt;
+use crate::utils::halt;
 use crate::println;
 use core::mem;
 

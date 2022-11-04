@@ -10,7 +10,7 @@ use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SHIFT};
 use crate::kernel_launch::KernelLaunchInfo;
 use core::alloc::{GlobalAlloc, Layout};
 use crate::locking::SpinLock;
-use crate::util::align_up;
+use crate::utils::align_up;
 use core::mem::size_of;
 use crate::heap_start;
 use core::arch::asm;

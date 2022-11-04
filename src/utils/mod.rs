@@ -7,6 +7,8 @@
 // vim: ts=4 sw=4 et
 
 pub mod alloc;
+pub mod util;
 pub mod vec;
 
 pub use alloc::{alloc, dealloc, alloc_zeroed, realloc, handle_alloc_error};
+pub use util::{align_up, page_align, page_align_up, ffs, halt};
