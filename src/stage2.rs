@@ -37,7 +37,7 @@ use cpu::msr;
 use sev::msr_protocol::{validate_page_msr,GHCBMsr};
 use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
-use console::{WRITER, init_console};
+use console::{WRITER, init_console, install_console_logger};
 use fw_cfg::{FwCfg, KernelRegion};
 use core::alloc::GlobalAlloc;
 use core::panic::PanicInfo;
@@ -209,6 +209,8 @@ fn sev_ghcb_msr_available() -> Result<u64, ()> {
 }
 
 fn setup_env() {
+    install_console_logger("Stage2");
+
     // Under SVM-ES, the only means to communicate with the user is through the
     // SVSMIOPort console, which requires a functional GHCB protocol. If the
     // GHCB is not available, indicating that SEV-ES is probably not active, the
@@ -384,15 +386,4 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 fn panic(info : &PanicInfo) -> ! {
     println!("Panic: {}", info);
     loop { halt(); }
-}
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::console::_print(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("[Stage2] {}\n", format_args!($($arg)*)));
 }

@@ -39,7 +39,7 @@ use crate::cpu::control_regs::{cr0_init, cr4_init};
 use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
 use cpu::idt::{early_idt_init, idt_init};
 use acpi::tables::load_acpi_cpu_info;
-use console::{WRITER, init_console};
+use console::{WRITER, init_console, install_console_logger};
 use crate::svsm_console::SVSMIOPort;
 use kernel_launch::KernelLaunchInfo;
 use core::arch::{global_asm, asm};
@@ -179,6 +179,7 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
 
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();
+    install_console_logger("SVSM");
 
     println!("Secure Virtual Machine Service Module (SVSM)");
 
@@ -243,15 +244,4 @@ pub extern "C" fn svsm_main() {
 fn panic(info : &PanicInfo) -> ! {
     println!("Panic: {}", info);
     loop { halt(); }
-}
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::console::_print(format_args!($($arg)*)));
-}
-
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("[SVSM] {}\n", format_args!($($arg)*)));
 }
