@@ -12,9 +12,11 @@ use crate::types::{PhysAddr, VirtAddr};
 use super::utils::raw_vmgexit;
 
 #[non_exhaustive]
-enum GHCBMsr {}
+pub enum GHCBMsr {}
 
 impl GHCBMsr {
+    pub const SEV_INFO_REQ          : u64 = 0x02;
+    pub const SEV_INFO_RESP         : u64 = 0x01;
     pub const SNP_REG_GHCB_GPA_REQ  : u64 = 0x12;
     pub const SNP_REG_GHCB_GPA_RESP : u64 = 0x13;
     pub const SNP_STATE_CHANGE_REQ  : u64 = 0x14;

@@ -17,6 +17,15 @@ const ENTRY_COUNT   : usize = 512;
 static mut ENCRYPT_MASK : usize = 0;
 static mut FEATURE_MASK : PTEntryFlags = PTEntryFlags::empty();
 
+pub fn paging_init_early(encrypt_mask : u64) {
+    unsafe{ENCRYPT_MASK = encrypt_mask as usize};
+
+    let mut feature_mask = PTEntryFlags::all();
+    feature_mask.remove(PTEntryFlags::NX);
+    feature_mask.remove(PTEntryFlags::GLOBAL);
+    unsafe{FEATURE_MASK = feature_mask};
+}
+
 pub fn paging_init() {
     // Find C bit position
     let res = cpuid_table(0x8000001f);
@@ -26,9 +35,18 @@ pub fn paging_init() {
     }
 
     let c_bit = res.unwrap().ebx & 0x3f;
+    let new_encrypt_mask = 1usize << c_bit;
+    let old_encrypt_mask = unsafe{ENCRYPT_MASK};
+    if old_encrypt_mask != 0 && old_encrypt_mask != new_encrypt_mask {
+        // The ENCRYPT_MASK has previously obtained by some other means,
+        // e.g. through a GHCB MSR protocol info request, and is inconsistent
+        // with what the more secure cpuid page says. Either the HV is buggy or
+        // is trying to actively fool us.
+        panic!("Early C-Bit position inconsistent with CPUID table");
+    }
 
     unsafe {
-        ENCRYPT_MASK = 1usize << c_bit;
+        ENCRYPT_MASK = new_encrypt_mask;
 
         FEATURE_MASK = PTEntryFlags::all();
 

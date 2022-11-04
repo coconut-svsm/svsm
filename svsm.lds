@@ -4,6 +4,10 @@ SECTIONS
 {
 	. = 0xffffff8000000000;
 	stext = .;
+	.kernel_metadata : {
+		QUAD(.)
+		QUAD(startup_64)
+	}
 	.text : { *(.startup.*) *(.text) *(.text.*) }
 	. = ALIGN(4096);
 	etext = .;

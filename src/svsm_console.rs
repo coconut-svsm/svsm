@@ -51,5 +51,3 @@ impl IOPort for SVSMIOPort {
         }
     }
 }
-
-
