@@ -14,11 +14,11 @@ SECTIONS
 	. = .stext;
 	.text : { *(.startup.*) *(.text) *(.text.*) }
 
-	.sdata = ALIGN(.srodata - SIZEOF(.data) - 15, 16);
+	.sdata = ALIGN(.srodata - SIZEOF(.data) - 4095, 4096);
 	. = .sdata;
 	.data : { *(.data) }
 
-	.srodata = ALIGN(.sbss - SIZEOF(.rodata) - 15, 16);
+	.srodata = ALIGN(.sbss - SIZEOF(.rodata) - 4095, 4096);
 	. = .srodata;
 	.rodata : { *(.rodata) }
 
@@ -27,7 +27,7 @@ SECTIONS
 	 * symbols don't alias, which would be confusing when
 	 * examining the resulting binary.
 	 */
-	.sbss = ALIGN(.sinit - SIZEOF(.bss) - 15 - 1, 16);
+	.sbss = ALIGN(.sinit - SIZEOF(.bss) - 4095 - 1, 4096);
 	. = .sbss;
 	.bss . : { *(.bss) }
 	edata = .;
