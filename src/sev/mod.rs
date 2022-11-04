@@ -14,11 +14,6 @@ pub mod vmsa;
 mod utils;
 
 pub use utils::{PValidateError, pvalidate};
-pub use status::sev_es_enabled;
-
-use status::{sev_status_init};
-
-pub fn sev_init() {
-    sev_status_init();
-}
-
+pub use status::sev_status_init;
+pub use status::{sev_es_enabled, sev_snp_enabled};
+pub use status::sev_status_verify;

@@ -10,20 +10,31 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	. = 0x00000000;
-	.stext = .;
+	.stext = ALIGN(.sdata  - SIZEOF(.text) - 4095, 4096);
+	. = .stext;
 	.text : { *(.startup.*) *(.text) *(.text.*) }
-	. = ALIGN(16);
+
+	.sdata = ALIGN(.srodata - SIZEOF(.data) - 15, 16);
+	. = .sdata;
 	.data : { *(.data) }
-	. = ALIGN(16);
+
+	.srodata = ALIGN(.sbss - SIZEOF(.rodata) - 15, 16);
+	. = .srodata;
 	.rodata : { *(.rodata) }
-	. = ALIGN(16);
-	.bss : { *(.bss) }
-	. = ALIGN(16);
+
+	/*
+	 * Subtract an extra byte so that edata and the .init function
+	 * symbols don't alias, which would be confusing when
+	 * examining the resulting binary.
+	 */
+	.sbss = ALIGN(.sinit - SIZEOF(.bss) - 15 - 1, 16);
+	. = .sbss;
+	.bss . : { *(.bss) }
 	edata = .;
-	. = 0x000ffe00;
+
+	. = 0xfffffe00;
 	.sinit = .;
-	.init : {
+	.init . : {
 		*(.init);
 		. = 512 - 32 - 256;
 		*(.sevmeta);
@@ -32,6 +43,8 @@ SECTIONS
 		. = 512;
 	}
 	einit = .;
+
+	/DISCARD/ : {*(.*)}
 }
 
 ENTRY(startup_32)

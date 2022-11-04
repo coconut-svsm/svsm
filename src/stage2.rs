@@ -28,11 +28,13 @@ pub mod mm;
 extern crate compiler_builtins;
 use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
 use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
-use mm::pagetable::{PageTable, PTEntryFlags, paging_init};
-use sev::{sev_init, sev_es_enabled, pvalidate};
+use mm::pagetable::{PageTable, PTEntryFlags, paging_init, paging_init_early};
+use sev::status::SEVStatusFlags;
+use sev::{sev_status_init, sev_status_verify, pvalidate};
 use util::{page_align, page_align_up, halt};
 use types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use sev::msr_protocol::validate_page_msr;
+use cpu::msr;
+use sev::msr_protocol::{validate_page_msr,GHCBMsr};
 use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
 use console::{WRITER, init_console};
@@ -119,18 +121,120 @@ fn shutdown_percpu() {
 static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
 static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
 
+extern "C" {
+    pub fn rdmsr_safe(msr : u32, dst : *mut u64) -> i64;
+    pub fn wrmsr_safe(msr : u32, val : u64) -> i64;
+    pub fn vmgexit_safe() -> i64;
+}
+
+// For use at an early stage when it's neither known yet that the GHCB MSR is
+// valid (and thus, accesses can #GP) nor that the HV is implementing the GHCB
+// MSR protocol on it.
+fn ghcb_msr_proto_safe(cmd : u64) -> Result<u64, ()> {
+    let mut orig_msr_val : u64 = 0;
+    if unsafe{rdmsr_safe(msr::SEV_GHCB, &mut orig_msr_val as *mut u64)} != 0 {
+        return Err(())
+    }
+
+    if unsafe{wrmsr_safe(msr::SEV_GHCB, cmd)} != 0 {
+        return Err(());
+    }
+
+    if unsafe{vmgexit_safe()} != 0 {
+        unsafe{wrmsr_safe(msr::SEV_GHCB, orig_msr_val)};
+        return Err(());
+    }
+
+    let mut response : u64 = 0;
+    let r = unsafe{rdmsr_safe(msr::SEV_GHCB, &mut response as *mut u64)};
+    unsafe{wrmsr_safe(msr::SEV_GHCB, orig_msr_val)};
+    if r != 0 {
+        return Err(())
+    }
+
+    Ok(response)
+}
+
+// Check that the SEV_STATUS and GHCB MSRs are present and behaving as expected.
+// In particular, it's being verified that the HV respnds properly to the GHCB
+// MSR protocol. Returns the (untrusted!) PTE C-bit position as a byproduct on
+// success.
+fn sev_ghcb_msr_available() -> Result<u64, ()> {
+     // First check: the SEV_STATUS MSR should be present and indicate that
+     // either SEV_ES or SEV_SNP is active.
+    let mut status_raw : u64 = 0;
+    if unsafe{rdmsr_safe(msr::SEV_STATUS, &mut status_raw)} != 0 {
+        return Err(());
+    }
+
+    let status = SEVStatusFlags::from_bits_truncate(status_raw);
+    if !status.contains(SEVStatusFlags::SEV_ES) && !status.contains(SEVStatusFlags::SEV_SNP) {
+        return Err(());
+    }
+
+    // Second check: the GHCB MSR should be present and the HV should respond
+    // to GHCB MSR protocol info requests.
+    let sev_info = match ghcb_msr_proto_safe(GHCBMsr::SEV_INFO_REQ) {
+        Ok(info) => info,
+        Err(_) => return Err(()),
+    };
+
+    if sev_info & 0xfffu64 != GHCBMsr::SEV_INFO_RESP {
+        return Err(());
+    }
+
+    // Compare announced supported GHCB MSR protocol version range
+    // for compatibility.
+    let min_version = (sev_info >> 32) & 0xffffu64;
+    let max_version = (sev_info >> 48) & 0xffffu64;
+    if min_version > 2 || max_version < 1 {
+        return Err(());
+    }
+
+    // Retrieve the PTE C-bit position and check its range.
+    let c_bit_pos = sev_info >> 24 & 0x3fu64;
+    if c_bit_pos < 32 || c_bit_pos >= 64 {
+        return Err(());
+    }
+
+    let encrypt_mask : u64 = 1u64 << c_bit_pos;
+    Ok(encrypt_mask)
+}
+
 fn setup_env() {
-    sev_init();
+    // Under SVM-ES, the only means to communicate with the user is through the
+    // SVSMIOPort console, which requires a functional GHCB protocol. If the
+    // GHCB is not available, indicating that SEV-ES is probably not active, the
+    // last resort is to print an error to the standard serial using emulated io
+    // insns and hope that it reaches the user. If SEV-ES is enabled, the
+    // SVSMIOPort needs the GHCB initialized, which in turn requires the paging
+    // subsystem to be in a tentative working state.
+    match sev_ghcb_msr_available() {
+        Ok(encrypt_mask) => paging_init_early(encrypt_mask),
+        Err(_) => {
+            unsafe { DEFAULT_SERIAL_PORT.init(); }
+            init_console();
+            panic!("SEV-ES not available");
+        },
+    };
+
+    // Bring up the GCHB for use from the SVSMIOPort console.
+    sev_status_init();
     setup_stage2_allocator();
     init_percpu();
 
-    if !sev_es_enabled() {
-        unsafe { DEFAULT_SERIAL_PORT.init(); }
-        panic!("SEV-ES not available");
-    }
-
     unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
     init_console();
+
+    // Console is fully working now and any unsupported configuration can be
+    // properly reported.
+    sev_status_verify();
+
+    // At this point SEV-SNP is confirmed to be active and the CPUID table
+    // should be available. Fully initialize the paging subsystem now. In
+    // particular this verifies that the C-bit from the CPUID table matches what
+    // has been obtained above.
+    paging_init();
 }
 
 fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Result<(), ()> {
@@ -236,9 +340,7 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 
 #[no_mangle]
 pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
-    paging_init();
     setup_env();
-    sev_init();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
