@@ -6,13 +6,13 @@
 //
 // vim: ts=4 sw=4 et
 
-use core::sync::atomic::{AtomicU64, Ordering};
-use core::ops::{Deref, DerefMut};
 use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub struct LockGuard<'a, T> {
-    holder  : &'a AtomicU64,
-    data    : &'a mut T,
+    holder: &'a AtomicU64,
+    data: &'a mut T,
 }
 
 impl<'a, T> Drop for LockGuard<'a, T> {
@@ -22,18 +22,18 @@ impl<'a, T> Drop for LockGuard<'a, T> {
 }
 
 pub struct SpinLock<T> {
-    current : AtomicU64,
-    holder  : AtomicU64,
-    data    : UnsafeCell<T>,
+    current: AtomicU64,
+    holder: AtomicU64,
+    data: UnsafeCell<T>,
 }
 
-unsafe impl<T> Sync for SpinLock<T> { }
+unsafe impl<T> Sync for SpinLock<T> {}
 
 impl<T> SpinLock<T> {
     pub const fn new(data: T) -> Self {
         SpinLock {
             current: AtomicU64::new(0),
-            holder:  AtomicU64::new(0),
+            holder: AtomicU64::new(0),
             data: UnsafeCell::new(data),
         }
     }
@@ -47,8 +47,8 @@ impl<T> SpinLock<T> {
             }
         }
         LockGuard {
-            holder  : &self.holder,
-            data : unsafe { &mut *self.data.get() },
+            holder: &self.holder,
+            data: unsafe { &mut *self.data.get() },
         }
     }
 
@@ -57,14 +57,14 @@ impl<T> SpinLock<T> {
     }
 }
 
-impl <'a, T> Deref for LockGuard<'a, T> {
+impl<'a, T> Deref for LockGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl <'a, T> DerefMut for LockGuard<'a, T> {
+impl<'a, T> DerefMut for LockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }

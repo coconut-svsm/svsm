@@ -8,43 +8,43 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs,rustc_private)]
+#![feature(const_mut_refs, rustc_private)]
 
-pub mod kernel_launch;
-pub mod svsm_console;
 pub mod boot_stage2;
-pub mod locking;
 pub mod console;
-pub mod string;
-pub mod serial;
+pub mod cpu;
 pub mod fw_cfg;
+pub mod io;
+pub mod kernel_launch;
+pub mod locking;
+pub mod mm;
+pub mod serial;
+pub mod sev;
+pub mod string;
+pub mod svsm_console;
 pub mod types;
 pub mod utils;
-pub mod cpu;
-pub mod sev;
-pub mod io;
-pub mod mm;
 
 extern crate compiler_builtins;
-use mm::alloc::{root_mem_init, memory_info, ALLOCATOR, print_memory_info};
-use serial::{DEFAULT_SERIAL_PORT, SERIAL_PORT, SerialPort};
-use mm::pagetable::{PageTable, PTEntryFlags, paging_init, paging_init_early};
-use sev::status::SEVStatusFlags;
-use sev::{sev_status_init, sev_status_verify, pvalidate};
-use utils::{page_align, page_align_up, halt};
-use types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use cpu::msr;
-use sev::msr_protocol::{validate_page_msr,GHCBMsr};
-use kernel_launch::KernelLaunchInfo;
 use crate::svsm_console::SVSMIOPort;
-use console::{WRITER, init_console, install_console_logger};
-use fw_cfg::{FwCfg, KernelRegion};
+use console::{init_console, install_console_logger, WRITER};
 use core::alloc::GlobalAlloc;
+use core::alloc::Layout;
+use core::arch::asm;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
-use core::alloc::Layout;
+use cpu::msr;
 use cpu::percpu::PerCpu;
-use core::arch::asm;
+use fw_cfg::{FwCfg, KernelRegion};
+use kernel_launch::KernelLaunchInfo;
+use mm::alloc::{memory_info, print_memory_info, root_mem_init, ALLOCATOR};
+use mm::pagetable::{paging_init, paging_init_early, PTEntryFlags, PageTable};
+use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
+use sev::msr_protocol::{validate_page_msr, GHCBMsr};
+use sev::status::SEVStatusFlags;
+use sev::{pvalidate, sev_status_init, sev_status_verify};
+use types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use utils::{halt, page_align, page_align_up};
 
 #[macro_use]
 extern crate bitflags;
@@ -52,8 +52,8 @@ extern crate bitflags;
 extern "C" {
     pub static heap_start: u8;
     pub static heap_end: u8;
-    pub static mut pgtable : PageTable;
-    pub static CPUID_PAGE : SnpCpuidTable;
+    pub static mut pgtable: PageTable;
+    pub static CPUID_PAGE: SnpCpuidTable;
 }
 
 pub fn allocate_pt_page() -> *mut u8 {
@@ -65,47 +65,47 @@ pub fn allocate_pt_page() -> *mut u8 {
     }
 }
 
-pub fn virt_to_phys(vaddr : VirtAddr) -> PhysAddr {
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     vaddr as PhysAddr
 }
 
-pub fn phys_to_virt(paddr : PhysAddr) -> VirtAddr {
+pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     paddr as VirtAddr
 }
 
-pub fn map_page_shared(vaddr : VirtAddr) -> Result<(), ()> {
+pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
     unsafe { pgtable.set_shared_4k(vaddr) }
 }
 
-pub fn map_page_encrypted(vaddr : VirtAddr) -> Result<(), ()> {
+pub fn map_page_encrypted(vaddr: VirtAddr) -> Result<(), ()> {
     unsafe { pgtable.set_encrypted_4k(vaddr) }
 }
 
-pub fn map_data_4k(vaddr : VirtAddr, paddr : PhysAddr) -> Result<(), ()> {
+pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
     unsafe {
         let flags = PageTable::data_flags();
         pgtable.map_4k(vaddr, paddr, &flags)
     }
 }
 
-pub fn unmap_4k(vaddr : VirtAddr) -> Result<(), ()> {
+pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
     unsafe { pgtable.unmap_4k(vaddr) }
 }
 
-pub fn walk_addr(vaddr : VirtAddr) -> Result<PhysAddr, ()> {
+pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
     unsafe { pgtable.phys_addr(vaddr) }
 }
 
 fn setup_stage2_allocator() {
-    let vstart   = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
-    let vend     = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
-    let pstart   = virt_to_phys(vstart);
+    let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
+    let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
+    let pstart = virt_to_phys(vstart);
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
     root_mem_init(pstart, vstart, nr_pages);
 }
 
-pub static mut PERCPU : PerCpu = PerCpu::new();
+pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
@@ -114,7 +114,11 @@ fn init_percpu() {
 }
 
 fn shutdown_percpu() {
-    unsafe { PERCPU.shutdown().expect("Failed to shut down percpu data (including GHCB)"); }
+    unsafe {
+        PERCPU
+            .shutdown()
+            .expect("Failed to shut down percpu data (including GHCB)");
+    }
 }
 
 pub fn this_cpu() -> &'static PerCpu {
@@ -125,38 +129,41 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     unsafe { &mut PERCPU }
 }
 
-static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
-static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
+static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static mut CONSOLE_SERIAL: SerialPort = SerialPort {
+    driver: &CONSOLE_IO,
+    port: SERIAL_PORT,
+};
 
 extern "C" {
-    pub fn rdmsr_safe(msr : u32, dst : *mut u64) -> i64;
-    pub fn wrmsr_safe(msr : u32, val : u64) -> i64;
+    pub fn rdmsr_safe(msr: u32, dst: *mut u64) -> i64;
+    pub fn wrmsr_safe(msr: u32, val: u64) -> i64;
     pub fn vmgexit_safe() -> i64;
 }
 
 // For use at an early stage when it's neither known yet that the GHCB MSR is
 // valid (and thus, accesses can #GP) nor that the HV is implementing the GHCB
 // MSR protocol on it.
-fn ghcb_msr_proto_safe(cmd : u64) -> Result<u64, ()> {
-    let mut orig_msr_val : u64 = 0;
-    if unsafe{rdmsr_safe(msr::SEV_GHCB, &mut orig_msr_val as *mut u64)} != 0 {
-        return Err(())
-    }
-
-    if unsafe{wrmsr_safe(msr::SEV_GHCB, cmd)} != 0 {
+fn ghcb_msr_proto_safe(cmd: u64) -> Result<u64, ()> {
+    let mut orig_msr_val: u64 = 0;
+    if unsafe { rdmsr_safe(msr::SEV_GHCB, &mut orig_msr_val as *mut u64) } != 0 {
         return Err(());
     }
 
-    if unsafe{vmgexit_safe()} != 0 {
-        unsafe{wrmsr_safe(msr::SEV_GHCB, orig_msr_val)};
+    if unsafe { wrmsr_safe(msr::SEV_GHCB, cmd) } != 0 {
         return Err(());
     }
 
-    let mut response : u64 = 0;
-    let r = unsafe{rdmsr_safe(msr::SEV_GHCB, &mut response as *mut u64)};
-    unsafe{wrmsr_safe(msr::SEV_GHCB, orig_msr_val)};
+    if unsafe { vmgexit_safe() } != 0 {
+        unsafe { wrmsr_safe(msr::SEV_GHCB, orig_msr_val) };
+        return Err(());
+    }
+
+    let mut response: u64 = 0;
+    let r = unsafe { rdmsr_safe(msr::SEV_GHCB, &mut response as *mut u64) };
+    unsafe { wrmsr_safe(msr::SEV_GHCB, orig_msr_val) };
     if r != 0 {
-        return Err(())
+        return Err(());
     }
 
     Ok(response)
@@ -167,10 +174,10 @@ fn ghcb_msr_proto_safe(cmd : u64) -> Result<u64, ()> {
 // MSR protocol. Returns the (untrusted!) PTE C-bit position as a byproduct on
 // success.
 fn sev_ghcb_msr_available() -> Result<u64, ()> {
-     // First check: the SEV_STATUS MSR should be present and indicate that
-     // either SEV_ES or SEV_SNP is active.
-    let mut status_raw : u64 = 0;
-    if unsafe{rdmsr_safe(msr::SEV_STATUS, &mut status_raw)} != 0 {
+    // First check: the SEV_STATUS MSR should be present and indicate that
+    // either SEV_ES or SEV_SNP is active.
+    let mut status_raw: u64 = 0;
+    if unsafe { rdmsr_safe(msr::SEV_STATUS, &mut status_raw) } != 0 {
         return Err(());
     }
 
@@ -204,7 +211,7 @@ fn sev_ghcb_msr_available() -> Result<u64, ()> {
         return Err(());
     }
 
-    let encrypt_mask : u64 = 1u64 << c_bit_pos;
+    let encrypt_mask: u64 = 1u64 << c_bit_pos;
     Ok(encrypt_mask)
 }
 
@@ -221,10 +228,12 @@ fn setup_env() {
     match sev_ghcb_msr_available() {
         Ok(encrypt_mask) => paging_init_early(encrypt_mask),
         Err(_) => {
-            unsafe { DEFAULT_SERIAL_PORT.init(); }
+            unsafe {
+                DEFAULT_SERIAL_PORT.init();
+            }
             init_console();
             panic!("SEV-ES not available");
-        },
+        }
     };
 
     // Bring up the GCHB for use from the SVSMIOPort console.
@@ -232,7 +241,9 @@ fn setup_env() {
     setup_stage2_allocator();
     init_percpu();
 
-    unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
+    unsafe {
+        WRITER.lock().set(&mut CONSOLE_SERIAL);
+    }
     init_console();
 
     // Console is fully working now and any unsupported configuration can be
@@ -246,8 +257,11 @@ fn setup_env() {
     paging_init();
 }
 
-fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Result<(), ()> {
-    let flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY;
+fn map_memory(mut paddr: PhysAddr, pend: PhysAddr, mut vaddr: VirtAddr) -> Result<(), ()> {
+    let flags = PTEntryFlags::PRESENT
+        | PTEntryFlags::WRITABLE
+        | PTEntryFlags::ACCESSED
+        | PTEntryFlags::DIRTY;
 
     loop {
         unsafe {
@@ -267,26 +281,31 @@ fn map_memory(mut paddr : PhysAddr, pend : PhysAddr, mut vaddr : VirtAddr) -> Re
     Ok(())
 }
 
-fn map_kernel_region(vaddr: VirtAddr, region : &KernelRegion) -> Result<(),()> {
+fn map_kernel_region(vaddr: VirtAddr, region: &KernelRegion) -> Result<(), ()> {
     let paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
 
     map_memory(paddr, pend, vaddr)
 }
 
-fn validate_kernel_region(mut vaddr: VirtAddr, region : &KernelRegion) -> Result<(), ()> {
+fn validate_kernel_region(mut vaddr: VirtAddr, region: &KernelRegion) -> Result<(), ()> {
     let mut paddr = region.start as PhysAddr;
-    let pend  = region.end as PhysAddr;
+    let pend = region.end as PhysAddr;
 
     loop {
-
         if let Err(_e) = validate_page_msr(paddr) {
-            println!("Error: Validating page failed for physical address {:#018x}", paddr);
+            println!(
+                "Error: Validating page failed for physical address {:#018x}",
+                paddr
+            );
             return Err(());
         }
 
         if let Err(_e) = pvalidate(vaddr, false, true) {
-            println!("Error: PVALIDATE failed for virtual address {:#018x}", vaddr);
+            println!(
+                "Error: PVALIDATE failed for virtual address {:#018x}",
+                vaddr
+            );
             return Err(());
         }
 
@@ -301,46 +320,62 @@ fn validate_kernel_region(mut vaddr: VirtAddr, region : &KernelRegion) -> Result
     Ok(())
 }
 
-
 #[repr(C, packed)]
 struct KernelMetaData {
-    virt_addr   : VirtAddr,
-    entry       : VirtAddr,
+    virt_addr: VirtAddr,
+    entry: VirtAddr,
 }
 
 struct KInfo {
-    k_image_start : PhysAddr,
-    k_image_end   : PhysAddr,
-    phys_base     : PhysAddr,
-    phys_end      : PhysAddr,
-    virt_base     : VirtAddr,
-    entry         : VirtAddr,
+    k_image_start: PhysAddr,
+    k_image_end: PhysAddr,
+    phys_base: PhysAddr,
+    phys_end: PhysAddr,
+    virt_base: VirtAddr,
+    entry: VirtAddr,
 }
 
-unsafe fn copy_and_launch_kernel(kli : KInfo) {
+unsafe fn copy_and_launch_kernel(kli: KInfo) {
     let image_size = kli.k_image_end - kli.k_image_start;
     let kernel_launch_info = KernelLaunchInfo {
-        kernel_start : kli.phys_base as u64,
-        kernel_end   : kli.phys_end  as u64,
-        virt_base    : kli.virt_base as u64,
-        cpuid_page   : 0x9f000u64,
-        secrets_page : 0x9e000u64,
-        ghcb         : 0,
+        kernel_start: kli.phys_base as u64,
+        kernel_end: kli.phys_end as u64,
+        virt_base: kli.virt_base as u64,
+        cpuid_page: 0x9f000u64,
+        secrets_page: 0x9e000u64,
+        ghcb: 0,
     };
 
-    println!("  kernel_physical_start = {:#018x}", kernel_launch_info.kernel_start);
-    println!("  kernel_physical_end   = {:#018x}", kernel_launch_info.kernel_end);
-    println!("  kernel_virtual_base   = {:#018x}", kernel_launch_info.virt_base);
-    println!("  cpuid_page            = {:#018x}", kernel_launch_info.cpuid_page);
-    println!("  secrets_page          = {:#018x}", kernel_launch_info.secrets_page);
+    println!(
+        "  kernel_physical_start = {:#018x}",
+        kernel_launch_info.kernel_start
+    );
+    println!(
+        "  kernel_physical_end   = {:#018x}",
+        kernel_launch_info.kernel_end
+    );
+    println!(
+        "  kernel_virtual_base   = {:#018x}",
+        kernel_launch_info.virt_base
+    );
+    println!(
+        "  cpuid_page            = {:#018x}",
+        kernel_launch_info.cpuid_page
+    );
+    println!(
+        "  secrets_page          = {:#018x}",
+        kernel_launch_info.secrets_page
+    );
     println!("Launching SVSM kernel...");
 
     // Shut down the GHCB
     shutdown_percpu();
 
-    compiler_builtins::mem::memcpy(kli.virt_base as *mut u8,
-                                   kli.k_image_start as *const u8,
-                                   image_size);
+    compiler_builtins::mem::memcpy(
+        kli.virt_base as *mut u8,
+        kli.k_image_start as *const u8,
+        image_size,
+    );
     asm!("jmp *%rax",
           in("rax") kli.entry,
           in("r8") &kernel_launch_info,
@@ -348,7 +383,7 @@ unsafe fn copy_and_launch_kernel(kli : KInfo) {
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
+pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
     setup_env();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
@@ -358,7 +393,7 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
     println!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
     let (kernel_virt_base, kernel_entry) = unsafe {
-        let kmd : *const KernelMetaData =  kernel_start as *const KernelMetaData;
+        let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;
         ((*kmd).virt_addr, (*kmd).entry)
     };
 
@@ -369,13 +404,14 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
     print_memory_info(&mem_info);
 
     unsafe {
-        copy_and_launch_kernel( KInfo {
-                        k_image_start   : kernel_start,
-                        k_image_end : kernel_end,
-                        phys_base   : r.start as usize,
-                        phys_end    : r.end as usize,
-                        virt_base   : kernel_virt_base,
-                        entry       : kernel_entry } );
+        copy_and_launch_kernel(KInfo {
+            k_image_start: kernel_start,
+            k_image_end: kernel_end,
+            phys_base: r.start as usize,
+            phys_end: r.end as usize,
+            virt_base: kernel_virt_base,
+            entry: kernel_entry,
+        });
         // This should never return
     }
 
@@ -383,7 +419,9 @@ pub extern "C" fn stage2_main(kernel_start : PhysAddr, kernel_end : PhysAddr) {
 }
 
 #[panic_handler]
-fn panic(info : &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
     println!("Panic: {}", info);
-    loop { halt(); }
+    loop {
+        halt();
+    }
 }

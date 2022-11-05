@@ -15,17 +15,17 @@ use super::utils::raw_vmgexit;
 pub enum GHCBMsr {}
 
 impl GHCBMsr {
-    pub const SEV_INFO_REQ          : u64 = 0x02;
-    pub const SEV_INFO_RESP         : u64 = 0x01;
-    pub const SNP_REG_GHCB_GPA_REQ  : u64 = 0x12;
-    pub const SNP_REG_GHCB_GPA_RESP : u64 = 0x13;
-    pub const SNP_STATE_CHANGE_REQ  : u64 = 0x14;
-    pub const SNP_STATE_CHANGE_RESP : u64 = 0x15;
-    pub const TERM_REQ      : u64 = 0x100;
+    pub const SEV_INFO_REQ: u64 = 0x02;
+    pub const SEV_INFO_RESP: u64 = 0x01;
+    pub const SNP_REG_GHCB_GPA_REQ: u64 = 0x12;
+    pub const SNP_REG_GHCB_GPA_RESP: u64 = 0x13;
+    pub const SNP_STATE_CHANGE_REQ: u64 = 0x14;
+    pub const SNP_STATE_CHANGE_RESP: u64 = 0x15;
+    pub const TERM_REQ: u64 = 0x100;
 }
 
-pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(),()> {
-    let mut info : u64 = addr as u64;
+pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), ()> {
+    let mut info: u64 = addr as u64;
 
     info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
     write_msr(SEV_GHCB, info);
@@ -43,8 +43,8 @@ pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(),()> {
     }
 }
 
-fn set_page_valid_status_msr(addr : PhysAddr, valid : bool) -> Result<(),()> {
-    let mut info : u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
+fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), ()> {
+    let mut info: u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
 
     if valid {
         info |= 1u64 << 52;
@@ -68,19 +68,18 @@ fn set_page_valid_status_msr(addr : PhysAddr, valid : bool) -> Result<(),()> {
     Ok(())
 }
 
-pub fn validate_page_msr(addr: PhysAddr) -> Result<(),()> {
+pub fn validate_page_msr(addr: PhysAddr) -> Result<(), ()> {
     set_page_valid_status_msr(addr, true)
 }
 
-pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(),()> {
+pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(), ()> {
     set_page_valid_status_msr(addr, false)
 }
 
 pub fn request_termination_msr() {
-    let info : u64 = GHCBMsr::TERM_REQ;
+    let info: u64 = GHCBMsr::TERM_REQ;
 
     write_msr(SEV_GHCB, info);
     raw_vmgexit();
-    loop {};
+    loop {}
 }
-

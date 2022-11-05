@@ -9,21 +9,21 @@
 use crate::types::PAGE_SIZE;
 use core::arch::asm;
 
-pub fn align_up(addr : usize, align: usize) -> usize {
-    addr + (align -1) & !(align - 1)
+pub fn align_up(addr: usize, align: usize) -> usize {
+    addr + (align - 1) & !(align - 1)
 }
 
-pub fn page_align(addr : usize) -> usize {
+pub fn page_align(addr: usize) -> usize {
     addr & !(PAGE_SIZE - 1)
 }
 
-pub fn page_align_up(addr : usize) -> usize {
+pub fn page_align_up(addr: usize) -> usize {
     (addr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
 }
 
 #[inline(always)]
-pub fn ffs(val : u64) -> usize {
-    let mut ret : usize;
+pub fn ffs(val: u64) -> usize {
+    let mut ret: usize;
 
     unsafe {
         asm!("bsf   %rax, %rsi
@@ -40,7 +40,6 @@ pub fn ffs(val : u64) -> usize {
 
 pub fn halt() {
     unsafe {
-        asm!("hlt",
-             options(att_syntax));
+        asm!("hlt", options(att_syntax));
     }
 }

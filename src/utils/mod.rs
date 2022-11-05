@@ -10,5 +10,5 @@ pub mod alloc;
 pub mod util;
 pub mod vec;
 
-pub use alloc::{alloc, dealloc, alloc_zeroed, realloc, handle_alloc_error};
-pub use util::{align_up, page_align, page_align_up, ffs, halt};
+pub use alloc::{alloc, alloc_zeroed, dealloc, handle_alloc_error, realloc};
+pub use util::{align_up, ffs, halt, page_align, page_align_up};

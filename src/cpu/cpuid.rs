@@ -6,61 +6,64 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr};
+use crate::types::VirtAddr;
 use crate::CPUID_PAGE;
 
-const SNP_CPUID_MAX_COUNT : usize = 64;
+const SNP_CPUID_MAX_COUNT: usize = 64;
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct SnpCpuidFn {
-    eax_in     : u32,
-    ecx_in     : u32,
-    xcr0_in    : u64,
-    xss_in     : u64,
-    eax_out    : u32,
-    ebx_out    : u32,
-    ecx_out    : u32,
-    edx_out    : u32,
-    reserved_1 : u64,
+    eax_in: u32,
+    ecx_in: u32,
+    xcr0_in: u64,
+    xss_in: u64,
+    eax_out: u32,
+    ebx_out: u32,
+    ecx_out: u32,
+    edx_out: u32,
+    reserved_1: u64,
 }
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct SnpCpuidTable {
-    count      : u32,
-    reserved_1 : u32,
-    reserved_2 : u64,
-    func       : [SnpCpuidFn; SNP_CPUID_MAX_COUNT],
+    count: u32,
+    reserved_1: u32,
+    reserved_2: u64,
+    func: [SnpCpuidFn; SNP_CPUID_MAX_COUNT],
 }
 
-pub fn copy_cpuid_table(target : &mut SnpCpuidTable, source : VirtAddr) {
+pub fn copy_cpuid_table(target: &mut SnpCpuidTable, source: VirtAddr) {
     let table = source as *const SnpCpuidTable;
 
-    unsafe { *target = *table; }
+    unsafe {
+        *target = *table;
+    }
 }
 
 pub struct CpuidResult {
-    pub eax : u32,
-    pub ebx : u32,
-    pub ecx : u32,
-    pub edx : u32,
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
 }
 
-pub fn cpuid_table_raw(eax : u32, ecx : u32, xcr0 : u64, xss : u64) -> Option<CpuidResult> {
+pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
     unsafe {
-        let count : usize = CPUID_PAGE.count as usize;
+        let count: usize = CPUID_PAGE.count as usize;
 
         for i in 0..count {
-            if eax  == CPUID_PAGE.func[i].eax_in &&
-               ecx  == CPUID_PAGE.func[i].ecx_in &&
-               xcr0 == CPUID_PAGE.func[i].xcr0_in &&
-               xss  == CPUID_PAGE.func[i].xss_in {
+            if eax == CPUID_PAGE.func[i].eax_in
+                && ecx == CPUID_PAGE.func[i].ecx_in
+                && xcr0 == CPUID_PAGE.func[i].xcr0_in
+                && xss == CPUID_PAGE.func[i].xss_in
+            {
                 return Some(CpuidResult {
-                    eax : CPUID_PAGE.func[i].eax_out,
-                    ebx : CPUID_PAGE.func[i].ebx_out,
-                    ecx : CPUID_PAGE.func[i].ecx_out,
-                    edx : CPUID_PAGE.func[i].edx_out,
+                    eax: CPUID_PAGE.func[i].eax_out,
+                    ebx: CPUID_PAGE.func[i].ebx_out,
+                    ecx: CPUID_PAGE.func[i].ecx_out,
+                    edx: CPUID_PAGE.func[i].edx_out,
                 });
             }
         }
@@ -69,7 +72,7 @@ pub fn cpuid_table_raw(eax : u32, ecx : u32, xcr0 : u64, xss : u64) -> Option<Cp
     }
 }
 
-pub fn cpuid_table(eax : u32) -> Option<CpuidResult> {
+pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {
     cpuid_table_raw(eax, 0, 0, 0)
 }
 

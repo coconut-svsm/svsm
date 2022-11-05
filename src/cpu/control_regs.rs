@@ -48,7 +48,7 @@ bitflags! {
 }
 
 pub fn read_cr0() -> CR0Flags {
-    let cr0 : u64;
+    let cr0: u64;
 
     unsafe {
         asm!("mov %cr0, %rax",
@@ -57,9 +57,9 @@ pub fn read_cr0() -> CR0Flags {
     }
 
     CR0Flags::from_bits_truncate(cr0)
-}   
+}
 
-pub fn write_cr0(cr0 : CR0Flags) {
+pub fn write_cr0(cr0: CR0Flags) {
     let reg = cr0.bits();
 
     unsafe {
@@ -70,7 +70,7 @@ pub fn write_cr0(cr0 : CR0Flags) {
 }
 
 pub fn read_cr2() -> usize {
-    let ret : usize;
+    let ret: usize;
     unsafe {
         asm!("mov %cr2, %rax",
              out("rax") ret,
@@ -79,7 +79,7 @@ pub fn read_cr2() -> usize {
     ret
 }
 
-pub fn write_cr2(cr2 : usize) {
+pub fn write_cr2(cr2: usize) {
     unsafe {
         asm!("mov %rax, %cr2",
              in("rax") cr2,
@@ -88,7 +88,7 @@ pub fn write_cr2(cr2 : usize) {
 }
 
 pub fn read_cr3() -> usize {
-    let ret : usize;
+    let ret: usize;
     unsafe {
         asm!("mov %cr3, %rax",
              out("rax") ret,
@@ -97,7 +97,7 @@ pub fn read_cr3() -> usize {
     ret
 }
 
-pub fn write_cr3(cr3 : usize) {
+pub fn write_cr3(cr3: usize) {
     unsafe {
         asm!("mov %rax, %cr3",
              in("rax") cr3,
@@ -120,7 +120,7 @@ bitflags! {
         const OSXMMEXCPT    = 1 << 10; // Operating System Unmasked Exception Support
         const UMIP      = 1 << 11; // User Mode Instruction Prevention
         const FSGSBASE      = 1 << 16; // Enable RDFSBASE, RDGSBASE, WRFSBASE, and
-                           // WRGSBASE instructions 
+                           // WRGSBASE instructions
         const PCIDE     = 1 << 17; // Process Context Identifier Enable
         const OSXSAVE       = 1 << 18; // XSAVE and Processor Extended States Enable Bit
         const SMEP      = 1 << 20; // Supervisor Mode Execution Prevention
@@ -131,7 +131,7 @@ bitflags! {
 }
 
 pub fn read_cr4() -> CR4Flags {
-    let cr4 : u64;
+    let cr4: u64;
 
     unsafe {
         asm!("mov %cr4, %rax",
@@ -140,9 +140,9 @@ pub fn read_cr4() -> CR4Flags {
     }
 
     CR4Flags::from_bits_truncate(cr4)
-}   
+}
 
-pub fn write_cr4(cr4 : CR4Flags) {
+pub fn write_cr4(cr4: CR4Flags) {
     let reg = cr4.bits();
 
     unsafe {
@@ -151,4 +151,3 @@ pub fn write_cr4(cr4 : CR4Flags) {
              options(att_syntax));
     }
 }
-

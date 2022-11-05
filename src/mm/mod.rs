@@ -6,6 +6,6 @@
 //
 // vim: ts=4 sw=4 et
 
-pub mod pagetable;
 pub mod alloc;
+pub mod pagetable;
 pub mod stack;

@@ -8,56 +8,56 @@
 
 #![no_std]
 #![no_main]
-
 #![feature(const_mut_refs)]
+pub mod acpi;
+pub mod console;
+pub mod cpu;
+pub mod fw_cfg;
+pub mod io;
 pub mod kernel_launch;
+pub mod locking;
+pub mod mm;
+pub mod serial;
+pub mod sev;
+pub mod string;
 pub mod svsm_console;
 pub mod svsm_paging;
-pub mod console;
-pub mod locking;
-pub mod string;
-pub mod fw_cfg;
-pub mod serial;
 pub mod types;
 pub mod utils;
-pub mod acpi;
-pub mod cpu;
-pub mod sev;
-pub mod mm;
-pub mod io;
 
 pub mod fw_meta;
 use fw_meta::parse_fw_meta_data;
 
-use mm::alloc::{memory_init, memory_info, print_memory_info};
-use cpu::percpu::{PerCpu, register_per_cpu, load_per_cpu};
-use sev::secrets_page::{SecretsPage, copy_secrets_page};
-use svsm_paging::{init_page_table, invalidate_stage2};
-use mm::stack::{allocate_stack, stack_base_pointer};
 use crate::cpu::control_regs::{cr0_init, cr4_init};
-use cpu::cpuid::{SnpCpuidTable, copy_cpuid_table};
-use cpu::idt::{early_idt_init, idt_init};
-use acpi::tables::load_acpi_cpu_info;
-use console::{WRITER, init_console, install_console_logger};
-use crate::svsm_console::SVSMIOPort;
-use kernel_launch::KernelLaunchInfo;
-use core::arch::{global_asm, asm};
 use crate::cpu::efer::efer_init;
-use mm::pagetable::paging_init;
-use crate::serial::SERIAL_PORT;
 use crate::serial::SerialPort;
-use core::panic::PanicInfo;
-use sev::utils::{RMPFlags};
-use cpu::gdt::load_gdt;
-use crate::utils::halt;
-use types::VirtAddr;
-use fw_cfg::FwCfg;
+use crate::serial::SERIAL_PORT;
 use crate::sev::vmsa::VMSA;
+use crate::svsm_console::SVSMIOPort;
+use crate::utils::halt;
+use acpi::tables::load_acpi_cpu_info;
+use console::{init_console, install_console_logger, WRITER};
+use core::arch::{asm, global_asm};
+use core::panic::PanicInfo;
+use cpu::cpuid::{copy_cpuid_table, SnpCpuidTable};
+use cpu::gdt::load_gdt;
+use cpu::idt::{early_idt_init, idt_init};
+use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use cpu::vmsa::init_svsm_vmsa;
+use fw_cfg::FwCfg;
+use kernel_launch::KernelLaunchInfo;
+use mm::alloc::{memory_info, memory_init, print_memory_info};
+use mm::pagetable::paging_init;
+use mm::stack::{allocate_stack, stack_base_pointer};
+use sev::secrets_page::{copy_secrets_page, SecretsPage};
+use sev::utils::RMPFlags;
+use svsm_paging::{init_page_table, invalidate_stage2};
+use types::VirtAddr;
 
-pub use svsm_paging::{allocate_pt_page, virt_to_phys, phys_to_virt,
-                      map_page_shared, map_page_encrypted, map_data_4k,
-                      unmap_4k, walk_addr, INIT_PGTABLE, PTMappingGuard};
+pub use svsm_paging::{
+    allocate_pt_page, map_data_4k, map_page_encrypted, map_page_shared, phys_to_virt, unmap_4k,
+    virt_to_phys, walk_addr, PTMappingGuard, INIT_PGTABLE,
+};
 
 pub use cpu::percpu::{this_cpu, this_cpu_mut};
 
@@ -65,9 +65,9 @@ pub use cpu::percpu::{this_cpu, this_cpu_mut};
 extern crate bitflags;
 
 extern "C" {
-    pub static mut SECRETS_PAGE : SecretsPage;
-    pub static mut CPUID_PAGE : SnpCpuidTable;
-    pub static bsp_stack_end : u8;
+    pub static mut SECRETS_PAGE: SecretsPage;
+    pub static mut CPUID_PAGE: SnpCpuidTable;
+    pub static bsp_stack_end: u8;
 }
 
 /*
@@ -78,7 +78,8 @@ extern "C" {
  *
  * %r8  will contain a pointer to the KernelLaunchInfo structure
  */
-global_asm!(r#"
+global_asm!(
+    r#"
         .text
         .section ".startup.text","ax"
         .code64
@@ -116,21 +117,23 @@ global_asm!(r#"
         .globl SECRETS_PAGE
     SECRETS_PAGE:
         .fill 4096, 1, 0
-        "#, options(att_syntax));
+        "#,
+    options(att_syntax)
+);
 
 extern "C" {
-    static _stext           : u8;
-    static _etext           : u8;
-    static _sdata           : u8;
-    static _edata           : u8;
-    static _sdataro         : u8;
-    static _edataro         : u8;
-    static _sbss            : u8;
-    static _ebss            : u8;
-    pub static heap_start   : u8;
+    static _stext: u8;
+    static _etext: u8;
+    static _sdata: u8;
+    static _edata: u8;
+    static _sdataro: u8;
+    static _edataro: u8;
+    static _sbss: u8;
+    static _ebss: u8;
+    pub static heap_start: u8;
 }
 
-pub static mut PERCPU : PerCpu = PerCpu::new();
+pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
@@ -140,8 +143,11 @@ fn init_percpu() {
     }
 }
 
-static CONSOLE_IO : SVSMIOPort = SVSMIOPort::new();
-static mut CONSOLE_SERIAL : SerialPort = SerialPort { driver : &CONSOLE_IO, port : SERIAL_PORT };
+static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static mut CONSOLE_SERIAL: SerialPort = SerialPort {
+    driver: &CONSOLE_IO,
+    port: SERIAL_PORT,
+};
 
 pub fn boot_stack_info() {
     unsafe {
@@ -151,8 +157,8 @@ pub fn boot_stack_info() {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
-    let launch_info : KernelLaunchInfo = *li;
+pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
+    let launch_info: KernelLaunchInfo = *li;
 
     load_gdt();
     early_idt_init();
@@ -176,7 +182,9 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     init_percpu();
     idt_init();
 
-    unsafe { WRITER.lock().set(&mut CONSOLE_SERIAL); }
+    unsafe {
+        WRITER.lock().set(&mut CONSOLE_SERIAL);
+    }
     init_console();
     install_console_logger("SVSM");
 
@@ -190,7 +198,9 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     let stack = allocate_stack().expect("Failed to allocate runtime stack");
     let bp = stack_base_pointer(stack);
 
-    this_cpu_mut().alloc_vmsa(RMPFlags::VMPL0).expect("Failed to allocate VMSA page");
+    this_cpu_mut()
+        .alloc_vmsa(RMPFlags::VMPL0)
+        .expect("Failed to allocate VMSA page");
     init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
     println!("BSP Runtime stack starts @ {:#018x}", bp);
@@ -201,13 +211,15 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
     this_cpu_mut().prepare_svsm_vmsa(rip, rsp);
     let sev_features = this_cpu_mut().vmsa(RMPFlags::VMPL0).sev_features;
 
-    let vmsa_addr : VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
+    let vmsa_addr: VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
     let vmsa_pa = virt_to_phys(vmsa_addr);
 
     println!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
 
-
-    this_cpu_mut().ghcb().ap_create(vmsa_pa, 0, 0, sev_features).expect("Failed to load boot CPU VMSA");
+    this_cpu_mut()
+        .ghcb()
+        .ap_create(vmsa_pa, 0, 0, sev_features)
+        .expect("Failed to load boot CPU VMSA");
 
     // Enable runtime stack and jump to main function
     unsafe {
@@ -220,16 +232,17 @@ pub extern "C" fn svsm_start(li : &KernelLaunchInfo) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
-
     invalidate_stage2().expect("Failed to invalidate Stage2 memory");
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
-	let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
+    let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
 
     for i in 0..cpus.size() {
-        if cpus[i].enabled { nr_cpus += 1; }
+        if cpus[i].enabled {
+            nr_cpus += 1;
+        }
     }
 
     println!("{} CPU(s) present", nr_cpus);
@@ -240,7 +253,9 @@ pub extern "C" fn svsm_main() {
 }
 
 #[panic_handler]
-fn panic(info : &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
     println!("Panic: {}", info);
-    loop { halt(); }
+    loop {
+        halt();
+    }
 }

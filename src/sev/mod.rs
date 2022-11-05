@@ -6,15 +6,15 @@
 //
 // vim: ts=4 sw=4 et
 
-pub mod secrets_page;
-pub mod msr_protocol;
-pub mod status;
 pub mod ghcb;
+pub mod msr_protocol;
+pub mod secrets_page;
+pub mod status;
 pub mod vmsa;
 
 pub mod utils;
 
-pub use utils::{PValidateError, pvalidate};
 pub use status::sev_status_init;
-pub use status::{sev_es_enabled, sev_snp_enabled};
 pub use status::sev_status_verify;
+pub use status::{sev_es_enabled, sev_snp_enabled};
+pub use utils::{pvalidate, PValidateError};

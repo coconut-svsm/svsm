@@ -7,12 +7,12 @@
 // vim: ts=4 sw=4 et
 
 pub mod control_regs;
-pub mod features;
-pub mod percpu;
 pub mod cpuid;
 pub mod efer;
-pub mod vmsa;
-pub mod msr;
+pub mod features;
 pub mod gdt;
 pub mod idt;
+pub mod msr;
+pub mod percpu;
 pub mod tss;
+pub mod vmsa;

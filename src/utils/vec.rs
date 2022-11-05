@@ -9,30 +9,33 @@
 // Custom Vec implementation
 // Written while following https://doc.rust-lang.org/nomicon/vec/vec.html
 
-use crate::utils::{alloc, dealloc, realloc, handle_alloc_error};
-use core::ops::{Deref, DerefMut};
-use core::marker::PhantomData;
+use crate::utils::{alloc, dealloc, handle_alloc_error, realloc};
 use core::alloc::Layout;
-use core::ptr;
+use core::marker::PhantomData;
 use core::mem;
+use core::ops::{Deref, DerefMut};
+use core::ptr;
 
 struct RawVec<T> {
-    ptr         : ptr::NonNull<T>,
-    capacity    : usize,
-    _marker     : PhantomData<T>,
+    ptr: ptr::NonNull<T>,
+    capacity: usize,
+    _marker: PhantomData<T>,
 }
 
 // Implement Send and Sync for RawVec<T> iff T is Send/Sync
-unsafe impl<T : Send> Send for RawVec<T> {}
-unsafe impl<T : Sync> Sync for RawVec<T> {}
+unsafe impl<T: Send> Send for RawVec<T> {}
+unsafe impl<T: Sync> Sync for RawVec<T> {}
 
 impl<T> RawVec<T> {
     const fn new() -> Self {
-        assert!(mem::size_of::<T>() != 0, "Zero sized elements not supported in RawVec");
+        assert!(
+            mem::size_of::<T>() != 0,
+            "Zero sized elements not supported in RawVec"
+        );
         RawVec {
-            ptr      : ptr::NonNull::dangling(),
-            capacity : 0,
-            _marker  : PhantomData,
+            ptr: ptr::NonNull::dangling(),
+            capacity: 0,
+            _marker: PhantomData,
         }
     }
 
@@ -48,8 +51,8 @@ impl<T> RawVec<T> {
         let new_ptr = if self.capacity == 0 {
             unsafe { alloc(new_layout) }
         } else {
-            let layout  = Layout::array::<T>(self.capacity).unwrap();
-            let ptr     = self.ptr.as_ptr() as *mut u8;
+            let layout = Layout::array::<T>(self.capacity).unwrap();
+            let ptr = self.ptr.as_ptr() as *mut u8;
             unsafe { realloc(ptr, layout, new_layout.size()) }
         };
 
@@ -66,21 +69,23 @@ impl<T> Drop for RawVec<T> {
     fn drop(&mut self) {
         if self.capacity != 0 {
             let layout = Layout::array::<T>(self.capacity).unwrap();
-            unsafe { dealloc(self.ptr.as_ptr() as *mut u8, layout); }
+            unsafe {
+                dealloc(self.ptr.as_ptr() as *mut u8, layout);
+            }
         }
     }
 }
 
 pub struct Vec<T> {
-    buf         : RawVec<T>,
-    length      : usize,
+    buf: RawVec<T>,
+    length: usize,
 }
 
 // Implement Send and Sync for Vec<T> iff T is Send/Sync
-unsafe impl<T : Send> Send for Vec<T> {}
-unsafe impl<T : Sync> Sync for Vec<T> {}
+unsafe impl<T: Send> Send for Vec<T> {}
+unsafe impl<T: Sync> Sync for Vec<T> {}
 
-impl <T> Vec<T> {
+impl<T> Vec<T> {
     fn ptr(&self) -> *mut T {
         self.buf.ptr.as_ptr()
     }
@@ -96,13 +101,15 @@ impl <T> Vec<T> {
     pub const fn new() -> Self {
         assert!(mem::size_of::<T>() != 0, "No zero sized elements allowed");
         Vec {
-            buf     : RawVec::new(),
-            length  : 0,
+            buf: RawVec::new(),
+            length: 0,
         }
     }
 
-    pub fn push(&mut self, elem : T) {
-        if self.length == self.capacity() { self.buf.grow(); }
+    pub fn push(&mut self, elem: T) {
+        if self.length == self.capacity() {
+            self.buf.grow();
+        }
 
         unsafe {
             ptr::write(self.ptr().add(self.length), elem);
@@ -120,26 +127,32 @@ impl <T> Vec<T> {
         }
     }
 
-    pub fn insert(&mut self, index : usize, elem : T) {
+    pub fn insert(&mut self, index: usize, elem: T) {
         assert!(index <= self.length, "Vec index out of bounds");
-        if self.length == self.capacity() { self.buf.grow(); }
+        if self.length == self.capacity() {
+            self.buf.grow();
+        }
         unsafe {
-            ptr::copy(self.ptr().add(index),
-                      self.ptr().add(index + 1),
-                      self.length - index);
+            ptr::copy(
+                self.ptr().add(index),
+                self.ptr().add(index + 1),
+                self.length - index,
+            );
             ptr::write(self.ptr().add(index), elem);
         }
         self.length += 1;
     }
 
-    pub fn remove(&mut self, index : usize) -> T {
+    pub fn remove(&mut self, index: usize) -> T {
         assert!(index < self.length, "Vec index out of bounds");
         unsafe {
             self.length -= 1;
             let result = ptr::read(self.ptr().add(index));
-            ptr::copy(self.ptr().add(index + 1),
-                      self.ptr().add(index),
-                      self.length - index);
+            ptr::copy(
+                self.ptr().add(index + 1),
+                self.ptr().add(index),
+                self.length - index,
+            );
             result
         }
     }
@@ -151,8 +164,8 @@ impl <T> Vec<T> {
             self.length = 0;
 
             Drain {
-                iter : iter,
-                vec  : PhantomData,
+                iter: iter,
+                vec: PhantomData,
             }
         }
     }
@@ -161,7 +174,7 @@ impl <T> Vec<T> {
 impl<T> Drop for Vec<T> {
     fn drop(&mut self) {
         if self.length != 0 {
-            while let Some(_) = self.pop() { }
+            while let Some(_) = self.pop() {}
         }
     }
 }
@@ -180,19 +193,19 @@ impl<T> DerefMut for Vec<T> {
 }
 
 struct RawValIter<T> {
-    start   : *const T,
-    end     : *const T,
+    start: *const T,
+    end: *const T,
 }
 
 impl<T> RawValIter<T> {
-    unsafe fn new(slice : &[T]) -> Self {
+    unsafe fn new(slice: &[T]) -> Self {
         RawValIter {
-            start   : slice.as_ptr(),
-            end     : if slice.len() == 0 {
-                          slice.as_ptr()
-                      } else {
-                          slice.as_ptr().add(slice.len())
-                      }
+            start: slice.as_ptr(),
+            end: if slice.len() == 0 {
+                slice.as_ptr()
+            } else {
+                slice.as_ptr().add(slice.len())
+            },
         }
     }
 }
@@ -232,24 +245,24 @@ impl<T> DoubleEndedIterator for RawValIter<T> {
 }
 
 pub struct IntoIter<T> {
-    _buf        : RawVec<T>,
-    iter        : RawValIter<T>
+    _buf: RawVec<T>,
+    iter: RawValIter<T>,
 }
 
 impl<T> IntoIterator for Vec<T> {
     type Item = T;
     type IntoIter = IntoIter<T>;
-    
+
     fn into_iter(self) -> IntoIter<T> {
         unsafe {
             let iter = RawValIter::new(&self);
-            let buf  = ptr::read(&self.buf);
+            let buf = ptr::read(&self.buf);
 
             mem::forget(self);
 
             IntoIter {
-                iter        : iter,
-                _buf        : buf,
+                iter: iter,
+                _buf: buf,
             }
         }
     }
@@ -275,13 +288,13 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
 
 impl<T> Drop for IntoIter<T> {
     fn drop(&mut self) {
-        for _ in &mut *self { }
+        for _ in &mut *self {}
     }
 }
 
 pub struct Drain<'a, T: 'a> {
-    vec     : PhantomData<&'a mut Vec<T>>,
-    iter    : RawValIter<T>,
+    vec: PhantomData<&'a mut Vec<T>>,
+    iter: RawValIter<T>,
 }
 
 impl<'a, T> Iterator for Drain<'a, T> {
@@ -304,6 +317,6 @@ impl<'a, T> DoubleEndedIterator for Drain<'a, T> {
 
 impl<'a, T> Drop for Drain<'a, T> {
     fn drop(&mut self) {
-        for _ in &mut *self { }
+        for _ in &mut *self {}
     }
 }

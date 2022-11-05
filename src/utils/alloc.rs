@@ -6,25 +6,25 @@
 //
 // vim: ts=4 sw=4 et
 
-use core::alloc::{GlobalAlloc, Layout};
 use crate::mm::alloc::ALLOCATOR;
+use core::alloc::{GlobalAlloc, Layout};
 
-pub unsafe fn alloc(layout : Layout) -> *mut u8 {
+pub unsafe fn alloc(layout: Layout) -> *mut u8 {
     ALLOCATOR.alloc(layout)
 }
 
-pub unsafe fn dealloc(ptr : *mut u8, layout : Layout) {
+pub unsafe fn dealloc(ptr: *mut u8, layout: Layout) {
     ALLOCATOR.dealloc(ptr, layout);
 }
 
-pub unsafe fn alloc_zeroed(layout : Layout) -> *mut u8 {
+pub unsafe fn alloc_zeroed(layout: Layout) -> *mut u8 {
     ALLOCATOR.alloc_zeroed(layout)
 }
 
-pub unsafe fn realloc(ptr : *mut u8, layout : Layout, new_size : usize) -> *mut u8 {
+pub unsafe fn realloc(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
     ALLOCATOR.realloc(ptr, layout, new_size)
 }
 
-pub fn handle_alloc_error(layout : Layout) -> ! {
+pub fn handle_alloc_error(layout: Layout) -> ! {
     panic!("Allocation of size {} failed", layout.size());
 }

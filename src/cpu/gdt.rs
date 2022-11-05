@@ -6,21 +6,20 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr, SVSM_CS, SVSM_DS, SVSM_TSS};
 use super::tss::{X86Tss, TSS_LIMIT};
+use crate::types::{VirtAddr, SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
 use core::mem;
 
-
 #[repr(packed)]
 pub struct GdtDesc {
-    size : u16,
-    addr : VirtAddr,
+    size: u16,
+    addr: VirtAddr,
 }
 
-const GDT_SIZE : u16 = 8;
+const GDT_SIZE: u16 = 8;
 
-static mut GDT : [ u64; GDT_SIZE as usize] = [
+static mut GDT: [u64; GDT_SIZE as usize] = [
     0,
     0x00af9a000000ffff, // 64-bit code segment
     0x00cf92000000ffff, // 64-bit data segment
@@ -31,11 +30,11 @@ static mut GDT : [ u64; GDT_SIZE as usize] = [
     0,                  // TSS continued
 ];
 
-pub fn load_tss(tss : &X86Tss) {
+pub fn load_tss(tss: &X86Tss) {
     let addr = (tss as *const X86Tss) as u64;
 
-    let mut desc0 : u64 = 0;
-    let mut desc1 : u64 = 0;
+    let mut desc0: u64 = 0;
+    let mut desc1: u64 = 0;
 
     // Limit
     desc0 |= TSS_LIMIT & 0xffffu64;
@@ -61,10 +60,7 @@ pub fn load_tss(tss : &X86Tss) {
     }
 }
 
-static mut GDT_DESC : GdtDesc = GdtDesc {
-    size : 0,
-    addr : 0,
-};
+static mut GDT_DESC: GdtDesc = GdtDesc { size: 0, addr: 0 };
 
 pub fn gdt_base_limit() -> (u64, u32) {
     unsafe {
@@ -102,6 +98,6 @@ pub fn load_gdt() {
             in("rax") &GDT_DESC,
             in("rdx") SVSM_CS,
             in("rcx") SVSM_DS,
-            options(att_syntax)); 
+            options(att_syntax));
     }
 }

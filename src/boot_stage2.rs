@@ -8,7 +8,8 @@
 
 use core::arch::global_asm;
 
-global_asm!(r#"
+global_asm!(
+    r#"
         .text
         .section ".startup.text","ax"
         .code32
@@ -515,4 +516,6 @@ global_asm!(r#"
         .globl pgtable
     pgtable:
         .fill 7 * 4096, 1, 0
-    pgtable_end:"#, options(att_syntax));
+    pgtable_end:"#,
+    options(att_syntax)
+);

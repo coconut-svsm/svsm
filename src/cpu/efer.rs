@@ -6,8 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::msr::{read_msr, write_msr, EFER};
 use super::features::cpu_has_nx;
+use super::msr::{read_msr, write_msr, EFER};
 
 bitflags! {
     pub struct EFERFlags: u64 {
@@ -29,7 +29,7 @@ pub fn read_efer() -> EFERFlags {
     EFERFlags::from_bits_truncate(read_msr(EFER))
 }
 
-pub fn write_efer(efer : EFERFlags) {
+pub fn write_efer(efer: EFERFlags) {
     let val = efer.bits();
     write_msr(EFER, val);
 }
