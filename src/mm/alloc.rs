@@ -18,7 +18,7 @@ use core::ptr;
 
 struct PageStorageType(u64);
 
-// Support only order 0 allocations for now
+// Support allocations up to order-5 (128kb)
 pub const MAX_ORDER: usize = 6;
 
 impl PageStorageType {
