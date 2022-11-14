@@ -357,12 +357,11 @@ impl PageTable {
             let addr_4k = addr_2m + (i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
-                (*page).entries[i].set(set_c_bit(virt_to_phys(addr_4k)), flags);
+                (*page).entries[i].set(set_c_bit(addr_4k), flags);
             }
         }
 
-        let addr_2m = page as PhysAddr;
-        entry.set(set_c_bit(virt_to_phys(addr_2m)), flags);
+        entry.set(set_c_bit(virt_to_phys(page as VirtAddr)), flags);
 
         flush_tlb();
 
@@ -391,7 +390,7 @@ impl PageTable {
         let addr = entry.address();
 
         // entry.address() returned with c-bit clear already
-        entry.set(set_c_bit(virt_to_phys(addr)), flags);
+        entry.set(set_c_bit(addr), flags);
     }
 
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
