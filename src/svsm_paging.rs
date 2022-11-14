@@ -18,14 +18,6 @@ use core::ptr;
 
 pub static INIT_PGTABLE: SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
 
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    mm::alloc::virt_to_phys(vaddr)
-}
-
-pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    mm::alloc::phys_to_virt(paddr)
-}
-
 pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
     unsafe {
         let ptr = INIT_PGTABLE.lock().as_mut().unwrap();

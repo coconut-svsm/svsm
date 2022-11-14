@@ -7,12 +7,12 @@
 // vim: ts=4 sw=4 et
 
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
 use crate::mm::pagetable::flush_tlb_global;
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::ffs;
 use crate::{map_data_4k, unmap_4k};
-use crate::{phys_to_virt, virt_to_phys, walk_addr};
+use crate::walk_addr;
 
 const STACK_RANGE_START: VirtAddr = 0xffff_ff80_4000_0000;
 const STACK_RANGE_END: VirtAddr = 0xffff_ff80_8000_0000;

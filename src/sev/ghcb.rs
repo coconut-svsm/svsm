@@ -11,7 +11,7 @@ use crate::io::IOPort;
 use crate::mm::pagetable::flush_tlb_global;
 use crate::sev::sev_snp_enabled;
 use crate::types::{PhysAddr, VirtAddr};
-use crate::virt_to_phys;
+use crate::mm::alloc::virt_to_phys;
 use crate::{map_page_encrypted, map_page_shared};
 use core::arch::asm;
 use core::cell::RefCell;

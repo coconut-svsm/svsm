@@ -10,8 +10,7 @@ use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4, CR4Flag
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::{phys_to_virt, virt_to_phys};
-use crate::mm::alloc::allocate_zeroed_page;
+use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
 use core::ops::{Index, IndexMut};
 
 const ENTRY_COUNT: usize = 512;

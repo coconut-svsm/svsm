@@ -54,14 +54,6 @@ extern "C" {
     pub static CPUID_PAGE: SnpCpuidTable;
 }
 
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    vaddr as PhysAddr
-}
-
-pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    paddr as VirtAddr
-}
-
 pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
     unsafe { pgtable.set_shared_4k(vaddr) }
 }
@@ -88,7 +80,7 @@ pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
 fn setup_stage2_allocator() {
     let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
     let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
-    let pstart = virt_to_phys(vstart);
+    let pstart = vstart as PhysAddr; // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
     root_mem_init(pstart, vstart, nr_pages);
