@@ -545,3 +545,54 @@ impl DerefMut for PageTableRef {
         unsafe {&mut *self.pgtable_ptr}
     }
 }
+
+
+#[derive(Copy, Clone)]
+struct RawPTMappingGuard {
+    start: VirtAddr,
+    end: VirtAddr,
+}
+
+impl RawPTMappingGuard {
+    pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
+        RawPTMappingGuard {
+            start: start,
+            end: end,
+        }
+    }
+}
+
+pub struct PTMappingGuard {
+    mapping: Option<RawPTMappingGuard>,
+}
+
+impl PTMappingGuard {
+    pub fn create(start: VirtAddr, end: VirtAddr, phys: PhysAddr) -> Self {
+        let raw_mapping = RawPTMappingGuard::new(start, end);
+        match get_init_pgtable_locked().map_region_4k(
+                start,
+                end,
+                phys,
+                PageTable::data_flags()) {
+            Ok(()) => PTMappingGuard {
+                mapping: Some(raw_mapping),
+            },
+            Err(()) => PTMappingGuard { mapping: None },
+        }
+    }
+
+    pub fn check_mapping(&self) -> Result<(), ()> {
+        match self.mapping {
+            Some(_) => Ok(()),
+            None => Err(()),
+        }
+    }
+}
+
+impl Drop for PTMappingGuard {
+    fn drop(&mut self) {
+        if let Some(m) = self.mapping {
+            get_init_pgtable_locked().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
+        }
+    }
+}

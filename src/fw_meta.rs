@@ -8,7 +8,7 @@
 
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use crate::utils::vec::Vec;
-use crate::PTMappingGuard;
+use crate::mm::pagetable::PTMappingGuard;
 
 use core::fmt;
 use core::mem;
