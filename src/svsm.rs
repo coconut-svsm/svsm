@@ -55,8 +55,7 @@ use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
 
 pub use svsm_paging::{
-    map_data_4k, map_page_encrypted, map_page_shared, unmap_4k,
-    walk_addr, PTMappingGuard,
+    map_data_4k, unmap_4k, walk_addr, PTMappingGuard,
 };
 
 pub use cpu::percpu::{this_cpu, this_cpu_mut};

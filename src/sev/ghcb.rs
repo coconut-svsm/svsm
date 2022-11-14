@@ -8,11 +8,10 @@
 
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::io::IOPort;
-use crate::mm::pagetable::flush_tlb_global;
+use crate::mm::pagetable::{flush_tlb_global, get_init_pgtable_locked};
 use crate::sev::sev_snp_enabled;
 use crate::types::{PhysAddr, VirtAddr};
 use crate::mm::alloc::virt_to_phys;
-use crate::{map_page_encrypted, map_page_shared};
 use core::arch::asm;
 use core::cell::RefCell;
 
@@ -134,7 +133,7 @@ impl GHCB {
         }
 
         // Map page unencrypted
-        if let Err(_e) = map_page_shared(vaddr) {
+        if let Err(_e) = get_init_pgtable_locked().set_shared_4k(vaddr) {
             return Err(());
         }
 
@@ -148,7 +147,7 @@ impl GHCB {
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
-        map_page_encrypted(vaddr)?;
+        get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
 
         // Unregister GHCB PA
         register_ghcb_gpa_msr(0usize)?;
