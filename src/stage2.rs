@@ -36,7 +36,8 @@ use cpu::percpu::PerCpu;
 use fw_cfg::{FwCfg, KernelRegion};
 use kernel_launch::KernelLaunchInfo;
 use mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use mm::pagetable::{paging_init, paging_init_early, PTEntryFlags, PageTable};
+use mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
+                    PTEntryFlags, PageTable, PageTableRef, };
 use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use sev::msr_protocol::{validate_page_msr, GHCBMsr};
 use sev::status::SEVStatusFlags;
@@ -55,26 +56,24 @@ extern "C" {
 }
 
 pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.set_shared_4k(vaddr) }
+    get_init_pgtable_locked().set_shared_4k(vaddr)
 }
 
 pub fn map_page_encrypted(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.set_encrypted_4k(vaddr) }
+    get_init_pgtable_locked().set_encrypted_4k(vaddr)
 }
 
 pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
-    unsafe {
-        let flags = PageTable::data_flags();
-        pgtable.map_4k(vaddr, paddr, &flags)
-    }
+    let flags = PageTable::data_flags();
+    get_init_pgtable_locked().map_4k(vaddr, paddr, &flags)
 }
 
 pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.unmap_4k(vaddr) }
+    get_init_pgtable_locked().unmap_4k(vaddr)
 }
 
 pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
-    unsafe { pgtable.phys_addr(vaddr) }
+    get_init_pgtable_locked().phys_addr(vaddr)
 }
 
 fn setup_stage2_allocator() {
@@ -219,6 +218,7 @@ fn setup_env() {
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     sev_status_init();
+    set_init_pgtable(PageTableRef::new(unsafe { &mut pgtable }));
     setup_stage2_allocator();
     init_percpu();
 
@@ -244,11 +244,10 @@ fn map_memory(mut paddr: PhysAddr, pend: PhysAddr, mut vaddr: VirtAddr) -> Resul
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
 
+    let mut init_pgtable = get_init_pgtable_locked();
     loop {
-        unsafe {
-            if let Err(_e) = pgtable.map_4k(vaddr, paddr as PhysAddr, &flags) {
-                return Err(());
-            }
+        if let Err(_e) = init_pgtable.map_4k(vaddr, paddr as PhysAddr, &flags) {
+            return Err(());
         }
 
         paddr += 4096;
