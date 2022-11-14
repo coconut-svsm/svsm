@@ -11,7 +11,9 @@ use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
-use core::ops::{Index, IndexMut};
+use crate::locking::{SpinLock, LockGuard};
+use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::ptr;
 
 const ENTRY_COUNT: usize = 512;
 static mut ENCRYPT_MASK: usize = 0;
@@ -495,5 +497,51 @@ impl PageTable {
             self.unmap_4k(addr)?;
         }
         Ok(())
+    }
+}
+
+static INIT_PGTABLE : SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
+
+pub fn set_init_pgtable(pgtable : PageTableRef) {
+    let mut init_pgtable = INIT_PGTABLE.lock();
+    assert_eq!(init_pgtable.is_set(), false);
+    *init_pgtable = pgtable;
+}
+
+pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
+    INIT_PGTABLE.lock()
+}
+
+pub struct PageTableRef {
+    pgtable_ptr : *mut PageTable,
+}
+
+impl PageTableRef {
+    pub fn new(pgtable : &mut PageTable) -> PageTableRef {
+        PageTableRef{pgtable_ptr : pgtable as *mut PageTable}
+    }
+
+    const fn unset() -> PageTableRef {
+        PageTableRef{pgtable_ptr : ptr::null_mut()}
+    }
+
+    fn is_set(&self) -> bool {
+        self.pgtable_ptr != ptr::null_mut()
+    }
+}
+
+impl Deref for PageTableRef {
+    type Target = PageTable;
+
+    fn deref(&self)  -> &Self::Target {
+        assert_eq!(self.is_set(), true);
+        unsafe {&*self.pgtable_ptr}
+    }
+}
+
+impl DerefMut for PageTableRef {
+    fn deref_mut(&mut self)  -> &mut Self::Target {
+        assert_eq!(self.is_set(), true);
+        unsafe {&mut *self.pgtable_ptr}
     }
 }

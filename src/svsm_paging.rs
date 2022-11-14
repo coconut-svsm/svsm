@@ -8,50 +8,31 @@
 
 use crate::heap_start;
 use crate::kernel_launch::KernelLaunchInfo;
-use crate::locking::SpinLock;
 use crate::mm;
-use crate::mm::pagetable::PageTable;
+use crate::mm::pagetable::{set_init_pgtable, get_init_pgtable_locked, PageTable, PageTableRef};
 use crate::sev::msr_protocol::invalidate_page_msr;
 use crate::sev::pvalidate;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use core::ptr;
-
-pub static INIT_PGTABLE: SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
 
 pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe {
-        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-        (*ptr).set_shared_4k(vaddr)
-    }
+    get_init_pgtable_locked().set_shared_4k(vaddr)
 }
 
 pub fn map_page_encrypted(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe {
-        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-        (*ptr).set_encrypted_4k(vaddr)
-    }
+    get_init_pgtable_locked().set_encrypted_4k(vaddr)
 }
 
 pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
-    unsafe {
-        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-        let flags = PageTable::data_flags();
-        (*ptr).map_4k(vaddr, paddr, &flags)
-    }
+    let flags = PageTable::data_flags();
+    get_init_pgtable_locked().map_4k(vaddr, paddr, &flags)
 }
 
 pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe {
-        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-        (*ptr).unmap_4k(vaddr)
-    }
+    get_init_pgtable_locked().unmap_4k(vaddr)
 }
 
 pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
-    unsafe {
-        let ptr = INIT_PGTABLE.lock().as_mut().unwrap();
-        (*ptr).phys_addr(vaddr)
-    }
+    get_init_pgtable_locked().phys_addr(vaddr)
 }
 
 extern "C" {
@@ -67,61 +48,43 @@ extern "C" {
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let mut ptr = INIT_PGTABLE.lock();
     let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
 
-    *ptr = vaddr as *mut PageTable;
+    let mut pgtable = PageTableRef::new(unsafe {&mut *(vaddr as *mut PageTable)});
 
-    unsafe {
-        let pgtable = ptr.as_mut().unwrap();
+    /* Text segment */
+    let start: VirtAddr = (unsafe { &stext } as *const u8) as VirtAddr;
+    let end: VirtAddr = (unsafe { &etext } as *const u8) as VirtAddr;
+    let phys: PhysAddr = start - offset;
+    pgtable.map_region_4k(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
 
-        /* Text segment */
-        let start: VirtAddr = (&stext as *const u8) as VirtAddr;
-        let end: VirtAddr = (&etext as *const u8) as VirtAddr;
-        let phys: PhysAddr = start - offset;
+    /* Writeble data */
+    let start: VirtAddr = (unsafe { &sdata } as *const u8) as VirtAddr;
+    let end: VirtAddr = (unsafe { &edata } as *const u8) as VirtAddr;
+    let phys: PhysAddr = start - offset;
+    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
 
-        (*pgtable)
-            .map_region_4k(start, end, phys, PageTable::exec_flags())
-            .expect("Failed to map text segment");
+    /* Read-only data */
+    let start: VirtAddr = (unsafe { &sdataro } as *const u8) as VirtAddr;
+    let end: VirtAddr = (unsafe { &edataro } as *const u8) as VirtAddr;
+    let phys: PhysAddr = start - offset;
+    pgtable.map_region_4k(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
 
-        /* Writeble data */
-        let start: VirtAddr = (&sdata as *const u8) as VirtAddr;
-        let end: VirtAddr = (&edata as *const u8) as VirtAddr;
-        let phys: PhysAddr = start - offset;
+    /* BSS */
+    let start: VirtAddr = (unsafe { &sbss } as *const u8) as VirtAddr;
+    let end: VirtAddr = (unsafe { &ebss } as *const u8) as VirtAddr;
+    let phys: PhysAddr = start - offset;
+    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
 
-        (*pgtable)
-            .map_region_4k(start, end, phys, PageTable::data_flags())
-            .expect("Failed to map data segment");
+    /* Heap */
+    let start: VirtAddr = (unsafe { &heap_start } as *const u8) as VirtAddr;
+    let end: VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
+    let phys: PhysAddr = start - offset;
+    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
 
-        /* Read-only data */
-        let start: VirtAddr = (&sdataro as *const u8) as VirtAddr;
-        let end: VirtAddr = (&edataro as *const u8) as VirtAddr;
-        let phys: PhysAddr = start - offset;
+    pgtable.load();
 
-        (*pgtable)
-            .map_region_4k(start, end, phys, PageTable::data_ro_flags())
-            .expect("Failed to map read-only data");
-
-        /* BSS */
-        let start: VirtAddr = (&sbss as *const u8) as VirtAddr;
-        let end: VirtAddr = (&ebss as *const u8) as VirtAddr;
-        let phys: PhysAddr = start - offset;
-
-        (*pgtable)
-            .map_region_4k(start, end, phys, PageTable::data_flags())
-            .expect("Failed to map bss segment");
-
-        /* Heap */
-        let start: VirtAddr = (&heap_start as *const u8) as VirtAddr;
-        let end: VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
-        let phys: PhysAddr = start - offset;
-
-        (*pgtable)
-            .map_region_4k(start, end, phys, PageTable::data_flags())
-            .expect("Failed to map heap");
-
-        (*pgtable).load();
-    }
+    set_init_pgtable(pgtable);
 }
 
 pub fn invalidate_stage2() -> Result<(), ()> {
@@ -174,18 +137,15 @@ pub struct PTMappingGuard {
 impl PTMappingGuard {
     pub fn create(start: VirtAddr, end: VirtAddr, phys: PhysAddr) -> Self {
         let raw_mapping = RawPTMappingGuard::new(start, end);
-        unsafe {
-            match INIT_PGTABLE.lock().as_mut().unwrap().map_region_4k(
+        match get_init_pgtable_locked().map_region_4k(
                 start,
                 end,
                 phys,
-                PageTable::data_flags(),
-            ) {
-                Ok(()) => PTMappingGuard {
-                    mapping: Some(raw_mapping),
-                },
-                Err(()) => PTMappingGuard { mapping: None },
-            }
+                PageTable::data_flags()) {
+            Ok(()) => PTMappingGuard {
+                mapping: Some(raw_mapping),
+            },
+            Err(()) => PTMappingGuard { mapping: None },
         }
     }
 
@@ -200,14 +160,7 @@ impl PTMappingGuard {
 impl Drop for PTMappingGuard {
     fn drop(&mut self) {
         if let Some(m) = self.mapping {
-            unsafe {
-                INIT_PGTABLE
-                    .lock()
-                    .as_mut()
-                    .unwrap()
-                    .unmap_region_4k(m.start, m.end)
-                    .expect("Failed guarded region");
-            }
+            get_init_pgtable_locked().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
         }
     }
 }
