@@ -10,7 +10,8 @@ use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4, CR4Flag
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::{allocate_pt_page, phys_to_virt, virt_to_phys};
+use crate::{phys_to_virt, virt_to_phys};
+use crate::mm::alloc::allocate_zeroed_page;
 use core::ops::{Index, IndexMut};
 
 const ENTRY_COUNT: usize = 512;
@@ -193,10 +194,9 @@ impl PageTable {
             | PTEntryFlags::DIRTY
     }
 
-    fn allocate_page_table() -> *mut PTPage {
-        let ptr = allocate_pt_page();
-
-        ptr as *mut PTPage
+    fn allocate_page_table() -> Result<*mut PTPage, ()> {
+        let ptr = allocate_zeroed_page()?;
+        Ok(ptr as *mut PTPage)
     }
 
     fn index<const L: usize>(vaddr: VirtAddr) -> usize {
@@ -263,11 +263,10 @@ impl PageTable {
             return Mapping::Level3(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level3(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level3(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -289,11 +288,10 @@ impl PageTable {
             return Mapping::Level2(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level2(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level2(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -315,11 +313,10 @@ impl PageTable {
             return Mapping::Level1(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level1(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level1(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -346,14 +343,10 @@ impl PageTable {
     }
 
     fn do_split_4k(entry: &mut PTEntry) -> Result<(), ()> {
-        let page = PageTable::allocate_page_table();
+        let page = PageTable::allocate_page_table()?;
         let mut flags = entry.flags();
 
         assert!(flags.contains(PTEntryFlags::HUGE));
-
-        if page.is_null() {
-            return Err(());
-        }
 
         let addr_2m = entry.address() & 0x000f_ffff_fff0_0000;
 

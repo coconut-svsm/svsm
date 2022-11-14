@@ -55,7 +55,7 @@ use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
 
 pub use svsm_paging::{
-    allocate_pt_page, map_data_4k, map_page_encrypted, map_page_shared, phys_to_virt, unmap_4k,
+    map_data_4k, map_page_encrypted, map_page_shared, phys_to_virt, unmap_4k,
     virt_to_phys, walk_addr, PTMappingGuard, INIT_PGTABLE,
 };
 

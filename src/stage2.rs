@@ -28,8 +28,6 @@ pub mod utils;
 extern crate compiler_builtins;
 use crate::svsm_console::SVSMIOPort;
 use console::{init_console, install_console_logger, WRITER};
-use core::alloc::GlobalAlloc;
-use core::alloc::Layout;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
@@ -37,7 +35,7 @@ use cpu::msr;
 use cpu::percpu::PerCpu;
 use fw_cfg::{FwCfg, KernelRegion};
 use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, print_memory_info, root_mem_init, ALLOCATOR};
+use mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use mm::pagetable::{paging_init, paging_init_early, PTEntryFlags, PageTable};
 use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use sev::msr_protocol::{validate_page_msr, GHCBMsr};
@@ -54,15 +52,6 @@ extern "C" {
     pub static heap_end: u8;
     pub static mut pgtable: PageTable;
     pub static CPUID_PAGE: SnpCpuidTable;
-}
-
-pub fn allocate_pt_page() -> *mut u8 {
-    let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-
-    unsafe {
-        let ptr = ALLOCATOR.alloc(layout);
-        ptr as *mut u8
-    }
 }
 
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {

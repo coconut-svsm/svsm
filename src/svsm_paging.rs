@@ -18,13 +18,6 @@ use core::ptr;
 
 pub static INIT_PGTABLE: SpinLock<*mut PageTable> = SpinLock::new(ptr::null_mut());
 
-pub fn allocate_pt_page() -> *mut u8 {
-    let pt_page: VirtAddr =
-        mm::alloc::allocate_zeroed_page().expect("Failed to allocate pgtable page");
-
-    pt_page as *mut u8
-}
-
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     mm::alloc::virt_to_phys(vaddr)
 }
