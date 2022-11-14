@@ -55,19 +55,6 @@ extern "C" {
     pub static CPUID_PAGE: SnpCpuidTable;
 }
 
-pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
-    let flags = PageTable::data_flags();
-    get_init_pgtable_locked().map_4k(vaddr, paddr, &flags)
-}
-
-pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
-    get_init_pgtable_locked().unmap_4k(vaddr)
-}
-
-pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
-    get_init_pgtable_locked().phys_addr(vaddr)
-}
-
 fn setup_stage2_allocator() {
     let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
     let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };

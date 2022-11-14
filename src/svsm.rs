@@ -54,9 +54,7 @@ use sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
 
-pub use svsm_paging::{
-    map_data_4k, unmap_4k, walk_addr, PTMappingGuard,
-};
+pub use svsm_paging::PTMappingGuard;
 
 pub use cpu::percpu::{this_cpu, this_cpu_mut};
 

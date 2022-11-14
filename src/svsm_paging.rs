@@ -14,19 +14,6 @@ use crate::sev::msr_protocol::invalidate_page_msr;
 use crate::sev::pvalidate;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 
-pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
-    let flags = PageTable::data_flags();
-    get_init_pgtable_locked().map_4k(vaddr, paddr, &flags)
-}
-
-pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
-    get_init_pgtable_locked().unmap_4k(vaddr)
-}
-
-pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
-    get_init_pgtable_locked().phys_addr(vaddr)
-}
-
 extern "C" {
     static stext: u8;
     static etext: u8;

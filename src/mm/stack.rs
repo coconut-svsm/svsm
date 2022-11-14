@@ -8,11 +8,9 @@
 
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
-use crate::mm::pagetable::flush_tlb_global;
+use crate::mm::pagetable::{flush_tlb_global, get_init_pgtable_locked, PageTable};
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::ffs;
-use crate::{map_data_4k, unmap_4k};
-use crate::walk_addr;
 
 const STACK_RANGE_START: VirtAddr = 0xffff_ff80_4000_0000;
 const STACK_RANGE_END: VirtAddr = 0xffff_ff80_8000_0000;
@@ -85,10 +83,12 @@ static STACK_ALLOC: SpinLock<StackRange> =
 pub fn allocate_stack() -> Result<VirtAddr, ()> {
     let stack = STACK_ALLOC.lock().alloc()?;
 
+    let mut pgtable = get_init_pgtable_locked();
+    let flags = PageTable::data_flags();
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);
-        map_data_4k(stack + (i * PAGE_SIZE), paddr)?;
+        pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, &flags)?;
     }
 
     Ok(stack)
@@ -101,11 +101,12 @@ pub fn stack_base_pointer(stack: VirtAddr) -> VirtAddr {
 pub fn free_stack(stack: VirtAddr) {
     let mut pages: [VirtAddr; STACK_PAGES] = [0; STACK_PAGES];
 
+    let mut pgtable = get_init_pgtable_locked();
     for i in 0..STACK_PAGES {
         let addr = stack + (i * PAGE_SIZE);
-        let paddr = walk_addr(addr).expect("Failed to get stack physical address");
+        let paddr = pgtable.phys_addr(addr).expect("Failed to get stack physical address");
         let vaddr = phys_to_virt(paddr);
-        unmap_4k(addr).expect("Failed to unmap stack");
+        pgtable.unmap_4k(addr).expect("Failed to unmap stack");
         pages[i] = vaddr;
     }
 
