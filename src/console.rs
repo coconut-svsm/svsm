@@ -8,6 +8,7 @@
 
 use crate::locking::SpinLock;
 use crate::serial::DEFAULT_SERIAL_PORT;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
@@ -46,23 +47,19 @@ pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
         writer: &mut DEFAULT_SERIAL_PORT,
     }
 });
-static mut CONSOLE_INITIALIZED: bool = false;
+static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
 pub fn init_console() {
-    unsafe {
-        CONSOLE_INITIALIZED = true;
-    }
+    unsafe { CONSOLE_INITIALIZED.reinit(&true) };
 }
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    unsafe {
-        if !CONSOLE_INITIALIZED {
-            return;
-        }
-        WRITER.lock().write_fmt(args).unwrap();
+    if !*CONSOLE_INITIALIZED {
+        return;
     }
+    WRITER.lock().write_fmt(args).unwrap();
 }
 
 enum ConsoleLoggerComponent {
