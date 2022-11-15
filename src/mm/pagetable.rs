@@ -18,7 +18,7 @@ use core::ptr;
 
 const ENTRY_COUNT: usize = 512;
 static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
-static mut FEATURE_MASK: PTEntryFlags = PTEntryFlags::empty();
+static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> = ImmutAfterInitCell::new(PTEntryFlags::empty());
 
 pub fn paging_init_early(encrypt_mask: u64) {
     unsafe { ENCRYPT_MASK.reinit(&(encrypt_mask as usize)) };
@@ -26,7 +26,7 @@ pub fn paging_init_early(encrypt_mask: u64) {
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    unsafe { FEATURE_MASK = feature_mask };
+    unsafe { FEATURE_MASK.reinit(&feature_mask) };
 }
 
 pub fn paging_init() {
@@ -50,17 +50,14 @@ pub fn paging_init() {
 
     unsafe { ENCRYPT_MASK.reinit(&new_encrypt_mask) };
 
-    unsafe {
-        FEATURE_MASK = PTEntryFlags::all();
-
-        if !cpu_has_nx() {
-            FEATURE_MASK.remove(PTEntryFlags::NX);
-        }
-
-        if !cpu_has_pge() {
-            FEATURE_MASK.remove(PTEntryFlags::GLOBAL);
-        }
+    let mut feature_mask = PTEntryFlags::all();
+    if !cpu_has_nx() {
+        feature_mask.remove(PTEntryFlags::NX);
     }
+    if !cpu_has_pge() {
+        feature_mask.remove(PTEntryFlags::GLOBAL);
+    }
+    unsafe { FEATURE_MASK.reinit(&feature_mask) };
 }
 
 pub fn flush_tlb() {
@@ -86,7 +83,7 @@ fn encrypt_mask() -> usize {
 }
 
 fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
-    unsafe { flags & FEATURE_MASK }
+    flags & *FEATURE_MASK
 }
 
 fn strip_c_bit(paddr: PhysAddr) -> PhysAddr {
