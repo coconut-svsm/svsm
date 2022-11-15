@@ -12,15 +12,16 @@ use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
 use crate::locking::{SpinLock, LockGuard};
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr;
 
 const ENTRY_COUNT: usize = 512;
-static mut ENCRYPT_MASK: usize = 0;
+static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static mut FEATURE_MASK: PTEntryFlags = PTEntryFlags::empty();
 
 pub fn paging_init_early(encrypt_mask: u64) {
-    unsafe { ENCRYPT_MASK = encrypt_mask as usize };
+    unsafe { ENCRYPT_MASK.reinit(&(encrypt_mask as usize)) };
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
@@ -38,7 +39,7 @@ pub fn paging_init() {
 
     let c_bit = res.unwrap().ebx & 0x3f;
     let new_encrypt_mask = 1usize << c_bit;
-    let old_encrypt_mask = unsafe { ENCRYPT_MASK };
+    let old_encrypt_mask = *ENCRYPT_MASK;
     if old_encrypt_mask != 0 && old_encrypt_mask != new_encrypt_mask {
         // The ENCRYPT_MASK has previously obtained by some other means,
         // e.g. through a GHCB MSR protocol info request, and is inconsistent
@@ -47,9 +48,9 @@ pub fn paging_init() {
         panic!("Early C-Bit position inconsistent with CPUID table");
     }
 
-    unsafe {
-        ENCRYPT_MASK = new_encrypt_mask;
+    unsafe { ENCRYPT_MASK.reinit(&new_encrypt_mask) };
 
+    unsafe {
         FEATURE_MASK = PTEntryFlags::all();
 
         if !cpu_has_nx() {
@@ -81,7 +82,7 @@ pub fn flush_tlb_global() {
 }
 
 fn encrypt_mask() -> usize {
-    unsafe { ENCRYPT_MASK }
+    *ENCRYPT_MASK
 }
 
 fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
