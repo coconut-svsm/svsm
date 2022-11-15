@@ -41,7 +41,7 @@ impl fmt::Write for Console {
     }
 }
 
-pub static mut WRITER: SpinLock<Console> = SpinLock::new(unsafe {
+pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
     Console {
         writer: &mut DEFAULT_SERIAL_PORT,
     }
