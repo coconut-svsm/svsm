@@ -9,6 +9,7 @@
 use crate::cpu::msr::{read_msr, SEV_STATUS};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt::{self, Write};
+use bitflags::bitflags;
 use log;
 
 bitflags! {

@@ -57,9 +57,6 @@ use cpu::percpu::this_cpu_mut;
 
 use log;
 
-#[macro_use]
-extern crate bitflags;
-
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
     pub static bsp_stack_end: u8;

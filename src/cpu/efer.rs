@@ -8,6 +8,7 @@
 
 use super::features::cpu_has_nx;
 use super::msr::{read_msr, write_msr, EFER};
+use bitflags::bitflags;
 
 bitflags! {
     pub struct EFERFlags: u64 {

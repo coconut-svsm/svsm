@@ -15,6 +15,7 @@ use crate::locking::{SpinLock, LockGuard};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr;
+use bitflags::bitflags;
 
 const ENTRY_COUNT: usize = 512;
 static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
