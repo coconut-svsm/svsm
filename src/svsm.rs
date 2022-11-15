@@ -53,8 +53,9 @@ use sev::secrets_page::{copy_secrets_page, SecretsPage};
 use sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
-
 use cpu::percpu::this_cpu_mut;
+
+use log;
 
 #[macro_use]
 extern crate bitflags;
@@ -143,7 +144,7 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 pub fn boot_stack_info() {
     unsafe {
         let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
-        println!("Boot stack starts        @ {:#018x}", vaddr);
+        log::info!("Boot stack starts        @ {:#018x}", vaddr);
     }
 }
 
@@ -180,7 +181,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     init_console();
     install_console_logger("SVSM");
 
-    println!("Secure Virtual Machine Service Module (SVSM)");
+    log::info!("Secure Virtual Machine Service Module (SVSM)");
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -195,7 +196,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
         .expect("Failed to allocate VMSA page");
     init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
-    println!("BSP Runtime stack starts @ {:#018x}", bp);
+    log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
     let rip = (svsm_main as extern "C" fn()) as u64;
     let rsp = stack_base_pointer(stack) as u64;
@@ -206,7 +207,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     let vmsa_addr: VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
     let vmsa_pa = virt_to_phys(vmsa_addr);
 
-    println!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
+    log::info!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
 
     this_cpu_mut()
         .ghcb()
@@ -237,7 +238,7 @@ pub extern "C" fn svsm_main() {
         }
     }
 
-    println!("{} CPU(s) present", nr_cpus);
+    log::info!("{} CPU(s) present", nr_cpus);
 
     let _ = parse_fw_meta_data();
 
@@ -246,7 +247,7 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Panic: {}", info);
+    log::error!("Panic: {}", info);
     loop {
         halt();
     }
