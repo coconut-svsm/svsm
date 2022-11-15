@@ -30,7 +30,7 @@ use crate::svsm_console::SVSMIOPort;
 use console::{init_console, install_console_logger, WRITER};
 use core::arch::asm;
 use core::panic::PanicInfo;
-use cpu::cpuid::SnpCpuidTable;
+use cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
 use cpu::msr;
 use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use fw_cfg::{FwCfg, KernelRegion};
@@ -203,6 +203,9 @@ fn setup_env() {
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
     sev_status_verify();
+
+    // At this point, SEV-SNP is confirmed. Register the supplied CPUID page.
+    register_cpuid_table(unsafe { &CPUID_PAGE });
 
     // At this point SEV-SNP is confirmed to be active and the CPUID table
     // should be available. Fully initialize the paging subsystem now. In

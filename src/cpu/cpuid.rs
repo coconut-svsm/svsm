@@ -7,9 +7,11 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::VirtAddr;
-use crate::CPUID_PAGE;
+use crate::utils::immut_after_init::ImmutAfterInitRef;
 
 const SNP_CPUID_MAX_COUNT: usize = 64;
+
+static CPUID_PAGE: ImmutAfterInitRef<SnpCpuidTable> = ImmutAfterInitRef::uninit();
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
@@ -42,6 +44,10 @@ pub fn copy_cpuid_table(target: &mut SnpCpuidTable, source: VirtAddr) {
     }
 }
 
+pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
+    unsafe { CPUID_PAGE.init_from_ref(table) };
+}
+
 pub struct CpuidResult {
     pub eax: u32,
     pub ebx: u32,
@@ -50,15 +56,13 @@ pub struct CpuidResult {
 }
 
 pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
-    unsafe {
-        let count: usize = CPUID_PAGE.count as usize;
+    let count: usize = CPUID_PAGE.count as usize;
 
-        for i in 0..count {
-            if eax == CPUID_PAGE.func[i].eax_in
-                && ecx == CPUID_PAGE.func[i].ecx_in
-                && xcr0 == CPUID_PAGE.func[i].xcr0_in
-                && xss == CPUID_PAGE.func[i].xss_in
-            {
+    for i in 0..count {
+        if eax == CPUID_PAGE.func[i].eax_in
+            && ecx == CPUID_PAGE.func[i].ecx_in
+            && xcr0 == CPUID_PAGE.func[i].xcr0_in
+            && xss == CPUID_PAGE.func[i].xss_in {
                 return Some(CpuidResult {
                     eax: CPUID_PAGE.func[i].eax_out,
                     ebx: CPUID_PAGE.func[i].ebx_out,
@@ -66,10 +70,9 @@ pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidR
                     edx: CPUID_PAGE.func[i].edx_out,
                 });
             }
-        }
-
-        None
     }
+
+    None
 }
 
 pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {

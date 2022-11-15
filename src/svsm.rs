@@ -39,7 +39,7 @@ use acpi::tables::load_acpi_cpu_info;
 use console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
-use cpu::cpuid::{copy_cpuid_table, SnpCpuidTable};
+use cpu::cpuid::{copy_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use cpu::gdt::load_gdt;
 use cpu::idt::{early_idt_init, idt_init};
 use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
@@ -165,6 +165,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
         let secrets_page_virt = launch_info.secrets_page as VirtAddr;
         copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
     }
+
+    register_cpuid_table(unsafe { &CPUID_PAGE });
 
     cr0_init();
     cr4_init();
