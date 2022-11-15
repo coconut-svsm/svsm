@@ -15,6 +15,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::arch::asm;
 use core::mem::size_of;
 use core::ptr;
+use log;
 
 struct PageStorageType(u64);
 
@@ -617,7 +618,7 @@ pub fn print_memory_info(info: &MemInfo) {
 
     for i in 0..MAX_ORDER {
         let nr_4k_pages: usize = 1 << i;
-        println!(
+        log::info!(
             "Order-{:#02}: total pages: {:#5} free pages: {:#5}",
             i, info.total_pages[i], info.free_pages[i]
         );
@@ -625,7 +626,7 @@ pub fn print_memory_info(info: &MemInfo) {
         free_pages_4k += info.free_pages[i] * nr_4k_pages;
     }
 
-    println!(
+    log::info!(
         "Total memory: {}KiB free memory: {}KiB",
         (pages_4k * PAGE_SIZE) / 1024,
         (free_pages_4k * PAGE_SIZE) / 1024
@@ -1199,13 +1200,11 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     }
 }
 
-use crate::println;
-
 pub fn print_alloc_info() {
     for i in 0..MAX_ORDER {
         let nr_pages = ROOT_MEM.lock().nr_pages[i];
         let free_pages = ROOT_MEM.lock().free_pages[i];
-        println!(
+        log::trace!(
             "Order-{}: Pages: {:#04} Free Pages: {:#04}",
             i, nr_pages, free_pages
         );
