@@ -44,6 +44,7 @@ use sev::status::SEVStatusFlags;
 use sev::{pvalidate, sev_status_init, sev_status_verify};
 use types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use utils::{halt, page_align, page_align_up};
+use log;
 
 #[macro_use]
 extern crate bitflags;
@@ -250,16 +251,16 @@ fn validate_kernel_region(mut vaddr: VirtAddr, region: &KernelRegion) -> Result<
 
     loop {
         if let Err(_e) = validate_page_msr(paddr) {
-            println!(
-                "Error: Validating page failed for physical address {:#018x}",
+            log::error!(
+                "Validating page failed for physical address {:#018x}",
                 paddr
             );
             return Err(());
         }
 
         if let Err(_e) = pvalidate(vaddr, false, true) {
-            println!(
-                "Error: PVALIDATE failed for virtual address {:#018x}",
+            log::error!(
+                "PVALIDATE failed for virtual address {:#018x}",
                 vaddr
             );
             return Err(());
@@ -302,27 +303,27 @@ unsafe fn copy_and_launch_kernel(kli: KInfo) {
         ghcb: 0,
     };
 
-    println!(
+    log::info!(
         "  kernel_physical_start = {:#018x}",
         kernel_launch_info.kernel_start
     );
-    println!(
+    log::info!(
         "  kernel_physical_end   = {:#018x}",
         kernel_launch_info.kernel_end
     );
-    println!(
+    log::info!(
         "  kernel_virtual_base   = {:#018x}",
         kernel_launch_info.virt_base
     );
-    println!(
+    log::info!(
         "  cpuid_page            = {:#018x}",
         kernel_launch_info.cpuid_page
     );
-    println!(
+    log::info!(
         "  secrets_page          = {:#018x}",
         kernel_launch_info.secrets_page
     );
-    println!("Launching SVSM kernel...");
+    log::info!("Launching SVSM kernel...");
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -346,7 +347,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
 
     let r = fw_cfg.find_kernel_region().unwrap();
 
-    println!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
+    log::info!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
     let (kernel_virt_base, kernel_entry) = unsafe {
         let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;
@@ -376,7 +377,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Panic: {}", info);
+    log::error!("Panic: {}", info);
     loop {
         halt();
     }
