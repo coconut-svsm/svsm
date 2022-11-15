@@ -46,13 +46,13 @@ use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use cpu::vmsa::init_svsm_vmsa;
 use fw_cfg::FwCfg;
 use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, memory_init, print_memory_info, virt_to_phys};
+use mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
 use mm::pagetable::paging_init;
 use mm::stack::{allocate_stack, stack_base_pointer};
 use sev::secrets_page::{copy_secrets_page, SecretsPage};
 use sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
-use types::VirtAddr;
+use types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use cpu::percpu::this_cpu_mut;
 
 use log;
@@ -126,6 +126,17 @@ extern "C" {
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
+
+pub fn memory_init(launch_info: &KernelLaunchInfo) {
+    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
+    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
+    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
+    let page_count = (vend - vstart) / PAGE_SIZE;
+    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
+    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
+
+    root_mem_init(pstart, vstart, page_count);
+}
 
 fn init_percpu() {
     unsafe {

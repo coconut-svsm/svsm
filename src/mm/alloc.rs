@@ -6,8 +6,6 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::heap_start;
-use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::SpinLock;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::align_up;
@@ -1209,15 +1207,4 @@ pub fn print_alloc_info() {
             i, nr_pages, free_pages
         );
     }
-}
-
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
-    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
-    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
-    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
-    let page_count = (vend - vstart) / PAGE_SIZE;
-    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
-    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
-
-    root_mem_init(pstart, vstart, page_count);
 }
