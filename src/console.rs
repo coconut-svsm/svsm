@@ -62,25 +62,20 @@ pub fn _print(args: fmt::Arguments) {
     WRITER.lock().write_fmt(args).unwrap();
 }
 
-enum ConsoleLoggerComponent {
-    Uninitialized,
-    Name { name: &'static str },
+#[derive(Clone, Copy)]
+struct ConsoleLoggerComponent {
+    name: &'static str
 }
 
+#[derive(Clone, Copy)]
 struct ConsoleLogger {
     component: ConsoleLoggerComponent,
 }
 
 impl ConsoleLogger {
-    const fn uninitialized() -> ConsoleLogger {
-        ConsoleLogger {
-            component: ConsoleLoggerComponent::Uninitialized,
-        }
-    }
-
     fn new(component: &'static str) -> ConsoleLogger {
         ConsoleLogger {
-            component: ConsoleLoggerComponent::Name { name: component },
+            component: ConsoleLoggerComponent { name: component },
         }
     }
 }
@@ -97,11 +92,7 @@ impl log::Log for ConsoleLogger {
 
         // The logger being uninitialized is impossible, as that would mean it
         // wouldn't have been registered with the log library.
-        let component: &'static str = match self.component {
-            ConsoleLoggerComponent::Uninitialized => &"",
-            ConsoleLoggerComponent::Name { name } => name,
-        };
-
+        let component: &'static str = &self.component.name;
         // Log format/detail depends on the level.
         match record.metadata().level() {
             log::Level::Error | log::Level::Warn => {
@@ -132,25 +123,13 @@ impl log::Log for ConsoleLogger {
     fn flush(&self) {}
 }
 
-static mut CONSOLE_LOGGER: ConsoleLogger = ConsoleLogger::uninitialized();
-static CONSOLE_LOGGER_LOCK: SpinLock<()> = SpinLock::new(());
+static CONSOLE_LOGGER: ImmutAfterInitCell<ConsoleLogger> = ImmutAfterInitCell::uninit();
 
 pub fn install_console_logger(component: &'static str) {
-    // The console logger gets initialized early once and becomes effectively
-    // immutable henceafter. Even though not needed with the assumed
-    // single-threaded setup, synchronize the initialization for universal
-    // correctness.
-    let console_logger_lock = CONSOLE_LOGGER_LOCK.lock();
-    let console_logger = unsafe { &mut CONSOLE_LOGGER };
+    let logger = ConsoleLogger::new(component);
+    unsafe { CONSOLE_LOGGER.init(&logger) };
 
-    if let ConsoleLoggerComponent::Name { name: _ } = console_logger.component {
-        // Another component has already installed the console logger.
-        log::error!("Console logger reregistration from {}", component);
-    }
-    *console_logger = ConsoleLogger::new(component);
-    drop(console_logger_lock);
-
-    if let Err(_) = log::set_logger(console_logger) {
+    if let Err(_) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had
         // installed another logger before. No logs will appear at the console.
         // Print an error string.
