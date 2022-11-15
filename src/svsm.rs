@@ -54,7 +54,7 @@ use sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
 
-pub use cpu::percpu::{this_cpu, this_cpu_mut};
+use cpu::percpu::this_cpu_mut;
 
 #[macro_use]
 extern crate bitflags;

@@ -32,7 +32,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
 use cpu::msr;
-use cpu::percpu::PerCpu;
+use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use fw_cfg::{FwCfg, KernelRegion};
 use kernel_launch::KernelLaunchInfo;
 use mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -68,7 +68,9 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
+        register_per_cpu(0, &PERCPU);
         PERCPU.setup_ghcb().expect("Failed to setup percpu data");
+        load_per_cpu(0);
     }
 }
 
@@ -78,14 +80,6 @@ fn shutdown_percpu() {
             .shutdown()
             .expect("Failed to shut down percpu data (including GHCB)");
     }
-}
-
-pub fn this_cpu() -> &'static PerCpu {
-    unsafe { &PERCPU }
-}
-
-pub fn this_cpu_mut() -> &'static mut PerCpu {
-    unsafe { &mut PERCPU }
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();

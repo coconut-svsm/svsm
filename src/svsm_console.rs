@@ -9,7 +9,7 @@
 use crate::io::IOPort;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::request_termination_msr;
-use crate::this_cpu_mut;
+use crate::cpu::percpu::this_cpu_mut;
 
 pub struct SVSMIOPort {}
 
