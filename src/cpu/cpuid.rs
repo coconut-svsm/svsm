@@ -7,6 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::utils::immut_after_init::ImmutAfterInitRef;
+use log;
 
 const SNP_CPUID_MAX_COUNT: usize = 64;
 
@@ -37,6 +38,7 @@ pub struct SnpCpuidTable {
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     unsafe { CPUID_PAGE.init_from_ref(table) };
+    dump_cpuid_table();
 }
 
 pub struct CpuidResult {
@@ -70,26 +72,21 @@ pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {
     cpuid_table_raw(eax, 0, 0, 0)
 }
 
-/*
-pub fn dump_cpuid_table() {
-    unsafe {
-        let cpuid : *const SnpCpuidTable = 0x9f000 as *const SnpCpuidTable;
-        let count = (*cpuid).count as usize;
+fn dump_cpuid_table() {
+    let count = CPUID_PAGE.count as usize;
 
-        println!("CPUID Table entry count: {}", count);
+    log::trace!("CPUID Table entry count: {}", count);
 
-        for i in 0..count {
-            let eax_in = (*cpuid).func[i].eax_in;
-            let ecx_in = (*cpuid).func[i].ecx_in;
-            let xcr0_in = (*cpuid).func[i].xcr0_in;
-            let xss_in = (*cpuid).func[i].xss_in;
-            let eax_out = (*cpuid).func[i].eax_out;
-            let ebx_out = (*cpuid).func[i].ebx_out;
-            let ecx_out = (*cpuid).func[i].ecx_out;
-            let edx_out = (*cpuid).func[i].edx_out;
-            println!("EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
+    for i in 0..count {
+        let eax_in = CPUID_PAGE.func[i].eax_in;
+        let ecx_in = CPUID_PAGE.func[i].ecx_in;
+        let xcr0_in = CPUID_PAGE.func[i].xcr0_in;
+        let xss_in = CPUID_PAGE.func[i].xss_in;
+        let eax_out = CPUID_PAGE.func[i].eax_out;
+        let ebx_out = CPUID_PAGE.func[i].ebx_out;
+        let ecx_out = CPUID_PAGE.func[i].ecx_out;
+        let edx_out = CPUID_PAGE.func[i].edx_out;
+        log::trace!("EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
                     eax_in, ecx_in, xcr0_in, xss_in, eax_out, ebx_out, ecx_out, edx_out);
-        }
     }
 }
-*/
