@@ -34,12 +34,12 @@ use crate::serial::SerialPort;
 use crate::serial::SERIAL_PORT;
 use crate::sev::vmsa::VMSA;
 use crate::svsm_console::SVSMIOPort;
-use crate::utils::halt;
+use crate::utils::{halt, immut_after_init::ImmutAfterInitCell};
 use acpi::tables::load_acpi_cpu_info;
 use console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
-use cpu::cpuid::{copy_cpuid_table, register_cpuid_table, SnpCpuidTable};
+use cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
 use cpu::gdt::load_gdt;
 use cpu::idt::{early_idt_init, idt_init};
 use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
@@ -61,7 +61,6 @@ extern crate bitflags;
 
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
-    pub static mut CPUID_PAGE: SnpCpuidTable;
     pub static bsp_stack_end: u8;
 }
 
@@ -104,11 +103,6 @@ global_asm!(
     bsp_stack_end:
 
         .align 4096
-        .globl CPUID_PAGE
-    CPUID_PAGE:
-        .fill 4096, 1, 0
-
-        .align 4096
         .globl SECRETS_PAGE
     SECRETS_PAGE:
         .fill 4096, 1, 0
@@ -127,6 +121,8 @@ extern "C" {
     static _ebss: u8;
     pub static heap_start: u8;
 }
+
+static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
@@ -158,15 +154,14 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     load_gdt();
     early_idt_init();
 
-    unsafe {
-        let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
-        copy_cpuid_table(&mut CPUID_PAGE, cpuid_table_virt);
+    let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
+    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
+    register_cpuid_table(&CPUID_PAGE);
 
+    unsafe {
         let secrets_page_virt = launch_info.secrets_page as VirtAddr;
         copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
     }
-
-    register_cpuid_table(unsafe { &CPUID_PAGE });
 
     cr0_init();
     cr4_init();
