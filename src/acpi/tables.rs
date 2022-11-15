@@ -13,8 +13,7 @@ use crate::utils::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
 use core::mem;
 use core::ptr;
-
-use crate::println;
+use log;
 
 #[repr(C, packed)]
 pub struct RSDPDesc {
@@ -118,7 +117,7 @@ impl ACPITableHeader {
         let oem_id = array_to_string(self.oem_id);
         let oem_table_id = array_to_string(self.oem_table_id);
         let compiler_id = array_to_string(self.compiler_id);
-        println!(
+        log::trace!(
             "ACPI: [{} {} {} {} {} {} {} {} {}]",
             sig,
             self.len,
