@@ -9,6 +9,7 @@
 pub mod alloc;
 pub mod util;
 pub mod vec;
+pub mod immut_after_init;
 
 pub use alloc::{alloc, alloc_zeroed, dealloc, handle_alloc_error, realloc};
 pub use util::{align_up, ffs, halt, page_align, page_align_up};
