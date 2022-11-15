@@ -6,7 +6,6 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::VirtAddr;
 use crate::utils::immut_after_init::ImmutAfterInitRef;
 
 const SNP_CPUID_MAX_COUNT: usize = 64;
@@ -34,14 +33,6 @@ pub struct SnpCpuidTable {
     reserved_1: u32,
     reserved_2: u64,
     func: [SnpCpuidFn; SNP_CPUID_MAX_COUNT],
-}
-
-pub fn copy_cpuid_table(target: &mut SnpCpuidTable, source: VirtAddr) {
-    let table = source as *const SnpCpuidTable;
-
-    unsafe {
-        *target = *table;
-    }
 }
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
