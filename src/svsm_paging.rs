@@ -7,12 +7,12 @@
 // vim: ts=4 sw=4 et
 
 use crate::heap_start;
-use crate::kernel_launch::KernelLaunchInfo;
-use crate::mm;
-use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef, PTMappingGuard};
-use crate::sev::msr_protocol::invalidate_page_msr;
-use crate::sev::pvalidate;
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm;
+use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef, PTMappingGuard};
+use svsm::sev::msr_protocol::invalidate_page_msr;
+use svsm::sev::pvalidate;
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 
 extern "C" {
     static stext: u8;

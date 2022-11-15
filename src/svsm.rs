@@ -9,51 +9,36 @@
 #![no_std]
 #![no_main]
 #![feature(const_mut_refs)]
-pub mod acpi;
-pub mod console;
-pub mod cpu;
-pub mod fw_cfg;
-pub mod io;
-pub mod kernel_launch;
-pub mod locking;
-pub mod mm;
-pub mod serial;
-pub mod sev;
-pub mod string;
-pub mod svsm_console;
 pub mod svsm_paging;
-pub mod types;
-pub mod utils;
 
-pub mod fw_meta;
-use fw_meta::parse_fw_meta_data;
+use svsm::fw_meta::parse_fw_meta_data;
 
-use crate::cpu::control_regs::{cr0_init, cr4_init};
-use crate::cpu::efer::efer_init;
-use crate::serial::SerialPort;
-use crate::serial::SERIAL_PORT;
-use crate::sev::vmsa::VMSA;
-use crate::svsm_console::SVSMIOPort;
-use crate::utils::{halt, immut_after_init::ImmutAfterInitCell};
-use acpi::tables::load_acpi_cpu_info;
-use console::{init_console, install_console_logger, WRITER};
+use svsm::cpu::control_regs::{cr0_init, cr4_init};
+use svsm::cpu::efer::efer_init;
+use svsm::serial::SerialPort;
+use svsm::serial::SERIAL_PORT;
+use svsm::sev::vmsa::VMSA;
+use svsm::svsm_console::SVSMIOPort;
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell};
+use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
-use cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
-use cpu::gdt::load_gdt;
-use cpu::idt::{early_idt_init, idt_init};
-use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
-use cpu::vmsa::init_svsm_vmsa;
-use fw_cfg::FwCfg;
-use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
-use mm::pagetable::paging_init;
-use mm::stack::{allocate_stack, stack_base_pointer};
-use sev::secrets_page::{copy_secrets_page, SecretsPage};
-use sev::utils::RMPFlags;
+use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::gdt::load_gdt;
+use svsm::cpu::idt::{early_idt_init, idt_init};
+use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::cpu::vmsa::init_svsm_vmsa;
+use svsm::fw_cfg::FwCfg;
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
+use svsm::mm::pagetable::paging_init;
+use svsm::mm::stack::{allocate_stack, stack_base_pointer};
+use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
-use types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use cpu::percpu::this_cpu_mut;
+use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use svsm::cpu::percpu::this_cpu_mut;
 
 use log;
 

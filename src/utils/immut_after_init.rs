@@ -33,7 +33,7 @@ use core::marker::PhantomData;
 /// A `ImmutAfterInitCell` may start out in unitialized state and can get
 /// initialized at runtime:
 /// ```
-/// # use crate::utils::immut_after_init::ImmutAfterInitCell;
+/// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
 /// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
 /// pub fn main() {
 ///     unsafe { X.init(&123) };
@@ -45,7 +45,7 @@ use core::marker::PhantomData;
 /// `ImmutAfterInitCell`'s value may get reset after having been initialized
 /// already:
 /// ```
-/// # use crate::utils::immut_after_init::ImmutAfterInitCell;
+/// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
 /// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::new(0);
 /// pub fn main() {
 ///     assert_eq!(*X, 0);
@@ -120,7 +120,7 @@ unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
 /// A `ImmutAfterInitRef` can be initialized to either point to a
 /// `ImmutAfterInitCell`'s contents,
 /// ```
-/// # use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
+/// # use svsm::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
 /// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
 /// static RX : ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
 /// fn main() {
@@ -131,7 +131,7 @@ unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
 /// ```
 /// or to plain value directly:
 /// ```
-/// # use crate::utils::immut_after_init::ImmutAfterInitRef;
+/// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
 /// static X : i32 = 123;
 /// static RX : ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
 /// fn main() {
@@ -144,7 +144,7 @@ unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
 /// possibly temporary `ImmutAfterInitRef`, with the temporary again either
 /// dereferencing a [`ImmutAfterInitCell`]'s contents,
 /// ```
-/// # use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
+/// # use svsm::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
 /// static RX : ImmutAfterInitRef::<'static, i32> = ImmutAfterInitRef::uninit();
 ///
 /// fn init_rx(r : ImmutAfterInitRef<'static, i32>) {
@@ -162,7 +162,7 @@ unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
 /// ```
 /// or a plain value directly:
 /// ```
-/// # use crate::utils::immut_after_init::ImmutAfterInitRef;
+/// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
 /// static RX : ImmutAfterInitRef::<'static, i32> = ImmutAfterInitRef::uninit();
 //
 /// fn init_rx(r : ImmutAfterInitRef<'static, i32>) {

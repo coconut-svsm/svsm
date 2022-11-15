@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "stage2"
+name = "svsm"
 version = "0.1.0"
 dependencies = [
  "bitflags",

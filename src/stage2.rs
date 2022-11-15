@@ -11,39 +11,26 @@
 #![feature(const_mut_refs, rustc_private)]
 
 pub mod boot_stage2;
-pub mod console;
-pub mod cpu;
-pub mod fw_cfg;
-pub mod io;
-pub mod kernel_launch;
-pub mod locking;
-pub mod mm;
-pub mod serial;
-pub mod sev;
-pub mod string;
-pub mod svsm_console;
-pub mod types;
-pub mod utils;
 
 extern crate compiler_builtins;
-use crate::svsm_console::SVSMIOPort;
-use console::{init_console, install_console_logger, WRITER};
+use svsm::svsm_console::SVSMIOPort;
+use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::asm;
 use core::panic::PanicInfo;
-use cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
-use cpu::msr;
-use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
-use fw_cfg::{FwCfg, KernelRegion};
-use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
-                    PTEntryFlags, PageTable, PageTableRef, };
-use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
-use sev::msr_protocol::{validate_page_msr, GHCBMsr};
-use sev::status::SEVStatusFlags;
-use sev::{pvalidate, sev_status_init, sev_status_verify};
-use types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use utils::{halt, page_align, page_align_up};
+use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
+use svsm::cpu::msr;
+use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::fw_cfg::{FwCfg, KernelRegion};
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
+                          PTEntryFlags, PageTable, PageTableRef, };
+use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
+use svsm::sev::msr_protocol::{validate_page_msr, GHCBMsr};
+use svsm::sev::status::SEVStatusFlags;
+use svsm::sev::{pvalidate, sev_status_init, sev_status_verify};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::utils::{halt, page_align, page_align_up};
 use log;
 
 extern "C" {
