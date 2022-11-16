@@ -11,12 +11,15 @@ edition = "2021"
 [[bin]]
 name = "stage2"
 path = "src/stage2.rs"
+test = false
 
 [[bin]]
 name = "svsm"
 path = "src/svsm.rs"
+test = false
 
 [lib]
+test = true
 
 [dependencies]
 bitflags = "1.3.2"
