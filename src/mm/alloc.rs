@@ -1180,7 +1180,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     }
 }
 
-#[global_allocator]
+#[cfg_attr(not(test), global_allocator)]
 pub static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
