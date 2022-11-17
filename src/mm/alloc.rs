@@ -404,31 +404,13 @@ impl MemoryRegion {
         }
     }
 
-    fn order_mask(order: usize) -> usize {
-        !((PAGE_SIZE << order) - 1)
-    }
-
-    fn pfn_to_virt(&self, pfn: usize) -> VirtAddr {
-        self.start_virt + (pfn * PAGE_SIZE)
-    }
-
-    fn virt_to_pfn(&self, vaddr: VirtAddr) -> usize {
-        (vaddr - self.start_virt) / PAGE_SIZE
-    }
-
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, ()> {
         if order >= MAX_ORDER - 1 {
             return Err(());
         }
 
-        let vaddr = self.pfn_to_virt(pfn) & MemoryRegion::order_mask(order);
-        let neigh = vaddr ^ (PAGE_SIZE << order);
-
-        if vaddr < self.start_virt || neigh < self.start_virt {
-            return Err(());
-        }
-
-        let pfn = self.virt_to_pfn(neigh);
+        assert_eq!(pfn & ((1usize << order) - 1), 0);
+        let pfn = pfn ^ (1usize << order);
         if pfn >= self.page_count {
             return Err(());
         }
