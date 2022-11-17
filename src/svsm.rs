@@ -225,7 +225,7 @@ pub extern "C" fn svsm_main() {
     let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
 
-    for i in 0..cpus.size() {
+    for i in 0..cpus.len() {
         if cpus[i].enabled {
             nr_cpus += 1;
         }
