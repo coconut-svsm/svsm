@@ -8,7 +8,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
+#![feature(const_mut_refs, default_alloc_error_handler)]
 pub mod svsm_paging;
 
 use svsm::fw_meta::parse_fw_meta_data;

@@ -6,10 +6,12 @@
 //
 // vim: ts=4 sw=4 et
 
+extern crate alloc;
+
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
 use crate::utils::vec::Vec;
-use crate::utils::{alloc, dealloc, handle_alloc_error};
+use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
 use core::mem;
 use core::ptr;

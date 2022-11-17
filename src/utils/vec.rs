@@ -9,7 +9,9 @@
 // Custom Vec implementation
 // Written while following https://doc.rust-lang.org/nomicon/vec/vec.html
 
-use crate::utils::{alloc, dealloc, handle_alloc_error, realloc};
+extern crate alloc;
+
+use alloc::alloc::{alloc, dealloc, handle_alloc_error, realloc};
 use core::alloc::Layout;
 use core::marker::PhantomData;
 use core::mem;
