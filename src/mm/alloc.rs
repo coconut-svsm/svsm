@@ -1230,6 +1230,11 @@ fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
     let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
     unsafe { dealloc(root_mem.start_phys as *mut u8, layout) };
     *root_mem = MemoryRegion::new();
+
+    // Reset the Slabs
+    *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();
+    unsafe { ALLOCATOR = SvsmAllocator::new() };
+
     drop(lock);
 }
 
@@ -1366,5 +1371,122 @@ fn test_page_alloc_oom() {
     assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
 
     drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+
+#[cfg(test)]
+const TEST_SLAB_SIZES: [usize; 7]  = [32, 64, 128, 256, 512, 1024, 2048];
+
+#[test]
+// Allocate and free a couple of objects for each slab size.
+fn test_slab_alloc_free_many() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+
+    // Run it twice to make sure some objects will get freed and allocated again.
+    for _i in 0..2 {
+        let mut allocs: [Vec<*mut u8>; TEST_SLAB_SIZES.len()] = Default::default();
+        let mut j = 0;
+        for size in TEST_SLAB_SIZES {
+            let layout = Layout::from_size_align(size, size).unwrap().pad_to_align();
+            assert_eq!(layout.size(), size);
+
+            // Allocate four pages worth of objects from each Slab.
+            let n = (4 * PAGE_SIZE + size - 1) / size;
+            for _k in 0..n {
+                let p = unsafe { ALLOCATOR.alloc(layout) };
+                assert_ne!(p, ptr::null_mut());
+                allocs[j].push(p);
+            }
+            j = j + 1;
+        }
+
+        j = 0;
+        for size in TEST_SLAB_SIZES {
+            let layout = Layout::from_size_align(size, size).unwrap().pad_to_align();
+            assert_eq!(layout.size(), size);
+
+            for p in &allocs[j][..] {
+                unsafe { ALLOCATOR.dealloc(*p, layout) };
+            }
+            j = j + 1;
+        }
+    }
+
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate enough objects so that the SlabPageSlab will need a SlabPage for
+// itself twice.
+fn test_slab_page_slab_for_self() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+
+    const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
+    const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
+
+    const SLAB_PAGE_SIZE: usize = size_of::<SlabPage>();
+    const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE;
+
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    assert_eq!(layout.size(), OBJECT_SIZE);
+
+    let mut allocs: Vec<*mut u8> = Vec::new();
+    for _i in 0..(2 * SLAB_PAGES_PER_PAGE * OBJECTS_PER_PAGE) {
+        let p = unsafe { ALLOCATOR.alloc(layout) };
+        assert_ne!(p, ptr::null_mut());
+        assert_ne!(SLAB_PAGE_SLAB.lock().common.capacity, 0);
+        allocs.push(p);
+    }
+
+    for p in allocs {
+        unsafe { ALLOCATOR.dealloc(p, layout) };
+    }
+
+    assert_ne!(SLAB_PAGE_SLAB.lock().common.free, 0);
+    assert!(SLAB_PAGE_SLAB.lock().common.free_pages < 2);
+
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate enough objects to hit an OOM situation and verify null gets
+// returned at some point.
+fn test_slab_oom() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    const TEST_MEMORY_SIZE: usize = 256 * PAGE_SIZE;
+    let test_mem_lock =  setup_test_root_mem(TEST_MEMORY_SIZE);
+
+    const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    assert_eq!(layout.size(), OBJECT_SIZE);
+
+    let mut allocs: Vec<*mut u8> = Vec::new();
+    let mut null_seen = false;
+    for _i in 0..((TEST_MEMORY_SIZE + OBJECT_SIZE - 1) / OBJECT_SIZE) {
+        let p = unsafe { ALLOCATOR.alloc(layout) };
+        if p.is_null() {
+            null_seen = true;
+            break;
+        }
+        allocs.push(p);
+    }
+
+    if !null_seen {
+        panic!("unexpected slab allocation success after memory exhaustion");
+    }
+
+    for p in allocs {
+        unsafe { ALLOCATOR.dealloc(p, layout) };
+    }
+
     destroy_test_root_mem(test_mem_lock);
 }
