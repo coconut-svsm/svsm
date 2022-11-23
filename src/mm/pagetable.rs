@@ -10,8 +10,10 @@ use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4, CR4Flag
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::{allocate_pt_page, phys_to_virt, virt_to_phys};
-use core::ops::{Index, IndexMut};
+use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
+use crate::locking::{SpinLock, LockGuard};
+use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::ptr;
 
 const ENTRY_COUNT: usize = 512;
 static mut ENCRYPT_MASK: usize = 0;
@@ -193,10 +195,9 @@ impl PageTable {
             | PTEntryFlags::DIRTY
     }
 
-    fn allocate_page_table() -> *mut PTPage {
-        let ptr = allocate_pt_page();
-
-        ptr as *mut PTPage
+    fn allocate_page_table() -> Result<*mut PTPage, ()> {
+        let ptr = allocate_zeroed_page()?;
+        Ok(ptr as *mut PTPage)
     }
 
     fn index<const L: usize>(vaddr: VirtAddr) -> usize {
@@ -263,11 +264,10 @@ impl PageTable {
             return Mapping::Level3(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level3(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level3(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -289,11 +289,10 @@ impl PageTable {
             return Mapping::Level2(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level2(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level2(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -315,11 +314,10 @@ impl PageTable {
             return Mapping::Level1(entry);
         }
 
-        let page = PageTable::allocate_page_table();
-
-        if page.is_null() {
-            return Mapping::Level1(entry);
-        }
+        let page = match PageTable::allocate_page_table() {
+            Ok(page) => page,
+            _ => return Mapping::Level1(entry),
+        };
 
         let addr = page as PhysAddr;
         let flags = PTEntryFlags::PRESENT
@@ -346,14 +344,10 @@ impl PageTable {
     }
 
     fn do_split_4k(entry: &mut PTEntry) -> Result<(), ()> {
-        let page = PageTable::allocate_page_table();
+        let page = PageTable::allocate_page_table()?;
         let mut flags = entry.flags();
 
         assert!(flags.contains(PTEntryFlags::HUGE));
-
-        if page.is_null() {
-            return Err(());
-        }
 
         let addr_2m = entry.address() & 0x000f_ffff_fff0_0000;
 
@@ -364,12 +358,11 @@ impl PageTable {
             let addr_4k = addr_2m + (i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
-                (*page).entries[i].set(set_c_bit(virt_to_phys(addr_4k)), flags);
+                (*page).entries[i].set(set_c_bit(addr_4k), flags);
             }
         }
 
-        let addr_2m = page as PhysAddr;
-        entry.set(set_c_bit(virt_to_phys(addr_2m)), flags);
+        entry.set(set_c_bit(virt_to_phys(page as VirtAddr)), flags);
 
         flush_tlb();
 
@@ -398,7 +391,7 @@ impl PageTable {
         let addr = entry.address();
 
         // entry.address() returned with c-bit clear already
-        entry.set(set_c_bit(virt_to_phys(addr)), flags);
+        entry.set(set_c_bit(addr), flags);
     }
 
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
@@ -504,5 +497,102 @@ impl PageTable {
             self.unmap_4k(addr)?;
         }
         Ok(())
+    }
+}
+
+static INIT_PGTABLE : SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
+
+pub fn set_init_pgtable(pgtable : PageTableRef) {
+    let mut init_pgtable = INIT_PGTABLE.lock();
+    assert_eq!(init_pgtable.is_set(), false);
+    *init_pgtable = pgtable;
+}
+
+pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
+    INIT_PGTABLE.lock()
+}
+
+pub struct PageTableRef {
+    pgtable_ptr : *mut PageTable,
+}
+
+impl PageTableRef {
+    pub fn new(pgtable : &mut PageTable) -> PageTableRef {
+        PageTableRef{pgtable_ptr : pgtable as *mut PageTable}
+    }
+
+    const fn unset() -> PageTableRef {
+        PageTableRef{pgtable_ptr : ptr::null_mut()}
+    }
+
+    fn is_set(&self) -> bool {
+        self.pgtable_ptr != ptr::null_mut()
+    }
+}
+
+impl Deref for PageTableRef {
+    type Target = PageTable;
+
+    fn deref(&self)  -> &Self::Target {
+        assert_eq!(self.is_set(), true);
+        unsafe {&*self.pgtable_ptr}
+    }
+}
+
+impl DerefMut for PageTableRef {
+    fn deref_mut(&mut self)  -> &mut Self::Target {
+        assert_eq!(self.is_set(), true);
+        unsafe {&mut *self.pgtable_ptr}
+    }
+}
+
+
+#[derive(Copy, Clone)]
+struct RawPTMappingGuard {
+    start: VirtAddr,
+    end: VirtAddr,
+}
+
+impl RawPTMappingGuard {
+    pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
+        RawPTMappingGuard {
+            start: start,
+            end: end,
+        }
+    }
+}
+
+pub struct PTMappingGuard {
+    mapping: Option<RawPTMappingGuard>,
+}
+
+impl PTMappingGuard {
+    pub fn create(start: VirtAddr, end: VirtAddr, phys: PhysAddr) -> Self {
+        let raw_mapping = RawPTMappingGuard::new(start, end);
+        match get_init_pgtable_locked().map_region_4k(
+                start,
+                end,
+                phys,
+                PageTable::data_flags()) {
+            Ok(()) => PTMappingGuard {
+                mapping: Some(raw_mapping),
+            },
+            Err(()) => PTMappingGuard { mapping: None },
+        }
+    }
+
+    pub fn check_mapping(&self) -> Result<(), ()> {
+        match self.mapping {
+            Some(_) => Ok(()),
+            None => Err(()),
+        }
+    }
+}
+
+impl Drop for PTMappingGuard {
+    fn drop(&mut self) {
+        if let Some(m) = self.mapping {
+            get_init_pgtable_locked().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
+        }
     }
 }

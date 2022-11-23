@@ -28,8 +28,6 @@ pub mod utils;
 extern crate compiler_builtins;
 use crate::svsm_console::SVSMIOPort;
 use console::{init_console, install_console_logger, WRITER};
-use core::alloc::GlobalAlloc;
-use core::alloc::Layout;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use cpu::cpuid::SnpCpuidTable;
@@ -37,8 +35,9 @@ use cpu::msr;
 use cpu::percpu::PerCpu;
 use fw_cfg::{FwCfg, KernelRegion};
 use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, print_memory_info, root_mem_init, ALLOCATOR};
-use mm::pagetable::{paging_init, paging_init_early, PTEntryFlags, PageTable};
+use mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
+                    PTEntryFlags, PageTable, PageTableRef, };
 use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use sev::msr_protocol::{validate_page_msr, GHCBMsr};
 use sev::status::SEVStatusFlags;
@@ -56,50 +55,10 @@ extern "C" {
     pub static CPUID_PAGE: SnpCpuidTable;
 }
 
-pub fn allocate_pt_page() -> *mut u8 {
-    let layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-
-    unsafe {
-        let ptr = ALLOCATOR.alloc(layout);
-        ptr as *mut u8
-    }
-}
-
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    vaddr as PhysAddr
-}
-
-pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    paddr as VirtAddr
-}
-
-pub fn map_page_shared(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.set_shared_4k(vaddr) }
-}
-
-pub fn map_page_encrypted(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.set_encrypted_4k(vaddr) }
-}
-
-pub fn map_data_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), ()> {
-    unsafe {
-        let flags = PageTable::data_flags();
-        pgtable.map_4k(vaddr, paddr, &flags)
-    }
-}
-
-pub fn unmap_4k(vaddr: VirtAddr) -> Result<(), ()> {
-    unsafe { pgtable.unmap_4k(vaddr) }
-}
-
-pub fn walk_addr(vaddr: VirtAddr) -> Result<PhysAddr, ()> {
-    unsafe { pgtable.phys_addr(vaddr) }
-}
-
 fn setup_stage2_allocator() {
     let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
     let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
-    let pstart = virt_to_phys(vstart);
+    let pstart = vstart as PhysAddr; // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
     root_mem_init(pstart, vstart, nr_pages);
@@ -238,6 +197,7 @@ fn setup_env() {
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     sev_status_init();
+    set_init_pgtable(PageTableRef::new(unsafe { &mut pgtable }));
     setup_stage2_allocator();
     init_percpu();
 
@@ -263,11 +223,10 @@ fn map_memory(mut paddr: PhysAddr, pend: PhysAddr, mut vaddr: VirtAddr) -> Resul
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
 
+    let mut init_pgtable = get_init_pgtable_locked();
     loop {
-        unsafe {
-            if let Err(_e) = pgtable.map_4k(vaddr, paddr as PhysAddr, &flags) {
-                return Err(());
-            }
+        if let Err(_e) = init_pgtable.map_4k(vaddr, paddr as PhysAddr, &flags) {
+            return Err(());
         }
 
         paddr += 4096;

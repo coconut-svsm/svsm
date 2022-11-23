@@ -206,6 +206,11 @@ impl MemoryRegion {
         let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
         if paddr < self.start_phys || paddr >= end_phys {
+            // For the initial stage2 identity mapping, the root page table
+            // pages are static and outside of the heap memory region.
+            if self.start_phys as VirtAddr == self.start_virt {
+                return Some(paddr as VirtAddr);
+            }
             return None;
         }
 

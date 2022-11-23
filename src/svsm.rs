@@ -46,18 +46,13 @@ use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use cpu::vmsa::init_svsm_vmsa;
 use fw_cfg::FwCfg;
 use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, memory_init, print_memory_info};
+use mm::alloc::{memory_info, memory_init, print_memory_info, virt_to_phys};
 use mm::pagetable::paging_init;
 use mm::stack::{allocate_stack, stack_base_pointer};
 use sev::secrets_page::{copy_secrets_page, SecretsPage};
 use sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use types::VirtAddr;
-
-pub use svsm_paging::{
-    allocate_pt_page, map_data_4k, map_page_encrypted, map_page_shared, phys_to_virt, unmap_4k,
-    virt_to_phys, walk_addr, PTMappingGuard, INIT_PGTABLE,
-};
 
 pub use cpu::percpu::{this_cpu, this_cpu_mut};
 
