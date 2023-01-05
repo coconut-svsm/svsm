@@ -261,7 +261,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
         if let Ok(tbl) = ret {
             let (base, _len) = tbl;
             let off_ptr = base as *const u32;
-            let offset = off_ptr.read() as usize;
+            let offset = off_ptr.read_unaligned() as usize;
 
             let meta_ptr = (end - offset) as *const SevMetaDataHeader;
             //let len = meta_ptr.read().len;
