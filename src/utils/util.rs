@@ -43,3 +43,10 @@ pub fn halt() {
         asm!("hlt", options(att_syntax));
     }
 }
+
+pub fn overlap<T>(x1 : T, x2 : T, y1 : T, y2 : T) -> bool
+where
+    T : core::cmp::PartialOrd
+{
+    x1 <= y2 && y1 <= x2
+}
