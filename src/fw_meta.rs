@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use crate::mm::pagetable::PTMappingGuard;
 use crate::utils::util::overlap;
 use crate::sev::msr_protocol::validate_page_msr;
-use crate::sev::pvalidate;
+use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
 
 use core::cmp;
 use core::fmt;
@@ -314,6 +314,11 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
     loop {
         validate_page_msr(page_paddr)?;
         if let Err(_e) = pvalidate(page_vaddr, false, true) {
+            return Err(());
+        }
+
+        // Make page accessible to VMPL1
+        if let Err(_e) = rmp_adjust(page_vaddr, RMPFlags::VMPL1_RWX, false) {
             return Err(());
         }
         

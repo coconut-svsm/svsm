@@ -108,7 +108,6 @@ pub enum RMPAdjustError {
     FailUnknown,
 }
 
-#[allow(dead_code)]
 pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), RMPAdjustError> {
     let rcx: usize = if huge { PAGE_SIZE } else { PAGE_SIZE_2M };
     let rax: u64 = addr as u64;
