@@ -11,7 +11,7 @@
 #![feature(const_mut_refs)]
 pub mod svsm_paging;
 
-use svsm::fw_meta::parse_fw_meta_data;
+use svsm::fw_meta::{parse_fw_meta_data, validate_fw_memory, print_fw_meta};
 
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::efer::efer_init;
@@ -216,7 +216,11 @@ pub extern "C" fn svsm_main() {
 
     log::info!("{} CPU(s) present", nr_cpus);
 
-    let _ = parse_fw_meta_data();
+    let fw_meta = parse_fw_meta_data().expect("Failed to parse FW SEV meta-data");
+    
+    print_fw_meta(&fw_meta);
+
+    validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
 
     panic!("Road ends here!");
 }
