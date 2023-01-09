@@ -17,7 +17,6 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::efer::efer_init;
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::vmsa::VMSA;
 use svsm::svsm_console::SVSMIOPort;
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell};
 use svsm::acpi::tables::load_acpi_cpu_info;
@@ -31,7 +30,7 @@ use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use svsm::cpu::vmsa::init_svsm_vmsa;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
+use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::stack::{allocate_stack, stack_base_pointer};
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
@@ -190,22 +189,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
-
-    let rip = (svsm_main as extern "C" fn()) as u64;
-    let rsp = stack_base_pointer(stack) as u64;
-
-    this_cpu_mut().prepare_svsm_vmsa(rip, rsp);
-    let sev_features = this_cpu_mut().vmsa(RMPFlags::VMPL0).sev_features;
-
-    let vmsa_addr: VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
-    let vmsa_pa = virt_to_phys(vmsa_addr);
-
-    log::info!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
-
-    this_cpu_mut()
-        .ghcb()
-        .ap_create(vmsa_pa, 0, 0, sev_features)
-        .expect("Failed to load boot CPU VMSA");
 
     // Enable runtime stack and jump to main function
     unsafe {
