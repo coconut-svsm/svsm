@@ -397,6 +397,12 @@ pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
         regions.push(SevPreValidMem { base : secrets_paddr, length : PAGE_SIZE });
     }
 
+    // Add region for CAA page if present
+    if let Some(caa_paddr) = fw_meta.caa_page {
+        regions.push(SevPreValidMem { base : caa_paddr, length : PAGE_SIZE });
+    }
+
+
     // Sort regions by base address
     regions.sort_by(|a, b| a.base.partial_cmp(&b.base).unwrap());
 
