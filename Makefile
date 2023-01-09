@@ -13,6 +13,10 @@ STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
 all: svsm.bin
 
+test:
+	cd src/
+	cargo test --target=x86_64-unknown-linux-gnu -Z build-std
+
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
 
