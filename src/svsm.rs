@@ -134,8 +134,43 @@ fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
+fn copy_secrets_page_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
+	let start = fw_addr as VirtAddr;
+    let end   = start + PAGE_SIZE;
+    let guard = PTMappingGuard::create(start, end, fw_addr);
+
+    guard.check_mapping()?;
+
+    let mut target = ptr::NonNull::new(fw_addr as *mut SecretsPage).unwrap();
+
+    // Zero target
+    unsafe {
+        let mut page_ptr = target.cast::<u8>();
+        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
+    }
+
+    // Copy and initialize data
+    unsafe {
+        let dst = target.as_ptr();
+        *dst = SECRETS_PAGE;
+
+        // Copy Table
+        let mut fw_sp = target.as_mut();
+
+        // Zero VMCK0 key
+        for i in 0..32 {
+            fw_sp.vmpck0[i] = 0;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
+
     copy_cpuid_table_to_fw(fw_meta.cpuid_page.unwrap())?;
+
+    copy_secrets_page_to_fw(fw_meta.secrets_page.unwrap())?;
 
     Ok(())
 }
