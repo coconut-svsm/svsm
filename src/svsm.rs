@@ -162,6 +162,14 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
         for i in 0..32 {
             fw_sp.vmpck0[i] = 0;
         }
+
+        let &li = &*LAUNCH_INFO;
+
+        fw_sp.svsm_base = li.kernel_start;
+        fw_sp.svsm_size = li.kernel_end - li.kernel_start;
+        fw_sp.svsm_caa  = 0;
+        fw_sp.svsm_max_version = 1;
+        fw_sp.svsm_guest_vmpl = 1;
     }
 
     Ok(())
