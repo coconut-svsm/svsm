@@ -177,11 +177,24 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
 
 pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
 
-    copy_cpuid_table_to_fw(fw_meta.cpuid_page.unwrap())?;
+    let cpuid_page = match fw_meta.cpuid_page {
+        Some(addr) => addr,
+        None => panic!("FW does not specify CPUID_PAGE location"),
+    };
 
-    copy_secrets_page_to_fw(fw_meta.secrets_page.unwrap(), fw_meta.caa_page.unwrap())?;
+    copy_cpuid_table_to_fw(cpuid_page)?;
 
-    Ok(())
+    let secrets_page = match fw_meta.secrets_page {
+        Some(addr) => addr,
+        None => panic!("FW does not specify SECRETS_PAGE location"),
+    };
+
+    let caa_page = match fw_meta.caa_page  {
+        Some(addr) => addr,
+        None => panic!("FW does not specify CAA_PAGE location"),
+    };
+
+    copy_secrets_page_to_fw(secrets_page, caa_page)
 }
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
