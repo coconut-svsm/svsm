@@ -135,7 +135,7 @@ fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
-fn copy_secrets_page_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
+fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<(), ()> {
 	let start = fw_addr as VirtAddr;
     let end   = start + PAGE_SIZE;
     let guard = PTMappingGuard::create(start, end, fw_addr);
@@ -167,7 +167,7 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
 
         fw_sp.svsm_base = li.kernel_start;
         fw_sp.svsm_size = li.kernel_end - li.kernel_start;
-        fw_sp.svsm_caa  = 0;
+        fw_sp.svsm_caa  = caa_addr as u64;
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = 1;
     }
@@ -179,7 +179,7 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
 
     copy_cpuid_table_to_fw(fw_meta.cpuid_page.unwrap())?;
 
-    copy_secrets_page_to_fw(fw_meta.secrets_page.unwrap())?;
+    copy_secrets_page_to_fw(fw_meta.secrets_page.unwrap(), fw_meta.caa_page.unwrap())?;
 
     Ok(())
 }
