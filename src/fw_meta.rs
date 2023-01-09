@@ -29,6 +29,7 @@ pub struct SevFWMetaData {
     pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
     pub secrets_page: Option<PhysAddr>,
+    pub caa_page: Option<PhysAddr>,
     pub valid_mem: Vec<SevPreValidMem>,
 }
 
@@ -38,6 +39,7 @@ impl SevFWMetaData {
             reset_ip: None,
             cpuid_page: None,
             secrets_page: None,
+            caa_page: None,
             valid_mem: Vec::new(),
         }
     }
@@ -209,6 +211,7 @@ struct SevMetaDataDesc {
 const SEV_META_DESC_TYPE_MEM: u32 = 1;
 const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
+const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     let end: VirtAddr = 0x1_0000_0000usize;
@@ -289,6 +292,11 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
                         return Err(());
                     }
                     meta_data.cpuid_page = Some(base);
+                } else if t == SEV_META_DESC_TYPE_CAA {
+                    if len != PAGE_SIZE {
+                        return Err(());
+                    }
+                    meta_data.caa_page = Some(base);
                 }
             }
         }
@@ -411,6 +419,11 @@ pub fn print_fw_meta(fw_meta : &SevFWMetaData) {
     match fw_meta.secrets_page {
         Some(addr) => log::info!("  Secrets Page : {:#010x}", addr),
         None       => log::info!("  Secrets Page : None"),
+    };
+
+    match fw_meta.caa_page {
+        Some(addr) => log::info!("  CAA Page     : {:#010x}", addr),
+        None       => log::info!("  CAA Page     : None"),
     };
 
     let count = fw_meta.valid_mem.len();
