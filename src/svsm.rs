@@ -107,6 +107,7 @@ extern "C" {
 }
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
+static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
@@ -213,6 +214,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
 
     load_gdt();
     early_idt_init();
+
+    unsafe { LAUNCH_INFO.init(li); }
 
     let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
     unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
