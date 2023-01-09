@@ -11,7 +11,7 @@
 #![feature(const_mut_refs)]
 pub mod svsm_paging;
 
-use svsm::fw_meta::{parse_fw_meta_data, validate_fw_memory, print_fw_meta};
+use svsm::fw_meta::{parse_fw_meta_data, validate_fw_memory, print_fw_meta, SevFWMetaData};
 
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::efer::efer_init;
@@ -31,13 +31,15 @@ use svsm::cpu::vmsa::init_svsm_vmsa;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
-use svsm::mm::pagetable::paging_init;
+use svsm::mm::pagetable::{paging_init, PTMappingGuard};
 use svsm::mm::stack::{allocate_stack, stack_base_pointer};
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use svsm::cpu::percpu::this_cpu_mut;
+
+use core::ptr;
 
 use log;
 
@@ -107,6 +109,36 @@ extern "C" {
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
+
+fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
+	let start = fw_addr as VirtAddr;
+    let end   = start + PAGE_SIZE;
+    let guard = PTMappingGuard::create(start, end, fw_addr);
+
+    guard.check_mapping()?;
+
+    let target = ptr::NonNull::new(fw_addr as *mut SnpCpuidTable).unwrap();
+
+    // Zero target
+    unsafe {
+        let mut page_ptr = target.cast::<u8>();
+        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
+    }
+
+    // Copy data
+    unsafe {
+        let dst = target.as_ptr();
+        *dst = *CPUID_PAGE;
+    }
+
+    Ok(())
+}
+
+pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
+    copy_cpuid_table_to_fw(fw_meta.cpuid_page.unwrap())?;
+
+    Ok(())
+}
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     let mem_size = launch_info.kernel_end - launch_info.kernel_start;
@@ -221,6 +253,8 @@ pub extern "C" fn svsm_main() {
     print_fw_meta(&fw_meta);
 
     validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
+
+    copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
 
     panic!("Road ends here!");
 }
