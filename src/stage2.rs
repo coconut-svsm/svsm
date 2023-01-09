@@ -8,7 +8,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs, rustc_private, default_alloc_error_handler)]
+#![feature(const_mut_refs, rustc_private)]
 
 pub mod boot_stage2;
 
