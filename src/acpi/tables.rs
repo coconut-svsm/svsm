@@ -6,15 +6,16 @@
 //
 // vim: ts=4 sw=4 et
 
+extern crate alloc;
+
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
-use crate::utils::vec::Vec;
-use crate::utils::{alloc, dealloc, handle_alloc_error};
+use alloc::vec::Vec;
+use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
 use core::mem;
 use core::ptr;
-
-use crate::println;
+use log;
 
 #[repr(C, packed)]
 pub struct RSDPDesc {
@@ -118,7 +119,7 @@ impl ACPITableHeader {
         let oem_id = array_to_string(self.oem_id);
         let oem_table_id = array_to_string(self.oem_table_id);
         let compiler_id = array_to_string(self.compiler_id);
-        println!(
+        log::trace!(
             "ACPI: [{} {} {} {} {} {} {} {} {}]",
             sig,
             self.len,
@@ -287,7 +288,7 @@ impl ACPITableBuffer {
     }
 
     pub fn acp_table_by_sig(&self, str: &str) -> Option<ACPITable> {
-        let entries = self.tables.size();
+        let entries = self.tables.len();
         let mut offset = self.size;
 
         for i in 0..entries {

@@ -7,7 +7,9 @@
 // vim: ts=4 sw=4 et
 
 use crate::cpu::msr::{read_msr, SEV_STATUS};
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt::{self, Write};
+use bitflags::bitflags;
 use log;
 
 bitflags! {
@@ -127,21 +129,19 @@ impl fmt::Display for SEVStatusFlags {
     }
 }
 
-static mut SEV_FLAGS: SEVStatusFlags = SEVStatusFlags::empty();
+static SEV_FLAGS: ImmutAfterInitCell<SEVStatusFlags> = ImmutAfterInitCell::uninit();
 
 fn read_sev_status() -> SEVStatusFlags {
     SEVStatusFlags::from_bits_truncate(read_msr(SEV_STATUS))
 }
 
 fn sev_flags() -> SEVStatusFlags {
-    unsafe { SEV_FLAGS }
+    *SEV_FLAGS
 }
 
 pub fn sev_status_init() {
     let status: SEVStatusFlags = read_sev_status();
-    unsafe {
-        SEV_FLAGS = status;
-    }
+    unsafe { SEV_FLAGS.init(&status) };
 }
 
 pub fn sev_es_enabled() -> bool {

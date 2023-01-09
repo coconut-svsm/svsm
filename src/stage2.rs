@@ -8,45 +8,30 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs, rustc_private)]
+#![feature(const_mut_refs, rustc_private, default_alloc_error_handler)]
 
 pub mod boot_stage2;
-pub mod console;
-pub mod cpu;
-pub mod fw_cfg;
-pub mod io;
-pub mod kernel_launch;
-pub mod locking;
-pub mod mm;
-pub mod serial;
-pub mod sev;
-pub mod string;
-pub mod svsm_console;
-pub mod types;
-pub mod utils;
 
 extern crate compiler_builtins;
-use crate::svsm_console::SVSMIOPort;
-use console::{init_console, install_console_logger, WRITER};
+use svsm::svsm_console::SVSMIOPort;
+use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::asm;
 use core::panic::PanicInfo;
-use cpu::cpuid::SnpCpuidTable;
-use cpu::msr;
-use cpu::percpu::PerCpu;
-use fw_cfg::{FwCfg, KernelRegion};
-use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
-                    PTEntryFlags, PageTable, PageTableRef, };
-use serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
-use sev::msr_protocol::{validate_page_msr, GHCBMsr};
-use sev::status::SEVStatusFlags;
-use sev::{pvalidate, sev_status_init, sev_status_verify};
-use types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use utils::{halt, page_align, page_align_up};
-
-#[macro_use]
-extern crate bitflags;
+use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
+use svsm::cpu::msr;
+use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::fw_cfg::{FwCfg, KernelRegion};
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
+                          PTEntryFlags, PageTable, PageTableRef, };
+use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
+use svsm::sev::msr_protocol::{validate_page_msr, GHCBMsr};
+use svsm::sev::status::SEVStatusFlags;
+use svsm::sev::{pvalidate, sev_status_init, sev_status_verify};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::utils::{halt, page_align, page_align_up};
+use log;
 
 extern "C" {
     pub static heap_start: u8;
@@ -68,7 +53,9 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
+        register_per_cpu(0, &PERCPU);
         PERCPU.setup_ghcb().expect("Failed to setup percpu data");
+        load_per_cpu(0);
     }
 }
 
@@ -78,14 +65,6 @@ fn shutdown_percpu() {
             .shutdown()
             .expect("Failed to shut down percpu data (including GHCB)");
     }
-}
-
-pub fn this_cpu() -> &'static PerCpu {
-    unsafe { &PERCPU }
-}
-
-pub fn this_cpu_mut() -> &'static mut PerCpu {
-    unsafe { &mut PERCPU }
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
@@ -210,6 +189,9 @@ fn setup_env() {
     // properly reported.
     sev_status_verify();
 
+    // At this point, SEV-SNP is confirmed. Register the supplied CPUID page.
+    register_cpuid_table(unsafe { &CPUID_PAGE });
+
     // At this point SEV-SNP is confirmed to be active and the CPUID table
     // should be available. Fully initialize the paging subsystem now. In
     // particular this verifies that the C-bit from the CPUID table matches what
@@ -253,16 +235,16 @@ fn validate_kernel_region(mut vaddr: VirtAddr, region: &KernelRegion) -> Result<
 
     loop {
         if let Err(_e) = validate_page_msr(paddr) {
-            println!(
-                "Error: Validating page failed for physical address {:#018x}",
+            log::error!(
+                "Validating page failed for physical address {:#018x}",
                 paddr
             );
             return Err(());
         }
 
         if let Err(_e) = pvalidate(vaddr, false, true) {
-            println!(
-                "Error: PVALIDATE failed for virtual address {:#018x}",
+            log::error!(
+                "PVALIDATE failed for virtual address {:#018x}",
                 vaddr
             );
             return Err(());
@@ -305,27 +287,27 @@ unsafe fn copy_and_launch_kernel(kli: KInfo) {
         ghcb: 0,
     };
 
-    println!(
+    log::info!(
         "  kernel_physical_start = {:#018x}",
         kernel_launch_info.kernel_start
     );
-    println!(
+    log::info!(
         "  kernel_physical_end   = {:#018x}",
         kernel_launch_info.kernel_end
     );
-    println!(
+    log::info!(
         "  kernel_virtual_base   = {:#018x}",
         kernel_launch_info.virt_base
     );
-    println!(
+    log::info!(
         "  cpuid_page            = {:#018x}",
         kernel_launch_info.cpuid_page
     );
-    println!(
+    log::info!(
         "  secrets_page          = {:#018x}",
         kernel_launch_info.secrets_page
     );
-    println!("Launching SVSM kernel...");
+    log::info!("Launching SVSM kernel...");
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -349,7 +331,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
 
     let r = fw_cfg.find_kernel_region().unwrap();
 
-    println!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
+    log::info!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
     let (kernel_virt_base, kernel_entry) = unsafe {
         let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;
@@ -379,7 +361,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Panic: {}", info);
+    log::error!("Panic: {}", info);
     loop {
         halt();
     }

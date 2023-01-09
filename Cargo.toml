@@ -1,26 +1,30 @@
 [package]
-name = "stage2"
+name = "svsm"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [profile.dev]
-panic = "abort"
 
 [profile.release]
-panic = "abort"
 
 [[bin]]
 name = "stage2"
 path = "src/stage2.rs"
+test = false
 
 [[bin]]
 name = "svsm"
 path = "src/svsm.rs"
+test = false
+
+[lib]
+test = true
+doctest = false
 
 [dependencies]
 bitflags = "1.3.2"
-log = { version = "0.4.17", features = ["max_level_trace", "release_max_level_info"] }
+log = { version = "0.4.17", features = ["max_level_debug", "release_max_level_info"] }
 
 [build-dependencies]
 cc = "1.0.46"

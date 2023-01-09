@@ -6,8 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
+extern crate alloc;
+
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::utils::vec::Vec;
+use alloc::vec::Vec;
 use crate::mm::pagetable::PTMappingGuard;
 
 use core::fmt;

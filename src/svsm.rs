@@ -8,60 +8,42 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
-pub mod acpi;
-pub mod console;
-pub mod cpu;
-pub mod fw_cfg;
-pub mod io;
-pub mod kernel_launch;
-pub mod locking;
-pub mod mm;
-pub mod serial;
-pub mod sev;
-pub mod string;
-pub mod svsm_console;
+#![feature(const_mut_refs, default_alloc_error_handler)]
 pub mod svsm_paging;
-pub mod types;
-pub mod utils;
 
-pub mod fw_meta;
-use fw_meta::parse_fw_meta_data;
+use svsm::fw_meta::parse_fw_meta_data;
 
-use crate::cpu::control_regs::{cr0_init, cr4_init};
-use crate::cpu::efer::efer_init;
-use crate::serial::SerialPort;
-use crate::serial::SERIAL_PORT;
-use crate::sev::vmsa::VMSA;
-use crate::svsm_console::SVSMIOPort;
-use crate::utils::halt;
-use acpi::tables::load_acpi_cpu_info;
-use console::{init_console, install_console_logger, WRITER};
+use svsm::cpu::control_regs::{cr0_init, cr4_init};
+use svsm::cpu::efer::efer_init;
+use svsm::serial::SerialPort;
+use svsm::serial::SERIAL_PORT;
+use svsm::sev::vmsa::VMSA;
+use svsm::svsm_console::SVSMIOPort;
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell};
+use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
-use cpu::cpuid::{copy_cpuid_table, SnpCpuidTable};
-use cpu::gdt::load_gdt;
-use cpu::idt::{early_idt_init, idt_init};
-use cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
-use cpu::vmsa::init_svsm_vmsa;
-use fw_cfg::FwCfg;
-use kernel_launch::KernelLaunchInfo;
-use mm::alloc::{memory_info, memory_init, print_memory_info, virt_to_phys};
-use mm::pagetable::paging_init;
-use mm::stack::{allocate_stack, stack_base_pointer};
-use sev::secrets_page::{copy_secrets_page, SecretsPage};
-use sev::utils::RMPFlags;
+use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::gdt::load_gdt;
+use svsm::cpu::idt::{early_idt_init, idt_init};
+use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::cpu::vmsa::init_svsm_vmsa;
+use svsm::fw_cfg::FwCfg;
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
+use svsm::mm::pagetable::paging_init;
+use svsm::mm::stack::{allocate_stack, stack_base_pointer};
+use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
-use types::VirtAddr;
+use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use svsm::cpu::percpu::this_cpu_mut;
 
-pub use cpu::percpu::{this_cpu, this_cpu_mut};
-
-#[macro_use]
-extern crate bitflags;
+use log;
 
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
-    pub static mut CPUID_PAGE: SnpCpuidTable;
     pub static bsp_stack_end: u8;
 }
 
@@ -104,11 +86,6 @@ global_asm!(
     bsp_stack_end:
 
         .align 4096
-        .globl CPUID_PAGE
-    CPUID_PAGE:
-        .fill 4096, 1, 0
-
-        .align 4096
         .globl SECRETS_PAGE
     SECRETS_PAGE:
         .fill 4096, 1, 0
@@ -128,7 +105,20 @@ extern "C" {
     pub static heap_start: u8;
 }
 
+static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
+
 pub static mut PERCPU: PerCpu = PerCpu::new();
+
+pub fn memory_init(launch_info: &KernelLaunchInfo) {
+    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
+    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
+    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
+    let page_count = (vend - vstart) / PAGE_SIZE;
+    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
+    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
+
+    root_mem_init(pstart, vstart, page_count);
+}
 
 fn init_percpu() {
     unsafe {
@@ -147,7 +137,7 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 pub fn boot_stack_info() {
     unsafe {
         let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
-        println!("Boot stack starts        @ {:#018x}", vaddr);
+        log::info!("Boot stack starts        @ {:#018x}", vaddr);
     }
 }
 
@@ -158,10 +148,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     load_gdt();
     early_idt_init();
 
-    unsafe {
-        let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
-        copy_cpuid_table(&mut CPUID_PAGE, cpuid_table_virt);
+    let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
+    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
+    register_cpuid_table(&CPUID_PAGE);
 
+    unsafe {
         let secrets_page_virt = launch_info.secrets_page as VirtAddr;
         copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
     }
@@ -183,7 +174,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     init_console();
     install_console_logger("SVSM");
 
-    println!("Secure Virtual Machine Service Module (SVSM)");
+    log::info!("Secure Virtual Machine Service Module (SVSM)");
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -198,7 +189,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
         .expect("Failed to allocate VMSA page");
     init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
-    println!("BSP Runtime stack starts @ {:#018x}", bp);
+    log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
     let rip = (svsm_main as extern "C" fn()) as u64;
     let rsp = stack_base_pointer(stack) as u64;
@@ -209,7 +200,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     let vmsa_addr: VirtAddr = (this_cpu_mut().vmsa(RMPFlags::VMPL0) as *const VMSA) as VirtAddr;
     let vmsa_pa = virt_to_phys(vmsa_addr);
 
-    println!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
+    log::info!("VMSA vaddr : {:#018x} paddr : {:#018x}", vmsa_addr, vmsa_pa);
 
     this_cpu_mut()
         .ghcb()
@@ -234,13 +225,13 @@ pub extern "C" fn svsm_main() {
     let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
 
-    for i in 0..cpus.size() {
+    for i in 0..cpus.len() {
         if cpus[i].enabled {
             nr_cpus += 1;
         }
     }
 
-    println!("{} CPU(s) present", nr_cpus);
+    log::info!("{} CPU(s) present", nr_cpus);
 
     let _ = parse_fw_meta_data();
 
@@ -249,7 +240,7 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("Panic: {}", info);
+    log::error!("Panic: {}", info);
     loop {
         halt();
     }

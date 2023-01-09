@@ -6,8 +6,6 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::heap_start;
-use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::SpinLock;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::align_up;
@@ -15,6 +13,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::arch::asm;
 use core::mem::size_of;
 use core::ptr;
+use log;
 
 struct PageStorageType(u64);
 
@@ -405,31 +404,13 @@ impl MemoryRegion {
         }
     }
 
-    fn order_mask(order: usize) -> usize {
-        !((PAGE_SIZE << order) - 1)
-    }
-
-    fn pfn_to_virt(&self, pfn: usize) -> VirtAddr {
-        self.start_virt + (pfn * PAGE_SIZE)
-    }
-
-    fn virt_to_pfn(&self, vaddr: VirtAddr) -> usize {
-        (vaddr - self.start_virt) / PAGE_SIZE
-    }
-
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, ()> {
         if order >= MAX_ORDER - 1 {
             return Err(());
         }
 
-        let vaddr = self.pfn_to_virt(pfn) & MemoryRegion::order_mask(order);
-        let neigh = vaddr ^ (PAGE_SIZE << order);
-
-        if vaddr < self.start_virt || neigh < self.start_virt {
-            return Err(());
-        }
-
-        let pfn = self.virt_to_pfn(neigh);
+        assert_eq!(pfn & ((1usize << order) - 1), 0);
+        let pfn = pfn ^ (1usize << order);
         if pfn >= self.page_count {
             return Err(());
         }
@@ -617,7 +598,7 @@ pub fn print_memory_info(info: &MemInfo) {
 
     for i in 0..MAX_ORDER {
         let nr_4k_pages: usize = 1 << i;
-        println!(
+        log::info!(
             "Order-{:#02}: total pages: {:#5} free pages: {:#5}",
             i, info.total_pages[i], info.free_pages[i]
         );
@@ -625,7 +606,7 @@ pub fn print_memory_info(info: &MemInfo) {
         free_pages_4k += info.free_pages[i] * nr_4k_pages;
     }
 
-    println!(
+    log::info!(
         "Total memory: {}KiB free memory: {}KiB",
         (pages_4k * PAGE_SIZE) / 1024,
         (free_pages_4k * PAGE_SIZE) / 1024
@@ -1181,7 +1162,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     }
 }
 
-#[global_allocator]
+#[cfg_attr(not(test), global_allocator)]
 pub static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
@@ -1199,26 +1180,313 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     }
 }
 
-use crate::println;
-
 pub fn print_alloc_info() {
     for i in 0..MAX_ORDER {
         let nr_pages = ROOT_MEM.lock().nr_pages[i];
         let free_pages = ROOT_MEM.lock().free_pages[i];
-        println!(
+        log::trace!(
             "Order-{}: Pages: {:#04} Free Pages: {:#04}",
             i, nr_pages, free_pages
         );
     }
 }
 
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
-    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
-    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
-    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
-    let page_count = (vend - vstart) / PAGE_SIZE;
-    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
-    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
 
-    root_mem_init(pstart, vstart, page_count);
+
+#[cfg(test)]
+static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
+
+#[cfg(test)]
+use crate::locking::LockGuard;
+
+#[cfg(test)]
+// Allocate a memory region from the standard Rust allocator and pass it to
+// root_mem_init().
+fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
+    extern crate alloc;
+    use alloc::alloc::{alloc, handle_alloc_error};
+
+    let layout = Layout::from_size_align(size, PAGE_SIZE).unwrap().pad_to_align();
+    let ptr = unsafe { alloc(layout) };
+    if ptr.is_null() {
+        handle_alloc_error(layout);
+    } else if ptr as usize & (PAGE_SIZE - 1) != 0 {
+        panic!("test memory region allocation not aligned to page size");
+    }
+
+    let page_count = layout.size() / PAGE_SIZE;
+    let lock = TEST_ROOT_MEM_LOCK.lock();
+    root_mem_init(ptr as PhysAddr, ptr as VirtAddr, page_count);
+    lock
+}
+
+#[cfg(test)]
+// Undo the setup done from setup_test_root_mem().
+fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
+    extern crate alloc;
+    use alloc::alloc::dealloc;
+
+    let mut root_mem = ROOT_MEM.lock();
+    let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
+    unsafe { dealloc(root_mem.start_phys as *mut u8, layout) };
+    *root_mem = MemoryRegion::new();
+
+    // Reset the Slabs
+    *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();
+    unsafe { ALLOCATOR = SvsmAllocator::new() };
+
+    drop(lock);
+}
+
+#[cfg(test)]
+const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
+
+#[test]
+fn test_root_mem_setup() {
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate one page and free it again, verify that memory_info() reflects it.
+fn test_page_alloc_one() {
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let mut root_mem = ROOT_MEM.lock();
+
+    let info_before = root_mem.memory_info();
+    let page = root_mem.allocate_page().unwrap();
+    assert_ne!(page, 0);
+    assert_ne!(info_before.free_pages, root_mem.memory_info().free_pages);
+    root_mem.free_page(page);
+    assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
+
+    drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate and free all available compound pages, verify that memory_info()
+// reflects it.
+fn test_page_alloc_all_compound() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let mut root_mem = ROOT_MEM.lock();
+
+    let info_before = root_mem.memory_info();
+    let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
+    for o in 0..MAX_ORDER {
+        for _i in 0..info_before.free_pages[o] {
+            let pages = root_mem.allocate_pages(o).unwrap();
+            assert_ne!(pages, 0);
+            allocs[o].push(pages);
+        }
+    }
+    let info_after = root_mem.memory_info();
+    for o in 0..MAX_ORDER {
+        assert_eq!(info_after.free_pages[o], 0);
+    }
+
+    for o in 0..MAX_ORDER {
+        for pages in &allocs[o][..] {
+            root_mem.free_page(*pages);
+        }
+    }
+    assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
+
+    drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate and free all available 4k pages, verify that memory_info()
+// reflects it.
+fn test_page_alloc_all_single() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let mut root_mem = ROOT_MEM.lock();
+
+    let info_before = root_mem.memory_info();
+    let mut allocs: Vec<VirtAddr> = Vec::new();
+    for o in 0..MAX_ORDER {
+        for _i in 0..info_before.free_pages[o] {
+            for _j in 0..(1usize << o) {
+                let page = root_mem.allocate_page().unwrap();
+                assert_ne!(page, 0);
+                allocs.push(page);
+            }
+        }
+    }
+    let info_after = root_mem.memory_info();
+    for o in 0..MAX_ORDER {
+        assert_eq!(info_after.free_pages[o], 0);
+    }
+
+    for page in &allocs[..] {
+        root_mem.free_page(*page);
+    }
+    assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
+
+    drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate and free all available compound pages, verify that any subsequent
+// allocation fails.
+fn test_page_alloc_oom() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let mut root_mem = ROOT_MEM.lock();
+
+    let info_before = root_mem.memory_info();
+    let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
+    for o in 0..MAX_ORDER {
+        for _i in 0..info_before.free_pages[o] {
+            let pages = root_mem.allocate_pages(o).unwrap();
+            assert_ne!(pages, 0);
+            allocs[o].push(pages);
+        }
+    }
+    let info_after = root_mem.memory_info();
+    for o in 0..MAX_ORDER {
+        assert_eq!(info_after.free_pages[o], 0);
+    }
+
+    let page = root_mem.allocate_page();
+    if let Ok(_) = page {
+        panic!("unexpected page allocation success after memory exhaustion");
+    }
+
+    for o in 0..MAX_ORDER {
+        for pages in &allocs[o][..] {
+            root_mem.free_page(*pages);
+        }
+    }
+    assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
+
+    drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
+
+#[cfg(test)]
+const TEST_SLAB_SIZES: [usize; 7]  = [32, 64, 128, 256, 512, 1024, 2048];
+
+#[test]
+// Allocate and free a couple of objects for each slab size.
+fn test_slab_alloc_free_many() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+
+    // Run it twice to make sure some objects will get freed and allocated again.
+    for _i in 0..2 {
+        let mut allocs: [Vec<*mut u8>; TEST_SLAB_SIZES.len()] = Default::default();
+        let mut j = 0;
+        for size in TEST_SLAB_SIZES {
+            let layout = Layout::from_size_align(size, size).unwrap().pad_to_align();
+            assert_eq!(layout.size(), size);
+
+            // Allocate four pages worth of objects from each Slab.
+            let n = (4 * PAGE_SIZE + size - 1) / size;
+            for _k in 0..n {
+                let p = unsafe { ALLOCATOR.alloc(layout) };
+                assert_ne!(p, ptr::null_mut());
+                allocs[j].push(p);
+            }
+            j = j + 1;
+        }
+
+        j = 0;
+        for size in TEST_SLAB_SIZES {
+            let layout = Layout::from_size_align(size, size).unwrap().pad_to_align();
+            assert_eq!(layout.size(), size);
+
+            for p in &allocs[j][..] {
+                unsafe { ALLOCATOR.dealloc(*p, layout) };
+            }
+            j = j + 1;
+        }
+    }
+
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate enough objects so that the SlabPageSlab will need a SlabPage for
+// itself twice.
+fn test_slab_page_slab_for_self() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+
+    const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
+    const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
+
+    const SLAB_PAGE_SIZE: usize = size_of::<SlabPage>();
+    const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE;
+
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    assert_eq!(layout.size(), OBJECT_SIZE);
+
+    let mut allocs: Vec<*mut u8> = Vec::new();
+    for _i in 0..(2 * SLAB_PAGES_PER_PAGE * OBJECTS_PER_PAGE) {
+        let p = unsafe { ALLOCATOR.alloc(layout) };
+        assert_ne!(p, ptr::null_mut());
+        assert_ne!(SLAB_PAGE_SLAB.lock().common.capacity, 0);
+        allocs.push(p);
+    }
+
+    for p in allocs {
+        unsafe { ALLOCATOR.dealloc(p, layout) };
+    }
+
+    assert_ne!(SLAB_PAGE_SLAB.lock().common.free, 0);
+    assert!(SLAB_PAGE_SLAB.lock().common.free_pages < 2);
+
+    destroy_test_root_mem(test_mem_lock);
+}
+
+#[test]
+// Allocate enough objects to hit an OOM situation and verify null gets
+// returned at some point.
+fn test_slab_oom() {
+    extern crate alloc;
+    use alloc::vec::Vec;
+
+    const TEST_MEMORY_SIZE: usize = 256 * PAGE_SIZE;
+    let test_mem_lock =  setup_test_root_mem(TEST_MEMORY_SIZE);
+
+    const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    assert_eq!(layout.size(), OBJECT_SIZE);
+
+    let mut allocs: Vec<*mut u8> = Vec::new();
+    let mut null_seen = false;
+    for _i in 0..((TEST_MEMORY_SIZE + OBJECT_SIZE - 1) / OBJECT_SIZE) {
+        let p = unsafe { ALLOCATOR.alloc(layout) };
+        if p.is_null() {
+            null_seen = true;
+            break;
+        }
+        allocs.push(p);
+    }
+
+    if !null_seen {
+        panic!("unexpected slab allocation success after memory exhaustion");
+    }
+
+    for p in allocs {
+        unsafe { ALLOCATOR.dealloc(p, layout) };
+    }
+
+    destroy_test_root_mem(test_mem_lock);
 }

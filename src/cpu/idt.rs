@@ -8,11 +8,11 @@
 
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
-use crate::println;
 use crate::types::{VirtAddr, SVSM_CS};
 use crate::utils::halt;
 use core::arch::{asm, global_asm};
 use core::mem;
+use log;
 
 pub const _DE_VECTOR: usize = 0;
 pub const _DB_VECTOR: usize = 1;
@@ -188,14 +188,14 @@ fn generic_idt_handler(regs: &mut x86_regs) {
         let cr2 = read_cr2();
         let rip = regs.rip;
         let rsp = regs.rsp;
-        println!(
+        log::error!(
             "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
             rip, rsp, cr2
         );
     } else if regs.vector == GP_VECTOR {
         let rip = regs.rip;
         let err = regs.error_code;
-        println!(
+        log::error!(
             "General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
             rip, err
         );
@@ -203,7 +203,7 @@ fn generic_idt_handler(regs: &mut x86_regs) {
         let cr2 = read_cr2();
         let rip = regs.rip;
         let err = regs.error_code;
-        println!(
+        log::error!(
             "Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
             rip, cr2, err
         );

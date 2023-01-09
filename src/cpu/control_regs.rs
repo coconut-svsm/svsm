@@ -8,6 +8,7 @@
 
 use super::features::cpu_has_pge;
 use core::arch::asm;
+use bitflags::bitflags;
 
 pub fn cr0_init() {
     let mut cr0 = read_cr0();

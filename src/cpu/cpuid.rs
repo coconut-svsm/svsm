@@ -6,10 +6,12 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::VirtAddr;
-use crate::CPUID_PAGE;
+use crate::utils::immut_after_init::ImmutAfterInitRef;
+use log;
 
 const SNP_CPUID_MAX_COUNT: usize = 64;
+
+static CPUID_PAGE: ImmutAfterInitRef<SnpCpuidTable> = ImmutAfterInitRef::uninit();
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
@@ -34,12 +36,9 @@ pub struct SnpCpuidTable {
     func: [SnpCpuidFn; SNP_CPUID_MAX_COUNT],
 }
 
-pub fn copy_cpuid_table(target: &mut SnpCpuidTable, source: VirtAddr) {
-    let table = source as *const SnpCpuidTable;
-
-    unsafe {
-        *target = *table;
-    }
+pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
+    unsafe { CPUID_PAGE.init_from_ref(table) };
+    dump_cpuid_table();
 }
 
 pub struct CpuidResult {
@@ -50,15 +49,13 @@ pub struct CpuidResult {
 }
 
 pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
-    unsafe {
-        let count: usize = CPUID_PAGE.count as usize;
+    let count: usize = CPUID_PAGE.count as usize;
 
-        for i in 0..count {
-            if eax == CPUID_PAGE.func[i].eax_in
-                && ecx == CPUID_PAGE.func[i].ecx_in
-                && xcr0 == CPUID_PAGE.func[i].xcr0_in
-                && xss == CPUID_PAGE.func[i].xss_in
-            {
+    for i in 0..count {
+        if eax == CPUID_PAGE.func[i].eax_in
+            && ecx == CPUID_PAGE.func[i].ecx_in
+            && xcr0 == CPUID_PAGE.func[i].xcr0_in
+            && xss == CPUID_PAGE.func[i].xss_in {
                 return Some(CpuidResult {
                     eax: CPUID_PAGE.func[i].eax_out,
                     ebx: CPUID_PAGE.func[i].ebx_out,
@@ -66,36 +63,30 @@ pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidR
                     edx: CPUID_PAGE.func[i].edx_out,
                 });
             }
-        }
-
-        None
     }
+
+    None
 }
 
 pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {
     cpuid_table_raw(eax, 0, 0, 0)
 }
 
-/*
-pub fn dump_cpuid_table() {
-    unsafe {
-        let cpuid : *const SnpCpuidTable = 0x9f000 as *const SnpCpuidTable;
-        let count = (*cpuid).count as usize;
+fn dump_cpuid_table() {
+    let count = CPUID_PAGE.count as usize;
 
-        println!("CPUID Table entry count: {}", count);
+    log::trace!("CPUID Table entry count: {}", count);
 
-        for i in 0..count {
-            let eax_in = (*cpuid).func[i].eax_in;
-            let ecx_in = (*cpuid).func[i].ecx_in;
-            let xcr0_in = (*cpuid).func[i].xcr0_in;
-            let xss_in = (*cpuid).func[i].xss_in;
-            let eax_out = (*cpuid).func[i].eax_out;
-            let ebx_out = (*cpuid).func[i].ebx_out;
-            let ecx_out = (*cpuid).func[i].ecx_out;
-            let edx_out = (*cpuid).func[i].edx_out;
-            println!("EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
+    for i in 0..count {
+        let eax_in = CPUID_PAGE.func[i].eax_in;
+        let ecx_in = CPUID_PAGE.func[i].ecx_in;
+        let xcr0_in = CPUID_PAGE.func[i].xcr0_in;
+        let xss_in = CPUID_PAGE.func[i].xss_in;
+        let eax_out = CPUID_PAGE.func[i].eax_out;
+        let ebx_out = CPUID_PAGE.func[i].ebx_out;
+        let ecx_out = CPUID_PAGE.func[i].ecx_out;
+        let edx_out = CPUID_PAGE.func[i].edx_out;
+        log::trace!("EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
                     eax_in, ecx_in, xcr0_in, xss_in, eax_out, ebx_out, ecx_out, edx_out);
-        }
     }
 }
-*/
