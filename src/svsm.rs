@@ -175,6 +175,24 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
     Ok(())
 }
 
+fn zero_caa_page(fw_addr : PhysAddr) -> Result<(), ()> {
+	let start = fw_addr as VirtAddr;
+    let end   = start + PAGE_SIZE;
+    let guard = PTMappingGuard::create(start, end, fw_addr);
+
+    guard.check_mapping()?;
+
+    let target = ptr::NonNull::new(fw_addr as *mut u8).unwrap();
+
+    // Zero target
+    unsafe {
+        let mut page_ptr = target.cast::<u8>();
+        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
+    }
+
+    Ok(())
+}
+
 pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
 
     let cpuid_page = match fw_meta.cpuid_page {
@@ -194,7 +212,9 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
         None => panic!("FW does not specify CAA_PAGE location"),
     };
 
-    copy_secrets_page_to_fw(secrets_page, caa_page)
+    copy_secrets_page_to_fw(secrets_page, caa_page)?;
+
+    zero_caa_page(caa_page)
 }
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
