@@ -27,17 +27,14 @@ use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
-use svsm::cpu::vmsa::init_svsm_vmsa;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
 use svsm::mm::pagetable::{paging_init, PTMappingGuard};
 use svsm::mm::stack::{allocate_stack, stack_base_pointer};
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
-use svsm::sev::utils::RMPFlags;
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use svsm::cpu::percpu::this_cpu_mut;
 
 use core::ptr;
 
@@ -293,11 +290,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
 
     let stack = allocate_stack().expect("Failed to allocate runtime stack");
     let bp = stack_base_pointer(stack);
-
-    this_cpu_mut()
-        .alloc_vmsa(RMPFlags::VMPL0)
-        .expect("Failed to allocate VMSA page");
-    init_svsm_vmsa(this_cpu_mut().vmsa(RMPFlags::VMPL0));
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
