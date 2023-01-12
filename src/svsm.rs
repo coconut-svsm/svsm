@@ -217,6 +217,12 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
+fn setup_caa(fw_meta: &SevFWMetaData) -> Result<(),()> {
+    let addr = fw_meta.caa_page.unwrap();
+
+    this_cpu_mut().map_caa_phys(addr)
+}
+
 fn prepare_fw_launch() -> Result<(), ()>
 {
     let cpu = this_cpu_mut();
@@ -383,6 +389,8 @@ pub extern "C" fn svsm_main() {
     validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
 
     copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
+
+    setup_caa(&fw_meta).expect("Failed to setup CAA for BSP");
 
     validate_flash().expect("Failed to validate flash memory");
 

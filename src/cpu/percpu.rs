@@ -12,9 +12,10 @@ use crate::cpu::msr::{write_msr, MSR_GS_BASE};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::mm::alloc::allocate_page;
 use crate::mm::stack::{allocate_stack, stack_base_pointer};
+use crate::mm::pagetable::{PageTable, get_init_pgtable_locked};
 use crate::sev::ghcb::GHCB;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMPL_MAX, VMSA};
-use crate::types::{VirtAddr, MAX_CPUS};
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, MAX_CPUS};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
 use core::arch::asm;
@@ -25,6 +26,8 @@ static mut PER_CPU_PTRS: [usize; MAX_CPUS] = [0; MAX_CPUS];
 struct IstStacks {
     double_fault_stack: VirtAddr,
 }
+
+const CAA_BASE_ADDR : VirtAddr = 0xffff_ffff_fff8_0000;
 
 impl IstStacks {
     const fn new() -> Self {
@@ -45,16 +48,19 @@ pub struct PerCpu {
     ist: IstStacks,
     tss: X86Tss,
     vmsa: [*mut VMSA; VMPL_MAX],
+    caa_addr: Option<VirtAddr>,
     reset_ip: u64,
 }
 
 impl PerCpu {
     pub const fn new() -> Self {
         PerCpu {
+            apic_id: 0,
             ghcb: ptr::null_mut(),
             ist: IstStacks::new(),
             tss: X86Tss::new(),
             vmsa: [ptr::null_mut(); VMPL_MAX],
+            caa_addr: None,
             reset_ip: 0xffff_fff0u64,
         }
     }
@@ -134,6 +140,34 @@ impl PerCpu {
 
     pub fn prepare_guest_vmsa(&mut self) -> Result<(),()> {
         init_guest_vmsa(self.vmsa[1], self.reset_ip);
+
+        Ok(())
+    }
+
+    pub fn get_caa_addr(&self) -> Option<VirtAddr> {
+        self.caa_addr
+    }
+
+    pub fn unmap_caa(&mut self) -> Result<(),()> {
+        if let Some(v) = self.caa_addr {
+            let start = v;
+            let end = start + PAGE_SIZE;
+
+            self.caa_addr = None;
+            get_init_pgtable_locked().unmap_region_4k(start, end)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn map_caa_phys(&mut self, paddr: PhysAddr) -> Result<(),()> {
+        self.unmap_caa()?;
+
+        // CAA page is 4k, leave a guard page between mapped CAA pages
+        let offset = (self.apic_id as VirtAddr) * 2 * PAGE_SIZE;
+        let vaddr : VirtAddr = CAA_BASE_ADDR + offset;
+
+        get_init_pgtable_locked().map_region_4k(vaddr, vaddr + PAGE_SIZE, paddr, PageTable::data_flags())?;
 
         Ok(())
     }
