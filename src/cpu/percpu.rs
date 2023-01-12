@@ -169,6 +169,8 @@ impl PerCpu {
 
         get_init_pgtable_locked().map_region_4k(vaddr, vaddr + PAGE_SIZE, paddr, PageTable::data_flags())?;
 
+        self.caa_addr = Some(vaddr);
+
         Ok(())
     }
 }

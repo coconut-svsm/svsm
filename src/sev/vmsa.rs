@@ -136,7 +136,7 @@ impl VMSA {
         self.efer |= 1u64 << 12;
     }
 
-    pub fn diable(&mut self) {
+    pub fn disable(&mut self) {
         self.efer &= !(1u64 << 12);
     }
 }

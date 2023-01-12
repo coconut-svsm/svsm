@@ -38,6 +38,7 @@ use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use svsm::cpu::percpu::this_cpu_mut;
 use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
+use svsm::requests::request_loop;
 
 use core::ptr;
 
@@ -397,6 +398,8 @@ pub extern "C" fn svsm_main() {
     prepare_fw_launch().expect("Failed to setup guest VMSA");
 
     launch_fw().expect("Failed to launch FW");
+
+    request_loop();
 
     panic!("Road ends here!");
 }

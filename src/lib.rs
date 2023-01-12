@@ -24,6 +24,7 @@ pub mod string;
 pub mod svsm_console;
 pub mod types;
 pub mod utils;
+pub mod requests;
 
 #[test]
 fn test_nop() {}
