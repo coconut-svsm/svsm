@@ -29,12 +29,15 @@ use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
+use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
 use svsm::mm::pagetable::{paging_init, PTMappingGuard};
 use svsm::mm::stack::{allocate_stack, stack_base_pointer};
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
+use svsm::cpu::percpu::this_cpu_mut;
+use svsm::sev::vmsa::{VMSA};
+use svsm::sev::utils::{rmp_adjust, RMPFlags};
 
 use core::ptr;
 
@@ -214,6 +217,60 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
+fn prepare_fw_launch() -> Result<(), ()>
+{
+    let cpu = this_cpu_mut();
+
+    cpu.alloc_vmsa(1)?;
+    cpu.prepare_guest_vmsa()?;
+
+    Ok(())
+}
+
+fn launch_fw() -> Result<(),()> {
+    let cpu = this_cpu_mut();
+
+    let vmsa_addr = (cpu.vmsa(1) as *const VMSA) as VirtAddr;
+    let vmsa_pa = virt_to_phys(vmsa_addr);
+    let sev_features = cpu.vmsa(1).sev_features;
+
+    log::info!("Launching Firmware");
+    cpu.vmsa(1).enable();
+    cpu.ghcb().ap_create(vmsa_pa, 0, 1, sev_features)?;
+
+    Ok(())
+}
+
+fn validate_flash() -> Result<(),()> {
+    let fw_cfg = FwCfg::new(&CONSOLE_IO);
+    let count = fw_cfg.flash_region_count();
+
+    for i in 0..count {
+        let flash = fw_cfg.get_flash_region(i)?;
+        log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.size);
+
+        let start = flash.start as VirtAddr;
+        let end   = start + (flash.size as usize);
+        let guard = PTMappingGuard::create(start, end, start);
+
+        guard.check_mapping()?;
+
+        let mut current = start;
+        loop {
+            if current >= end {
+                break;
+            }
+            if let Err(_) = rmp_adjust(current, RMPFlags::VMPL1_RWX, false) {
+                log::info!("rmpadjust failed for addr {:#018x}", current);
+                return Err(());
+            }
+            current += PAGE_SIZE;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     let mem_size = launch_info.kernel_end - launch_info.kernel_start;
     let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
@@ -326,6 +383,12 @@ pub extern "C" fn svsm_main() {
     validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
 
     copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
+
+    validate_flash().expect("Failed to validate flash memory");
+
+    prepare_fw_launch().expect("Failed to setup guest VMSA");
+
+    launch_fw().expect("Failed to launch FW");
 
     panic!("Road ends here!");
 }

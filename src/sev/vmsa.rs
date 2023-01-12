@@ -131,6 +131,16 @@ pub struct VMSA {
     pub reserved_670: [u8; 2448],
 }
 
+impl VMSA {
+    pub fn enable(&mut self) {
+        self.efer |= 1u64 << 12;
+    }
+
+    pub fn diable(&mut self) {
+        self.efer &= !(1u64 << 12);
+    }
+}
+
 pub fn allocate_new_vmsa() -> Result<*mut VMSA, ()> {
     let vmsa_page = allocate_zeroed_page()?;
     if let Err(_e) = rmp_adjust(vmsa_page, RMPFlags::VMPL1_VMSA, false) {

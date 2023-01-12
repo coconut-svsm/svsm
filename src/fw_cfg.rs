@@ -47,6 +47,11 @@ pub struct KernelRegion {
     pub end: u64,
 }
 
+pub struct FlashRegion {
+    pub start: u64,
+    pub size: u64,
+}
+
 impl<'a> FwCfg<'a> {
     pub fn new(driver: &'a dyn IOPort) -> Self {
         FwCfg { driver: driver }
@@ -111,7 +116,7 @@ impl<'a> FwCfg<'a> {
                 fs.push(c);
             }
 
-            //println!("FwCfg File: {} Size: {}", fs, size);
+    //        log::info!("FwCfg File: {} Size: {}", fs, size);
 
             if fs.equal_str(str) {
                 ret = Ok(FwCfgFile {
@@ -158,5 +163,36 @@ impl<'a> FwCfg<'a> {
         region.start = start;
 
         Ok(region)
+    }
+
+    pub fn flash_region_count(&self) -> u32 {
+        let result = self.file_selector("etc/flash");
+
+        if let Err(_) = result {
+            return 0;
+        }
+
+        let file = result.unwrap();
+
+        return file.size / 16;
+    }
+
+    pub fn get_flash_region(&self, index : u32) -> Result<FlashRegion, ()> {
+        let file = self.file_selector("etc/flash")?;
+
+        if index * 16 > file.size - 16 {
+            return Err(());
+        }
+
+        self.select(file.selector);
+
+        // skip over unwanted entries
+        for _ in 0..index*2 {
+            let _ = self.read_le::<u64>();
+        }
+
+        Ok(FlashRegion {
+            start: self.read_le(), size: self.read_le()
+        })
     }
 }

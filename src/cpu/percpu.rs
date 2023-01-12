@@ -16,6 +16,7 @@ use crate::sev::ghcb::GHCB;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMPL_MAX, VMSA};
 use crate::types::{VirtAddr, MAX_CPUS};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
+use crate::cpu::vmsa::init_guest_vmsa;
 use core::arch::asm;
 use core::ptr;
 
@@ -39,10 +40,12 @@ impl IstStacks {
 }
 
 pub struct PerCpu {
+    apic_id: u32,
     ghcb: *mut GHCB,
     ist: IstStacks,
     tss: X86Tss,
     vmsa: [*mut VMSA; VMPL_MAX],
+    reset_ip: u64,
 }
 
 impl PerCpu {
@@ -52,6 +55,7 @@ impl PerCpu {
             ist: IstStacks::new(),
             tss: X86Tss::new(),
             vmsa: [ptr::null_mut(); VMPL_MAX],
+            reset_ip: 0xffff_fff0u64,
         }
     }
 
@@ -87,6 +91,10 @@ impl PerCpu {
         unsafe { (*self.ghcb).shutdown() }
     }
 
+    pub fn set_reset_ip(&mut self, reset_ip: u64) {
+        self.reset_ip = reset_ip;
+    }
+
     pub fn ghcb(&mut self) -> &'static mut GHCB {
         unsafe { self.ghcb.as_mut().unwrap() }
     }
@@ -94,7 +102,8 @@ impl PerCpu {
     pub fn alloc_vmsa(&mut self, level: u64) -> Result<(), ()> {
         let l = level as usize;
         assert!(l < VMPL_MAX);
-        self.vmsa[l] = allocate_new_vmsa()?;
+        let vmsa = allocate_new_vmsa().unwrap();
+        self.vmsa[l] = vmsa;
         Ok(())
     }
 
@@ -121,6 +130,12 @@ impl PerCpu {
         vmsa.rsp = rsp;
 
         vmsa.gs.base = (self as *const PerCpu) as u64;
+    }
+
+    pub fn prepare_guest_vmsa(&mut self) -> Result<(),()> {
+        init_guest_vmsa(self.vmsa[1], self.reset_ip);
+
+        Ok(())
     }
 }
 
