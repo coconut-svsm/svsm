@@ -8,6 +8,15 @@
 
 use crate::cpu::percpu::{this_cpu_mut, this_cpu};
 
+const _SVSM_REQ_CORE_REMAP_CA : u32 = 0;
+const _SVSM_REQ_CORE_PVALIDATE : u32 = 1;
+const _SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
+const _SVSM_REQ_CORE_DELETE_VCPU : u32 = 3;
+const _SVSM_REQ_CORE_DEPOSIT_MEM : u32 = 4;
+const _SVSM_REQ_CORE_WITHDRAW_MEM : u32 = 5;
+const _SVSM_REQ_CORE_QUERY_PROTOCOL : u32 = 6;
+const _SVSM_REQ_CIRE_CONFIGURE_VTOM : u32 = 7;
+
 pub fn request_loop() {
     let result = this_cpu().get_caa_addr();
     let vmsa = this_cpu_mut().vmsa(1);
@@ -31,6 +40,7 @@ pub fn request_loop() {
     let rax = vmsa.rax;
     let protocol : u32 = (rax >> 32) as u32;
     let request : u32 = (rax & 0xffff_ffff) as u32;
+    let gpa = vmsa.rcx;
 
-    log::info!("Protocol: {} Request: {}", protocol, request);
+    log::info!("Protocol: {} Request: {} RCX: {:#018x}", protocol, request, gpa);
 }
