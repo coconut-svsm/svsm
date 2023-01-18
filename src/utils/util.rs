@@ -13,12 +13,20 @@ pub fn align_up(addr: usize, align: usize) -> usize {
     addr + (align - 1) & !(align - 1)
 }
 
+pub fn page_offset(addr : usize) -> usize {
+    addr & (PAGE_SIZE - 1)
+}
+
 pub fn page_align(addr: usize) -> usize {
     addr & !(PAGE_SIZE - 1)
 }
 
 pub fn page_align_up(addr: usize) -> usize {
     (addr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
+}
+
+pub fn is_aligned(addr: usize, align: usize) -> bool {
+    (addr & (align - 1)) == 0
 }
 
 #[inline(always)]

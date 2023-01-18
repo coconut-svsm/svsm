@@ -13,7 +13,9 @@ use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
 use crate::locking::{SpinLock, LockGuard};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::is_aligned;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::arch::asm;
 use core::ptr;
 use bitflags::bitflags;
 
@@ -79,6 +81,13 @@ pub fn flush_tlb_global() {
     write_cr4(cr4);
 }
 
+pub fn invlpg(addr: VirtAddr) {
+    let param : u64 = addr.try_into().unwrap();
+    unsafe {
+        asm!("invlpg ({})", in(reg) param, options(att_syntax));
+    }
+}
+
 fn encrypt_mask() -> usize {
     *ENCRYPT_MASK
 }
@@ -126,6 +135,9 @@ impl PTEntry {
     }
 
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+        if addr & !0x000f_ffff_ffff_f000 != 0 {
+            log::info!("addr: {:#018x}", addr);
+        }
         assert!(addr & !0x000f_ffff_ffff_f000 == 0);
         self.0 = (addr as u64) | supported_flags(flags).bits();
     }
@@ -331,12 +343,23 @@ impl PageTable {
         unsafe { Mapping::Level0(&mut (*page)[idx]) }
     }
 
-    pub fn alloc_pte_lvl0(&mut self, vaddr: VirtAddr) -> Mapping {
+    pub fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping {
         let m = self.walk_addr(vaddr);
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr),
+        }
+    }
+
+    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping {
+        let m = self.walk_addr(vaddr);
+
+        match m {
+            Mapping::Level0(entry) => Mapping::Level0(entry),
+            Mapping::Level1(entry) => Mapping::Level1(entry),
             Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr),
             Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr),
         }
@@ -423,13 +446,53 @@ impl PageTable {
         }
     }
 
+    pub fn map_2m(
+            &mut self,
+            vaddr: VirtAddr,
+            paddr: PhysAddr,
+            flags: &PTEntryFlags,
+            ) -> Result<(),()> {
+        assert!(is_aligned(vaddr, PAGE_SIZE_2M));
+        assert!(is_aligned(paddr, PAGE_SIZE_2M));
+
+        let mapping = self.alloc_pte_2m(vaddr);
+
+        if let Mapping::Level1(entry) = mapping {
+            let f = flags.clone() | PTEntryFlags::HUGE;
+            entry.set(set_c_bit(paddr), f);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn unmap_2m(
+            &mut self,
+            vaddr: VirtAddr,
+            ) -> Result<(),()> {
+        assert!(is_aligned(vaddr, PAGE_SIZE_2M));
+
+        let mapping = self.walk_addr(vaddr);
+
+        if let Mapping::Level1(entry) = mapping {
+            if !entry.flags().contains(PTEntryFlags::PRESENT | PTEntryFlags::HUGE) {
+                return Err(());
+            }
+
+            entry.clear();
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     pub fn map_4k(
         &mut self,
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: &PTEntryFlags,
     ) -> Result<(), ()> {
-        let mapping = self.alloc_pte_lvl0(vaddr);
+        let mapping = self.alloc_pte_4k(vaddr);
 
         if let Mapping::Level0(entry) = mapping {
             let f = flags.clone();

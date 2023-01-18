@@ -6,15 +6,19 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{VirtAddr};
 use core::arch::asm;
 
 #[derive(Debug)]
-pub enum PValidateError {
-    FailInput,
-    FailSizeMismatch,
-    FailUnknown,
-    FailNotChanged,
+pub struct PValidateError {
+    pub error_code: u64,
+    pub changed: bool,
+}
+
+impl PValidateError {
+    pub fn new(code: u64, changed: bool) -> Self {
+        PValidateError { error_code: code, changed: changed }
+    }
 }
 
 pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), PValidateError> {
@@ -50,18 +54,12 @@ pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), PV
              options(att_syntax));
     }
 
-    if cf == 1 {
-        return Err(PValidateError::FailNotChanged);
-    }
+    let changed : bool = cf == 0;
 
-    if ret == 0 {
+    if ret == 0 && changed {
         Ok(())
-    } else if ret == 1 {
-        Err(PValidateError::FailInput)
-    } else if ret == 6 {
-        Err(PValidateError::FailSizeMismatch)
     } else {
-        Err(PValidateError::FailUnknown)
+        Err(PValidateError::new(ret, changed))
     }
 }
 
@@ -86,6 +84,11 @@ impl RMPFlags {
     pub const X_SUPER: u64 = 1u64 << 11;
     pub const VMSA: u64 = 1u64 << 16;
 
+    pub const VMPL0_NONE: u64 = RMPFlags::VMPL0;
+    pub const VMPL1_NONE: u64 = RMPFlags::VMPL1;
+    pub const VMPL2_NONE: u64 = RMPFlags::VMPL2;
+    pub const VMPL3_NONE: u64 = RMPFlags::VMPL3;
+
     pub const VMPL0_RWX: u64 =
         RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
     pub const VMPL1_RWX: u64 =
@@ -109,7 +112,7 @@ pub enum RMPAdjustError {
 }
 
 pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), RMPAdjustError> {
-    let rcx: usize = if huge { PAGE_SIZE } else { PAGE_SIZE_2M };
+    let rcx: usize = if huge { 1 } else { 0 };
     let rax: u64 = addr as u64;
     let rdx: u64 = flags as u64;
     let mut result: u64;
@@ -134,4 +137,13 @@ pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), RMPAdjus
     } else {
         Err(RMPAdjustError::FailUnknown)
     }
+}
+
+pub fn rmp_adjust_report(addr: VirtAddr, flags: u64, huge: bool) -> Result<(),()> {
+    if let Err(_) = rmp_adjust(addr, flags, huge) {
+        log::error!("RMPADJUST failed for addr {:#018x}", addr);
+        return Err(());
+    }
+
+    Ok(())
 }

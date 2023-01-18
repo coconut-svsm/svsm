@@ -102,6 +102,7 @@ enum GHCBExitCode {}
 impl GHCBExitCode {
     pub const IOIO: u64 = 0x7b;
     pub const AP_CREATE: u64 = 0x80000013;
+    pub const RUN_VMPL: u64 = 0x80000018;
 }
 
 pub enum GHCBIOSize {
@@ -326,6 +327,11 @@ impl GHCB {
         let exit_info_2: u64 = vmsa_gpa as u64;
         self.set_rax(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)
+    }
+
+    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(),()> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)
     }
 }
 

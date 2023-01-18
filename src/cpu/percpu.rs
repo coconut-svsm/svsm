@@ -65,6 +65,10 @@ impl PerCpu {
         }
     }
 
+    pub const fn get_apic_id(&self) -> u32 {
+        self.apic_id
+    }
+
     pub fn setup_ghcb(&mut self) -> Result<(), ()> {
         let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
         self.ghcb = ghcb_page as *mut GHCB;
