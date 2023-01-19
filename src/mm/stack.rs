@@ -20,8 +20,8 @@ const MAX_STACKS: usize = 1024;
 const BMP_QWORDS: usize = MAX_STACKS / 64;
 
 // Set stack size to 8k, certain macros can be very stack intensive (e.g. panic!)
-const STACK_SIZE: usize = 2 * PAGE_SIZE;
-const GUARD_SIZE: usize = 2 * PAGE_SIZE;
+const STACK_SIZE: usize = 4 * PAGE_SIZE;
+const GUARD_SIZE: usize = 4 * PAGE_SIZE;
 const STACK_PAGES: usize = STACK_SIZE / PAGE_SIZE;
 
 struct StackRange {
