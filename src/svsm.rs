@@ -32,6 +32,7 @@ use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
 use svsm::mm::pagetable::{paging_init, PTMappingGuard};
 use svsm::mm::stack::{allocate_stack, stack_base_pointer};
+use svsm::mm::memory::init_memory_map;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
@@ -371,6 +372,8 @@ pub extern "C" fn svsm_main() {
     invalidate_stage2().expect("Failed to invalidate Stage2 memory");
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
+
+    init_memory_map(&fw_cfg, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
     let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

@@ -9,3 +9,6 @@
 pub mod alloc;
 pub mod pagetable;
 pub mod stack;
+pub mod memory;
+
+pub use memory::valid_phys_address;

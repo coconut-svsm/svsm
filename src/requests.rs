@@ -12,6 +12,7 @@ use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust_report, RMPFlags};
 use crate::mm::pagetable::{PageTable, PTMappingGuard, invlpg, get_init_pgtable_locked, flush_tlb_global};
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
+use crate::mm::valid_phys_address;
 
 const  SVSM_REQ_CORE_REMAP_CA : u32 = 0;
 const  SVSM_REQ_CORE_PVALIDATE : u32 = 1;
@@ -72,7 +73,7 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
     let vaddr : VirtAddr = region_base_addr() + alignment;
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
-    if !is_aligned(paddr, alignment) {
+    if !is_aligned(paddr, alignment) || !valid_phys_address(paddr) {
         vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
         return Err(())
     }
@@ -133,7 +134,7 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
 
     vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
 
-    if !is_aligned(gpa, 8) {
+    if !is_aligned(gpa, 8) || !valid_phys_address(gpa) {
         return Err(())
     }
 
@@ -188,7 +189,7 @@ fn core_remap_ca(vmsa: &mut VMSA) -> Result<(), ()> {
 
     vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
 
-    if !is_aligned(gpa, 8) || crosses_page(gpa, 8) {
+    if !is_aligned(gpa, 8) || !valid_phys_address(gpa) || crosses_page(gpa, 8) {
         // Report error to guest
         return Ok(());
     }
