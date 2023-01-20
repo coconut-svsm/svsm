@@ -58,3 +58,10 @@ where
 {
     x1 <= y2 && y1 <= x2
 }
+
+pub fn crosses_page(start: usize, size: usize) -> bool {
+    let x1 = start / PAGE_SIZE;
+    let x2 = (start + size - 1) / PAGE_SIZE;
+
+    x1 != x2
+}

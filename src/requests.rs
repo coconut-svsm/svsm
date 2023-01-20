@@ -11,9 +11,9 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust_report, RMPFlags};
 use crate::mm::pagetable::{PageTable, PTMappingGuard, invlpg, get_init_pgtable_locked, flush_tlb_global};
-use crate::utils::{page_align, page_offset, is_aligned};
+use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 
-const _SVSM_REQ_CORE_REMAP_CA : u32 = 0;
+const  SVSM_REQ_CORE_REMAP_CA : u32 = 0;
 const  SVSM_REQ_CORE_PVALIDATE : u32 = 1;
 const _SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
 const _SVSM_REQ_CORE_DELETE_VCPU : u32 = 3;
@@ -183,8 +183,38 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
     Ok(())
 }
 
+fn core_remap_ca(vmsa: &mut VMSA) -> Result<(), ()> {
+    let gpa : PhysAddr = vmsa.rcx.try_into().unwrap();
+
+    vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
+
+    if !is_aligned(gpa, 8) || crosses_page(gpa, 8) {
+        // Report error to guest
+        return Ok(());
+    }
+
+    // Unmap old CAA
+    this_cpu_mut().unmap_caa()?;
+
+    // Map new CAA
+    this_cpu_mut().map_caa_phys(gpa)?;
+
+    let vaddr = this_cpu().get_caa_addr().unwrap();
+
+    unsafe {
+        let pending : *mut u64 = vaddr as *mut u64;
+        // Clear the whole 8 bytes for of the CA
+        (*pending) = 0;
+    }
+
+    vmsa.rax = SVSM_SUCCESS;
+
+    Ok(())
+}
+
 fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
     let result = match request {
+        SVSM_REQ_CORE_REMAP_CA => core_remap_ca(vmsa),
         SVSM_REQ_CORE_PVALIDATE => core_pvalidate(vmsa),
         _ => { log::error!("Core protocol request {} not supported", request); Err(()) },
     };

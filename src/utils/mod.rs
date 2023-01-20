@@ -9,4 +9,4 @@
 pub mod util;
 pub mod immut_after_init;
 
-pub use util::{align_up, ffs, halt, page_offset, page_align, page_align_up, is_aligned};
+pub use util::{align_up, ffs, halt, page_offset, page_align, page_align_up, is_aligned, crosses_page};
