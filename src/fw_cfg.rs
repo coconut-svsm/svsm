@@ -6,9 +6,12 @@
 //
 // vim: ts=4 sw=4 et
 
+extern crate alloc;
+
 use super::io::IOPort;
 use super::string::FixedString;
 use core::mem::size_of;
+use alloc::vec::Vec;
 
 const FW_CFG_CTL: u16 = 0x510;
 const FW_CFG_DATA: u16 = 0x511;
@@ -124,40 +127,54 @@ impl<'a> FwCfg<'a> {
         ret
     }
 
-    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
-        let mut region = MemoryRegion { start: 0, end: 0 };
-        let result = self.file_selector("etc/e820");
+    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
+        let mut regions: Vec::<MemoryRegion> = Vec::new();
+        let file = self.file_selector("etc/e820")?;
+        let entries = file.size / 20;
 
-        if let Err(e) = result {
-            return Err(e);
-        }
-
-        let file = result.unwrap();
 
         self.select(file.selector);
-
-        let entries = file.size / 20;
 
         for _i in 0..entries {
             let start: u64 = self.read_le();
             let size: u64 = self.read_le();
             let t: u32 = self.read_le();
 
-            if (t == 1) && (start >= region.start) {
-                region.start = start;
-                region.end = start + size;
+            if t == 1 {
+                regions.push(MemoryRegion { start: start, end: start + size });
             }
         }
 
-        let start = (region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
+        Ok(regions)
+    }
 
-        if start < region.start {
+    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
+        let mut kernel_region = MemoryRegion { start: 0, end: 0 };
+        let regions = self.get_memory_regions()?;
+
+        if regions.len() == 0 {
             return Err(());
         }
 
-        region.start = start;
+        for i in 0..regions.len() {
+            let start = regions[i].start;
+            let end = regions[i].end;
 
-        Ok(region)
+            if start >= kernel_region.start {
+                kernel_region.start = start;
+                kernel_region.end = end;
+            }
+        }
+
+        let start = (kernel_region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
+
+        if start < kernel_region.start {
+            return Err(());
+        }
+
+        kernel_region.start = start;
+
+        Ok(kernel_region)
     }
 
     pub fn flash_region_count(&self) -> u32 {
