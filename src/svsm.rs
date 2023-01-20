@@ -254,10 +254,10 @@ fn validate_flash() -> Result<(),()> {
 
     for i in 0..count {
         let flash = fw_cfg.get_flash_region(i)?;
-        log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.size);
+        log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.end - flash.start);
 
         let start = flash.start as VirtAddr;
-        let end   = start + (flash.size as usize);
+        let end   = flash.end as VirtAddr;
         let guard = PTMappingGuard::create(start, end, start);
 
         guard.check_mapping()?;

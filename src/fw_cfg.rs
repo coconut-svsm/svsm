@@ -42,14 +42,9 @@ impl FwCfgFile {
     }
 }
 
-pub struct KernelRegion {
+pub struct MemoryRegion {
     pub start: u64,
     pub end: u64,
-}
-
-pub struct FlashRegion {
-    pub start: u64,
-    pub size: u64,
 }
 
 impl<'a> FwCfg<'a> {
@@ -129,8 +124,8 @@ impl<'a> FwCfg<'a> {
         ret
     }
 
-    pub fn find_kernel_region(&self) -> Result<KernelRegion, ()> {
-        let mut region = KernelRegion { start: 0, end: 0 };
+    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
+        let mut region = MemoryRegion { start: 0, end: 0 };
         let result = self.file_selector("etc/e820");
 
         if let Err(e) = result {
@@ -177,7 +172,7 @@ impl<'a> FwCfg<'a> {
         return file.size / 16;
     }
 
-    pub fn get_flash_region(&self, index : u32) -> Result<FlashRegion, ()> {
+    pub fn get_flash_region(&self, index : u32) -> Result<MemoryRegion, ()> {
         let file = self.file_selector("etc/flash")?;
 
         if index * 16 > file.size - 16 {
@@ -191,8 +186,11 @@ impl<'a> FwCfg<'a> {
             let _ = self.read_le::<u64>();
         }
 
-        Ok(FlashRegion {
-            start: self.read_le(), size: self.read_le()
+        let start: u64 = self.read_le();
+        let end: u64 = start + self.read_le::<u64>();
+        Ok(MemoryRegion {
+            start: start,
+            end: end,
         })
     }
 }

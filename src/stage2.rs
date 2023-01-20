@@ -20,7 +20,7 @@ use core::panic::PanicInfo;
 use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
 use svsm::cpu::msr;
 use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
-use svsm::fw_cfg::{FwCfg, KernelRegion};
+use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
@@ -222,14 +222,14 @@ fn map_memory(mut paddr: PhysAddr, pend: PhysAddr, mut vaddr: VirtAddr) -> Resul
     Ok(())
 }
 
-fn map_kernel_region(vaddr: VirtAddr, region: &KernelRegion) -> Result<(), ()> {
+fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
     let paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
 
     map_memory(paddr, pend, vaddr)
 }
 
-fn validate_kernel_region(mut vaddr: VirtAddr, region: &KernelRegion) -> Result<(), ()> {
+fn validate_kernel_region(mut vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
     let mut paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
 
