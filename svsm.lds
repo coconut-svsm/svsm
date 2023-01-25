@@ -8,7 +8,15 @@ SECTIONS
 		QUAD(.)
 		QUAD(startup_64)
 	}
-	.text : { *(.startup.*) *(.text) *(.text.*) }
+	.text : {
+		*(.startup.*)
+		*(.text)
+		*(.text.*)
+		. = ALIGN(16);
+		exception_table_start = .;
+		KEEP(*(__exception_table))
+		exception_table_end = .;
+	}
 	. = ALIGN(4096);
 	etext = .;
 	sdata = .;

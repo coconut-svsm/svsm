@@ -10,6 +10,7 @@ use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use crate::types::{VirtAddr, SVSM_CS};
 use crate::utils::halt;
+use crate::cpu::extable::handle_exception_table;
 use core::arch::{asm, global_asm};
 use core::mem;
 use log;
@@ -39,29 +40,29 @@ pub const _VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
 #[repr(C, packed)]
-pub struct x86_regs {
-    r15: usize,
-    r14: usize,
-    r13: usize,
-    r12: usize,
-    r11: usize,
-    r10: usize,
-    r9: usize,
-    r8: usize,
-    rbp: usize,
-    rdi: usize,
-    rsi: usize,
-    rdx: usize,
-    rcx: usize,
-    rbx: usize,
-    rax: usize,
-    vector: usize,
-    error_code: usize,
-    rip: usize,
-    cs: usize,
-    flags: usize,
-    rsp: usize,
-    ss: usize,
+pub struct X86Regs {
+    pub r15: usize,
+    pub r14: usize,
+    pub r13: usize,
+    pub r12: usize,
+    pub r11: usize,
+    pub r10: usize,
+    pub r9: usize,
+    pub r8: usize,
+    pub rbp: usize,
+    pub rdi: usize,
+    pub rsi: usize,
+    pub rdx: usize,
+    pub rcx: usize,
+    pub rbx: usize,
+    pub rax: usize,
+    pub vector: usize,
+    pub error_code: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub flags: usize,
+    pub rsp: usize,
+    pub ss: usize,
 }
 
 #[derive(Copy, Clone)]
@@ -183,7 +184,7 @@ pub fn idt_init() {
 }
 
 #[no_mangle]
-fn generic_idt_handler(regs: &mut x86_regs) {
+fn generic_idt_handler(regs: &mut X86Regs) {
     if regs.vector == DF_VECTOR {
         let cr2 = read_cr2();
         let rip = regs.rip;
@@ -195,6 +196,11 @@ fn generic_idt_handler(regs: &mut x86_regs) {
     } else if regs.vector == GP_VECTOR {
         let rip = regs.rip;
         let err = regs.error_code;
+
+        if handle_exception_table(regs) {
+            return;
+        }
+
         log::error!(
             "General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
             rip, err
@@ -203,6 +209,11 @@ fn generic_idt_handler(regs: &mut x86_regs) {
         let cr2 = read_cr2();
         let rip = regs.rip;
         let err = regs.error_code;
+
+        if handle_exception_table(regs) {
+            return;
+        }
+
         log::error!(
             "Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
             rip, cr2, err
@@ -211,6 +222,11 @@ fn generic_idt_handler(regs: &mut x86_regs) {
         let err = regs.error_code;
         let vec = regs.vector;
         let rip = regs.rip;
+
+        if handle_exception_table(regs) {
+            return;
+        }
+
         panic!(
             "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
             vec, rip, err

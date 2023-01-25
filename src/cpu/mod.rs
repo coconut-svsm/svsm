@@ -16,3 +16,6 @@ pub mod msr;
 pub mod percpu;
 pub mod tss;
 pub mod vmsa;
+pub mod extable;
+
+pub use idt::X86Regs;
