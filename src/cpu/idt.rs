@@ -280,7 +280,7 @@ global_asm!(
 
         addq    $16, %rsp /* Skip vector and error code */
 
-        iret
+        iretq
 
         .align 32
         .globl idt_handler_array
