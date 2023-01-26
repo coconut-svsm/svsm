@@ -9,11 +9,9 @@
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use crate::types::{VirtAddr, SVSM_CS};
-use crate::utils::halt;
 use crate::cpu::extable::handle_exception_table;
 use core::arch::{asm, global_asm};
 use core::mem;
-use log;
 
 pub const _DE_VECTOR: usize = 0;
 pub const _DB_VECTOR: usize = 1;
@@ -189,7 +187,7 @@ fn generic_idt_handler(regs: &mut X86Regs) {
         let cr2 = read_cr2();
         let rip = regs.rip;
         let rsp = regs.rsp;
-        log::error!(
+        panic!(
             "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
             rip, rsp, cr2
         );
@@ -197,44 +195,34 @@ fn generic_idt_handler(regs: &mut X86Regs) {
         let rip = regs.rip;
         let err = regs.error_code;
 
-        if handle_exception_table(regs) {
-            return;
+        if !handle_exception_table(regs) {
+            panic!(
+                "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
+                rip, err
+            );
         }
-
-        log::error!(
-            "General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
-            rip, err
-        );
     } else if regs.vector == PF_VECTOR {
         let cr2 = read_cr2();
         let rip = regs.rip;
         let err = regs.error_code;
 
-        if handle_exception_table(regs) {
-            return;
+        if !handle_exception_table(regs) {
+            panic!(
+                "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+                rip, cr2, err
+            );
         }
-
-        log::error!(
-            "Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
-            rip, cr2, err
-        );
     } else {
         let err = regs.error_code;
         let vec = regs.vector;
         let rip = regs.rip;
 
         if handle_exception_table(regs) {
-            return;
+            panic!(
+                "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
+                vec, rip, err
+            );
         }
-
-        panic!(
-            "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-            vec, rip, err
-        );
-    }
-
-    loop {
-        halt();
     }
 }
 
