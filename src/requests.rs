@@ -9,7 +9,7 @@
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::cpu::percpu::{this_cpu_mut, this_cpu};
 use crate::sev::vmsa::VMSA;
-use crate::sev::utils::{pvalidate, rmp_adjust_report, RMPFlags};
+use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
 use crate::mm::pagetable::{PageTable, PTMappingGuard, invlpg, get_init_pgtable_locked, flush_tlb_global};
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::valid_phys_address;
@@ -27,7 +27,7 @@ const SVSM_SUCCESS : u64 = 0x0000_0000;
 const _SVSM_ERR_INCOMPLETE : u64 = 0x8000_0000;
 const _SVSM_ERR_UNSUPPORTED_PROTOCOL : u64 = 0x8000_0001;
 const _SVSM_ERR_UNSUPPORTED_CALL : u64 = 0x8000_0002;
-const _SVSM_ERR_INVALID_ADDRESS : u64= 0x8000_0003;
+const SVSM_ERR_INVALID_ADDRESS : u64= 0x8000_0003;
 const _SVSM_ERR_INVALID_FORMAT : u64 = 0x8000_0004;
 const SVSM_ERR_INVALID_PARAMETER : u64 = 0x8000_0005;
 const _SVSM_ERR_INVALID_REQUEST : u64 = 0x8000_0006;
@@ -53,11 +53,29 @@ fn region_base_addr() -> VirtAddr {
     REQUEST_BASE_ADDR + (apic_id * REQUEST_REGION_SIZE)
 }
 
-fn reset_access(vaddr: VirtAddr, huge: bool) -> Result<(),()>
+fn rmpadjust_update_vmsa(vmsa: &mut VMSA, vaddr: VirtAddr,
+                         flags: u64, huge: bool) -> Result<(),()> {
+    if let Err(code) = rmp_adjust(vaddr, flags, huge) {
+        let ret_code = if code < 0x10 { code } else { 0x11 };
+        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + ret_code;
+        return Err(())
+    }
+
+    Ok(())
+}
+
+fn revoke_access(vmsa: &mut VMSA, vaddr: VirtAddr, huge: bool) -> Result<(),()>
 {
-    rmp_adjust_report(vaddr, RMPFlags::VMPL1_NONE, huge)?;
-    rmp_adjust_report(vaddr, RMPFlags::VMPL2_NONE, huge)?;
-    rmp_adjust_report(vaddr, RMPFlags::VMPL3_NONE, huge)?;
+    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL1_NONE, huge)?;
+    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL2_NONE, huge)?;
+    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL3_NONE, huge)?;
+
+    Ok(())
+}
+
+fn grant_access(vmsa: &mut VMSA, vaddr: VirtAddr, huge: bool) -> Result<(),()>
+{
+    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL1_RWX, huge)?;
 
     Ok(())
 }
@@ -73,9 +91,14 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
     let vaddr : VirtAddr = region_base_addr() + alignment;
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
-    if !is_aligned(paddr, alignment) || !valid_phys_address(paddr) {
+    if !is_aligned(paddr, alignment) {
         vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
-        return Err(())
+        return Ok(false);
+    }
+
+    if !valid_phys_address(paddr) {
+        vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
+        return Ok(false);
     }
 
     let flags = PageTable::data_flags();
@@ -88,7 +111,9 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
 
     if !valid {
         flush = true;
-        reset_access(vaddr, huge)?;
+        if let Err(_) = revoke_access(vmsa, vaddr, huge) {
+            return Ok(flush)
+        }
     }
 
     let result = pvalidate(vaddr, huge, valid);
@@ -110,11 +135,13 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
 
     if ret_code != SVSM_SUCCESS {
         log::error!("Failed to process entry: {:#x} return code: {:#x}", entry, ret_code);
-        return Err(());
+        return Ok(flush);
     }
 
     if valid {
-        rmp_adjust_report(vaddr, RMPFlags::VMPL1_RWX, huge)?;
+        if let Err(_) = grant_access(vmsa, vaddr, huge) {
+            return Ok(flush)
+        }
     }
 
     if huge {

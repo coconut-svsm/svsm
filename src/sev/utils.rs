@@ -104,46 +104,38 @@ impl RMPFlags {
     pub const VMPL3_VMSA: u64 = RMPFlags::VMPL3 | RMPFlags::READ | RMPFlags::VMSA;
 }
 
-pub enum RMPAdjustError {
-    FailInput,
-    FailPermission,
-    FailSizeMismatch,
-    FailUnknown,
-}
-
-pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), RMPAdjustError> {
+pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
     let rcx: usize = if huge { 1 } else { 0 };
     let rax: u64 = addr as u64;
     let rdx: u64 = flags as u64;
     let mut result: u64;
+    let mut ex: u64;
 
     unsafe {
-        asm!(".byte 0xf3, 0x0f, 0x01, 0xfe",
+        asm!("1: .byte 0xf3, 0x0f, 0x01, 0xfe
+                 xorq %rcx, %rcx
+              2:
+              .pushsection \"__exception_table\",\"a\"
+              .balign 16
+              .quad (1b)
+              .quad (2b)
+              .popsection",
                 in("rax") rax,
                 in("rcx") rcx,
                 in("rdx") rdx,
                 lateout("rax") result,
+                lateout("rcx") ex,
                 options(att_syntax));
     }
 
-    if result == 0 {
+    if result == 0 && ex == 0 {
+        // RMPADJUST completed successfully
         Ok(())
-    } else if result == 1 {
-        Err(RMPAdjustError::FailInput)
-    } else if result == 2 {
-        Err(RMPAdjustError::FailPermission)
-    } else if result == 6 {
-        Err(RMPAdjustError::FailSizeMismatch)
+    } else if ex == 0 {
+        // RMPADJUST instruction completed with failure
+        Err(result)
     } else {
-        Err(RMPAdjustError::FailUnknown)
+        // Report exceptions on RMPADJUST just as FailInput
+        Err(1u64)
     }
-}
-
-pub fn rmp_adjust_report(addr: VirtAddr, flags: u64, huge: bool) -> Result<(),()> {
-    if let Err(_) = rmp_adjust(addr, flags, huge) {
-        log::error!("RMPADJUST failed for addr {:#018x}", addr);
-        return Err(());
-    }
-
-    Ok(())
 }
