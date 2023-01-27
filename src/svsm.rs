@@ -37,6 +37,7 @@ use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use svsm::cpu::percpu::this_cpu_mut;
+use svsm::sev::sev_status_init;
 use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::requests::request_loop;
@@ -332,6 +333,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     cr0_init();
     cr4_init();
     efer_init();
+    sev_status_init();
 
     memory_init(&launch_info);
     paging_init();
