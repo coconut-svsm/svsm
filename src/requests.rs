@@ -53,37 +53,41 @@ fn region_base_addr() -> VirtAddr {
     REQUEST_BASE_ADDR + (apic_id * REQUEST_REGION_SIZE)
 }
 
-fn rmpadjust_update_vmsa(vmsa: &mut VMSA, vaddr: VirtAddr,
-                         flags: u64, huge: bool) -> Result<(),()> {
+fn rmpadjust_update_vmsa(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u64> {
     if let Err(code) = rmp_adjust(vaddr, flags, huge) {
         let ret_code = if code < 0x10 { code } else { 0x11 };
-        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + ret_code;
-        return Err(())
+        Err(SVSM_ERR_PROTOCOL_BASE + ret_code)
+    } else {
+        Ok(())
+    }
+}
+
+fn revoke_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
+{
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1_NONE, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL2_NONE, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL3_NONE, huge)?;
+
+    Ok(())
+}
+
+fn grant_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
+{
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1_RWX, huge)?;
+
+    Ok(())
+}
+
+fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
+    let result: u64;
+    let mut flush: bool = false;
+    let page_size: u64= entry & 3;
+
+    if page_size > 1 {
+        return Ok((SVSM_ERR_INVALID_PARAMETER, flush));
     }
 
-    Ok(())
-}
-
-fn revoke_access(vmsa: &mut VMSA, vaddr: VirtAddr, huge: bool) -> Result<(),()>
-{
-    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL1_NONE, huge)?;
-    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL2_NONE, huge)?;
-    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL3_NONE, huge)?;
-
-    Ok(())
-}
-
-fn grant_access(vmsa: &mut VMSA, vaddr: VirtAddr, huge: bool) -> Result<(),()>
-{
-    rmpadjust_update_vmsa(vmsa, vaddr, RMPFlags::VMPL1_RWX, huge)?;
-
-    Ok(())
-}
-
-fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
-    let mut flush : bool = false;
-
-    let huge: bool = (entry & 3) == 1;
+    let huge: bool = page_size == 1;
     let valid: bool = (entry & 4) == 4;
     let ign_cf: bool = (entry & 8) == 8;
 
@@ -92,13 +96,11 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
     if !is_aligned(paddr, alignment) {
-        vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
-        return Ok(false);
+        return Ok((SVSM_ERR_INVALID_PARAMETER, flush));
     }
 
     if !valid_phys_address(paddr) {
-        vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
-        return Ok(false);
+        return Ok((SVSM_ERR_INVALID_ADDRESS, flush));
     }
 
     let flags = PageTable::data_flags();
@@ -110,15 +112,13 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
     }
 
     if !valid {
-        flush = true;
-        if let Err(_) = revoke_access(vmsa, vaddr, huge) {
-            return Ok(flush)
+        if let Err(error_code) = revoke_access(vaddr, huge) {
+            return Ok((error_code, true))
         }
+        flush = true;
     }
 
-    let result = pvalidate(vaddr, huge, valid);
-
-    let ret_code : u64 = match result {
+    result = match pvalidate(vaddr, huge, valid) {
         Ok(_) => SVSM_SUCCESS,
         Err(e) => {
                     if e.error_code != 0 {
@@ -131,16 +131,14 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
                 },
     };
 
-    vmsa.rax = ret_code;
-
-    if ret_code != SVSM_SUCCESS {
-        log::error!("Failed to process entry: {:#x} return code: {:#x}", entry, ret_code);
-        return Ok(flush);
+    if result != SVSM_SUCCESS {
+        log::error!("Failed to process entry: {:#x} return code: {:#x}", entry, result);
+        return Ok((result, flush));
     }
 
     if valid {
-        if let Err(_) = grant_access(vmsa, vaddr, huge) {
-            return Ok(flush)
+        if let Err(error_code) = grant_access(vaddr, huge) {
+            return Ok((error_code, flush))
         }
     }
 
@@ -152,7 +150,7 @@ fn core_pvalidate_one(vmsa: &mut VMSA, entry: u64) -> Result<bool,()> {
 
     invlpg(vaddr);
 
-    Ok(flush)
+    Ok((SVSM_SUCCESS, flush))
 }
 
 fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
@@ -195,12 +193,14 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
             let index = i as usize;
             let entry = (*req).list[index];
 
-            let result = core_pvalidate_one(vmsa, entry);
-            if let Err(_) = result {
+            let (result, flush_entry) = core_pvalidate_one(entry)?;
+            flush |= flush_entry;
+            if result == 0 {
+                (*req).next += 1;
+            } else {
+                vmsa.rax = result;
                 break;
             }
-            (*req).next += 1;
-            flush |= result.unwrap();
         }
 
         if flush {
@@ -299,6 +299,7 @@ pub fn request_loop() {
             vmsa.enable();
         }
 
+        flush_tlb_global();
         this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
     }
 }
