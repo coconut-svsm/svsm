@@ -26,7 +26,7 @@ const SVSM_REQ_CORE_CONFIGURE_VTOM : u32 = 7;
 
 const SVSM_SUCCESS : u64 = 0x0000_0000;
 const _SVSM_ERR_INCOMPLETE : u64 = 0x8000_0000;
-const _SVSM_ERR_UNSUPPORTED_PROTOCOL : u64 = 0x8000_0001;
+const SVSM_ERR_UNSUPPORTED_PROTOCOL : u64 = 0x8000_0001;
 const SVSM_ERR_UNSUPPORTED_CALL : u64 = 0x8000_0002;
 const SVSM_ERR_INVALID_ADDRESS : u64= 0x8000_0003;
 const _SVSM_ERR_INVALID_FORMAT : u64 = 0x8000_0004;
@@ -275,7 +275,11 @@ fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
         SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(vmsa),
         SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(vmsa),
         SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(vmsa),
-        _ => { log::error!("Core protocol request {} not supported", request); Err(()) },
+        _ => {
+            log::info!("Core protocol request {} not supported", request);
+            vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+            Ok(())
+        },
     };
 
     if let Err(_) = result {
@@ -314,19 +318,20 @@ pub fn request_loop() {
             let protocol : u32 = (rax >> 32) as u32;
             let request : u32 = (rax & 0xffff_ffff) as u32;
 
-            if protocol != 0 {
-                log::error!("Only protocol 0 supported, got {}", protocol);
-                break;
+            if protocol == 0 {
+                if let Err(_) = core_protocol_request(request, vmsa) {
+                    log::error!("Fatal Error handling core protocol request");
+                    break;
+                }
+            } else {
+                log::info!("Only protocol 0 supported, got {}", protocol);
+                vmsa.rax = SVSM_ERR_UNSUPPORTED_PROTOCOL;
             }
 
-            if let Err(_) = core_protocol_request(request, vmsa) {
-                log::error!("Error handling core protocol request");
-                break;
-            }
-
-            // Make VMSA runable again
-            vmsa.enable();
         }
+
+        // Make VMSA runable again by setting EFER.SVME
+        vmsa.enable();
 
         flush_tlb_global_sync();
         this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
