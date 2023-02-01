@@ -10,5 +10,7 @@ pub mod alloc;
 pub mod pagetable;
 pub mod stack;
 pub mod memory;
+pub mod guestmem;
 
 pub use memory::valid_phys_address;
+pub use guestmem::GuestPtr;

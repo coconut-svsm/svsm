@@ -13,7 +13,7 @@ use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
 use crate::mm::pagetable::PageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
-use crate::mm::valid_phys_address;
+use crate::mm::{valid_phys_address, GuestPtr};
 
 const SVSM_REQ_CORE_REMAP_CA : u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE : u32 = 1;
@@ -36,11 +36,11 @@ const _SVSM_ERR_INVALID_REQUEST : u64 = 0x8000_0006;
 const SVSM_ERR_PROTOCOL_BASE : u64 = 0x8000_1000;
 
 #[repr(C, packed)]
+#[derive(Copy, Clone)]
 struct PValidateRequest {
     entries : u16,
     next : u16,
     resv : u32,
-    list : [u64; 511],
 }
 
 /// Base address for per-cpu request mappings
@@ -196,41 +196,51 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
 	let guard = PageMappingGuard::create(start, paddr, false);
     guard.check_mapping()?;
 
-    unsafe {
-        let req = (start + offset) as *mut PValidateRequest;
+    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
+    let mut request = match guest_page.read() {
+        Ok(d) => d,
+        Err(_) => { vmsa.rax = SVSM_ERR_INVALID_ADDRESS; return Ok(()); },
+    };
 
-        let entries = (*req).entries;
-        let next = (*req).next;
+    let entries = request.entries;
+    let next = request.next;
 
-        // Each entry is 8 bytes in size, 8 bytes for the request header
-        let max_entries : u16 = ((PAGE_SIZE - offset - 8) / 8).try_into().unwrap();
+    // Each entry is 8 bytes in size, 8 bytes for the request header
+    let max_entries : u16 = ((PAGE_SIZE - offset - 8) / 8).try_into().unwrap();
 
-        if entries == 0 || entries > max_entries || entries <= next {
-            return Ok(())
+    if entries == 0 || entries > max_entries || entries <= next {
+        return Ok(())
+    }
+
+    vmsa.rax = SVSM_SUCCESS;
+
+    let mut flush : bool = false;
+
+    let guest_entries = guest_page.offset(1).cast::<u64>();
+    for i in next..entries {
+        let index = i as usize;
+        let entry = match guest_entries.offset(index).read() {
+            Ok(v) => v,
+            Err(_) => { vmsa.rax = SVSM_ERR_INVALID_ADDRESS; break; },
+        };
+
+        let (result, flush_entry) = core_pvalidate_one(entry)?;
+        flush |= flush_entry;
+        if result == SVSM_SUCCESS {
+            request.next += 1;
+        } else {
+            log::info!("Unexpected result from core_pvalidate_one(): {:#x}", result);
+            vmsa.rax = result;
+            break;
         }
+    }
 
-        vmsa.rax = SVSM_SUCCESS;
+    if let Err(_) = guest_page.write_ref(&request) {
+        vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
+    }
 
-        let mut flush : bool = false;
-
-        for i in next..entries {
-            let index = i as usize;
-            let entry = (*req).list[index];
-
-            let (result, flush_entry) = core_pvalidate_one(entry)?;
-            flush |= flush_entry;
-            if result == SVSM_SUCCESS {
-                (*req).next += 1;
-            } else {
-                log::info!("Unexpected result from core_pvalidate_one(): {:#x}", result);
-                vmsa.rax = result;
-                break;
-            }
-        }
-
-        if flush {
-            flush_tlb_global_sync();
-        }
+    if flush {
+        flush_tlb_global_sync();
     }
 
     Ok(())
@@ -254,13 +264,12 @@ fn core_remap_ca(vmsa: &mut VMSA) -> Result<(), ()> {
 
     let vaddr = this_cpu().get_caa_addr().unwrap();
 
-    unsafe {
-        let pending : *mut u64 = vaddr as *mut u64;
-        // Clear the whole 8 bytes for of the CA
-        (*pending) = 0;
+    let pending = GuestPtr::<u64>::new(vaddr);
+    if let Err(_) = pending.write(0) {
+        vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
+    } else {
+        vmsa.rax = SVSM_SUCCESS;
     }
-
-    vmsa.rax = SVSM_SUCCESS;
 
     Ok(())
 }
@@ -298,6 +307,10 @@ pub fn request_loop() {
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();
 
+        let rax = vmsa.rax;
+        let protocol : u32 = (rax >> 32) as u32;
+        let request : u32 = (rax & 0xffff_ffff) as u32;
+
         if let None = result {
             log::error!("No CAA mapped - bailing out");
             break;
@@ -305,19 +318,15 @@ pub fn request_loop() {
 
         let caa_addr = result.unwrap();
 
-        let pending: u8 = unsafe {
-            let pending_ptr = caa_addr as *mut u8;
-            let ret: u8 = *pending_ptr;
-
-            (*pending_ptr) = 0;
-            ret
+        let guest_pending = GuestPtr::<u64>::new(caa_addr);
+        let pending = match guest_pending.read() {
+            Ok(v) => v,
+            Err(_) => { vmsa.rax = SVSM_ERR_INVALID_ADDRESS; 0 },
         };
 
-        if pending == 1 {
-            let rax = vmsa.rax;
-            let protocol : u32 = (rax >> 32) as u32;
-            let request : u32 = (rax & 0xffff_ffff) as u32;
-
+        if let Err(_) = guest_pending.write(0) {
+            vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
+        } else if pending == 1 {
             if protocol == 0 {
                 if let Err(_) = core_protocol_request(request, vmsa) {
                     log::error!("Fatal Error handling core protocol request");
@@ -327,7 +336,6 @@ pub fn request_loop() {
                 log::info!("Only protocol 0 supported, got {}", protocol);
                 vmsa.rax = SVSM_ERR_UNSUPPORTED_PROTOCOL;
             }
-
         }
 
         // Make VMSA runable again by setting EFER.SVME
