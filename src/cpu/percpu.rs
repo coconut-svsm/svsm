@@ -18,6 +18,7 @@ use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMPL_MAX, VMSA};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, MAX_CPUS};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
+use crate::utils::{page_align, page_offset};
 use core::arch::asm;
 use core::ptr;
 
@@ -154,7 +155,7 @@ impl PerCpu {
 
     pub fn unmap_caa(&mut self) -> Result<(),()> {
         if let Some(v) = self.caa_addr {
-            let start = v;
+            let start = page_align(v);
             let end = start + PAGE_SIZE;
 
             self.caa_addr = None;
@@ -167,13 +168,16 @@ impl PerCpu {
     pub fn map_caa_phys(&mut self, paddr: PhysAddr) -> Result<(),()> {
         self.unmap_caa()?;
 
+        let paddr_aligned = page_align(paddr);
+        let page_offset = page_offset(paddr);
+
         // CAA page is 4k, leave a guard page between mapped CAA pages
         let offset = (self.apic_id as VirtAddr) * 2 * PAGE_SIZE;
         let vaddr : VirtAddr = CAA_BASE_ADDR + offset;
 
-        get_init_pgtable_locked().map_region_4k(vaddr, vaddr + PAGE_SIZE, paddr, PageTable::data_flags())?;
+        get_init_pgtable_locked().map_region_4k(vaddr, vaddr + PAGE_SIZE, paddr_aligned, PageTable::data_flags())?;
 
-        self.caa_addr = Some(vaddr);
+        self.caa_addr = Some(vaddr + page_offset);
 
         Ok(())
     }
