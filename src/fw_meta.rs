@@ -11,7 +11,7 @@ extern crate alloc;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use alloc::vec::Vec;
 use crate::mm::pagetable::PTMappingGuard;
-use crate::utils::util::overlap;
+use crate::utils::{overlap, zero_mem_region};
 use crate::sev::msr_protocol::validate_page_msr;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
 
@@ -337,6 +337,8 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
             break;
         }
     }
+
+    zero_mem_region(start, end);
 
     Ok(())
 }

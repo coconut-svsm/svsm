@@ -6,16 +6,16 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::cpu::control_regs::{read_cr3, read_cr4, write_cr3, write_cr4, CR4Flags};
+use crate::cpu::control_regs::write_cr3;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
+use crate::cpu::{flush_tlb_global_sync, flush_address_sync};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
 use crate::locking::{SpinLock, LockGuard};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::is_aligned;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
-use core::arch::asm;
 use core::ptr;
 use bitflags::bitflags;
 
@@ -63,31 +63,6 @@ pub fn paging_init() {
     unsafe { FEATURE_MASK.reinit(&feature_mask) };
 }
 
-pub fn flush_tlb() {
-    write_cr3(read_cr3());
-}
-
-pub fn flush_tlb_global() {
-    let cr4 = read_cr4();
-
-    if !cr4.contains(CR4Flags::PGE) {
-        return;
-    }
-
-    let mut cr4_nopge = cr4;
-    cr4_nopge.remove(CR4Flags::PGE);
-
-    write_cr4(cr4_nopge);
-    write_cr4(cr4);
-}
-
-pub fn invlpg(addr: VirtAddr) {
-    let param : u64 = addr.try_into().unwrap();
-    unsafe {
-        asm!("invlpg ({})", in(reg) param, options(att_syntax));
-    }
-}
-
 fn encrypt_mask() -> usize {
     *ENCRYPT_MASK
 }
@@ -128,6 +103,10 @@ impl PTEntry {
 
     pub fn clear(&mut self) {
         self.0 = 0;
+    }
+
+    pub fn raw(&self) -> u64 {
+        self.0
     }
 
     pub fn flags(&self) -> PTEntryFlags {
@@ -386,7 +365,7 @@ impl PageTable {
 
         entry.set(set_c_bit(virt_to_phys(page as VirtAddr)), flags);
 
-        flush_tlb();
+        flush_tlb_global_sync();
 
         Ok(())
     }
@@ -445,6 +424,14 @@ impl PageTable {
             Err(())
         }
     }
+
+	pub fn check_mapping(&mut self, vaddr: VirtAddr) -> Option<PhysAddr> {
+        match self.walk_addr(vaddr) {
+        Mapping::Level0(entry) => Some(entry.address()),
+        Mapping::Level1(entry) => Some(entry.address()),
+        _ => None,
+        }
+	}
 
     pub fn map_2m(
             &mut self,
@@ -655,6 +642,46 @@ impl Drop for PTMappingGuard {
     fn drop(&mut self) {
         if let Some(m) = self.mapping {
             get_init_pgtable_locked().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
+            flush_tlb_global_sync();
+        }
+    }
+}
+
+pub struct PageMappingGuard {
+    mapping: Option<RawPTMappingGuard>,
+    huge : bool,
+}
+
+impl PageMappingGuard {
+    pub fn create(vaddr: VirtAddr, paddr: PhysAddr, huge : bool) -> Self {
+        let size = if huge { PAGE_SIZE_2M } else { PAGE_SIZE };
+        let result = match huge {
+            false => get_init_pgtable_locked().map_4k(vaddr, paddr, &PageTable::data_flags()),
+            true  => get_init_pgtable_locked().map_2m(vaddr, paddr, &PageTable::data_flags()),
+        };
+
+        match result {
+            Ok(()) => PageMappingGuard { mapping: Some(RawPTMappingGuard::new(vaddr, vaddr + size)), huge: huge },
+            Err(()) => PageMappingGuard { mapping: None, huge: huge },
+        }
+    }
+
+    pub fn check_mapping(&self) -> Result<(), ()> {
+        match self.mapping {
+            Some(_) => Ok(()),
+            None => Err(()),
+        }
+    }
+}
+
+impl Drop for PageMappingGuard {
+    fn drop(&mut self) {
+        if let Some(m) = self.mapping {
+            match self.huge {
+                false => get_init_pgtable_locked().unmap_4k(m.start).expect("Failed to unmap 4k page"),
+                true => get_init_pgtable_locked().unmap_2m(m.start).expect("Failed to unmap 2M page"),
+            }
+            flush_address_sync(m.start);
         }
     }
 }

@@ -8,7 +8,8 @@
 
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::io::IOPort;
-use crate::mm::pagetable::{flush_tlb_global, get_init_pgtable_locked};
+use crate::mm::pagetable::get_init_pgtable_locked;
+use crate::cpu::flush_tlb_global_sync;
 use crate::sev::sev_snp_enabled;
 use crate::types::{PhysAddr, VirtAddr};
 use crate::mm::alloc::virt_to_phys;
@@ -138,7 +139,7 @@ impl GHCB {
             return Err(());
         }
 
-        flush_tlb_global();
+        flush_tlb_global_sync();
 
         Ok(())
     }

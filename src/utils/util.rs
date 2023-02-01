@@ -6,8 +6,9 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::PAGE_SIZE;
+use crate::types::{PAGE_SIZE, VirtAddr};
 use core::arch::asm;
+use core::ptr;
 
 pub fn align_up(addr: usize, align: usize) -> usize {
     addr + (align - 1) & !(align - 1)
@@ -65,3 +66,15 @@ pub fn crosses_page(start: usize, size: usize) -> bool {
 
     x1 != x2
 }
+
+pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
+    let size = end - start;
+
+    let mut target = ptr::NonNull::new(start as *mut u8).unwrap();
+
+    // Zero region
+    unsafe {
+        ptr::write_bytes(target.as_mut(), 0, size);
+    }
+}
+

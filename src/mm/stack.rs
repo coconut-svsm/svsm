@@ -8,7 +8,8 @@
 
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
-use crate::mm::pagetable::{flush_tlb_global, get_init_pgtable_locked, PageTable};
+use crate::mm::pagetable::{get_init_pgtable_locked, PageTable};
+use crate::cpu::flush_tlb_global_sync;
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::ffs;
 
@@ -111,7 +112,7 @@ pub fn free_stack(stack: VirtAddr) {
     }
 
     // Pages are unmapped - flush TLB
-    flush_tlb_global();
+    flush_tlb_global_sync();
 
     // Now free the stack pages
     for i in 0..STACK_PAGES {

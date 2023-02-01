@@ -8,9 +8,10 @@
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::cpu::percpu::{this_cpu_mut, this_cpu};
+use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
-use crate::mm::pagetable::{PageTable, PTMappingGuard, invlpg, get_init_pgtable_locked, flush_tlb_global};
+use crate::mm::pagetable::PageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::valid_phys_address;
 
@@ -100,16 +101,12 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     }
 
     if !valid_phys_address(paddr) {
+        log::info!("Invalid phys address: {:#x}", paddr);
         return Ok((SVSM_ERR_INVALID_ADDRESS, flush));
     }
 
-    let flags = PageTable::data_flags();
-
-    if huge {
-        get_init_pgtable_locked().map_2m(vaddr, paddr, &flags)?;
-    } else {
-        get_init_pgtable_locked().map_4k(vaddr, paddr, &flags)?;
-    }
+    let guard = PageMappingGuard::create(vaddr, paddr, huge);
+    guard.check_mapping()?;
 
     if !valid {
         if let Err(error_code) = revoke_access(vaddr, huge) {
@@ -142,14 +139,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
         }
     }
 
-    if huge {
-        get_init_pgtable_locked().unmap_2m(vaddr)?;
-    } else {
-        get_init_pgtable_locked().unmap_4k(vaddr)?;
-    }
-
-    invlpg(vaddr);
-
     Ok((SVSM_SUCCESS, flush))
 }
 
@@ -167,9 +156,8 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
     let offset = page_offset(gpa);
 
     let start = region;
-    let end = start + PAGE_SIZE;
 
-	let guard = PTMappingGuard::create(start, end, paddr);
+	let guard = PageMappingGuard::create(start, paddr, false);
     guard.check_mapping()?;
 
     unsafe {
@@ -195,16 +183,17 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
 
             let (result, flush_entry) = core_pvalidate_one(entry)?;
             flush |= flush_entry;
-            if result == 0 {
+            if result == SVSM_SUCCESS {
                 (*req).next += 1;
             } else {
+                log::info!("Unexpected result from core_pvalidate_one(): {:#x}", result);
                 vmsa.rax = result;
                 break;
             }
         }
 
         if flush {
-            flush_tlb_global();
+            flush_tlb_global_sync();
         }
     }
 
@@ -257,8 +246,6 @@ fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
 pub fn request_loop() {
 
     loop {
-        flush_tlb_global();
-
         let result = this_cpu().get_caa_addr();
         let vmsa = this_cpu_mut().vmsa(1);
 
@@ -299,7 +286,7 @@ pub fn request_loop() {
             vmsa.enable();
         }
 
-        flush_tlb_global();
+        flush_tlb_global_sync();
         this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
     }
 }
