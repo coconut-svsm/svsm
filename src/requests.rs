@@ -15,19 +15,19 @@ use crate::mm::pagetable::PageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::valid_phys_address;
 
-const  SVSM_REQ_CORE_REMAP_CA : u32 = 0;
-const  SVSM_REQ_CORE_PVALIDATE : u32 = 1;
-const _SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
-const _SVSM_REQ_CORE_DELETE_VCPU : u32 = 3;
-const _SVSM_REQ_CORE_DEPOSIT_MEM : u32 = 4;
-const _SVSM_REQ_CORE_WITHDRAW_MEM : u32 = 5;
-const _SVSM_REQ_CORE_QUERY_PROTOCOL : u32 = 6;
-const _SVSM_REQ_CORE_CONFIGURE_VTOM : u32 = 7;
+const SVSM_REQ_CORE_REMAP_CA : u32 = 0;
+const SVSM_REQ_CORE_PVALIDATE : u32 = 1;
+const SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
+const SVSM_REQ_CORE_DELETE_VCPU : u32 = 3;
+const SVSM_REQ_CORE_DEPOSIT_MEM : u32 = 4;
+const SVSM_REQ_CORE_WITHDRAW_MEM : u32 = 5;
+const SVSM_REQ_CORE_QUERY_PROTOCOL : u32 = 6;
+const SVSM_REQ_CORE_CONFIGURE_VTOM : u32 = 7;
 
 const SVSM_SUCCESS : u64 = 0x0000_0000;
 const _SVSM_ERR_INCOMPLETE : u64 = 0x8000_0000;
 const _SVSM_ERR_UNSUPPORTED_PROTOCOL : u64 = 0x8000_0001;
-const _SVSM_ERR_UNSUPPORTED_CALL : u64 = 0x8000_0002;
+const SVSM_ERR_UNSUPPORTED_CALL : u64 = 0x8000_0002;
 const SVSM_ERR_INVALID_ADDRESS : u64= 0x8000_0003;
 const _SVSM_ERR_INVALID_FORMAT : u64 = 0x8000_0004;
 const SVSM_ERR_INVALID_PARAMETER : u64 = 0x8000_0005;
@@ -47,6 +47,42 @@ struct PValidateRequest {
 const REQUEST_BASE_ADDR : VirtAddr = 0xffff_ff00_0000_0000;
 /// per-cpu request mapping area size (1GB)
 const REQUEST_REGION_SIZE : usize = 0x40000000;
+
+fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_CREATE_VCPU not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
+
+fn core_delete_vcpu(vmsa: &mut VMSA)-> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_DELETE_VCPU not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
+
+fn core_deposit_mem(vmsa: &mut VMSA)-> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_DEPOSIT_MEM not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
+
+fn core_withdraw_mem(vmsa: &mut VMSA)-> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_WITHDRAW_MEM not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
+
+fn core_query_protocol(vmsa: &mut VMSA)-> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_QUERY_PROTOCOL not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
+
+fn core_configure_vtom(vmsa: &mut VMSA)-> Result<(),()> {
+    log::info!("Request SVSM_REQ_CORE_CONFIGURE_VTOM not yet supported");
+    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    Ok(())
+}
 
 fn region_base_addr() -> VirtAddr {
     let apic_id : usize = this_cpu().get_apic_id().try_into().unwrap();
@@ -233,6 +269,12 @@ fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
     let result = match request {
         SVSM_REQ_CORE_REMAP_CA => core_remap_ca(vmsa),
         SVSM_REQ_CORE_PVALIDATE => core_pvalidate(vmsa),
+        SVSM_REQ_CORE_CREATE_VCPU => core_create_vcpu(vmsa),
+        SVSM_REQ_CORE_DELETE_VCPU => core_delete_vcpu(vmsa),
+        SVSM_REQ_CORE_DEPOSIT_MEM => core_deposit_mem(vmsa),
+        SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(vmsa),
+        SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(vmsa),
+        SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(vmsa),
         _ => { log::error!("Core protocol request {} not supported", request); Err(()) },
     };
 
