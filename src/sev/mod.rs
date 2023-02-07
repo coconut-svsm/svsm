@@ -18,4 +18,4 @@ pub use status::sev_status_init;
 pub use status::sev_status_verify;
 pub use status::{sev_es_enabled, sev_snp_enabled};
 pub use utils::{RMPFlags, rmp_adjust};
-pub use utils::{pvalidate, PValidateError};
+pub use utils::{pvalidate, pvalidate_range, PValidateError};

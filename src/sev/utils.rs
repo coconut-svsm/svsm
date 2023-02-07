@@ -6,8 +6,11 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr};
+use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::is_aligned;
 use core::arch::asm;
+
+const PV_ERR_FAIL_SIZE_MISMATCH: u64 = 6;
 
 #[derive(Debug)]
 pub struct PValidateError {
@@ -19,6 +22,39 @@ impl PValidateError {
     pub fn new(code: u64, changed: bool) -> Self {
         PValidateError { error_code: code, changed: changed }
     }
+}
+
+fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), PValidateError> {
+    let mut addr = start;
+
+    while addr < end {
+        pvalidate(addr, false, valid)?;
+        addr += PAGE_SIZE;
+    }
+
+    Ok(())
+}
+
+pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), PValidateError> {
+    let mut addr = start;
+
+    while addr < end {
+        if is_aligned(addr, PAGE_SIZE_2M) && (addr + PAGE_SIZE_2M) <= end {
+            if let Err(e) = pvalidate(addr, true, valid) {
+                if e.error_code == PV_ERR_FAIL_SIZE_MISMATCH {
+                    pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)?;
+                } else {
+                    return Err(e);
+                }
+            }
+            addr += PAGE_SIZE_2M;
+        } else {
+            pvalidate(addr, false, valid)?;
+            addr += PAGE_SIZE;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), PValidateError> {

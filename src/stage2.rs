@@ -28,7 +28,7 @@ use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use svsm::sev::msr_protocol::{GHCBMsr};
 use svsm::sev::status::SEVStatusFlags;
-use svsm::sev::{pvalidate, sev_status_init, sev_status_verify};
+use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::sev::ghcb::{PageStateChangeOp};
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use svsm::utils::{halt, page_align, page_align_up};
@@ -215,28 +215,15 @@ fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
     pgtbl.map_region_2m(vaddr, vaddr + size, paddr, flags)
 }
 
-fn validate_kernel_region(mut vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
-    let mut paddr = region.start as PhysAddr;
+fn validate_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
+    let paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
+    let size: usize = pend - paddr;
 
-    this_cpu_mut().ghcb().page_state_change(paddr, pend, true, PageStateChangeOp::PscPrivate)?;
+    this_cpu_mut().ghcb().page_state_change(paddr, pend, true, PageStateChangeOp::PscPrivate)
+        .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
 
-    loop {
-        if let Err(_e) = pvalidate(vaddr, false, true) {
-            log::error!(
-                "PVALIDATE failed for virtual address {:#018x}",
-                vaddr
-            );
-            return Err(());
-        }
-
-        vaddr += 4096;
-        paddr += 4096;
-
-        if paddr >= pend {
-            break;
-        }
-    }
+    pvalidate_range(vaddr, vaddr + size, true).expect("PVALIDATE kernel region failed");
 
     Ok(())
 }
