@@ -247,7 +247,7 @@ impl PageTable {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
-    fn alloc_pte_lvl3<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr) -> Mapping<'a> {
+    fn alloc_pte_lvl3<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -269,10 +269,10 @@ impl PageTable {
 
         let idx = PageTable::index::<2>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr) }
+        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, pgsize) }
     }
 
-    fn alloc_pte_lvl2<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr) -> Mapping<'a> {
+    fn alloc_pte_lvl2<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -294,13 +294,14 @@ impl PageTable {
 
         let idx = PageTable::index::<1>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr) }
+        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, pgsize) }
     }
 
-    fn alloc_pte_lvl1<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr) -> Mapping<'a> {
+    fn alloc_pte_lvl1<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
         let flags = entry.flags();
 
-        if flags.contains(PTEntryFlags::PRESENT) {
+        if pgsize == PAGE_SIZE_2M ||
+           flags.contains(PTEntryFlags::PRESENT) {
             return Mapping::Level1(entry);
         }
 
@@ -327,9 +328,9 @@ impl PageTable {
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr),
+            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PAGE_SIZE),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE),
         }
     }
 
@@ -339,8 +340,8 @@ impl PageTable {
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE_2M),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE_2M),
         }
     }
 
