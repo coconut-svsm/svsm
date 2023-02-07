@@ -114,9 +114,6 @@ impl PTEntry {
     }
 
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
-        if addr & !0x000f_ffff_ffff_f000 != 0 {
-            log::info!("addr: {:#018x}", addr);
-        }
         assert!(addr & !0x000f_ffff_ffff_f000 == 0);
         self.0 = (addr as u64) | supported_flags(flags).bits();
     }
