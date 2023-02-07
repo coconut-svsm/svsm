@@ -35,31 +35,31 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
     let start: VirtAddr = (unsafe { &stext } as *const u8) as VirtAddr;
     let end: VirtAddr = (unsafe { &etext } as *const u8) as VirtAddr;
     let phys: PhysAddr = start - offset;
-    pgtable.map_region_4k(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
+    pgtable.map_region(start, end, phys, PageTable::exec_flags()).expect("Failed to map text segment");
 
     /* Writeble data */
     let start: VirtAddr = (unsafe { &sdata } as *const u8) as VirtAddr;
     let end: VirtAddr = (unsafe { &edata } as *const u8) as VirtAddr;
     let phys: PhysAddr = start - offset;
-    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
+    pgtable.map_region(start, end, phys, PageTable::data_flags()).expect("Failed to map data segment");
 
     /* Read-only data */
     let start: VirtAddr = (unsafe { &sdataro } as *const u8) as VirtAddr;
     let end: VirtAddr = (unsafe { &edataro } as *const u8) as VirtAddr;
     let phys: PhysAddr = start - offset;
-    pgtable.map_region_4k(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
+    pgtable.map_region(start, end, phys, PageTable::data_ro_flags()).expect("Failed to map read-only data");
 
     /* BSS */
     let start: VirtAddr = (unsafe { &sbss } as *const u8) as VirtAddr;
     let end: VirtAddr = (unsafe { &ebss } as *const u8) as VirtAddr;
     let phys: PhysAddr = start - offset;
-    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
+    pgtable.map_region(start, end, phys, PageTable::data_flags()).expect("Failed to map bss segment");
 
     /* Heap */
     let start: VirtAddr = (unsafe { &heap_start } as *const u8) as VirtAddr;
     let end: VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
     let phys: PhysAddr = start - offset;
-    pgtable.map_region_4k(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
+    pgtable.map_region(start, end, phys, PageTable::data_flags()).expect("Failed to map heap");
 
     pgtable.load();
 
