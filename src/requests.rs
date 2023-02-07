@@ -165,7 +165,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     };
 
     if result != SVSM_SUCCESS {
-        log::error!("Failed to process entry: {:#x} return code: {:#x}", entry, result);
         return Ok((result, flush));
     }
 
@@ -229,7 +228,6 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
         if result == SVSM_SUCCESS {
             request.next += 1;
         } else {
-            log::info!("Unexpected result from core_pvalidate_one(): {:#x}", result);
             vmsa.rax = result;
             break;
         }
