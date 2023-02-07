@@ -565,6 +565,59 @@ impl PageTable {
         }
         Ok(())
     }
+
+    pub fn map_region(
+            &mut self,
+            start: VirtAddr,
+            end: VirtAddr,
+            phys: PhysAddr,
+            flags: PTEntryFlags) -> Result<(), ()> {
+        let mut vaddr = start;
+        let mut paddr = phys;
+
+        while vaddr < end {
+            if is_aligned(vaddr, PAGE_SIZE_2M) &&
+               is_aligned(paddr, PAGE_SIZE_2M) &&
+               vaddr + PAGE_SIZE_2M <= end {
+                   if let Ok(_) = self.map_2m(vaddr, paddr, &flags) {
+                       vaddr += PAGE_SIZE_2M;
+                       paddr += PAGE_SIZE_2M;
+                       continue;
+                   }
+            }
+
+            self.map_4k(vaddr, paddr, &flags)?;
+            vaddr += PAGE_SIZE;
+            paddr += PAGE_SIZE;
+        }
+
+        Ok(())
+    }
+
+    pub fn unmap_region(&mut self, start: VirtAddr, end: VirtAddr) -> Result<(), ()> {
+        let mut vaddr = start;
+
+        while vaddr < end {
+            let mapping = self.walk_addr(vaddr);
+
+            match mapping {
+                Mapping::Level0(entry) => {
+                    entry.clear();
+                    vaddr += PAGE_SIZE;
+                }
+                Mapping::Level1(entry) => {
+                    entry.clear();
+                    vaddr += PAGE_SIZE_2M;
+                }
+                _ => {
+                    log::error!("Can't unmap - address not mapped {:#x}", vaddr);
+                    return Err(());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 static INIT_PGTABLE : SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
