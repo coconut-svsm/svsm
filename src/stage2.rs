@@ -199,34 +199,19 @@ fn setup_env() {
     paging_init();
 }
 
-fn map_memory(mut paddr: PhysAddr, pend: PhysAddr, mut vaddr: VirtAddr) -> Result<(), ()> {
+fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
-
-    let mut init_pgtable = get_init_pgtable_locked();
-    loop {
-        if let Err(_e) = init_pgtable.map_4k(vaddr, paddr as PhysAddr, &flags) {
-            return Err(());
-        }
-
-        paddr += 4096;
-        vaddr += 4096;
-
-        if paddr >= pend {
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
     let paddr = region.start as PhysAddr;
-    let pend = region.end as PhysAddr;
+    let size = (region.end - region.start) as usize;
 
-    map_memory(paddr, pend, vaddr)
+    let mut pgtbl = get_init_pgtable_locked();
+
+    log::info!("Mapping kernel region {:#018x}-{:#018x} to {:#018x}", vaddr, vaddr + size, paddr);
+
+    pgtbl.map_region_2m(vaddr, vaddr + size, paddr, flags)
 }
 
 fn validate_kernel_region(mut vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
