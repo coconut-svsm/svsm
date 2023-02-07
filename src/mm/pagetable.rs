@@ -548,6 +548,26 @@ impl PageTable {
         }
         Ok(())
     }
+
+    pub fn map_region_2m(
+            &mut self,
+            start: VirtAddr,
+            end: VirtAddr,
+            phys: PhysAddr,
+            flags: PTEntryFlags) -> Result<(),()> {
+        for addr in (start..end).step_by(PAGE_SIZE_2M) {
+            let offset = addr - start;
+            self.map_2m(addr, phys + offset, &flags)?;
+        }
+        Ok(())
+    }
+
+    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) -> Result<(), ()> {
+        for addr in (start..end).step_by(PAGE_SIZE_2M) {
+            self.unmap_2m(addr)?;
+        }
+        Ok(())
+    }
 }
 
 static INIT_PGTABLE : SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
