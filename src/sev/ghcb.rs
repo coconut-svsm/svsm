@@ -11,10 +11,12 @@ use crate::io::IOPort;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::cpu::flush_tlb_global_sync;
 use crate::sev::sev_snp_enabled;
-use crate::types::{PhysAddr, VirtAddr};
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::{is_aligned};
 use crate::mm::alloc::virt_to_phys;
 use core::arch::asm;
 use core::cell::RefCell;
+use core::{mem, ptr};
 
 use super::msr_protocol::{
     invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
@@ -41,11 +43,10 @@ const OFF_VERSION: u16 = 0xffa;
 const OFF_USAGE: u16 = 0xffc;
 
 #[repr(C, packed)]
-pub struct PageStateChange {
+pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
     reserved: u32,
-    entries: [u64; 253],
 }
 
 pub enum PageStateChangeOp {
@@ -55,16 +56,18 @@ pub enum PageStateChangeOp {
     PscUnsmash,
 }
 
-const _PSC_GFN_MASK: u64 = ((1u64 << 52) - 1) & !0xfffu64;
+const PSC_GFN_MASK: u64 = ((1u64 << 52) - 1) & !0xfffu64;
 
-const _PSC_OP_SHIFT: u8 = 52;
-const _PSC_OP_PRIVATE: u64 = 1 << _PSC_OP_SHIFT;
-const _PSC_OP_SHARED: u64 = 2 << _PSC_OP_SHIFT;
-const _PSC_OP_PSMASH: u64 = 3 << _PSC_OP_SHIFT;
-const _PSC_OP_UNSMASH: u64 = 4 << _PSC_OP_SHIFT;
+const PSC_OP_SHIFT: u8 = 52;
+const PSC_OP_PRIVATE: u64 = 1 << PSC_OP_SHIFT;
+const PSC_OP_SHARED: u64 = 2 << PSC_OP_SHIFT;
+const PSC_OP_PSMASH: u64 = 3 << PSC_OP_SHIFT;
+const PSC_OP_UNSMASH: u64 = 4 << PSC_OP_SHIFT;
 
-const _PSC_FLAG_HUGE_SHIFT: u8 = 56;
-const _PSC_FLAG_HUGE: u64 = 1 << _PSC_FLAG_HUGE_SHIFT;
+const PSC_FLAG_HUGE_SHIFT: u8 = 56;
+const PSC_FLAG_HUGE: u64 = 1 << PSC_FLAG_HUGE_SHIFT;
+
+const GHCB_BUFFER_SIZE: usize = 0x7f0;
 
 #[repr(C, packed)]
 pub struct GHCB {
@@ -91,7 +94,7 @@ pub struct GHCB {
     valid_bitmap: [u64; 2],
     x87_state_gpa: u64,
     reserved_9: [u8; 0x3f8],
-    buffer: [u8; 0x7f0],
+    buffer: [u8; GHCB_BUFFER_SIZE],
     reserved_10: [u8; 0xa],
     version: u16,
     usage: u32,
@@ -102,6 +105,7 @@ enum GHCBExitCode {}
 
 impl GHCBExitCode {
     pub const IOIO: u64 = 0x7b;
+    pub const SNP_PSC: u64 = 0x8000_0010;
     pub const AP_CREATE: u64 = 0x80000013;
     pub const RUN_VMPL: u64 = 0x80000018;
 }
@@ -314,6 +318,87 @@ impl GHCB {
         self.set_rax(value);
 
         self.vmgexit(GHCBExitCode::IOIO, info, 0)
+    }
+
+    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), ()>
+    where T: Sized
+    {
+        let size: isize = mem::size_of::<T>() as isize;
+
+        if offset < 0 || offset + size > (GHCB_BUFFER_SIZE as isize) {
+            return Err(())
+        }
+
+        unsafe {
+            let dst = self.buffer.as_mut_ptr().cast::<u8>().offset(offset).cast::<T>();
+            let src = data as *const T;
+
+            ptr::copy_nonoverlapping(src, dst, 1);
+        }
+
+        Ok(())
+    }
+
+    pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
+        assert!(huge == false || is_aligned(paddr, PAGE_SIZE_2M));
+
+        let mut entry:u64 = ((paddr as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
+        if huge {
+            entry |= PSC_FLAG_HUGE;
+        }
+
+        entry
+    }
+
+    pub fn page_state_change(&mut self, start: PhysAddr, end: PhysAddr,
+                             huge: bool, op: PageStateChangeOp) -> Result<(), ()> {
+        // Maximum entries (8 bytes each_ minus 8 bytes for header
+        let max_entries:u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
+        let mut entries: u16 = 0;
+        let mut vaddr = start;
+        let op_mask: u64 = match op {
+            PageStateChangeOp::PscPrivate => PSC_OP_PRIVATE,
+            PageStateChangeOp::PscShared => PSC_OP_SHARED,
+            PageStateChangeOp::PscPsmash => PSC_OP_PSMASH,
+            PageStateChangeOp::PscUnsmash => PSC_OP_UNSMASH,
+        };
+        let pgsize: usize = match huge { true => PAGE_SIZE_2M, false => PAGE_SIZE }; 
+
+        self.clear();
+
+        while vaddr < end {
+            let entry = self.psc_entry(vaddr, op_mask, 0, huge);
+            let offset: isize = (entries as isize) * 8 + 8;
+            self.write_buffer(&entry, offset)?;
+            entries += 1;
+            vaddr += pgsize;
+
+            if entries == max_entries {
+                let header = PageStateChangeHeader { cur_entry: 0, end_entry: entries - 1, reserved: 0 };
+                self.write_buffer(&header, 0)?;
+                
+                let buffer_va = self.buffer.as_ptr() as VirtAddr;
+                let buffer_pa: u64 = virt_to_phys(buffer_va) as u64;
+                self.set_sw_scratch(buffer_pa);
+
+                if let Err(_) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
+                    if !self.is_valid(OFF_SW_EXIT_INFO_2) {
+                        return Err(());
+                    }
+
+                    let info_high: u32 = (self.sw_exit_info_2 >> 32) as u32;
+                    let info_low: u32 = (self.sw_exit_info_2 & 0xffff_ffffu64) as u32;
+
+                    log::error!("GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}", info_high, info_low);
+
+                    return Err(());
+                }
+
+                entries = 0;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn ap_create(

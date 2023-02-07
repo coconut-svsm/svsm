@@ -19,16 +19,17 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
 use svsm::cpu::msr;
-use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu, this_cpu_mut};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
                           PTEntryFlags, PageTable, PageTableRef, };
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
-use svsm::sev::msr_protocol::{validate_page_msr, GHCBMsr};
+use svsm::sev::msr_protocol::{GHCBMsr};
 use svsm::sev::status::SEVStatusFlags;
 use svsm::sev::{pvalidate, sev_status_init, sev_status_verify};
+use svsm::sev::ghcb::{PageStateChangeOp};
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use svsm::utils::{halt, page_align, page_align_up};
 use log;
@@ -218,15 +219,9 @@ fn validate_kernel_region(mut vaddr: VirtAddr, region: &MemoryRegion) -> Result<
     let mut paddr = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
 
-    loop {
-        if let Err(_e) = validate_page_msr(paddr) {
-            log::error!(
-                "Validating page failed for physical address {:#018x}",
-                paddr
-            );
-            return Err(());
-        }
+    this_cpu_mut().ghcb().page_state_change(paddr, pend, true, PageStateChangeOp::PscPrivate)?;
 
+    loop {
         if let Err(_e) = pvalidate(vaddr, false, true) {
             log::error!(
                 "PVALIDATE failed for virtual address {:#018x}",
