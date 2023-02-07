@@ -127,7 +127,23 @@ impl<'a> FwCfg<'a> {
         ret
     }
 
+    fn find_svsm_region(&self) -> Result<MemoryRegion, ()> {
+        let file = self.file_selector("etc/sev/svsm")?;
+
+        if file.size != 16 {
+            return Err(());
+        }
+
+        self.select(file.selector);
+
+        let base: u64 = self.read_le();
+        let size: u64 = self.read_le();
+
+        Ok(MemoryRegion { start: base, end: base + size })
+    }
+
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
+
         let mut regions: Vec::<MemoryRegion> = Vec::new();
         let file = self.file_selector("etc/e820")?;
         let entries = file.size / 20;
@@ -148,7 +164,7 @@ impl<'a> FwCfg<'a> {
         Ok(regions)
     }
 
-    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
+    fn find_kernel_region_e820(&self) -> Result<MemoryRegion, ()> {
         let mut kernel_region = MemoryRegion { start: 0, end: 0 };
         let regions = self.get_memory_regions()?;
 
@@ -175,6 +191,13 @@ impl<'a> FwCfg<'a> {
         kernel_region.start = start;
 
         Ok(kernel_region)
+    }
+
+    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
+        match self.find_svsm_region() {
+            Ok(region) => Ok(region),
+            Err(_) => self.find_kernel_region_e820()
+        }
     }
 
     pub fn flash_region_count(&self) -> u32 {

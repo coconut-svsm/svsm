@@ -328,8 +328,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
     setup_env();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
-
-    let r = fw_cfg.find_kernel_region().unwrap();
+	let r = fw_cfg.find_kernel_region().expect("Failed to find memory region for SVSM kernel");
 
     log::info!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
