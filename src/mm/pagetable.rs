@@ -256,13 +256,13 @@ impl PageTable {
             _ => return Mapping::Level3(entry),
         };
 
-        let addr = page as PhysAddr;
+        let paddr = virt_to_phys(page as VirtAddr);
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
         entry.clear();
-        entry.set(set_c_bit(virt_to_phys(addr)), flags);
+        entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<2>(vaddr);
 
@@ -281,13 +281,13 @@ impl PageTable {
             _ => return Mapping::Level2(entry),
         };
 
-        let addr = page as PhysAddr;
+        let paddr = virt_to_phys(page as VirtAddr);
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
         entry.clear();
-        entry.set(set_c_bit(virt_to_phys(addr)), flags);
+        entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<1>(vaddr);
 
@@ -307,13 +307,13 @@ impl PageTable {
             _ => return Mapping::Level1(entry),
         };
 
-        let addr = page as PhysAddr;
+        let paddr = virt_to_phys(page as VirtAddr);
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
         entry.clear();
-        entry.set(set_c_bit(virt_to_phys(addr)), flags);
+        entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<0>(vaddr);
 
