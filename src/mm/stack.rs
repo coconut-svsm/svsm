@@ -9,21 +9,14 @@
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable};
+use crate::mm::{STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END};
 use crate::cpu::flush_tlb_global_sync;
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::ffs;
 
-const STACK_RANGE_START: VirtAddr = 0xffff_ff80_4000_0000;
-const STACK_RANGE_END: VirtAddr = 0xffff_ff80_8000_0000;
-
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS: usize = 1024;
 const BMP_QWORDS: usize = MAX_STACKS / 64;
-
-// Set stack size to 8k, certain macros can be very stack intensive (e.g. panic!)
-const STACK_SIZE: usize = 4 * PAGE_SIZE;
-const GUARD_SIZE: usize = 4 * PAGE_SIZE;
-const STACK_PAGES: usize = STACK_SIZE / PAGE_SIZE;
 
 struct StackRange {
     start: VirtAddr,
@@ -53,7 +46,7 @@ impl StackRange {
 
             self.alloc_bitmap[i] |= mask;
 
-            return Ok(self.start + (i * 64 + idx) * (STACK_SIZE + GUARD_SIZE));
+            return Ok(self.start + (i * 64 + idx) * STACK_TOTAL_SIZE);
         }
 
         Err(())
@@ -63,9 +56,9 @@ impl StackRange {
         assert!(stack >= self.start && stack < self.end);
 
         let offset = stack - self.start;
-        let idx = offset / (STACK_SIZE + GUARD_SIZE);
+        let idx = offset / (STACK_TOTAL_SIZE);
 
-        assert!((offset % (STACK_SIZE + GUARD_SIZE)) <= STACK_SIZE);
+        assert!((offset % (STACK_TOTAL_SIZE)) <= STACK_SIZE);
         assert!(idx < MAX_STACKS);
 
         let i = idx / 64;
@@ -79,11 +72,9 @@ impl StackRange {
 }
 
 static STACK_ALLOC: SpinLock<StackRange> =
-    SpinLock::new(StackRange::new(STACK_RANGE_START, STACK_RANGE_END));
+    SpinLock::new(StackRange::new(SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END));
 
-pub fn allocate_stack() -> Result<VirtAddr, ()> {
-    let stack = STACK_ALLOC.lock().alloc()?;
-
+pub fn allocate_stack_addr(stack: VirtAddr) -> Result<(), ()> {
     let mut pgtable = get_init_pgtable_locked();
     let flags = PageTable::data_flags();
     for i in 0..STACK_PAGES {
@@ -92,6 +83,12 @@ pub fn allocate_stack() -> Result<VirtAddr, ()> {
         pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, &flags)?;
     }
 
+    Ok(())
+}
+
+pub fn allocate_stack() -> Result<VirtAddr, ()> {
+    let stack = STACK_ALLOC.lock().alloc()?;
+    allocate_stack_addr(stack)?;
     Ok(stack)
 }
 
