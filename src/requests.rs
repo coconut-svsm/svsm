@@ -11,6 +11,7 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
+use crate::mm::{SVSM_SHARED_BASE, SIZE_1G};
 use crate::mm::pagetable::PageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::{valid_phys_address, GuestPtr};
@@ -44,10 +45,8 @@ struct PValidateRequest {
 }
 
 /// Base address for per-cpu request mappings
-const REQUEST_BASE_ADDR : VirtAddr = 0xffff_ff00_0000_0000;
+const REQUEST_BASE_ADDR : VirtAddr = SVSM_SHARED_BASE + (192 * SIZE_1G);
 /// per-cpu request mapping area size (1GB)
-const REQUEST_REGION_SIZE : usize = 0x40000000;
-
 fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
     log::info!("Request SVSM_REQ_CORE_CREATE_VCPU not yet supported");
     vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
@@ -85,9 +84,7 @@ fn core_configure_vtom(vmsa: &mut VMSA)-> Result<(),()> {
 }
 
 fn region_base_addr() -> VirtAddr {
-    let apic_id : usize = this_cpu().get_apic_id().try_into().unwrap();
-
-    REQUEST_BASE_ADDR + (apic_id * REQUEST_REGION_SIZE)
+    REQUEST_BASE_ADDR
 }
 
 fn rmpadjust_update_vmsa(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u64> {

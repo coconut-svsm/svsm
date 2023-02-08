@@ -10,6 +10,7 @@ extern crate alloc;
 
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use alloc::vec::Vec;
+use crate::mm::{SVSM_SHARED_BASE, SIZE_1G};
 use crate::mm::pagetable::PTMappingGuard;
 use crate::utils::{overlap, zero_mem_region};
 use crate::sev::msr_protocol::validate_page_msr;
@@ -214,17 +215,17 @@ const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
-    let end: VirtAddr = 0x1_0000_0000usize;
-    let start = end - PAGE_SIZE;
-    let phys: PhysAddr = start as PhysAddr;
+    let pstart: PhysAddr = (4 * SIZE_1G) - PAGE_SIZE;
+    let vstart: VirtAddr = SVSM_SHARED_BASE + (128 * SIZE_1G);
+    let vend: VirtAddr = vstart + PAGE_SIZE;
 
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
-    let mapping_guard = PTMappingGuard::create(start, end, phys);
+    let mapping_guard = PTMappingGuard::create(vstart, vend, pstart);
     mapping_guard.check_mapping()?;
 
-    let mut curr = end - 32;
+    let mut curr = vend - 32;
 
     let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
 
@@ -270,7 +271,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
             let off_ptr = base as *const u32;
             let offset = off_ptr.read_unaligned() as usize;
 
-            let meta_ptr = (end - offset) as *const SevMetaDataHeader;
+            let meta_ptr = (vend - offset) as *const SevMetaDataHeader;
             //let len = meta_ptr.read().len;
             let num_descs = meta_ptr.read().num_desc as isize;
             let desc_ptr = meta_ptr.offset(1).cast::<SevMetaDataDesc>();
@@ -306,8 +307,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
 }
 
 fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
-    let start : VirtAddr = region.base as VirtAddr;
-    let end : VirtAddr = region.base + region.length;
+    let start : VirtAddr = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
+    let end : VirtAddr = start + region.length;
     let phys : PhysAddr = region.base;
 
     log::info!("Validating {:#018x}-{:#018x}", start, end);

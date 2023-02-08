@@ -8,7 +8,7 @@
 
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable};
+use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
 use crate::mm::{STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END};
 use crate::cpu::flush_tlb_global_sync;
 use crate::types::{VirtAddr, PAGE_SIZE};
@@ -74,8 +74,7 @@ impl StackRange {
 static STACK_ALLOC: SpinLock<StackRange> =
     SpinLock::new(StackRange::new(SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END));
 
-pub fn allocate_stack_addr(stack: VirtAddr) -> Result<(), ()> {
-    let mut pgtable = get_init_pgtable_locked();
+pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), ()> {
     let flags = PageTable::data_flags();
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
@@ -88,7 +87,7 @@ pub fn allocate_stack_addr(stack: VirtAddr) -> Result<(), ()> {
 
 pub fn allocate_stack() -> Result<VirtAddr, ()> {
     let stack = STACK_ALLOC.lock().alloc()?;
-    allocate_stack_addr(stack)?;
+    allocate_stack_addr(stack, &mut get_init_pgtable_locked())?;
     Ok(stack)
 }
 

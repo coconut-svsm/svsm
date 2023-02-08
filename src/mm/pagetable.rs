@@ -11,6 +11,7 @@ use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::{flush_tlb_global_sync, flush_address_sync};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::mm::PGTABLE_LVL3_IDX_SHARED;
 use crate::mm::alloc::{allocate_zeroed_page, phys_to_virt, virt_to_phys};
 use crate::locking::{SpinLock, LockGuard};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -159,6 +160,18 @@ impl PageTable {
         let pgtable: usize = (self as *const PageTable) as usize;
         let cr3 = virt_to_phys(pgtable);
         write_cr3(set_c_bit(cr3));
+    }
+
+    pub fn clone_shared(&self) -> Result<PageTableRef, ()> {
+        let root_ptr = PageTable::allocate_page_table()?;
+        let pgtable = root_ptr.cast::<PageTable>();
+
+        unsafe {
+            let root = root_ptr.as_mut().unwrap();
+            root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
+        }
+
+        Ok(PageTableRef { pgtable_ptr: pgtable })
     }
 
     pub fn exec_flags() -> PTEntryFlags {
@@ -641,7 +654,7 @@ impl PageTableRef {
         PageTableRef{pgtable_ptr : pgtable as *mut PageTable}
     }
 
-    const fn unset() -> PageTableRef {
+    pub const fn unset() -> PageTableRef {
         PageTableRef{pgtable_ptr : ptr::null_mut()}
     }
 

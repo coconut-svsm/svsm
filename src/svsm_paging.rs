@@ -9,6 +9,7 @@
 use crate::heap_start;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
+use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G};
 use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef, PTMappingGuard};
 use svsm::sev::msr_protocol::invalidate_page_msr;
 use svsm::sev::pvalidate;
@@ -67,8 +68,8 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
 }
 
 pub fn invalidate_stage2() -> Result<(), ()> {
-    let start: VirtAddr = 0;
-    let end: VirtAddr = 640 * 1024;
+    let start: VirtAddr = SVSM_SHARED_BASE + (128 * SIZE_1G);
+    let end: VirtAddr = start + (640 * 1024);
     let phys: PhysAddr = 0;
 
     // Stage2 memory must be invalidated when already on the SVSM page-table,

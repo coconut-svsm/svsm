@@ -19,7 +19,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
 use svsm::cpu::msr;
-use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu, this_cpu_mut};
+use svsm::cpu::percpu::{PerCpu, this_cpu_mut};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -54,9 +54,14 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
-        register_per_cpu(0, &PERCPU);
-        PERCPU.setup_ghcb().expect("Failed to setup percpu data");
-        load_per_cpu(0);
+        let bsp_percpu = PerCpu::alloc()
+            .expect("Failed to allocate BSP per-cpu data")
+            .as_mut()
+            .unwrap();
+
+        bsp_percpu.set_pgtable(PageTableRef::new(&mut pgtable));
+        bsp_percpu.map_self().expect("Failed to map per-cpu area");
+        bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
     }
 }
 

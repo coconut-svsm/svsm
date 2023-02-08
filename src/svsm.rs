@@ -26,17 +26,17 @@ use core::panic::PanicInfo;
 use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{load_per_cpu, register_per_cpu, PerCpu};
+use svsm::cpu::percpu::PerCpu;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G};
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
 use svsm::mm::pagetable::{paging_init, PTMappingGuard};
-use svsm::mm::stack::{allocate_stack, stack_base_pointer};
 use svsm::mm::memory::init_memory_map;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use svsm::cpu::percpu::this_cpu_mut;
+use svsm::cpu::percpu::{this_cpu_mut, this_cpu};
 use svsm::sev::sev_status_init;
 use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -115,13 +115,13 @@ static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::u
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
-	let start = fw_addr as VirtAddr;
+	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
     let end   = start + PAGE_SIZE;
     let guard = PTMappingGuard::create(start, end, fw_addr);
 
     guard.check_mapping()?;
 
-    let target = ptr::NonNull::new(fw_addr as *mut SnpCpuidTable).unwrap();
+    let target = ptr::NonNull::new(start as *mut SnpCpuidTable).unwrap();
 
     // Zero target
     unsafe {
@@ -139,13 +139,13 @@ fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
 }
 
 fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<(), ()> {
-	let start = fw_addr as VirtAddr;
+	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
     let end   = start + PAGE_SIZE;
     let guard = PTMappingGuard::create(start, end, fw_addr);
 
     guard.check_mapping()?;
 
-    let mut target = ptr::NonNull::new(fw_addr as *mut SecretsPage).unwrap();
+    let mut target = ptr::NonNull::new(start as *mut SecretsPage).unwrap();
 
     // Zero target
     unsafe {
@@ -179,13 +179,13 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
 }
 
 fn zero_caa_page(fw_addr : PhysAddr) -> Result<(), ()> {
-	let start = fw_addr as VirtAddr;
+	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
     let end   = start + PAGE_SIZE;
     let guard = PTMappingGuard::create(start, end, fw_addr);
 
     guard.check_mapping()?;
 
-    let target = ptr::NonNull::new(fw_addr as *mut u8).unwrap();
+    let target = ptr::NonNull::new(start as *mut u8).unwrap();
 
     // Zero target
     unsafe {
@@ -258,17 +258,16 @@ fn validate_flash() -> Result<(),()> {
         let flash = fw_cfg.get_flash_region(i)?;
         log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.end - flash.start);
 
-        let start = flash.start as VirtAddr;
-        let end   = flash.end as VirtAddr;
-        let guard = PTMappingGuard::create(start, end, start);
+        let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
+        let len:usize = (flash.end - flash.start) as usize;
+        let end   = (start + len) as VirtAddr;
+        let pstart = flash.start as PhysAddr;
+        let guard = PTMappingGuard::create(start, end, pstart);
 
         guard.check_mapping()?;
 
         let mut current = start;
-        loop {
-            if current >= end {
-                break;
-            }
+        while  current < end {
             if let Err(_) = rmp_adjust(current, RMPFlags::VMPL1_RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", current);
                 return Err(());
@@ -289,14 +288,6 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
 
     root_mem_init(pstart, vstart, page_count);
-}
-
-fn init_percpu() {
-    unsafe {
-        register_per_cpu(0, &PERCPU);
-        PERCPU.setup().expect("Failed to setup percpu data");
-        load_per_cpu(0);
-    }
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
@@ -339,7 +330,15 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     paging_init();
     init_page_table(&launch_info);
 
-    init_percpu();
+    unsafe {
+        let bsp_percpu = PerCpu::alloc()
+            .expect("Failed to allocate BSP per-cpu data")
+            .as_mut()
+            .unwrap();
+
+        bsp_percpu.setup().expect("Failed to setup BSP per-cpu area");
+        bsp_percpu.load();
+    }
     idt_init();
 
     unsafe {
@@ -355,8 +354,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
 
     boot_stack_info();
 
-    let stack = allocate_stack().expect("Failed to allocate runtime stack");
-    let bp = stack_base_pointer(stack);
+    let bp = this_cpu().get_top_of_stack();
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
@@ -364,7 +362,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     unsafe {
         asm!("movq  %rax, %rsp
               jmp   svsm_main",
-              in("rax") stack_base_pointer(stack),
+              in("rax") bp,
               options(att_syntax));
     }
 }
