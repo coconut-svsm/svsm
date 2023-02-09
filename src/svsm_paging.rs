@@ -9,8 +9,8 @@
 use crate::heap_start;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
-use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G};
-use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef, PTMappingGuard};
+use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G, PTMappingGuard};
+use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use svsm::sev::msr_protocol::invalidate_page_msr;
 use svsm::sev::pvalidate;
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};

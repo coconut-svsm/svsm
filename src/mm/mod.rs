@@ -12,7 +12,9 @@ pub mod stack;
 pub mod memory;
 pub mod guestmem;
 pub mod address_space;
+pub mod ptguards;
 
 pub use memory::valid_phys_address;
 pub use guestmem::GuestPtr;
 pub use address_space::*;
+pub use ptguards::*;

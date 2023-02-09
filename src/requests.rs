@@ -12,7 +12,7 @@ use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
 use crate::mm::{SVSM_SHARED_BASE, SIZE_1G};
-use crate::mm::pagetable::PageMappingGuard;
+use crate::mm::PageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::{valid_phys_address, GuestPtr};
 
