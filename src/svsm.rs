@@ -18,7 +18,7 @@ use svsm::cpu::efer::efer_init;
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
 use svsm::svsm_console::SVSMIOPort;
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
@@ -29,10 +29,9 @@ use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G};
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info, virt_to_phys};
 use svsm::mm::pagetable::paging_init;
-use svsm::mm::PTMappingGuard;
+use svsm::mm::PerCPUPageMappingGuard;
 use svsm::mm::memory::init_memory_map;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
@@ -116,19 +115,14 @@ static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::u
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
-	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
+    let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
+    let start = guard.virt_addr();
     let end   = start + PAGE_SIZE;
-    let guard = PTMappingGuard::create(start, end, fw_addr);
-
-    guard.check_mapping()?;
 
     let target = ptr::NonNull::new(start as *mut SnpCpuidTable).unwrap();
 
     // Zero target
-    unsafe {
-        let mut page_ptr = target.cast::<u8>();
-        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
-    }
+    zero_mem_region(start, end);
 
     // Copy data
     unsafe {
@@ -140,11 +134,8 @@ fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
 }
 
 fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<(), ()> {
-	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
-    let end   = start + PAGE_SIZE;
-    let guard = PTMappingGuard::create(start, end, fw_addr);
-
-    guard.check_mapping()?;
+    let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
+	let start = guard.virt_addr();
 
     let mut target = ptr::NonNull::new(start as *mut SecretsPage).unwrap();
 
@@ -180,19 +171,10 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
 }
 
 fn zero_caa_page(fw_addr : PhysAddr) -> Result<(), ()> {
-	let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
-    let end   = start + PAGE_SIZE;
-    let guard = PTMappingGuard::create(start, end, fw_addr);
+    let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
+    let vaddr = guard.virt_addr();
 
-    guard.check_mapping()?;
-
-    let target = ptr::NonNull::new(start as *mut u8).unwrap();
-
-    // Zero target
-    unsafe {
-        let mut page_ptr = target.cast::<u8>();
-        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
-    }
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
 
     Ok(())
 }
@@ -259,21 +241,19 @@ fn validate_flash() -> Result<(),()> {
         let flash = fw_cfg.get_flash_region(i)?;
         log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.end - flash.start);
 
-        let start = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
-        let len:usize = (flash.end - flash.start) as usize;
-        let end   = (start + len) as VirtAddr;
         let pstart = flash.start as PhysAddr;
-        let guard = PTMappingGuard::create(start, end, pstart);
+        let pend   = flash.end as PhysAddr;
 
-        guard.check_mapping()?;
+        let mut paddr = pstart;
 
-        let mut current = start;
-        while  current < end {
-            if let Err(_) = rmp_adjust(current, RMPFlags::VMPL1_RWX, false) {
-                log::info!("rmpadjust failed for addr {:#018x}", current);
+        while  paddr < pend {
+            let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+            let vaddr = guard.virt_addr();
+            if let Err(_) = rmp_adjust(vaddr, RMPFlags::VMPL1_RWX, false) {
+                log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(());
             }
-            current += PAGE_SIZE;
+            paddr += PAGE_SIZE;
         }
     }
 
