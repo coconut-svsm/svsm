@@ -42,6 +42,8 @@ use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::requests::request_loop;
 
+use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
+
 use core::ptr;
 
 use log;
@@ -57,7 +59,8 @@ extern "C" {
  * The stage2 loader will map and load the svsm binary image and jump to
  * startup_64.
  *
- * %r8  will contain a pointer to the KernelLaunchInfo structure
+ * %r8  Pointer to the KernelLaunchInfo structure
+ * %r9  Pointer to the valid-bitmap from stage2
  */
 global_asm!(
     r#"
@@ -80,6 +83,7 @@ global_asm!(
 
         /* Jump to rust code */
         movq    %r8, %rdi
+        movq    %r9, %rsi
         jmp svsm_start
 
         .bss
@@ -285,8 +289,14 @@ pub fn boot_stack_info() {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
+pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     let launch_info: KernelLaunchInfo = *li;
+    let vb_ptr = vb_addr as *mut u64;
+
+    init_valid_bitmap_ptr(
+            launch_info.kernel_start.try_into().unwrap(),
+            launch_info.kernel_end.try_into().unwrap(),
+            vb_ptr);
 
     load_gdt();
     early_idt_init();
@@ -308,6 +318,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo) {
     sev_status_init();
 
     memory_init(&launch_info);
+    migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
+
     paging_init();
     init_page_table(&launch_info);
 

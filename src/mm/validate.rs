@@ -6,34 +6,35 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PhysAddr};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PhysAddr, VirtAddr};
 use crate::utils::is_aligned;
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_pages, get_order};
+use crate::mm::alloc::{allocate_pages, get_order, virt_to_phys};
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
 
 pub fn init_valid_bitmap_ptr(pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) {
-    VALID_BITMAP.lock().set(pbase, pend, bitmap);
+    let mut vb_ref = VALID_BITMAP.lock();
+    vb_ref.set_range(pbase, pend);
+    vb_ref.set_bitmap(bitmap);
 }
 
 pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), ()> {
-    let mem_size = (pend - pbase) / (PAGE_SIZE * 8);
-    let order = get_order(mem_size);
-    let vaddr = allocate_pages(order)?;
-    let bitmap = vaddr as *mut u64;
-
     let mut vb_ref = VALID_BITMAP.lock();
-    vb_ref.set(pbase, pend, bitmap);
+    vb_ref.set_range(pbase, pend);
+    let bitmap = vb_ref.alloc()?;
+    vb_ref.set_bitmap(bitmap);
     vb_ref.clear_all();
 
     Ok(())
 }
 
-pub fn migrate_valid_bitmap(new_bitmap: *mut u64) {
+pub fn migrate_valid_bitmap() -> Result<(), ()> {
     let mut vb_ref = VALID_BITMAP.lock();
+    let new_bitmap = vb_ref.alloc()?;
     vb_ref.migrate(new_bitmap);
+    Ok(())
 }
 
 pub fn validated_phys_addr(paddr: PhysAddr) -> bool {
@@ -61,6 +62,11 @@ pub fn valid_bitmap_clear_valid_2m(paddr: PhysAddr) {
     vb_ref.clear_valid_2m(paddr)
 }
 
+pub fn valid_bitmap_addr() -> PhysAddr {
+    let vb_ref = VALID_BITMAP.lock();
+    vb_ref.bitmap_addr()
+}
+
 struct ValidBitmap {
     pbase: PhysAddr,
     pend: PhysAddr,
@@ -72,14 +78,22 @@ impl ValidBitmap {
         ValidBitmap { pbase: 0, pend: 0, bitmap: ptr::null_mut() }
     }
 
-    pub fn set(&mut self, pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) {
+    pub fn set_range(&mut self, pbase: PhysAddr, pend: PhysAddr) {
         self.pbase = pbase;
         self.pend = pend;
+    }
+
+    pub fn set_bitmap(&mut self, bitmap: *mut u64) {
         self.bitmap = bitmap;
     }
 
     pub fn check_addr(&self, paddr: PhysAddr) -> bool {
         paddr >= self.pbase && paddr < self.pend
+    }
+
+    pub fn bitmap_addr(&self) -> PhysAddr {
+        assert!(!self.bitmap.is_null());
+        virt_to_phys(self.bitmap as VirtAddr)
     }
 
 #[inline(always)]
@@ -96,6 +110,14 @@ impl ValidBitmap {
         let index: usize = i.try_into().unwrap();
 
         unsafe { ptr::write_bytes(self.bitmap, 0, index); }
+    }
+
+    pub fn alloc(&self) -> Result<*mut u64, ()> {
+        let mem_size = (self.pend - self.pbase) / (PAGE_SIZE * 8);
+        let order = get_order(mem_size);
+        let vaddr = allocate_pages(order)?;
+
+        Ok(vaddr as *mut u64)
     }
 
     pub fn migrate(&mut self, new_bitmap: *mut u64) {

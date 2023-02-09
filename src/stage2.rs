@@ -25,7 +25,7 @@ use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
                           PTEntryFlags, PageTable, PageTableRef};
-use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_set_valid_2m};
+use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_set_valid_2m, valid_bitmap_addr};
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use svsm::sev::msr_protocol::{GHCBMsr};
 use svsm::sev::status::SEVStatusFlags;
@@ -292,6 +292,8 @@ unsafe fn copy_and_launch_kernel(kli: KInfo) {
     // Shut down the GHCB
     shutdown_percpu();
 
+    let valid_bitmap: PhysAddr = valid_bitmap_addr();
+
     compiler_builtins::mem::memcpy(
         kli.virt_base as *mut u8,
         kli.k_image_start as *const u8,
@@ -300,6 +302,7 @@ unsafe fn copy_and_launch_kernel(kli: KInfo) {
     asm!("jmp *%rax",
           in("rax") kli.entry,
           in("r8") &kernel_launch_info,
+          in("r9") valid_bitmap,
           options(att_syntax));
 }
 
