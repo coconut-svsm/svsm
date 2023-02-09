@@ -24,14 +24,15 @@ use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
-                          PTEntryFlags, PageTable, PageTableRef, };
+                          PTEntryFlags, PageTable, PageTableRef};
+use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_set_valid_2m};
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
 use svsm::sev::msr_protocol::{GHCBMsr};
 use svsm::sev::status::SEVStatusFlags;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::sev::ghcb::{PageStateChangeOp};
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use svsm::utils::{halt, page_align, page_align_up};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use svsm::utils::{halt, page_align, page_align_up, is_aligned};
 use log;
 
 extern "C" {
@@ -221,14 +222,21 @@ fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
 }
 
 fn validate_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
-    let paddr = region.start as PhysAddr;
+    let pstart = region.start as PhysAddr;
     let pend = region.end as PhysAddr;
-    let size: usize = pend - paddr;
+    let size: usize = pend - pstart;
 
-    this_cpu_mut().ghcb().page_state_change(paddr, pend, true, PageStateChangeOp::PscPrivate)
+    assert!(is_aligned(pstart, PAGE_SIZE_2M));
+    assert!(is_aligned(pend, PAGE_SIZE_2M));
+
+    this_cpu_mut().ghcb().page_state_change(pstart, pend, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
 
     pvalidate_range(vaddr, vaddr + size, true).expect("PVALIDATE kernel region failed");
+
+    for paddr in (pstart..pend).step_by(PAGE_SIZE_2M) {
+        valid_bitmap_set_valid_2m(paddr);
+    }
 
     Ok(())
 }
@@ -308,6 +316,9 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
         let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;
         ((*kmd).virt_addr, (*kmd).entry)
     };
+
+    init_valid_bitmap_alloc(r.start.try_into().unwrap(), r.end.try_into().unwrap())
+        .expect("Failed to allocate valid-bitmap");
 
     map_kernel_region(kernel_virt_base, &r).expect("Error mapping kernel region");
     validate_kernel_region(kernel_virt_base, &r).expect("Validating kernel region failed");

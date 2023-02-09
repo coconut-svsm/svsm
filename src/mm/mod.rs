@@ -13,6 +13,7 @@ pub mod memory;
 pub mod guestmem;
 pub mod address_space;
 pub mod ptguards;
+pub mod validate;
 
 pub use memory::valid_phys_address;
 pub use guestmem::GuestPtr;
