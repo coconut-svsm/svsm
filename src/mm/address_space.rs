@@ -6,6 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::types::VirtAddr;
+
 // Address space definitions for SVSM virtual memory layout
 
 /// Size helpers
@@ -66,3 +68,34 @@ pub const SVSM_STACKS_IST_BASE: usize = SVSM_STACKS_INIT_TASK + STACK_TOTAL_SIZE
 
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: usize = SVSM_STACKS_IST_BASE;
+
+/// Base Address for temporary mappings - used by page-table guards
+pub const SVSM_PERCPU_TEMP_BASE: usize = SVSM_PERCPU_BASE + SIZE_LEVEL2;
+
+// Below is space for 512 temporary 4k mappings and 511 temporary 2M mappings
+
+/// Start and End for PAGE_SIZEed temporary mappings
+pub const SVSM_PERCPU_TEMP_BASE_4K: usize = SVSM_PERCPU_TEMP_BASE;
+pub const SVSM_PERCPU_TEMP_END_4K:  usize = SVSM_PERCPU_TEMP_BASE_4K + SIZE_LEVEL1;
+
+/// Start and End for PAGE_SIZEed temporary mappings
+pub const SVSM_PERCPU_TEMP_BASE_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL1;
+pub const SVSM_PERCPU_TEMP_END_2M:  usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL2;
+
+/// Number of slots - only use half of them to leave guard pages between the mappings
+pub const SVSM_PERCPU_TEMP_4K_SLOTS: usize = ((SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE) / 2;
+pub const SVSM_PERCPU_TEMP_2M_SLOTS: usize = ((SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M) / 2;
+
+pub fn percpu_4k_slot_addr(slot: usize) -> Result<VirtAddr, ()> {
+    if slot >= SVSM_PERCPU_TEMP_4K_SLOTS {
+        return Err(());
+    }
+    Ok(SVSM_PERCPU_TEMP_BASE_4K + (2 * slot * PAGE_SIZE))
+}
+
+pub fn percpu_2m_slot_addr(slot: usize) -> Result<VirtAddr, ()> {
+    if slot >= SVSM_PERCPU_TEMP_2M_SLOTS {
+        return Err(());
+    }
+    Ok(SVSM_PERCPU_TEMP_BASE_2M + (2 * slot * PAGE_SIZE_2M))
+}

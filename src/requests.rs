@@ -11,8 +11,7 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
-use crate::mm::{SVSM_SHARED_BASE, SIZE_1G};
-use crate::mm::PageMappingGuard;
+use crate::mm::PerCPUPageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
 use crate::mm::{valid_phys_address, GuestPtr};
 
@@ -44,8 +43,6 @@ struct PValidateRequest {
     resv : u32,
 }
 
-/// Base address for per-cpu request mappings
-const REQUEST_BASE_ADDR : VirtAddr = SVSM_SHARED_BASE + (192 * SIZE_1G);
 /// per-cpu request mapping area size (1GB)
 fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
     log::info!("Request SVSM_REQ_CORE_CREATE_VCPU not yet supported");
@@ -83,10 +80,6 @@ fn core_configure_vtom(vmsa: &mut VMSA)-> Result<(),()> {
     Ok(())
 }
 
-fn region_base_addr() -> VirtAddr {
-    REQUEST_BASE_ADDR
-}
-
 fn rmpadjust_update_vmsa(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u64> {
     if let Err(code) = rmp_adjust(vaddr, flags, huge) {
         let ret_code = if code < 0x10 { code } else { 0x11 };
@@ -115,7 +108,7 @@ fn grant_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
 fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     let result: u64;
     let mut flush: bool = false;
-    let page_size: u64= entry & 3;
+    let page_size: u64 = entry & 3;
 
     if page_size > 1 {
         return Ok((SVSM_ERR_INVALID_PARAMETER, flush));
@@ -126,7 +119,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     let ign_cf: bool = (entry & 8) == 8;
 
     let alignment = { if huge { PAGE_SIZE_2M } else { PAGE_SIZE } };
-    let vaddr : VirtAddr = region_base_addr() + alignment;
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
     if !is_aligned(paddr, alignment) {
@@ -138,8 +130,8 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
         return Ok((SVSM_ERR_INVALID_ADDRESS, flush));
     }
 
-    let guard = PageMappingGuard::create(vaddr, paddr, huge);
-    guard.check_mapping()?;
+    let guard = PerCPUPageMappingGuard::create(paddr, 1, huge)?;
+    let vaddr = guard.virt_addr();
 
     if !valid {
         if let Err(error_code) = revoke_access(vaddr, huge) {
@@ -176,7 +168,6 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
 
 fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
     let gpa : PhysAddr = vmsa.rcx.try_into().unwrap();
-    let region = region_base_addr();
 
     vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
 
@@ -187,10 +178,8 @@ fn core_pvalidate(vmsa: &mut VMSA) -> Result<(),()> {
     let paddr = page_align(gpa);
     let offset = page_offset(gpa);
 
-    let start = region;
-
-	let guard = PageMappingGuard::create(start, paddr, false);
-    guard.check_mapping()?;
+    let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+    let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
     let mut request = match guest_page.read() {
