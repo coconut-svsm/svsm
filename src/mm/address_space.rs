@@ -23,6 +23,7 @@ pub const PAGE_SIZE_2M: usize = SIZE_1M * 2;
 pub const SIZE_LEVEL3: usize = 1usize << ((9 * 3) + 12);
 pub const SIZE_LEVEL2: usize = 1usize << ((9 * 2) + 12);
 pub const SIZE_LEVEL1: usize = 1usize << ((9 * 1) + 12);
+pub const SIZE_LEVEL0: usize = 1usize << ((9 * 0) + 12);
 
 // Stack definitions
 pub const STACK_PAGES: usize = 4;
@@ -56,6 +57,9 @@ pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 
 /// Base Address of shared memory region
 pub const SVSM_PERCPU_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_PERCPU << ((3 * 9) + 12));
+
+/// PerCPU CAA mappings
+pub const SVSM_PERCPU_CAA_BASE: usize = SVSM_PERCPU_BASE + (2 * SIZE_LEVEL0);
 
 /// Region for PerCPU Stacks
 pub const SVSM_PERCPU_STACKS_BASE: usize = SVSM_PERCPU_BASE + SIZE_LEVEL1;

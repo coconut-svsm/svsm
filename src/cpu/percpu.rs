@@ -9,13 +9,13 @@
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
-use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
+use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page, virt_to_phys};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::pagetable::{PageTable, PageTableRef, get_init_pgtable_locked};
 use crate::sev::ghcb::GHCB;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMPL_MAX, VMSA};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::types::{PhysAddr, VirtAddr};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::utils::{page_align, page_offset};
@@ -25,8 +25,6 @@ use core::ptr;
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
 }
-
-const CAA_BASE_ADDR : VirtAddr = 0xffff_ffff_fff8_0000;
 
 impl IstStacks {
     const fn new() -> Self {
@@ -227,10 +225,9 @@ impl PerCpu {
     pub fn unmap_caa(&mut self) -> Result<(),()> {
         if let Some(v) = self.caa_addr {
             let start = page_align(v);
-            let end = start + PAGE_SIZE;
 
             self.caa_addr = None;
-            get_init_pgtable_locked().unmap_region_4k(start, end)?;
+            this_cpu_mut().get_pgtable().unmap_4k(start)?;
         }
 
         Ok(())
@@ -241,12 +238,11 @@ impl PerCpu {
 
         let paddr_aligned = page_align(paddr);
         let page_offset = page_offset(paddr);
+        let flags = PageTable::data_flags();
 
-        // CAA page is 4k, leave a guard page between mapped CAA pages
-        let offset = (self.apic_id as VirtAddr) * 2 * PAGE_SIZE;
-        let vaddr : VirtAddr = CAA_BASE_ADDR + offset;
+        let vaddr = SVSM_PERCPU_CAA_BASE;
 
-        get_init_pgtable_locked().map_region_4k(vaddr, vaddr + PAGE_SIZE, paddr_aligned, PageTable::data_flags())?;
+        this_cpu_mut().get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
 
         self.caa_addr = Some(vaddr + page_offset);
 
