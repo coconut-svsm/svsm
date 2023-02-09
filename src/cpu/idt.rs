@@ -8,6 +8,7 @@
 
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
+use super::vc::handle_vc_exception;
 use crate::types::{VirtAddr, SVSM_CS};
 use crate::cpu::extable::handle_exception_table;
 use core::arch::{asm, global_asm};
@@ -34,7 +35,7 @@ pub const _MCE_VECTOR: usize = 18;
 pub const _XF_VECTOR: usize = 19;
 pub const _CP_VECTOR: usize = 21;
 pub const _HV_VECTOR: usize = 28;
-pub const _VC_VECTOR: usize = 29;
+pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
 #[repr(C, packed)]
@@ -212,12 +213,14 @@ fn generic_idt_handler(regs: &mut X86Regs) {
                 rip, cr2, err
             );
         }
+    } else if regs.vector == VC_VECTOR {
+        handle_vc_exception(regs);
     } else {
         let err = regs.error_code;
         let vec = regs.vector;
         let rip = regs.rip;
 
-        if handle_exception_table(regs) {
+        if !handle_exception_table(regs) {
             panic!(
                 "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
                 vec, rip, err
