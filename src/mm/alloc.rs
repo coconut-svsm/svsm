@@ -20,6 +20,22 @@ struct PageStorageType(u64);
 // Support allocations up to order-5 (128kb)
 pub const MAX_ORDER: usize = 6;
 
+pub fn get_order(size: usize) -> usize {
+    let mut val = (size - 1) >> PAGE_SHIFT;
+    let mut order: usize = 0;
+
+    loop {
+        if val == 0 {
+            break;
+        }
+
+        order += 1;
+        val >>= 1;
+    }
+
+    order
+}
+
 impl PageStorageType {
     pub const fn new(t: u64) -> Self {
         PageStorageType(t)
@@ -1080,22 +1096,6 @@ impl SvsmAllocator {
             slab_size_2048: SpinLock::new(Slab::new(2048)),
         }
     }
-
-    fn get_order(size: usize) -> usize {
-        let mut val = (size - 1) >> PAGE_SHIFT;
-        let mut order: usize = 0;
-
-        loop {
-            if val == 0 {
-                break;
-            }
-
-            order += 1;
-            val >>= 1;
-        }
-
-        order
-    }
 }
 
 unsafe impl GlobalAlloc for SvsmAllocator {
@@ -1120,7 +1120,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
         } else if size <= 4096 {
             ret = allocate_page();
         } else {
-            let order = SvsmAllocator::get_order(size);
+            let order = get_order(size);
             if order >= MAX_ORDER {
                 return ptr::null_mut();
             }
