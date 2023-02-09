@@ -9,7 +9,7 @@
 use crate::heap_start;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
-use svsm::mm::{SVSM_SHARED_BASE, SIZE_1G, PTMappingGuard};
+use svsm::mm::PerCPUPageMappingGuard;
 use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use svsm::sev::msr_protocol::invalidate_page_msr;
 use svsm::sev::pvalidate;
@@ -68,28 +68,22 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
 }
 
 pub fn invalidate_stage2() -> Result<(), ()> {
-    let start: VirtAddr = SVSM_SHARED_BASE + (128 * SIZE_1G);
-    let end: VirtAddr = start + (640 * 1024);
-    let phys: PhysAddr = 0;
+    let pstart: PhysAddr = 0;
+    let pend = pstart  + (640 * 1024);
+    let mut paddr = pstart;
 
     // Stage2 memory must be invalidated when already on the SVSM page-table,
     // because before that the stage2 page-table is still active, which is in
     // stage2 memory, causing invalidation of page-table pages.
-    let mapping_guard = PTMappingGuard::create(start, end, phys);
-    mapping_guard.check_mapping()?;
+    while paddr < pend {
+        let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+        let vaddr = guard.virt_addr();
 
-    let mut curr = start;
-    loop {
-        if curr >= end {
-            break;
-        }
+        pvalidate(vaddr, false, false).expect("PINVALIDATE failed");
 
-        pvalidate(curr, false, false).expect("PINVALIDATE failed");
-
-        let paddr = curr as PhysAddr;
         invalidate_page_msr(paddr)?;
 
-        curr += PAGE_SIZE;
+        paddr += PAGE_SIZE;
     }
 
     Ok(())
