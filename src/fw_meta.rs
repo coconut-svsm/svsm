@@ -10,8 +10,8 @@ extern crate alloc;
 
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use alloc::vec::Vec;
-use crate::mm::{SVSM_SHARED_BASE, SIZE_1G};
-use crate::mm::PTMappingGuard;
+use crate::mm::SIZE_1G;
+use crate::mm::PerCPUPageMappingGuard;
 use crate::utils::{overlap, zero_mem_region};
 use crate::sev::msr_protocol::validate_page_msr;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
@@ -216,14 +216,12 @@ const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     let pstart: PhysAddr = (4 * SIZE_1G) - PAGE_SIZE;
-    let vstart: VirtAddr = SVSM_SHARED_BASE + (128 * SIZE_1G);
-    let vend: VirtAddr = vstart + PAGE_SIZE;
-
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
-    let mapping_guard = PTMappingGuard::create(vstart, vend, pstart);
-    mapping_guard.check_mapping()?;
+    let guard = PerCPUPageMappingGuard::create(pstart, 0, false)?;
+    let vstart = guard.virt_addr();
+    let vend: VirtAddr = vstart + PAGE_SIZE;
 
     let mut curr = vend - 32;
 
@@ -307,20 +305,17 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
 }
 
 fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
-    let start : VirtAddr = (SVSM_SHARED_BASE + (128 * SIZE_1G)) as VirtAddr;
-    let end : VirtAddr = start + region.length;
-    let phys : PhysAddr = region.base;
+    let pstart: PhysAddr = region.base;
+    let pend: PhysAddr = pstart + region.length;
 
-    log::info!("Validating {:#018x}-{:#018x}", start, end);
+    log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
-    let guard = PTMappingGuard::create(start, end, phys);
+    let mut page_paddr = pstart;
 
-    guard.check_mapping()?;
+    while page_paddr < pend {
+        let guard = PerCPUPageMappingGuard::create(page_paddr, 0, false)?;
+        let page_vaddr = guard.virt_addr();
 
-    let mut page_vaddr = start;
-    let mut page_paddr = phys;
-
-    loop {
         validate_page_msr(page_paddr)?;
         if let Err(_e) = pvalidate(page_vaddr, false, true) {
             return Err(());
@@ -330,16 +325,11 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
         if let Err(_e) = rmp_adjust(page_vaddr, RMPFlags::VMPL1_RWX, false) {
             return Err(());
         }
+
+        zero_mem_region(page_vaddr, page_vaddr + PAGE_SIZE);
         
         page_paddr += PAGE_SIZE;
-        page_vaddr += PAGE_SIZE;
-
-        if page_vaddr >= end {
-            break;
-        }
     }
-
-    zero_mem_region(start, end);
 
     Ok(())
 }
