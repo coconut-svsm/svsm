@@ -10,11 +10,12 @@ extern crate alloc;
 
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use alloc::vec::Vec;
+use crate::cpu::percpu::this_cpu_mut;
 use crate::mm::SIZE_1G;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::utils::{overlap, zero_mem_region};
-use crate::sev::msr_protocol::validate_page_msr;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
+use crate::sev::ghcb::PageStateChangeOp;
 
 use core::cmp;
 use core::fmt;
@@ -312,11 +313,14 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
 
     let mut page_paddr = pstart;
 
+    this_cpu_mut().ghcb()
+        .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
+        .expect("GHCB PSC call failed to validate firmware memory");
+
     while page_paddr < pend {
         let guard = PerCPUPageMappingGuard::create(page_paddr, 0, false)?;
         let page_vaddr = guard.virt_addr();
 
-        validate_page_msr(page_paddr)?;
         if let Err(_e) = pvalidate(page_vaddr, false, true) {
             return Err(());
         }
