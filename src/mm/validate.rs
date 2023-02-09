@@ -67,6 +67,11 @@ pub fn valid_bitmap_addr() -> PhysAddr {
     vb_ref.bitmap_addr()
 }
 
+pub fn valid_bitmap_valid_addr(paddr: PhysAddr) -> bool {
+    let vb_ref = VALID_BITMAP.lock();
+    vb_ref.check_addr(paddr)
+}
+
 struct ValidBitmap {
     pbase: PhysAddr,
     pend: PhysAddr,
@@ -129,7 +134,15 @@ impl ValidBitmap {
         self.bitmap = new_bitmap;
     }
 
+    fn initialized(&self) -> bool {
+        !self.bitmap.is_null()
+    }
+
     pub fn set_valid_4k(&mut self, paddr: PhysAddr) {
+        if !self.initialized() {
+            return;
+        }
+
         let (index, bit) = self.index(paddr);
 
         assert!(is_aligned(paddr, PAGE_SIZE));
@@ -143,6 +156,10 @@ impl ValidBitmap {
     }
 
     pub fn clear_valid_4k(&mut self, paddr: PhysAddr) {
+        if !self.initialized() {
+            return;
+        }
+
         let (index, bit) = self.index(paddr);
 
         assert!(is_aligned(paddr, PAGE_SIZE));
@@ -156,6 +173,10 @@ impl ValidBitmap {
     }
 
     fn set_2m(&mut self, paddr: PhysAddr, val: u64) {
+        if !self.initialized() {
+            return;
+        }
+
         const NR_INDEX: isize = (PAGE_SIZE_2M / (PAGE_SIZE * 64)) as isize;
         let (index, _) = self.index(paddr);
 
@@ -176,6 +197,10 @@ impl ValidBitmap {
     }
 
     pub fn is_valid_4k(&self, paddr: PhysAddr) -> bool {
+        if !self.initialized() {
+            return false;
+        }
+
         let (index, bit) = self.index(paddr);
 
         assert!(self.check_addr(paddr));
