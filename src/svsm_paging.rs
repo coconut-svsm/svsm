@@ -9,9 +9,10 @@
 use crate::heap_start;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
+use svsm::cpu::percpu::this_cpu_mut;
 use svsm::mm::PerCPUPageMappingGuard;
 use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
-use svsm::sev::msr_protocol::invalidate_page_msr;
+use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::pvalidate;
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 
@@ -81,10 +82,12 @@ pub fn invalidate_stage2() -> Result<(), ()> {
 
         pvalidate(vaddr, false, false).expect("PINVALIDATE failed");
 
-        invalidate_page_msr(paddr)?;
-
         paddr += PAGE_SIZE;
     }
+
+    this_cpu_mut().ghcb()
+        .page_state_change(paddr, pend, false, PageStateChangeOp::PscShared)
+        .expect("Failed to invalidate Stage2 memory");
 
     Ok(())
 }
