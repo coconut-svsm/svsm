@@ -9,7 +9,6 @@
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::types::{VirtAddr, PhysAddr};
 
-#[allow(dead_code)]
 #[derive(Copy, Clone)]
 struct KernelMapping {
     virt_start: VirtAddr,
@@ -34,6 +33,28 @@ pub fn init_kernel_mapping_info(
                 virt_end: vend,
                 phys_start: pstart };
     unsafe { KERNEL_MAPPING.init(&km); }
+}
+
+
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    if vaddr < KERNEL_MAPPING.virt_start || vaddr >= KERNEL_MAPPING.virt_end {
+           panic!("Invalid physical address {:#018x}", vaddr);
+    }
+
+    let offset: usize = vaddr - KERNEL_MAPPING.virt_start;
+
+    KERNEL_MAPPING.phys_start + offset
+}
+
+pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+    let size: usize = KERNEL_MAPPING.virt_end - KERNEL_MAPPING.virt_start;
+    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start + size {
+        panic!("Invalid physical address {:#018x}", paddr);
+    }
+
+    let offset: usize = paddr - KERNEL_MAPPING.phys_start;
+
+    KERNEL_MAPPING.virt_start + offset
 }
 
 // Address space definitions for SVSM virtual memory layout

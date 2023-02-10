@@ -217,6 +217,7 @@ impl MemoryRegion {
         }
     }
 
+    #[allow(dead_code)]
     pub fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
         let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
@@ -234,6 +235,7 @@ impl MemoryRegion {
         Some((self.start_virt + offset) as VirtAddr)
     }
 
+    #[allow(dead_code)]
     pub fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
         let end_virt = self.start_virt + (self.page_count * PAGE_SIZE);
 
@@ -649,24 +651,6 @@ pub fn allocate_zeroed_page() -> Result<VirtAddr, ()> {
 
 pub fn free_page(vaddr: VirtAddr) {
     ROOT_MEM.lock().free_page(vaddr)
-}
-
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    match ROOT_MEM.lock().virt_to_phys(vaddr) {
-        None => {
-            panic!("Invalid virtual address {:#018x}", vaddr);
-        }
-        Some(v) => v,
-    }
-}
-
-pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    match ROOT_MEM.lock().phys_to_virt(paddr) {
-        None => {
-            panic!("Invalid physical address {:#018x}", paddr);
-        }
-        Some(p) => p,
-    }
 }
 
 pub fn memory_info() -> MemInfo {
