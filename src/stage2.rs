@@ -22,6 +22,7 @@ use svsm::cpu::msr;
 use svsm::cpu::percpu::{PerCpu, this_cpu_mut};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
                           PTEntryFlags, PageTable, PageTableRef};
@@ -162,6 +163,7 @@ fn sev_ghcb_msr_available() -> Result<u64, ()> {
 
 fn setup_env() {
     install_console_logger("Stage2");
+    init_kernel_mapping_info(0, 640 * 1024, 0);
 
     // Under SVM-ES, the only means to communicate with the user is through the
     // SVSMIOPort console, which requires a functional GHCB protocol. If the

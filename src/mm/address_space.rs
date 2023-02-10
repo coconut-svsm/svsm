@@ -6,7 +6,35 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::VirtAddr;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::types::{VirtAddr, PhysAddr};
+
+#[allow(dead_code)]
+#[derive(Copy, Clone)]
+struct KernelMapping {
+    virt_start: VirtAddr,
+    virt_end: VirtAddr,
+    phys_start: PhysAddr,
+}
+
+impl KernelMapping {
+    pub const fn new() -> Self {
+        KernelMapping { virt_start:0, virt_end: 0, phys_start: 0 }
+    }
+}
+
+static KERNEL_MAPPING: ImmutAfterInitCell<KernelMapping> = ImmutAfterInitCell::new(KernelMapping::new());
+
+pub fn init_kernel_mapping_info(
+        vstart: VirtAddr,
+        vend: VirtAddr,
+        pstart: VirtAddr) {
+    let km = KernelMapping {
+                virt_start: vstart,
+                virt_end: vend,
+                phys_start: pstart };
+    unsafe { KERNEL_MAPPING.init(&km); }
+}
 
 // Address space definitions for SVSM virtual memory layout
 

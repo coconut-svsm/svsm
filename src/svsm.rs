@@ -31,7 +31,7 @@ use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
 use svsm::mm::pagetable::paging_init;
-use svsm::mm::{PerCPUPageMappingGuard, virt_to_phys};
+use svsm::mm::{PerCPUPageMappingGuard, virt_to_phys, init_kernel_mapping_info};
 use svsm::mm::memory::init_memory_map;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
@@ -288,10 +288,21 @@ pub fn boot_stack_info() {
     }
 }
 
+fn mapping_info_init(launch_info: &KernelLaunchInfo) {
+    let ksize: usize = (launch_info.kernel_end - launch_info.kernel_start) as usize;
+    let vstart: VirtAddr = launch_info.virt_base as VirtAddr;
+    let vend: VirtAddr = vstart + ksize;
+    let pstart: PhysAddr = launch_info.kernel_start as PhysAddr;
+
+    init_kernel_mapping_info(vstart, vend, pstart);
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     let launch_info: KernelLaunchInfo = *li;
     let vb_ptr = vb_addr as *mut u64;
+
+    mapping_info_init(&launch_info);
 
     init_valid_bitmap_ptr(
             launch_info.kernel_start.try_into().unwrap(),
