@@ -9,8 +9,9 @@
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
-use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE};
-use crate::mm::alloc::{allocate_page, allocate_zeroed_page, virt_to_phys};
+use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK,
+    SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE, virt_to_phys};
+use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::pagetable::{PageTable, PageTableRef, get_init_pgtable_locked};
 use crate::sev::ghcb::GHCB;

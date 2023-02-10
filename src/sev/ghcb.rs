@@ -13,7 +13,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::sev::sev_snp_enabled;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::{is_aligned};
-use crate::mm::alloc::virt_to_phys;
+use crate::mm::virt_to_phys;
 use crate::mm::validate::{valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr};
 use core::arch::asm;
 use core::cell::RefCell;

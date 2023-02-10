@@ -7,7 +7,8 @@
 // vim: ts=4 sw=4 et
 
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_zeroed_page, free_page, phys_to_virt, virt_to_phys};
+use crate::mm::{phys_to_virt, virt_to_phys};
+use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
 use crate::mm::{STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END};
 use crate::cpu::flush_tlb_global_sync;

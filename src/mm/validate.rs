@@ -9,7 +9,8 @@
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PhysAddr, VirtAddr};
 use crate::utils::util::is_aligned;
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_pages, get_order, virt_to_phys};
+use crate::mm::virt_to_phys;
+use crate::mm::alloc::{allocate_pages, get_order};
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());

@@ -19,3 +19,4 @@ pub use memory::valid_phys_address;
 pub use guestmem::GuestPtr;
 pub use address_space::*;
 pub use ptguards::*;
+pub use alloc::{virt_to_phys, phys_to_virt};
