@@ -7,12 +7,18 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PhysAddr, VirtAddr};
-use crate::utils::is_aligned;
+use crate::utils::util::is_aligned;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_pages, get_order, virt_to_phys};
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
+
+#[inline(always)]
+fn bitmap_alloc_order(pbase: PhysAddr, pend: PhysAddr) -> usize {
+    let mem_size = (pend - pbase) / (PAGE_SIZE * 8);
+    get_order(mem_size)
+}
 
 pub fn init_valid_bitmap_ptr(pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) {
     let mut vb_ref = VALID_BITMAP.lock();
@@ -21,19 +27,24 @@ pub fn init_valid_bitmap_ptr(pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) 
 }
 
 pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), ()> {
+    let order: usize = bitmap_alloc_order(pbase, pend);
+    let bitmap_addr = allocate_pages(order)?;
+
     let mut vb_ref = VALID_BITMAP.lock();
     vb_ref.set_range(pbase, pend);
-    let bitmap = vb_ref.alloc()?;
-    vb_ref.set_bitmap(bitmap);
+    vb_ref.set_bitmap(bitmap_addr as *mut u64);
     vb_ref.clear_all();
 
     Ok(())
 }
 
 pub fn migrate_valid_bitmap() -> Result<(), ()> {
+    let order: usize = VALID_BITMAP.lock().alloc_order();
+    let bitmap_addr = allocate_pages(order)?;
+
+    // lock again here because allocator path also takes VALID_BITMAP.lock()
     let mut vb_ref = VALID_BITMAP.lock();
-    let new_bitmap = vb_ref.alloc()?;
-    vb_ref.migrate(new_bitmap);
+    vb_ref.migrate(bitmap_addr as *mut u64);
     Ok(())
 }
 
@@ -117,12 +128,8 @@ impl ValidBitmap {
         unsafe { ptr::write_bytes(self.bitmap, 0, index); }
     }
 
-    pub fn alloc(&self) -> Result<*mut u64, ()> {
-        let mem_size = (self.pend - self.pbase) / (PAGE_SIZE * 8);
-        let order = get_order(mem_size);
-        let vaddr = allocate_pages(order)?;
-
-        Ok(vaddr as *mut u64)
+    pub fn alloc_order(&self) -> usize {
+        bitmap_alloc_order(self.pbase, self.pend)
     }
 
     pub fn migrate(&mut self, new_bitmap: *mut u64) {
