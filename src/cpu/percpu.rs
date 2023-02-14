@@ -215,8 +215,8 @@ impl PerCpu {
     pub fn alloc_vmsa(&mut self, level: u64) -> Result<(), ()> {
         let l = level as usize;
         assert!(l < VMPL_MAX);
-        let vmsa = allocate_new_vmsa().unwrap();
-        self.vmsa[l] = vmsa;
+        let vmsa = allocate_new_vmsa(level).unwrap();
+        self.vmsa[l] = vmsa as *mut VMSA;
         Ok(())
     }
 

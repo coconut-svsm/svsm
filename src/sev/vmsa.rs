@@ -8,6 +8,7 @@
 
 use super::utils::{rmp_adjust, RMPFlags};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::types::VirtAddr;
 
 pub const VMPL_MAX: usize = 4;
 
@@ -141,11 +142,12 @@ impl VMSA {
     }
 }
 
-pub fn allocate_new_vmsa() -> Result<*mut VMSA, ()> {
+pub fn allocate_new_vmsa(vmpl: u64) -> Result<VirtAddr, ()> {
+    assert!(vmpl < (VMPL_MAX as u64));
     let vmsa_page = allocate_zeroed_page()?;
-    if let Err(_e) = rmp_adjust(vmsa_page, RMPFlags::VMPL1_VMSA, false) {
+    if let Err(_) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);
         return Err(());
     }
-    Ok(vmsa_page as *mut VMSA)
+    Ok(vmsa_page)
 }
