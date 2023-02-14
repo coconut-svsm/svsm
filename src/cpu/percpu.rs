@@ -27,8 +27,30 @@ use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+struct PerCpuInfo {
+    apic_id: u32,
+    addr: VirtAddr,
+}
+
+impl PerCpuInfo {
+    const fn new(apic_id: u32, addr: VirtAddr) -> Self {
+        PerCpuInfo { apic_id: apic_id, addr: addr }
+    }
+}
+
 // PERCPU areas virtual addresses into shared memory
-static PERCPU_AREAS : SpinLock::<Vec::<VirtAddr>> = SpinLock::new(Vec::new());
+static PERCPU_AREAS : SpinLock::<Vec::<PerCpuInfo>> = SpinLock::new(Vec::new());
+
+struct VmsaRef {
+    vaddr: VirtAddr,
+    paddr: PhysAddr,
+}
+
+impl VmsaRef {
+    const fn new(v: VirtAddr, p: PhysAddr) -> Self {
+        VmsaRef { vaddr: v, paddr: p }
+    }
+}
 
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
@@ -51,6 +73,7 @@ pub struct PerCpu {
     ist: IstStacks,
     tss: X86Tss,
     vmsa: [*mut VMSA; VMPL_MAX],
+    guest_vmsa: SpinLock::<Option<VmsaRef>>,
     caa_addr: Option<VirtAddr>,
     reset_ip: u64,
 }
@@ -66,15 +89,16 @@ impl PerCpu {
             ist: IstStacks::new(),
             tss: X86Tss::new(),
             vmsa: [ptr::null_mut(); VMPL_MAX],
+            guest_vmsa: SpinLock::new(None),
             caa_addr: None,
             reset_ip: 0xffff_fff0u64,
         }
     }
 
-    pub fn alloc() -> Result<*mut PerCpu, ()> {
+    pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, ()> {
         let vaddr = allocate_zeroed_page()?;
 
-        PERCPU_AREAS.lock().push(vaddr);
+        PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
 
         unsafe {
             let percpu: *mut PerCpu = vaddr as *mut PerCpu;
@@ -226,6 +250,10 @@ impl PerCpu {
         unsafe { self.vmsa[l].as_mut().unwrap() }
     }
 
+    pub fn alloc_guest_vmsa(&mut self) -> Result<(), ()> {
+        Ok(())
+    }
+
     fn vmsa_tr_segment(&self) -> VMSASegment {
         VMSASegment {
             selector: SVSM_TSS,
@@ -297,3 +325,15 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
         ptr.as_mut().unwrap()
     }
 }
+
+pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
+    for i in PERCPU_AREAS
+        .lock()
+        .iter()
+        .filter(|x| (*x).apic_id == apic_id) {
+            let ptr = (*i).addr as *const PerCpu;
+            unsafe { return Some(ptr.as_ref().unwrap()); }
+    }
+    None
+}
+

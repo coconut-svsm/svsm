@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 fn start_cpu(apic_id: u32) {
     unsafe {
         let start_rip: u64 = (start_ap as *const u8) as u64;
-        let percpu = PerCpu::alloc()
+        let percpu = PerCpu::alloc(apic_id)
             .expect("Failed to allocate AP per-cpu data")
             .as_mut()
             .unwrap();

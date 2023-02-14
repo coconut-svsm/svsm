@@ -336,7 +336,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     init_page_table(&launch_info);
 
     unsafe {
-        let bsp_percpu = PerCpu::alloc()
+        let bsp_percpu = PerCpu::alloc(0)
             .expect("Failed to allocate BSP per-cpu data")
             .as_mut()
             .unwrap();

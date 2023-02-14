@@ -56,7 +56,7 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 
 fn init_percpu() {
     unsafe {
-        let bsp_percpu = PerCpu::alloc()
+        let bsp_percpu = PerCpu::alloc(0)
             .expect("Failed to allocate BSP per-cpu data")
             .as_mut()
             .unwrap();
