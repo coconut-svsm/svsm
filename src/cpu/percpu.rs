@@ -6,6 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
+extern crate alloc;
+
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
@@ -21,7 +23,11 @@ use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::utils::{page_align, page_offset};
 use crate::locking::{SpinLock, LockGuard};
+use alloc::vec::Vec;
 use core::ptr;
+
+// PERCPU areas virtual addresses into shared memory
+static PERCPU_AREAS : SpinLock::<Vec::<VirtAddr>> = SpinLock::new(Vec::new());
 
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
@@ -64,6 +70,8 @@ impl PerCpu {
 
     pub fn alloc() -> Result<*mut PerCpu, ()> {
         let vaddr = allocate_zeroed_page()?;
+
+        PERCPU_AREAS.lock().push(vaddr);
 
         unsafe {
             let percpu: *mut PerCpu = vaddr as *mut PerCpu;
