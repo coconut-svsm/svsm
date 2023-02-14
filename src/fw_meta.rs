@@ -326,7 +326,7 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
         }
 
         // Make page accessible to VMPL1
-        if let Err(_e) = rmp_adjust(page_vaddr, RMPFlags::VMPL1_RWX, false) {
+        if let Err(_e) = rmp_adjust(page_vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
             return Err(());
         }
 

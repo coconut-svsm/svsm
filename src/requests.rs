@@ -91,16 +91,16 @@ fn rmpadjust_update_vmsa(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u
 
 fn revoke_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
 {
-    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1_NONE, huge)?;
-    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL2_NONE, huge)?;
-    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL3_NONE, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1 | RMPFlags::NONE, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL2 | RMPFlags::NONE, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)?;
 
     Ok(())
 }
 
 fn grant_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
 {
-    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1_RWX, huge)?;
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)?;
 
     Ok(())
 }

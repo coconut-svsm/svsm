@@ -254,7 +254,7 @@ fn validate_flash() -> Result<(),()> {
         while  paddr < pend {
             let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
             let vaddr = guard.virt_addr();
-            if let Err(_) = rmp_adjust(vaddr, RMPFlags::VMPL1_RWX, false) {
+            if let Err(_) = rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(());
             }

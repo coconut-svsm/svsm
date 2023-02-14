@@ -120,19 +120,8 @@ impl RMPFlags {
     pub const X_SUPER: u64 = 1u64 << 11;
     pub const VMSA: u64 = 1u64 << 16;
 
-    pub const VMPL0_NONE: u64 = RMPFlags::VMPL0;
-    pub const VMPL1_NONE: u64 = RMPFlags::VMPL1;
-    pub const VMPL2_NONE: u64 = RMPFlags::VMPL2;
-    pub const VMPL3_NONE: u64 = RMPFlags::VMPL3;
-
-    pub const VMPL0_RWX: u64 =
-        RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
-    pub const VMPL1_RWX: u64 =
-        RMPFlags::VMPL1 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
-    pub const VMPL2_RWX: u64 =
-        RMPFlags::VMPL2 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
-    pub const VMPL3_RWX: u64 =
-        RMPFlags::VMPL3 | RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
+    pub const NONE: u64 = 0;
+    pub const RWX: u64 = RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
 
     pub const VMPL0_VMSA: u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
     pub const VMPL1_VMSA: u64 = RMPFlags::VMPL1 | RMPFlags::READ | RMPFlags::VMSA;
