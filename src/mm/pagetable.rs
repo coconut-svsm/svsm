@@ -157,9 +157,13 @@ pub struct PageTable {
 
 impl PageTable {
     pub fn load(&self) {
+        write_cr3(self.cr3_value());
+    }
+
+    pub fn cr3_value(&self) -> usize {
         let pgtable: usize = (self as *const PageTable) as usize;
         let cr3 = virt_to_phys(pgtable);
-        write_cr3(set_c_bit(cr3));
+        set_c_bit(cr3)
     }
 
     pub fn clone_shared(&self) -> Result<PageTableRef, ()> {

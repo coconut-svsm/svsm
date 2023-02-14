@@ -19,6 +19,7 @@ pub mod vmsa;
 pub mod extable;
 pub mod tlb;
 pub mod vc;
+pub mod smp;
 
 pub use idt::X86Regs;
 pub use tlb::*;

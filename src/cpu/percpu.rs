@@ -25,6 +25,7 @@ use crate::utils::{page_align, page_offset};
 use crate::locking::{SpinLock, LockGuard};
 use alloc::vec::Vec;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // PERCPU areas virtual addresses into shared memory
 static PERCPU_AREAS : SpinLock::<Vec::<VirtAddr>> = SpinLock::new(Vec::new());
@@ -42,6 +43,7 @@ impl IstStacks {
 }
 
 pub struct PerCpu {
+    online: AtomicBool,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     ghcb: *mut GHCB,
@@ -56,6 +58,7 @@ pub struct PerCpu {
 impl PerCpu {
     pub const fn new() -> Self {
         PerCpu {
+            online: AtomicBool::new(false),
             apic_id: 0,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
@@ -78,6 +81,18 @@ impl PerCpu {
             (*percpu) = PerCpu::new();
             Ok(percpu)
         }
+    }
+
+    pub fn set_online(&mut self) {
+        self.online.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.online.load(Ordering::Acquire)
+    }
+
+    pub fn set_apic_id(&mut self, apic_id: u32) {
+        self.apic_id = apic_id;
     }
 
     pub const fn get_apic_id(&self) -> u32 {
@@ -220,14 +235,13 @@ impl PerCpu {
         }
     }
 
-    pub fn prepare_svsm_vmsa(&mut self, rip: u64, rsp: u64) {
+    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
         let vmsa = unsafe { self.vmsa[0].as_mut().unwrap() };
 
         vmsa.tr = self.vmsa_tr_segment();
-        vmsa.rip = rip;
-        vmsa.rsp = rsp;
-
-        vmsa.gs.base = (self as *const PerCpu) as u64;
+        vmsa.rip = start_rip;
+        vmsa.rsp = self.get_top_of_stack().try_into().unwrap();
+        vmsa.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
     pub fn prepare_guest_vmsa(&mut self) -> Result<(),()> {

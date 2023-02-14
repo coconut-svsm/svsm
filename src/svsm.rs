@@ -41,6 +41,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::requests::request_loop;
+use svsm::cpu::smp::start_secondary_cpus;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -390,6 +391,8 @@ pub extern "C" fn svsm_main() {
     }
 
     log::info!("{} CPU(s) present", nr_cpus);
+
+    start_secondary_cpus(&cpus);
 
     let fw_meta = parse_fw_meta_data().expect("Failed to parse FW SEV meta-data");
     

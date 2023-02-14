@@ -53,34 +53,32 @@ fn svsm_idt_segment() -> VMSASegment {
     }
 }
 
-pub fn init_svsm_vmsa(vmsa: *mut VMSA) {
-    let v = unsafe { vmsa.as_mut().unwrap() };
+pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
+    vmsa.es = svsm_data_segment();
+    vmsa.cs = svsm_code_segment();
+    vmsa.ss = svsm_data_segment();
+    vmsa.ds = svsm_data_segment();
+    vmsa.fs = svsm_data_segment();
+    vmsa.gs = svsm_data_segment();
+    vmsa.gdt = svsm_gdt_segment();
+    vmsa.idt = svsm_idt_segment();
 
-    v.es = svsm_data_segment();
-    v.cs = svsm_code_segment();
-    v.ss = svsm_data_segment();
-    v.ds = svsm_data_segment();
-    v.fs = svsm_data_segment();
-    v.gs = svsm_data_segment();
-    v.gdt = svsm_gdt_segment();
-    v.idt = svsm_idt_segment();
+    vmsa.cr0 = read_cr0().bits();
+    vmsa.cr3 = read_cr3() as u64;
+    vmsa.cr4 = read_cr4().bits();
+    vmsa.efer = read_efer().bits();
 
-    v.cr0 = read_cr0().bits();
-    v.cr3 = read_cr3() as u64;
-    v.cr4 = read_cr4().bits();
-    v.efer = read_efer().bits();
+    vmsa.rflags = 0x2;
+    vmsa.dr6 = 0xffff0ff0;
+    vmsa.dr7 = 0x400;
+    vmsa.g_pat = 0x0007040600070406u64;
+    vmsa.xcr0 = 1;
+    vmsa.mxcsr = 0x1f80;
+    vmsa.x87_ftw = 0x5555;
+    vmsa.x87_fcw = 0x0040;
+    vmsa.vmpl = 0;
 
-    v.rflags = 0x2;
-    v.dr6 = 0xffff0ff0;
-    v.dr7 = 0x400;
-    v.g_pat = 0x0007040600070406u64;
-    v.xcr0 = 1;
-    v.mxcsr = 0x1f80;
-    v.x87_ftw = 0x5555;
-    v.x87_fcw = 0x0040;
-    v.vmpl = 0;
-
-    v.sev_features = read_msr(0xc0010131) >> 2;
+    vmsa.sev_features = read_msr(0xc0010131) >> 2;
 }
 
 fn real_mode_code_segment(rip : u64) -> VMSASegment {
