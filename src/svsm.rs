@@ -341,6 +341,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
             .unwrap();
 
         bsp_percpu.setup().expect("Failed to setup BSP per-cpu area");
+        bsp_percpu.setup_on_cpu().expect("Failed to run percpu.setup_on_cpu()");
         bsp_percpu.load();
     }
     idt_init();

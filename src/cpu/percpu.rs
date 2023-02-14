@@ -121,6 +121,10 @@ impl PerCpu {
         unsafe { (*self.ghcb).init() }
     }
 
+    pub fn register_ghcb(&self) -> Result<(), ()> {
+        unsafe { self.ghcb.as_ref().unwrap().register() }
+    }
+
     pub fn get_top_of_stack(&self) -> VirtAddr {
         stack_base_pointer(self.init_stack.unwrap())
     }
@@ -157,6 +161,11 @@ impl PerCpu {
         self.setup_tss();
 
         Ok(())
+    }
+
+    // Setup code which needs to run on the target CPU
+    pub fn setup_on_cpu(&self) -> Result<(), ()> {
+        self.register_ghcb()
     }
 
     pub fn load_pgtable(&mut self) {

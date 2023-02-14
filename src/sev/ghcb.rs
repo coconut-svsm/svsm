@@ -139,11 +139,6 @@ impl GHCB {
             }
         }
 
-        // Register GHCB GPA
-        if let Err(_e) = register_ghcb_gpa_msr(paddr) {
-            return Err(());
-        }
-
         // Map page unencrypted
         if let Err(_e) = get_init_pgtable_locked().set_shared_4k(vaddr) {
             return Err(());
@@ -152,6 +147,14 @@ impl GHCB {
         flush_tlb_global_sync();
 
         Ok(())
+    }
+
+    pub fn register(&self) -> Result<(), ()> {
+        let vaddr = (self as *const GHCB) as VirtAddr;
+        let paddr = virt_to_phys(vaddr);
+
+        // Register GHCB GPA
+        register_ghcb_gpa_msr(paddr)
     }
 
     pub fn shutdown(&mut self) -> Result<(), ()> {

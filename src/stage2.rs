@@ -64,6 +64,7 @@ fn init_percpu() {
         bsp_percpu.set_pgtable(PageTableRef::new(&mut pgtable));
         bsp_percpu.map_self().expect("Failed to map per-cpu area");
         bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
+        bsp_percpu.register_ghcb().expect("Failed to register GHCB");
     }
 }
 
