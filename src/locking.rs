@@ -52,6 +52,24 @@ impl<T> SpinLock<T> {
         }
     }
 
+    pub fn try_lock(&self) -> Option<LockGuard<T>> {
+        let current = self.current.load(Ordering::Relaxed);
+        let holder = self.holder.load(Ordering::Acquire);
+
+        if current == holder {
+            let result = self.current.compare_exchange(current, current + 1,
+                                                       Ordering::Acquire, Ordering::Relaxed);
+            if let Ok(_) = result {
+                return Some(LockGuard {
+                                holder: &self.holder,
+                                data: unsafe { &mut *self.data.get() },
+                            });
+            }
+        }
+
+        None
+    }
+
     pub fn unlock(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
     }

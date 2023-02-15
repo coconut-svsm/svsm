@@ -133,6 +133,13 @@ pub struct VMSA {
 }
 
 impl VMSA {
+    pub fn from_virt_addr(v: VirtAddr) -> &'static mut VMSA {
+        unsafe {
+            let ptr = v as *mut VMSA;
+            ptr.as_mut().unwrap()
+        }
+    }
+
     pub fn enable(&mut self) {
         self.efer |= 1u64 << 12;
     }

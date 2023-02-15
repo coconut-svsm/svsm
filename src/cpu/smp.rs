@@ -11,6 +11,7 @@ extern crate alloc;
 use crate::cpu::percpu::{PerCpu, this_cpu_mut};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::acpi::tables::ACPICPUInfo;
+use crate::requests::request_loop;
 use alloc::vec::Vec;
 
 fn start_cpu(apic_id: u32) {
@@ -64,5 +65,7 @@ fn start_ap() {
     this_cpu_mut().set_online();
 
     // Loop for now
-    loop {}
+    request_loop();
+
+    panic!("Returned from request_loop!");
 }

@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
@@ -32,6 +32,7 @@ const SVSM_ERR_INVALID_ADDRESS : u64= 0x8000_0003;
 const _SVSM_ERR_INVALID_FORMAT : u64 = 0x8000_0004;
 const SVSM_ERR_INVALID_PARAMETER : u64 = 0x8000_0005;
 const _SVSM_ERR_INVALID_REQUEST : u64 = 0x8000_0006;
+const SVSM_ERR_BUSY: u64 = 0x8000_0007;
 
 const SVSM_ERR_PROTOCOL_BASE : u64 = 0x8000_1000;
 
@@ -43,10 +44,124 @@ struct PValidateRequest {
     resv : u32,
 }
 
+fn make_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
+    rmpadjust_update_vmsa(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)?;
+
+    Ok(())
+}
+
+fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), ()> {
+    if let Err(error_code) = grant_access(vaddr, false) {
+        log::error!("Failed to restore page permissions (code: {})", error_code);
+    }
+    // In case mappings have been changed
+    flush_tlb_global_sync();
+
+    return Ok(())
+}
+
 /// per-cpu request mapping area size (1GB)
 fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
-    log::info!("Request SVSM_REQ_CORE_CREATE_VCPU not yet supported");
-    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    let paddr = vmsa.rcx as PhysAddr;
+    let pcaa = vmsa.rdx as PhysAddr;
+    let apic_id: u32 = (vmsa.r8 & 0xffff_ffff) as u32;
+
+    vmsa.rax = SVSM_ERR_INVALID_ADDRESS;
+
+    // Check VMSA address
+    if !valid_phys_address(paddr) || !is_aligned(paddr, PAGE_SIZE) {
+        return Ok(());
+    }
+
+    // Check CAA address
+    if !valid_phys_address(pcaa) || !is_aligned(pcaa, 8) {
+        return Ok(());
+    }
+
+    vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
+    let has_cpu = percpu(apic_id);
+    if let None = has_cpu {
+        return Ok(());
+    }
+
+    let target_cpu = has_cpu.unwrap();
+
+    // This returns Option<LockGuard<Option<VmsaRef>>>
+    // - Outer Option tells whether lock was taken or not
+    // - LockGuard is the owner of the lock if it was taken
+    // - Inner Option tells whether there is a guest vmsa configured
+    let check_guest_vmsa = target_cpu.try_update_guest_vmsa();
+
+    vmsa.rax = SVSM_ERR_BUSY;
+
+    // Check if lock was aquired
+    if let Err(_) = check_guest_vmsa {
+        return Ok(());
+    }
+
+    let old_vmsa_ref = check_guest_vmsa.unwrap();
+
+    // Is there already a guest VMSA on that VCPU?
+    if let Some(vmsa_ref) = old_vmsa_ref {
+        // Revoke RMP permissions for old VMSA page
+        let mapping_guard = PerCPUPageMappingGuard::create(vmsa_ref.paddr, 0, false)?;
+        let vaddr = mapping_guard.virt_addr();
+        if let Err(error_code) = revoke_access(vaddr, false) {
+            vmsa.rax = error_code;
+            return Ok(());
+        }
+
+        // Restore normal guest permissions
+        if vmsa_ref.guest_owned {
+            if let Err(error_code) = grant_access(vaddr, false) {
+                vmsa.rax = error_code;
+                return Ok(());
+            }
+        }
+    }
+
+    // Time to map the VMSA
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)?;
+    let vaddr = mapping_guard.virt_addr();
+
+    // Make sure the guest can't make modifications anymore to the VMSA page
+    if let Err(error_code) = revoke_access(vaddr, false) {
+        vmsa.rax = error_code;
+        return Ok(());
+    }
+
+    // TLB flush needed to propagate new permissions
+    flush_tlb_global_sync();
+
+    let new_vmsa = VMSA::from_virt_addr(vaddr);
+    let svme_mask: u64 = 1u64 << 12;
+
+    vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
+
+    // VMSA validity checks according to SVSM spec
+    if (new_vmsa.vmpl != RMPFlags::VMPL1 as u8) ||
+       ((new_vmsa.efer & svme_mask) != svme_mask) ||
+       (new_vmsa.sev_features != vmsa.sev_features) {
+        return core_create_vcpu_error_restore(vaddr);
+    }
+
+    if let Err(_) = make_vmsa(vaddr) {
+        return core_create_vcpu_error_restore(vaddr);
+    }
+
+    if let Err(_) = target_cpu.map_guest_vmsa(paddr, true) {
+        return core_create_vcpu_error_restore(vaddr);
+    }
+
+    if let Err(_) = target_cpu.map_caa_phys(pcaa) {
+        if let Err(_) = target_cpu.unmap_guest_vmsa() {
+            log::error!("Failed to unmap guest VMSA");
+        }
+        return core_create_vcpu_error_restore(vaddr);
+    }
+
+    vmsa.rax = SVSM_SUCCESS;
+
     Ok(())
 }
 

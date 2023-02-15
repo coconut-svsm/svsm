@@ -82,7 +82,7 @@ pub struct PerCpu {
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
     guest_vmsa: SpinLock::<Option<VmsaRef>>,
-    caa_addr: Option<VirtAddr>,
+    caa_addr: SpinLock::<Option<VirtAddr>>,
     reset_ip: u64,
 }
 
@@ -98,7 +98,7 @@ impl PerCpu {
             tss: X86Tss::new(),
             svsm_vmsa: None,
             guest_vmsa: SpinLock::new(None),
-            caa_addr: None,
+            caa_addr: SpinLock::new(None),
             reset_ip: 0xffff_fff0u64,
         }
     }
@@ -270,7 +270,7 @@ impl PerCpu {
 		vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
-    fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
+    pub fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
         let new_ref = vmsa_ref.clone();
         if let Some(vmsa_info) = new_ref {
             self.get_pgtable().unmap_4k(vmsa_info.vaddr)?;
@@ -302,6 +302,7 @@ impl PerCpu {
 
         self.get_pgtable().map_4k(vaddr, paddr, &flags)?;
 
+        log::info!("Setting guest_vmsa for apic-id {}", self.apic_id);
         *vmsa_ref = Some(VmsaRef::new(SVSM_PERCPU_VMSA_BASE, paddr, guest_owned));
 
         Ok(())
@@ -320,6 +321,26 @@ impl PerCpu {
 
     pub fn get_guest_vmsa(&self) -> LockGuard<Option<VmsaRef>> {
         self.guest_vmsa.lock()
+    }
+
+    pub fn try_update_guest_vmsa(&self) -> Result<Option<VmsaRef>, ()> {
+        if let Some(mut guard) = self.guest_vmsa.try_lock() {
+            // Lock taken successfully
+            if let None = *guard {
+                return Ok(None);
+            }
+            let vmsa_ref = (*guard).unwrap();
+            let ret = vmsa_ref.clone();
+            self.unmap_guest_vmsa_locked(&mut guard)?;
+
+            Ok(Some(ret))
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn try_get_guest_vmsa(&self) -> Option<LockGuard<Option<VmsaRef>>> {
+        self.guest_vmsa.try_lock()
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
@@ -342,21 +363,22 @@ impl PerCpu {
     }
 
     pub fn get_caa_addr(&self) -> Option<VirtAddr> {
-        self.caa_addr
+        *self.caa_addr.lock()
     }
 
-    pub fn unmap_caa(&mut self) -> Result<(),()> {
-        if let Some(v) = self.caa_addr {
+    pub fn unmap_caa(&self) -> Result<(),()> {
+        let mut caa_addr = self.caa_addr.lock();
+        if let Some(v) = *caa_addr {
             let start = page_align(v);
 
-            self.caa_addr = None;
+            *caa_addr = None;
             self.get_pgtable().unmap_4k(start)?;
         }
 
         Ok(())
     }
 
-    pub fn map_caa_phys(&mut self, paddr: PhysAddr) -> Result<(),()> {
+    pub fn map_caa_phys(&self, paddr: PhysAddr) -> Result<(),()> {
         self.unmap_caa()?;
 
         let paddr_aligned = page_align(paddr);
@@ -367,7 +389,8 @@ impl PerCpu {
 
         self.get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
 
-        self.caa_addr = Some(vaddr + page_offset);
+        let mut caa_addr = self.caa_addr.lock();
+        *caa_addr = Some(vaddr + page_offset);
 
         Ok(())
     }
