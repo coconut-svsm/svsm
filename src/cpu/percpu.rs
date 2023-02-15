@@ -11,13 +11,14 @@ extern crate alloc;
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
-use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK,
-    SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE, virt_to_phys};
+use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK, SVSM_PERCPU_VMSA_BASE,
+    SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE, virt_to_phys, phys_to_virt};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::pagetable::{PageTable, PageTableRef, get_init_pgtable_locked};
 use crate::sev::ghcb::GHCB;
-use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMPL_MAX, VMSA};
+use crate::sev::utils::RMPFlags;
+use crate::sev::vmsa::{allocate_new_vmsa, free_vmsa, VMSASegment, VMSA};
 use crate::types::{PhysAddr, VirtAddr};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
@@ -41,14 +42,21 @@ impl PerCpuInfo {
 // PERCPU areas virtual addresses into shared memory
 static PERCPU_AREAS : SpinLock::<Vec::<PerCpuInfo>> = SpinLock::new(Vec::new());
 
-struct VmsaRef {
-    vaddr: VirtAddr,
-    paddr: PhysAddr,
+#[derive(Copy, Clone)]
+pub struct VmsaRef {
+    pub vaddr: VirtAddr,
+    pub paddr: PhysAddr,
+    pub guest_owned : bool,
 }
 
 impl VmsaRef {
-    const fn new(v: VirtAddr, p: PhysAddr) -> Self {
-        VmsaRef { vaddr: v, paddr: p }
+    const fn new(v: VirtAddr, p: PhysAddr, g: bool) -> Self {
+        VmsaRef { vaddr: v, paddr: p, guest_owned: g }
+    }
+
+    pub fn vmsa(&self) -> &mut VMSA {
+        let ptr: *mut VMSA = self.vaddr as *mut VMSA;
+        unsafe { ptr.as_mut().unwrap() }
     }
 }
 
@@ -72,7 +80,7 @@ pub struct PerCpu {
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
     tss: X86Tss,
-    vmsa: [*mut VMSA; VMPL_MAX],
+    svsm_vmsa: Option<VmsaRef>,
     guest_vmsa: SpinLock::<Option<VmsaRef>>,
     caa_addr: Option<VirtAddr>,
     reset_ip: u64,
@@ -88,7 +96,7 @@ impl PerCpu {
             init_stack: None,
             ist: IstStacks::new(),
             tss: X86Tss::new(),
-            vmsa: [ptr::null_mut(); VMPL_MAX],
+            svsm_vmsa: None,
             guest_vmsa: SpinLock::new(None),
             caa_addr: None,
             reset_ip: 0xffff_fff0u64,
@@ -150,7 +158,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&mut self) -> LockGuard<PageTableRef> {
+    pub fn get_pgtable(&self) -> LockGuard<PageTableRef> {
         self.pgtbl.lock()
     }
 
@@ -236,22 +244,82 @@ impl PerCpu {
         unsafe { self.ghcb.as_mut().unwrap() }
     }
 
-    pub fn alloc_vmsa(&mut self, level: u64) -> Result<(), ()> {
-        let l = level as usize;
-        assert!(l < VMPL_MAX);
-        let vmsa = allocate_new_vmsa(level).unwrap();
-        self.vmsa[l] = vmsa as *mut VMSA;
+    pub fn alloc_svsm_vmsa(&mut self) -> Result<(), ()> {
+        if let Some(_) = self.svsm_vmsa {
+            return Err(());
+        }
+
+        let vaddr = allocate_new_vmsa(RMPFlags::VMPL1)?;
+        let paddr = virt_to_phys(vaddr);
+
+        self.svsm_vmsa = Some(VmsaRef::new(vaddr, paddr, false));
+
         Ok(())
     }
 
-    pub fn vmsa(&mut self, level: u64) -> &'static mut VMSA {
-        let l = level as usize;
-        assert!(l < VMPL_MAX);
-        unsafe { self.vmsa[l].as_mut().unwrap() }
+    pub fn get_svsm_vmsa(&mut self) -> &mut Option<VmsaRef> {
+        &mut self.svsm_vmsa
     }
 
-    pub fn alloc_guest_vmsa(&mut self) -> Result<(), ()> {
+    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
+        let vmsa = self.svsm_vmsa.unwrap();
+
+		vmsa.vmsa().tr = self.vmsa_tr_segment();
+		vmsa.vmsa().rip = start_rip;
+		vmsa.vmsa().rsp = self.get_top_of_stack().try_into().unwrap();
+		vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+    }
+
+    fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
+        let new_ref = vmsa_ref.clone();
+        if let Some(vmsa_info) = new_ref {
+            self.get_pgtable().unmap_4k(vmsa_info.vaddr)?;
+
+            if !vmsa_info.guest_owned {
+                // Get the virtual address in SVSM shared memory
+                let vaddr = phys_to_virt(vmsa_info.paddr);
+                free_vmsa(vaddr);
+            }
+        }
+
+        *vmsa_ref = None;
+
         Ok(())
+    }
+
+    pub fn unmap_guest_vmsa(&self) -> Result<(), ()> {
+        let mut vmsa_ref = self.guest_vmsa.lock();
+
+        self.unmap_guest_vmsa_locked(&mut vmsa_ref)
+    }
+
+    pub fn map_guest_vmsa(&self, paddr: PhysAddr, guest_owned: bool) -> Result<(), ()> {
+        let mut vmsa_ref = self.guest_vmsa.lock();
+        self.unmap_guest_vmsa_locked(&mut vmsa_ref)?;
+
+        let flags = PageTable::data_flags();
+        let vaddr = SVSM_PERCPU_VMSA_BASE;
+
+        self.get_pgtable().map_4k(vaddr, paddr, &flags)?;
+
+        *vmsa_ref = Some(VmsaRef::new(SVSM_PERCPU_VMSA_BASE, paddr, guest_owned));
+
+        Ok(())
+    }
+
+    pub fn alloc_guest_vmsa(&self) -> Result<(), ()> {
+        let vmsa = allocate_new_vmsa(RMPFlags::VMPL1)?;
+        let phys = virt_to_phys(vmsa);   
+
+        if let Err(_) = self.map_guest_vmsa(phys, false) {
+            free_vmsa(vmsa);
+        }
+
+        Ok(())
+    }
+
+    pub fn get_guest_vmsa(&self) -> LockGuard<Option<VmsaRef>> {
+        self.guest_vmsa.lock()
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
@@ -263,17 +331,12 @@ impl PerCpu {
         }
     }
 
-    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
-        let vmsa = unsafe { self.vmsa[0].as_mut().unwrap() };
-
-        vmsa.tr = self.vmsa_tr_segment();
-        vmsa.rip = start_rip;
-        vmsa.rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
-    }
-
     pub fn prepare_guest_vmsa(&mut self) -> Result<(),()> {
-        init_guest_vmsa(self.vmsa[1], self.reset_ip);
+        let guard = self.get_guest_vmsa();
+        let vmsa_ref = guard.clone();
+        let vmsa = vmsa_ref.unwrap();
+
+        init_guest_vmsa(vmsa.vmsa(), self.reset_ip);
 
         Ok(())
     }
@@ -287,7 +350,7 @@ impl PerCpu {
             let start = page_align(v);
 
             self.caa_addr = None;
-            this_cpu_mut().get_pgtable().unmap_4k(start)?;
+            self.get_pgtable().unmap_4k(start)?;
         }
 
         Ok(())
@@ -302,7 +365,7 @@ impl PerCpu {
 
         let vaddr = SVSM_PERCPU_CAA_BASE;
 
-        this_cpu_mut().get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
+        self.get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
 
         self.caa_addr = Some(vaddr + page_offset);
 

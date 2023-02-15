@@ -12,7 +12,7 @@ use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_adjust, RMPFlags};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::utils::{page_align, page_offset, is_aligned, crosses_page};
+use crate::utils::{page_align, page_offset, is_aligned, crosses_page, halt};
 use crate::mm::{valid_phys_address, GuestPtr};
 
 const SVSM_REQ_CORE_REMAP_CA : u32 = 0;
@@ -285,8 +285,18 @@ fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
 pub fn request_loop() {
 
     loop {
+        let locked = this_cpu_mut().get_guest_vmsa();
+        let opt_vmsa_ref = locked.clone();
+        if let None = opt_vmsa_ref {
+            // When there is no VMSA - go into halt and retry when someone wakes us up
+            drop(locked);
+            halt();
+            continue;
+        }
+
         let result = this_cpu().get_caa_addr();
-        let vmsa = this_cpu_mut().vmsa(1);
+        let vmsa_ref = opt_vmsa_ref.unwrap();
+        let vmsa = vmsa_ref.vmsa();
 
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();

@@ -31,14 +31,13 @@ use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
 use svsm::mm::pagetable::paging_init;
-use svsm::mm::{PerCPUPageMappingGuard, virt_to_phys, init_kernel_mapping_info};
+use svsm::mm::{PerCPUPageMappingGuard, init_kernel_mapping_info};
 use svsm::mm::memory::init_memory_map;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use svsm::cpu::percpu::{this_cpu_mut, this_cpu};
 use svsm::sev::sev_status_init;
-use svsm::sev::vmsa::{VMSA};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::requests::request_loop;
 use svsm::cpu::smp::start_secondary_cpus;
@@ -218,22 +217,26 @@ fn prepare_fw_launch() -> Result<(), ()>
 {
     let cpu = this_cpu_mut();
 
-    cpu.alloc_vmsa(1)?;
+    cpu.alloc_guest_vmsa()?;
     cpu.prepare_guest_vmsa()?;
 
     Ok(())
 }
 
 fn launch_fw() -> Result<(),()> {
-    let cpu = this_cpu_mut();
+    let guard = this_cpu_mut().get_guest_vmsa();
+    let opt_vmsa_ref = guard.clone();
+    let vmsa_ref = opt_vmsa_ref.unwrap();
+    let vmsa_pa = vmsa_ref.paddr;
 
-    let vmsa_addr = (cpu.vmsa(1) as *const VMSA) as VirtAddr;
-    let vmsa_pa = virt_to_phys(vmsa_addr);
-    let sev_features = cpu.vmsa(1).sev_features;
+    vmsa_ref.vmsa().enable();
+    let sev_features = vmsa_ref.vmsa().sev_features;
+
+    // Drop lock
+    drop(guard);
 
     log::info!("Launching Firmware");
-    cpu.vmsa(1).enable();
-    cpu.ghcb().ap_create(vmsa_pa, 0, 1, sev_features)?;
+    this_cpu_mut().ghcb().ap_create(vmsa_pa, 0, 1, sev_features)?;
 
     Ok(())
 }

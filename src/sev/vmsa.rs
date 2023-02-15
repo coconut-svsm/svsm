@@ -151,3 +151,8 @@ pub fn allocate_new_vmsa(vmpl: u64) -> Result<VirtAddr, ()> {
     }
     Ok(vmsa_page)
 }
+
+pub fn free_vmsa(vaddr: VirtAddr) {
+    rmp_adjust(vaddr, RMPFlags::RWX | RMPFlags::VMPL0, false).expect("Failed to free VMSA page");
+    free_page(vaddr);
+}

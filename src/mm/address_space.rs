@@ -110,6 +110,9 @@ pub const SVSM_PERCPU_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_PERCPU << ((3 *
 /// PerCPU CAA mappings
 pub const SVSM_PERCPU_CAA_BASE: usize = SVSM_PERCPU_BASE + (2 * SIZE_LEVEL0);
 
+/// PerCPU VMSA mappings
+pub const SVSM_PERCPU_VMSA_BASE: usize = SVSM_PERCPU_BASE + (4 * SIZE_LEVEL0);
+
 /// Region for PerCPU Stacks
 pub const SVSM_PERCPU_STACKS_BASE: usize = SVSM_PERCPU_BASE + SIZE_LEVEL1;
 

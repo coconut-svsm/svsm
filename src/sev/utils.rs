@@ -118,15 +118,12 @@ impl RMPFlags {
     pub const WRITE: u64 = 1u64 << 9;
     pub const X_USER: u64 = 1u64 << 10;
     pub const X_SUPER: u64 = 1u64 << 11;
-    pub const VMSA: u64 = 1u64 << 16;
+    pub const BIT_VMSA: u64 = 1u64 << 16;
 
     pub const NONE: u64 = 0;
     pub const RWX: u64 = RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
 
-    pub const VMPL0_VMSA: u64 = RMPFlags::VMPL0 | RMPFlags::READ | RMPFlags::VMSA;
-    pub const VMPL1_VMSA: u64 = RMPFlags::VMPL1 | RMPFlags::READ | RMPFlags::VMSA;
-    pub const VMPL2_VMSA: u64 = RMPFlags::VMPL2 | RMPFlags::READ | RMPFlags::VMSA;
-    pub const VMPL3_VMSA: u64 = RMPFlags::VMPL3 | RMPFlags::READ | RMPFlags::VMSA;
+    pub const VMSA: u64 = RMPFlags::READ | RMPFlags::BIT_VMSA;
 }
 
 pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
