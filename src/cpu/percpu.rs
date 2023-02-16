@@ -273,13 +273,17 @@ impl PerCpu {
     pub fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
         let new_ref = vmsa_ref.clone();
         if let Some(vmsa_info) = new_ref {
+            let paddr = vmsa_info.paddr;
+
             self.get_pgtable().unmap_4k(vmsa_info.vaddr)?;
 
             if !vmsa_info.guest_owned {
                 // Get the virtual address in SVSM shared memory
-                let vaddr = phys_to_virt(vmsa_info.paddr);
+                let vaddr = phys_to_virt(paddr);
                 free_vmsa(vaddr);
             }
+
+            unregister_guest_vmsa(paddr);
         }
 
         *vmsa_ref = None;
@@ -301,6 +305,8 @@ impl PerCpu {
         let vaddr = SVSM_PERCPU_VMSA_BASE;
 
         self.get_pgtable().map_4k(vaddr, paddr, &flags)?;
+
+        register_guest_vmsa(paddr, self.apic_id, guest_owned);
 
         log::info!("Setting guest_vmsa for apic-id {}", self.apic_id);
         *vmsa_ref = Some(VmsaRef::new(SVSM_PERCPU_VMSA_BASE, paddr, guest_owned));
@@ -423,3 +429,50 @@ pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
     None
 }
 
+struct VmsaRegistryEntry {
+    pub paddr: PhysAddr,
+    pub apic_id: u32,
+    pub guest_owned: bool,
+    pub in_use: bool,
+}
+
+impl VmsaRegistryEntry {
+    pub const fn new(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Self {
+        VmsaRegistryEntry { paddr: paddr, apic_id: apic_id, guest_owned: guest_owned, in_use: true }
+    }
+}
+
+// PERCPU VMSAs to apic_id map
+static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
+
+fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
+    PERCPU_VMSAS.lock().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+}
+
+fn unregister_guest_vmsa(paddr: PhysAddr) {
+    let mut percpu_vmsa = PERCPU_VMSAS.lock();
+    let size = percpu_vmsa.len();
+
+    for i in 0..size {
+        if percpu_vmsa[i].paddr == paddr {
+            percpu_vmsa.remove(i);
+        }
+    }
+}
+
+pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
+    for mut entry in PERCPU_VMSAS.lock().iter_mut()
+        .filter(|x| (*x).apic_id == apic_id && (*x).in_use == true) {
+        entry.in_use = false;
+    }
+}
+
+pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
+    for vmsa_info in PERCPU_VMSAS
+        .lock().iter()
+        .filter(|x| (*x).paddr == paddr && (*x).guest_owned) {
+        return Some(vmsa_info.apic_id);
+    }
+
+    None
+}
