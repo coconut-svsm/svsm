@@ -324,7 +324,6 @@ impl PerCpu {
 
         register_guest_vmsa(paddr, self.apic_id, guest_owned);
 
-        log::info!("Setting guest_vmsa for apic-id {}", self.apic_id);
         *vmsa_ref = Some(VmsaRef::new(SVSM_PERCPU_VMSA_BASE, paddr, guest_owned));
 
         Ok(())
@@ -438,7 +437,7 @@ pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
     None
 }
 
-struct VmsaRegistryEntry {
+pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,
     pub guest_owned: bool,
@@ -454,19 +453,57 @@ impl VmsaRegistryEntry {
 // PERCPU VMSAs to apic_id map
 static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
 
+pub fn vmsa_exists(paddr: PhysAddr) -> bool {
+    let mut ret = false;
+
+    for _ in PERCPU_VMSAS.lock().iter()
+        .filter(|x| (*x).paddr == paddr) {
+        ret = true;
+    }
+
+    ret
+}
+
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
     PERCPU_VMSAS.lock().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
 }
 
-pub fn unregister_guest_vmsa(paddr: PhysAddr) {
+pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> {
     let mut percpu_vmsa = PERCPU_VMSAS.lock();
     let size = percpu_vmsa.len();
+    let mut index = size;
 
     for i in 0..size {
         if percpu_vmsa[i].paddr == paddr {
-            percpu_vmsa.remove(i);
+            index = i;
         }
     }
+
+    if index == size {
+        // Not found
+        return Err(0);
+    }
+
+    let in_use = percpu_vmsa[index].in_use;
+    let apic_id = percpu_vmsa[index].apic_id;
+    if in_use && apic_id == 0 {
+        return Err(0)
+    }
+
+    if in_use {
+        if apic_id == this_cpu().get_apic_id() {
+            // Not yet supported because VMSA is locked in this code path
+            todo!();
+        } else {
+            // VMSA is still active on a remote CPU - unmap it there
+            let target_cpu = percpu(apic_id).expect("Invalid APIC-ID in VMSA registry");
+            if let Err(_) = target_cpu.try_unmap_guest_vmsa() {
+                return Err(3);
+            }
+        }
+    }
+
+    return Ok(percpu_vmsa.remove(index));
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {

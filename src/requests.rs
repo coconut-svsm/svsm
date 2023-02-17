@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
@@ -129,8 +129,36 @@ fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
 }
 
 fn core_delete_vcpu(vmsa: &mut VMSA)-> Result<(),()> {
-    log::info!("Request SVSM_REQ_CORE_DELETE_VCPU not yet supported");
-    vmsa.rax = SVSM_ERR_UNSUPPORTED_CALL;
+    let paddr = vmsa.rcx as PhysAddr;
+
+    vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
+    let vmsa_entry = match unregister_guest_vmsa(paddr) {
+        Ok(entry) => entry,
+        Err(code) => {
+            if code > 0 {
+                vmsa.rax = SVSM_ERR_PROTOCOL_BASE + code;
+            }
+            return Ok(());
+        },
+    };
+
+    // Map the VMSA
+    let mapping_guard = PerCPUPageMappingGuard::create(vmsa_entry.paddr, 0, false)?;
+
+    // Remove VMSA permissions from page
+    if let Err(code) = rmp_clear_guest_vmsa(mapping_guard.virt_addr()) {
+        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + code;
+        return Ok(());
+    }
+
+    // Unmap the page
+    drop(mapping_guard);
+
+    // Tell everyone the news and flush temporary mapping
+    flush_tlb_global_sync();
+
+    vmsa.rax = SVSM_SUCCESS;
+
     Ok(())
 }
 
@@ -327,6 +355,16 @@ fn core_protocol_request(request: u32, vmsa: &mut VMSA) -> Result<(),()> {
             Ok(())
         },
     };
+
+    if request == SVSM_REQ_CORE_CREATE_VCPU && vmsa.rax != SVSM_SUCCESS {
+        let rax = vmsa.rax;
+        log::info!("SVSM_REQ_CORE_CREATE_VCPU failed, code: {:#x}", rax);
+    }
+
+    if request == SVSM_REQ_CORE_DELETE_VCPU && vmsa.rax != SVSM_SUCCESS {
+        let rax = vmsa.rax;
+        log::info!("SVSM_REQ_CORE_DELETE_VCPU failed, code: {:#x}", rax);
+    }
 
     if let Err(_) = result {
         log::error!("Error handling core protocol request {}", request);
