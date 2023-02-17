@@ -161,3 +161,42 @@ pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
         Err(1u64)
     }
 }
+
+fn rmpadjust_adjusted_error(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u64> {
+    if let Err(code) = rmp_adjust(vaddr, flags, huge) {
+        let ret_code = if code < 0x10 { code } else { 0x11 };
+        Err(ret_code)
+    } else {
+        Ok(())
+    }
+}
+
+pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
+{
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::NONE, huge)?;
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL2 | RMPFlags::NONE, huge)?;
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)?;
+
+    Ok(())
+}
+
+pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
+{
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)?;
+
+    Ok(())
+}
+
+pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)?;
+
+    Ok(())
+}
+
+pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
+    rmp_revoke_guest_access(vaddr, false)?;
+    rmp_grant_guest_access(vaddr, false)?;
+
+    Ok(())
+}
+
