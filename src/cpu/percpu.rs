@@ -330,23 +330,16 @@ impl PerCpu {
     }
 
     pub fn try_update_guest_vmsa(&self) -> Result<Option<VmsaRef>, ()> {
-        if let Some(mut guard) = self.guest_vmsa.try_lock() {
-            // Lock taken successfully
-            if let None = *guard {
-                return Ok(None);
-            }
-            let vmsa_ref = (*guard).unwrap();
-            let ret = vmsa_ref.clone();
-            self.unmap_guest_vmsa_locked(&mut guard)?;
+        let mut guard = self.guest_vmsa.try_lock()?;
 
-            Ok(Some(ret))
-        } else {
-            Err(())
+        if let None = *guard {
+            return Ok(None);
         }
-    }
+        let vmsa_ref = (*guard).unwrap();
+        let ret = vmsa_ref.clone();
+        self.unmap_guest_vmsa_locked(&mut guard)?;
 
-    pub fn try_get_guest_vmsa(&self) -> Option<LockGuard<Option<VmsaRef>>> {
-        self.guest_vmsa.try_lock()
+        Ok(Some(ret))
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
