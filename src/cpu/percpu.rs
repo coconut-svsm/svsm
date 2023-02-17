@@ -270,6 +270,22 @@ impl PerCpu {
 		vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
+    // Returns Error when VMSA is locked/busy
+    pub fn try_unmap_guest_vmsa(&self) -> Result<(), ()> {
+        let mut opt_vmsa_ref = self.guest_vmsa.try_lock()?;
+
+        // If there is no VMSA, the nothing to unmap
+        if let None = *opt_vmsa_ref {
+            return Ok(());
+        }
+
+        if let Err(_) = self.unmap_guest_vmsa_locked(&mut *opt_vmsa_ref) {
+            log::error!("Failed to unmap guest VMSA");
+        }
+
+        Ok(())
+    }
+
     pub fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
         let new_ref = vmsa_ref.clone();
         if let Some(vmsa_info) = new_ref {
@@ -283,7 +299,7 @@ impl PerCpu {
                 free_vmsa(vaddr);
             }
 
-            unregister_guest_vmsa(paddr);
+            set_vmsa_unused_by_apic_id(self.apic_id);
         }
 
         *vmsa_ref = None;
@@ -438,11 +454,11 @@ impl VmsaRegistryEntry {
 // PERCPU VMSAs to apic_id map
 static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
 
-fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
+pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
     PERCPU_VMSAS.lock().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
 }
 
-fn unregister_guest_vmsa(paddr: PhysAddr) {
+pub fn unregister_guest_vmsa(paddr: PhysAddr) {
     let mut percpu_vmsa = PERCPU_VMSAS.lock();
     let size = percpu_vmsa.len();
 

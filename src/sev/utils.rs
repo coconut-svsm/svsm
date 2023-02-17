@@ -188,6 +188,7 @@ pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
 }
 
 pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
+    rmp_revoke_guest_access(vaddr, false)?;
     rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)?;
 
     Ok(())

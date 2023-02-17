@@ -11,7 +11,7 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
-    rmp_set_guest_vmsa, RMPFlags };
+    rmp_set_guest_vmsa, rmp_clear_guest_vmsa, RMPFlags };
 use crate::mm::PerCPUPageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page, halt};
 use crate::mm::{valid_phys_address, GuestPtr};
@@ -46,7 +46,7 @@ struct PValidateRequest {
 }
 
 fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), ()> {
-    if let Err(error_code) = rmp_grant_guest_access(vaddr, false) {
+    if let Err(error_code) = rmp_clear_guest_vmsa(vaddr) {
         log::error!("Failed to restore page permissions (code: {})", error_code);
     }
     // In case mappings have been changed
@@ -81,46 +81,12 @@ fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
 
     let target_cpu = has_cpu.unwrap();
 
-    // This returns Option<LockGuard<Option<VmsaRef>>>
-    // - Outer Option tells whether lock was taken or not
-    // - LockGuard is the owner of the lock if it was taken
-    // - Inner Option tells whether there is a guest vmsa configured
-    let check_guest_vmsa = target_cpu.try_update_guest_vmsa();
-
-    vmsa.rax = SVSM_ERR_BUSY;
-
-    // Check if lock was aquired
-    if let Err(_) = check_guest_vmsa {
-        return Ok(());
-    }
-
-    let old_vmsa_ref = check_guest_vmsa.unwrap();
-
-    // Is there already a guest VMSA on that VCPU?
-    if let Some(vmsa_ref) = old_vmsa_ref {
-        // Revoke RMP permissions for old VMSA page
-        let mapping_guard = PerCPUPageMappingGuard::create(vmsa_ref.paddr, 0, false)?;
-        let vaddr = mapping_guard.virt_addr();
-        if let Err(error_code) = rmp_revoke_guest_access(vaddr, false) {
-            vmsa.rax = SVSM_ERR_PROTOCOL_BASE + error_code;
-            return Ok(());
-        }
-
-        // Restore normal guest permissions
-        if vmsa_ref.guest_owned {
-            if let Err(error_code) = rmp_grant_guest_access(vaddr, false) {
-                vmsa.rax = SVSM_ERR_PROTOCOL_BASE + error_code;
-                return Ok(());
-            }
-        }
-    }
-
     // Time to map the VMSA
     let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)?;
     let vaddr = mapping_guard.virt_addr();
 
-    // Make sure the guest can't make modifications anymore to the VMSA page
-    if let Err(error_code) = rmp_revoke_guest_access(vaddr, false) {
+    // Make sure the guest can't make modifications to the VMSA page
+    if let Err(error_code) = rmp_set_guest_vmsa(vaddr) {
         vmsa.rax = SVSM_ERR_PROTOCOL_BASE + error_code;
         return Ok(());
     }
@@ -140,7 +106,9 @@ fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
         return core_create_vcpu_error_restore(vaddr);
     }
 
-    if let Err(_) = rmp_set_guest_vmsa(vaddr) {
+    // Unmap any previously used VMSA on the target VCPU
+    vmsa.rax = SVSM_ERR_BUSY;
+    if let Err(_) = target_cpu.try_unmap_guest_vmsa() {
         return core_create_vcpu_error_restore(vaddr);
     }
 
