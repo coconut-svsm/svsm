@@ -427,14 +427,13 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
 }
 
 pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
-    for i in PERCPU_AREAS
-        .lock()
+    PERCPU_AREAS.lock()
         .iter()
-        .filter(|x| (*x).apic_id == apic_id) {
-            let ptr = (*i).addr as *const PerCpu;
-            unsafe { return Some(ptr.as_ref().unwrap()); }
-    }
-    None
+        .find(|info| info.apic_id == apic_id)
+        .map(|info| {
+            let ptr = info.addr as *const PerCpu;
+            unsafe { ptr.as_ref().unwrap() }
+        })
 }
 
 pub struct VmsaRegistryEntry {
