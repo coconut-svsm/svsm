@@ -501,11 +501,8 @@ pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
 }
 
 pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
-    for vmsa_info in PERCPU_VMSAS
-        .lock().iter()
-        .filter(|x| (*x).paddr == paddr && (*x).guest_owned) {
-        return Some(vmsa_info.apic_id);
-    }
-
-    None
+    PERCPU_VMSAS.lock()
+        .iter()
+        .find(|vmsa| vmsa.paddr == paddr && vmsa.guest_owned)
+        .map(|vmsa| vmsa.apic_id)
 }
