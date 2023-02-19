@@ -470,22 +470,14 @@ pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
 
 pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> {
     let mut percpu_vmsa = PERCPU_VMSAS.lock();
-    let size = percpu_vmsa.len();
-    let mut index = size;
 
-    for i in 0..size {
-        if percpu_vmsa[i].paddr == paddr {
-            index = i;
-        }
-    }
+    let index = percpu_vmsa.iter()
+        .position(|vmsa| vmsa.paddr == paddr)
+        .ok_or(0u64)?;
+    let vmsa = &percpu_vmsa[index];
 
-    if index == size {
-        // Not found
-        return Err(0);
-    }
-
-    let in_use = percpu_vmsa[index].in_use;
-    let apic_id = percpu_vmsa[index].apic_id;
+    let in_use = vmsa.in_use;
+    let apic_id = vmsa.apic_id;
     if in_use && apic_id == 0 {
         return Err(0)
     }
@@ -503,7 +495,7 @@ pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> 
         }
     }
 
-    return Ok(percpu_vmsa.remove(index));
+    return Ok(percpu_vmsa.swap_remove(index));
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
