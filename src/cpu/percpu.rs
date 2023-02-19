@@ -454,14 +454,9 @@ impl VmsaRegistryEntry {
 static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
 
 pub fn vmsa_exists(paddr: PhysAddr) -> bool {
-    let mut ret = false;
-
-    for _ in PERCPU_VMSAS.lock().iter()
-        .filter(|x| (*x).paddr == paddr) {
-        ret = true;
-    }
-
-    ret
+    PERCPU_VMSAS.lock().iter()
+        .find(|vmsa| vmsa.paddr == paddr)
+        .is_some()
 }
 
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
