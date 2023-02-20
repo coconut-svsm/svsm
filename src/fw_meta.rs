@@ -381,12 +381,8 @@ fn validate_fw_memory_vec(regions : Vec<SevPreValidMem>) -> Result<(), ()> {
 }
 
 pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
-    let mut regions : Vec<SevPreValidMem> = Vec::new();
-
     // Initalize vector with regions from the FW
-    for i in 0..fw_meta.valid_mem.len() {
-        regions.push(fw_meta.valid_mem[i]);
-    }
+    let mut regions = fw_meta.valid_mem.clone();
 
     // Add region for CPUID page if present
     if let Some(cpuid_paddr) = fw_meta.cpuid_page {
