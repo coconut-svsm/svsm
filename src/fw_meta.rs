@@ -323,28 +323,24 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
-    let mut page_paddr = pstart;
-
     this_cpu_mut().ghcb()
         .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
         .expect("GHCB PSC call failed to validate firmware memory");
 
-    while page_paddr < pend {
-        let guard = PerCPUPageMappingGuard::create(page_paddr, 0, false)?;
-        let page_vaddr = guard.virt_addr();
+    for paddr in (pstart..pend).step_by(PAGE_SIZE) {
+        let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+        let vaddr = guard.virt_addr();
 
-        if let Err(_e) = pvalidate(page_vaddr, false, true) {
+        if pvalidate(vaddr, false, true).is_err() {
             return Err(());
         }
 
         // Make page accessible to VMPL1
-        if let Err(_e) = rmp_adjust(page_vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
-            return Err(());
+        if rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false).is_err() {
+            return Err(())
         }
 
-        zero_mem_region(page_vaddr, page_vaddr + PAGE_SIZE);
-        
-        page_paddr += PAGE_SIZE;
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }
 
     Ok(())
