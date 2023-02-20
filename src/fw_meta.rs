@@ -360,7 +360,7 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions : &Vec<SevPreValidMem>) -> Result<(), ()> {
+fn validate_fw_memory_vec(regions : Vec<SevPreValidMem>) -> Result<(), ()> {
     if regions.len() == 0 {
         return Ok(());
     }
@@ -368,17 +368,16 @@ fn validate_fw_memory_vec(regions : &Vec<SevPreValidMem>) -> Result<(), ()> {
     let mut next_vec : Vec<SevPreValidMem> = Vec::new();
     let mut region = regions[0];
 
-    for i in 1..regions.len() {
-        if region.overlap(&regions[i]) {
-            region = region.merge(regions[i]);
+    for next in regions.into_iter().skip(1) {
+        if region.overlap(&next) {
+            region = region.merge(next);
         } else {
-            next_vec.push(regions[i]);
+            next_vec.push(next);
         }
     }
 
     validate_fw_mem_region(region)?;
-
-    validate_fw_memory_vec(&next_vec)
+    validate_fw_memory_vec(next_vec)
 }
 
 pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
@@ -407,7 +406,7 @@ pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     // Sort regions by base address
     regions.sort_unstable_by(|a, b| a.base.cmp(&b.base));
 
-    validate_fw_memory_vec(&regions)
+    validate_fw_memory_vec(regions)
 }
 
 pub fn print_fw_meta(fw_meta : &SevFWMetaData) {
