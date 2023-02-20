@@ -405,7 +405,7 @@ pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     }
 
     // Sort regions by base address
-    regions.sort_by(|a, b| a.base.partial_cmp(&b.base).unwrap());
+    regions.sort_unstable_by(|a, b| a.base.cmp(&b.base));
 
     validate_fw_memory_vec(&regions)
 }
