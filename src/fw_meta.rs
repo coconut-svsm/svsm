@@ -27,6 +27,16 @@ pub struct SevPreValidMem {
     length: usize,
 }
 
+impl SevPreValidMem {
+    fn new(base: PhysAddr, length: usize) -> Self {
+        Self { base, length }
+    }
+
+    fn new_4k(base: PhysAddr) -> Self {
+        Self::new(base, PAGE_SIZE)
+    }
+}
+
 pub struct SevFWMetaData {
     pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
@@ -47,10 +57,7 @@ impl SevFWMetaData {
     }
 
     pub fn add_valid_mem(&mut self, base: PhysAddr, len: usize) {
-        self.valid_mem.push(SevPreValidMem {
-            base: base,
-            length: len,
-        });
+        self.valid_mem.push(SevPreValidMem::new(base, len));
     }
 }
 
@@ -347,7 +354,7 @@ fn merge_regions(region1 : SevPreValidMem, region2: SevPreValidMem) -> SevPreVal
     let base : PhysAddr = cmp::min(x1, y1);
     let len  : usize = cmp::max(x2, y2) - base;
 
-    SevPreValidMem { base : base, length : len }
+    SevPreValidMem::new(base, len)
 }
 
 fn validate_fw_memory_vec(regions : &Vec<SevPreValidMem>) -> Result<(), ()> {
@@ -386,17 +393,17 @@ pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
 
     // Add region for CPUID page if present
     if let Some(cpuid_paddr) = fw_meta.cpuid_page {
-        regions.push(SevPreValidMem { base : cpuid_paddr, length : PAGE_SIZE });
+        regions.push(SevPreValidMem::new_4k(cpuid_paddr));
     }
 
     // Add region for Secrets page if present
     if let Some(secrets_paddr) = fw_meta.secrets_page {
-        regions.push(SevPreValidMem { base : secrets_paddr, length : PAGE_SIZE });
+        regions.push(SevPreValidMem::new_4k(secrets_paddr));
     }
 
     // Add region for CAA page if present
     if let Some(caa_paddr) = fw_meta.caa_page {
-        regions.push(SevPreValidMem { base : caa_paddr, length : PAGE_SIZE });
+        regions.push(SevPreValidMem::new_4k(caa_paddr));
     }
 
     // Sort regions by base address
