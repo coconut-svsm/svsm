@@ -35,6 +35,21 @@ impl SevPreValidMem {
     fn new_4k(base: PhysAddr) -> Self {
         Self::new(base, PAGE_SIZE)
     }
+
+    fn overlap(&self, other: &Self) -> bool {
+        let x1 : PhysAddr = self.base;
+        let x2 : PhysAddr = x1 + self.length;
+        let y1 : PhysAddr = other.base;
+        let y2 : PhysAddr = y1 + other.length;
+        overlap(x1, x2, y1, y2)
+    }
+
+    fn merge(self, other: Self) -> Self {
+        let base = cmp::min(self.base, other.base);
+        let length = cmp::max(self.base + self.length,
+            other.base + other.length) - base;
+        Self::new(base, length)
+    }
 }
 
 pub struct SevFWMetaData {
@@ -345,18 +360,6 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
     Ok(())
 }
 
-fn merge_regions(region1 : SevPreValidMem, region2: SevPreValidMem) -> SevPreValidMem {
-    let x1 : PhysAddr = region1.base;
-    let x2 : PhysAddr = x1 + region1.length;
-    let y1 : PhysAddr = region2.base;
-    let y2 : PhysAddr = y1 + region2.length;
-
-    let base : PhysAddr = cmp::min(x1, y1);
-    let len  : usize = cmp::max(x2, y2) - base;
-
-    SevPreValidMem::new(base, len)
-}
-
 fn validate_fw_memory_vec(regions : &Vec<SevPreValidMem>) -> Result<(), ()> {
     if regions.len() == 0 {
         return Ok(());
@@ -366,13 +369,8 @@ fn validate_fw_memory_vec(regions : &Vec<SevPreValidMem>) -> Result<(), ()> {
     let mut region = regions[0];
 
     for i in 1..regions.len() {
-        let x1 : PhysAddr = region.base;
-        let x2 : PhysAddr = x1 + region.length;
-        let y1 : PhysAddr = regions[i].base;
-        let y2 : PhysAddr = y1 + regions[i].length;
-
-        if overlap(x1, x2, y1, y2) {
-            region = merge_regions(region, regions[i]);
+        if region.overlap(&regions[i]) {
+            region = region.merge(regions[i]);
         } else {
             next_vec.push(regions[i]);
         }
