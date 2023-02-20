@@ -37,18 +37,18 @@ impl SevPreValidMem {
         Self::new(base, PAGE_SIZE)
     }
 
+    #[inline]
+    fn end(&self) -> PhysAddr {
+        self.base + self.length
+    }
+
     fn overlap(&self, other: &Self) -> bool {
-        let x1 : PhysAddr = self.base;
-        let x2 : PhysAddr = x1 + self.length;
-        let y1 : PhysAddr = other.base;
-        let y2 : PhysAddr = y1 + other.length;
-        overlap(x1, x2, y1, y2)
+        overlap(self.base, self.end(), other.base, other.end())
     }
 
     fn merge(self, other: Self) -> Self {
         let base = cmp::min(self.base, other.base);
-        let length = cmp::max(self.base + self.length,
-            other.base + other.length) - base;
+        let length = cmp::max(self.end(), other.end()) - base;
         Self::new(base, length)
     }
 }
@@ -319,7 +319,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
 
 fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
     let pstart: PhysAddr = region.base;
-    let pend: PhysAddr = pstart + region.length;
+    let pend: PhysAddr = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
@@ -351,7 +351,7 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
 }
 
 fn validate_fw_memory_vec(regions : Vec<SevPreValidMem>) -> Result<(), ()> {
-    if regions.len() == 0 {
+    if regions.is_empty() {
         return Ok(());
     }
 
@@ -418,10 +418,7 @@ pub fn print_fw_meta(fw_meta : &SevFWMetaData) {
         None       => log::info!("  CAA Page     : None"),
     };
 
-    let count = fw_meta.valid_mem.len();
-    for i in 0..count {
-        let base = fw_meta.valid_mem[i].base;
-        let len  = fw_meta.valid_mem[i].length;
-        log::info!("  Pre-Validated Region {:#018x}-{:#018x}", base, base + len);
+    for region in &fw_meta.valid_mem {
+        log::info!("  Pre-Validated Region {:#018x}-{:#018x}", region.base, region.end());
     }
 }
