@@ -146,24 +146,16 @@ impl Uuid {
             ],
         }
     }
+}
 
-    fn equal(&self, other: &Uuid) -> bool {
-        for i in 0..16 {
-            if self.data[i] != other.data[i] {
+impl PartialEq for Uuid {
+    fn eq(&self, other: &Self) -> bool {
+        for (a, b) in self.data.iter().zip(&other.data) {
+            if a != b {
                 return false;
             }
         }
         return true;
-    }
-}
-
-impl PartialEq for Uuid {
-    fn eq(&self, other: &Uuid) -> bool {
-        self.equal(other)
-    }
-
-    fn ne(&self, other: &Uuid) -> bool {
-        !self.equal(other)
     }
 }
 
