@@ -20,6 +20,7 @@ use crate::sev::ghcb::PageStateChangeOp;
 use core::cmp;
 use core::fmt;
 use core::mem;
+use core::str::FromStr;
 
 #[derive(Copy, Clone)]
 pub struct SevPreValidMem {
@@ -92,38 +93,6 @@ impl Uuid {
         Uuid { data: [0; 16] }
     }
 
-    pub fn parse(&mut self, s: &str) -> Result<(), ()> {
-        let mut buf: u8 = 0;
-
-        let mut index = 0;
-        for c in s.chars() {
-            if !c.is_ascii_hexdigit() {
-                continue;
-            }
-
-            if (index % 2) == 0 {
-                buf = from_hex(c)? << 4;
-            } else {
-                buf |= from_hex(c)?;
-                let i = index / 2;
-                if i >= 16 {
-                    break;
-                }
-                self.data[i] = buf;
-            }
-
-            index += 1;
-        }
-        Ok(())
-    }
-
-    pub fn from_str(s: &str) -> Result<Self, ()> {
-        let mut uuid = Uuid::new();
-        uuid.parse(s)?;
-
-        Ok(uuid)
-    }
-
     pub unsafe fn from_mem(ptr: *const u8) -> Self {
         Uuid {
             data: [
@@ -145,6 +114,36 @@ impl Uuid {
                 ptr.offset(15).read(),
             ],
         }
+    }
+}
+
+impl FromStr for Uuid {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut uuid = Uuid::new();
+        let mut buf: u8 = 0;
+        let mut index = 0;
+
+        for c in s.chars() {
+            if !c.is_ascii_hexdigit() {
+                continue;
+            }
+
+            if (index % 2) == 0 {
+                buf = from_hex(c)? << 4;
+            } else {
+                buf |= from_hex(c)?;
+                let i = index / 2;
+                if i >= 16 {
+                    break;
+                }
+                uuid.data[i] = buf;
+            }
+
+            index += 1;
+        }
+        
+        Ok(uuid)
     }
 }
 
