@@ -302,23 +302,22 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
                 let t = desc.t;
                 let base = desc.base as PhysAddr;
                 let len = desc.len as usize;
-                if t == SEV_META_DESC_TYPE_MEM {
-                    meta_data.add_valid_mem(base, len);
-                } else if t == SEV_META_DESC_TYPE_SECRETS {
-                    if len != PAGE_SIZE {
-                        return Err(());
+                match t {
+                    SEV_META_DESC_TYPE_MEM =>
+                        meta_data.add_valid_mem(base, len),
+                    SEV_META_DESC_TYPE_SECRETS => {
+                        if len != PAGE_SIZE { return Err(()); }
+                        meta_data.secrets_page = Some(base);
                     }
-                    meta_data.secrets_page = Some(base);
-                } else if t == SEV_META_DESC_TYPE_CPUID {
-                    if len != PAGE_SIZE {
-                        return Err(());
+                    SEV_META_DESC_TYPE_CPUID => {
+                        if len != PAGE_SIZE { return Err(()); }
+                        meta_data.cpuid_page = Some(base);
                     }
-                    meta_data.cpuid_page = Some(base);
-                } else if t == SEV_META_DESC_TYPE_CAA {
-                    if len != PAGE_SIZE {
-                        return Err(());
+                    SEV_META_DESC_TYPE_CAA => {
+                        if len != PAGE_SIZE { return Err(()); }
+                         meta_data.caa_page = Some(base);
                     }
-                    meta_data.caa_page = Some(base);
+                    _ => log::info!("Unknown metadata item type: {}", t),
                 }
             }
         }
