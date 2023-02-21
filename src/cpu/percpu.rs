@@ -427,14 +427,13 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
 }
 
 pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
-    for i in PERCPU_AREAS
-        .lock()
+    PERCPU_AREAS.lock()
         .iter()
-        .filter(|x| (*x).apic_id == apic_id) {
-            let ptr = (*i).addr as *const PerCpu;
-            unsafe { return Some(ptr.as_ref().unwrap()); }
-    }
-    None
+        .find(|info| info.apic_id == apic_id)
+        .map(|info| {
+            let ptr = info.addr as *const PerCpu;
+            unsafe { ptr.as_ref().unwrap() }
+        })
 }
 
 pub struct VmsaRegistryEntry {
@@ -454,14 +453,9 @@ impl VmsaRegistryEntry {
 static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
 
 pub fn vmsa_exists(paddr: PhysAddr) -> bool {
-    let mut ret = false;
-
-    for _ in PERCPU_VMSAS.lock().iter()
-        .filter(|x| (*x).paddr == paddr) {
-        ret = true;
-    }
-
-    ret
+    PERCPU_VMSAS.lock().iter()
+        .find(|vmsa| vmsa.paddr == paddr)
+        .is_some()
 }
 
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
@@ -470,22 +464,14 @@ pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
 
 pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> {
     let mut percpu_vmsa = PERCPU_VMSAS.lock();
-    let size = percpu_vmsa.len();
-    let mut index = size;
 
-    for i in 0..size {
-        if percpu_vmsa[i].paddr == paddr {
-            index = i;
-        }
-    }
+    let index = percpu_vmsa.iter()
+        .position(|vmsa| vmsa.paddr == paddr)
+        .ok_or(0u64)?;
+    let vmsa = &percpu_vmsa[index];
 
-    if index == size {
-        // Not found
-        return Err(0);
-    }
-
-    let in_use = percpu_vmsa[index].in_use;
-    let apic_id = percpu_vmsa[index].apic_id;
+    let in_use = vmsa.in_use;
+    let apic_id = vmsa.apic_id;
     if in_use && apic_id == 0 {
         return Err(0)
     }
@@ -503,7 +489,7 @@ pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> 
         }
     }
 
-    return Ok(percpu_vmsa.remove(index));
+    return Ok(percpu_vmsa.swap_remove(index));
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
@@ -514,11 +500,8 @@ pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
 }
 
 pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
-    for vmsa_info in PERCPU_VMSAS
-        .lock().iter()
-        .filter(|x| (*x).paddr == paddr && (*x).guest_owned) {
-        return Some(vmsa_info.apic_id);
-    }
-
-    None
+    PERCPU_VMSAS.lock()
+        .iter()
+        .find(|vmsa| vmsa.paddr == paddr && vmsa.guest_owned)
+        .map(|vmsa| vmsa.apic_id)
 }
