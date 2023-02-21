@@ -11,7 +11,7 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::VMSA;
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
-    rmp_set_guest_vmsa, rmp_clear_guest_vmsa, RMPFlags };
+    rmp_set_guest_vmsa, rmp_clear_guest_vmsa, RMPFlags, SevSnpError};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::utils::{page_align, page_offset, is_aligned, crosses_page, halt};
 use crate::mm::{valid_phys_address, GuestPtr};
@@ -46,8 +46,8 @@ struct PValidateRequest {
 }
 
 fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), ()> {
-    if let Err(error_code) = rmp_clear_guest_vmsa(vaddr) {
-        log::error!("Failed to restore page permissions (code: {})", error_code);
+    if let Err(err) = rmp_clear_guest_vmsa(vaddr) {
+        log::error!("Failed to restore page permissions ({}, code: {})", err, err.ret());
     }
     // In case mappings have been changed
     flush_tlb_global_sync();
@@ -86,8 +86,8 @@ fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
-    if let Err(error_code) = rmp_set_guest_vmsa(vaddr) {
-        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + error_code;
+    if let Err(err) = rmp_set_guest_vmsa(vaddr) {
+        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + err.ret();
         return Ok(());
     }
 
@@ -146,8 +146,8 @@ fn core_delete_vcpu(vmsa: &mut VMSA)-> Result<(),()> {
     let mapping_guard = PerCPUPageMappingGuard::create(vmsa_entry.paddr, 0, false)?;
 
     // Remove VMSA permissions from page
-    if let Err(code) = rmp_clear_guest_vmsa(mapping_guard.virt_addr()) {
-        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + code;
+    if let Err(err) = rmp_clear_guest_vmsa(mapping_guard.virt_addr()) {
+        vmsa.rax = SVSM_ERR_PROTOCOL_BASE + err.ret();
         return Ok(());
     }
 
@@ -187,7 +187,6 @@ fn core_configure_vtom(vmsa: &mut VMSA)-> Result<(),()> {
 }
 
 fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
-    let result: u64;
     let mut flush: bool = false;
     let page_size: u64 = entry & 3;
 
@@ -215,23 +214,18 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     let vaddr = guard.virt_addr();
 
     if !valid {
-        if let Err(error_code) = rmp_revoke_guest_access(vaddr, huge) {
-            return Ok((SVSM_ERR_PROTOCOL_BASE + error_code, true))
+        if let Err(err) = rmp_revoke_guest_access(vaddr, huge) {
+            return Ok((SVSM_ERR_PROTOCOL_BASE + err.ret(), true))
         }
         flush = true;
     }
 
-    result = match pvalidate(vaddr, huge, valid) {
-        Ok(_) => SVSM_SUCCESS,
-        Err(e) => {
-                    if e.error_code != 0 {
-                        SVSM_ERR_PROTOCOL_BASE + e.error_code
-                    } else if ign_cf == false && e.changed == false { 
-                        SVSM_ERR_PROTOCOL_BASE + 0x10
-                    } else  {
-                        SVSM_SUCCESS
-                    }
-                },
+    let result = match pvalidate(vaddr, huge, valid) {
+        Ok(()) => SVSM_SUCCESS,
+        Err(err) => match err {
+            SevSnpError::FAIL_UNCHANGED(_) if ign_cf => SVSM_SUCCESS,
+            _ => SVSM_ERR_PROTOCOL_BASE + err.ret(),
+        }
     };
 
     if result != SVSM_SUCCESS {
@@ -239,8 +233,8 @@ fn core_pvalidate_one(entry: u64) -> Result<(u64, bool),()> {
     }
 
     if valid {
-        if let Err(error_code) = rmp_grant_guest_access(vaddr, huge) {
-            return Ok((SVSM_ERR_PROTOCOL_BASE + error_code, flush))
+        if let Err(err) = rmp_grant_guest_access(vaddr, huge) {
+            return Ok((SVSM_ERR_PROTOCOL_BASE + err.ret(), flush))
         }
     }
 
