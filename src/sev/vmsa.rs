@@ -149,8 +149,8 @@ impl VMSA {
     }
 }
 
-pub fn allocate_new_vmsa(vmpl: u64) -> Result<VirtAddr, ()> {
-    assert!(vmpl < (VMPL_MAX as u64));
+pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, ()> {
+    assert!(vmpl.bits() < (VMPL_MAX as u64));
     let vmsa_page = allocate_zeroed_page()?;
     if let Err(_) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);

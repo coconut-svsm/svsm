@@ -90,31 +90,27 @@ pub fn raw_vmgexit() {
     }
 }
 
-#[non_exhaustive]
-pub enum RMPFlags {}
-
-#[allow(dead_code)]
-impl RMPFlags {
-    pub const VMPL0: u64 = 0;
-    pub const VMPL1: u64 = 1;
-    pub const VMPL2: u64 = 2;
-    pub const VMPL3: u64 = 3;
-    pub const READ: u64 = 1u64 << 8;
-    pub const WRITE: u64 = 1u64 << 9;
-    pub const X_USER: u64 = 1u64 << 10;
-    pub const X_SUPER: u64 = 1u64 << 11;
-    pub const BIT_VMSA: u64 = 1u64 << 16;
-
-    pub const NONE: u64 = 0;
-    pub const RWX: u64 = RMPFlags::READ | RMPFlags::WRITE | RMPFlags::X_USER | RMPFlags::X_SUPER;
-
-    pub const VMSA: u64 = RMPFlags::READ | RMPFlags::BIT_VMSA;
+bitflags::bitflags! {
+    pub struct RMPFlags: u64 {
+        const VMPL0 = 0;
+        const VMPL1 = 1;
+        const VMPL2 = 2;
+        const VMPL3 = 3;
+        const READ = 1u64 << 8;
+        const WRITE = 1u64 << 9;
+        const X_USER = 1u64 << 10;
+        const X_SUPER = 1u64 << 11;
+        const BIT_VMSA = 1u64 << 16;
+        const NONE = 0;
+        const RWX = Self::READ.bits | Self::WRITE.bits | Self::X_USER.bits | Self::X_SUPER.bits;
+        const VMSA = Self::READ.bits | Self::BIT_VMSA.bits;
+    }
 }
 
-pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
+pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), u64> {
     let rcx: usize = if huge { 1 } else { 0 };
     let rax: u64 = addr as u64;
-    let rdx: u64 = flags as u64;
+    let rdx: u64 = flags.bits();
     let mut result: u64;
     let mut ex: u64;
 
@@ -147,7 +143,7 @@ pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
     }
 }
 
-fn rmpadjust_adjusted_error(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
+fn rmpadjust_adjusted_error(vaddr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), u64> {
     rmp_adjust(vaddr, flags, huge)
         .map_err(|code| if code < 0x10 { code } else { 0x11 })
 }

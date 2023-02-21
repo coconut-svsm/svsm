@@ -100,7 +100,7 @@ fn core_create_vcpu(vmsa: &mut VMSA) -> Result<(),()> {
     vmsa.rax = SVSM_ERR_INVALID_PARAMETER;
 
     // VMSA validity checks according to SVSM spec
-    if (new_vmsa.vmpl != RMPFlags::VMPL1 as u8) ||
+    if (new_vmsa.vmpl != (RMPFlags::VMPL1.bits() as u8)) ||
        ((new_vmsa.efer & svme_mask) != svme_mask) ||
        (new_vmsa.sev_features != vmsa.sev_features) {
         return core_create_vcpu_error_restore(vaddr);
