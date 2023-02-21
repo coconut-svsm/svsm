@@ -25,11 +25,8 @@ impl PValidateError {
 }
 
 fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), PValidateError> {
-    let mut addr = start;
-
-    while addr < end {
+    for addr in (start..end).step_by(PAGE_SIZE) {
         pvalidate(addr, false, valid)?;
-        addr += PAGE_SIZE;
     }
 
     Ok(())
@@ -59,20 +56,8 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
 
 pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), PValidateError> {
     let rax = vaddr;
-    let rcx = {
-        if huge_page {
-            1
-        } else {
-            0
-        }
-    };
-    let rdx = {
-        if valid {
-            1
-        } else {
-            0
-        }
-    };
+    let rcx = huge_page as u64;
+    let rdx = valid as u64;
     let ret: u64;
     let cf: u64;
 
@@ -162,42 +147,28 @@ pub fn rmp_adjust(addr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
     }
 }
 
-fn rmpadjust_adjusted_error(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(),u64> {
-    if let Err(code) = rmp_adjust(vaddr, flags, huge) {
-        let ret_code = if code < 0x10 { code } else { 0x11 };
-        Err(ret_code)
-    } else {
-        Ok(())
-    }
+fn rmpadjust_adjusted_error(vaddr: VirtAddr, flags: u64, huge: bool) -> Result<(), u64> {
+    rmp_adjust(vaddr, flags, huge)
+        .map_err(|code| if code < 0x10 { code } else { 0x11 })
 }
 
-pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
-{
+pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), u64> {
     rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::NONE, huge)?;
     rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL2 | RMPFlags::NONE, huge)?;
-    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)?;
-
-    Ok(())
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)
 }
 
-pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(),u64>
-{
-    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)?;
-
-    Ok(())
+pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), u64> {
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)
 }
 
 pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
     rmp_revoke_guest_access(vaddr, false)?;
-    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)?;
-
-    Ok(())
+    rmpadjust_adjusted_error(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)
 }
 
 pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), u64> {
     rmp_revoke_guest_access(vaddr, false)?;
-    rmp_grant_guest_access(vaddr, false)?;
-
-    Ok(())
+    rmp_grant_guest_access(vaddr, false)
 }
 
