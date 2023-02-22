@@ -77,6 +77,14 @@ impl SvsmError {
     }
 }
 
+// SEV-SNP errors obtained from PVALIDATE or RMPADJUST are returned
+// to the guest as protocol-specific errors.
+impl From<SevSnpError> for SvsmError {
+    fn from(err: SevSnpError) -> SvsmError {
+        SvsmError::protocol(err.ret())
+    }
+}
+
 const SVSM_REQ_CORE_REMAP_CA : u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE : u32 = 1;
 const SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
@@ -136,8 +144,7 @@ fn core_create_vcpu(vmsa: &VMSA) -> Result<(), SvsmError> {
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_set_guest_vmsa(vaddr)
-        .map_err(|err| SvsmError::protocol(err.ret()))?;
+    rmp_set_guest_vmsa(vaddr)?;
 
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
@@ -185,8 +192,7 @@ fn core_delete_vcpu(vmsa: &VMSA)-> Result<(), SvsmError> {
         .map_err(SvsmError::FatalError)?;
 
     // Remove VMSA permissions from page
-    rmp_clear_guest_vmsa(mapping_guard.virt_addr())
-        .map_err(|err| SvsmError::protocol(err.ret()))?;
+    rmp_clear_guest_vmsa(mapping_guard.virt_addr())?;
 
     // Unmap the page
     drop(mapping_guard);
@@ -246,19 +252,17 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
 
     if !valid {
         *flush |= true;
-        rmp_revoke_guest_access(vaddr, huge)
-            .map_err(|err| SvsmError::protocol(err.ret()))?;
+        rmp_revoke_guest_access(vaddr, huge)?;
     }
 
     pvalidate(vaddr, huge, valid)
         .or_else(|err| match err {
             SevSnpError::FAIL_UNCHANGED(_) if ign_cf => Ok(()),
-            _ => Err(SvsmError::protocol(err.ret())),
+            _ => Err(err),
         })?;
 
     if valid {
-        rmp_grant_guest_access(vaddr, huge)
-            .map_err(|err| SvsmError::protocol(err.ret()))?;
+        rmp_grant_guest_access(vaddr, huge)?;
     }
 
     Ok(())
