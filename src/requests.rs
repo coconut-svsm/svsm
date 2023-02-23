@@ -367,66 +367,65 @@ fn core_protocol_request(request: u32, vmsa: &VMSA) -> Result<(), SvsmError> {
     }
 }
 
-pub fn request_loop() {
+fn request_loop_once(vmsa: &VMSA, protocol: u32, request: u32) -> Result<bool, SvsmError> {
+    let caa_addr = this_cpu().get_caa_addr()
+        .ok_or_else(|| {
+            log::error!("No CAA mapped - bailing out");
+            SvsmError::FatalError(())
+        })?;
 
+    let guest_pending = GuestPtr::<u64>::new(caa_addr);
+    let pending = guest_pending.read()
+        .map_err(|_| SvsmError::invalid_address())?;
+    guest_pending.write(0)
+        .map_err(|_| SvsmError::invalid_address())?;
+
+    if pending != 1 {
+        return Ok(false);
+    }
+
+    match protocol {
+        0 => core_protocol_request(request, vmsa).map(|_| true),
+        _ => Err(SvsmError::unsupported_protocol()),
+    }
+}
+
+pub fn request_loop() {
     loop {
         let locked = this_cpu_mut().get_guest_vmsa();
-        let opt_vmsa_ref = locked.clone();
-        if let None = opt_vmsa_ref {
-            // When there is no VMSA - go into halt and retry when someone wakes us up
-            drop(locked);
-            halt();
-            continue;
-        }
-
-        let result = this_cpu().get_caa_addr();
-        let vmsa_ref = opt_vmsa_ref.unwrap();
+        let vmsa_ref = match locked.clone() {
+            Some(vmsa) => vmsa,
+            None => {
+                // When there is no VMSA - go into halt and retry when someone wakes us up
+                log::warn!("No VMSA! Halting");
+                drop(locked);
+                halt();
+                continue;
+            }
+        };
         let vmsa = vmsa_ref.vmsa();
 
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();
 
         let rax = vmsa.rax;
-        let protocol : u32 = (rax >> 32) as u32;
-        let request : u32 = (rax & 0xffff_ffff) as u32;
+        let protocol = (rax >> 32) as u32;
+        let request = (rax & 0xffff_ffff) as u32;
 
-        if let None = result {
-            log::error!("No CAA mapped - bailing out");
-            break;
-        }
-
-        let caa_addr = result.unwrap();
-
-        let guest_pending = GuestPtr::<u64>::new(caa_addr);
-        let pending = match guest_pending.read() {
-            Ok(v) => v,
-            Err(_) => {
-                vmsa.rax = SvsmResultCode::INVALID_ADDRESS.into();
-                0
+        vmsa.rax = match request_loop_once(&vmsa, protocol, request) {
+            Ok(success) => match success {
+                true => SvsmResultCode::SUCCESS.into(),
+                false => vmsa.rax,
             },
-        };
-
-        if guest_pending.write(0).is_err() {
-            vmsa.rax = SvsmResultCode::INVALID_ADDRESS.into();
-        } else if pending == 1 {
-            vmsa.rax = match protocol {
-                0 => match core_protocol_request(request, vmsa) {
-                    Ok(()) => SvsmResultCode::SUCCESS.into(),
-                    Err(SvsmError::FatalError(..)) => {
-                        log::error!("Fatal error handling core protocol request {}", request);
-                        break;
-                    },
-                    Err(SvsmError::RequestError(code)) => {
-                        log::warn!("Soft error handling core protocol request {}: {:?}", request, code);
-                        code.into()
-                    }
-                }
-                _ => {
-                    log::info!("Only protocol 0 supported, got {}", protocol);
-                    SvsmResultCode::UNSUPPORTED_PROTOCOL.into()
-                }
+            Err(SvsmError::RequestError(code)) => {
+                log::warn!("Soft error handling protocol {} request {}: {:?}", protocol, request, code);
+                code.into()
+            },
+            Err(SvsmError::FatalError(..)) => {
+                log::error!("Fatal error handling core protocol request {}", request);
+                break;
             }
-        }
+        };
 
         // Make VMSA runable again by setting EFER.SVME
         vmsa.enable();
