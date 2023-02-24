@@ -207,7 +207,7 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
-fn setup_caa(fw_meta: &SevFWMetaData) -> Result<(),()> {
+fn setup_caa(fw_meta: &SevFWMetaData) -> Result<VirtAddr, ()> {
     let addr = fw_meta.caa_page.unwrap();
 
     this_cpu_mut().map_caa_phys(addr)

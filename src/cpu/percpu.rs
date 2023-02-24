@@ -392,7 +392,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn map_caa_phys(&self, paddr: PhysAddr) -> Result<(),()> {
+    pub fn map_caa_phys(&self, paddr: PhysAddr) -> Result<VirtAddr, ()> {
         self.unmap_caa()?;
 
         let paddr_aligned = page_align(paddr);
@@ -404,9 +404,10 @@ impl PerCpu {
         self.get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
 
         let mut caa_addr = self.caa_addr.lock();
-        *caa_addr = Some(vaddr + page_offset);
+        let caa_vaddr = vaddr + page_offset;
+        *caa_addr = Some(caa_vaddr);
 
-        Ok(())
+        Ok(caa_vaddr)
     }
 }
 
