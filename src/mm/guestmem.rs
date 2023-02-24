@@ -107,7 +107,8 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64,()> {
 unsafe fn do_movsb(src: VirtAddr, dst: VirtAddr, size: usize) -> Result<(),()> {
     let mut rcx : u64; 
 
-    asm!("1:rep movsb
+    asm!("1:cld
+            rep movsb
           2:
          .pushsection \"__exception_table\",\"a\"
          .balign 16
