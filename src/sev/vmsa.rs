@@ -12,6 +12,44 @@ use crate::types::VirtAddr;
 
 pub const VMPL_MAX: usize = 4;
 
+// AE Exitcodes
+// Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
+#[repr(u64)]
+#[derive(Clone, Copy)]
+#[allow(dead_code, non_camel_case_types)]
+pub enum GuestVMExit {
+    MC = 0x52,
+    INTR = 0x60,
+    NMI = 0x61,
+    SMI = 0x62,
+    INIT = 0x63,
+    VINTR = 0x64,
+    PAUSE = 0x77,
+    HLT = 0x78,
+    SHUTDOWN = 0x7F,
+    EFER_WRITE_TRAP = 0x8F,
+    CR0_WRITE_TRAP = 0x90,
+    CR1_WRITE_TRAP = 0x91,
+    CR2_WRITE_TRAP = 0x92,
+    CR3_WRITE_TRAP = 0x93,
+    CR4_WRITE_TRAP = 0x94,
+    CR5_WRITE_TRAP = 0x95,
+    CR6_WRITE_TRAP = 0x96,
+    CR7_WRITE_TRAP = 0x97,
+    CR8_WRITE_TRAP = 0x98,
+    CR9_WRITE_TRAP = 0x99,
+    CR10_WRITE_TRAP = 0x9a,
+    CR11_WRITE_TRAP = 0x9b,
+    CR12_WRITE_TRAP = 0x9c,
+    CR13_WRITE_TRAP = 0x9d,
+    CR14_WRITE_TRAP = 0x9e,
+    CR15_WRITE_TRAP = 0x9f,
+    NPF = 0x400,
+    VMGEXIT = 0x403,
+    INVALID = 0xffffffffffffffff,
+    BUSY = 0xfffffffffffffffe
+}
+
 #[repr(C, packed)]
 pub struct VMSASegment {
     pub selector: u16,
@@ -110,7 +148,7 @@ pub struct VMSA {
     pub guest_nrip: u64,
     pub sev_features: u64,
     pub vintr_ctrl: u64,
-    pub guest_exit_code: u64,
+    pub guest_exit_code: GuestVMExit,
     pub vtom: u64,
     pub tlb_id: u64,
     pub pcpu_id: u64,
