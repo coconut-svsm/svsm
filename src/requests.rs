@@ -9,7 +9,7 @@
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa};
 use crate::cpu::{flush_tlb_global_sync};
-use crate::sev::vmsa::VMSA;
+use crate::sev::vmsa::{VMSA, GuestVMExit};
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
     rmp_set_guest_vmsa, rmp_clear_guest_vmsa, RMPFlags, SevSnpError};
 use crate::mm::PerCPUPageMappingGuard;
@@ -368,6 +368,10 @@ fn core_protocol_request(request: u32, vmsa: &VMSA) -> Result<(), SvsmError> {
 }
 
 fn request_loop_once(vmsa: &VMSA, protocol: u32, request: u32) -> Result<bool, SvsmError> {
+    if !matches!(vmsa.guest_exit_code, GuestVMExit::VMGEXIT) {
+        return Ok(false);
+    }
+
     let caa_addr = this_cpu().get_caa_addr()
         .ok_or_else(|| {
             log::error!("No CAA mapped - bailing out");
