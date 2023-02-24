@@ -242,7 +242,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
     }
 
     if !valid_phys_address(paddr) {
-        log::info!("Invalid phys address: {:#x}", paddr);
+        log::debug!("Invalid phys address: {:#x}", paddr);
         return Err(SvsmError::invalid_address());
     }
 
@@ -397,7 +397,7 @@ pub fn request_loop() {
             Some(vmsa) => vmsa,
             None => {
                 // When there is no VMSA - go into halt and retry when someone wakes us up
-                log::warn!("No VMSA! Halting");
+                log::debug!("No VMSA! Halting");
                 drop(locked);
                 halt();
                 continue;
@@ -418,7 +418,7 @@ pub fn request_loop() {
                 false => vmsa.rax,
             },
             Err(SvsmError::RequestError(code)) => {
-                log::warn!("Soft error handling protocol {} request {}: {:?}", protocol, request, code);
+                log::debug!("Soft error handling protocol {} request {}: {:?}", protocol, request, code);
                 code.into()
             },
             Err(SvsmError::FatalError(..)) => {
