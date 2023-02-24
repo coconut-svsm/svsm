@@ -25,6 +25,7 @@ pub mod svsm_console;
 pub mod types;
 pub mod utils;
 pub mod requests;
+pub mod debug;
 
 #[test]
 fn test_nop() {}

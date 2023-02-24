@@ -229,6 +229,16 @@ fn generic_idt_handler(regs: &mut X86Regs) {
     }
 }
 
+#[cfg(feature = "enable-stacktrace")]
+extern "C" {
+    static generic_idt_handler_return: u8;
+}
+
+#[cfg(feature = "enable-stacktrace")]
+pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
+    rip == unsafe{&generic_idt_handler_return} as *const u8 as VirtAddr
+}
+
 // Entry Code
 global_asm!(
     r#"
@@ -252,6 +262,10 @@ global_asm!(
 
         movq    %rsp, %rdi
         call    generic_idt_handler
+
+        /* Needed by the stack unwinder to recognize exception frames. */
+        .globl generic_idt_handler_return
+    generic_idt_handler_return:
 
         popq    %r15
         popq    %r14
