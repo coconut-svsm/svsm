@@ -7,6 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use core::fmt;
+use core::mem::MaybeUninit;
 
 pub struct FixedString<const T: usize> {
     len: usize,
@@ -30,6 +31,22 @@ impl<const T: usize> FixedString<T> {
 
         self.data[l] = c;
         self.len += 1;
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for FixedString<N> {
+    fn from(arr: [u8; N]) -> FixedString<N> {
+        let mut data = MaybeUninit::<char>::uninit_array::<N>();
+        let mut len = N;
+
+        for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
+            let val = *val;
+            if val == 0 && len == N { len = i; }
+            d.write(val as char);
+        }
+
+        let data = unsafe { MaybeUninit::array_assume_init(data) };
+        FixedString { data, len }
     }
 }
 
