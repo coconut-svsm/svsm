@@ -59,12 +59,8 @@ impl<const T: usize> FixedString<T> {
 
 impl<const T: usize> fmt::Display for FixedString<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut i = 0;
-        while i < self.len {
-            if let Err(e) = write!(f, "{}", self.data[i]) {
-                return Err(e);
-            }
-            i += 1;
+        for b in self.data.iter().take(self.len) {
+            write!(f, "{}", *b)?;
         }
         Ok(())
     }
