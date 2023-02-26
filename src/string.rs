@@ -21,18 +21,6 @@ impl<const T: usize> FixedString<T> {
         }
     }
 
-    pub fn from(str: &str) -> Self {
-        let mut fs = FixedString::new();
-        for (i, c) in str.chars().enumerate() {
-            if i == T {
-                break;
-            }
-            fs.data[i] = c;
-            fs.len += 1;
-        }
-        fs
-    }
-
     pub fn push(&mut self, c: char) {
         let l = self.len;
 
@@ -42,6 +30,17 @@ impl<const T: usize> FixedString<T> {
 
         self.data[l] = c;
         self.len += 1;
+    }
+}
+
+impl<const N: usize> From<&str> for FixedString<N> {
+    fn from(st: &str) -> FixedString<N> {
+        let mut fs = FixedString::new();
+        for c in st.chars().take(N) {
+            fs.data[fs.len] = c;
+            fs.len += 1;
+        }
+        fs
     }
 }
 
