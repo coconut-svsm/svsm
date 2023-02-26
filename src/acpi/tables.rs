@@ -288,20 +288,11 @@ impl ACPITableBuffer {
     }
 
     pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
-        let entries = self.tables.len();
-        let mut offset = self.size;
+        let offset = self.tables.iter()
+            .find(|entry| entry.sig == sig)
+            .map(|entry| entry.offset)?;
 
-        for i in 0..entries {
-            if self.tables[i].sig == sig {
-                offset = self.tables[i].offset;
-                break;
-            }
-        }
-
-        match self.acpi_table_from_offset(offset) {
-            Ok(t) => Some(t),
-            Err(_e) => None,
-        }
+        self.acpi_table_from_offset(offset).ok()
     }
 }
 
