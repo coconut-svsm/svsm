@@ -287,12 +287,12 @@ impl ACPITableBuffer {
         }
     }
 
-    pub fn acp_table_by_sig(&self, str: &str) -> Option<ACPITable> {
+    pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
         let entries = self.tables.len();
         let mut offset = self.size;
 
         for i in 0..entries {
-            if self.tables[i].sig.equal_str(str) {
+            if self.tables[i].sig == sig {
                 offset = self.tables[i].offset;
                 break;
             }

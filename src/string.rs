@@ -43,10 +43,12 @@ impl<const T: usize> FixedString<T> {
         self.data[l] = c;
         self.len += 1;
     }
+}
 
-    pub fn equal_str(&self, s: &str) -> bool {
-        for (i, c) in s.chars().enumerate() {
-            if i >= T {
+impl<const N: usize> PartialEq<&str> for FixedString<N> {
+    fn eq(&self, other: &&str) -> bool {
+        for (i, c) in other.chars().enumerate() {
+            if i >= N {
                 return false;
             }
             if self.data[i] != c {
