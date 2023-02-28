@@ -45,6 +45,7 @@ impl FwCfgFile {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MemoryRegion {
     pub start: u64,
     pub end: u64,
@@ -165,22 +166,11 @@ impl<'a> FwCfg<'a> {
     }
 
     fn find_kernel_region_e820(&self) -> Result<MemoryRegion, ()> {
-        let mut kernel_region = MemoryRegion { start: 0, end: 0 };
         let regions = self.get_memory_regions()?;
-
-        if regions.is_empty() {
-            return Err(());
-        }
-
-        for region in regions.iter() {
-            let start = region.start;
-            let end = region.end;
-
-            if start >= kernel_region.start {
-                kernel_region.start = start;
-                kernel_region.end = end;
-            }
-        }
+        let mut kernel_region = regions.iter()
+            .max_by_key(|region| region.start)
+            .copied()
+            .ok_or(())?;
 
         let start = (kernel_region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
 
