@@ -30,4 +30,5 @@ log = { version = "0.4.17", features = ["max_level_info", "release_max_level_inf
 cc = "1.0.46"
 
 [features]
+default = ["enable-stacktrace"]
 enable-stacktrace = []
