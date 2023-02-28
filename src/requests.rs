@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa, register_guest_vmsa};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::{VMSA, GuestVMExit};
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
@@ -158,20 +158,8 @@ fn core_create_vcpu(vmsa: &VMSA) -> Result<(), SvsmError> {
         return Err(SvsmError::invalid_parameter());
     }
 
-    // Unmap any previously used VMSA on the target VCPU and map the new one
-    if target_cpu.try_unmap_guest_vmsa()
-        .and_then(|_| target_cpu.map_guest_vmsa(paddr, true))
-        .is_err()
-    {
-        core_create_vcpu_error_restore(vaddr)?;
-        return Err(SvsmError::busy());
-    }
-
-    if target_cpu.map_caa_phys(pcaa).is_err() {
-        target_cpu.unmap_guest_vmsa();
-        core_create_vcpu_error_restore(vaddr)?;
-        return Err(SvsmError::busy());
-    }
+    register_guest_vmsa(paddr, apic_id, true);
+    target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())
 }
@@ -179,24 +167,30 @@ fn core_create_vcpu(vmsa: &VMSA) -> Result<(), SvsmError> {
 fn core_delete_vcpu(vmsa: &VMSA)-> Result<(), SvsmError> {
     let paddr = vmsa.rcx as PhysAddr;
 
-    let vmsa_entry = unregister_guest_vmsa(paddr)
-        .map_err(|e| match e {
-            e if e > 0 => SvsmError::protocol(e),
-            _ => SvsmError::invalid_parameter(),
-        })?;
-
     // Map the VMSA
-    let mapping_guard = PerCPUPageMappingGuard::create(vmsa_entry.paddr, 0, false)
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 0, false)
         .map_err(SvsmError::FatalError)?;
 
+    let vaddr = mapping_guard.virt_addr();
+
     // Remove VMSA permissions from page
-    rmp_clear_guest_vmsa(mapping_guard.virt_addr())?;
+    rmp_clear_guest_vmsa(vaddr)?;
+
+    // Clear EFER.SVME on deleted VMSA
+    let del_vmsa = VMSA::from_virt_addr(vaddr);
+    del_vmsa.disable();
 
     // Unmap the page
     drop(mapping_guard);
 
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync();
+
+    unregister_guest_vmsa(paddr)
+        .map_err(|e| match e {
+            e if e > 0 => SvsmError::protocol(e),
+            _ => SvsmError::invalid_parameter(),
+        })?;
 
     Ok(())
 }
@@ -334,17 +328,20 @@ fn core_remap_ca(vmsa: &VMSA) -> Result<(), SvsmError> {
         return Err(SvsmError::invalid_parameter());
     }
 
-    // Unmap old CAA
-    this_cpu_mut().unmap_caa();
+    let offset = page_offset(gpa);
+    let paddr = page_align(gpa);
 
-    // Map new CAA
-    let vaddr = this_cpu_mut()
-        .map_caa_phys(gpa)
+    // Temporarily map new CAA to clear it
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
         .map_err(SvsmError::FatalError)?;
+
+    let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);
     pending.write(0)
         .map_err(|_| SvsmError::invalid_address())?;
+
+    this_cpu_mut().update_guest_caa(gpa);
 
     Ok(())
 }
@@ -363,12 +360,43 @@ fn core_protocol_request(request: u32, vmsa: &VMSA) -> Result<(), SvsmError> {
     }
 }
 
+/// Returns true if there is a valid VMSA mapping
+pub fn update_mappings() -> Result<(), ()> {
+    let mut locked = this_cpu_mut().guest_vmsa_ref();
+    let mut ret = Ok(());
+
+    if locked.needs_update() {
+        this_cpu_mut().unmap_guest_vmsa();
+        this_cpu_mut().unmap_caa();
+
+        let vmsa_phys = locked.vmsa_phys();
+        if vmsa_phys.is_some() {
+            let paddr = vmsa_phys.unwrap();
+            this_cpu_mut().map_guest_vmsa(paddr)?;
+        } else {
+            ret = Err(());
+        }
+
+        let caa_phys = locked.caa_phys();
+        if caa_phys.is_some() {
+            let paddr = caa_phys.unwrap();
+            this_cpu_mut().map_guest_caa(paddr)?;
+        } else {
+            ret = Err(());
+        }
+
+        locked.set_updated();
+    }
+
+    ret
+}
+
 fn request_loop_once(vmsa: &VMSA, protocol: u32, request: u32) -> Result<bool, SvsmError> {
     if !matches!(vmsa.guest_exit_code, GuestVMExit::VMGEXIT) {
         return Ok(false);
     }
 
-    let caa_addr = this_cpu().get_caa_addr()
+    let caa_addr = this_cpu().caa_addr()
         .ok_or_else(|| {
             log::error!("No CAA mapped - bailing out");
             SvsmError::FatalError(())
@@ -392,18 +420,13 @@ fn request_loop_once(vmsa: &VMSA, protocol: u32, request: u32) -> Result<bool, S
 
 pub fn request_loop() {
     loop {
-        let locked = this_cpu_mut().get_guest_vmsa();
-        let vmsa_ref = match locked.clone() {
-            Some(vmsa) => vmsa,
-            None => {
-                // When there is no VMSA - go into halt and retry when someone wakes us up
-                log::debug!("No VMSA! Halting");
-                drop(locked);
-                halt();
-                continue;
-            }
-        };
-        let vmsa = vmsa_ref.vmsa();
+        if update_mappings().is_err() {
+            log::debug!("No VMSA or CAA! Halting");
+            halt();
+            continue;
+        }
+
+        let vmsa = this_cpu_mut().guest_vmsa();
 
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();
@@ -431,6 +454,10 @@ pub fn request_loop() {
         vmsa.enable();
 
         flush_tlb_global_sync();
-        this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
+
+        // Check if mappings still valid
+        if update_mappings().is_ok() {
+            this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
+        }
     }
 }

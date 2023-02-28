@@ -39,8 +39,9 @@ use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
 use svsm::cpu::percpu::{this_cpu_mut, this_cpu};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::requests::request_loop;
+use svsm::requests::{request_loop, update_mappings};
 use svsm::cpu::smp::start_secondary_cpus;
+use svsm::debug::stacktrace::*;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -207,33 +208,26 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
-fn setup_caa(fw_meta: &SevFWMetaData) -> Result<VirtAddr, ()> {
-    let addr = fw_meta.caa_page.unwrap();
-
-    this_cpu_mut().map_caa_phys(addr)
-}
-
-fn prepare_fw_launch() -> Result<(), ()>
+fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()>
 {
+    let caa = fw_meta.caa_page.unwrap();
     let cpu = this_cpu_mut();
 
     cpu.alloc_guest_vmsa()?;
-    cpu.prepare_guest_vmsa()?;
+    cpu.update_guest_caa(caa);
+    update_mappings()?;
 
     Ok(())
 }
 
 fn launch_fw() -> Result<(),()> {
-    let guard = this_cpu_mut().get_guest_vmsa();
-    let opt_vmsa_ref = guard.clone();
-    let vmsa_ref = opt_vmsa_ref.unwrap();
-    let vmsa_pa = vmsa_ref.paddr;
+    let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
+    let vmsa = this_cpu_mut().guest_vmsa();
 
-    vmsa_ref.vmsa().enable();
-    let sev_features = vmsa_ref.vmsa().sev_features;
+    log::info!("VMSA PA: {:#x}", vmsa_pa);
 
-    // Drop lock
-    drop(guard);
+    vmsa.enable();
+    let sev_features = vmsa.sev_features;
 
     log::info!("Launching Firmware");
     this_cpu_mut().ghcb().ap_create(vmsa_pa, 0, 1, sev_features)?;
@@ -405,11 +399,9 @@ pub extern "C" fn svsm_main() {
 
     copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
 
-    setup_caa(&fw_meta).expect("Failed to setup CAA for BSP");
-
     validate_flash().expect("Failed to validate flash memory");
 
-    prepare_fw_launch().expect("Failed to setup guest VMSA");
+    prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
     launch_fw().expect("Failed to launch FW");
 
