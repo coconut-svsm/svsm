@@ -183,32 +183,18 @@ impl<'a> FwCfg<'a> {
         }
     }
 
-    pub fn flash_region_count(&self) -> u32 {
-        let result = self.file_selector("etc/flash");
+    // This needs to be &mut self to prevent iterator invalidation, where the caller
+    // could do fw_cfg.select() while iterating. Having a mutable reference prevents
+    // other references.
+    pub fn iter_flash_regions(&mut self) -> impl Iterator<Item = MemoryRegion> + '_ {
+        let num = match self.file_selector("etc/flash") {
+            Ok(file) => {
+                self.select(file.selector);
+                file.size as usize / 16
+            },
+            Err(_) => 0
+        };
 
-        if let Err(_) = result {
-            return 0;
-        }
-
-        let file = result.unwrap();
-
-        return file.size / 16;
-    }
-
-    pub fn get_flash_region(&self, index : u32) -> Result<MemoryRegion, ()> {
-        let file = self.file_selector("etc/flash")?;
-
-        if index * 16 > file.size - 16 {
-            return Err(());
-        }
-
-        self.select(file.selector);
-
-        // skip over unwanted entries
-        for _ in 0..index*2 {
-            let _ = self.read_le::<u64>();
-        }
-
-        Ok(self.read_memory_region())
+        (0..num).map(|_| self.read_memory_region())
     }
 }
