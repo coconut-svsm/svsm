@@ -61,9 +61,9 @@ impl Drop for PerCPUPageMappingGuard {
         if let Some(m) = &self.mapping {
             let size = m.end - m.start;
             if size == PAGE_SIZE {
-                this_cpu_mut().get_pgtable().unmap_4k(m.start).expect("Failed to unmap private 4k mapping");
+                this_cpu_mut().get_pgtable().unmap_4k(m.start);
             } else if size == PAGE_SIZE_2M {
-                this_cpu_mut().get_pgtable().unmap_2m(m.start).expect("Failed to unmap private 2M mapping");
+                this_cpu_mut().get_pgtable().unmap_2m(m.start);
             } else {
                 assert!(false);
             }
@@ -102,7 +102,7 @@ impl PTMappingGuard {
 impl Drop for PTMappingGuard {
     fn drop(&mut self) {
         if let Some(m) = &self.mapping {
-            get_init_pgtable_locked().unmap_region_4k(m.start, m.end).expect("Failed guarded region");
+            get_init_pgtable_locked().unmap_region_4k(m.start, m.end);
             flush_tlb_global_sync();
         }
     }

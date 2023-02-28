@@ -168,9 +168,7 @@ fn core_create_vcpu(vmsa: &VMSA) -> Result<(), SvsmError> {
     }
 
     if target_cpu.map_caa_phys(pcaa).is_err() {
-        if target_cpu.unmap_guest_vmsa().is_err() {
-            log::error!("Failed to unmap guest VMSA");
-        }
+        target_cpu.unmap_guest_vmsa();
         core_create_vcpu_error_restore(vaddr)?;
         return Err(SvsmError::busy());
     }
@@ -337,9 +335,7 @@ fn core_remap_ca(vmsa: &VMSA) -> Result<(), SvsmError> {
     }
 
     // Unmap old CAA
-    this_cpu_mut()
-        .unmap_caa()
-        .map_err(SvsmError::FatalError)?;
+    this_cpu_mut().unmap_caa();
 
     // Map new CAA
     let vaddr = this_cpu_mut()

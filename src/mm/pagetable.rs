@@ -106,6 +106,10 @@ impl PTEntry {
         self.0 = 0;
     }
 
+    pub fn present(&self) -> bool {
+        self.flags().contains(PTEntryFlags::PRESENT)
+    }
+
     pub fn raw(&self) -> u64 {
         self.0
     }
@@ -471,20 +475,16 @@ impl PageTable {
     pub fn unmap_2m(
             &mut self,
             vaddr: VirtAddr,
-            ) -> Result<(),()> {
+            ) {
         assert!(is_aligned(vaddr, PAGE_SIZE_2M));
 
         let mapping = self.walk_addr(vaddr);
 
-        if let Mapping::Level1(entry) = mapping {
-            if !entry.flags().contains(PTEntryFlags::PRESENT | PTEntryFlags::HUGE) {
-                return Err(());
-            }
-
-            entry.clear();
-            Ok(())
-        } else {
-            Err(())
+        match mapping {
+            Mapping::Level0(_) => assert!(false),
+            Mapping::Level1(entry) => entry.clear(),
+            Mapping::Level2(entry) => assert!(!entry.present()),
+            Mapping::Level3(entry) => assert!(!entry.present()),
         }
     }
 
@@ -505,14 +505,14 @@ impl PageTable {
         }
     }
 
-    pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    pub fn unmap_4k(&mut self, vaddr: VirtAddr) {
         let mapping = self.walk_addr(vaddr);
 
-        if let Mapping::Level0(entry) = mapping {
-            entry.clear();
-            Ok(())
-        } else {
-            Err(())
+        match mapping {
+            Mapping::Level0(entry) => entry.clear(),
+            Mapping::Level1(entry) => assert!(!entry.present()),
+            Mapping::Level2(entry) => assert!(!entry.present()),
+            Mapping::Level3(entry) => assert!(!entry.present()),
         }
     }
 
@@ -556,11 +556,10 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) -> Result<(), ()> {
+    pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) {
         for addr in (start..end).step_by(PAGE_SIZE) {
-            self.unmap_4k(addr)?;
+            self.unmap_4k(addr);
         }
-        Ok(())
     }
 
     pub fn map_region_2m(
@@ -576,11 +575,10 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) -> Result<(), ()> {
+    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) {
         for addr in (start..end).step_by(PAGE_SIZE_2M) {
-            self.unmap_2m(addr)?;
+            self.unmap_2m(addr);
         }
-        Ok(())
     }
 
     pub fn map_region(
@@ -611,7 +609,7 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn unmap_region(&mut self, start: VirtAddr, end: VirtAddr) -> Result<(), ()> {
+    pub fn unmap_region(&mut self, start: VirtAddr, end: VirtAddr) {
         let mut vaddr = start;
 
         while vaddr < end {
@@ -627,13 +625,10 @@ impl PageTable {
                     vaddr += PAGE_SIZE_2M;
                 }
                 _ => {
-                    log::error!("Can't unmap - address not mapped {:#x}", vaddr);
-                    return Err(());
+                    log::debug!("Can't unmap - address not mapped {:#x}", vaddr);
                 }
             }
         }
-
-        Ok(())
     }
 }
 

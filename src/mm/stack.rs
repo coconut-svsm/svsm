@@ -104,7 +104,7 @@ pub fn free_stack(stack: VirtAddr) {
         let addr = stack + (i * PAGE_SIZE);
         let paddr = pgtable.phys_addr(addr).expect("Failed to get stack physical address");
         let vaddr = phys_to_virt(paddr);
-        pgtable.unmap_4k(addr).expect("Failed to unmap stack");
+        pgtable.unmap_4k(addr);
         pages[i] = vaddr;
     }
 

@@ -279,19 +279,17 @@ impl PerCpu {
             return Ok(());
         }
 
-        if let Err(_) = self.unmap_guest_vmsa_locked(&mut *opt_vmsa_ref) {
-            log::error!("Failed to unmap guest VMSA");
-        }
+        self.unmap_guest_vmsa_locked(&mut *opt_vmsa_ref);
 
         Ok(())
     }
 
-    pub fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) -> Result<(), ()> {
+    pub fn unmap_guest_vmsa_locked(&self, vmsa_ref: &mut Option<VmsaRef>) {
         let new_ref = vmsa_ref.clone();
         if let Some(vmsa_info) = new_ref {
             let paddr = vmsa_info.paddr;
 
-            self.get_pgtable().unmap_4k(vmsa_info.vaddr)?;
+            self.get_pgtable().unmap_4k(vmsa_info.vaddr);
 
             if !vmsa_info.guest_owned {
                 // Get the virtual address in SVSM shared memory
@@ -303,19 +301,17 @@ impl PerCpu {
         }
 
         *vmsa_ref = None;
-
-        Ok(())
     }
 
-    pub fn unmap_guest_vmsa(&self) -> Result<(), ()> {
+    pub fn unmap_guest_vmsa(&self) {
         let mut vmsa_ref = self.guest_vmsa_locked.lock();
 
-        self.unmap_guest_vmsa_locked(&mut vmsa_ref)
+        self.unmap_guest_vmsa_locked(&mut vmsa_ref);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr, guest_owned: bool) -> Result<(), ()> {
         let mut vmsa_ref = self.guest_vmsa_locked.lock();
-        self.unmap_guest_vmsa_locked(&mut vmsa_ref)?;
+        self.unmap_guest_vmsa_locked(&mut vmsa_ref);
 
         let flags = PageTable::data_flags();
         let vaddr = SVSM_PERCPU_VMSA_BASE;
@@ -352,7 +348,7 @@ impl PerCpu {
         }
         let vmsa_ref = (*guard).unwrap();
         let ret = vmsa_ref.clone();
-        self.unmap_guest_vmsa_locked(&mut guard)?;
+        self.unmap_guest_vmsa_locked(&mut guard);
 
         Ok(Some(ret))
     }
@@ -380,20 +376,18 @@ impl PerCpu {
         *self.caa_addr.lock()
     }
 
-    pub fn unmap_caa(&self) -> Result<(),()> {
+    pub fn unmap_caa(&self) {
         let mut caa_addr = self.caa_addr.lock();
         if let Some(v) = *caa_addr {
             let start = page_align(v);
 
             *caa_addr = None;
-            self.get_pgtable().unmap_4k(start)?;
+            self.get_pgtable().unmap_4k(start);
         }
-
-        Ok(())
     }
 
     pub fn map_caa_phys(&self, paddr: PhysAddr) -> Result<VirtAddr, ()> {
-        self.unmap_caa()?;
+        self.unmap_caa();
 
         let paddr_aligned = page_align(paddr);
         let page_offset = page_offset(paddr);
