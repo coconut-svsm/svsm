@@ -41,7 +41,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::cpu::smp::start_secondary_cpus;
-use svsm::debug::stacktrace::*;
+use svsm::debug::stacktrace::print_stack;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -412,7 +412,10 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    log::error!("Panic: {}", info);
+    log::error!("Panic: CPU[{}] {}", this_cpu().get_apic_id(), info);
+
+    print_stack(3);
+
     loop {
         halt();
     }

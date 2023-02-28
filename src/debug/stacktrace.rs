@@ -183,6 +183,23 @@ impl Iterator for StackUnwinder {
     }
 }
 
+#[cfg(feature = "enable-stacktrace")]
+pub fn print_stack(skip: usize) {
+    let unwinder = StackUnwinder::unwind_this_cpu();
+    log::info!("---BACKTRACE---:");
+    for frame in unwinder.skip(skip) {
+        match frame {
+            UnwoundStackFrame::Valid(item) => log::info!("  [{:#018x}]", item.rip),
+            UnwoundStackFrame::Invalid => log::info!("  Invalid frame"),
+        }
+    }
+    log::info!("---END---");
+}
+
+#[cfg(not(feature = "enable-stacktrace"))]
+pub fn print_stack() {
+    log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
+}
 
 // Stub implementation if stacktraces are disabled.
 #[cfg(not(feature = "enable-stacktrace"))]
