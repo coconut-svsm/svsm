@@ -99,7 +99,7 @@ impl<'a> FwCfg<'a> {
         io.inb(FW_CFG_DATA) as char
     }
 
-    pub fn file_selector(&self, str: &str) -> Result<FwCfgFile, ()> {
+    pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, ()> {
         let mut ret: Result<FwCfgFile, ()> = Err(());
         self.select(FW_CFG_FILE_DIR);
         let mut n: u32 = self.read_be();
@@ -116,7 +116,7 @@ impl<'a> FwCfg<'a> {
 
     //        log::info!("FwCfg File: {} Size: {}", fs, size);
 
-            if fs.equal_str(str) {
+            if fs == name {
                 ret = Ok(FwCfgFile {
                     size: size,
                     selector: select,

@@ -88,16 +88,6 @@ struct ACPITableHeader {
     compiler_rev: u32,
 }
 
-fn array_to_string<const S: usize>(data: [u8; S]) -> FixedString<S> {
-    let mut fs = FixedString::<S>::new();
-
-    for i in 0..S {
-        fs.push(data[i] as char);
-    }
-
-    fs
-}
-
 impl ACPITableHeader {
     pub const fn new(raw: RawACPITableHeader) -> Self {
         ACPITableHeader {
@@ -115,10 +105,10 @@ impl ACPITableHeader {
 
     #[allow(dead_code)]
     pub fn print_summary(&self) {
-        let sig = array_to_string(self.sig);
-        let oem_id = array_to_string(self.oem_id);
-        let oem_table_id = array_to_string(self.oem_table_id);
-        let compiler_id = array_to_string(self.compiler_id);
+        let sig = FixedString::from(self.sig);
+        let oem_id = FixedString::from(self.oem_id);
+        let oem_table_id = FixedString::from(self.oem_table_id);
+        let compiler_id = FixedString::from(self.compiler_id);
         log::trace!(
             "ACPI: [{} {} {} {} {} {} {} {} {}]",
             sig,
@@ -161,7 +151,7 @@ impl ACPITable {
 
     #[allow(dead_code)]
     pub fn signature(&self) -> FixedString<4> {
-        array_to_string(self.header.sig)
+        FixedString::from(self.header.sig)
     }
 
     pub fn content_length(&self) -> usize {
@@ -186,7 +176,7 @@ struct ACPITableMeta {
 
 impl ACPITableMeta {
     pub fn new(header: &RawACPITableHeader, offset: usize) -> Self {
-        let sig = array_to_string(header.sig);
+        let sig = FixedString::from(header.sig);
 
         ACPITableMeta {
             sig: sig,
@@ -287,21 +277,12 @@ impl ACPITableBuffer {
         }
     }
 
-    pub fn acp_table_by_sig(&self, str: &str) -> Option<ACPITable> {
-        let entries = self.tables.len();
-        let mut offset = self.size;
+    pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
+        let offset = self.tables.iter()
+            .find(|entry| entry.sig == sig)
+            .map(|entry| entry.offset)?;
 
-        for i in 0..entries {
-            if self.tables[i].sig.equal_str(str) {
-                offset = self.tables[i].offset;
-                break;
-            }
-        }
-
-        match self.acpi_table_from_offset(offset) {
-            Ok(t) => Some(t),
-            Err(_e) => None,
-        }
+        self.acpi_table_from_offset(offset).ok()
     }
 }
 

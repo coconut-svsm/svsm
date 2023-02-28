@@ -7,6 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use core::fmt;
+use core::mem::MaybeUninit;
 
 pub struct FixedString<const T: usize> {
     len: usize,
@@ -21,18 +22,6 @@ impl<const T: usize> FixedString<T> {
         }
     }
 
-    pub fn from(str: &str) -> Self {
-        let mut fs = FixedString::new();
-        for (i, c) in str.chars().enumerate() {
-            if i == T {
-                break;
-            }
-            fs.data[i] = c;
-            fs.len += 1;
-        }
-        fs
-    }
-
     pub fn push(&mut self, c: char) {
         let l = self.len;
 
@@ -43,10 +32,39 @@ impl<const T: usize> FixedString<T> {
         self.data[l] = c;
         self.len += 1;
     }
+}
 
-    pub fn equal_str(&self, s: &str) -> bool {
-        for (i, c) in s.chars().enumerate() {
-            if i >= T {
+impl<const N: usize> From<[u8; N]> for FixedString<N> {
+    fn from(arr: [u8; N]) -> FixedString<N> {
+        let mut data = MaybeUninit::<char>::uninit_array::<N>();
+        let mut len = N;
+
+        for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
+            let val = *val;
+            if val == 0 && len == N { len = i; }
+            d.write(val as char);
+        }
+
+        let data = unsafe { MaybeUninit::array_assume_init(data) };
+        FixedString { data, len }
+    }
+}
+
+impl<const N: usize> From<&str> for FixedString<N> {
+    fn from(st: &str) -> FixedString<N> {
+        let mut fs = FixedString::new();
+        for c in st.chars().take(N) {
+            fs.data[fs.len] = c;
+            fs.len += 1;
+        }
+        fs
+    }
+}
+
+impl<const N: usize> PartialEq<&str> for FixedString<N> {
+    fn eq(&self, other: &&str) -> bool {
+        for (i, c) in other.chars().enumerate() {
+            if i >= N {
                 return false;
             }
             if self.data[i] != c {
@@ -59,12 +77,8 @@ impl<const T: usize> FixedString<T> {
 
 impl<const T: usize> fmt::Display for FixedString<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut i = 0;
-        while i < self.len {
-            if let Err(e) = write!(f, "{}", self.data[i]) {
-                return Err(e);
-            }
-            i += 1;
+        for b in self.data.iter().take(self.len) {
+            write!(f, "{}", *b)?;
         }
         Ok(())
     }
