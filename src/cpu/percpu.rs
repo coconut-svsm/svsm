@@ -81,7 +81,7 @@ pub struct PerCpu {
     ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
-    guest_vmsa: SpinLock::<Option<VmsaRef>>,
+    guest_vmsa_locked: SpinLock::<Option<VmsaRef>>,
     caa_addr: SpinLock::<Option<VirtAddr>>,
     reset_ip: u64,
 }
@@ -97,7 +97,7 @@ impl PerCpu {
             ist: IstStacks::new(),
             tss: X86Tss::new(),
             svsm_vmsa: None,
-            guest_vmsa: SpinLock::new(None),
+            guest_vmsa_locked: SpinLock::new(None),
             caa_addr: SpinLock::new(None),
             reset_ip: 0xffff_fff0u64,
         }
@@ -272,7 +272,7 @@ impl PerCpu {
 
     // Returns Error when VMSA is locked/busy
     pub fn try_unmap_guest_vmsa(&self) -> Result<(), ()> {
-        let mut opt_vmsa_ref = self.guest_vmsa.try_lock()?;
+        let mut opt_vmsa_ref = self.guest_vmsa_locked.try_lock()?;
 
         // If there is no VMSA, the nothing to unmap
         if let None = *opt_vmsa_ref {
@@ -308,13 +308,13 @@ impl PerCpu {
     }
 
     pub fn unmap_guest_vmsa(&self) -> Result<(), ()> {
-        let mut vmsa_ref = self.guest_vmsa.lock();
+        let mut vmsa_ref = self.guest_vmsa_locked.lock();
 
         self.unmap_guest_vmsa_locked(&mut vmsa_ref)
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr, guest_owned: bool) -> Result<(), ()> {
-        let mut vmsa_ref = self.guest_vmsa.lock();
+        let mut vmsa_ref = self.guest_vmsa_locked.lock();
         self.unmap_guest_vmsa_locked(&mut vmsa_ref)?;
 
         let flags = PageTable::data_flags();
@@ -341,11 +341,11 @@ impl PerCpu {
     }
 
     pub fn get_guest_vmsa(&self) -> LockGuard<Option<VmsaRef>> {
-        self.guest_vmsa.lock()
+        self.guest_vmsa_locked.lock()
     }
 
     pub fn try_update_guest_vmsa(&self) -> Result<Option<VmsaRef>, ()> {
-        let mut guard = self.guest_vmsa.try_lock()?;
+        let mut guard = self.guest_vmsa_locked.try_lock()?;
 
         if let None = *guard {
             return Ok(None);
