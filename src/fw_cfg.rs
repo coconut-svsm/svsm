@@ -53,13 +53,11 @@ pub struct MemoryRegion {
 
 impl<'a> FwCfg<'a> {
     pub fn new(driver: &'a dyn IOPort) -> Self {
-        FwCfg { driver: driver }
+        FwCfg { driver }
     }
 
     pub fn select(&self, cfg: u16) {
-        let io = &self.driver;
-
-        io.outw(FW_CFG_CTL, cfg);
+        self.driver.outw(FW_CFG_CTL, cfg);
     }
 
     pub fn read_le<T>(&self) -> T
@@ -67,7 +65,6 @@ impl<'a> FwCfg<'a> {
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
             + core::convert::From<u8>
-            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -83,7 +80,6 @@ impl<'a> FwCfg<'a> {
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
             + core::convert::From<u8>
-            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -95,9 +91,7 @@ impl<'a> FwCfg<'a> {
     }
 
     pub fn read_char(&self) -> char {
-        let io = &self.driver;
-
-        io.inb(FW_CFG_DATA) as char
+        self.driver.inb(FW_CFG_DATA) as char
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, ()> {
