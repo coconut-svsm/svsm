@@ -260,9 +260,16 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn core_configure_vtom(_params: &RequestParams) -> Result<(), SvsmError> {
-    log::info!("Request SVSM_REQ_CORE_CONFIGURE_VTOM not yet supported");
-    Err(SvsmError::unsupported_call())
+fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmError> {
+    let query: bool = (params.rcx & 1) == 1;
+
+    // Report that vTOM configuration is unsupported
+    if query {
+        params.rcx = 0;
+        Ok(())
+    } else {
+        Err(SvsmError::invalid_request())
+    }
 }
 
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
