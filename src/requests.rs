@@ -94,6 +94,10 @@ const SVSM_REQ_CORE_WITHDRAW_MEM : u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL : u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM : u32 = 7;
 
+const CORE_PROTOCOL: u32 = 1;
+const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
+const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
+
 struct RequestParams {
     guest_exit_code: GuestVMExit,
     sev_features: u64,
@@ -230,9 +234,30 @@ fn core_withdraw_mem(_params: &RequestParams) -> Result<(), SvsmError> {
     Err(SvsmError::unsupported_call())
 }
 
-fn core_query_protocol(_params: &RequestParams) -> Result<(), SvsmError> {
-    log::info!("Request SVSM_REQ_CORE_QUERY_PROTOCOL not yet supported");
-    Err(SvsmError::unsupported_call())
+fn protocol_supported(version: u32, version_min: u32, version_max: u32) -> u64 {
+    if version >= version_min && version <= version_max {
+        let ret_low: u64 = version_min.into();
+        let ret_high: u64 = version_max.into();
+
+        ret_low | (ret_high << 32)
+    } else {
+        0
+    }
+}
+
+fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmError> {
+    let rcx: u64 = params.rcx;
+    let protocol: u32 = (rcx >> 32).try_into().unwrap();
+    let version: u32 = (rcx & 0xffff_ffffu64).try_into().unwrap();
+
+    let ret_val = match protocol {
+        CORE_PROTOCOL => protocol_supported(version, CORE_PROTOCOL_VERSION_MIN, CORE_PROTOCOL_VERSION_MAX),
+        _ => 0,
+    };
+
+    params.rcx = ret_val;
+
+    Ok(())
 }
 
 fn core_configure_vtom(_params: &RequestParams) -> Result<(), SvsmError> {
@@ -371,7 +396,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn core_protocol_request(request: u32, params: &RequestParams) -> Result<(), SvsmError> {
+fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmError> {
     match request {
         SVSM_REQ_CORE_REMAP_CA => core_remap_ca(params),
         SVSM_REQ_CORE_PVALIDATE => core_pvalidate(params),
