@@ -168,13 +168,13 @@ impl<'a> FwCfg<'a> {
         let mut kernel_region = MemoryRegion { start: 0, end: 0 };
         let regions = self.get_memory_regions()?;
 
-        if regions.len() == 0 {
+        if regions.is_empty() {
             return Err(());
         }
 
-        for i in 0..regions.len() {
-            let start = regions[i].start;
-            let end = regions[i].end;
+        for region in regions.iter() {
+            let start = region.start;
+            let end = region.end;
 
             if start >= kernel_region.start {
                 kernel_region.start = start;

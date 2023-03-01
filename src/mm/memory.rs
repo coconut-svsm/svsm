@@ -21,16 +21,16 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
     let mut regions = fwcfg.get_memory_regions()?;
 
     // Remove SVSM memory from guest memory map
-    for i in 0..regions.len() {
-        if (launch_info.kernel_start > regions[i].start) &&
-           (launch_info.kernel_start < regions[i].end) {
-               regions[i].end = launch_info.kernel_start;
+    for mut region in regions.iter_mut() {
+        if (launch_info.kernel_start > region.start) &&
+           (launch_info.kernel_start < region.end) {
+               region.end = launch_info.kernel_start;
            }
     }
 
     log::info!("Guest Memory Regions:");
-    for i in 0..regions.len() {
-        log::info!("  {:018x}-{:018x}", regions[i].start, regions[i].end);
+    for r in regions.iter() {
+        log::info!("  {:018x}-{:018x}", r.start, r.end);
     }
 
     unsafe { MEMORY_MAP = regions; }
@@ -39,15 +39,9 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
 }
 
 pub fn valid_phys_address(addr: PhysAddr) -> bool {
-    let len = unsafe { MEMORY_MAP.len() };
-    for i in 0..len {
-        let start: PhysAddr = unsafe {MEMORY_MAP[i].start.try_into().unwrap() };
-        let end: PhysAddr = unsafe { MEMORY_MAP[i].end.try_into().unwrap() };
-
-        if (addr >= start) && (addr <  end) {
-            return true;
-        }
+    let addr = addr as u64;
+    unsafe {
+        MEMORY_MAP.iter()
+            .any(|region| addr >= region.start && addr < region.end )
     }
-
-    return false;
 }
