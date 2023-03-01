@@ -293,7 +293,7 @@ fn core_pvalidate(vmsa: &VMSA) -> Result<(), SvsmError> {
 
     let guest_entries = guest_page.offset(1).cast::<u64>();
     for i in next..entries {
-        let index = i as usize;
+        let index = i as isize;
         let entry = match guest_entries.offset(index).read() {
             Ok(v) => v,
             Err(_) => {

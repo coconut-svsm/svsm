@@ -8,7 +8,6 @@
 
 use crate::types::VirtAddr;
 
-use core::marker::PhantomData;
 use core::mem::{size_of, MaybeUninit};
 use core::arch::asm;
 
@@ -104,7 +103,8 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64,()> {
 }
 
 #[inline]
-unsafe fn do_movsb(src: VirtAddr, dst: VirtAddr, size: usize) -> Result<(),()> {
+unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(),()> {
+    let size: usize = size_of::<T>();
     let mut rcx : u64; 
 
     asm!("1:cld
@@ -116,81 +116,58 @@ unsafe fn do_movsb(src: VirtAddr, dst: VirtAddr, size: usize) -> Result<(),()> {
          .quad (2b)
          .popsection",
             in("rsi") src,
-            in("rdi") dst,
-            in("rcx") size,
-            lateout("rcx") rcx,
+            inout("rdi") dst => _,
+            inout("rcx") size => rcx,
             options(att_syntax, nostack));
 
     if rcx == 0 { Ok(()) } else { Err(()) }
-}
-
-unsafe fn read_generic<T>(src: VirtAddr, buffer : &mut T) -> Result<(),()>
-where
-    T : Sized + Copy
-{
-    let dst = (buffer as *mut T) as VirtAddr;
-    let size = size_of::<T>();
-
-    do_movsb(src, dst, size)
-}
-
-unsafe fn write_generic<T>(dst: VirtAddr, buffer : &T) -> Result<(),()>
-where
-    T : Sized + Copy
-{
-    let src = (buffer as *const T) as VirtAddr;
-    let size = size_of::<T>();
-
-    do_movsb(src, dst, size)
 }
 
 pub struct GuestPtr<T>
 where
     T : Sized + Copy
 {
-    addr: VirtAddr,
-    _phantom: PhantomData<T>,
+    ptr: *mut T,
 }
 
 impl<T : Sized + Copy> GuestPtr<T> {
     pub fn new(v: VirtAddr) -> Self {
-        GuestPtr { addr: v, _phantom: PhantomData }
+        GuestPtr { ptr: v as *mut T}
+    }
+
+    pub fn from_ptr(p: *mut T) -> Self {
+        GuestPtr { ptr: p }
     }
 
     pub fn read(&self) -> Result<T,()> {
-        let result;
-        let mut buf : T = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut buf = MaybeUninit::<T>::uninit();
 
-        unsafe { result = read_generic::<T>(self.addr, &mut buf); }
-
-        if let Ok(_) = result { Ok(buf) } else { Err(()) }
-    }
-
-    pub fn write(&self, buf: T) -> Result<T,()> {
-        let result;
-
-        unsafe { result = write_generic::<T>(self.addr, &buf); }
+        let result = unsafe { do_movsb(self.ptr, buf.as_mut_ptr()) };
+        let buf = unsafe { buf.assume_init() };
 
         if let Ok(_) = result { Ok(buf) } else { Err(()) }
     }
 
-    pub fn write_ref(&self, buf: &T) -> Result<T,()> {
-        let result;
+    pub fn write(&self, buf: T) -> Result<(),()> {
+        let src = &buf as *const T;
+        
+        unsafe { do_movsb(src, self.ptr) }
+    }
 
-        unsafe { result = write_generic::<T>(self.addr, &buf); }
+    pub fn write_ref(&self, buf: &T) -> Result<(),()> {
+        let src = buf as *const T;
 
-        if let Ok(_) = result { Ok(*buf) } else { Err(()) }
+        unsafe { do_movsb(src, self.ptr) }
     }
 
     pub fn cast<N : Sized + Copy>(&self) -> GuestPtr<N>
     where
         N : Sized + Copy
     {
-        GuestPtr::<N>::new(self.addr)
+        GuestPtr::<N>::new(self.ptr as VirtAddr)
     }
 
-    pub fn offset(&self, count: usize) -> Self {
-        let offset = count * size_of::<T>();
-        GuestPtr::new(self.addr + offset)
+    pub fn offset(&self, count: isize) -> Self {
+        unsafe { GuestPtr::from_ptr(self.ptr.offset(count)) }
     }
 }
