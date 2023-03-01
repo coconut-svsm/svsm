@@ -45,6 +45,7 @@ impl FwCfgFile {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MemoryRegion {
     pub start: u64,
     pub end: u64,
@@ -52,13 +53,11 @@ pub struct MemoryRegion {
 
 impl<'a> FwCfg<'a> {
     pub fn new(driver: &'a dyn IOPort) -> Self {
-        FwCfg { driver: driver }
+        FwCfg { driver }
     }
 
     pub fn select(&self, cfg: u16) {
-        let io = &self.driver;
-
-        io.outw(FW_CFG_CTL, cfg);
+        self.driver.outw(FW_CFG_CTL, cfg);
     }
 
     pub fn read_le<T>(&self) -> T
@@ -66,7 +65,6 @@ impl<'a> FwCfg<'a> {
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
             + core::convert::From<u8>
-            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -82,21 +80,18 @@ impl<'a> FwCfg<'a> {
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
             + core::convert::From<u8>
-            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
 
-        for _i in 0..size_of::<T>() {
+        for _ in 0..size_of::<T>() {
             val = (val << 8) | T::from(io.inb(FW_CFG_DATA));
         }
         val
     }
 
     pub fn read_char(&self) -> char {
-        let io = &self.driver;
-
-        io.inb(FW_CFG_DATA) as char
+        self.driver.inb(FW_CFG_DATA) as char
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, ()> {
@@ -109,7 +104,7 @@ impl<'a> FwCfg<'a> {
             let select: u16 = self.read_be();
             let _unused: u16 = self.read_be();
             let mut fs = FixedString::<56>::new();
-            for _i in 0..56 {
+            for _ in 0..56 {
                 let c = self.read_char();
                 fs.push(c);
             }
@@ -135,29 +130,28 @@ impl<'a> FwCfg<'a> {
         }
 
         self.select(file.selector);
+        Ok(self.read_memory_region())
+    }
 
-        let base: u64 = self.read_le();
+    fn read_memory_region(&self) -> MemoryRegion {
+        let start: u64 = self.read_le();
         let size: u64 = self.read_le();
-
-        Ok(MemoryRegion { start: base, end: base + size })
+        MemoryRegion { start, end: start + size }
     }
 
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
-
         let mut regions: Vec::<MemoryRegion> = Vec::new();
         let file = self.file_selector("etc/e820")?;
         let entries = file.size / 20;
 
-
         self.select(file.selector);
 
-        for _i in 0..entries {
-            let start: u64 = self.read_le();
-            let size: u64 = self.read_le();
+        for _ in 0..entries {
+            let region = self.read_memory_region();
             let t: u32 = self.read_le();
 
             if t == 1 {
-                regions.push(MemoryRegion { start: start, end: start + size });
+                regions.push(region);
             }
         }
 
@@ -165,22 +159,11 @@ impl<'a> FwCfg<'a> {
     }
 
     fn find_kernel_region_e820(&self) -> Result<MemoryRegion, ()> {
-        let mut kernel_region = MemoryRegion { start: 0, end: 0 };
         let regions = self.get_memory_regions()?;
-
-        if regions.is_empty() {
-            return Err(());
-        }
-
-        for region in regions.iter() {
-            let start = region.start;
-            let end = region.end;
-
-            if start >= kernel_region.start {
-                kernel_region.start = start;
-                kernel_region.end = end;
-            }
-        }
+        let mut kernel_region = regions.iter()
+            .max_by_key(|region| region.start)
+            .copied()
+            .ok_or(())?;
 
         let start = (kernel_region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
 
@@ -200,37 +183,18 @@ impl<'a> FwCfg<'a> {
         }
     }
 
-    pub fn flash_region_count(&self) -> u32 {
-        let result = self.file_selector("etc/flash");
+    // This needs to be &mut self to prevent iterator invalidation, where the caller
+    // could do fw_cfg.select() while iterating. Having a mutable reference prevents
+    // other references.
+    pub fn iter_flash_regions(&mut self) -> impl Iterator<Item = MemoryRegion> + '_ {
+        let num = match self.file_selector("etc/flash") {
+            Ok(file) => {
+                self.select(file.selector);
+                file.size as usize / 16
+            },
+            Err(_) => 0
+        };
 
-        if let Err(_) = result {
-            return 0;
-        }
-
-        let file = result.unwrap();
-
-        return file.size / 16;
-    }
-
-    pub fn get_flash_region(&self, index : u32) -> Result<MemoryRegion, ()> {
-        let file = self.file_selector("etc/flash")?;
-
-        if index * 16 > file.size - 16 {
-            return Err(());
-        }
-
-        self.select(file.selector);
-
-        // skip over unwanted entries
-        for _ in 0..index*2 {
-            let _ = self.read_le::<u64>();
-        }
-
-        let start: u64 = self.read_le();
-        let end: u64 = start + self.read_le::<u64>();
-        Ok(MemoryRegion {
-            start: start,
-            end: end,
-        })
+        (0..num).map(|_| self.read_memory_region())
     }
 }

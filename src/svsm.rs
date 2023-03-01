@@ -235,27 +235,21 @@ fn launch_fw() -> Result<(),()> {
     Ok(())
 }
 
-fn validate_flash() -> Result<(),()> {
-    let fw_cfg = FwCfg::new(&CONSOLE_IO);
-    let count = fw_cfg.flash_region_count();
+fn validate_flash() -> Result<(), ()> {
+    let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
-    for i in 0..count {
-        let flash = fw_cfg.get_flash_region(i)?;
-        log::info!("Flash region {} at {:#018x} size {:018x}", i, flash.start, flash.end - flash.start);
+    for (i, region) in fw_cfg.iter_flash_regions().enumerate() {
+        let pstart = region.start as PhysAddr;
+        let pend   = region.end as PhysAddr;
+        log::info!("Flash region {} at {:#018x} size {:018x}", i, pstart, pend - pstart);
 
-        let pstart = flash.start as PhysAddr;
-        let pend   = flash.end as PhysAddr;
-
-        let mut paddr = pstart;
-
-        while  paddr < pend {
+        for paddr in (pstart..pend).step_by(PAGE_SIZE) {
             let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
             let vaddr = guard.virt_addr();
             if let Err(_) = rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(());
             }
-            paddr += PAGE_SIZE;
         }
     }
 
