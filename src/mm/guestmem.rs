@@ -115,7 +115,7 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(),()> {
          .quad (1b)
          .quad (2b)
          .popsection",
-            in("rsi") src,
+            inout("rsi") src => _,
             inout("rdi") dst => _,
             inout("rcx") size => rcx,
             options(att_syntax, nostack));
