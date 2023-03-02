@@ -7,5 +7,7 @@
 // vim: ts=4 sw=4 et
 
 pub mod spinlock;
+pub mod rwlock;
 
 pub use spinlock::{SpinLock, LockGuard};
+pub use rwlock::{RWLock, ReadLockGuard, WriteLockGuard};
