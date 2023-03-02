@@ -150,23 +150,24 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Sev
               .quad (1b)
               .quad (2b)
               .popsection",
-                in("rax") rax,
-                in("rcx") rcx,
+                inout("rax") rax => ret,
+                inout("rcx") rcx => ex,
                 in("rdx") rdx,
-                lateout("rax") ret,
-                lateout("rcx") ex,
                 options(att_syntax));
     }
 
-    match ret {
-        0 if ex == 0 => Ok(()),
+    if ex != 0 {
         // Report exceptions just as FAIL_INPUT
-        0 if ex != 0 => Err(SevSnpError::FAIL_INPUT(1)),
+        return Err(SevSnpError::FAIL_INPUT(1));
+    }
+
+    match ret {
+        0 => Ok(()),
         1 => Err(SevSnpError::FAIL_INPUT(ret)),
         2 => Err(SevSnpError::FAIL_PERMISSION(ret)),
         6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret)),
         _ => {
-            log::error!("RMPADJUST: Unexpected return value: {}", ret);
+            log::error!("RMPADJUST: Unexpected return value: {:#x}", ret);
             unreachable!();
         },
     }
