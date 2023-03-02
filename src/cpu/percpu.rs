@@ -23,7 +23,7 @@ use crate::types::{PhysAddr, VirtAddr};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::utils::{page_align, page_offset};
-use crate::locking::{SpinLock, LockGuard};
+use crate::locking::{RWLock, SpinLock, LockGuard};
 use alloc::vec::Vec;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -463,20 +463,20 @@ impl VmsaRegistryEntry {
 }
 
 // PERCPU VMSAs to apic_id map
-static PERCPU_VMSAS : SpinLock::<Vec::<VmsaRegistryEntry>> = SpinLock::new(Vec::new());
+static PERCPU_VMSAS : RWLock::<Vec::<VmsaRegistryEntry>> = RWLock::new(Vec::new());
 
 pub fn vmsa_exists(paddr: PhysAddr) -> bool {
-    PERCPU_VMSAS.lock().iter()
+    PERCPU_VMSAS.lock_read().iter()
         .find(|vmsa| vmsa.paddr == paddr)
         .is_some()
 }
 
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
-    PERCPU_VMSAS.lock().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+    PERCPU_VMSAS.lock_write().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
 }
 
 pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> {
-    let mut percpu_vmsa = PERCPU_VMSAS.lock();
+    let mut percpu_vmsa = PERCPU_VMSAS.lock_write();
 
     let index = percpu_vmsa.iter()
         .position(|vmsa| vmsa.paddr == paddr)
@@ -496,14 +496,14 @@ pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> 
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
-    for mut entry in PERCPU_VMSAS.lock().iter_mut()
+    for mut entry in PERCPU_VMSAS.lock_write().iter_mut()
         .filter(|x| (*x).apic_id == apic_id && (*x).in_use == true) {
         entry.in_use = false;
     }
 }
 
 pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
-    PERCPU_VMSAS.lock()
+    PERCPU_VMSAS.lock_read()
         .iter()
         .find(|vmsa| vmsa.paddr == paddr && vmsa.guest_owned)
         .map(|vmsa| vmsa.apic_id)
