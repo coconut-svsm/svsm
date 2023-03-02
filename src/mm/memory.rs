@@ -11,10 +11,11 @@ extern crate alloc;
 use crate::types::PhysAddr;
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::fw_cfg::{FwCfg, MemoryRegion};
+use crate::locking::RWLock;
 use alloc::vec::Vec;
 use log;
 
-static mut MEMORY_MAP: Vec<MemoryRegion> = Vec::new();
+static MEMORY_MAP: RWLock<Vec<MemoryRegion>> = RWLock::new(Vec::new());
 
 
 pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(),()> {
@@ -33,15 +34,15 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
         log::info!("  {:018x}-{:018x}", r.start, r.end);
     }
 
-    unsafe { MEMORY_MAP = regions; }
+    let mut map = MEMORY_MAP.lock_write();
+    *map = regions;
 
     Ok(())
 }
 
 pub fn valid_phys_address(addr: PhysAddr) -> bool {
     let addr = addr as u64;
-    unsafe {
-        MEMORY_MAP.iter()
-            .any(|region| addr >= region.start && addr < region.end )
-    }
+
+    MEMORY_MAP.lock_read().iter()
+        .any(|region| addr >= region.start && addr < region.end )
 }
