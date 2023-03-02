@@ -87,6 +87,7 @@ impl<T> RWLock<T> {
             if writers == 0 {
                 return val;
             }
+            core::hint::spin_loop();
         }
     }
 
@@ -99,6 +100,7 @@ impl<T> RWLock<T> {
             if readers == 0 {
                 return val;
             }
+            core::hint::spin_loop();
         }
     }
 
@@ -111,6 +113,7 @@ impl<T> RWLock<T> {
             if self.rwlock.compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed).is_ok() {
                 break;
             }
+            core::hint::spin_loop();
         }
 
         ReadLockGuard {
@@ -129,6 +132,7 @@ impl<T> RWLock<T> {
             if self.rwlock.compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed) .is_ok() {
                 break;
             }
+            core::hint::spin_loop();
         }
 
         // Now locked for write - wait until all readers finished

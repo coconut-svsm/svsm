@@ -45,6 +45,7 @@ impl<T> SpinLock<T> {
             if h == ticket {
                 break;
             }
+            core::hint::spin_loop();
         }
         LockGuard {
             holder: &self.holder,
