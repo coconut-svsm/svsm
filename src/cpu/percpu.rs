@@ -148,12 +148,10 @@ impl PerCpu {
 
     pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, ()> {
         let vaddr = allocate_zeroed_page()?;
-
-        PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
-
         unsafe {
-            let percpu: *mut PerCpu = vaddr as *mut PerCpu;
+            let percpu = vaddr as *mut PerCpu;
             (*percpu) = PerCpu::new();
+            PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
     }
