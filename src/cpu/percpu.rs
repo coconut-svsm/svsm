@@ -98,7 +98,13 @@ impl GuestVmsaRef {
         self.generation += 1;
     }
 
-    pub fn set_updated (&mut self) {
+    pub fn update_vmsa_caa(&mut self, vmsa: Option<PhysAddr>, caa: Option<PhysAddr>) {
+        self.vmsa = vmsa;
+        self.caa = caa;
+        self.generation += 1;
+    }
+
+    pub fn set_updated(&mut self) {
         self.gen_in_use = self.generation;
     }
 
@@ -331,32 +337,24 @@ impl PerCpu {
 
         let vmsa_phys = locked.vmsa_phys();
         if vmsa_phys.unwrap() == paddr {
-            locked.vmsa = None;
-            locked.generation += 1;
+            locked.update_vmsa(None);
         }
     }
 
     pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.vmsa = Some(vmsa);
-        locked.caa = Some(caa);
-        locked.generation += 1;
+        locked.update_vmsa_caa(Some(vmsa), Some(caa));
     }
 
 
     pub fn update_guest_vmsa(&self, vmsa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.vmsa = Some(vmsa);
-        locked.generation += 1;
+        locked.update_vmsa(Some(vmsa));
     }
 
     pub fn update_guest_caa(&self, caa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.caa = Some(caa);
-        locked.generation += 1;
+        locked.update_caa(Some(caa));
     }
 
     pub fn guest_vmsa_ref(&self) -> LockGuard::<GuestVmsaRef> {
