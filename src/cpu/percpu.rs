@@ -171,13 +171,12 @@ impl PerCpu {
 
     fn allocate_page_table(&mut self) -> Result<(), ()> {
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        let mut pgtbl = self.pgtbl.lock();
-        *pgtbl = pgtable_ref;
+        self.set_pgtable(pgtable_ref);
         Ok(())
     }
 
-    pub fn set_pgtable(&mut self, pgtable : PageTableRef) {
-        let mut my_pgtable = self.pgtbl.lock();
+    pub fn set_pgtable(&mut self, pgtable: PageTableRef) {
+        let mut my_pgtable = self.get_pgtable();
         *my_pgtable = pgtable;
     }
 
