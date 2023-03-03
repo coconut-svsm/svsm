@@ -456,7 +456,7 @@ impl PageTable {
             &mut self,
             vaddr: VirtAddr,
             paddr: PhysAddr,
-            flags: &PTEntryFlags,
+            flags: PTEntryFlags,
             ) -> Result<(),()> {
         assert!(is_aligned(vaddr, PAGE_SIZE_2M));
         assert!(is_aligned(paddr, PAGE_SIZE_2M));
@@ -464,8 +464,7 @@ impl PageTable {
         let mapping = self.alloc_pte_2m(vaddr);
 
         if let Mapping::Level1(entry) = mapping {
-            let f = flags.clone() | PTEntryFlags::HUGE;
-            entry.set(set_c_bit(paddr), f);
+            entry.set(set_c_bit(paddr), flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
             Err(())
@@ -492,13 +491,12 @@ impl PageTable {
         &mut self,
         vaddr: VirtAddr,
         paddr: PhysAddr,
-        flags: &PTEntryFlags,
+        flags: PTEntryFlags,
     ) -> Result<(), ()> {
         let mapping = self.alloc_pte_4k(vaddr);
 
         if let Mapping::Level0(entry) = mapping {
-            let f = flags.clone();
-            entry.set(set_c_bit(paddr), f);
+            entry.set(set_c_bit(paddr), flags);
             Ok(())
         } else {
             Err(())
@@ -551,7 +549,7 @@ impl PageTable {
     ) -> Result<(), ()> {
         for addr in (start..end).step_by(PAGE_SIZE) {
             let offset = addr - start;
-            self.map_4k(addr, phys + offset, &flags)?;
+            self.map_4k(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -570,7 +568,7 @@ impl PageTable {
             flags: PTEntryFlags) -> Result<(),()> {
         for addr in (start..end).step_by(PAGE_SIZE_2M) {
             let offset = addr - start;
-            self.map_2m(addr, phys + offset, &flags)?;
+            self.map_2m(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -594,14 +592,14 @@ impl PageTable {
             if is_aligned(vaddr, PAGE_SIZE_2M) &&
                is_aligned(paddr, PAGE_SIZE_2M) &&
                vaddr + PAGE_SIZE_2M <= end {
-                   if let Ok(_) = self.map_2m(vaddr, paddr, &flags) {
+                   if let Ok(_) = self.map_2m(vaddr, paddr, flags) {
                        vaddr += PAGE_SIZE_2M;
                        paddr += PAGE_SIZE_2M;
                        continue;
                    }
             }
 
-            self.map_4k(vaddr, paddr, &flags)?;
+            self.map_4k(vaddr, paddr, flags)?;
             vaddr += PAGE_SIZE;
             paddr += PAGE_SIZE;
         }

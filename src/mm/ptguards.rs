@@ -41,9 +41,9 @@ impl PerCPUPageMappingGuard {
         let flags = PageTable::data_flags();
 
         if huge {
-            this_cpu_mut().get_pgtable().map_2m(vaddr, paddr, &flags)?;
+            this_cpu_mut().get_pgtable().map_2m(vaddr, paddr, flags)?;
         } else {
-            this_cpu_mut().get_pgtable().map_4k(vaddr, paddr, &flags)?;
+            this_cpu_mut().get_pgtable().map_4k(vaddr, paddr, flags)?;
         }
 
         let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);

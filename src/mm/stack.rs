@@ -80,7 +80,7 @@ pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Resul
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);
-        pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, &flags)?;
+        pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, flags)?;
     }
 
     Ok(())
