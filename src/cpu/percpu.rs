@@ -151,6 +151,7 @@ impl PerCpu {
         unsafe {
             let percpu = vaddr as *mut PerCpu;
             (*percpu) = PerCpu::new();
+            (*percpu).apic_id = apic_id;
             PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
@@ -162,10 +163,6 @@ impl PerCpu {
 
     pub fn is_online(&self) -> bool {
         self.online.load(Ordering::Acquire)
-    }
-
-    pub fn set_apic_id(&mut self, apic_id: u32) {
-        self.apic_id = apic_id;
     }
 
     pub const fn get_apic_id(&self) -> u32 {
