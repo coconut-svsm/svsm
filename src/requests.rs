@@ -422,28 +422,24 @@ pub fn update_mappings() -> Result<(), ()> {
     let mut locked = this_cpu_mut().guest_vmsa_ref();
     let mut ret = Ok(());
 
-    if locked.needs_update() {
-        this_cpu_mut().unmap_guest_vmsa();
-        this_cpu_mut().unmap_caa();
-
-        let vmsa_phys = locked.vmsa_phys();
-        if vmsa_phys.is_some() {
-            let paddr = vmsa_phys.unwrap();
-            this_cpu_mut().map_guest_vmsa(paddr)?;
-        } else {
-            ret = Err(());
-        }
-
-        let caa_phys = locked.caa_phys();
-        if caa_phys.is_some() {
-            let paddr = caa_phys.unwrap();
-            this_cpu_mut().map_guest_caa(paddr)?;
-        } else {
-            ret = Err(());
-        }
-
-        locked.set_updated();
+    if !locked.needs_update() {
+        return Ok(());
     }
+
+    this_cpu_mut().unmap_guest_vmsa();
+    this_cpu_mut().unmap_caa();
+
+    match locked.vmsa_phys() {
+        Some(paddr) => this_cpu_mut().map_guest_vmsa(paddr)?,
+        None => ret = Err(()),
+    }
+
+    match locked.caa_phys() {
+        Some(paddr) => this_cpu_mut().map_guest_caa(paddr)?,
+        None => ret = Err(()),
+    }
+
+    locked.set_updated();
 
     ret
 }
