@@ -222,7 +222,7 @@ impl PerCpu {
         let paddr = virt_to_phys(vaddr);
         let flags = PageTable::data_flags();
 
-        self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, &flags)
+        self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
 
     pub fn setup(&mut self) -> Result<(), ()> {
@@ -318,7 +318,7 @@ impl PerCpu {
         let flags = PageTable::data_flags();
         let vaddr = SVSM_PERCPU_VMSA_BASE;
 
-        self.get_pgtable().map_4k(vaddr, paddr, &flags)?;
+        self.get_pgtable().map_4k(vaddr, paddr, flags)?;
 
         Ok(())
     }
@@ -395,7 +395,7 @@ impl PerCpu {
 
         let vaddr = SVSM_PERCPU_CAA_BASE;
 
-        self.get_pgtable().map_4k(vaddr, paddr_aligned, &flags)?;
+        self.get_pgtable().map_4k(vaddr, paddr_aligned, flags)?;
 
         Ok(())
     }
