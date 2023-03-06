@@ -459,8 +459,7 @@ static PERCPU_VMSAS : RWLock::<Vec::<VmsaRegistryEntry>> = RWLock::new(Vec::new(
 
 pub fn vmsa_exists(paddr: PhysAddr) -> bool {
     PERCPU_VMSAS.lock_read().iter()
-        .find(|vmsa| vmsa.paddr == paddr)
-        .is_some()
+        .any(|vmsa| vmsa.paddr == paddr)
 }
 
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
@@ -488,10 +487,9 @@ pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> 
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
-    for mut entry in PERCPU_VMSAS.lock_write().iter_mut()
-        .filter(|x| (*x).apic_id == apic_id && (*x).in_use == true) {
-        entry.in_use = false;
-    }
+    PERCPU_VMSAS.lock_write().iter_mut()
+        .find(|vmsa| vmsa.apic_id == apic_id && vmsa.in_use)
+        .map(|vmsa| vmsa.in_use = false);
 }
 
 pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
