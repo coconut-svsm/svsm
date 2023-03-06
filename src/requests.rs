@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa, register_guest_vmsa};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa, register_guest_vmsa, set_vmsa_used};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::{VMSA, GuestVMExit};
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
@@ -167,13 +167,26 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     let target_cpu = percpu(apic_id)
         .ok_or_else(SvsmError::invalid_parameter)?;
 
-    // Time to map the VMSA
+    // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
+    register_guest_vmsa(paddr, apic_id, true)
+        .map_err(|_| SvsmError::invalid_address())?;
+
+    // Time to map the VMSA. No need to clean up the registered VMSA on the
+    // error path since this is a fatal error anyway.
     let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
         .map_err(SvsmError::FatalError)?;
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_set_guest_vmsa(vaddr)?;
+    rmp_set_guest_vmsa(vaddr)
+        .map_err(|err| {
+            // SAFETY: this can only fail if another CPU unregisters our
+            // unused VMSA. This is not possible, since unregistration of
+            // an unused VMSA only happens in the error path for this function,
+            // with a physical address that only this CPU managed to register.
+            unregister_guest_vmsa(paddr, false).unwrap();
+            err
+        })?;
 
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
@@ -183,11 +196,12 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
 
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
+        unregister_guest_vmsa(paddr, false).unwrap();
         core_create_vcpu_error_restore(vaddr)?;
         return Err(SvsmError::invalid_parameter());
     }
 
-    register_guest_vmsa(paddr, apic_id, true);
+    assert!(set_vmsa_used(paddr) == Some(apic_id));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())
@@ -215,7 +229,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync();
 
-    unregister_guest_vmsa(paddr)
+    unregister_guest_vmsa(paddr, true)
         .map_err(|e| match e {
             e if e > 0 => SvsmError::protocol(e),
             _ => SvsmError::invalid_parameter(),
