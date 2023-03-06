@@ -11,7 +11,7 @@ use core::arch::asm;
 use core::ptr;
 
 pub fn align_up(addr: usize, align: usize) -> usize {
-    addr + (align - 1) & !(align - 1)
+    (addr + (align - 1)) & !(align - 1)
 }
 
 pub fn page_offset(addr : usize) -> usize {

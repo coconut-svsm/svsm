@@ -37,7 +37,7 @@ pub fn paging_init() {
     // Find C bit position
     let res = cpuid_table(0x8000001f);
 
-    if let None = res {
+    if res.is_none() {
         panic!("Can not get C-Bit position from CPUID table");
     }
 
@@ -119,7 +119,7 @@ impl PTEntry {
     }
 
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
-        assert!(addr & !0x000f_ffff_ffff_f000 == 0);
+        assert_eq!(addr & !0x000f_ffff_ffff_f000,  0);
         self.0 = (addr as u64) | supported_flags(flags).bits();
     }
 
@@ -222,42 +222,42 @@ impl PageTable {
         Some(unsafe { &mut *(address as *mut PTPage) })
     }
 
-    fn walk_addr_lvl0<'a>(page: &'a mut PTPage, vaddr: VirtAddr) -> Mapping<'a> {
+    fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
         let idx = PageTable::index::<0>(vaddr);
 
         Mapping::Level0(&mut page[idx])
     }
 
-    fn walk_addr_lvl1<'a>(page: &'a mut PTPage, vaddr: VirtAddr) -> Mapping<'a> {
+    fn walk_addr_lvl1(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
         let idx = PageTable::index::<1>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
 
-        match ret {
-            Some(page) => return PageTable::walk_addr_lvl0(page, vaddr),
-            None => return Mapping::Level1(&mut page[idx]),
+        return match ret {
+            Some(page) => PageTable::walk_addr_lvl0(page, vaddr),
+            None => Mapping::Level1(&mut page[idx]),
         }
     }
 
-    fn walk_addr_lvl2<'a>(page: &'a mut PTPage, vaddr: VirtAddr) -> Mapping<'a> {
+    fn walk_addr_lvl2(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
         let idx = PageTable::index::<2>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
 
-        match ret {
-            Some(page) => return PageTable::walk_addr_lvl1(page, vaddr),
-            None => return Mapping::Level2(&mut page[idx]),
+        return match ret {
+            Some(page) => PageTable::walk_addr_lvl1(page, vaddr),
+            None => Mapping::Level2(&mut page[idx]),
         }
     }
 
-    fn walk_addr_lvl3<'a>(page: &'a mut PTPage, vaddr: VirtAddr) -> Mapping<'a> {
+    fn walk_addr_lvl3(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
         let idx = PageTable::index::<3>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
 
-        match ret {
-            Some(page) => return PageTable::walk_addr_lvl2(page, vaddr),
-            None => return Mapping::Level3(&mut page[idx]),
+        return match ret {
+            Some(page) => PageTable::walk_addr_lvl2(page, vaddr),
+            None => Mapping::Level3(&mut page[idx]),
         }
     }
 
@@ -265,7 +265,7 @@ impl PageTable {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
-    fn alloc_pte_lvl3<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
+    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -290,7 +290,7 @@ impl PageTable {
         unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, pgsize) }
     }
 
-    fn alloc_pte_lvl2<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
+    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -315,7 +315,7 @@ impl PageTable {
         unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, pgsize) }
     }
 
-    fn alloc_pte_lvl1<'a>(entry: &'a mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping<'a> {
+    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
         let flags = entry.flags();
 
         if pgsize == PAGE_SIZE_2M ||
@@ -480,7 +480,7 @@ impl PageTable {
         let mapping = self.walk_addr(vaddr);
 
         match mapping {
-            Mapping::Level0(_) => assert!(false),
+            Mapping::Level0(_) => unreachable!(),
             Mapping::Level1(entry) => entry.clear(),
             Mapping::Level2(entry) => assert!(!entry.present()),
             Mapping::Level3(entry) => assert!(!entry.present()),
@@ -590,13 +590,10 @@ impl PageTable {
 
         while vaddr < end {
             if is_aligned(vaddr, PAGE_SIZE_2M) &&
-               is_aligned(paddr, PAGE_SIZE_2M) &&
-               vaddr + PAGE_SIZE_2M <= end {
-                   if let Ok(_) = self.map_2m(vaddr, paddr, flags) {
-                       vaddr += PAGE_SIZE_2M;
-                       paddr += PAGE_SIZE_2M;
-                       continue;
-                   }
+               is_aligned(paddr, PAGE_SIZE_2M) && vaddr + PAGE_SIZE_2M <= end && self.map_2m(vaddr, paddr, flags).is_ok() {
+                vaddr += PAGE_SIZE_2M;
+                paddr += PAGE_SIZE_2M;
+                continue;
             }
 
             self.map_4k(vaddr, paddr, flags)?;
@@ -634,7 +631,7 @@ static INIT_PGTABLE : SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset
 
 pub fn set_init_pgtable(pgtable : PageTableRef) {
     let mut init_pgtable = INIT_PGTABLE.lock();
-    assert_eq!(init_pgtable.is_set(), false);
+    assert!(!init_pgtable.is_set());
     *init_pgtable = pgtable;
 }
 
@@ -656,7 +653,7 @@ impl PageTableRef {
     }
 
     fn is_set(&self) -> bool {
-        self.pgtable_ptr != ptr::null_mut()
+        !self.pgtable_ptr.is_null()
     }
 }
 
@@ -664,14 +661,14 @@ impl Deref for PageTableRef {
     type Target = PageTable;
 
     fn deref(&self)  -> &Self::Target {
-        assert_eq!(self.is_set(), true);
+        assert!(self.is_set());
         unsafe {&*self.pgtable_ptr}
     }
 }
 
 impl DerefMut for PageTableRef {
     fn deref_mut(&mut self)  -> &mut Self::Target {
-        assert_eq!(self.is_set(), true);
+        assert!(self.is_set());
         unsafe {&mut *self.pgtable_ptr}
     }
 }

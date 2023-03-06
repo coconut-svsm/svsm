@@ -73,7 +73,7 @@ impl<T : Copy> ImmutAfterInitCell<T> {
     ///
     /// * `v` - Initialization value.
     pub unsafe fn init(&self, v : &T) {
-        core::ptr::copy_nonoverlapping(v as *const T, (&mut *self.data.get()).as_mut_ptr(), 1);
+        core::ptr::copy_nonoverlapping(v as *const T, (*self.data.get()).as_mut_ptr(), 1);
     }
 
     /// Reinitialize an initialized `ImmutAfterInitCell` instance from a value.
@@ -240,7 +240,7 @@ impl<'a, T : Copy> ImmutAfterInitRef<'a, T> {
     ///            convention, the referenced value must have been initialized
     ///            already.
     pub unsafe fn init_from_cell<'b>(&self, cell : &'b ImmutAfterInitCell<T>) where 'b : 'a {
-        self.ptr.init(&(&*cell.data.get()).as_ptr());
+        self.ptr.init(&(*cell.data.get()).as_ptr());
     }
 
     /// Create an initialized `ImmutAfterInitRef` instance pointing to a value

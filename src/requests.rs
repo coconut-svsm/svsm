@@ -17,7 +17,7 @@ use crate::utils::{page_align, page_offset, is_aligned, crosses_page, halt};
 use crate::mm::{valid_phys_address, GuestPtr};
 
 #[derive(Debug, Clone, Copy)]
-#[allow(non_camel_case_types, dead_code)]
+#[allow(non_camel_case_types, dead_code, clippy::upper_case_acronyms)]
 enum SvsmResultCode {
     SUCCESS,
     INCOMPLETE,
@@ -499,7 +499,7 @@ pub fn request_loop() {
         let rax = vmsa.rax;
         let protocol = (rax >> 32) as u32;
         let request = (rax & 0xffff_ffff) as u32;
-        let mut params = RequestParams::from_vmsa(&vmsa);
+        let mut params = RequestParams::from_vmsa(vmsa);
 
         vmsa.rax = match request_loop_once(&mut params, protocol, request) {
             Ok(success) => match success {

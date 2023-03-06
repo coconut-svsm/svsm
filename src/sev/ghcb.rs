@@ -189,7 +189,7 @@ impl GHCB {
         self.valid_bitmap[1] = 0;
 
         // Mark valid_bitmap valid
-        self.set_valid(OFF_VALID_BITMAP + 0);
+        self.set_valid(OFF_VALID_BITMAP);
         self.set_valid(OFF_VALID_BITMAP + 8);
     }
 
@@ -354,7 +354,7 @@ impl GHCB {
     }
 
     pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
-        assert!(huge == false || is_aligned(paddr, PAGE_SIZE_2M));
+        assert!(!huge || is_aligned(paddr, PAGE_SIZE_2M));
 
         let mut entry:u64 = ((paddr as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
         if huge {
@@ -395,7 +395,7 @@ impl GHCB {
                 let buffer_pa: u64 = virt_to_phys(buffer_va) as u64;
                 self.set_sw_scratch(buffer_pa);
 
-                if let Err(_) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
+                if self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0).is_err() {
                     if !self.is_valid(OFF_SW_EXIT_INFO_2) {
                         return Err(());
                     }
@@ -441,7 +441,7 @@ pub struct GHCBIOPort<'a> {
 
 impl<'a> GHCBIOPort<'a> {
     pub fn new(ghcb: RefCell<&'a mut GHCB>) -> Self {
-        GHCBIOPort { ghcb: ghcb }
+        GHCBIOPort { ghcb }
     }
 }
 unsafe impl<'a> Sync for GHCBIOPort<'a> {}
