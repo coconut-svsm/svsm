@@ -23,7 +23,6 @@ fn start_cpu(apic_id: u32) {
             .unwrap();
 
         percpu.setup().expect("Failed to setup AP per-cpu area");
-        percpu.set_apic_id(apic_id);
         percpu.alloc_svsm_vmsa().expect("Failed to allocate AP SVSM VMSA");
 
         let vmsa = percpu.get_svsm_vmsa().unwrap();

@@ -98,7 +98,13 @@ impl GuestVmsaRef {
         self.generation += 1;
     }
 
-    pub fn set_updated (&mut self) {
+    pub fn update_vmsa_caa(&mut self, vmsa: Option<PhysAddr>, caa: Option<PhysAddr>) {
+        self.vmsa = vmsa;
+        self.caa = caa;
+        self.generation += 1;
+    }
+
+    pub fn set_updated(&mut self) {
         self.gen_in_use = self.generation;
     }
 
@@ -142,12 +148,11 @@ impl PerCpu {
 
     pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, ()> {
         let vaddr = allocate_zeroed_page()?;
-
-        PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
-
         unsafe {
-            let percpu: *mut PerCpu = vaddr as *mut PerCpu;
+            let percpu = vaddr as *mut PerCpu;
             (*percpu) = PerCpu::new();
+            (*percpu).apic_id = apic_id;
+            PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
     }
@@ -160,23 +165,18 @@ impl PerCpu {
         self.online.load(Ordering::Acquire)
     }
 
-    pub fn set_apic_id(&mut self, apic_id: u32) {
-        self.apic_id = apic_id;
-    }
-
     pub const fn get_apic_id(&self) -> u32 {
         self.apic_id
     }
 
     fn allocate_page_table(&mut self) -> Result<(), ()> {
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        let mut pgtbl = self.pgtbl.lock();
-        *pgtbl = pgtable_ref;
+        self.set_pgtable(pgtable_ref);
         Ok(())
     }
 
-    pub fn set_pgtable(&mut self, pgtable : PageTableRef) {
-        let mut my_pgtable = self.pgtbl.lock();
+    pub fn set_pgtable(&mut self, pgtable: PageTableRef) {
+        let mut my_pgtable = self.get_pgtable();
         *my_pgtable = pgtable;
     }
 
@@ -331,32 +331,24 @@ impl PerCpu {
 
         let vmsa_phys = locked.vmsa_phys();
         if vmsa_phys.unwrap() == paddr {
-            locked.vmsa = None;
-            locked.generation += 1;
+            locked.update_vmsa(None);
         }
     }
 
     pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.vmsa = Some(vmsa);
-        locked.caa = Some(caa);
-        locked.generation += 1;
+        locked.update_vmsa_caa(Some(vmsa), Some(caa));
     }
 
 
     pub fn update_guest_vmsa(&self, vmsa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.vmsa = Some(vmsa);
-        locked.generation += 1;
+        locked.update_vmsa(Some(vmsa));
     }
 
     pub fn update_guest_caa(&self, caa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
-
-        locked.caa = Some(caa);
-        locked.generation += 1;
+        locked.update_caa(Some(caa));
     }
 
     pub fn guest_vmsa_ref(&self) -> LockGuard::<GuestVmsaRef> {
@@ -467,8 +459,7 @@ static PERCPU_VMSAS : RWLock::<Vec::<VmsaRegistryEntry>> = RWLock::new(Vec::new(
 
 pub fn vmsa_exists(paddr: PhysAddr) -> bool {
     PERCPU_VMSAS.lock_read().iter()
-        .find(|vmsa| vmsa.paddr == paddr)
-        .is_some()
+        .any(|vmsa| vmsa.paddr == paddr)
 }
 
 pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
@@ -496,10 +487,9 @@ pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> 
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
-    for mut entry in PERCPU_VMSAS.lock_write().iter_mut()
-        .filter(|x| (*x).apic_id == apic_id && (*x).in_use == true) {
-        entry.in_use = false;
-    }
+    PERCPU_VMSAS.lock_write().iter_mut()
+        .find(|vmsa| vmsa.apic_id == apic_id && vmsa.in_use)
+        .map(|vmsa| vmsa.in_use = false);
 }
 
 pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
