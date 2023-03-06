@@ -210,18 +210,22 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     let paddr = params.rcx as PhysAddr;
 
+    unregister_guest_vmsa(paddr, true)
+        .map_err(|_| SvsmError::invalid_parameter())?;
+
     // Map the VMSA
     let mapping_guard = PerCPUPageMappingGuard::create(paddr, 0, false)
         .map_err(SvsmError::FatalError)?;
-
     let vaddr = mapping_guard.virt_addr();
 
-    // Remove VMSA permissions from page
-    rmp_clear_guest_vmsa(vaddr)?;
-
-    // Clear EFER.SVME on deleted VMSA
+    // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
+    // disable() will loop until that is not the case
     let del_vmsa = VMSA::from_virt_addr(vaddr);
     del_vmsa.disable();
+
+    // Do not return early here, as we need to do a TLB flush
+    let res = rmp_clear_guest_vmsa(vaddr)
+        .map_err(|_| SvsmError::invalid_address());
 
     // Unmap the page
     drop(mapping_guard);
@@ -229,13 +233,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync();
 
-    unregister_guest_vmsa(paddr, true)
-        .map_err(|e| match e {
-            e if e > 0 => SvsmError::protocol(e),
-            _ => SvsmError::invalid_parameter(),
-        })?;
-
-    Ok(())
+    res
 }
 
 fn core_deposit_mem(_params: &RequestParams)-> Result<(), SvsmError> {
