@@ -450,7 +450,7 @@ pub struct VmsaRegistryEntry {
 
 impl VmsaRegistryEntry {
     pub const fn new(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Self {
-        VmsaRegistryEntry { paddr: paddr, apic_id: apic_id, guest_owned: guest_owned, in_use: true }
+        VmsaRegistryEntry { paddr, apic_id, guest_owned, in_use: false }
     }
 }
 
@@ -462,28 +462,45 @@ pub fn vmsa_exists(paddr: PhysAddr) -> bool {
         .any(|vmsa| vmsa.paddr == paddr)
 }
 
-pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) {
-    PERCPU_VMSAS.lock_write().push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Result<(), ()> {
+    let mut guard = PERCPU_VMSAS.lock_write();
+    if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
+        return Err(());
+    }
+
+    guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+    Ok(())
 }
 
-pub fn unregister_guest_vmsa(paddr: PhysAddr) -> Result<VmsaRegistryEntry, u64> {
+pub fn set_vmsa_used(paddr: PhysAddr) -> Option<u32> {
+    PERCPU_VMSAS.lock_write().iter_mut()
+        .find(|vmsa| vmsa.paddr == paddr && !vmsa.in_use)
+        .map(|vmsa| {
+            vmsa.in_use = true;
+            vmsa.apic_id
+        })
+}
+
+pub fn unregister_guest_vmsa(paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
     let mut percpu_vmsa = PERCPU_VMSAS.lock_write();
 
     let index = percpu_vmsa.iter()
-        .position(|vmsa| vmsa.paddr == paddr)
+        .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
         .ok_or(0u64)?;
-    let vmsa = &percpu_vmsa[index];
 
-    let in_use = vmsa.in_use;
-    let apic_id = vmsa.apic_id;
-    if in_use && apic_id == 0 {
-        return Err(0)
+    if in_use {
+        let vmsa = &percpu_vmsa[index];
+
+        if vmsa.apic_id == 0 {
+            return Err(0);
+        }
+
+        let target_cpu = percpu(vmsa.apic_id)
+            .expect("Invalid APIC-ID in VMSA registry");
+        target_cpu.clear_guest_vmsa_if_match(paddr);
     }
 
-    let target_cpu = percpu(apic_id).expect("Invalid APIC-ID in VMSA registry");
-    target_cpu.clear_guest_vmsa_if_match(paddr);
-
-    return Ok(percpu_vmsa.swap_remove(index));
+    Ok(percpu_vmsa.swap_remove(index))
 }
 
 pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
