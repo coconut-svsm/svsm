@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use crate::cpu::percpu::vmsa_exists;
+use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::utils::page_align;
 use crate::types::PhysAddr;
 use crate::kernel_launch::KernelLaunchInfo;
@@ -46,7 +46,7 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     let page_addr = page_align(paddr);
     let addr = paddr as u64;
 
-    if vmsa_exists(page_addr) {
+    if PERCPU_VMSAS.exists(page_addr) {
         return false;
     }
 

@@ -455,63 +455,59 @@ impl VmsaRegistryEntry {
 }
 
 // PERCPU VMSAs to apic_id map
-static PERCPU_VMSAS : RWLock::<Vec::<VmsaRegistryEntry>> = RWLock::new(Vec::new());
+pub static PERCPU_VMSAS: PerCpuVmsas = PerCpuVmsas::new();
 
-pub fn vmsa_exists(paddr: PhysAddr) -> bool {
-    PERCPU_VMSAS.lock_read().iter()
-        .any(|vmsa| vmsa.paddr == paddr)
+pub struct PerCpuVmsas {
+    vmsas: RWLock::<Vec::<VmsaRegistryEntry>>
 }
 
-pub fn register_guest_vmsa(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Result<(), ()> {
-    let mut guard = PERCPU_VMSAS.lock_write();
-    if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
-        return Err(());
+impl PerCpuVmsas {
+    const fn new() -> Self {
+        Self { vmsas: RWLock::new(Vec::new()) }
     }
 
-    guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
-    Ok(())
-}
+    pub fn exists(&self, paddr: PhysAddr) -> bool {
+        self.vmsas.lock_read().iter()
+            .any(|vmsa| vmsa.paddr == paddr)
+    }
 
-pub fn set_vmsa_used(paddr: PhysAddr) -> Option<u32> {
-    PERCPU_VMSAS.lock_write().iter_mut()
-        .find(|vmsa| vmsa.paddr == paddr && !vmsa.in_use)
-        .map(|vmsa| {
-            vmsa.in_use = true;
-            vmsa.apic_id
-        })
-}
-
-pub fn unregister_guest_vmsa(paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
-    let mut percpu_vmsa = PERCPU_VMSAS.lock_write();
-
-    let index = percpu_vmsa.iter()
-        .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
-        .ok_or(0u64)?;
-
-    if in_use {
-        let vmsa = &percpu_vmsa[index];
-
-        if vmsa.apic_id == 0 {
-            return Err(0);
+    pub fn register(&self, paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Result<(), ()> {
+        let mut guard = self.vmsas.lock_write();
+        if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
+            return Err(());
         }
 
-        let target_cpu = percpu(vmsa.apic_id)
-            .expect("Invalid APIC-ID in VMSA registry");
-        target_cpu.clear_guest_vmsa_if_match(paddr);
+        guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+        Ok(())
     }
 
-    Ok(percpu_vmsa.swap_remove(index))
-}
+    pub fn set_used(&self, paddr: PhysAddr) -> Option<u32> {
+        self.vmsas.lock_write().iter_mut()
+            .find(|vmsa| vmsa.paddr == paddr && !vmsa.in_use)
+            .map(|vmsa| {
+                vmsa.in_use = true;
+                vmsa.apic_id
+            })
+    }
 
-pub fn set_vmsa_unused_by_apic_id(apic_id: u32) {
-    PERCPU_VMSAS.lock_write().iter_mut()
-        .find(|vmsa| vmsa.apic_id == apic_id && vmsa.in_use)
-        .map(|vmsa| vmsa.in_use = false);
-}
+    pub fn unregister(&self, paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
+        let mut guard = self.vmsas.lock_write();
+        let index = guard.iter()
+            .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
+            .ok_or(0u64)?;
 
-pub fn guest_vmsa_to_apic_id(paddr: PhysAddr) -> Option<u32> {
-    PERCPU_VMSAS.lock_read()
-        .iter()
-        .find(|vmsa| vmsa.paddr == paddr && vmsa.guest_owned)
-        .map(|vmsa| vmsa.apic_id)
+        if in_use {
+            let vmsa = &guard[index];
+
+            if vmsa.apic_id == 0 {
+                return Err(0);
+            }
+
+            let target_cpu = percpu(vmsa.apic_id)
+                .expect("Invalid APIC-ID in VMSA registry");
+            target_cpu.clear_guest_vmsa_if_match(paddr);
+        }
+
+        Ok(guard.swap_remove(index))
+    }
 }

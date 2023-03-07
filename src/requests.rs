@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, unregister_guest_vmsa, register_guest_vmsa, set_vmsa_used};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, PERCPU_VMSAS};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::{VMSA, GuestVMExit};
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
@@ -168,7 +168,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
         .ok_or_else(SvsmError::invalid_parameter)?;
 
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
-    register_guest_vmsa(paddr, apic_id, true)
+    PERCPU_VMSAS.register(paddr, apic_id, true)
         .map_err(|_| SvsmError::invalid_address())?;
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
@@ -184,7 +184,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
             // unused VMSA. This is not possible, since unregistration of
             // an unused VMSA only happens in the error path for this function,
             // with a physical address that only this CPU managed to register.
-            unregister_guest_vmsa(paddr, false).unwrap();
+            PERCPU_VMSAS.unregister(paddr, false).unwrap();
             err
         })?;
 
@@ -196,12 +196,12 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
 
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
-        unregister_guest_vmsa(paddr, false).unwrap();
+        PERCPU_VMSAS.unregister(paddr, false).unwrap();
         core_create_vcpu_error_restore(vaddr)?;
         return Err(SvsmError::invalid_parameter());
     }
 
-    assert!(set_vmsa_used(paddr) == Some(apic_id));
+    assert!(PERCPU_VMSAS.set_used(paddr) == Some(apic_id));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())
@@ -210,7 +210,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     let paddr = params.rcx as PhysAddr;
 
-    unregister_guest_vmsa(paddr, true)
+    PERCPU_VMSAS.unregister(paddr, true)
         .map_err(|_| SvsmError::invalid_parameter())?;
 
     // Map the VMSA
