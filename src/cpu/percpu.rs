@@ -25,6 +25,7 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::utils::{page_align, page_offset};
 use crate::locking::{RWLock, SpinLock, LockGuard};
 use alloc::vec::Vec;
+use core::cell::SyncUnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -42,22 +43,35 @@ impl PerCpuInfo {
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 
+// We use a SyncUnsafeCell to allow for a static with interior
+// mutability. It is like an UnsafeCell except it implements Sync,
+// which allows the compiler to know that it is going to be accessed
+// from multiple threads, but synchronization is left to the user. In
+// our case we do not use any synchronization because writes to the
+// structure only occur at initialization, from CPU 0, and reads
+// should only occur after all writes are done.
 pub struct PerCpuAreas {
-    areas: SpinLock<Vec::<PerCpuInfo>>
+    areas: SyncUnsafeCell<Vec::<PerCpuInfo>>
 }
 
 impl PerCpuAreas {
     const fn new() -> Self {
-        Self { areas: SpinLock::new(Vec::new()) }
+        Self { areas: SyncUnsafeCell::new(Vec::new()) }
     }
 
-    fn push(&self, info: PerCpuInfo) {
-        self.areas.lock().push(info);
+    unsafe fn push(&self, info: PerCpuInfo) {
+        let ptr = self.areas.get().as_mut().unwrap();
+        ptr.push(info);
     }
 
     // Fails if no such area exists or its address is NULL
     pub fn get(&self, apic_id: u32) -> Option<&'static PerCpu> {
-        self.areas.lock().iter()
+        // For this to not produce UB the only invariant we must
+        // uphold is that there are no mutations or mutable aliases
+        // going on when casting via as_ref(). This only happens via
+        // Self::push(), which is intentionally unsafe and private.
+        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
+        ptr.iter()
             .find(|info| info.apic_id == apic_id)
             .map(|info| {
                 let ptr = info.addr as *const PerCpu;
