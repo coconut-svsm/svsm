@@ -40,7 +40,31 @@ impl PerCpuInfo {
 }
 
 // PERCPU areas virtual addresses into shared memory
-static PERCPU_AREAS : SpinLock::<Vec::<PerCpuInfo>> = SpinLock::new(Vec::new());
+pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
+
+pub struct PerCpuAreas {
+    areas: SpinLock<Vec::<PerCpuInfo>>
+}
+
+impl PerCpuAreas {
+    const fn new() -> Self {
+        Self { areas: SpinLock::new(Vec::new()) }
+    }
+
+    fn push(&self, info: PerCpuInfo) {
+        self.areas.lock().push(info);
+    }
+
+    // Fails if no such area exists or its address is NULL
+    pub fn get(&self, apic_id: u32) -> Option<&'static PerCpu> {
+        self.areas.lock().iter()
+            .find(|info| info.apic_id == apic_id)
+            .map(|info| {
+                let ptr = info.addr as *const PerCpu;
+                unsafe { ptr.as_ref().unwrap() }
+            })
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct VmsaRef {
@@ -152,7 +176,7 @@ impl PerCpu {
             let percpu = vaddr as *mut PerCpu;
             (*percpu) = PerCpu::new();
             (*percpu).apic_id = apic_id;
-            PERCPU_AREAS.lock().push(PerCpuInfo::new(apic_id, vaddr));
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
     }
@@ -431,16 +455,6 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     }
 }
 
-pub fn percpu(apic_id: u32) -> Option<&'static PerCpu> {
-    PERCPU_AREAS.lock()
-        .iter()
-        .find(|info| info.apic_id == apic_id)
-        .map(|info| {
-            let ptr = info.addr as *const PerCpu;
-            unsafe { ptr.as_ref().unwrap() }
-        })
-}
-
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,
@@ -503,7 +517,7 @@ impl PerCpuVmsas {
                 return Err(0);
             }
 
-            let target_cpu = percpu(vmsa.apic_id)
+            let target_cpu = PERCPU_AREAS.get(vmsa.apic_id)
                 .expect("Invalid APIC-ID in VMSA registry");
             target_cpu.clear_guest_vmsa_if_match(paddr);
         }

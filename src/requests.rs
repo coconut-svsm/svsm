@@ -7,7 +7,7 @@
 // vim: ts=4 sw=4 et
 
 use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, percpu, PERCPU_VMSAS};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::cpu::{flush_tlb_global_sync};
 use crate::sev::vmsa::{VMSA, GuestVMExit};
 use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
@@ -164,7 +164,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
         return Err(SvsmError::invalid_address());
     }
 
-    let target_cpu = percpu(apic_id)
+    let target_cpu = PERCPU_AREAS.get(apic_id)
         .ok_or_else(SvsmError::invalid_parameter)?;
 
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
