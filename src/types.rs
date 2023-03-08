@@ -10,6 +10,7 @@ pub const PAGE_SHIFT: usize = 12;
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 pub const PAGE_SIZE_2M: usize = PAGE_SIZE * 512;
 
+#[allow(clippy::identity_op)]
 pub const SVSM_CS: u16 = 1 * 8;
 pub const SVSM_DS: u16 = 2 * 8;
 pub const SVSM_USER_CS: u16 = 3 * 8;

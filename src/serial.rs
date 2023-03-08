@@ -35,7 +35,7 @@ pub struct SerialPort<'a> {
 impl<'a> SerialPort<'a> {
     pub fn new(driver: &'a dyn IOPort, p: u16) -> Self {
         SerialPort {
-            driver: driver,
+            driver,
             port: p,
         }
     }

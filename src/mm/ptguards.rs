@@ -21,8 +21,8 @@ struct RawPTMappingGuard {
 impl RawPTMappingGuard {
     pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
         RawPTMappingGuard {
-            start: start,
-            end: end,
+            start,
+            end,
         }
     }
 }
@@ -65,7 +65,7 @@ impl Drop for PerCPUPageMappingGuard {
             } else if size == PAGE_SIZE_2M {
                 this_cpu_mut().get_pgtable().unmap_2m(m.start);
             } else {
-                assert!(false);
+                unreachable!();
             }
             flush_address_sync(m.start);
         }

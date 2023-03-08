@@ -28,8 +28,8 @@ struct StackRange {
 impl StackRange {
     pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
         StackRange {
-            start: start,
-            end: end,
+            start,
+            end,
             alloc_bitmap: [0; BMP_QWORDS],
         }
     }
@@ -66,7 +66,7 @@ impl StackRange {
         let bit = idx % 64;
         let mask = 1u64 << bit;
 
-        assert!((self.alloc_bitmap[i] & mask) == mask);
+        assert_eq!((self.alloc_bitmap[i] & mask), mask);
 
         self.alloc_bitmap[i] &= !mask;
     }
@@ -100,20 +100,20 @@ pub fn free_stack(stack: VirtAddr) {
     let mut pages: [VirtAddr; STACK_PAGES] = [0; STACK_PAGES];
 
     let mut pgtable = get_init_pgtable_locked();
-    for i in 0..STACK_PAGES {
+    for (i, page) in pages.iter_mut().enumerate() {
         let addr = stack + (i * PAGE_SIZE);
         let paddr = pgtable.phys_addr(addr).expect("Failed to get stack physical address");
         let vaddr = phys_to_virt(paddr);
         pgtable.unmap_4k(addr);
-        pages[i] = vaddr;
+        *page = vaddr;
     }
 
     // Pages are unmapped - flush TLB
     flush_tlb_global_sync();
 
     // Now free the stack pages
-    for i in 0..STACK_PAGES {
-        free_page(pages[i]);
+    for page in pages {
+        free_page(page);
     }
 
     STACK_ALLOC.lock().dealloc(stack);

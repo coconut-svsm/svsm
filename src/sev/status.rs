@@ -39,7 +39,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::SEV_ES) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("SEV-ES")?;
@@ -47,7 +47,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::SEV_SNP) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("SEV-SNP")?;
@@ -55,7 +55,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::VTOM) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("VTOM")?;
@@ -63,7 +63,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::REFLECT_VC) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("REFLECT_VC")?;
@@ -71,7 +71,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::REST_INJ) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("RESTRICTED_INJECTION")?;
@@ -79,7 +79,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::ALT_INJ) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("ALTERNATE_INJECTION")?;
@@ -87,7 +87,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::DBGSWP) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("DEBUG_SWAP")?;
@@ -95,7 +95,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::PREV_HOST_IBS) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("PREVENT_HOST_IBS")?;
@@ -103,7 +103,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::BTB_ISOLATION) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("SNP_BTB_ISOLATION")?;
@@ -111,7 +111,7 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::SECURE_TSC) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("SECURE_TSC")?;
@@ -119,13 +119,13 @@ impl fmt::Display for SEVStatusFlags {
         }
 
         if self.contains(SEVStatusFlags::VMSA_REG_PROT) {
-            if first == false {
+            if !first {
                 f.write_char(' ')?;
             }
             f.write_str("VMSA_REG_PROT")?;
         }
 
-        fmt::Result::Ok(())
+        Ok(())
     }
 }
 

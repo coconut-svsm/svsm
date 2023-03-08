@@ -190,7 +190,7 @@ impl VMSA {
 pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, ()> {
     assert!(vmpl.bits() < (VMPL_MAX as u64));
     let vmsa_page = allocate_zeroed_page()?;
-    if let Err(_) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
+    if rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false).is_err() {
         free_page(vmsa_page);
         return Err(());
     }

@@ -142,10 +142,10 @@ impl<T : Sized + Copy> GuestPtr<T> {
     pub fn read(&self) -> Result<T,()> {
         let mut buf = MaybeUninit::<T>::uninit();
 
-        let result = unsafe { do_movsb(self.ptr, buf.as_mut_ptr()) };
-        let buf = unsafe { buf.assume_init() };
-
-        if let Ok(_) = result { Ok(buf) } else { Err(()) }
+        unsafe {
+            do_movsb(self.ptr, buf.as_mut_ptr())?;
+            Ok(buf.assume_init())
+        }
     }
 
     pub fn write(&self, buf: T) -> Result<(),()> {
