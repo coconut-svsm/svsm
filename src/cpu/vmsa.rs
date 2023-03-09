@@ -81,8 +81,8 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
     vmsa.sev_features = read_msr(0xc0010131) >> 2;
 }
 
-fn real_mode_code_segment(rip : u64) -> VMSASegment {
-    VMSASegment{
+fn real_mode_code_segment(rip: u64) -> VMSASegment {
+    VMSASegment {
         selector: 0xf000,
         base: rip & 0xffff_0000u64,
         limit: 0xffff,
@@ -91,7 +91,7 @@ fn real_mode_code_segment(rip : u64) -> VMSASegment {
 }
 fn real_mode_data_segment() -> VMSASegment {
     VMSASegment {
-        selector : 0,
+        selector: 0,
         flags: 0x93,
         limit: 0xFFFF,
         base: 0,
@@ -107,7 +107,7 @@ fn real_mode_sys_seg(flags: u16) -> VMSASegment {
     }
 }
 
-pub fn init_guest_vmsa(vmsa: *mut VMSA, rip : u64) {
+pub fn init_guest_vmsa(vmsa: *mut VMSA, rip: u64) {
     let v = unsafe { vmsa.as_mut().unwrap() };
 
     v.cr0 = 0x6000_0010;

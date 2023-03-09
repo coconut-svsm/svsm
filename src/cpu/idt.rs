@@ -9,8 +9,8 @@
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use super::vc::handle_vc_exception;
-use crate::types::{VirtAddr, SVSM_CS};
 use crate::cpu::extable::handle_exception_table;
+use crate::types::{VirtAddr, SVSM_CS};
 use core::arch::{asm, global_asm};
 use core::mem;
 
@@ -236,7 +236,7 @@ extern "C" {
 
 #[cfg(feature = "enable-stacktrace")]
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
-    rip == unsafe{&generic_idt_handler_return} as *const u8 as VirtAddr
+    rip == unsafe { &generic_idt_handler_return } as *const u8 as VirtAddr
 }
 
 // Entry Code

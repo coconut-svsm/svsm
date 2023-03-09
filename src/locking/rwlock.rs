@@ -6,9 +6,9 @@
 //
 // vim: ts=4 sw=4 et
 
-use core::sync::atomic::{AtomicU64, Ordering};
-use core::ops::{Deref, DerefMut};
 use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub struct ReadLockGuard<'a, T> {
     rwlock: &'a AtomicU64,
@@ -110,7 +110,11 @@ impl<T> RWLock<T> {
             let (readers, _) = split_val(val);
             let new_val = compose_val(readers + 1, 0);
 
-            if self.rwlock.compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+            if self
+                .rwlock
+                .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 break;
             }
             core::hint::spin_loop();
@@ -129,7 +133,11 @@ impl<T> RWLock<T> {
             let (readers, _) = split_val(val);
             let new_val = compose_val(readers, 1);
 
-            if self.rwlock.compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed) .is_ok() {
+            if self
+                .rwlock
+                .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
                 break;
             }
             core::hint::spin_loop();
@@ -137,7 +145,7 @@ impl<T> RWLock<T> {
 
         // Now locked for write - wait until all readers finished
         let val: u64 = self.wait_for_readers();
-        assert!(val == compose_val(0,1));
+        assert!(val == compose_val(0, 1));
 
         WriteLockGuard {
             rwlock: &self.rwlock,

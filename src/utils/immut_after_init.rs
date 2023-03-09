@@ -6,11 +6,11 @@
 //
 // vim: ts=4 sw=4 et
 
-use core::marker::Copy;
-use core::ops::Deref;
 use core::cell::UnsafeCell;
-use core::mem::MaybeUninit;
+use core::marker::Copy;
 use core::marker::PhantomData;
+use core::mem::MaybeUninit;
+use core::ops::Deref;
 
 /// A memory location which is effectively immutable after initalization code
 /// has run.
@@ -55,16 +55,18 @@ use core::marker::PhantomData;
 /// ```
 ///
 #[repr(transparent)]
-pub struct ImmutAfterInitCell<T : Copy> {
+pub struct ImmutAfterInitCell<T: Copy> {
     #[doc(hidden)]
-    data : UnsafeCell<MaybeUninit<T>>,
+    data: UnsafeCell<MaybeUninit<T>>,
 }
 
-impl<T : Copy> ImmutAfterInitCell<T> {
+impl<T: Copy> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
     /// initialized by means of [`Self::init()`] before first usage.
     pub const fn uninit() -> Self {
-        ImmutAfterInitCell{data : UnsafeCell::new(MaybeUninit::uninit()) }
+        ImmutAfterInitCell {
+            data: UnsafeCell::new(MaybeUninit::uninit()),
+        }
     }
 
     /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
@@ -72,7 +74,7 @@ impl<T : Copy> ImmutAfterInitCell<T> {
     /// Must **not** get called on an already initialized instance!
     ///
     /// * `v` - Initialization value.
-    pub unsafe fn init(&self, v : &T) {
+    pub unsafe fn init(&self, v: &T) {
         core::ptr::copy_nonoverlapping(v as *const T, (*self.data.get()).as_mut_ptr(), 1);
     }
 
@@ -82,19 +84,21 @@ impl<T : Copy> ImmutAfterInitCell<T> {
     /// [`ImmutAfterInitRef::deref()`]is alive!
     ///
     /// * `v` - Initialization value.
-    pub unsafe fn reinit(&self, v : &T) {
+    pub unsafe fn reinit(&self, v: &T) {
         self.init(v);
     }
 
     /// Create an initialized `ImmutAfterInitCell` instance from a value.
     ///
     /// * `v` - Initialization value.
-    pub const fn new(v : T) -> Self {
-        ImmutAfterInitCell{data : UnsafeCell::new(MaybeUninit::new(v))}
+    pub const fn new(v: T) -> Self {
+        ImmutAfterInitCell {
+            data: UnsafeCell::new(MaybeUninit::new(v)),
+        }
     }
 }
 
-impl<T : Copy> Deref for ImmutAfterInitCell<T> {
+impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
     /// Dereference the wrapped value. Must **only ever** get called on an
@@ -104,9 +108,8 @@ impl<T : Copy> Deref for ImmutAfterInitCell<T> {
     }
 }
 
-unsafe impl<T : Copy> Send for ImmutAfterInitCell<T> {}
-unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
-
+unsafe impl<T: Copy> Send for ImmutAfterInitCell<T> {}
+unsafe impl<T: Copy> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
@@ -178,11 +181,11 @@ unsafe impl<T : Copy> Sync for ImmutAfterInitCell<T> {}
 /// ```
 ///
 #[repr(transparent)]
-pub struct ImmutAfterInitRef<'a, T : 'a> {
+pub struct ImmutAfterInitRef<'a, T: 'a> {
     #[doc(hidden)]
-    ptr : ImmutAfterInitCell<*const T>,
+    ptr: ImmutAfterInitCell<*const T>,
     #[doc(hidden)]
-    _phantom : PhantomData<&'a mut &'a T>,
+    _phantom: PhantomData<&'a mut &'a T>,
 }
 
 impl<'a, T> ImmutAfterInitRef<'a, T> {
@@ -190,9 +193,9 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// must get initialized via either of [`Self::init_from_ref()`] or
     /// [`Self::init_from_cell()`] before first dereferencing it.
     pub const fn uninit() -> Self {
-        ImmutAfterInitRef{
-            ptr : ImmutAfterInitCell::uninit(),
-            _phantom : PhantomData
+        ImmutAfterInitRef {
+            ptr: ImmutAfterInitCell::uninit(),
+            _phantom: PhantomData,
         }
     }
 
@@ -205,7 +208,10 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
     ///         to. By convention, the referenced value must have been
     ///         initialized already.
-    pub unsafe fn init_from_ref<'b>(&self, r : &'b T) where 'b : 'a {
+    pub unsafe fn init_from_ref<'b>(&self, r: &'b T)
+    where
+        'b: 'a,
+    {
         self.ptr.init(&(r as *const T));
     }
 
@@ -215,10 +221,10 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
     ///         to. By convention, the referenced value must have been
     ///         initialized already.
-    pub const fn new_from_ref(r : &'a T) -> Self {
+    pub const fn new_from_ref(r: &'a T) -> Self {
         Self {
-            ptr : ImmutAfterInitCell::new(r as *const T),
-            _phantom : PhantomData,
+            ptr: ImmutAfterInitCell::new(r as *const T),
+            _phantom: PhantomData,
         }
     }
 
@@ -226,11 +232,11 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// ever** get called on an initialized `ImmutAfterInitRef` instance! Moreover,
     /// the value referenced must have been initialized as well.
     pub fn get(&self) -> &'a T {
-        unsafe{&**self.ptr}
+        unsafe { &**self.ptr }
     }
 }
 
-impl<'a, T : Copy> ImmutAfterInitRef<'a, T> {
+impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to
     /// value wrapped in a [`ImmutAfterInitCell`].
     ///
@@ -239,7 +245,10 @@ impl<'a, T : Copy> ImmutAfterInitRef<'a, T> {
     /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
     ///            convention, the referenced value must have been initialized
     ///            already.
-    pub unsafe fn init_from_cell<'b>(&self, cell : &'b ImmutAfterInitCell<T>) where 'b : 'a {
+    pub unsafe fn init_from_cell<'b>(&self, cell: &'b ImmutAfterInitCell<T>)
+    where
+        'b: 'a,
+    {
         self.ptr.init(&(*cell.data.get()).as_ptr());
     }
 
@@ -249,10 +258,10 @@ impl<'a, T : Copy> ImmutAfterInitRef<'a, T> {
     /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
     ///            convention, the referenced value must have been initialized
     ///            already.
-    pub const fn new_from_cell(cell : &'a ImmutAfterInitCell<T>) -> Self {
+    pub const fn new_from_cell(cell: &'a ImmutAfterInitCell<T>) -> Self {
         Self {
-            ptr : ImmutAfterInitCell::new(unsafe { &*cell.data.get() }.as_ptr()),
-            _phantom : PhantomData,
+            ptr: ImmutAfterInitCell::new(unsafe { &*cell.data.get() }.as_ptr()),
+            _phantom: PhantomData,
         }
     }
 }

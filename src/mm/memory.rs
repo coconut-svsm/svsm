@@ -9,26 +9,24 @@
 extern crate alloc;
 
 use crate::cpu::percpu::PERCPU_VMSAS;
-use crate::utils::page_align;
-use crate::types::PhysAddr;
-use crate::kernel_launch::KernelLaunchInfo;
 use crate::fw_cfg::{FwCfg, MemoryRegion};
+use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::RWLock;
+use crate::types::PhysAddr;
+use crate::utils::page_align;
 use alloc::vec::Vec;
 use log;
 
 static MEMORY_MAP: RWLock<Vec<MemoryRegion>> = RWLock::new(Vec::new());
 
-
-pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(),()> {
+pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(), ()> {
     let mut regions = fwcfg.get_memory_regions()?;
 
     // Remove SVSM memory from guest memory map
     for mut region in regions.iter_mut() {
-        if (launch_info.kernel_start > region.start) &&
-           (launch_info.kernel_start < region.end) {
-               region.end = launch_info.kernel_start;
-           }
+        if (launch_info.kernel_start > region.start) && (launch_info.kernel_start < region.end) {
+            region.end = launch_info.kernel_start;
+        }
     }
 
     log::info!("Guest Memory Regions:");
@@ -50,6 +48,8 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
         return false;
     }
 
-    MEMORY_MAP.lock_read().iter()
-        .any(|region| addr >= region.start && addr < region.end )
+    MEMORY_MAP
+        .lock_read()
+        .iter()
+        .any(|region| addr >= region.start && addr < region.end)
 }

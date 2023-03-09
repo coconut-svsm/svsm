@@ -6,11 +6,11 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PhysAddr, VirtAddr};
-use crate::utils::util::is_aligned;
 use crate::locking::SpinLock;
-use crate::mm::virt_to_phys;
 use crate::mm::alloc::{allocate_pages, get_order};
+use crate::mm::virt_to_phys;
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::util::is_aligned;
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
@@ -92,7 +92,11 @@ struct ValidBitmap {
 
 impl ValidBitmap {
     pub const fn new() -> Self {
-        ValidBitmap { pbase: 0, pend: 0, bitmap: ptr::null_mut() }
+        ValidBitmap {
+            pbase: 0,
+            pend: 0,
+            bitmap: ptr::null_mut(),
+        }
     }
 
     pub fn set_range(&mut self, pbase: PhysAddr, pend: PhysAddr) {
@@ -113,10 +117,10 @@ impl ValidBitmap {
         virt_to_phys(self.bitmap as VirtAddr)
     }
 
-#[inline(always)]
+    #[inline(always)]
     fn index(&self, paddr: PhysAddr) -> (isize, usize) {
         let page_offset = (paddr - self.pbase) / PAGE_SIZE;
-        let index : isize = (page_offset / 64).try_into().unwrap();
+        let index: isize = (page_offset / 64).try_into().unwrap();
         let bit: usize = page_offset % 64;
 
         (index, bit)
@@ -126,7 +130,9 @@ impl ValidBitmap {
         let (i, _) = self.index(self.pend - 1);
         let index: usize = i.try_into().unwrap();
 
-        unsafe { ptr::write_bytes(self.bitmap, 0, index); }
+        unsafe {
+            ptr::write_bytes(self.bitmap, 0, index);
+        }
     }
 
     pub fn alloc_order(&self) -> usize {
@@ -192,7 +198,9 @@ impl ValidBitmap {
         assert!(self.check_addr(paddr));
 
         for i in 0..NR_INDEX {
-            unsafe { ptr::write(self.bitmap.offset(index + i), val); }
+            unsafe {
+                ptr::write(self.bitmap.offset(index + i), val);
+            }
         }
     }
 
@@ -216,7 +224,7 @@ impl ValidBitmap {
         unsafe {
             let mask: u64 = 1u64 << bit;
             let val: u64 = ptr::read(self.bitmap.offset(index));
-            
+
             (val & mask) == mask
         }
     }

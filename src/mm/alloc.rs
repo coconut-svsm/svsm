@@ -615,7 +615,9 @@ pub fn print_memory_info(info: &MemInfo) {
         let nr_4k_pages: usize = 1 << i;
         log::info!(
             "Order-{:#02}: total pages: {:#5} free pages: {:#5}",
-            i, info.total_pages[i], info.free_pages[i]
+            i,
+            info.total_pages[i],
+            info.free_pages[i]
         );
         pages_4k += info.total_pages[i] * nr_4k_pages;
         free_pages_4k += info.free_pages[i] * nr_4k_pages;
@@ -1167,12 +1169,12 @@ pub fn print_alloc_info() {
         let free_pages = ROOT_MEM.lock().free_pages[i];
         log::trace!(
             "Order-{}: Pages: {:#04} Free Pages: {:#04}",
-            i, nr_pages, free_pages
+            i,
+            nr_pages,
+            free_pages
         );
     }
 }
-
-
 
 #[cfg(test)]
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
@@ -1187,7 +1189,9 @@ fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
     extern crate alloc;
     use alloc::alloc::{alloc, handle_alloc_error};
 
-    let layout = Layout::from_size_align(size, PAGE_SIZE).unwrap().pad_to_align();
+    let layout = Layout::from_size_align(size, PAGE_SIZE)
+        .unwrap()
+        .pad_to_align();
     let ptr = unsafe { alloc(layout) };
     if ptr.is_null() {
         handle_alloc_error(layout);
@@ -1252,7 +1256,7 @@ fn test_page_alloc_all_compound() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1287,7 +1291,7 @@ fn test_page_alloc_all_single() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1322,7 +1326,7 @@ fn test_page_alloc_oom() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1355,9 +1359,8 @@ fn test_page_alloc_oom() {
     destroy_test_root_mem(test_mem_lock);
 }
 
-
 #[cfg(test)]
-const TEST_SLAB_SIZES: [usize; 7]  = [32, 64, 128, 256, 512, 1024, 2048];
+const TEST_SLAB_SIZES: [usize; 7] = [32, 64, 128, 256, 512, 1024, 2048];
 
 #[test]
 // Allocate and free a couple of objects for each slab size.
@@ -1365,7 +1368,7 @@ fn test_slab_alloc_free_many() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
 
     // Run it twice to make sure some objects will get freed and allocated again.
     for _i in 0..2 {
@@ -1407,7 +1410,7 @@ fn test_slab_page_slab_for_self() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock =  setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
 
     const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
     const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
@@ -1415,7 +1418,9 @@ fn test_slab_page_slab_for_self() {
     const SLAB_PAGE_SIZE: usize = size_of::<SlabPage>();
     const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE;
 
-    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE)
+        .unwrap()
+        .pad_to_align();
     assert_eq!(layout.size(), OBJECT_SIZE);
 
     let mut allocs: Vec<*mut u8> = Vec::new();
@@ -1444,10 +1449,12 @@ fn test_slab_oom() {
     use alloc::vec::Vec;
 
     const TEST_MEMORY_SIZE: usize = 256 * PAGE_SIZE;
-    let test_mem_lock =  setup_test_root_mem(TEST_MEMORY_SIZE);
+    let test_mem_lock = setup_test_root_mem(TEST_MEMORY_SIZE);
 
     const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
-    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE).unwrap().pad_to_align();
+    let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE)
+        .unwrap()
+        .pad_to_align();
     assert_eq!(layout.size(), OBJECT_SIZE);
 
     let mut allocs: Vec<*mut u8> = Vec::new();

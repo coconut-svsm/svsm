@@ -8,12 +8,12 @@
 
 use crate::types::VirtAddr;
 
-use core::mem::{size_of, MaybeUninit};
 use core::arch::asm;
+use core::mem::{size_of, MaybeUninit};
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u8(v: VirtAddr) -> Result<u8,()> {
+unsafe fn read_u8(v: VirtAddr) -> Result<u8, ()> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -31,12 +31,16 @@ unsafe fn read_u8(v: VirtAddr) -> Result<u8,()> {
             options(att_syntax, nostack));
 
     let ret: u8 = (val & 0xff) as u8;
-    if rcx == 0 { Ok(ret) } else { Err(()) }
+    if rcx == 0 {
+        Ok(ret)
+    } else {
+        Err(())
+    }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u16(v: VirtAddr) -> Result<u16,()> {
+unsafe fn read_u16(v: VirtAddr) -> Result<u16, ()> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -54,12 +58,16 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16,()> {
             options(att_syntax, nostack));
 
     let ret: u16 = (val & 0xffff) as u16;
-    if rcx == 0 { Ok(ret) } else { Err(()) }
+    if rcx == 0 {
+        Ok(ret)
+    } else {
+        Err(())
+    }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u32(v: VirtAddr) -> Result<u32,()> {
+unsafe fn read_u32(v: VirtAddr) -> Result<u32, ()> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -77,12 +85,16 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32,()> {
             options(att_syntax, nostack));
 
     let ret: u32 = (val & 0xffffffff) as u32;
-    if rcx == 0 { Ok(ret) } else { Err(()) }
+    if rcx == 0 {
+        Ok(ret)
+    } else {
+        Err(())
+    }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u64(v: VirtAddr) -> Result<u64,()> {
+unsafe fn read_u64(v: VirtAddr) -> Result<u64, ()> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -99,13 +111,17 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64,()> {
             out("rcx") rcx,
             options(att_syntax, nostack));
 
-    if rcx == 0 { Ok(val) } else { Err(()) }
+    if rcx == 0 {
+        Ok(val)
+    } else {
+        Err(())
+    }
 }
 
 #[inline]
-unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(),()> {
+unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), ()> {
     let size: usize = size_of::<T>();
-    let mut rcx : u64; 
+    let mut rcx: u64;
 
     asm!("1:cld
             rep movsb
@@ -120,26 +136,30 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(),()> {
             inout("rcx") size => rcx,
             options(att_syntax, nostack));
 
-    if rcx == 0 { Ok(()) } else { Err(()) }
+    if rcx == 0 {
+        Ok(())
+    } else {
+        Err(())
+    }
 }
 
 pub struct GuestPtr<T>
 where
-    T : Sized + Copy
+    T: Sized + Copy,
 {
     ptr: *mut T,
 }
 
-impl<T : Sized + Copy> GuestPtr<T> {
+impl<T: Sized + Copy> GuestPtr<T> {
     pub fn new(v: VirtAddr) -> Self {
-        GuestPtr { ptr: v as *mut T}
+        GuestPtr { ptr: v as *mut T }
     }
 
     pub fn from_ptr(p: *mut T) -> Self {
         GuestPtr { ptr: p }
     }
 
-    pub fn read(&self) -> Result<T,()> {
+    pub fn read(&self) -> Result<T, ()> {
         let mut buf = MaybeUninit::<T>::uninit();
 
         unsafe {
@@ -148,21 +168,21 @@ impl<T : Sized + Copy> GuestPtr<T> {
         }
     }
 
-    pub fn write(&self, buf: T) -> Result<(),()> {
+    pub fn write(&self, buf: T) -> Result<(), ()> {
         let src = &buf as *const T;
-        
+
         unsafe { do_movsb(src, self.ptr) }
     }
 
-    pub fn write_ref(&self, buf: &T) -> Result<(),()> {
+    pub fn write_ref(&self, buf: &T) -> Result<(), ()> {
         let src = buf as *const T;
 
         unsafe { do_movsb(src, self.ptr) }
     }
 
-    pub fn cast<N : Sized + Copy>(&self) -> GuestPtr<N>
+    pub fn cast<N: Sized + Copy>(&self) -> GuestPtr<N>
     where
-        N : Sized + Copy
+        N: Sized + Copy,
     {
         GuestPtr::<N>::new(self.ptr as VirtAddr)
     }

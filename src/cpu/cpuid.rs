@@ -55,14 +55,15 @@ pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidR
         if eax == CPUID_PAGE.func[i].eax_in
             && ecx == CPUID_PAGE.func[i].ecx_in
             && xcr0 == CPUID_PAGE.func[i].xcr0_in
-            && xss == CPUID_PAGE.func[i].xss_in {
-                return Some(CpuidResult {
-                    eax: CPUID_PAGE.func[i].eax_out,
-                    ebx: CPUID_PAGE.func[i].ebx_out,
-                    ecx: CPUID_PAGE.func[i].ecx_out,
-                    edx: CPUID_PAGE.func[i].edx_out,
-                });
-            }
+            && xss == CPUID_PAGE.func[i].xss_in
+        {
+            return Some(CpuidResult {
+                eax: CPUID_PAGE.func[i].eax_out,
+                ebx: CPUID_PAGE.func[i].ebx_out,
+                ecx: CPUID_PAGE.func[i].ecx_out,
+                edx: CPUID_PAGE.func[i].edx_out,
+            });
+        }
     }
 
     None

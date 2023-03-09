@@ -7,8 +7,8 @@
 // vim: ts=4 sw=4 et
 
 use super::features::cpu_has_pge;
-use core::arch::asm;
 use bitflags::bitflags;
+use core::arch::asm;
 
 pub fn cr0_init() {
     let mut cr0 = read_cr0();

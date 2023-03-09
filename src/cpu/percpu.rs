@@ -11,19 +11,21 @@ extern crate alloc;
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
-use crate::mm::{SVSM_PERCPU_BASE, SVSM_STACKS_INIT_TASK, SVSM_PERCPU_VMSA_BASE,
-    SVSM_STACK_IST_DF_BASE, SVSM_PERCPU_CAA_BASE, virt_to_phys};
+use crate::cpu::vmsa::init_guest_vmsa;
+use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
+use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
-use crate::mm::pagetable::{PageTable, PageTableRef, get_init_pgtable_locked};
+use crate::mm::{
+    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_VMSA_BASE,
+    SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+};
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
 use crate::types::{PhysAddr, VirtAddr};
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
-use crate::cpu::vmsa::init_guest_vmsa;
 use crate::utils::{page_align, page_offset};
-use crate::locking::{RWLock, SpinLock, LockGuard};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use core::ptr;
@@ -36,7 +38,10 @@ struct PerCpuInfo {
 
 impl PerCpuInfo {
     const fn new(apic_id: u32, addr: VirtAddr) -> Self {
-        PerCpuInfo { apic_id: apic_id, addr: addr }
+        PerCpuInfo {
+            apic_id: apic_id,
+            addr: addr,
+        }
     }
 }
 
@@ -51,12 +56,14 @@ pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 // structure only occur at initialization, from CPU 0, and reads
 // should only occur after all writes are done.
 pub struct PerCpuAreas {
-    areas: SyncUnsafeCell<Vec::<PerCpuInfo>>
+    areas: SyncUnsafeCell<Vec<PerCpuInfo>>,
 }
 
 impl PerCpuAreas {
     const fn new() -> Self {
-        Self { areas: SyncUnsafeCell::new(Vec::new()) }
+        Self {
+            areas: SyncUnsafeCell::new(Vec::new()),
+        }
     }
 
     unsafe fn push(&self, info: PerCpuInfo) {
@@ -71,12 +78,10 @@ impl PerCpuAreas {
         // going on when casting via as_ref(). This only happens via
         // Self::push(), which is intentionally unsafe and private.
         let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.iter()
-            .find(|info| info.apic_id == apic_id)
-            .map(|info| {
-                let ptr = info.addr as *const PerCpu;
-                unsafe { ptr.as_ref().unwrap() }
-            })
+        ptr.iter().find(|info| info.apic_id == apic_id).map(|info| {
+            let ptr = info.addr as *const PerCpu;
+            unsafe { ptr.as_ref().unwrap() }
+        })
     }
 }
 
@@ -84,12 +89,16 @@ impl PerCpuAreas {
 pub struct VmsaRef {
     pub vaddr: VirtAddr,
     pub paddr: PhysAddr,
-    pub guest_owned : bool,
+    pub guest_owned: bool,
 }
 
 impl VmsaRef {
     const fn new(v: VirtAddr, p: PhysAddr, g: bool) -> Self {
-        VmsaRef { vaddr: v, paddr: p, guest_owned: g }
+        VmsaRef {
+            vaddr: v,
+            paddr: p,
+            guest_owned: g,
+        }
     }
 
     pub fn vmsa(&self) -> &mut VMSA {
@@ -119,7 +128,12 @@ pub struct GuestVmsaRef {
 
 impl GuestVmsaRef {
     pub const fn new() -> Self {
-        GuestVmsaRef { vmsa: None, caa: None, generation: 1, gen_in_use: 0 }
+        GuestVmsaRef {
+            vmsa: None,
+            caa: None,
+            generation: 1,
+            gen_in_use: 0,
+        }
     }
 
     pub fn needs_update(&self) -> bool {
@@ -164,7 +178,7 @@ pub struct PerCpu {
     ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
-    guest_vmsa: SpinLock::<GuestVmsaRef>,
+    guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
 }
 
@@ -219,8 +233,8 @@ impl PerCpu {
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), ()> {
-        allocate_stack_addr(SVSM_STACKS_INIT_TASK, &mut self.get_pgtable()).
-            expect("Failed to allocate per-cpu init stack");
+        allocate_stack_addr(SVSM_STACKS_INIT_TASK, &mut self.get_pgtable())
+            .expect("Failed to allocate per-cpu init stack");
         self.init_stack = Some(SVSM_STACKS_INIT_TASK);
         Ok(())
     }
@@ -339,10 +353,10 @@ impl PerCpu {
     pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
         let vmsa = self.svsm_vmsa.unwrap();
 
-		vmsa.vmsa().tr = self.vmsa_tr_segment();
-		vmsa.vmsa().rip = start_rip;
-		vmsa.vmsa().rsp = self.get_top_of_stack().try_into().unwrap();
-		vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa.vmsa().tr = self.vmsa_tr_segment();
+        vmsa.vmsa().rip = start_rip;
+        vmsa.vmsa().rsp = self.get_top_of_stack().try_into().unwrap();
+        vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -378,7 +392,6 @@ impl PerCpu {
         locked.update_vmsa_caa(Some(vmsa), Some(caa));
     }
 
-
     pub fn update_guest_vmsa(&self, vmsa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
         locked.update_vmsa(Some(vmsa));
@@ -389,7 +402,7 @@ impl PerCpu {
         locked.update_caa(Some(caa));
     }
 
-    pub fn guest_vmsa_ref(&self) -> LockGuard::<GuestVmsaRef> {
+    pub fn guest_vmsa_ref(&self) -> LockGuard<GuestVmsaRef> {
         self.guest_vmsa.lock()
     }
 
@@ -450,7 +463,6 @@ impl PerCpu {
             base: (&self.tss as *const X86Tss) as u64,
         }
     }
-
 }
 
 unsafe impl Sync for PerCpu {}
@@ -478,7 +490,12 @@ pub struct VmsaRegistryEntry {
 
 impl VmsaRegistryEntry {
     pub const fn new(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Self {
-        VmsaRegistryEntry { paddr, apic_id, guest_owned, in_use: false }
+        VmsaRegistryEntry {
+            paddr,
+            apic_id,
+            guest_owned,
+            in_use: false,
+        }
     }
 }
 
@@ -486,16 +503,20 @@ impl VmsaRegistryEntry {
 pub static PERCPU_VMSAS: PerCpuVmsas = PerCpuVmsas::new();
 
 pub struct PerCpuVmsas {
-    vmsas: RWLock::<Vec::<VmsaRegistryEntry>>
+    vmsas: RWLock<Vec<VmsaRegistryEntry>>,
 }
 
 impl PerCpuVmsas {
     const fn new() -> Self {
-        Self { vmsas: RWLock::new(Vec::new()) }
+        Self {
+            vmsas: RWLock::new(Vec::new()),
+        }
     }
 
     pub fn exists(&self, paddr: PhysAddr) -> bool {
-        self.vmsas.lock_read().iter()
+        self.vmsas
+            .lock_read()
+            .iter()
             .any(|vmsa| vmsa.paddr == paddr)
     }
 
@@ -510,7 +531,9 @@ impl PerCpuVmsas {
     }
 
     pub fn set_used(&self, paddr: PhysAddr) -> Option<u32> {
-        self.vmsas.lock_write().iter_mut()
+        self.vmsas
+            .lock_write()
+            .iter_mut()
             .find(|vmsa| vmsa.paddr == paddr && !vmsa.in_use)
             .map(|vmsa| {
                 vmsa.in_use = true;
@@ -520,7 +543,8 @@ impl PerCpuVmsas {
 
     pub fn unregister(&self, paddr: PhysAddr, in_use: bool) -> Result<VmsaRegistryEntry, u64> {
         let mut guard = self.vmsas.lock_write();
-        let index = guard.iter()
+        let index = guard
+            .iter()
             .position(|vmsa| vmsa.paddr == paddr && vmsa.in_use == in_use)
             .ok_or(0u64)?;
 
@@ -531,7 +555,8 @@ impl PerCpuVmsas {
                 return Err(0);
             }
 
-            let target_cpu = PERCPU_AREAS.get(vmsa.apic_id)
+            let target_cpu = PERCPU_AREAS
+                .get(vmsa.apic_id)
                 .expect("Invalid APIC-ID in VMSA registry");
             target_cpu.clear_guest_vmsa_if_match(paddr);
         }

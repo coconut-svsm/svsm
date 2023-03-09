@@ -64,7 +64,7 @@ pub fn _print(args: fmt::Arguments) {
 
 #[derive(Clone, Copy)]
 struct ConsoleLoggerComponent {
-    name: &'static str
+    name: &'static str,
 }
 
 #[derive(Clone, Copy)]

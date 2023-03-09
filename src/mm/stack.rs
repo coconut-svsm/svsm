@@ -6,12 +6,14 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::cpu::flush_tlb_global_sync;
 use crate::locking::SpinLock;
-use crate::mm::{phys_to_virt, virt_to_phys};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
-use crate::mm::{STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END};
-use crate::cpu::flush_tlb_global_sync;
+use crate::mm::{phys_to_virt, virt_to_phys};
+use crate::mm::{
+    STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
+};
 use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::ffs;
 
@@ -72,8 +74,10 @@ impl StackRange {
     }
 }
 
-static STACK_ALLOC: SpinLock<StackRange> =
-    SpinLock::new(StackRange::new(SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END));
+static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
+    SVSM_SHARED_STACK_BASE,
+    SVSM_SHARED_STACK_END,
+));
 
 pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), ()> {
     let flags = PageTable::data_flags();
@@ -102,7 +106,9 @@ pub fn free_stack(stack: VirtAddr) {
     let mut pgtable = get_init_pgtable_locked();
     for (i, page) in pages.iter_mut().enumerate() {
         let addr = stack + (i * PAGE_SIZE);
-        let paddr = pgtable.phys_addr(addr).expect("Failed to get stack physical address");
+        let paddr = pgtable
+            .phys_addr(addr)
+            .expect("Failed to get stack physical address");
         let vaddr = phys_to_virt(paddr);
         pgtable.unmap_4k(addr);
         *page = vaddr;

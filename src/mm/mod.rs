@@ -6,16 +6,16 @@
 //
 // vim: ts=4 sw=4 et
 
-pub mod alloc;
-pub mod pagetable;
-pub mod stack;
-pub mod memory;
-pub mod guestmem;
 pub mod address_space;
+pub mod alloc;
+pub mod guestmem;
+pub mod memory;
+pub mod pagetable;
 pub mod ptguards;
+pub mod stack;
 pub mod validate;
 
-pub use memory::valid_phys_address;
-pub use guestmem::GuestPtr;
 pub use address_space::*;
+pub use guestmem::GuestPtr;
+pub use memory::valid_phys_address;
 pub use ptguards::*;

@@ -58,13 +58,17 @@ impl<T> SpinLock<T> {
         let holder = self.holder.load(Ordering::Acquire);
 
         if current == holder {
-            let result = self.current.compare_exchange(current, current + 1,
-                                                       Ordering::Acquire, Ordering::Relaxed);
+            let result = self.current.compare_exchange(
+                current,
+                current + 1,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            );
             if let Ok(_) = result {
                 return Ok(LockGuard {
-                                holder: &self.holder,
-                                data: unsafe { &mut *self.data.get() },
-                            });
+                    holder: &self.holder,
+                    data: unsafe { &mut *self.data.get() },
+                });
             }
         }
 

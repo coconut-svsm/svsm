@@ -6,7 +6,7 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{PAGE_SIZE, VirtAddr};
+use crate::types::{VirtAddr, PAGE_SIZE};
 use core::arch::asm;
 use core::ptr;
 
@@ -14,7 +14,7 @@ pub fn align_up(addr: usize, align: usize) -> usize {
     (addr + (align - 1)) & !(align - 1)
 }
 
-pub fn page_offset(addr : usize) -> usize {
+pub fn page_offset(addr: usize) -> usize {
     addr & (PAGE_SIZE - 1)
 }
 
@@ -53,9 +53,9 @@ pub fn halt() {
     }
 }
 
-pub fn overlap<T>(x1 : T, x2 : T, y1 : T, y2 : T) -> bool
+pub fn overlap<T>(x1: T, x2: T, y1: T, y2: T) -> bool
 where
-    T : core::cmp::PartialOrd
+    T: core::cmp::PartialOrd,
 {
     x1 <= y2 && y1 <= x2
 }
@@ -77,4 +77,3 @@ pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
         ptr::write_bytes(target.as_mut(), 0, size);
     }
 }
-

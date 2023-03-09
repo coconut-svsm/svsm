@@ -10,8 +10,8 @@ extern crate alloc;
 
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
-use alloc::vec::Vec;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
+use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::mem;
 use core::ptr;
@@ -278,7 +278,9 @@ impl ACPITableBuffer {
     }
 
     pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
-        let offset = self.tables.iter()
+        let offset = self
+            .tables
+            .iter()
             .find(|entry| entry.sig == sig)
             .map(|entry| entry.offset)?;
 

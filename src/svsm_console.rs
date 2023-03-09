@@ -6,10 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::cpu::percpu::this_cpu_mut;
 use crate::io::IOPort;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::request_termination_msr;
-use crate::cpu::percpu::this_cpu_mut;
 
 pub struct SVSMIOPort {}
 

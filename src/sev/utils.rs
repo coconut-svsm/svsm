@@ -26,10 +26,10 @@ impl SevSnpError {
     // This should get optimized away by the compiler to a single instruction
     pub fn ret(&self) -> u64 {
         match self {
-            Self::FAIL_INPUT(ret) |
-            Self::FAIL_UNCHANGED(ret) |
-            Self::FAIL_PERMISSION(ret) |
-            Self::FAIL_SIZEMISMATCH(ret) => *ret,
+            Self::FAIL_INPUT(ret)
+            | Self::FAIL_UNCHANGED(ret)
+            | Self::FAIL_PERMISSION(ret)
+            | Self::FAIL_SIZEMISMATCH(ret) => *ret,
         }
     }
 }
@@ -60,12 +60,12 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
         if is_aligned(addr, PAGE_SIZE_2M) && (addr + PAGE_SIZE_2M) <= end {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
-            pvalidate(addr, true, valid)
-                .or_else(|err| match err {
-                    SevSnpError::FAIL_SIZEMISMATCH(_) =>
-                        pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid),
-                    _ => Err(err),
-                })?;
+            pvalidate(addr, true, valid).or_else(|err| match err {
+                SevSnpError::FAIL_SIZEMISMATCH(_) => {
+                    pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
+                }
+                _ => Err(err),
+            })?;
             addr += PAGE_SIZE_2M;
         } else {
             pvalidate(addr, false, valid)?;
@@ -169,7 +169,7 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Sev
         _ => {
             log::error!("RMPADJUST: Unexpected return value: {:#x}", ret);
             unreachable!();
-        },
+        }
     }
 }
 

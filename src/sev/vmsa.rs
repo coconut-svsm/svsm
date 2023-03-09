@@ -47,7 +47,7 @@ pub enum GuestVMExit {
     NPF = 0x400,
     VMGEXIT = 0x403,
     INVALID = 0xffffffffffffffff,
-    BUSY = 0xfffffffffffffffe
+    BUSY = 0xfffffffffffffffe,
 }
 
 #[repr(C, packed)]

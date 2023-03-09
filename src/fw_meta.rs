@@ -8,14 +8,14 @@
 
 extern crate alloc;
 
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use alloc::vec::Vec;
 use crate::cpu::percpu::this_cpu_mut;
-use crate::mm::SIZE_1G;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::utils::{overlap, zero_mem_region};
-use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
+use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
+use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::utils::{overlap, zero_mem_region};
+use alloc::vec::Vec;
 
 use core::cmp;
 use core::fmt;
@@ -142,7 +142,7 @@ impl FromStr for Uuid {
 
             index += 1;
         }
-        
+
         Ok(uuid)
     }
 }
@@ -294,19 +294,24 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
                 let base = desc.base as PhysAddr;
                 let len = desc.len as usize;
                 match t {
-                    SEV_META_DESC_TYPE_MEM =>
-                        meta_data.add_valid_mem(base, len),
+                    SEV_META_DESC_TYPE_MEM => meta_data.add_valid_mem(base, len),
                     SEV_META_DESC_TYPE_SECRETS => {
-                        if len != PAGE_SIZE { return Err(()); }
+                        if len != PAGE_SIZE {
+                            return Err(());
+                        }
                         meta_data.secrets_page = Some(base);
                     }
                     SEV_META_DESC_TYPE_CPUID => {
-                        if len != PAGE_SIZE { return Err(()); }
+                        if len != PAGE_SIZE {
+                            return Err(());
+                        }
                         meta_data.cpuid_page = Some(base);
                     }
                     SEV_META_DESC_TYPE_CAA => {
-                        if len != PAGE_SIZE { return Err(()); }
-                         meta_data.caa_page = Some(base);
+                        if len != PAGE_SIZE {
+                            return Err(());
+                        }
+                        meta_data.caa_page = Some(base);
                     }
                     _ => log::info!("Unknown metadata item type: {}", t),
                 }
@@ -317,13 +322,14 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     Ok(meta_data)
 }
 
-fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
+fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), ()> {
     let pstart: PhysAddr = region.base;
     let pend: PhysAddr = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
-    this_cpu_mut().ghcb()
+    this_cpu_mut()
+        .ghcb()
         .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
         .expect("GHCB PSC call failed to validate firmware memory");
 
@@ -337,7 +343,7 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
 
         // Make page accessible to VMPL1
         if rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false).is_err() {
-            return Err(())
+            return Err(());
         }
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
@@ -346,12 +352,12 @@ fn validate_fw_mem_region(region : SevPreValidMem) -> Result<(),()>{
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions : Vec<SevPreValidMem>) -> Result<(), ()> {
+fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), ()> {
     if regions.is_empty() {
         return Ok(());
     }
 
-    let mut next_vec : Vec<SevPreValidMem> = Vec::new();
+    let mut next_vec: Vec<SevPreValidMem> = Vec::new();
     let mut region = regions[0];
 
     for next in regions.into_iter().skip(1) {
@@ -366,7 +372,7 @@ fn validate_fw_memory_vec(regions : Vec<SevPreValidMem>) -> Result<(), ()> {
     validate_fw_memory_vec(next_vec)
 }
 
-pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
+pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     // Initalize vector with regions from the FW
     let mut regions = fw_meta.valid_mem.clone();
 
@@ -391,30 +397,34 @@ pub fn validate_fw_memory(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     validate_fw_memory_vec(regions)
 }
 
-pub fn print_fw_meta(fw_meta : &SevFWMetaData) {
+pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     log::info!("FW Meta Data");
 
     match fw_meta.reset_ip {
-        Some(ip) =>   log::info!("  Reset RIP    : {:#010x}", ip),
-        None     =>   log::info!("  Reset RIP    : None"),
+        Some(ip) => log::info!("  Reset RIP    : {:#010x}", ip),
+        None => log::info!("  Reset RIP    : None"),
     };
 
     match fw_meta.cpuid_page {
         Some(addr) => log::info!("  CPUID Page   : {:#010x}", addr),
-        None       => log::info!("  CPUID Page   : None"),
+        None => log::info!("  CPUID Page   : None"),
     };
 
     match fw_meta.secrets_page {
         Some(addr) => log::info!("  Secrets Page : {:#010x}", addr),
-        None       => log::info!("  Secrets Page : None"),
+        None => log::info!("  Secrets Page : None"),
     };
 
     match fw_meta.caa_page {
         Some(addr) => log::info!("  CAA Page     : {:#010x}", addr),
-        None       => log::info!("  CAA Page     : None"),
+        None => log::info!("  CAA Page     : None"),
     };
 
     for region in &fw_meta.valid_mem {
-        log::info!("  Pre-Validated Region {:#018x}-{:#018x}", region.base, region.end());
+        log::info!(
+            "  Pre-Validated Region {:#018x}-{:#018x}",
+            region.base,
+            region.end()
+        );
     }
 }

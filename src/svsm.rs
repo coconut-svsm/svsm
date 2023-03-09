@@ -11,37 +11,37 @@
 #![feature(const_mut_refs)]
 pub mod svsm_paging;
 
-use svsm::fw_meta::{parse_fw_meta_data, validate_fw_memory, print_fw_meta, SevFWMetaData};
+use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
-use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::efer::efer_init;
-use svsm::serial::SerialPort;
-use svsm::serial::SERIAL_PORT;
-use svsm::svsm_console::SVSMIOPort;
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
-use svsm::acpi::tables::load_acpi_cpu_info;
-use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
+use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::console::{init_console, install_console_logger, WRITER};
+use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
-use svsm::fw_cfg::FwCfg;
-use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm::alloc::{memory_info, root_mem_init, print_memory_info};
-use svsm::mm::pagetable::paging_init;
-use svsm::mm::{PerCPUPageMappingGuard, init_kernel_mapping_info};
-use svsm::mm::memory::init_memory_map;
-use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
-use svsm_paging::{init_page_table, invalidate_stage2};
-use svsm::types::{VirtAddr, PhysAddr, PAGE_SIZE};
-use svsm::cpu::percpu::{this_cpu_mut, this_cpu};
-use svsm::sev::sev_status_init;
-use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::requests::{request_loop, update_mappings};
+use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
+use svsm::fw_cfg::FwCfg;
+use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use svsm::mm::memory::init_memory_map;
+use svsm::mm::pagetable::paging_init;
+use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
+use svsm::requests::{request_loop, update_mappings};
+use svsm::serial::SerialPort;
+use svsm::serial::SERIAL_PORT;
+use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::sev_status_init;
+use svsm::sev::utils::{rmp_adjust, RMPFlags};
+use svsm::svsm_console::SVSMIOPort;
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm_paging::{init_page_table, invalidate_stage2};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -119,10 +119,10 @@ static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::u
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
-fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
+fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), ()> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
     let start = guard.virt_addr();
-    let end   = start + PAGE_SIZE;
+    let end = start + PAGE_SIZE;
 
     let target = ptr::NonNull::new(start as *mut SnpCpuidTable).unwrap();
 
@@ -138,9 +138,9 @@ fn copy_cpuid_table_to_fw(fw_addr : PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
-fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<(), ()> {
+fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), ()> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
-	let start = guard.virt_addr();
+    let start = guard.virt_addr();
 
     let mut target = ptr::NonNull::new(start as *mut SecretsPage).unwrap();
 
@@ -167,7 +167,7 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
 
         fw_sp.svsm_base = li.kernel_start;
         fw_sp.svsm_size = li.kernel_end - li.kernel_start;
-        fw_sp.svsm_caa  = caa_addr as u64;
+        fw_sp.svsm_caa = caa_addr as u64;
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = 1;
     }
@@ -175,7 +175,7 @@ fn copy_secrets_page_to_fw(fw_addr : PhysAddr, caa_addr : PhysAddr) -> Result<()
     Ok(())
 }
 
-fn zero_caa_page(fw_addr : PhysAddr) -> Result<(), ()> {
+fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), ()> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
     let vaddr = guard.virt_addr();
 
@@ -184,8 +184,7 @@ fn zero_caa_page(fw_addr : PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
-
+pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     let cpuid_page = match fw_meta.cpuid_page {
         Some(addr) => addr,
         None => panic!("FW does not specify CPUID_PAGE location"),
@@ -198,7 +197,7 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
         None => panic!("FW does not specify SECRETS_PAGE location"),
     };
 
-    let caa_page = match fw_meta.caa_page  {
+    let caa_page = match fw_meta.caa_page {
         Some(addr) => addr,
         None => panic!("FW does not specify CAA_PAGE location"),
     };
@@ -208,8 +207,7 @@ pub fn copy_tables_to_fw(fw_meta : &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
-fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()>
-{
+fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     let caa = fw_meta.caa_page.unwrap();
     let cpu = this_cpu_mut();
 
@@ -220,7 +218,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()>
     Ok(())
 }
 
-fn launch_fw() -> Result<(),()> {
+fn launch_fw() -> Result<(), ()> {
     let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
     let vmsa = this_cpu_mut().guest_vmsa();
 
@@ -230,7 +228,9 @@ fn launch_fw() -> Result<(),()> {
     let sev_features = vmsa.sev_features;
 
     log::info!("Launching Firmware");
-    this_cpu_mut().ghcb().ap_create(vmsa_pa, 0, 1, sev_features)?;
+    this_cpu_mut()
+        .ghcb()
+        .ap_create(vmsa_pa, 0, 1, sev_features)?;
 
     Ok(())
 }
@@ -240,8 +240,13 @@ fn validate_flash() -> Result<(), ()> {
 
     for (i, region) in fw_cfg.iter_flash_regions().enumerate() {
         let pstart = region.start as PhysAddr;
-        let pend   = region.end as PhysAddr;
-        log::info!("Flash region {} at {:#018x} size {:018x}", i, pstart, pend - pstart);
+        let pend = region.end as PhysAddr;
+        log::info!(
+            "Flash region {} at {:#018x} size {:018x}",
+            i,
+            pstart,
+            pend - pstart
+        );
 
         for paddr in (pstart..pend).step_by(PAGE_SIZE) {
             let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
@@ -297,14 +302,17 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     mapping_info_init(&launch_info);
 
     init_valid_bitmap_ptr(
-            launch_info.kernel_start.try_into().unwrap(),
-            launch_info.kernel_end.try_into().unwrap(),
-            vb_ptr);
+        launch_info.kernel_start.try_into().unwrap(),
+        launch_info.kernel_end.try_into().unwrap(),
+        vb_ptr,
+    );
 
     load_gdt();
     early_idt_init();
 
-    unsafe { LAUNCH_INFO.init(li); }
+    unsafe {
+        LAUNCH_INFO.init(li);
+    }
 
     let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
     unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
@@ -332,8 +340,12 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
             .as_mut()
             .unwrap();
 
-        bsp_percpu.setup().expect("Failed to setup BSP per-cpu area");
-        bsp_percpu.setup_on_cpu().expect("Failed to run percpu.setup_on_cpu()");
+        bsp_percpu
+            .setup()
+            .expect("Failed to setup BSP per-cpu area");
+        bsp_percpu
+            .setup_on_cpu()
+            .expect("Failed to run percpu.setup_on_cpu()");
         bsp_percpu.load();
     }
     idt_init();
@@ -386,7 +398,7 @@ pub extern "C" fn svsm_main() {
     start_secondary_cpus(&cpus);
 
     let fw_meta = parse_fw_meta_data().expect("Failed to parse FW SEV meta-data");
-    
+
     print_fw_meta(&fw_meta);
 
     validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");

@@ -13,28 +13,30 @@
 pub mod boot_stage2;
 
 extern crate compiler_builtins;
-use svsm::svsm_console::SVSMIOPort;
-use svsm::console::{init_console, install_console_logger, WRITER};
 use core::arch::asm;
 use core::panic::PanicInfo;
-use svsm::cpu::cpuid::{SnpCpuidTable, register_cpuid_table};
+use log;
+use svsm::console::{init_console, install_console_logger, WRITER};
+use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::msr;
-use svsm::cpu::percpu::{PerCpu, this_cpu_mut};
+use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::pagetable::{paging_init, paging_init_early, set_init_pgtable, get_init_pgtable_locked,
-                          PTEntryFlags, PageTable, PageTableRef};
-use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_set_valid_2m, valid_bitmap_addr};
+use svsm::mm::init_kernel_mapping_info;
+use svsm::mm::pagetable::{
+    get_init_pgtable_locked, paging_init, paging_init_early, set_init_pgtable, PTEntryFlags,
+    PageTable, PageTableRef,
+};
+use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
-use svsm::sev::msr_protocol::{GHCBMsr};
+use svsm::sev::ghcb::PageStateChangeOp;
+use svsm::sev::msr_protocol::GHCBMsr;
 use svsm::sev::status::SEVStatusFlags;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
-use svsm::sev::ghcb::{PageStateChangeOp};
+use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{halt, page_align, page_align_up, is_aligned};
-use log;
+use svsm::utils::{halt, is_aligned, page_align, page_align_up};
 
 extern "C" {
     pub static heap_start: u8;
@@ -219,7 +221,12 @@ fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
 
     let mut pgtbl = get_init_pgtable_locked();
 
-    log::info!("Mapping kernel region {:#018x}-{:#018x} to {:#018x}", vaddr, vaddr + size, paddr);
+    log::info!(
+        "Mapping kernel region {:#018x}-{:#018x} to {:#018x}",
+        vaddr,
+        vaddr + size,
+        paddr
+    );
 
     pgtbl.map_region_2m(vaddr, vaddr + size, paddr, flags)
 }
@@ -232,7 +239,9 @@ fn validate_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), 
     assert!(is_aligned(pstart, PAGE_SIZE_2M));
     assert!(is_aligned(pend, PAGE_SIZE_2M));
 
-    this_cpu_mut().ghcb().page_state_change(pstart, pend, true, PageStateChangeOp::PscPrivate)
+    this_cpu_mut()
+        .ghcb()
+        .page_state_change(pstart, pend, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
 
     pvalidate_range(vaddr, vaddr + size, true).expect("PVALIDATE kernel region failed");
@@ -314,7 +323,9 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
     setup_env();
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
-	let r = fw_cfg.find_kernel_region().expect("Failed to find memory region for SVSM kernel");
+    let r = fw_cfg
+        .find_kernel_region()
+        .expect("Failed to find memory region for SVSM kernel");
 
     log::info!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 

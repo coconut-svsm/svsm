@@ -9,17 +9,17 @@
 pub mod control_regs;
 pub mod cpuid;
 pub mod efer;
+pub mod extable;
 pub mod features;
 pub mod gdt;
 pub mod idt;
 pub mod msr;
 pub mod percpu;
-pub mod tss;
-pub mod vmsa;
-pub mod extable;
-pub mod tlb;
-pub mod vc;
 pub mod smp;
+pub mod tlb;
+pub mod tss;
+pub mod vc;
+pub mod vmsa;
 
 pub use idt::X86Regs;
 pub use tlb::*;

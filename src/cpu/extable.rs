@@ -11,8 +11,8 @@ extern "C" {
     pub static exception_table_end: u8;
 }
 
-use crate::types::VirtAddr;
 use crate::cpu::X86Regs;
+use crate::types::VirtAddr;
 use core::mem;
 
 #[repr(C, packed)]
@@ -27,7 +27,7 @@ fn check_exception_table(rip: usize) -> usize {
         let ex_table_end: VirtAddr = (&exception_table_end as *const u8) as VirtAddr;
         let mut current = ex_table_start;
 
-        loop { 
+        loop {
             let addr = current as *const ExceptionTableEntry;
 
             let start = (*addr).start;
@@ -53,7 +53,7 @@ pub fn dump_exception_table() {
         let ex_table_end: VirtAddr = (&exception_table_end as *const u8) as VirtAddr;
         let mut current = ex_table_start;
 
-        loop { 
+        loop {
             let addr = current as *const ExceptionTableEntry;
 
             let start = (*addr).start;

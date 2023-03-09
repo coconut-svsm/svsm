@@ -54,7 +54,8 @@ pub fn flush_tlb_global_sync() {
 }
 
 pub fn flush_address(va: VirtAddr) {
-    let rax: u64 = (page_align(va) as u64) | INVLPGB_VALID_VA | INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
+    let rax: u64 =
+        (page_align(va) as u64) | INVLPGB_VALID_VA | INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
     do_invlpgb(rax, 0, 0);
 }
 

@@ -41,7 +41,9 @@ impl<const N: usize> From<[u8; N]> for FixedString<N> {
 
         for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
             let val = *val;
-            if val == 0 && len == N { len = i; }
+            if val == 0 && len == N {
+                len = i;
+            }
             d.write(val as char);
         }
 

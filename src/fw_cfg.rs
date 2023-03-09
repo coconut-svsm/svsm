@@ -10,8 +10,8 @@ extern crate alloc;
 
 use super::io::IOPort;
 use super::string::FixedString;
-use core::mem::size_of;
 use alloc::vec::Vec;
+use core::mem::size_of;
 
 const FW_CFG_CTL: u16 = 0x510;
 const FW_CFG_DATA: u16 = 0x511;
@@ -64,7 +64,7 @@ impl<'a> FwCfg<'a> {
     where
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
-            + core::convert::From<u8>
+            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -79,7 +79,7 @@ impl<'a> FwCfg<'a> {
     where
         T: core::ops::Shl<usize, Output = T>
             + core::ops::BitOr<T, Output = T>
-            + core::convert::From<u8>
+            + core::convert::From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -109,7 +109,7 @@ impl<'a> FwCfg<'a> {
                 fs.push(c);
             }
 
-    //        log::info!("FwCfg File: {} Size: {}", fs, size);
+            //        log::info!("FwCfg File: {} Size: {}", fs, size);
 
             if fs == name {
                 ret = Ok(FwCfgFile {
@@ -136,11 +136,14 @@ impl<'a> FwCfg<'a> {
     fn read_memory_region(&self) -> MemoryRegion {
         let start: u64 = self.read_le();
         let size: u64 = self.read_le();
-        MemoryRegion { start, end: start + size }
+        MemoryRegion {
+            start,
+            end: start + size,
+        }
     }
 
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
-        let mut regions: Vec::<MemoryRegion> = Vec::new();
+        let mut regions: Vec<MemoryRegion> = Vec::new();
         let file = self.file_selector("etc/e820")?;
         let entries = file.size / 20;
 
@@ -160,7 +163,8 @@ impl<'a> FwCfg<'a> {
 
     fn find_kernel_region_e820(&self) -> Result<MemoryRegion, ()> {
         let regions = self.get_memory_regions()?;
-        let mut kernel_region = regions.iter()
+        let mut kernel_region = regions
+            .iter()
             .max_by_key(|region| region.start)
             .copied()
             .ok_or(())?;
@@ -179,7 +183,7 @@ impl<'a> FwCfg<'a> {
     pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
         match self.find_svsm_region() {
             Ok(region) => Ok(region),
-            Err(_) => self.find_kernel_region_e820()
+            Err(_) => self.find_kernel_region_e820(),
         }
     }
 
@@ -191,8 +195,8 @@ impl<'a> FwCfg<'a> {
             Ok(file) => {
                 self.select(file.selector);
                 file.size as usize / 16
-            },
-            Err(_) => 0
+            }
+            Err(_) => 0,
         };
 
         (0..num).map(|_| self.read_memory_region())

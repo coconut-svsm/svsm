@@ -6,7 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
-pub mod util;
 pub mod immut_after_init;
+pub mod util;
 
-pub use util::{align_up, ffs, halt, page_offset, page_align, page_align_up, is_aligned, crosses_page, zero_mem_region, overlap};
+pub use util::{
+    align_up, crosses_page, ffs, halt, is_aligned, overlap, page_align, page_align_up, page_offset,
+    zero_mem_region,
+};

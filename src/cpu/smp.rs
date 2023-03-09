@@ -8,9 +8,9 @@
 
 extern crate alloc;
 
-use crate::cpu::percpu::{PerCpu, this_cpu_mut};
-use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::acpi::tables::ACPICPUInfo;
+use crate::cpu::percpu::{this_cpu_mut, PerCpu};
+use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::request_loop;
 use alloc::vec::Vec;
 
@@ -23,7 +23,9 @@ fn start_cpu(apic_id: u32) {
             .unwrap();
 
         percpu.setup().expect("Failed to setup AP per-cpu area");
-        percpu.alloc_svsm_vmsa().expect("Failed to allocate AP SVSM VMSA");
+        percpu
+            .alloc_svsm_vmsa()
+            .expect("Failed to allocate AP SVSM VMSA");
 
         let vmsa = percpu.get_svsm_vmsa().unwrap();
         init_svsm_vmsa(vmsa.vmsa());
@@ -33,13 +35,15 @@ fn start_cpu(apic_id: u32) {
         let vmsa_pa = vmsa.paddr;
 
         vmsa.vmsa().enable();
-        this_cpu_mut().ghcb().ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
+        this_cpu_mut()
+            .ghcb()
+            .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
             .expect("Failed to launch secondary CPU");
-       loop {
-          if percpu.is_online() {
-             break;
-          }
-       } 
+        loop {
+            if percpu.is_online() {
+                break;
+            }
+        }
     }
 }
 
@@ -55,7 +59,9 @@ pub fn start_secondary_cpus(cpus: &Vec<ACPICPUInfo>) {
 
 #[no_mangle]
 fn start_ap() {
-    this_cpu_mut().setup_on_cpu().expect("setup_on_cpu() failed");
+    this_cpu_mut()
+        .setup_on_cpu()
+        .expect("setup_on_cpu() failed");
 
     // Send a life-sign
     log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());

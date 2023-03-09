@@ -6,15 +6,17 @@
 //
 // vim: ts=4 sw=4 et
 
-use crate::types::{VirtAddr, PhysAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::cpu::percpu::{this_cpu_mut, this_cpu, PERCPU_AREAS, PERCPU_VMSAS};
-use crate::cpu::{flush_tlb_global_sync};
-use crate::sev::vmsa::{VMSA, GuestVMExit};
-use crate::sev::utils::{pvalidate, rmp_revoke_guest_access, rmp_grant_guest_access,
-    rmp_set_guest_vmsa, rmp_clear_guest_vmsa, RMPFlags, SevSnpError};
+use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::utils::{page_align, page_offset, is_aligned, crosses_page, halt};
 use crate::mm::{valid_phys_address, GuestPtr};
+use crate::sev::utils::{
+    pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
+    rmp_set_guest_vmsa, RMPFlags, SevSnpError,
+};
+use crate::sev::vmsa::{GuestVMExit, VMSA};
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::{crosses_page, halt, is_aligned, page_align, page_offset};
 
 #[derive(Debug, Clone, Copy)]
 #[allow(non_camel_case_types, dead_code, clippy::upper_case_acronyms)]
@@ -51,7 +53,7 @@ impl From<SvsmResultCode> for u64 {
 #[derive(Debug, Clone, Copy)]
 enum SvsmError {
     RequestError(SvsmResultCode),
-    FatalError(())
+    FatalError(()),
 }
 
 macro_rules! impl_req_err {
@@ -59,7 +61,7 @@ macro_rules! impl_req_err {
         fn $name() -> Self {
             Self::RequestError(SvsmResultCode::$v)
         }
-    }
+    };
 }
 
 #[allow(dead_code)]
@@ -85,14 +87,14 @@ impl From<SevSnpError> for SvsmError {
     }
 }
 
-const SVSM_REQ_CORE_REMAP_CA : u32 = 0;
-const SVSM_REQ_CORE_PVALIDATE : u32 = 1;
-const SVSM_REQ_CORE_CREATE_VCPU : u32 = 2;
-const SVSM_REQ_CORE_DELETE_VCPU : u32 = 3;
-const SVSM_REQ_CORE_DEPOSIT_MEM : u32 = 4;
-const SVSM_REQ_CORE_WITHDRAW_MEM : u32 = 5;
-const SVSM_REQ_CORE_QUERY_PROTOCOL : u32 = 6;
-const SVSM_REQ_CORE_CONFIGURE_VTOM : u32 = 7;
+const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
+const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
+const SVSM_REQ_CORE_CREATE_VCPU: u32 = 2;
+const SVSM_REQ_CORE_DELETE_VCPU: u32 = 3;
+const SVSM_REQ_CORE_DEPOSIT_MEM: u32 = 4;
+const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
+const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
+const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
 
 const CORE_PROTOCOL: u32 = 1;
 const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
@@ -113,7 +115,8 @@ impl RequestParams {
             sev_features: vmsa.sev_features,
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
-            r8: vmsa.r8 }
+            r8: vmsa.r8,
+        }
     }
 
     fn write_back(&self, vmsa: &mut VMSA) {
@@ -126,14 +129,18 @@ impl RequestParams {
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 struct PValidateRequest {
-    entries : u16,
-    next : u16,
-    resv : u32,
+    entries: u16,
+    next: u16,
+    resv: u32,
 }
 
 fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), SvsmError> {
     if let Err(err) = rmp_clear_guest_vmsa(vaddr) {
-        log::error!("Failed to restore page permissions ({}, code: {})", err, err.ret());
+        log::error!(
+            "Failed to restore page permissions ({}, code: {})",
+            err,
+            err.ret()
+        );
     }
     // In case mappings have been changed
     flush_tlb_global_sync();
@@ -143,9 +150,9 @@ fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), SvsmError> {
 
 // VMSA validity checks according to SVSM spec
 fn check_vmsa(new: &VMSA, sev_features: u64, svme_mask: u64) -> bool {
-    new.vmpl == RMPFlags::VMPL1.bits() as u8 &&
-        new.efer & svme_mask == svme_mask &&
-        new.sev_features == sev_features
+    new.vmpl == RMPFlags::VMPL1.bits() as u8
+        && new.efer & svme_mask == svme_mask
+        && new.sev_features == sev_features
 }
 
 /// per-cpu request mapping area size (1GB)
@@ -164,29 +171,30 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
         return Err(SvsmError::invalid_address());
     }
 
-    let target_cpu = PERCPU_AREAS.get(apic_id)
+    let target_cpu = PERCPU_AREAS
+        .get(apic_id)
         .ok_or_else(SvsmError::invalid_parameter)?;
 
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
-    PERCPU_VMSAS.register(paddr, apic_id, true)
+    PERCPU_VMSAS
+        .register(paddr, apic_id, true)
         .map_err(|_| SvsmError::invalid_address())?;
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
-        .map_err(SvsmError::FatalError)?;
+    let mapping_guard =
+        PerCPUPageMappingGuard::create(paddr, 1, false).map_err(SvsmError::FatalError)?;
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_set_guest_vmsa(vaddr)
-        .map_err(|err| {
-            // SAFETY: this can only fail if another CPU unregisters our
-            // unused VMSA. This is not possible, since unregistration of
-            // an unused VMSA only happens in the error path for this function,
-            // with a physical address that only this CPU managed to register.
-            PERCPU_VMSAS.unregister(paddr, false).unwrap();
-            err
-        })?;
+    rmp_set_guest_vmsa(vaddr).map_err(|err| {
+        // SAFETY: this can only fail if another CPU unregisters our
+        // unused VMSA. This is not possible, since unregistration of
+        // an unused VMSA only happens in the error path for this function,
+        // with a physical address that only this CPU managed to register.
+        PERCPU_VMSAS.unregister(paddr, false).unwrap();
+        err
+    })?;
 
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
@@ -210,12 +218,13 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     let paddr = params.rcx as PhysAddr;
 
-    PERCPU_VMSAS.unregister(paddr, true)
+    PERCPU_VMSAS
+        .unregister(paddr, true)
         .map_err(|_| SvsmError::invalid_parameter())?;
 
     // Map the VMSA
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 0, false)
-        .map_err(SvsmError::FatalError)?;
+    let mapping_guard =
+        PerCPUPageMappingGuard::create(paddr, 0, false).map_err(SvsmError::FatalError)?;
     let vaddr = mapping_guard.virt_addr();
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
@@ -224,8 +233,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     del_vmsa.disable();
 
     // Do not return early here, as we need to do a TLB flush
-    let res = rmp_clear_guest_vmsa(vaddr)
-        .map_err(|_| SvsmError::invalid_address());
+    let res = rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmError::invalid_address());
 
     // Unmap the page
     drop(mapping_guard);
@@ -236,7 +244,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmError> {
     res
 }
 
-fn core_deposit_mem(_params: &RequestParams)-> Result<(), SvsmError> {
+fn core_deposit_mem(_params: &RequestParams) -> Result<(), SvsmError> {
     log::info!("Request SVSM_REQ_CORE_DEPOSIT_MEM not yet supported");
     Err(SvsmError::unsupported_call())
 }
@@ -263,7 +271,11 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmError> {
     let version: u32 = (rcx & 0xffff_ffffu64).try_into().unwrap();
 
     let ret_val = match protocol {
-        CORE_PROTOCOL => protocol_supported(version, CORE_PROTOCOL_VERSION_MIN, CORE_PROTOCOL_VERSION_MAX),
+        CORE_PROTOCOL => protocol_supported(
+            version,
+            CORE_PROTOCOL_VERSION_MIN,
+            CORE_PROTOCOL_VERSION_MAX,
+        ),
         _ => 0,
     };
 
@@ -295,7 +307,13 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
     let valid = (entry & 4) == 4;
     let ign_cf = (entry & 8) == 8;
 
-    let alignment = { if huge { PAGE_SIZE_2M } else { PAGE_SIZE } };
+    let alignment = {
+        if huge {
+            PAGE_SIZE_2M
+        } else {
+            PAGE_SIZE
+        }
+    };
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
     if !is_aligned(paddr, alignment) {
@@ -307,8 +325,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
         return Err(SvsmError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, 1, huge)
-        .map_err(SvsmError::FatalError)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, 1, huge).map_err(SvsmError::FatalError)?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -316,11 +333,10 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
         rmp_revoke_guest_access(vaddr, huge)?;
     }
 
-    pvalidate(vaddr, huge, valid)
-        .or_else(|err| match err {
-            SevSnpError::FAIL_UNCHANGED(_) if ign_cf => Ok(()),
-            _ => Err(err),
-        })?;
+    pvalidate(vaddr, huge, valid).or_else(|err| match err {
+        SevSnpError::FAIL_UNCHANGED(_) if ign_cf => Ok(()),
+        _ => Err(err),
+    })?;
 
     if valid {
         rmp_grant_guest_access(vaddr, huge)?;
@@ -330,7 +346,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmError> {
 }
 
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmError> {
-    let gpa : PhysAddr = params.rcx.try_into().unwrap();
+    let gpa: PhysAddr = params.rcx.try_into().unwrap();
 
     if !is_aligned(gpa, 8) || !valid_phys_address(gpa) {
         return Err(SvsmError::invalid_parameter());
@@ -339,19 +355,19 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmError> {
     let paddr = page_align(gpa);
     let offset = page_offset(gpa);
 
-    let guard = PerCPUPageMappingGuard::create(paddr, 0, false)
-        .map_err(SvsmError::FatalError)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, 0, false).map_err(SvsmError::FatalError)?;
     let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
-    let mut request = guest_page.read()
+    let mut request = guest_page
+        .read()
         .map_err(|_| SvsmError::invalid_address())?;
 
     let entries = request.entries;
     let next = request.next;
 
     // Each entry is 8 bytes in size, 8 bytes for the request header
-    let max_entries : u16 = ((PAGE_SIZE - offset - 8) / 8).try_into().unwrap();
+    let max_entries: u16 = ((PAGE_SIZE - offset - 8) / 8).try_into().unwrap();
 
     if entries == 0 || entries > max_entries || entries <= next {
         return Err(SvsmError::invalid_parameter());
@@ -368,7 +384,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmError> {
             Err(_) => {
                 loop_result = Err(SvsmError::invalid_address());
                 break;
-            },
+            }
         };
 
         loop_result = core_pvalidate_one(entry, &mut flush);
@@ -391,7 +407,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmError> {
 }
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmError> {
-    let gpa : PhysAddr = params.rcx.try_into().unwrap();
+    let gpa: PhysAddr = params.rcx.try_into().unwrap();
 
     if !is_aligned(gpa, 8) || !valid_phys_address(gpa) || crosses_page(gpa, 8) {
         return Err(SvsmError::invalid_parameter());
@@ -401,14 +417,13 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmError> {
     let paddr = page_align(gpa);
 
     // Temporarily map new CAA to clear it
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
-        .map_err(SvsmError::FatalError)?;
+    let mapping_guard =
+        PerCPUPageMappingGuard::create(paddr, 1, false).map_err(SvsmError::FatalError)?;
 
     let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);
-    pending.write(0)
-        .map_err(|_| SvsmError::invalid_address())?;
+    pending.write(0).map_err(|_| SvsmError::invalid_address())?;
 
     this_cpu_mut().update_guest_caa(gpa);
 
@@ -456,21 +471,26 @@ pub fn update_mappings() -> Result<(), ()> {
     ret
 }
 
-fn request_loop_once(params: &mut RequestParams, protocol: u32, request: u32) -> Result<bool, SvsmError> {
+fn request_loop_once(
+    params: &mut RequestParams,
+    protocol: u32,
+    request: u32,
+) -> Result<bool, SvsmError> {
     if !matches!(params.guest_exit_code, GuestVMExit::VMGEXIT) {
         return Ok(false);
     }
 
-    let caa_addr = this_cpu().caa_addr()
-        .ok_or_else(|| {
-            log::error!("No CAA mapped - bailing out");
-            SvsmError::FatalError(())
-        })?;
+    let caa_addr = this_cpu().caa_addr().ok_or_else(|| {
+        log::error!("No CAA mapped - bailing out");
+        SvsmError::FatalError(())
+    })?;
 
     let guest_pending = GuestPtr::<u64>::new(caa_addr);
-    let pending = guest_pending.read()
+    let pending = guest_pending
+        .read()
         .map_err(|_| SvsmError::invalid_address())?;
-    guest_pending.write(0)
+    guest_pending
+        .write(0)
         .map_err(|_| SvsmError::invalid_address())?;
 
     if pending != 1 {
@@ -507,9 +527,14 @@ pub fn request_loop() {
                 false => vmsa.rax,
             },
             Err(SvsmError::RequestError(code)) => {
-                log::debug!("Soft error handling protocol {} request {}: {:?}", protocol, request, code);
+                log::debug!(
+                    "Soft error handling protocol {} request {}: {:?}",
+                    protocol,
+                    request,
+                    code
+                );
                 code.into()
-            },
+            }
             Err(SvsmError::FatalError(..)) => {
                 log::error!("Fatal error handling core protocol request {}", request);
                 break;
@@ -526,7 +551,10 @@ pub fn request_loop() {
 
         // Check if mappings still valid
         if update_mappings().is_ok() {
-            this_cpu_mut().ghcb().run_vmpl(1).expect("Failed to run VMPL 1");
+            this_cpu_mut()
+                .ghcb()
+                .run_vmpl(1)
+                .expect("Failed to run VMPL 1");
         }
     }
 }

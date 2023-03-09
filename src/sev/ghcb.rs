@@ -6,15 +6,17 @@
 //
 // vim: ts=4 sw=4 et
 
+use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::io::IOPort;
 use crate::mm::pagetable::get_init_pgtable_locked;
-use crate::cpu::flush_tlb_global_sync;
+use crate::mm::validate::{
+    valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
+};
+use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::{is_aligned};
-use crate::mm::virt_to_phys;
-use crate::mm::validate::{valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr};
+use crate::utils::is_aligned;
 use core::arch::asm;
 use core::cell::RefCell;
 use core::{mem, ptr};
@@ -335,16 +337,22 @@ impl GHCB {
     }
 
     fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), ()>
-    where T: Sized
+    where
+        T: Sized,
     {
         let size: isize = mem::size_of::<T>() as isize;
 
         if offset < 0 || offset + size > (GHCB_BUFFER_SIZE as isize) {
-            return Err(())
+            return Err(());
         }
 
         unsafe {
-            let dst = self.buffer.as_mut_ptr().cast::<u8>().offset(offset).cast::<T>();
+            let dst = self
+                .buffer
+                .as_mut_ptr()
+                .cast::<u8>()
+                .offset(offset)
+                .cast::<T>();
             let src = data as *const T;
 
             ptr::copy_nonoverlapping(src, dst, 1);
@@ -356,7 +364,7 @@ impl GHCB {
     pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
         assert!(!huge || is_aligned(paddr, PAGE_SIZE_2M));
 
-        let mut entry:u64 = ((paddr as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
+        let mut entry: u64 = ((paddr as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
         if huge {
             entry |= PSC_FLAG_HUGE;
         }
@@ -364,10 +372,15 @@ impl GHCB {
         entry
     }
 
-    pub fn page_state_change(&mut self, start: PhysAddr, end: PhysAddr,
-                             huge: bool, op: PageStateChangeOp) -> Result<(), ()> {
+    pub fn page_state_change(
+        &mut self,
+        start: PhysAddr,
+        end: PhysAddr,
+        huge: bool,
+        op: PageStateChangeOp,
+    ) -> Result<(), ()> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
-        let max_entries:u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
+        let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
         let mut vaddr = start;
         let op_mask: u64 = match op {
@@ -376,7 +389,10 @@ impl GHCB {
             PageStateChangeOp::PscPsmash => PSC_OP_PSMASH,
             PageStateChangeOp::PscUnsmash => PSC_OP_UNSMASH,
         };
-        let pgsize: usize = match huge { true => PAGE_SIZE_2M, false => PAGE_SIZE }; 
+        let pgsize: usize = match huge {
+            true => PAGE_SIZE_2M,
+            false => PAGE_SIZE,
+        };
 
         self.clear();
 
@@ -388,9 +404,13 @@ impl GHCB {
             vaddr += pgsize;
 
             if entries == max_entries {
-                let header = PageStateChangeHeader { cur_entry: 0, end_entry: entries - 1, reserved: 0 };
+                let header = PageStateChangeHeader {
+                    cur_entry: 0,
+                    end_entry: entries - 1,
+                    reserved: 0,
+                };
                 self.write_buffer(&header, 0)?;
-                
+
                 let buffer_va = self.buffer.as_ptr() as VirtAddr;
                 let buffer_pa: u64 = virt_to_phys(buffer_va) as u64;
                 self.set_sw_scratch(buffer_pa);
@@ -403,7 +423,11 @@ impl GHCB {
                     let info_high: u32 = (self.sw_exit_info_2 >> 32) as u32;
                     let info_low: u32 = (self.sw_exit_info_2 & 0xffff_ffffu64) as u32;
 
-                    log::error!("GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}", info_high, info_low);
+                    log::error!(
+                        "GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}",
+                        info_high,
+                        info_low
+                    );
 
                     return Err(());
                 }
@@ -429,7 +453,7 @@ impl GHCB {
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)
     }
 
-    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(),()> {
+    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), ()> {
         self.clear();
         self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)
     }
