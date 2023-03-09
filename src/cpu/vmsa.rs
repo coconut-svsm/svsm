@@ -1,10 +1,8 @@
-// SPDX-License-Identifier: (GPL-2.0-or-later OR MIT)
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Copyright (c) 2022 SUSE LLC
+// Copyright (c) 2022-2023 SUSE LLC
 //
 // Author: Joerg Roedel <jroedel@suse.de>
-//
-// vim: ts=4 sw=4 et
 
 use crate::sev::vmsa::{VMSASegment, VMSA};
 use crate::types::{SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};

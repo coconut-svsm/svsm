@@ -1,10 +1,8 @@
-// SPDX-License-Identifier: (GPL-2.0-or-later OR MIT)
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Copyright (c) 2023 SUSE LLC
+// Copyright (c) 2022-2023 SUSE LLC
 //
 // Author: Nicolai Stange <nstange@suse.de>
-//
-// vim: ts=4 sw=4 et
 
 #[cfg(feature = "enable-stacktrace")]
 use crate::cpu::idt::{is_exception_handler_return_site, X86Regs};

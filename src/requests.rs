@@ -1,10 +1,8 @@
-// SPDX-License-Identifier: (GPL-2.0-or-later OR MIT)
+// SPDX-License-Identifier: MIT OR Apache-2.0
 //
-// Copyright (c) 2022 SUSE LLC
+// Copyright (c) 2022-2023 SUSE LLC
 //
 // Author: Joerg Roedel <jroedel@suse.de>
-//
-// vim: ts=4 sw=4 et
 
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
