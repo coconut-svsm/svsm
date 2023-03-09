@@ -327,7 +327,7 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
         .find_kernel_region()
         .expect("Failed to find memory region for SVSM kernel");
 
-    log::info!("Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
+    log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
     let (kernel_virt_base, kernel_entry) = unsafe {
         let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;

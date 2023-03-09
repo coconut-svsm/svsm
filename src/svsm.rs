@@ -356,7 +356,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     init_console();
     install_console_logger("SVSM");
 
-    log::info!("Secure Virtual Machine Service Module (SVSM)");
+    log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
