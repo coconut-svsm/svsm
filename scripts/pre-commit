@@ -4,7 +4,8 @@
 RET=0
 
 for file in `git diff --name-only`; do
-    if [ "$file" == "*.rs" ]; then
+    ext=${file##*.}
+    if [ "$ext" == "rs" ]; then
         rustfmt --unstable-features --check --edition 2021 --skip-children $file > /dev/null 2>&1
         if [ "$?" == "1" ]; then
             echo "$file needs rustfmt checking"
