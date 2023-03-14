@@ -164,10 +164,18 @@ struct KInfo {
 
 unsafe fn copy_and_launch_kernel(kli: KInfo) {
     let image_size = kli.k_image_end - kli.k_image_start;
+    let heap_offset = page_align_up(image_size as usize) as u64;
+    let kernel_region_phys_start = kli.phys_base as u64;
+    let kernel_region_phys_end = kli.phys_end as u64;
+    let kernel_region_virt_start = kli.virt_base as u64;
+    let heap_area_phys_start = kernel_region_phys_start + heap_offset;
+    let heap_area_virt_start = kernel_region_virt_start + heap_offset;
     let kernel_launch_info = KernelLaunchInfo {
-        kernel_region_phys_start: kli.phys_base as u64,
-        kernel_region_phys_end: kli.phys_end as u64,
-        kernel_region_virt_start: kli.virt_base as u64,
+        kernel_region_phys_start,
+        kernel_region_phys_end,
+        heap_area_phys_start,
+        kernel_region_virt_start,
+        heap_area_virt_start,
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
     };

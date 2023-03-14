@@ -105,7 +105,6 @@ extern "C" {
     static _edataro: u8;
     static _sbss: u8;
     static _ebss: u8;
-    pub static heap_start: u8;
 }
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
@@ -284,14 +283,11 @@ fn validate_flash() -> Result<(), SvsmError> {
 }
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
-    let mem_size = launch_info.kernel_region_phys_end - launch_info.kernel_region_phys_start;
-    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
-    let vend = (launch_info.kernel_region_virt_start + mem_size) as VirtAddr;
-    let page_count = (vend - vstart) / PAGE_SIZE;
-    let heap_offset = vstart - launch_info.kernel_region_virt_start as VirtAddr;
-    let pstart = launch_info.kernel_region_phys_start as PhysAddr + heap_offset;
-
-    root_mem_init(pstart, vstart, page_count);
+    root_mem_init(
+        launch_info.heap_area_phys_start as PhysAddr,
+        launch_info.heap_area_virt_start as VirtAddr,
+        launch_info.heap_area_size() as usize / PAGE_SIZE,
+    );
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
