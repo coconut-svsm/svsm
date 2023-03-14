@@ -17,8 +17,7 @@ use log;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
-use svsm::error::SvsmError;
-use svsm::fw_cfg::{FwCfg, MemoryRegion};
+use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
@@ -26,14 +25,16 @@ use svsm::mm::pagetable::{
     get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
     PageTableRef,
 };
-use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
+use svsm::mm::validate::{
+    init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
+};
 use svsm::serial::{SerialPort, SERIAL_PORT};
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{halt, is_aligned, page_align, page_align_up};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::utils::{halt, page_align, page_align_up};
 
 extern "C" {
     pub static heap_start: u8;
@@ -105,46 +106,23 @@ fn setup_env() {
     sev_status_verify();
 }
 
-fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), SvsmError> {
+fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
-    let paddr = region.start as PhysAddr;
-    let size = (region.end - region.start) as usize;
 
     let mut pgtbl = get_init_pgtable_locked();
-
-    log::info!(
-        "Mapping kernel region {:#018x}-{:#018x} to {:#018x}",
-        vaddr,
-        vaddr + size,
-        paddr
-    );
-
-    pgtbl.map_region_2m(vaddr, vaddr + size, paddr, flags)
-}
-
-fn validate_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
-    let pstart = region.start as PhysAddr;
-    let pend = region.end as PhysAddr;
-    let size: usize = pend - pstart;
-
-    assert!(is_aligned(pstart, PAGE_SIZE_2M));
-    assert!(is_aligned(pend, PAGE_SIZE_2M));
+    pgtbl
+        .map_region(vaddr, vaddr + len, paddr, flags)
+        .expect("Error mapping kernel region");
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(pstart, pend, true, PageStateChangeOp::PscPrivate)
+        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
-
-    pvalidate_range(vaddr, vaddr + size, true).expect("PVALIDATE kernel region failed");
-
-    for paddr in (pstart..pend).step_by(PAGE_SIZE_2M) {
-        valid_bitmap_set_valid_2m(paddr);
-    }
-
-    Ok(())
+    pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr + len);
 }
 
 #[repr(C, packed)]
@@ -238,10 +216,17 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
     init_valid_bitmap_alloc(r.start.try_into().unwrap(), r.end.try_into().unwrap())
         .expect("Failed to allocate valid-bitmap");
 
-    if let Err(e) = map_kernel_region(kernel_virt_base, &r) {
-        panic!("Error mapping kernel region: {:#?}", e);
-    }
-    validate_kernel_region(kernel_virt_base, &r).expect("Validating kernel region failed");
+    log::info!(
+        "Mapping kernel region {:#018x}-{:#018x} to {:#018x}",
+        kernel_virt_base,
+        kernel_virt_base + (r.end - r.start) as usize,
+        r.start as PhysAddr
+    );
+    map_and_validate(
+        kernel_virt_base,
+        r.start as PhysAddr,
+        (r.end - r.start) as usize,
+    );
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
