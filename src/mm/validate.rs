@@ -136,11 +136,14 @@ impl ValidBitmap {
     }
 
     pub fn clear_all(&mut self) {
-        let (i, _) = self.index(self.pend - 1);
+        let (mut i, bit) = self.index(self.pend);
+        if bit != 0 {
+            i += 1;
+        }
         let index: usize = i.try_into().unwrap();
 
         unsafe {
-            ptr::write_bytes(self.bitmap, 0, index);
+            ptr::write_bytes(self.bitmap, 0, index * 8);
         }
     }
 
