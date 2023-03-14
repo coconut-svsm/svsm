@@ -36,7 +36,6 @@ SECTIONS
 		ebss = .;
 	}
 	. = ALIGN(4096);
-	heap_start = .;
 }
 
 ENTRY(startup_64)

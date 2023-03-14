@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::heap_start;
 use svsm::cpu::percpu::this_cpu_mut;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
@@ -65,9 +64,9 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
         .expect("Failed to map bss segment");
 
     /* Heap */
-    let start: VirtAddr = (unsafe { &heap_start } as *const u8) as VirtAddr;
-    let end: VirtAddr = (launch_info.kernel_region_phys_end as VirtAddr) + offset;
-    let phys: PhysAddr = start - offset;
+    let start: VirtAddr = launch_info.heap_area_virt_start as VirtAddr;
+    let end: VirtAddr = launch_info.heap_area_virt_end() as VirtAddr;
+    let phys: PhysAddr = launch_info.heap_area_phys_start as PhysAddr;
     pgtable
         .map_region(start, end, phys, PageTable::data_flags())
         .expect("Failed to map heap");
