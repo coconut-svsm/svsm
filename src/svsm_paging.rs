@@ -28,7 +28,8 @@ extern "C" {
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
+    let offset =
+        (launch_info.kernel_region_virt_start - launch_info.kernel_region_phys_start) as usize;
 
     let mut pgtable = PageTableRef::new(unsafe { &mut *(vaddr as *mut PageTable) });
 
@@ -66,7 +67,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
 
     /* Heap */
     let start: VirtAddr = (unsafe { &heap_start } as *const u8) as VirtAddr;
-    let end: VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
+    let end: VirtAddr = (launch_info.kernel_region_phys_end as VirtAddr) + offset;
     let phys: PhysAddr = start - offset;
     pgtable
         .map_region(start, end, phys, PageTable::data_flags())

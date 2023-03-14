@@ -165,25 +165,24 @@ struct KInfo {
 unsafe fn copy_and_launch_kernel(kli: KInfo) {
     let image_size = kli.k_image_end - kli.k_image_start;
     let kernel_launch_info = KernelLaunchInfo {
-        kernel_start: kli.phys_base as u64,
-        kernel_end: kli.phys_end as u64,
-        virt_base: kli.virt_base as u64,
+        kernel_region_phys_start: kli.phys_base as u64,
+        kernel_region_phys_end: kli.phys_end as u64,
+        kernel_region_virt_start: kli.virt_base as u64,
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
-        ghcb: 0,
     };
 
     log::info!(
         "  kernel_physical_start = {:#018x}",
-        kernel_launch_info.kernel_start
+        kernel_launch_info.kernel_region_phys_start
     );
     log::info!(
         "  kernel_physical_end   = {:#018x}",
-        kernel_launch_info.kernel_end
+        kernel_launch_info.kernel_region_phys_end
     );
     log::info!(
         "  kernel_virtual_base   = {:#018x}",
-        kernel_launch_info.virt_base
+        kernel_launch_info.kernel_region_virt_start
     );
     log::info!(
         "  cpuid_page            = {:#018x}",
