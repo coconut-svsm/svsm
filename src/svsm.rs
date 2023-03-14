@@ -304,13 +304,11 @@ pub fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
-    let ksize: usize =
-        (launch_info.kernel_region_phys_end - launch_info.kernel_region_phys_start) as usize;
-    let vstart: VirtAddr = launch_info.kernel_region_virt_start as VirtAddr;
-    let vend: VirtAddr = vstart + ksize;
-    let pstart: PhysAddr = launch_info.kernel_region_phys_start as PhysAddr;
-
-    init_kernel_mapping_info(vstart, vend, pstart);
+    init_kernel_mapping_info(
+        launch_info.heap_area_virt_start as VirtAddr,
+        launch_info.heap_area_virt_end() as VirtAddr,
+        launch_info.heap_area_phys_start as PhysAddr,
+    );
 }
 
 #[no_mangle]
