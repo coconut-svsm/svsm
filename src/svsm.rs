@@ -73,14 +73,6 @@ global_asm!(
 
         .globl  startup_64
     startup_64:
-        /* Clear BSS */
-        xorq    %rax, %rax
-        leaq    sbss(%rip), %rdi
-        leaq    ebss(%rip), %rcx
-        subq    %rdi, %rcx
-        shrq    $3, %rcx
-        rep stosq
-
         /* Setup stack */
         leaq bsp_stack_end(%rip), %rsp
 
