@@ -163,8 +163,8 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
 
         let &li = &*LAUNCH_INFO;
 
-        fw_sp.svsm_base = li.kernel_start;
-        fw_sp.svsm_size = li.kernel_end - li.kernel_start;
+        fw_sp.svsm_base = li.kernel_region_phys_start;
+        fw_sp.svsm_size = li.kernel_region_phys_end - li.kernel_region_phys_start;
         fw_sp.svsm_caa = caa_addr as u64;
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = 1;
@@ -260,12 +260,12 @@ fn validate_flash() -> Result<(), ()> {
 }
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
-    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
+    let mem_size = launch_info.kernel_region_phys_end - launch_info.kernel_region_phys_start;
     let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
-    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
+    let vend = (launch_info.kernel_region_virt_start + mem_size) as VirtAddr;
     let page_count = (vend - vstart) / PAGE_SIZE;
-    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
-    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
+    let heap_offset = vstart - launch_info.kernel_region_virt_start as VirtAddr;
+    let pstart = launch_info.kernel_region_phys_start as PhysAddr + heap_offset;
 
     root_mem_init(pstart, vstart, page_count);
 }
@@ -284,10 +284,11 @@ pub fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
-    let ksize: usize = (launch_info.kernel_end - launch_info.kernel_start) as usize;
-    let vstart: VirtAddr = launch_info.virt_base as VirtAddr;
+    let ksize: usize =
+        (launch_info.kernel_region_phys_end - launch_info.kernel_region_phys_start) as usize;
+    let vstart: VirtAddr = launch_info.kernel_region_virt_start as VirtAddr;
     let vend: VirtAddr = vstart + ksize;
-    let pstart: PhysAddr = launch_info.kernel_start as PhysAddr;
+    let pstart: PhysAddr = launch_info.kernel_region_phys_start as PhysAddr;
 
     init_kernel_mapping_info(vstart, vend, pstart);
 }
@@ -300,8 +301,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     mapping_info_init(&launch_info);
 
     init_valid_bitmap_ptr(
-        launch_info.kernel_start.try_into().unwrap(),
-        launch_info.kernel_end.try_into().unwrap(),
+        launch_info.kernel_region_phys_start.try_into().unwrap(),
+        launch_info.kernel_region_phys_end.try_into().unwrap(),
         vb_ptr,
     );
 
