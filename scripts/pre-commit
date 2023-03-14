@@ -3,7 +3,7 @@
 
 RET=0
 
-for file in `git diff --name-only`; do
+for file in `git diff --name-only --staged`; do
     ext=${file##*.}
     if [ "$ext" == "rs" ]; then
         rustfmt --unstable-features --check --edition 2021 --skip-children $file > /dev/null 2>&1
