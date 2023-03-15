@@ -16,16 +16,16 @@ SECTIONS
 	. = ALIGN(4096);
 	etext = .;
 	sdataro = .;
-	.rodata : { *(.rodata) }
+	.rodata : { *(.rodata) *(.rodata.*) }
 	. = ALIGN(4096);
 	edataro = .;
 	sdata = .;
-	.data : { *(.data) }
+	.data : { *(.data) *(.data.*) }
 	. = ALIGN(4096);
 	edata = .;
 	.bss : {
 		sbss = .;
-		*(.bss) *(.bss.[0-9a-zA-Z_]*)
+		*(.bss) *(.bss.*)
 		. = ALIGN(4096);
 		ebss = .;
 	}
