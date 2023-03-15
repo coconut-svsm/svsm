@@ -9,5 +9,5 @@ pub mod util;
 
 pub use util::{
     align_up, crosses_page, ffs, halt, is_aligned, overlap, page_align, page_align_up, page_offset,
-    zero_mem_region,
+    rdrand64, zero_mem_region,
 };

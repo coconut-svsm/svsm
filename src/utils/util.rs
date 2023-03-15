@@ -75,3 +75,22 @@ pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
         ptr::write_bytes(target.as_mut(), 0, size);
     }
 }
+
+pub fn rdrand64() -> Option<u64> {
+    for _ in 0..10 {
+        let mut result: u64;
+        let mut valid: u8;
+        unsafe {
+            asm!("rdrand {result}
+                  setc   {valid}",
+                 result = out(reg) result,
+                 valid = out(reg_byte) valid,
+                 options(att_syntax));
+        };
+        if valid != 0 {
+            return Some(result);
+        }
+    }
+
+    None
+}
