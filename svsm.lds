@@ -31,7 +31,6 @@ SECTIONS
 	.bss : {
 		sbss = .;
 		*(.bss) *(.bss.[0-9a-zA-Z_]*)
-		BYTE(0) /* force linker to allocate file space */
 		. = ALIGN(4096);
 		ebss = .;
 	}
