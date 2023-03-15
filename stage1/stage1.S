@@ -47,8 +47,8 @@ startup_32:
 	shrl	$2, %ecx
 	rep movsl
 
-	leal	kernel_bin(%ebp), %edi
-	leal	kernel_bin_end(%ebp), %esi
+	leal	kernel_elf(%ebp), %edi
+	leal	kernel_elf_end(%ebp), %esi
 
 	/* Setup stack for stage 2*/
 	movl	$STAGE2_START, %esp
@@ -64,10 +64,10 @@ stage2_bin:
 	.align 4
 stage2_bin_end:
 
-kernel_bin:
-	.incbin "stage1/kernel.bin"
+kernel_elf:
+	.incbin "stage1/kernel.elf"
 	.align 4
-kernel_bin_end:
+kernel_elf_end:
 
 stage2_size:
 	.long	stage2_bin_end - stage2_bin
