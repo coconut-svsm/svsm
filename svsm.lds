@@ -15,15 +15,14 @@ SECTIONS
 	}
 	. = ALIGN(4096);
 	etext = .;
+	sdataro = .;
+	.rodata : { *(.rodata) }
+	. = ALIGN(4096);
+	edataro = .;
 	sdata = .;
 	.data : { *(.data) }
 	. = ALIGN(4096);
 	edata = .;
-	sdataro = .;
-	. = ALIGN(4096);
-	.rodata : { *(.rodata) }
-	. = ALIGN(4096);
-	edataro = .;
 	.bss : {
 		sbss = .;
 		*(.bss) *(.bss.[0-9a-zA-Z_]*)
