@@ -13,5 +13,6 @@ fn main() {
     // SVSM 2
     println!("cargo:rustc-link-arg-bin=svsm=-nostdlib");
     println!("cargo:rustc-link-arg-bin=svsm=-Wl,--build-id=none");
+    println!("cargo:rustc-link-arg-bin=svsm=-Wl,--pic-executable");
     println!("cargo:rustc-link-arg-bin=svsm=-Wl,-Tsvsm.lds");
 }
