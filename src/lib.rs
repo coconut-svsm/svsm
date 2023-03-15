@@ -14,6 +14,7 @@ pub mod acpi;
 pub mod console;
 pub mod cpu;
 pub mod debug;
+pub mod elf;
 pub mod fw_cfg;
 pub mod fw_meta;
 pub mod io;
