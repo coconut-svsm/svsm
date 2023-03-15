@@ -21,6 +21,7 @@ use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::mm::address_space::{SVSM_SHARED_BASE, SVSM_SHARED_STACK_BASE};
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::pagetable::{
@@ -36,8 +37,8 @@ use svsm::sev::msr_protocol::GHCBMsr;
 use svsm::sev::status::SEVStatusFlags;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use svsm::utils::{halt, is_aligned, page_align, page_align_up};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use svsm::utils::{halt, is_aligned, page_align, page_align_up, rdrand64};
 
 extern "C" {
     pub static heap_start: u8;
@@ -256,8 +257,65 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
+    // Find a suitable load base for the ELF.
     let kernel_vaddr_alloc_info = kernel_elf.image_load_vaddr_alloc_info();
-    let kernel_vaddr_alloc_base = kernel_vaddr_alloc_info.range.vaddr_begin;
+    let kernel_vaddr_alloc_base = match kernel_vaddr_alloc_info.align {
+        Some(align) => {
+            // Virtual address alignment constraints given, it's a
+            // PIE. Randomize the virtual base address. Enforce page alignment
+            // at minimum.
+            let align = (align as usize).max(PAGE_SIZE);
+
+            // The image will get loaded anywhere between SVMS_SHARED_BASE and
+            // SVSM_SHARED_STACK_BASE.
+            // Reject addresses that would not leave enough room towards the
+            // stack area for mapping the SVSM kernel itself and the remainder
+            // of the physical memory region made available as a heap. In
+            // reality, the heap will not span the whole physical region,
+            // because the heading part of the latter will be allocated to the
+            // loaded kernel, but compute the worst case virtual mapping extents
+            // for simplicity.
+            let max_heap_mapping_size = kernel_region_phys_end - kernel_region_phys_start;
+
+            // The first ELF segment's virtual starting address is not
+            // necessarily aligned. Compute the excess space at the head due to the
+            // alignment operation on the virtual base and add it to the maximum
+            // mapping size.
+            let kernel_mapping_align_op_excess =
+                kernel_vaddr_alloc_info.range.vaddr_begin as usize & (align - 1);
+            let kernel_mapping_extents = kernel_mapping_align_op_excess
+                + page_align_up(kernel_vaddr_alloc_info.range.len() as usize);
+            let max_virt_mapping_extents = max_heap_mapping_size + kernel_mapping_extents;
+
+            if max_virt_mapping_extents > SVSM_SHARED_STACK_BASE {
+                panic!("Not enough virtual address space room for SVSM kernel mapping.");
+            }
+
+            let mut retries = 10;
+            loop {
+                if retries == 0 {
+                    panic!("Maximum number of SVSM kernel address space randomization retries exceeded.");
+                }
+                retries -= 1;
+
+                let rand = match rdrand64() {
+                    Some(rand) => rand as usize,
+                    None => continue,
+                };
+                if rand == 0 {
+                    continue;
+                }
+                let load_offset = rand % (SVSM_SHARED_STACK_BASE - SVSM_SHARED_BASE);
+                let load_offset = load_offset & !(align - 1);
+                let kernel_vaddr_alloc_base = SVSM_SHARED_BASE + load_offset;
+                if kernel_vaddr_alloc_base > SVSM_SHARED_STACK_BASE - max_virt_mapping_extents {
+                    continue;
+                }
+                break (kernel_vaddr_alloc_base + kernel_mapping_align_op_excess) as u64;
+            }
+        }
+        None => kernel_vaddr_alloc_info.range.vaddr_begin,
+    };
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
@@ -333,9 +391,15 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         }
     }
 
-    // Map the rest of the memory region to right after the kernel image.
+    // Map the rest of the memory region to right after the kernel image. To
+    // facilitate mapping as 2MB pages, make sure the virtual and physical
+    // addresses are congruent modulo 2MB.
     let heap_area_phys_start = loaded_kernel_phys_end;
-    let heap_area_virt_start = loaded_kernel_virt_end;
+    let mut heap_area_virt_start = (loaded_kernel_virt_end & !(PAGE_SIZE_2M - 1))
+        + (heap_area_phys_start & (PAGE_SIZE_2M - 1));
+    if heap_area_virt_start < loaded_kernel_virt_end {
+        heap_area_virt_start += PAGE_SIZE_2M;
+    }
     let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
     map_and_validate(heap_area_virt_start, heap_area_phys_start, heap_area_size);
 
