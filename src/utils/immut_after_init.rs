@@ -53,37 +53,18 @@ use core::ops::Deref;
 /// ```
 ///
 #[repr(transparent)]
-pub struct ImmutAfterInitCell<T: Copy> {
+pub struct ImmutAfterInitCell<T> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
 }
 
-impl<T: Copy> ImmutAfterInitCell<T> {
+impl<T> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
     /// initialized by means of [`Self::init()`] before first usage.
     pub const fn uninit() -> Self {
         ImmutAfterInitCell {
             data: UnsafeCell::new(MaybeUninit::uninit()),
         }
-    }
-
-    /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
-    ///
-    /// Must **not** get called on an already initialized instance!
-    ///
-    /// * `v` - Initialization value.
-    pub unsafe fn init(&self, v: &T) {
-        core::ptr::copy_nonoverlapping(v as *const T, (*self.data.get()).as_mut_ptr(), 1);
-    }
-
-    /// Reinitialize an initialized `ImmutAfterInitCell` instance from a value.
-    ///
-    /// Must **not** get called while any borrow via [`Self::deref()`] or
-    /// [`ImmutAfterInitRef::deref()`]is alive!
-    ///
-    /// * `v` - Initialization value.
-    pub unsafe fn reinit(&self, v: &T) {
-        self.init(v);
     }
 
     /// Create an initialized `ImmutAfterInitCell` instance from a value.
@@ -96,7 +77,39 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     }
 }
 
-impl<T: Copy> Deref for ImmutAfterInitCell<T> {
+impl<T> ImmutAfterInitCell<T> {
+    /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
+    ///
+    /// Must **not** get called on an already initialized instance!
+    ///
+    /// * `v` - Initialization value.
+    pub unsafe fn init(&self, v: T) {
+        (*self.data.get()).as_mut_ptr().write(v);
+    }
+
+    /// Reinitialize an initialized `ImmutAfterInitCell` instance from a value.
+    ///
+    /// Must **not** get called while any borrow via [`Self::deref()`] or
+    /// [`ImmutAfterInitRef::deref()`]is alive!
+    ///
+    /// * `v` - Initialization value.
+    pub unsafe fn reinit(&self, v: T) {
+        self.init(v);
+    }
+}
+
+impl<T: Copy> ImmutAfterInitCell<T> {
+    /// Initialize an uninitialized `ImmutAfterInitCell` instance with a copy.
+    ///
+    /// Must **not** get called on an already initialized instance!
+    ///
+    /// * `v` - Initialization value.
+    pub unsafe fn init_copy_from(&self, v: &T) {
+        core::ptr::copy_nonoverlapping(v as *const T, (*self.data.get()).as_mut_ptr(), 1);
+    }
+}
+
+impl<T> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
     /// Dereference the wrapped value. Must **only ever** get called on an
@@ -106,8 +119,8 @@ impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     }
 }
 
-unsafe impl<T: Copy> Send for ImmutAfterInitCell<T> {}
-unsafe impl<T: Copy> Sync for ImmutAfterInitCell<T> {}
+unsafe impl<T> Send for ImmutAfterInitCell<T> {}
+unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
@@ -210,7 +223,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     where
         'b: 'a,
     {
-        self.ptr.init(&(r as *const T));
+        self.ptr.init(r as *const T);
     }
 
     /// Create an initialized `ImmutAfterInitRef` instance pointing to a value
@@ -234,7 +247,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     }
 }
 
-impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
+impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to
     /// value wrapped in a [`ImmutAfterInitCell`].
     ///
@@ -247,7 +260,7 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     where
         'b: 'a,
     {
-        self.ptr.init(&(*cell.data.get()).as_ptr());
+        self.ptr.init((*cell.data.get()).as_ptr());
     }
 
     /// Create an initialized `ImmutAfterInitRef` instance pointing to a value

@@ -287,11 +287,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     early_idt_init();
 
     unsafe {
-        LAUNCH_INFO.init(li);
+        LAUNCH_INFO.init(launch_info);
     }
 
     let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
-    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
+    unsafe { CPUID_PAGE.init_copy_from(&*(cpuid_table_virt as *const SnpCpuidTable)) };
     register_cpuid_table(&CPUID_PAGE);
 
     unsafe {

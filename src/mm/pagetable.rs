@@ -24,12 +24,12 @@ static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
 pub fn paging_init_early(encrypt_mask: u64) {
-    unsafe { ENCRYPT_MASK.reinit(&(encrypt_mask as usize)) };
+    unsafe { ENCRYPT_MASK.reinit(encrypt_mask as usize) };
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    unsafe { FEATURE_MASK.reinit(feature_mask) };
 }
 
 pub fn paging_init() {
@@ -51,7 +51,7 @@ pub fn paging_init() {
         panic!("Early C-Bit position inconsistent with CPUID table");
     }
 
-    unsafe { ENCRYPT_MASK.reinit(&new_encrypt_mask) };
+    unsafe { ENCRYPT_MASK.reinit(new_encrypt_mask) };
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -60,7 +60,7 @@ pub fn paging_init() {
     if !cpu_has_pge() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    unsafe { FEATURE_MASK.reinit(feature_mask) };
 }
 
 fn encrypt_mask() -> usize {
