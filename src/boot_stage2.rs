@@ -149,86 +149,60 @@ global_asm!(
         testl $0x06, %eax
         jz .Lsev_no_es
 
-        /*
-         * First check whether the GCHB MSR exists by reading from it. If not,
-         * that's inconsistent with the SEV_STATUS MSR from above, probably
-         * meaning there's no SEV at all.
+        /* Read the number of entries. */
+        mov CPUID_PAGE, %eax
+        /* Create a pointer to the first entry. */
+        leal CPUID_PAGE + 16, %ecx
+
+    .Lcheck_entry:
+        /* Check that there is another entry. */
+        test %eax, %eax
+        je .Lno_sev
+
+        /* Check the input parameters of the current entry. */
+        cmpl $0x8000001f, (%ecx) /* EAX_IN */
+        jne .Lwrong_entry
+        cmpl $0, 4(%ecx) /* ECX_IN */
+        jne .Lwrong_entry
+        cmpl $0, 8(%ecx) /* XCR0_IN (lower half) */
+        jne .Lwrong_entry
+        cmpl $0, 12(%ecx) /* XCR0_IN (upper half) */
+        jne .Lwrong_entry
+        cmpl $0, 16(%ecx) /* XSS_IN (lower half) */
+        jne .Lwrong_entry
+        cmpl $0, 20(%ecx) /* XSS_IN (upper half) */
+        jne .Lwrong_entry
+
+        /* All parameters were correct. */
+        jmp .Lfound_entry
+
+    .Lwrong_entry:
+        /* 
+         * The current entry doesn't contain the correct input
+         * parameters. Try the next one.
          */
-        movl $0xc0010130, %ecx
-        call __rdmsr_safe
-        testl %ecx, %ecx
-        js .Lno_sev
+        decl %eax
+        addl $0x30, %ecx
+        jmp .Lcheck_entry
 
-        /*
-         * GHCB MSR protocol: the HV is required to put an
-         * unsolicited SEV Information response into the GHCB MSR, but
-         * don't rely on it for reliability reasons. Poke the HV anyway,
-         * which will confirm that the HV is actually implementing the
-         * GHCB MSR protocol as is mandatory for SEV-ES.
-         */
-        /* Save away original GHCB MSR value so that it can be restored later. */
-        pushl %edx
-        pushl %eax
-
-        movl $0x002, %edi /* SEV Information Request */
-        call __ghcb_msr_proto_safe
-        testl %ecx, %ecx
-        js .Lno_sev_restore_ghcb_msr
-
-        /*
-         * Bits 31:24 in an SEV Information Response contain the C-bit position.
-         * Save away for later.
-         */
-        movl %eax, %ebx
-
-        andl $0xfff, %eax
-        cmpl $0x001, %eax /* SEV Information Response? */
-        js .Lno_sev_restore_ghcb_msr
-
-        /*
-         * Check the announced min and max supported GHCB protocol version.
-         * Versions 1 and 2 have been published as of now, so
-         * min should be <= 2, max should be >= 1.
-         */
-        movl %edx, %eax
-        andl $0xffff, %eax
-        cmpl $2, %eax
-        ja .Lno_sev_restore_ghcb_msr
-
-        shrl $16, %edx
-        cmpl $1, %edx
-        jl .Lno_sev_restore_ghcb_msr
+    .Lfound_entry:
+        /* Extract the c-bit location from the cpuid entry. */
+        movl 28(%ecx), %ebx
+        andl $0x3f, %ebx
 
         /*
-         * Alright, all evidence suggests that the HV is responding
-         * properly to GHCB MSR protocol requests. That's convincing
-         * enough that we're running under SEV-ES or SEV-SNP. As a last
-         * check verify that the announced C-bit position is within
-         * reasonable bounds: >= 32 and < 64.
+         * Verify that the C-bit position is within reasonable bounds:
+         * >= 32 and < 64.
          */
-        shrl $24, %ebx
         cmpl $32, %ebx
-        jl .Lno_sev_restore_ghcb_msr
+        jl .Lno_sev
         cmpl $64, %ebx
-        jae .Lno_sev_restore_ghcb_msr
-
-        /* Restore the original GHCB MSR values. */
-        popl %eax
-        popl %edx
-        movl $0xc0010130, %ecx
-        call __wrmsr_safe
+        jae .Lno_sev
 
         subl $32, %ebx
         xorl %eax, %eax
         btsl %ebx, %eax
         ret
-
-    .Lno_sev_restore_ghcb_msr:
-        popl %eax
-        popl %edx
-        movl $0xc0010130, %ecx
-        call __wrmsr_safe
-        jmp .Lno_sev
 
     .Lsev_no_es:
         /*
@@ -267,23 +241,6 @@ global_asm!(
 
     .Lno_sev:
         xorl %eax, %eax
-        ret
-
-    __ghcb_msr_proto_safe:
-        movl %edi, %eax
-        xorl %edx, %edx
-        movl $0xc0010130, %ecx
-        call __wrmsr_safe
-        testl %ecx, %ecx
-        jns 1f
-        ret
-        1: call __vmgexit_safe
-        testl %eax, %eax
-        jns 2f
-        movl %eax, %ecx
-        ret
-        2: movl $0xc0010130, %ecx
-        call __rdmsr_safe
         ret
 
     __rdmsr_safe:
