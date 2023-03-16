@@ -3,7 +3,6 @@ OUTPUT_ARCH(i386:x86-64)
 SECTIONS
 {
 	. = 0xffffff8000000000;
-	stext = .;
 	.text : {
 		*(.startup.*)
 		*(.text)
@@ -14,20 +13,13 @@ SECTIONS
 		exception_table_end = .;
 	}
 	. = ALIGN(4096);
-	etext = .;
-	sdataro = .;
 	.rodata : { *(.rodata) *(.rodata.*) }
 	. = ALIGN(4096);
-	edataro = .;
-	sdata = .;
 	.data : { *(.data) *(.data.*) }
 	. = ALIGN(4096);
-	edata = .;
 	.bss : {
-		sbss = .;
 		*(.bss) *(.bss.*)
 		. = ALIGN(4096);
-		ebss = .;
 	}
 	. = ALIGN(4096);
 }
