@@ -242,6 +242,8 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         heap_area_phys_start: heap_area_phys_start as u64,
         kernel_region_virt_start: loaded_kernel_virt_start as u64,
         heap_area_virt_start: heap_area_virt_start as u64,
+        kernel_elf_stage2_virt_start: kernel_elf_start as u64,
+        kernel_elf_stage2_virt_end: kernel_elf_end as u64,
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
     };
