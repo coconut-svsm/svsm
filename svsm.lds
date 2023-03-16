@@ -11,7 +11,6 @@ PHDRS
 SECTIONS
 {
 	. = 0xffffff8000000000;
-	stext = .;
 	.text : {
 		*(.startup.*)
 		*(.text)
@@ -22,21 +21,15 @@ SECTIONS
 		exception_table_end = .;
 	} :text
 	. = ALIGN(4096);
-	etext = .;
-	sdataro = .;
 	.rodata : { *(.rodata) *(.rodata.*) } :rodata
 	.dynamic : { *(.dynamic) } :dynamic :rodata
 	. = ALIGN(4096);
-	edataro = .;
-	sdata = .;
 	.data : { *(.data) *(.data.*) } :data
 	. = ALIGN(4096);
 	edata = .;
 	.bss : {
-		sbss = .;
 		*(.bss) *(.bss.*)
 		. = ALIGN(4096);
-		ebss = .;
 	} :data
 	. = ALIGN(4096);
 }
