@@ -16,6 +16,7 @@ use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFW
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
+use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -27,6 +28,7 @@ use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
+use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
@@ -95,17 +97,6 @@ global_asm!(
         "#,
     options(att_syntax)
 );
-
-extern "C" {
-    static _stext: u8;
-    static _etext: u8;
-    static _sdata: u8;
-    static _edata: u8;
-    static _sdataro: u8;
-    static _edataro: u8;
-    static _sbss: u8;
-    static _ebss: u8;
-}
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
@@ -349,8 +340,17 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     memory_init(&launch_info);
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
 
+    let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
+        - launch_info.kernel_elf_stage2_virt_start) as usize;
+    let kernel_elf_buf_ptr = launch_info.kernel_elf_stage2_virt_start as *const u8;
+    let kernel_elf_buf = unsafe { slice::from_raw_parts(kernel_elf_buf_ptr, kernel_elf_len) };
+    let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
+        Ok(kernel_elf) => kernel_elf,
+        Err(e) => panic!("error reading kernel ELF: {}", e),
+    };
+
     paging_init();
-    init_page_table(&launch_info);
+    init_page_table(&launch_info, &kernel_elf);
 
     unsafe {
         let bsp_percpu = PerCpu::alloc(0)
