@@ -5,6 +5,8 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 #[cfg(feature = "enable-stacktrace")]
+use super::program_info::PROGRAM_INFO;
+#[cfg(feature = "enable-stacktrace")]
 use crate::cpu::idt::{is_exception_handler_return_site, X86Regs};
 #[cfg(feature = "enable-stacktrace")]
 use crate::mm::address_space::{STACK_SIZE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
@@ -116,7 +118,7 @@ impl StackUnwinder {
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
-            rip,
+            rip: PROGRAM_INFO.reduce_loaded_program_vaddr(rip),
             rsp,
             is_last,
             is_exception_frame,

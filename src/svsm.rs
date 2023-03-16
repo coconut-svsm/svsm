@@ -24,6 +24,7 @@ use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
+use svsm::debug::program_info_init;
 use svsm::debug::stacktrace::print_stack;
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
@@ -315,6 +316,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
         Ok(kernel_elf) => kernel_elf,
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
+    program_info_init(launch_info.kernel_region_virt_start, &kernel_elf);
 
     paging_init();
     init_page_table(&launch_info, &kernel_elf);

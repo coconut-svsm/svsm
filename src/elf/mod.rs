@@ -563,7 +563,7 @@ impl<'a> Elf64File<'a> {
     // spec as the difference between the lowest address of the actual memory
     // image the file has been loaded into and the lowest vaddr of all the
     // PT_LOAD program headers. Calculate it in two's complement representation.
-    fn load_base(&self, image_load_addr: Elf64Addr) -> Elf64Xword {
+    pub fn load_base(&self, image_load_addr: Elf64Addr) -> Elf64Xword {
         let image_load_addr = self.image_load_addr(image_load_addr);
         image_load_addr.wrapping_sub(self.load_segments.total_vaddr_range().vaddr_begin)
     }

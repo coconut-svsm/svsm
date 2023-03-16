@@ -4,4 +4,7 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
+mod program_info;
 pub mod stacktrace;
+
+pub use program_info::program_info_init;
