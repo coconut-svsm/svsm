@@ -16,7 +16,6 @@ use core::panic::PanicInfo;
 use log;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
-use svsm::cpu::msr;
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
@@ -29,8 +28,7 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
 use svsm::serial::{SerialPort, SERIAL_PORT};
 use svsm::sev::ghcb::PageStateChangeOp;
-use svsm::sev::msr_protocol::{verify_ghcb_version, GHCBMsr};
-use svsm::sev::status::SEVStatusFlags;
+use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
@@ -81,40 +79,6 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
     driver: &CONSOLE_IO,
     port: SERIAL_PORT,
 };
-
-extern "C" {
-    pub fn rdmsr_safe(msr: u32, dst: *mut u64) -> i64;
-    pub fn wrmsr_safe(msr: u32, val: u64) -> i64;
-    pub fn vmgexit_safe() -> i64;
-}
-
-// For use at an early stage when it's neither known yet that the GHCB MSR is
-// valid (and thus, accesses can #GP) nor that the HV is implementing the GHCB
-// MSR protocol on it.
-fn ghcb_msr_proto_safe(cmd: u64) -> Result<u64, ()> {
-    let mut orig_msr_val: u64 = 0;
-    if unsafe { rdmsr_safe(msr::SEV_GHCB, &mut orig_msr_val as *mut u64) } != 0 {
-        return Err(());
-    }
-
-    if unsafe { wrmsr_safe(msr::SEV_GHCB, cmd) } != 0 {
-        return Err(());
-    }
-
-    if unsafe { vmgexit_safe() } != 0 {
-        unsafe { wrmsr_safe(msr::SEV_GHCB, orig_msr_val) };
-        return Err(());
-    }
-
-    let mut response: u64 = 0;
-    let r = unsafe { rdmsr_safe(msr::SEV_GHCB, &mut response as *mut u64) };
-    unsafe { wrmsr_safe(msr::SEV_GHCB, orig_msr_val) };
-    if r != 0 {
-        return Err(());
-    }
-
-    Ok(response)
-}
 
 fn setup_env() {
     install_console_logger("Stage2");

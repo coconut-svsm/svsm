@@ -36,20 +36,7 @@ global_asm!(
         lret
 
     .Lon_svsm32_cs:
-        push    %esi
         push    %edi
-
-        /* Prepare and load the 32bit IDT. */
-        movl $6, %edi /* #UD */
-        movl $ud_vmgexit_fixup_handler32, %esi
-        call idt32_install_handler
-
-        movl $13, %edi /* #GP */
-        movl $gp_msr_fixup_handler32, %esi
-        call idt32_install_handler
-
-        movl $idt32_desc, %eax
-        lidtl (%eax)
 
         /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
@@ -111,7 +98,6 @@ global_asm!(
         movl %eax, %cr0
 
         popl    %edi
-        popl    %esi
 
         pushl $0x18
         movl $startup_64, %eax
@@ -124,9 +110,7 @@ global_asm!(
          * Check that the SNP_Active bit in the SEV_STATUS MSR is set.
          */
         movl $0xc0010131, %ecx
-        call __rdmsr_safe
-        testl %ecx, %ecx
-        js .Lno_sev_snp
+        rdmsr
 
         testl $0x04, %eax
         jz .Lno_sev_snp
@@ -192,77 +176,6 @@ global_asm!(
         hlt
         jmp .Lno_sev_snp
 
-    __rdmsr_safe:
-    .Lrdmsr:
-        rdmsr
-        xorl %ecx, %ecx
-        ret
-    .Lrdmsr_fixup:
-        movl $-1, %ecx
-        ret
-
-    __wrmsr_safe:
-    .Lwrmsr:
-        wrmsr
-        xorl %ecx, %ecx
-        ret
-    .Lwrmsr_fixup:
-        movl $-1, %ecx
-        ret
-
-    __vmgexit_safe:
-    .Lvmgexit:
-        rep vmmcall
-        xorl %eax, %eax
-        ret
-    .Lvmgexit_fixup:
-        movl $-1, %eax
-        ret
-
-    idt32_install_handler:
-       leal idt32(, %edi, 8), %edi
-       movw %si, (%edi)
-       movw $8, 2(%edi) /* 32 bit CS */
-       movw $0xef00, 4(%edi) /* type = 0xf, dpl = 0x3, p = 1 */
-       shrl $16, %esi
-       movw %si, 6(%edi)
-       ret
-
-    gp_msr_fixup_handler32:
-        pushl %eax
-        movl 4+4(%esp), %eax /* saved %eip */
-
-        cmpl $.Lrdmsr, %eax
-        jne 1f
-        movl $.Lrdmsr_fixup, %eax
-        movl %eax, 4+4(%esp)
-        jmp 2f
-
-        1:cmpl $.Lwrmsr, %eax
-        jne 3f
-        movl $.Lwrmsr_fixup, %eax
-        movl %eax, 4+4(%esp)
-
-        2: popl %eax
-        addl $4, %esp /* Pop off error code from the stack. */
-        iretl
-
-        3: ud2 /* Unexpected #GP, not much we can do about it. */
-
-    ud_vmgexit_fixup_handler32:
-        pushl %eax
-        movl 4(%esp), %eax /* saved %eip */
-
-        cmpl $.Lvmgexit, %eax
-        jne 1f
-        movl $.Lvmgexit_fixup, %eax
-        movl %eax, 4(%esp)
-
-        popl %eax
-        iretl
-
-        1: int $3 /* Unexpected UD, not much we can do about it */
-
         .code64
 
     startup_64:
@@ -274,20 +187,7 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
-        pushq   %rsi
         pushq   %rdi
-
-        /* Prepare and load the 64bit IDT. */
-        movq $6, %rdi /* #UD */
-        movq $ud_vmgexit_fixup_handler64, %rsi
-        call idt64_install_handler
-
-        movq $13, %rdi /* #GP */
-        movq $gp_msr_fixup_handler64, %rsi
-        call idt64_install_handler
-
-        movq $idt64_desc, %rax
-        lidtq (%rax)
 
         /* Clear out .bss and transfer control to the main stage2 code. */
         xorq %rax, %rax
@@ -298,88 +198,7 @@ global_asm!(
         rep stosq
 
         popq    %rdi
-        popq    %rsi
         jmp stage2_main
-
-    /* Export of __rdmsr_safe for use from Rust stage2. */
-       .globl rdmsr_safe
-    rdmsr_safe:
-       movl %edi, %ecx
-       call __rdmsr_safe
-       movslq %ecx, %rcx
-       testq %rcx, %rcx
-       js 1f
-       movl %eax, (%rsi)
-       movl %edx, 4(%rsi)
-       xorq %rax, %rax
-       ret
-       1: movq %rcx, %rax
-       ret
-
-    /* Export of __wrmsr_safe for use from Rust stage2. */
-       .globl wrmsr_safe
-    wrmsr_safe:
-       movl %edi, %ecx
-       movl %esi, %eax
-       shrq $32, %rsi
-       movl %esi, %edx
-       call __wrmsr_safe
-       movslq %ecx, %rax
-       ret
-
-    /* Export of __vmgexit_safe for use from Rust stage2. */
-       .globl vmgexit_safe
-    vmgexit_safe:
-       call __vmgexit_safe
-       movslq %eax, %rax
-       ret
-
-    idt64_install_handler:
-       shlq $4, %rdi
-       leaq idt64(%rdi), %rdi
-       movw %si, (%rdi)
-       movw $0x18, 2(%rdi) /* 64 bit CS */
-       movw $0xef00, 4(%rdi) /* type = 0xf, dpl = 0x3, p = 1 */
-       shrq $16, %rsi
-       movw %si, 6(%rdi)
-       shrq $16, %rsi
-       movl %esi, 8(%rdi)
-       ret
-
-    gp_msr_fixup_handler64:
-        pushq %rax
-        movq 8+8(%rsp), %rax /* saved %rip */
-
-        cmpq $.Lrdmsr, %rax
-        jne 1f
-        movq $.Lrdmsr_fixup, %rax
-        movq %rax, 8+8(%rsp)
-        jmp 2f
-
-        1:cmpq $.Lwrmsr, %rax
-        jne 3f
-        movq $.Lwrmsr_fixup, %rax
-        movq %rax, 8+8(%rsp)
-
-        2: popq %rax
-        addq $8, %rsp /* Pop off error code from the stack. */
-        iretq
-
-        3: ud2 /* Unexpected #GP, not much we can do about it. */
-
-    ud_vmgexit_fixup_handler64:
-        pushq %rax
-        movq 8(%rsp), %rax /* saved %rip */
-
-        cmpq $.Lvmgexit, %rax
-        jne 1f
-        movq $.Lvmgexit_fixup, %rax
-        movq %rax, 8(%rsp)
-
-        popq %rax
-        iretq
-
-        1: int $3 /* Unexpected UD, not much we can do about it */
 
         .data
 
