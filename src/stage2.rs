@@ -27,9 +27,9 @@ use svsm::mm::pagetable::{
     PageTableRef,
 };
 use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
-use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
+use svsm::serial::{SerialPort, SERIAL_PORT};
 use svsm::sev::ghcb::PageStateChangeOp;
-use svsm::sev::msr_protocol::GHCBMsr;
+use svsm::sev::msr_protocol::{verify_ghcb_version, GHCBMsr};
 use svsm::sev::status::SEVStatusFlags;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
@@ -116,76 +116,14 @@ fn ghcb_msr_proto_safe(cmd: u64) -> Result<u64, ()> {
     Ok(response)
 }
 
-// Check that the SEV_STATUS and GHCB MSRs are present and behaving as expected.
-// In particular, it's being verified that the HV respnds properly to the GHCB
-// MSR protocol. Returns the (untrusted!) PTE C-bit position as a byproduct on
-// success.
-fn sev_ghcb_msr_available() -> Result<u64, ()> {
-    // First check: the SEV_STATUS MSR should be present and indicate that
-    // either SEV_ES or SEV_SNP is active.
-    let mut status_raw: u64 = 0;
-    if unsafe { rdmsr_safe(msr::SEV_STATUS, &mut status_raw) } != 0 {
-        return Err(());
-    }
-
-    let status = SEVStatusFlags::from_bits_truncate(status_raw);
-    if !status.contains(SEVStatusFlags::SEV_ES) && !status.contains(SEVStatusFlags::SEV_SNP) {
-        return Err(());
-    }
-
-    // Second check: the GHCB MSR should be present and the HV should respond
-    // to GHCB MSR protocol info requests.
-    let sev_info = match ghcb_msr_proto_safe(GHCBMsr::SEV_INFO_REQ) {
-        Ok(info) => info,
-        Err(_) => return Err(()),
-    };
-
-    if sev_info & 0xfffu64 != GHCBMsr::SEV_INFO_RESP {
-        return Err(());
-    }
-
-    // Compare announced supported GHCB MSR protocol version range
-    // for compatibility.
-    let min_version = (sev_info >> 32) & 0xffffu64;
-    let max_version = (sev_info >> 48) & 0xffffu64;
-    if min_version > 2 || max_version < 1 {
-        return Err(());
-    }
-
-    // Retrieve the PTE C-bit position and check its range.
-    let c_bit_pos = sev_info >> 24 & 0x3fu64;
-    if c_bit_pos < 32 || c_bit_pos >= 64 {
-        return Err(());
-    }
-
-    let encrypt_mask: u64 = 1u64 << c_bit_pos;
-    Ok(encrypt_mask)
-}
-
 fn setup_env() {
     install_console_logger("Stage2");
     init_kernel_mapping_info(0, 640 * 1024, 0);
     register_cpuid_table(unsafe { &CPUID_PAGE });
-
-    // Under SVM-ES, the only means to communicate with the user is through the
-    // SVSMIOPort console, which requires a functional GHCB protocol. If the
-    // GHCB is not available, indicating that SEV-ES is probably not active, the
-    // last resort is to print an error to the standard serial using emulated io
-    // insns and hope that it reaches the user. If SEV-ES is enabled, the
-    // SVSMIOPort needs the GHCB initialized, which in turn requires the paging
-    // subsystem to be in a tentative working state.
-    match sev_ghcb_msr_available() {
-        Ok(_) => paging_init_early(),
-        Err(_) => {
-            unsafe {
-                DEFAULT_SERIAL_PORT.init();
-            }
-            init_console();
-            panic!("SEV-ES not available");
-        }
-    };
+    paging_init_early();
 
     // Bring up the GCHB for use from the SVSMIOPort console.
+    verify_ghcb_version();
     sev_status_init();
     set_init_pgtable(PageTableRef::new(unsafe { &mut pgtable }));
     setup_stage2_allocator();
