@@ -121,33 +121,17 @@ global_asm!(
 
     get_pte_c_bit:
         /*
-         * Determine the PTE C-bit position. The user could mistakenly attempt
-         * to launch the SVSM in a non-SEV-SNP environment and we should handle
-         * this gracefully here, so that a meaningful error can be reported at a
-         * later stage when the console is functional. Ultimately, the C-bit
-         * is found from CPUID 0x8000001f[%ebx]. The cpuid insn cannot be used
-         * under SEV-ES or SEV-SNP, because the HV would fail to emulate it at
-         * this point. Under SEV-SNP, there is the CPUID page, but that's not
-         * available under either SEV or SEV-ES, where the C-bit would also
-         * strictly be needed to proceed. For SEV-ES, the GHCB MSR protocol can
-         * be used to retrieve the information, but not on plain SEV -- on the
-         * latter, we're left only with the cpuid insn. For code simplicity, this
-         * approach will also be used on SEV-SNP, the more secure CPUID page will
-         * be examined at a later stage. First read from the SEV_STATUS MSR
-         * to figure out whether any and which of SEV/SEV-ES/SEV-SNP is enabled.
-         * The MSR might not exist if SEV is not supported at all, but this
-         * will be handled gracefully by __rdmsr_safe.
+         * Check that the SNP_Active bit in the SEV_STATUS MSR is set.
          */
         movl $0xc0010131, %ecx
         call __rdmsr_safe
         testl %ecx, %ecx
-        js .Lno_sev
+        js .Lno_sev_snp
 
-        testl $0x01, %eax
-        jz .Lno_sev
+        testl $0x04, %eax
+        jz .Lno_sev_snp
 
-        testl $0x06, %eax
-        jz .Lsev_no_es
+        /* Determine the PTE C-bit position from the CPUID page. */
 
         /* Read the number of entries. */
         mov CPUID_PAGE, %eax
@@ -157,7 +141,7 @@ global_asm!(
     .Lcheck_entry:
         /* Check that there is another entry. */
         test %eax, %eax
-        je .Lno_sev
+        je .Lno_sev_snp
 
         /* Check the input parameters of the current entry. */
         cmpl $0x8000001f, (%ecx) /* EAX_IN */
@@ -195,53 +179,18 @@ global_asm!(
          * >= 32 and < 64.
          */
         cmpl $32, %ebx
-        jl .Lno_sev
+        jl .Lno_sev_snp
         cmpl $64, %ebx
-        jae .Lno_sev
+        jae .Lno_sev_snp
 
         subl $32, %ebx
         xorl %eax, %eax
         btsl %ebx, %eax
         ret
 
-    .Lsev_no_es:
-        /*
-         * The SEV_STATUS MSR indicates SEV is enabled, but there is no
-         * confirmation the MSR is actually what we think it is, i.e.
-         * that we're running on SEV-capable HW. Confirm that now.
-         */
-        /*
-         * Vendor should indicate "AuthenticAMD", maximum supported
-         * extended cpuid function should cover
-         * 0x8000001f ("Encrypted Memory Capabilities")
-         */
-        movl $0x80000000, %eax
-        cpuid
-        cmpl $0x68747541, %ebx
-        jne .Lno_sev
-        cmpl $0x444d4163, %ecx
-        jne .Lno_sev
-        cmpl $0x69746e65, %edx
-        jne .Lno_sev
-        cmpl $0x8000001f, %eax
-        jl .Lno_sev
-
-        /* 0x8000001f[%eax] shall indicate SEV support. */
-        movl $0x8000001f, %eax
-        cpuid
-        testl $0x02, %eax
-        jz .Lno_sev
-
-        /* C-bit position is in %ebx' lowest 6 bits. */
-        andl $0x3f, %ebx
-        subl $32, %ebx
-        xorl %eax, %eax
-        btsl %ebx, %eax
-        ret
-
-    .Lno_sev:
-        xorl %eax, %eax
-        ret
+    .Lno_sev_snp:
+        hlt
+        jmp .Lno_sev_snp
 
     __rdmsr_safe:
     .Lrdmsr:
