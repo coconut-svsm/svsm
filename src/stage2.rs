@@ -23,8 +23,8 @@ use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::pagetable::{
-    get_init_pgtable_locked, paging_init, paging_init_early, set_init_pgtable, PTEntryFlags,
-    PageTable, PageTableRef,
+    get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
+    PageTableRef,
 };
 use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
 use svsm::serial::{SerialPort, DEFAULT_SERIAL_PORT, SERIAL_PORT};
@@ -200,12 +200,6 @@ fn setup_env() {
     // properly reported.
     dump_cpuid_table();
     sev_status_verify();
-
-    // At this point SEV-SNP is confirmed to be active and the CPUID table
-    // should be available. Fully initialize the paging subsystem now. In
-    // particular this verifies that the C-bit from the CPUID table matches what
-    // has been obtained above.
-    paging_init();
 }
 
 fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
