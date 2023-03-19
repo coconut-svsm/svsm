@@ -15,7 +15,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use log;
 use svsm::console::{init_console, install_console_logger, WRITER};
-use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::msr;
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
@@ -165,6 +165,7 @@ fn sev_ghcb_msr_available() -> Result<u64, ()> {
 fn setup_env() {
     install_console_logger("Stage2");
     init_kernel_mapping_info(0, 640 * 1024, 0);
+    register_cpuid_table(unsafe { &CPUID_PAGE });
 
     // Under SVM-ES, the only means to communicate with the user is through the
     // SVSMIOPort console, which requires a functional GHCB protocol. If the
@@ -197,10 +198,8 @@ fn setup_env() {
 
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
+    dump_cpuid_table();
     sev_status_verify();
-
-    // At this point, SEV-SNP is confirmed. Register the supplied CPUID page.
-    register_cpuid_table(unsafe { &CPUID_PAGE });
 
     // At this point SEV-SNP is confirmed to be active and the CPUID table
     // should be available. Fully initialize the paging subsystem now. In
