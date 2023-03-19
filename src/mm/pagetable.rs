@@ -23,8 +23,8 @@ static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
-pub fn paging_init_early(encrypt_mask: u64) {
-    unsafe { ENCRYPT_MASK.reinit(&(encrypt_mask as usize)) };
+pub fn paging_init_early() {
+    init_encrypt_mask();
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
@@ -33,25 +33,7 @@ pub fn paging_init_early(encrypt_mask: u64) {
 }
 
 pub fn paging_init() {
-    // Find C bit position
-    let res = cpuid_table(0x8000001f);
-
-    if res.is_none() {
-        panic!("Can not get C-Bit position from CPUID table");
-    }
-
-    let c_bit = res.unwrap().ebx & 0x3f;
-    let new_encrypt_mask = 1usize << c_bit;
-    let old_encrypt_mask = *ENCRYPT_MASK;
-    if old_encrypt_mask != 0 && old_encrypt_mask != new_encrypt_mask {
-        // The ENCRYPT_MASK has previously obtained by some other means,
-        // e.g. through a GHCB MSR protocol info request, and is inconsistent
-        // with what the more secure cpuid page says. Either the HV is buggy or
-        // is trying to actively fool us.
-        panic!("Early C-Bit position inconsistent with CPUID table");
-    }
-
-    unsafe { ENCRYPT_MASK.reinit(&new_encrypt_mask) };
+    init_encrypt_mask();
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -61,6 +43,14 @@ pub fn paging_init() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
     unsafe { FEATURE_MASK.reinit(&feature_mask) };
+}
+
+fn init_encrypt_mask() {
+    // Find C bit position
+    let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
+    let c_bit = res.ebx & 0x3f;
+    let mask = 1u64 << c_bit;
+    unsafe { ENCRYPT_MASK.reinit(&(mask as usize)) };
 }
 
 fn encrypt_mask() -> usize {

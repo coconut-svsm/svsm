@@ -175,7 +175,7 @@ fn setup_env() {
     // SVSMIOPort needs the GHCB initialized, which in turn requires the paging
     // subsystem to be in a tentative working state.
     match sev_ghcb_msr_available() {
-        Ok(encrypt_mask) => paging_init_early(encrypt_mask),
+        Ok(_) => paging_init_early(),
         Err(_) => {
             unsafe {
                 DEFAULT_SERIAL_PORT.init();
