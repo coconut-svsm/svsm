@@ -16,7 +16,7 @@ use core::panic::PanicInfo;
 use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable, dump_cpuid_table};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
@@ -315,6 +315,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
     unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
     register_cpuid_table(&CPUID_PAGE);
+    dump_cpuid_table();
 
     unsafe {
         let secrets_page_virt = launch_info.secrets_page as VirtAddr;

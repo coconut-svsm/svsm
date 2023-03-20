@@ -36,7 +36,6 @@ pub struct SnpCpuidTable {
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     unsafe { CPUID_PAGE.init_from_ref(table) };
-    dump_cpuid_table();
 }
 
 pub struct CpuidResult {
@@ -71,7 +70,7 @@ pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {
     cpuid_table_raw(eax, 0, 0, 0)
 }
 
-fn dump_cpuid_table() {
+pub fn dump_cpuid_table() {
     let count = CPUID_PAGE.count as usize;
 
     log::trace!("CPUID Table entry count: {}", count);

@@ -22,6 +22,32 @@ impl GHCBMsr {
     pub const TERM_REQ: u64 = 0x100;
 }
 
+/// Check that we support the hypervisor's advertised GHCB versions.
+pub fn verify_ghcb_version() {
+    // Request SEV information.
+    write_msr(SEV_GHCB, GHCBMsr::SEV_INFO_REQ);
+    raw_vmgexit();
+    let sev_info = read_msr(SEV_GHCB);
+
+    // Parse the results.
+
+    let response_ty = sev_info & 0xfff;
+    assert_eq!(
+        response_ty,
+        GHCBMsr::SEV_INFO_RESP,
+        "unexpected response type: {response_ty:#05x}"
+    );
+
+    // Compare announced supported GHCB MSR protocol version range
+    // for compatibility.
+    let min_version = (sev_info >> 32) & 0xffff;
+    let max_version = (sev_info >> 48) & 0xffff;
+    assert!(
+        (min_version..=max_version).contains(&2),
+        "the hypervisor doesn't support GHCB version 2 (min: {min_version}, max: {max_version})"
+    );
+}
+
 pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), ()> {
     let mut info: u64 = addr as u64;
 
