@@ -13,9 +13,9 @@ use crate::mm::validate::{
 };
 use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
+use crate::sev::utils::raw_vmgexit;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
-use core::arch::asm;
 use core::cell::RefCell;
 use core::{mem, ptr};
 
@@ -227,12 +227,10 @@ impl GHCB {
         self.sw_exit_info_2 = exit_info_2;
         self.set_valid(OFF_SW_EXIT_INFO_2);
 
-        unsafe {
-            let ghcb_address = (self as *const GHCB) as VirtAddr;
-            let ghcb_pa: u64 = virt_to_phys(ghcb_address) as u64;
-            write_msr(SEV_GHCB, ghcb_pa);
-            asm!("rep; vmmcall", options(att_syntax));
-        }
+        let ghcb_address = (self as *const GHCB) as VirtAddr;
+        let ghcb_pa: u64 = virt_to_phys(ghcb_address) as u64;
+        write_msr(SEV_GHCB, ghcb_pa);
+        raw_vmgexit();
 
         if self.is_valid(OFF_SW_EXIT_INFO_1) && self.sw_exit_info_1 == 0 {
             Ok(())
