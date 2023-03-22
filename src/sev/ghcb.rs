@@ -154,7 +154,7 @@ impl GHCB {
         let paddr = virt_to_phys(vaddr);
 
         // Register GHCB GPA
-        register_ghcb_gpa_msr(paddr)
+        register_ghcb_gpa_msr(paddr).map_err(|_e| ())
     }
 
     pub fn shutdown(&mut self) -> Result<(), ()> {
@@ -165,10 +165,10 @@ impl GHCB {
         get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
 
         // Unregister GHCB PA
-        register_ghcb_gpa_msr(0usize)?;
+        register_ghcb_gpa_msr(0usize).map_err(|_e| ())?;
 
         // Make page guest-invalid
-        validate_page_msr(paddr)?;
+        validate_page_msr(paddr).map_err(|_e| ())?;
 
         // Make page guest-valid
         if pvalidate(vaddr, false, true).is_err() {

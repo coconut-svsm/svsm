@@ -9,6 +9,15 @@ use crate::types::{PhysAddr, VirtAddr};
 
 use super::utils::raw_vmgexit;
 
+#[derive(Clone, Copy, Debug)]
+pub enum GhcbMsrError {
+    // The info section of the response did not match our request
+    InfoMismatch,
+    // The data section of the response did not match our request,
+    // or it was malformed altogether.
+    DataMismatch,
+}
+
 #[non_exhaustive]
 pub enum GHCBMsr {}
 
@@ -48,7 +57,7 @@ pub fn verify_ghcb_version() {
     );
 }
 
-pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), ()> {
+pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), GhcbMsrError> {
     let mut info: u64 = addr as u64;
 
     info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
@@ -56,18 +65,18 @@ pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), ()> {
     raw_vmgexit();
     info = read_msr(SEV_GHCB);
 
-    if (info & 0xfffu64) != GHCBMsr::SNP_REG_GHCB_GPA_RESP {
-        return Err(());
+    if (info & 0xfff) != GHCBMsr::SNP_REG_GHCB_GPA_RESP {
+        return Err(GhcbMsrError::InfoMismatch);
     }
 
-    if (info & !0xfffu64) == (addr as u64) {
-        Ok(())
-    } else {
-        Err(())
+    if (info & !0xfff) != (addr as u64) {
+        return Err(GhcbMsrError::DataMismatch);
     }
+
+    Ok(())
 }
 
-fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), ()> {
+fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrError> {
     let mut info: u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
 
     if valid {
@@ -81,22 +90,22 @@ fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), ()> {
     raw_vmgexit();
     let response = read_msr(SEV_GHCB);
 
-    if (response & !0xfffu64) != 0 {
-        return Err(());
+    if (response & 0xfff) != GHCBMsr::SNP_STATE_CHANGE_RESP {
+        return Err(GhcbMsrError::InfoMismatch);
     }
 
-    if (response & 0xfffu64) != GHCBMsr::SNP_STATE_CHANGE_RESP {
-        return Err(());
+    if (response & !0xfff) != 0 {
+        return Err(GhcbMsrError::DataMismatch);
     }
 
     Ok(())
 }
 
-pub fn validate_page_msr(addr: PhysAddr) -> Result<(), ()> {
+pub fn validate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
     set_page_valid_status_msr(addr, true)
 }
 
-pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(), ()> {
+pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
     set_page_valid_status_msr(addr, false)
 }
 
