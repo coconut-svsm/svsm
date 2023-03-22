@@ -100,7 +100,7 @@ pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(), ()> {
     set_page_valid_status_msr(addr, false)
 }
 
-pub fn request_termination_msr() {
+pub fn request_termination_msr() -> ! {
     let info: u64 = GHCBMsr::TERM_REQ;
 
     write_msr(SEV_GHCB, info);

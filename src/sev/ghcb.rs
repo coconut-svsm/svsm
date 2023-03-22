@@ -480,10 +480,7 @@ impl<'a> IOPort for GHCBIOPort<'a> {
         let ret = g.ioio_in(port, GHCBIOSize::Size8);
         match ret {
             Ok(v) => (v & 0xff) as u8,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 
@@ -500,10 +497,7 @@ impl<'a> IOPort for GHCBIOPort<'a> {
         let ret = g.ioio_in(port, GHCBIOSize::Size16);
         match ret {
             Ok(v) => (v & 0xffff) as u16,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 }
