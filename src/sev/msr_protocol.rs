@@ -6,6 +6,7 @@
 
 use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
 use crate::types::{PhysAddr, VirtAddr};
+use crate::utils::halt;
 
 use super::utils::raw_vmgexit;
 
@@ -114,5 +115,7 @@ pub fn request_termination_msr() -> ! {
 
     write_msr(SEV_GHCB, info);
     raw_vmgexit();
-    loop {}
+    loop {
+        halt();
+    }
 }
