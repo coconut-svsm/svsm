@@ -520,10 +520,15 @@ impl PerCpuVmsas {
             .any(|vmsa| vmsa.paddr == paddr)
     }
 
-    pub fn register(&self, paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Result<(), ()> {
+    pub fn register(
+        &self,
+        paddr: PhysAddr,
+        apic_id: u32,
+        guest_owned: bool,
+    ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
         if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
-            return Err(());
+            return Err(SvsmError::InvalidAddress);
         }
 
         guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
