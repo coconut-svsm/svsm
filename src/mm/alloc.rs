@@ -567,6 +567,11 @@ impl MemoryRegion {
             Page::SlabPage(_si) => {
                 self.free_page_order(pfn, 0);
             }
+            Page::CompoundPage(ci) => {
+                let mask = (1usize << ci.order) - 1;
+                let start_pfn = pfn & !mask;
+                self.free_page_order(start_pfn, ci.order);
+            }
             _ => {
                 panic!("Unexpected page type in MemoryRegion::free_page()");
             }
