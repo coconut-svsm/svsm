@@ -524,8 +524,12 @@ pub fn request_loop() {
                 );
                 code.into()
             }
-            Err(SvsmReqError::FatalError(..)) => {
-                log::error!("Fatal error handling core protocol request {}", request);
+            Err(SvsmReqError::FatalError(err)) => {
+                log::error!(
+                    "Fatal error handling core protocol request {}: {:?}",
+                    request,
+                    err
+                );
                 break;
             }
         };
