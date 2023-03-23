@@ -5,8 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::utils::{rmp_adjust, RMPFlags};
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
-use crate::types::VirtAddr;
+use crate::mm::alloc::{allocate_pages, free_page};
+use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::{is_aligned, zero_mem_region};
 
 pub const VMPL_MAX: usize = 4;
 
@@ -187,7 +188,20 @@ impl VMSA {
 
 pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, ()> {
     assert!(vmpl.bits() < (VMPL_MAX as u64));
-    let vmsa_page = allocate_zeroed_page()?;
+
+    // Make sure the VMSA page is not 2M aligned. Some hardware generations
+    // can't handle this properly.
+    let mut vmsa_page = allocate_pages(0)?;
+    if is_aligned(vmsa_page, PAGE_SIZE_2M) {
+        free_page(vmsa_page);
+        vmsa_page = allocate_pages(1)?;
+        if is_aligned(vmsa_page, PAGE_SIZE_2M) {
+            vmsa_page += PAGE_SIZE;
+        }
+    }
+
+    zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
+
     if rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false).is_err() {
         free_page(vmsa_page);
         return Err(());
