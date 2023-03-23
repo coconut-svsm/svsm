@@ -6,6 +6,7 @@
 
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, GuestPtr};
 use crate::sev::utils::{
@@ -180,8 +181,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
-    let mapping_guard =
-        PerCPUPageMappingGuard::create(paddr, 1, false).map_err(SvsmReqError::FatalError)?;
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
+        .map_err(|_| SvsmReqError::FatalError(()))?;
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
@@ -221,8 +222,8 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     // Map the VMSA
-    let mapping_guard =
-        PerCPUPageMappingGuard::create(paddr, 0, false).map_err(SvsmReqError::FatalError)?;
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 0, false)
+        .map_err(|_| SvsmReqError::FatalError(()))?;
     let vaddr = mapping_guard.virt_addr();
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
@@ -323,7 +324,8 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, 1, huge).map_err(SvsmReqError::FatalError)?;
+    let guard =
+        PerCPUPageMappingGuard::create(paddr, 1, huge).map_err(|_| SvsmReqError::FatalError(()))?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -353,8 +355,8 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = page_align(gpa);
     let offset = page_offset(gpa);
 
-    let guard =
-        PerCPUPageMappingGuard::create(paddr, 0, false).map_err(SvsmReqError::FatalError)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, 0, false)
+        .map_err(|_| SvsmReqError::FatalError(()))?;
     let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
@@ -416,8 +418,8 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = page_align(gpa);
 
     // Temporarily map new CAA to clear it
-    let mapping_guard =
-        PerCPUPageMappingGuard::create(paddr, 1, false).map_err(SvsmReqError::FatalError)?;
+    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)
+        .map_err(|_| SvsmReqError::FatalError(()))?;
 
     let vaddr = mapping_guard.virt_addr() + offset;
 
@@ -446,7 +448,7 @@ fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result<(),
 }
 
 /// Returns true if there is a valid VMSA mapping
-pub fn update_mappings() -> Result<(), ()> {
+pub fn update_mappings() -> Result<(), SvsmError> {
     let mut locked = this_cpu_mut().guest_vmsa_ref();
     let mut ret = Ok(());
 
@@ -459,12 +461,12 @@ pub fn update_mappings() -> Result<(), ()> {
 
     match locked.vmsa_phys() {
         Some(paddr) => this_cpu_mut().map_guest_vmsa(paddr)?,
-        None => ret = Err(()),
+        None => ret = Err(SvsmError::MissingVMSA),
     }
 
     match locked.caa_phys() {
         Some(paddr) => this_cpu_mut().map_guest_caa(paddr)?,
-        None => ret = Err(()),
+        None => ret = Err(SvsmError::MissingCAA),
     }
 
     locked.set_updated();

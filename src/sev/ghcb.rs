@@ -153,9 +153,7 @@ impl GHCB {
         }
 
         // Map page unencrypted
-        if let Err(()) = get_init_pgtable_locked().set_shared_4k(vaddr) {
-            return Err(SvsmError::Mem);
-        }
+        get_init_pgtable_locked().set_shared_4k(vaddr)?;
 
         flush_tlb_global_sync();
 
@@ -175,9 +173,7 @@ impl GHCB {
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
-        get_init_pgtable_locked()
-            .set_encrypted_4k(vaddr)
-            .map_err(|()| SvsmError::Mem)?;
+        get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
 
         // Unregister GHCB PA
         register_ghcb_gpa_msr(0usize)?;

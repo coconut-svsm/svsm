@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::types::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -146,16 +147,16 @@ pub const SVSM_PERCPU_TEMP_4K_SLOTS: usize =
 pub const SVSM_PERCPU_TEMP_2M_SLOTS: usize =
     ((SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M) / 2;
 
-pub fn percpu_4k_slot_addr(slot: usize) -> Result<VirtAddr, ()> {
+pub fn percpu_4k_slot_addr(slot: usize) -> Result<VirtAddr, SvsmError> {
     if slot >= SVSM_PERCPU_TEMP_4K_SLOTS {
-        return Err(());
+        return Err(SvsmError::Mem);
     }
     Ok(SVSM_PERCPU_TEMP_BASE_4K + (2 * slot * PAGE_SIZE))
 }
 
-pub fn percpu_2m_slot_addr(slot: usize) -> Result<VirtAddr, ()> {
+pub fn percpu_2m_slot_addr(slot: usize) -> Result<VirtAddr, SvsmError> {
     if slot >= SVSM_PERCPU_TEMP_2M_SLOTS {
-        return Err(());
+        return Err(SvsmError::Mem);
     }
     Ok(SVSM_PERCPU_TEMP_BASE_2M + (2 * slot * PAGE_SIZE_2M))
 }

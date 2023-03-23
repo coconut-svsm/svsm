@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::flush_tlb_global_sync;
+use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
@@ -34,7 +35,7 @@ impl StackRange {
         }
     }
 
-    pub fn alloc(&mut self) -> Result<VirtAddr, ()> {
+    pub fn alloc(&mut self) -> Result<VirtAddr, SvsmError> {
         for i in 0..BMP_QWORDS {
             let val = !self.alloc_bitmap[i];
             let idx = ffs(val);
@@ -50,7 +51,7 @@ impl StackRange {
             return Ok(self.start + (i * 64 + idx) * STACK_TOTAL_SIZE);
         }
 
-        Err(())
+        Err(SvsmError::Mem)
     }
 
     pub fn dealloc(&mut self, stack: VirtAddr) {
@@ -77,7 +78,7 @@ static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
     SVSM_SHARED_STACK_END,
 ));
 
-pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), ()> {
+pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), SvsmError> {
     let flags = PageTable::data_flags();
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
@@ -88,7 +89,7 @@ pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Resul
     Ok(())
 }
 
-pub fn allocate_stack() -> Result<VirtAddr, ()> {
+pub fn allocate_stack() -> Result<VirtAddr, SvsmError> {
     let stack = STACK_ALLOC.lock().alloc()?;
     allocate_stack_addr(stack, &mut get_init_pgtable_locked())?;
     Ok(stack)

@@ -8,6 +8,7 @@ use crate::cpu::control_regs::write_cr3;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::flush_tlb_global_sync;
+use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
@@ -159,7 +160,7 @@ impl PageTable {
         set_c_bit(cr3)
     }
 
-    pub fn clone_shared(&self) -> Result<PageTableRef, ()> {
+    pub fn clone_shared(&self) -> Result<PageTableRef, SvsmError> {
         let root_ptr = PageTable::allocate_page_table()?;
         let pgtable = root_ptr.cast::<PageTable>();
 
@@ -194,7 +195,7 @@ impl PageTable {
             | PTEntryFlags::DIRTY
     }
 
-    fn allocate_page_table() -> Result<*mut PTPage, ()> {
+    fn allocate_page_table() -> Result<*mut PTPage, SvsmError> {
         let ptr = allocate_zeroed_page()?;
         Ok(ptr as *mut PTPage)
     }
@@ -353,7 +354,7 @@ impl PageTable {
         }
     }
 
-    fn do_split_4k(entry: &mut PTEntry) -> Result<(), ()> {
+    fn do_split_4k(entry: &mut PTEntry) -> Result<(), SvsmError> {
         let page = PageTable::allocate_page_table()?;
         let mut flags = entry.flags();
 
@@ -379,12 +380,12 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn split_4k(mapping: Mapping) -> Result<(), ()> {
+    pub fn split_4k(mapping: Mapping) -> Result<(), SvsmError> {
         match mapping {
             Mapping::Level0(_entry) => Ok(()),
             Mapping::Level1(entry) => PageTable::do_split_4k(entry),
-            Mapping::Level2(_entry) => Err(()),
-            Mapping::Level3(_entry) => Err(()),
+            Mapping::Level2(_entry) => Err(SvsmError::Mem),
+            Mapping::Level3(_entry) => Err(SvsmError::Mem),
         }
     }
 
@@ -404,33 +405,27 @@ impl PageTable {
         entry.set(set_c_bit(addr), flags);
     }
 
-    pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let mapping = self.walk_addr(vaddr);
-
-        if let Err(_e) = PageTable::split_4k(mapping) {
-            return Err(());
-        }
+        PageTable::split_4k(mapping)?;
 
         if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
             PageTable::clear_c_bit(entry);
             Ok(())
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
-    pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let mapping = self.walk_addr(vaddr);
-
-        if let Err(_e) = PageTable::split_4k(mapping) {
-            return Err(());
-        }
+        PageTable::split_4k(mapping)?;
 
         if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
             PageTable::set_c_bit(entry);
             Ok(())
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
@@ -447,7 +442,7 @@ impl PageTable {
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: PTEntryFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SvsmError> {
         assert!(is_aligned(vaddr, PAGE_SIZE_2M));
         assert!(is_aligned(paddr, PAGE_SIZE_2M));
 
@@ -457,7 +452,7 @@ impl PageTable {
             entry.set(set_c_bit(paddr), flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
@@ -479,14 +474,14 @@ impl PageTable {
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: PTEntryFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SvsmError> {
         let mapping = self.alloc_pte_4k(vaddr);
 
         if let Mapping::Level0(entry) = mapping {
             entry.set(set_c_bit(paddr), flags);
             Ok(())
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
@@ -501,14 +496,14 @@ impl PageTable {
         }
     }
 
-    pub fn phys_addr(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, ()> {
+    pub fn phys_addr(&mut self, vaddr: VirtAddr) -> Result<PhysAddr, SvsmError> {
         let mapping = self.walk_addr(vaddr);
 
         match mapping {
             Mapping::Level0(entry) => {
                 let offset = vaddr & (PAGE_SIZE - 1);
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
-                    return Err(());
+                    return Err(SvsmError::Mem);
                 }
                 Ok(entry.address() + offset)
             }
@@ -517,13 +512,13 @@ impl PageTable {
                 if !entry.flags().contains(PTEntryFlags::PRESENT)
                     || !entry.flags().contains(PTEntryFlags::HUGE)
                 {
-                    return Err(());
+                    return Err(SvsmError::Mem);
                 }
 
                 Ok(entry.address() + offset)
             }
-            Mapping::Level2(_entry) => Err(()),
-            Mapping::Level3(_entry) => Err(()),
+            Mapping::Level2(_entry) => Err(SvsmError::Mem),
+            Mapping::Level3(_entry) => Err(SvsmError::Mem),
         }
     }
 
@@ -533,7 +528,7 @@ impl PageTable {
         end: VirtAddr,
         phys: PhysAddr,
         flags: PTEntryFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SvsmError> {
         for addr in (start..end).step_by(PAGE_SIZE) {
             let offset = addr - start;
             self.map_4k(addr, phys + offset, flags)?;
@@ -553,7 +548,7 @@ impl PageTable {
         end: VirtAddr,
         phys: PhysAddr,
         flags: PTEntryFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SvsmError> {
         for addr in (start..end).step_by(PAGE_SIZE_2M) {
             let offset = addr - start;
             self.map_2m(addr, phys + offset, flags)?;
@@ -573,7 +568,7 @@ impl PageTable {
         end: VirtAddr,
         phys: PhysAddr,
         flags: PTEntryFlags,
-    ) -> Result<(), ()> {
+    ) -> Result<(), SvsmError> {
         let mut vaddr = start;
         let mut paddr = phys;
 

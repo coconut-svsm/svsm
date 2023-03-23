@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_up, zero_mem_region};
@@ -283,9 +284,9 @@ impl MemoryRegion {
         Page::from_mem(info)
     }
 
-    pub fn get_page_info(&self, vaddr: VirtAddr) -> Result<Page, ()> {
+    pub fn get_page_info(&self, vaddr: VirtAddr) -> Result<Page, SvsmError> {
         if vaddr == 0 || !self.check_virt_addr(vaddr) {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
@@ -293,11 +294,11 @@ impl MemoryRegion {
         Ok(self.read_page_info(pfn))
     }
 
-    fn get_next_page(&mut self, order: usize) -> Result<usize, ()> {
+    fn get_next_page(&mut self, order: usize) -> Result<usize, SvsmError> {
         let pfn = self.next_page[order];
 
         if pfn == 0 {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         let pg = self.read_page_info(pfn);
@@ -329,9 +330,9 @@ impl MemoryRegion {
         }
     }
 
-    fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), ()> {
+    fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
         if order < 1 || order >= MAX_ORDER {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         let new_order = order - 1;
@@ -351,13 +352,13 @@ impl MemoryRegion {
         Ok(())
     }
 
-    fn refill_page_list(&mut self, order: usize) -> Result<(), ()> {
+    fn refill_page_list(&mut self, order: usize) -> Result<(), SvsmError> {
         if self.next_page[order] != 0 {
             return Ok(());
         }
 
         if order >= MAX_ORDER - 1 {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         self.refill_page_list(order + 1)?;
@@ -367,7 +368,7 @@ impl MemoryRegion {
         self.split_page(pfn, order + 1)
     }
 
-    pub fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, ()> {
+    pub fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(order)?;
         if let Ok(pfn) = self.get_next_page(order) {
             let pg = Page::Allocated(AllocatedInfo { order });
@@ -375,15 +376,15 @@ impl MemoryRegion {
             let vaddr = self.start_virt + (pfn * PAGE_SIZE);
             Ok(vaddr)
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
-    pub fn allocate_page(&mut self) -> Result<VirtAddr, ()> {
+    pub fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
         self.allocate_pages(0)
     }
 
-    pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, ()> {
+    pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, SvsmError> {
         let vaddr = self.allocate_page()?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
@@ -391,7 +392,7 @@ impl MemoryRegion {
         Ok(vaddr)
     }
 
-    pub fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, ()> {
+    pub fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(0)?;
 
         let slab_vaddr = slab.unwrap_or(0);
@@ -402,27 +403,27 @@ impl MemoryRegion {
             let vaddr = self.start_virt + (pfn * PAGE_SIZE);
             Ok(vaddr)
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
-    fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, ()> {
+    fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
         if order >= MAX_ORDER - 1 {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         assert_eq!(pfn & ((1usize << order) - 1), 0);
         let pfn = pfn ^ (1usize << order);
         if pfn >= self.page_count {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         Ok(pfn)
     }
 
-    fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, ()> {
+    fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, SvsmError> {
         if order >= MAX_ORDER - 1 {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         let nr_pages: usize = 1 << (order + 1);
@@ -456,13 +457,13 @@ impl MemoryRegion {
         }
     }
 
-    fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), ()> {
+    fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
         let first_pfn = self.next_page[order];
 
         // Handle special cases first
         if first_pfn == 0 {
             // No pages for that order
-            return Err(());
+            return Err(SvsmError::Mem);
         } else if first_pfn == pfn {
             // Requested pfn is first in list
             self.get_next_page(order).unwrap();
@@ -494,7 +495,7 @@ impl MemoryRegion {
             old_pfn = current_pfn;
         }
 
-        Err(())
+        Err(SvsmError::Mem)
     }
 
     fn free_page_raw(&mut self, pfn: usize, order: usize) {
@@ -510,13 +511,13 @@ impl MemoryRegion {
         self.free_pages[order] += 1;
     }
 
-    fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, ()> {
+    fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
         let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
 
         if let Page::Free(fi) = neighbor_page {
             if fi.order != order {
-                return Err(());
+                return Err(SvsmError::Mem);
             }
 
             self.allocate_pfn(neighbor_pfn, order)?;
@@ -525,7 +526,7 @@ impl MemoryRegion {
 
             Ok(new_pfn)
         } else {
-            Err(())
+            Err(SvsmError::Mem)
         }
     }
 
@@ -624,19 +625,19 @@ pub fn print_memory_info(info: &MemInfo) {
 
 static ROOT_MEM: SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());
 
-pub fn allocate_page() -> Result<VirtAddr, ()> {
+pub fn allocate_page() -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_page()
 }
 
-pub fn allocate_pages(order: usize) -> Result<VirtAddr, ()> {
+pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_pages(order)
 }
 
-pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, ()> {
+pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_slab_page(slab)
 }
 
-pub fn allocate_zeroed_page() -> Result<VirtAddr, ()> {
+pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_zeroed_page()
 }
 
@@ -669,7 +670,11 @@ impl SlabPage {
         }
     }
 
-    pub fn init(&mut self, slab_vaddr: Option<VirtAddr>, mut item_size: u16) -> Result<(), ()> {
+    pub fn init(
+        &mut self,
+        slab_vaddr: Option<VirtAddr>,
+        mut item_size: u16,
+    ) -> Result<(), SvsmError> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -687,7 +692,7 @@ impl SlabPage {
             self.capacity = (PAGE_SIZE as u16) / item_size;
             self.free = self.capacity;
         } else {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         Ok(())
@@ -717,9 +722,9 @@ impl SlabPage {
         self.next_page = next_page;
     }
 
-    pub fn allocate(&mut self) -> Result<VirtAddr, ()> {
+    pub fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
         if self.free == 0 {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         for i in 0..self.capacity {
@@ -734,12 +739,12 @@ impl SlabPage {
             }
         }
 
-        Err(())
+        Err(SvsmError::Mem)
     }
 
-    pub fn free(&mut self, vaddr: VirtAddr) -> Result<(), ()> {
+    pub fn free(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         if vaddr < self.vaddr || vaddr >= self.vaddr + PAGE_SIZE {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         assert!(self.item_size > 0);
@@ -781,9 +786,9 @@ impl SlabCommon {
         }
     }
 
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), ()> {
+    fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), SvsmError> {
         if let Err(_e) = self.page.init(slab_vaddr, self.item_size) {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         self.capacity = self.page.get_capacity() as u32;
@@ -880,15 +885,13 @@ impl SlabPageSlab {
         }
     }
 
-    fn init(&mut self) -> Result<(), ()> {
+    fn init(&mut self) -> Result<(), SvsmError> {
         self.common.init(None)
     }
 
-    fn grow_slab(&mut self) -> Result<(), ()> {
+    fn grow_slab(&mut self) -> Result<(), SvsmError> {
         if self.common.capacity == 0 {
-            if let Err(_e) = self.init() {
-                return Err(());
-            }
+            self.init()?;
             return Ok(());
         }
 
@@ -904,7 +907,7 @@ impl SlabPageSlab {
         *slab_page = SlabPage::new();
         if let Err(_e) = slab_page.init(None, self.common.item_size) {
             self.common.deallocate_slot(page_vaddr);
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         self.common.add_slab_page(slab_page);
@@ -942,9 +945,9 @@ impl SlabPageSlab {
         }
     }
 
-    fn allocate(&mut self) -> Result<*mut SlabPage, ()> {
+    fn allocate(&mut self) -> Result<*mut SlabPage, SvsmError> {
         if self.grow_slab().is_err() {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         Ok(unsafe { &mut *(self.common.allocate_slot() as *mut SlabPage) })
@@ -967,15 +970,15 @@ impl Slab {
         }
     }
 
-    fn init(&mut self) -> Result<(), ()> {
+    fn init(&mut self) -> Result<(), SvsmError> {
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
         self.common.init(Some(slab_vaddr))
     }
 
-    fn grow_slab(&mut self) -> Result<(), ()> {
+    fn grow_slab(&mut self) -> Result<(), SvsmError> {
         if self.common.capacity == 0 {
             if let Err(_e) = self.init() {
-                return Err(());
+                return Err(SvsmError::Mem);
             }
             return Ok(());
         }
@@ -986,13 +989,13 @@ impl Slab {
 
         let slab_page = match SLAB_PAGE_SLAB.lock().allocate() {
             Ok(slab_page) => unsafe { &mut *slab_page },
-            Err(_) => return Err(()),
+            Err(_) => return Err(SvsmError::Mem),
         };
         let slab_vaddr = (self as *mut Slab) as VirtAddr;
         *slab_page = SlabPage::new();
         if let Err(_e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(slab_page);
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         self.common.add_slab_page(&mut *slab_page);
@@ -1033,9 +1036,9 @@ impl Slab {
         assert!(freed_one);
     }
 
-    fn allocate(&mut self) -> Result<VirtAddr, ()> {
+    fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
         if let Err(_e) = self.grow_slab() {
-            return Err(());
+            return Err(SvsmError::Mem);
         }
 
         Ok(self.common.allocate_slot())
@@ -1075,7 +1078,7 @@ impl SvsmAllocator {
 
 unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ret: Result<VirtAddr, ()>;
+        let ret: Result<VirtAddr, SvsmError>;
         let size = layout.size();
 
         if size <= 32 {
@@ -1177,7 +1180,7 @@ use crate::locking::LockGuard;
 #[cfg(test)]
 // Allocate a memory region from the standard Rust allocator and pass it to
 // root_mem_init().
-fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
+fn setup_test_root_mem(size: usize) -> LockGuard<'static, SvsmError> {
     extern crate alloc;
     use alloc::alloc::{alloc, handle_alloc_error};
 
@@ -1199,7 +1202,7 @@ fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
 
 #[cfg(test)]
 // Undo the setup done from setup_test_root_mem().
-fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
+fn destroy_test_root_mem(lock: LockGuard<'static, SvsmError>) {
     extern crate alloc;
     use alloc::alloc::dealloc;
 

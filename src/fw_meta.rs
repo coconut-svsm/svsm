@@ -231,7 +231,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
-    let guard = PerCPUPageMappingGuard::create(pstart, 0, false)?;
+    let guard = PerCPUPageMappingGuard::create(pstart, 0, false).map_err(|_e| ())?;
     let vstart = guard.virt_addr();
     let vend: VirtAddr = vstart + PAGE_SIZE;
 
@@ -332,7 +332,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), ()> {
         .expect("GHCB PSC call failed to validate firmware memory");
 
     for paddr in (pstart..pend).step_by(PAGE_SIZE) {
-        let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+        let guard = PerCPUPageMappingGuard::create(paddr, 0, false).map_err(|_e| ())?;
         let vaddr = guard.virt_addr();
 
         if pvalidate(vaddr, false, true).is_err() {
