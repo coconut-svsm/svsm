@@ -24,6 +24,7 @@ use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
+use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -33,7 +34,6 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::ghcb::GhcbError;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -217,7 +217,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     Ok(())
 }
 
-fn launch_fw() -> Result<(), GhcbError> {
+fn launch_fw() -> Result<(), SvsmError> {
     let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
     let vmsa = this_cpu_mut().guest_vmsa();
 

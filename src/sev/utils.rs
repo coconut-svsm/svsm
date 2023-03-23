@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
 use core::arch::asm;
@@ -18,6 +19,12 @@ pub enum SevSnpError {
     // Not a real error value, but we want to keep track of this,
     // especially for protocol-specific messaging
     FAIL_UNCHANGED(u64),
+}
+
+impl From<SevSnpError> for SvsmError {
+    fn from(e: SevSnpError) -> Self {
+        Self::SevSnp(e)
+    }
 }
 
 impl SevSnpError {

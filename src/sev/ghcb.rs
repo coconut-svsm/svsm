@@ -6,14 +6,15 @@
 
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
+use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::virt_to_phys;
+use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::sev::{sev_snp_enabled, SevSnpError};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
 use core::cell::RefCell;
@@ -21,7 +22,6 @@ use core::{mem, ptr};
 
 use super::msr_protocol::{
     invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
-    GhcbMsrError,
 };
 use super::pvalidate;
 
@@ -104,12 +104,6 @@ pub struct GHCB {
 
 #[derive(Clone, Copy, Debug)]
 pub enum GhcbError {
-    // Errors related to SEV-SNP operations (like PVALIDATE)
-    SevSnp(SevSnpError),
-    // Errors related to the MSR protocol
-    Msr(GhcbMsrError),
-    // Errors related to memory management
-    Mem,
     // Attempted to write at an invalid offset in the GHCB
     InvalidOffset,
     // A response from the hypervisor after VMGEXIT is invalid
@@ -118,15 +112,9 @@ pub enum GhcbError {
     VmgexitError(u64, u64),
 }
 
-impl From<SevSnpError> for GhcbError {
-    fn from(e: SevSnpError) -> Self {
-        Self::SevSnp(e)
-    }
-}
-
-impl From<GhcbMsrError> for GhcbError {
-    fn from(e: GhcbMsrError) -> Self {
-        Self::Msr(e)
+impl From<GhcbError> for SvsmError {
+    fn from(e: GhcbError) -> Self {
+        Self::Ghcb(e)
     }
 }
 
@@ -147,7 +135,7 @@ pub enum GHCBIOSize {
 }
 
 impl GHCB {
-    pub fn init(&mut self) -> Result<(), GhcbError> {
+    pub fn init(&mut self) -> Result<(), SvsmError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
@@ -166,7 +154,7 @@ impl GHCB {
 
         // Map page unencrypted
         if let Err(()) = get_init_pgtable_locked().set_shared_4k(vaddr) {
-            return Err(GhcbError::Mem);
+            return Err(SvsmError::Mem);
         }
 
         flush_tlb_global_sync();
@@ -174,7 +162,7 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn register(&self) -> Result<(), GhcbError> {
+    pub fn register(&self) -> Result<(), SvsmError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
@@ -182,14 +170,14 @@ impl GHCB {
         Ok(register_ghcb_gpa_msr(paddr)?)
     }
 
-    pub fn shutdown(&mut self) -> Result<(), GhcbError> {
+    pub fn shutdown(&mut self) -> Result<(), SvsmError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
         get_init_pgtable_locked()
             .set_encrypted_4k(vaddr)
-            .map_err(|()| GhcbError::Mem)?;
+            .map_err(|()| SvsmError::Mem)?;
 
         // Unregister GHCB PA
         register_ghcb_gpa_msr(0usize)?;
@@ -326,7 +314,7 @@ impl GHCB {
         self.set_valid(OFF_X87_STATE_GPA);
     }
 
-    pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, GhcbError> {
+    pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, SvsmError> {
         self.clear();
 
         let mut info: u64 = 1; // IN instruction
@@ -341,12 +329,12 @@ impl GHCB {
 
         self.vmgexit(GHCBExitCode::IOIO, info, 0)?;
         if !self.is_valid(OFF_RAX) {
-            return Err(GhcbError::VmgexitInvalid);
+            return Err(GhcbError::VmgexitInvalid.into());
         }
         Ok(self.rax)
     }
 
-    pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), GhcbError> {
+    pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), SvsmError> {
         self.clear();
 
         let mut info: u64 = 0; // OUT instruction
@@ -360,8 +348,8 @@ impl GHCB {
         }
 
         self.set_rax(value);
-
-        self.vmgexit(GHCBExitCode::IOIO, info, 0)
+        self.vmgexit(GHCBExitCode::IOIO, info, 0)?;
+        Ok(())
     }
 
     fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
@@ -406,7 +394,7 @@ impl GHCB {
         end: PhysAddr,
         huge: bool,
         op: PageStateChangeOp,
-    ) -> Result<(), GhcbError> {
+    ) -> Result<(), SvsmError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
         let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
@@ -457,7 +445,7 @@ impl GHCB {
                             info_low
                         );
                     }
-                    return Err(e);
+                    return Err(e.into());
                 }
 
                 entries = 0;
@@ -473,17 +461,19 @@ impl GHCB {
         apic_id: u64,
         vmpl: u64,
         sev_features: u64,
-    ) -> Result<(), GhcbError> {
+    ) -> Result<(), SvsmError> {
         self.clear();
         let exit_info_1: u64 = 1 | (vmpl & 0xf) << 16 | apic_id << 32;
         let exit_info_2: u64 = vmsa_gpa as u64;
         self.set_rax(sev_features);
-        self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)
+        self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
     }
 
-    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), GhcbError> {
+    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), SvsmError> {
         self.clear();
-        self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)
+        self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)?;
+        Ok(())
     }
 }
 
