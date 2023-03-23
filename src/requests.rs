@@ -85,6 +85,7 @@ impl From<SvsmError> for SvsmReqError {
             // SEV-SNP errors obtained from PVALIDATE or RMPADJUST are returned
             // to the guest as protocol-specific errors.
             SvsmError::SevSnp(e) => Self::protocol(e.ret()),
+            SvsmError::InvalidAddress => Self::invalid_address(),
             // Use a fatal error for now
             _ => Self::FatalError(err),
         }
@@ -357,9 +358,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
-    let mut request = guest_page
-        .read()
-        .map_err(|_| SvsmReqError::invalid_address())?;
+    let mut request = guest_page.read()?;
 
     let entries = request.entries;
     let next = request.next;
@@ -379,8 +378,8 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
         let index = i as isize;
         let entry = match guest_entries.offset(index).read() {
             Ok(v) => v,
-            Err(_) => {
-                loop_result = Err(SvsmReqError::invalid_address());
+            Err(e) => {
+                loop_result = Err(e.into());
                 break;
             }
         };
@@ -393,8 +392,8 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
         }
     }
 
-    if guest_page.write_ref(&request).is_err() {
-        loop_result = Err(SvsmReqError::invalid_address());
+    if let Err(e) = guest_page.write_ref(&request) {
+        loop_result = Err(e.into());
     }
 
     if flush {
@@ -419,9 +418,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);
-    pending
-        .write(0)
-        .map_err(|_| SvsmReqError::invalid_address())?;
+    pending.write(0)?;
 
     this_cpu_mut().update_guest_caa(gpa);
 
@@ -484,12 +481,8 @@ fn request_loop_once(
     })?;
 
     let guest_pending = GuestPtr::<u64>::new(caa_addr);
-    let pending = guest_pending
-        .read()
-        .map_err(|_| SvsmReqError::invalid_address())?;
-    guest_pending
-        .write(0)
-        .map_err(|_| SvsmReqError::invalid_address())?;
+    let pending = guest_pending.read()?;
+    guest_pending.write(0)?;
 
     if pending != 1 {
         return Ok(false);

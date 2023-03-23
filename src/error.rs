@@ -21,4 +21,6 @@ pub enum SvsmError {
     MissingVMSA,
     // There is no CAA
     MissingCAA,
+    // Invalid address, usually provided by the guest
+    InvalidAddress,
 }
