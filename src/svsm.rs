@@ -16,7 +16,7 @@ use core::panic::PanicInfo;
 use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{register_cpuid_table, SnpCpuidTable, dump_cpuid_table};
+use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
@@ -33,6 +33,7 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
+use svsm::sev::ghcb::GhcbError;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -216,7 +217,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     Ok(())
 }
 
-fn launch_fw() -> Result<(), ()> {
+fn launch_fw() -> Result<(), GhcbError> {
     let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
     let vmsa = this_cpu_mut().guest_vmsa();
 
@@ -408,7 +409,9 @@ pub extern "C" fn svsm_main() {
 
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
-    launch_fw().expect("Failed to launch FW");
+    if let Err(e) = launch_fw() {
+        panic!("Failed to launch FW: {:#?}", e);
+    }
 
     request_loop();
 

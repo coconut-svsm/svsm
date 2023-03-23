@@ -12,15 +12,16 @@ use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::virt_to_phys;
-use crate::sev::sev_snp_enabled;
+use crate::sev::utils::raw_vmgexit;
+use crate::sev::{sev_snp_enabled, SevSnpError};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
-use core::arch::asm;
 use core::cell::RefCell;
 use core::{mem, ptr};
 
 use super::msr_protocol::{
     invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
+    GhcbMsrError,
 };
 use super::pvalidate;
 
@@ -101,6 +102,34 @@ pub struct GHCB {
     usage: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum GhcbError {
+    // Errors related to SEV-SNP operations (like PVALIDATE)
+    SevSnp(SevSnpError),
+    // Errors related to the MSR protocol
+    Msr(GhcbMsrError),
+    // Errors related to memory management
+    Mem,
+    // Attempted to write at an invalid offset in the GHCB
+    InvalidOffset,
+    // A response from the hypervisor after VMGEXIT is invalid
+    VmgexitInvalid,
+    // A response from the hypervisor included an error code
+    VmgexitError(u64, u64),
+}
+
+impl From<SevSnpError> for GhcbError {
+    fn from(e: SevSnpError) -> Self {
+        Self::SevSnp(e)
+    }
+}
+
+impl From<GhcbMsrError> for GhcbError {
+    fn from(e: GhcbMsrError) -> Self {
+        Self::Msr(e)
+    }
+}
+
 #[non_exhaustive]
 enum GHCBExitCode {}
 
@@ -118,20 +147,16 @@ pub enum GHCBIOSize {
 }
 
 impl GHCB {
-    pub fn init(&mut self) -> Result<(), ()> {
+    pub fn init(&mut self) -> Result<(), GhcbError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
         if sev_snp_enabled() {
             // Make page invalid
-            if let Err(_e) = pvalidate(vaddr, false, false) {
-                return Err(());
-            }
+            pvalidate(vaddr, false, false)?;
 
             // Let the Hypervisor take the page back
-            if let Err(_e) = invalidate_page_msr(paddr) {
-                return Err(());
-            }
+            invalidate_page_msr(paddr)?;
 
             // Needs guarding for Stage2 GHCB
             if valid_bitmap_valid_addr(paddr) {
@@ -140,8 +165,8 @@ impl GHCB {
         }
 
         // Map page unencrypted
-        if let Err(_e) = get_init_pgtable_locked().set_shared_4k(vaddr) {
-            return Err(());
+        if let Err(()) = get_init_pgtable_locked().set_shared_4k(vaddr) {
+            return Err(GhcbError::Mem);
         }
 
         flush_tlb_global_sync();
@@ -149,20 +174,22 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn register(&self) -> Result<(), ()> {
+    pub fn register(&self) -> Result<(), GhcbError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
         // Register GHCB GPA
-        register_ghcb_gpa_msr(paddr)
+        Ok(register_ghcb_gpa_msr(paddr)?)
     }
 
-    pub fn shutdown(&mut self) -> Result<(), ()> {
+    pub fn shutdown(&mut self) -> Result<(), GhcbError> {
         let vaddr = (self as *const GHCB) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
-        get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
+        get_init_pgtable_locked()
+            .set_encrypted_4k(vaddr)
+            .map_err(|()| GhcbError::Mem)?;
 
         // Unregister GHCB PA
         register_ghcb_gpa_msr(0usize)?;
@@ -171,9 +198,7 @@ impl GHCB {
         validate_page_msr(paddr)?;
 
         // Make page guest-valid
-        if pvalidate(vaddr, false, true).is_err() {
-            return Err(());
-        }
+        pvalidate(vaddr, false, true)?;
 
         // Needs guarding for Stage2 GHCB
         if valid_bitmap_valid_addr(paddr) {
@@ -209,7 +234,12 @@ impl GHCB {
         (self.valid_bitmap[index] & mask) == mask
     }
 
-    fn vmgexit(&mut self, exit_code: u64, exit_info_1: u64, exit_info_2: u64) -> Result<(), ()> {
+    fn vmgexit(
+        &mut self,
+        exit_code: u64,
+        exit_info_1: u64,
+        exit_info_2: u64,
+    ) -> Result<(), GhcbError> {
         // GHCB is version 2
         self.version = 2;
         self.set_valid(OFF_VERSION);
@@ -227,18 +257,23 @@ impl GHCB {
         self.sw_exit_info_2 = exit_info_2;
         self.set_valid(OFF_SW_EXIT_INFO_2);
 
-        unsafe {
-            let ghcb_address = (self as *const GHCB) as VirtAddr;
-            let ghcb_pa: u64 = virt_to_phys(ghcb_address) as u64;
-            write_msr(SEV_GHCB, ghcb_pa);
-            asm!("rep; vmmcall", options(att_syntax));
+        let ghcb_address = (self as *const GHCB) as VirtAddr;
+        let ghcb_pa: u64 = virt_to_phys(ghcb_address) as u64;
+        write_msr(SEV_GHCB, ghcb_pa);
+        raw_vmgexit();
+
+        if !self.is_valid(OFF_SW_EXIT_INFO_1) {
+            return Err(GhcbError::VmgexitInvalid);
         }
 
-        if self.is_valid(OFF_SW_EXIT_INFO_1) && self.sw_exit_info_1 == 0 {
-            Ok(())
-        } else {
-            Err(())
+        if self.sw_exit_info_1 != 0 {
+            return Err(GhcbError::VmgexitError(
+                self.sw_exit_info_1,
+                self.sw_exit_info_2,
+            ));
         }
+
+        Ok(())
     }
 
     pub fn set_cpl(&mut self, cpl: u8) {
@@ -291,7 +326,7 @@ impl GHCB {
         self.set_valid(OFF_X87_STATE_GPA);
     }
 
-    pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, ()> {
+    pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, GhcbError> {
         self.clear();
 
         let mut info: u64 = 1; // IN instruction
@@ -304,19 +339,14 @@ impl GHCB {
             GHCBIOSize::Size32 => info |= 1 << 6,
         }
 
-        match self.vmgexit(GHCBExitCode::IOIO, info, 0) {
-            Ok(()) => {
-                if self.is_valid(OFF_RAX) {
-                    Ok(self.rax)
-                } else {
-                    Err(())
-                }
-            }
-            Err(()) => Err(()),
+        self.vmgexit(GHCBExitCode::IOIO, info, 0)?;
+        if !self.is_valid(OFF_RAX) {
+            return Err(GhcbError::VmgexitInvalid);
         }
+        Ok(self.rax)
     }
 
-    pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), ()> {
+    pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), GhcbError> {
         self.clear();
 
         let mut info: u64 = 0; // OUT instruction
@@ -334,14 +364,14 @@ impl GHCB {
         self.vmgexit(GHCBExitCode::IOIO, info, 0)
     }
 
-    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), ()>
+    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
     where
         T: Sized,
     {
         let size: isize = mem::size_of::<T>() as isize;
 
         if offset < 0 || offset + size > (GHCB_BUFFER_SIZE as isize) {
-            return Err(());
+            return Err(GhcbError::InvalidOffset);
         }
 
         unsafe {
@@ -376,7 +406,7 @@ impl GHCB {
         end: PhysAddr,
         huge: bool,
         op: PageStateChangeOp,
-    ) -> Result<(), ()> {
+    ) -> Result<(), GhcbError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
         let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
@@ -413,21 +443,21 @@ impl GHCB {
                 let buffer_pa: u64 = virt_to_phys(buffer_va) as u64;
                 self.set_sw_scratch(buffer_pa);
 
-                if self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0).is_err() {
+                if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
                     if !self.is_valid(OFF_SW_EXIT_INFO_2) {
-                        return Err(());
+                        e = GhcbError::VmgexitInvalid;
                     }
 
-                    let info_high: u32 = (self.sw_exit_info_2 >> 32) as u32;
-                    let info_low: u32 = (self.sw_exit_info_2 & 0xffff_ffffu64) as u32;
-
-                    log::error!(
-                        "GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}",
-                        info_high,
-                        info_low
-                    );
-
-                    return Err(());
+                    if let GhcbError::VmgexitError(_, info2) = e {
+                        let info_high: u32 = (info2 >> 32) as u32;
+                        let info_low: u32 = (info2 & 0xffff_ffffu64) as u32;
+                        log::error!(
+                            "GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}",
+                            info_high,
+                            info_low
+                        );
+                    }
+                    return Err(e);
                 }
 
                 entries = 0;
@@ -443,7 +473,7 @@ impl GHCB {
         apic_id: u64,
         vmpl: u64,
         sev_features: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), GhcbError> {
         self.clear();
         let exit_info_1: u64 = 1 | (vmpl & 0xf) << 16 | apic_id << 32;
         let exit_info_2: u64 = vmsa_gpa as u64;
@@ -451,7 +481,7 @@ impl GHCB {
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)
     }
 
-    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), ()> {
+    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), GhcbError> {
         self.clear();
         self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)
     }
@@ -472,7 +502,7 @@ impl<'a> IOPort for GHCBIOPort<'a> {
     fn outb(&self, port: u16, value: u8) {
         let mut g = self.ghcb.borrow_mut();
         let ret = g.ioio_out(port, GHCBIOSize::Size8, value as u64);
-        if let Err(()) = ret {
+        if ret.is_err() {
             request_termination_msr();
         }
     }
@@ -482,17 +512,14 @@ impl<'a> IOPort for GHCBIOPort<'a> {
         let ret = g.ioio_in(port, GHCBIOSize::Size8);
         match ret {
             Ok(v) => (v & 0xff) as u8,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 
     fn outw(&self, port: u16, value: u16) {
         let mut g = self.ghcb.borrow_mut();
         let ret = g.ioio_out(port, GHCBIOSize::Size16, value as u64);
-        if let Err(()) = ret {
+        if ret.is_err() {
             request_termination_msr();
         }
     }
@@ -502,10 +529,7 @@ impl<'a> IOPort for GHCBIOPort<'a> {
         let ret = g.ioio_in(port, GHCBIOSize::Size16);
         match ret {
             Ok(v) => (v & 0xffff) as u16,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 }

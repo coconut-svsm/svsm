@@ -22,7 +22,7 @@ impl IOPort for SVSMIOPort {
         let ret = this_cpu_mut()
             .ghcb()
             .ioio_out(port, GHCBIOSize::Size8, value as u64);
-        if let Err(()) = ret {
+        if ret.is_err() {
             request_termination_msr();
         }
     }
@@ -31,10 +31,7 @@ impl IOPort for SVSMIOPort {
         let ret = this_cpu_mut().ghcb().ioio_in(port, GHCBIOSize::Size8);
         match ret {
             Ok(v) => (v & 0xff) as u8,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 
@@ -42,7 +39,7 @@ impl IOPort for SVSMIOPort {
         let ret = this_cpu_mut()
             .ghcb()
             .ioio_out(port, GHCBIOSize::Size16, value as u64);
-        if let Err(()) = ret {
+        if ret.is_err() {
             request_termination_msr();
         }
     }
@@ -51,10 +48,7 @@ impl IOPort for SVSMIOPort {
         let ret = this_cpu_mut().ghcb().ioio_in(port, GHCBIOSize::Size16);
         match ret {
             Ok(v) => (v & 0xffff) as u16,
-            Err(_e) => {
-                request_termination_msr();
-                0
-            }
+            Err(_e) => request_termination_msr(),
         }
     }
 }

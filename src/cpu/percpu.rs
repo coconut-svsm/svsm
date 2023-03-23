@@ -252,11 +252,11 @@ impl PerCpu {
     pub fn setup_ghcb(&mut self) -> Result<(), ()> {
         let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
         self.ghcb = ghcb_page as *mut GHCB;
-        unsafe { (*self.ghcb).init() }
+        unsafe { (*self.ghcb).init().map_err(|_| ()) }
     }
 
     pub fn register_ghcb(&self) -> Result<(), ()> {
-        unsafe { self.ghcb.as_ref().unwrap().register() }
+        unsafe { self.ghcb.as_ref().unwrap().register().map_err(|_| ()) }
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -320,7 +320,7 @@ impl PerCpu {
             return Ok(());
         }
 
-        unsafe { (*self.ghcb).shutdown() }
+        unsafe { (*self.ghcb).shutdown().map_err(|_| ()) }
     }
 
     pub fn set_reset_ip(&mut self, reset_ip: u64) {
