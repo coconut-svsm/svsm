@@ -174,7 +174,7 @@ const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
-unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Result<(VirtAddr, usize), ()> {
+unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Option<(VirtAddr, usize)> {
     let mut curr = start;
     let end = start - len;
 
@@ -200,11 +200,11 @@ unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Result<(Vir
         curr -= len;
 
         if *uuid == curr_uuid {
-            return Ok((curr, len));
+            return Some((curr, len));
         }
     }
 
-    Err(())
+    None
 }
 
 #[repr(C, packed)]
@@ -258,7 +258,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
 
         // First check if this is the SVSM itself instead of OVMF
         let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).map_err(|()| SvsmError::Firmware)?;
-        if let Ok(_v) = find_table(&svsm_info_uuid, curr, len) {
+        if let Some(_v) = find_table(&svsm_info_uuid, curr, len) {
             return Err(SvsmError::Firmware);
         }
 
@@ -266,7 +266,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         let sev_info_uuid =
             Uuid::from_str(SEV_INFO_BLOCK_GUID).map_err(|()| SvsmError::Firmware)?;
         let ret = find_table(&sev_info_uuid, curr, len);
-        if let Ok(tbl) = ret {
+        if let Some(tbl) = ret {
             let (base, len) = tbl;
             if len != mem::size_of::<u32>() {
                 return Err(SvsmError::Firmware);
@@ -279,7 +279,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         let sev_meta_uuid =
             Uuid::from_str(OVMF_SEV_META_DATA_GUID).map_err(|()| SvsmError::Firmware)?;
         let ret = find_table(&sev_meta_uuid, curr, len);
-        if let Ok(tbl) = ret {
+        if let Some(tbl) = ret {
             let (base, _len) = tbl;
             let off_ptr = base as *const u32;
             let offset = off_ptr.read_unaligned() as usize;
