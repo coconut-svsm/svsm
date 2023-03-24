@@ -6,9 +6,8 @@
 
 use crate::locking::SpinLock;
 use crate::types::{PhysAddr, VirtAddr, PAGE_SHIFT, PAGE_SIZE};
-use crate::utils::align_up;
+use crate::utils::{align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
-use core::arch::asm;
 use core::mem::size_of;
 use core::ptr;
 use log;
@@ -385,21 +384,11 @@ impl MemoryRegion {
     }
 
     pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, ()> {
-        let vaddr = self.allocate_page();
+        let vaddr = self.allocate_page()?;
 
-        if let Err(_e) = vaddr {
-            return Err(());
-        }
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
 
-        unsafe {
-            asm!("rep stosq",
-                in("rdi") vaddr.unwrap(),
-                in("rax") 0,
-                in("rcx") PAGE_SIZE / 8,
-                options(att_syntax));
-        }
-
-        vaddr
+        Ok(vaddr)
     }
 
     pub fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, ()> {
