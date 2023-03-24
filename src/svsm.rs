@@ -397,15 +397,22 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = parse_fw_meta_data().expect("Failed to parse FW SEV meta-data");
+    let fw_meta = parse_fw_meta_data()
+        .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
 
     print_fw_meta(&fw_meta);
 
-    validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
+    if let Err(e) = validate_fw_memory(&fw_meta) {
+        panic!("Failed to validate firmware memory: {:#?}", e);
+    }
 
-    copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
+    if let Err(e) = copy_tables_to_fw(&fw_meta) {
+        panic!("Failed to copy firmware tables: {:#?}", e);
+    }
 
-    validate_flash().expect("Failed to validate flash memory");
+    if let Err(e) = validate_flash() {
+        panic!("Failed to validate flash memory: {:#?}", e);
+    }
 
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 

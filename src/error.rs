@@ -23,4 +23,6 @@ pub enum SvsmError {
     MissingCAA,
     // Invalid address, usually provided by the guest
     InvalidAddress,
+    // Errors related to firmware parsing
+    Firmware,
 }
