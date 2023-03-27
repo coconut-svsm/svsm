@@ -36,8 +36,8 @@ fn svsm_gdt_segment() -> VMSASegment {
     VMSASegment {
         selector: 0,
         flags: 0,
-        limit: limit,
-        base: base,
+        limit,
+        base,
     }
 }
 
@@ -46,8 +46,8 @@ fn svsm_idt_segment() -> VMSASegment {
     VMSASegment {
         selector: 0,
         flags: 0,
-        limit: limit,
-        base: base,
+        limit,
+        base,
     }
 }
 
@@ -101,7 +101,7 @@ fn real_mode_sys_seg(flags: u16) -> VMSASegment {
         selector: 0,
         base: 0,
         limit: 0xffff,
-        flags: flags,
+        flags,
     }
 }
 
