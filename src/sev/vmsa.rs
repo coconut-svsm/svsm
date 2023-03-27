@@ -205,7 +205,7 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
 
     if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);
-        return Err(e.into());
+        return Err(e);
     }
     Ok(vmsa_page)
 }
