@@ -445,12 +445,8 @@ impl PerCpu {
 
     pub fn caa_addr(&self) -> Option<VirtAddr> {
         let locked = self.guest_vmsa.lock();
-
-        if locked.caa_phys().is_none() {
-            return None;
-        }
-
-        let offset = page_offset(locked.caa_phys().unwrap());
+        let caa_phys = locked.caa_phys()?;
+        let offset = page_offset(caa_phys);
 
         Some((SVSM_PERCPU_CAA_BASE + offset) as VirtAddr)
     }
