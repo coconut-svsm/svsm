@@ -317,7 +317,7 @@ impl PerCpu {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        if self.ghcb == ptr::null_mut() {
+        if self.ghcb.is_null() {
             return Ok(());
         }
 
