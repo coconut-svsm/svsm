@@ -7,6 +7,7 @@
 use super::pagetable::{get_init_pgtable_locked, PageTable};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::{flush_address_sync, flush_tlb_global_sync};
+use crate::error::SvsmError;
 use crate::mm::{percpu_2m_slot_addr, percpu_4k_slot_addr};
 use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
@@ -27,7 +28,7 @@ pub struct PerCPUPageMappingGuard {
 }
 
 impl PerCPUPageMappingGuard {
-    pub fn create(paddr: VirtAddr, slot: usize, huge: bool) -> Result<Self, ()> {
+    pub fn create(paddr: VirtAddr, slot: usize, huge: bool) -> Result<Self, SvsmError> {
         let size = if huge { PAGE_SIZE_2M } else { PAGE_SIZE };
 
         assert!(is_aligned(paddr, size));
@@ -84,14 +85,14 @@ impl PTMappingGuard {
             Ok(()) => PTMappingGuard {
                 mapping: Some(raw_mapping),
             },
-            Err(()) => PTMappingGuard { mapping: None },
+            Err(_e) => PTMappingGuard { mapping: None },
         }
     }
 
-    pub fn check_mapping(&self) -> Result<(), ()> {
+    pub fn check_mapping(&self) -> Result<(), SvsmError> {
         match self.mapping {
             Some(_) => Ok(()),
-            None => Err(()),
+            None => Err(SvsmError::Mem),
         }
     }
 }

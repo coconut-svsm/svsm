@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::types::VirtAddr;
 
 use core::arch::asm;
@@ -11,7 +12,7 @@ use core::mem::{size_of, MaybeUninit};
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u8(v: VirtAddr) -> Result<u8, ()> {
+unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -32,13 +33,13 @@ unsafe fn read_u8(v: VirtAddr) -> Result<u8, ()> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(())
+        Err(SvsmError::InvalidAddress)
     }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u16(v: VirtAddr) -> Result<u16, ()> {
+unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -59,13 +60,13 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, ()> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(())
+        Err(SvsmError::InvalidAddress)
     }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u32(v: VirtAddr) -> Result<u32, ()> {
+unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -86,13 +87,13 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, ()> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(())
+        Err(SvsmError::InvalidAddress)
     }
 }
 
 #[allow(dead_code)]
 #[inline]
-unsafe fn read_u64(v: VirtAddr) -> Result<u64, ()> {
+unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
@@ -112,12 +113,12 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, ()> {
     if rcx == 0 {
         Ok(val)
     } else {
-        Err(())
+        Err(SvsmError::InvalidAddress)
     }
 }
 
 #[inline]
-unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), ()> {
+unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     let size: usize = size_of::<T>();
     let mut rcx: u64;
 
@@ -137,7 +138,7 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), ()> {
     if rcx == 0 {
         Ok(())
     } else {
-        Err(())
+        Err(SvsmError::InvalidAddress)
     }
 }
 
@@ -157,7 +158,7 @@ impl<T: Sized + Copy> GuestPtr<T> {
         GuestPtr { ptr: p }
     }
 
-    pub fn read(&self) -> Result<T, ()> {
+    pub fn read(&self) -> Result<T, SvsmError> {
         let mut buf = MaybeUninit::<T>::uninit();
 
         unsafe {
@@ -166,13 +167,13 @@ impl<T: Sized + Copy> GuestPtr<T> {
         }
     }
 
-    pub fn write(&self, buf: T) -> Result<(), ()> {
+    pub fn write(&self, buf: T) -> Result<(), SvsmError> {
         let src = &buf as *const T;
 
         unsafe { do_movsb(src, self.ptr) }
     }
 
-    pub fn write_ref(&self, buf: &T) -> Result<(), ()> {
+    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
         let src = buf as *const T;
 
         unsafe { do_movsb(src, self.ptr) }

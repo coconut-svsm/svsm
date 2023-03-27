@@ -10,6 +10,7 @@ use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
+use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
@@ -196,7 +197,7 @@ impl PerCpu {
         }
     }
 
-    pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, ()> {
+    pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
             let percpu = vaddr as *mut PerCpu;
@@ -219,7 +220,7 @@ impl PerCpu {
         self.apic_id
     }
 
-    fn allocate_page_table(&mut self) -> Result<(), ()> {
+    fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
         self.set_pgtable(pgtable_ref);
         Ok(())
@@ -230,14 +231,14 @@ impl PerCpu {
         *my_pgtable = pgtable;
     }
 
-    fn allocate_init_stack(&mut self) -> Result<(), ()> {
+    fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
         allocate_stack_addr(SVSM_STACKS_INIT_TASK, &mut self.get_pgtable())
             .expect("Failed to allocate per-cpu init stack");
         self.init_stack = Some(SVSM_STACKS_INIT_TASK);
         Ok(())
     }
 
-    fn allocate_ist_stacks(&mut self) -> Result<(), ()> {
+    fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
         allocate_stack_addr(SVSM_STACK_IST_DF_BASE, &mut self.get_pgtable())
             .expect("Failed to allocate percpu double-fault stack");
 
@@ -249,14 +250,14 @@ impl PerCpu {
         self.pgtbl.lock()
     }
 
-    pub fn setup_ghcb(&mut self) -> Result<(), ()> {
+    pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
         let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
         self.ghcb = ghcb_page as *mut GHCB;
-        unsafe { (*self.ghcb).init().map_err(|_| ()) }
+        unsafe { (*self.ghcb).init() }
     }
 
-    pub fn register_ghcb(&self) -> Result<(), ()> {
-        unsafe { self.ghcb.as_ref().unwrap().register().map_err(|_| ()) }
+    pub fn register_ghcb(&self) -> Result<(), SvsmError> {
+        unsafe { self.ghcb.as_ref().unwrap().register() }
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -267,7 +268,7 @@ impl PerCpu {
         self.tss.ist_stacks[IST_DF] = stack_base_pointer(self.ist.double_fault_stack.unwrap());
     }
 
-    pub fn map_self(&mut self) -> Result<(), ()> {
+    pub fn map_self(&mut self) -> Result<(), SvsmError> {
         let vaddr = (self as *const PerCpu) as VirtAddr;
         let paddr = virt_to_phys(vaddr);
         let flags = PageTable::data_flags();
@@ -275,7 +276,7 @@ impl PerCpu {
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
 
-    pub fn setup(&mut self) -> Result<(), ()> {
+    pub fn setup(&mut self) -> Result<(), SvsmError> {
         // Allocate page-table
         self.allocate_page_table()?;
 
@@ -298,7 +299,7 @@ impl PerCpu {
     }
 
     // Setup code which needs to run on the target CPU
-    pub fn setup_on_cpu(&self) -> Result<(), ()> {
+    pub fn setup_on_cpu(&self) -> Result<(), SvsmError> {
         self.register_ghcb()
     }
 
@@ -315,12 +316,12 @@ impl PerCpu {
         self.load_tss();
     }
 
-    pub fn shutdown(&mut self) -> Result<(), ()> {
+    pub fn shutdown(&mut self) -> Result<(), SvsmError> {
         if self.ghcb == ptr::null_mut() {
             return Ok(());
         }
 
-        unsafe { (*self.ghcb).shutdown().map_err(|_| ()) }
+        unsafe { (*self.ghcb).shutdown() }
     }
 
     pub fn set_reset_ip(&mut self, reset_ip: u64) {
@@ -331,9 +332,10 @@ impl PerCpu {
         unsafe { self.ghcb.as_mut().unwrap() }
     }
 
-    pub fn alloc_svsm_vmsa(&mut self) -> Result<(), ()> {
+    pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
         if let Some(_) = self.svsm_vmsa {
-            return Err(());
+            // FIXME: add a more explicit error variant for this condition
+            return Err(SvsmError::Mem);
         }
 
         let vaddr = allocate_new_vmsa(RMPFlags::VMPL1)?;
@@ -362,7 +364,7 @@ impl PerCpu {
         self.get_pgtable().unmap_4k(SVSM_PERCPU_VMSA_BASE);
     }
 
-    pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), ()> {
+    pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.apic_id == this_cpu().get_apic_id());
 
         let flags = PageTable::data_flags();
@@ -412,7 +414,7 @@ impl PerCpu {
         unsafe { (SVSM_PERCPU_VMSA_BASE as *mut VMSA).as_mut().unwrap() }
     }
 
-    pub fn alloc_guest_vmsa(&mut self) -> Result<(), ()> {
+    pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
         let vaddr = allocate_new_vmsa(RMPFlags::VMPL1)?;
         let paddr = virt_to_phys(vaddr);
 
@@ -428,7 +430,7 @@ impl PerCpu {
         self.get_pgtable().unmap_4k(SVSM_PERCPU_CAA_BASE);
     }
 
-    pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), ()> {
+    pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let paddr_aligned = page_align(paddr);
@@ -518,10 +520,15 @@ impl PerCpuVmsas {
             .any(|vmsa| vmsa.paddr == paddr)
     }
 
-    pub fn register(&self, paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Result<(), ()> {
+    pub fn register(
+        &self,
+        paddr: PhysAddr,
+        apic_id: u32,
+        guest_owned: bool,
+    ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
         if guard.iter().any(|vmsa| vmsa.paddr == paddr) {
-            return Err(());
+            return Err(SvsmError::InvalidAddress);
         }
 
         guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));

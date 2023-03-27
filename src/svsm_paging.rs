@@ -6,6 +6,7 @@
 
 use crate::heap_start;
 use svsm::cpu::percpu::this_cpu_mut;
+use svsm::error::SvsmError;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
 use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
@@ -76,7 +77,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo) {
     set_init_pgtable(pgtable);
 }
 
-pub fn invalidate_stage2() -> Result<(), ()> {
+pub fn invalidate_stage2() -> Result<(), SvsmError> {
     let pstart: PhysAddr = 0;
     let pend = pstart + (640 * 1024);
     let mut paddr = pstart;
@@ -88,7 +89,7 @@ pub fn invalidate_stage2() -> Result<(), ()> {
         let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, false, false).expect("PINVALIDATE failed");
+        pvalidate(vaddr, false, false)?;
 
         paddr += PAGE_SIZE;
     }

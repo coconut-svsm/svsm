@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use crate::cpu::percpu::this_cpu_mut;
+use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
@@ -173,7 +174,7 @@ const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
-unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Result<(VirtAddr, usize), ()> {
+unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Option<(VirtAddr, usize)> {
     let mut curr = start;
     let end = start - len;
 
@@ -199,11 +200,11 @@ unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Result<(Vir
         curr -= len;
 
         if *uuid == curr_uuid {
-            return Ok((curr, len));
+            return Some((curr, len));
         }
     }
 
-    Err(())
+    None
 }
 
 #[repr(C, packed)]
@@ -226,7 +227,7 @@ const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
-pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
+pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
     let pstart: PhysAddr = (4 * SIZE_1G) - PAGE_SIZE;
     let mut meta_data = SevFWMetaData::new();
 
@@ -237,7 +238,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
 
     let mut curr = vend - 32;
 
-    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
+    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID).map_err(|()| SvsmError::Firmware)?;
 
     curr -= mem::size_of::<Uuid>();
     let ptr = curr as *const u8;
@@ -246,7 +247,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
         let uuid = Uuid::from_mem(ptr);
 
         if uuid != meta_uuid {
-            return Err(());
+            return Err(SvsmError::Firmware);
         }
 
         curr -= mem::size_of::<u16>();
@@ -256,27 +257,29 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
         let len = full_len - mem::size_of::<u16>() + mem::size_of::<Uuid>();
 
         // First check if this is the SVSM itself instead of OVMF
-        let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).unwrap();
-        if let Ok(_v) = find_table(&svsm_info_uuid, curr, len) {
-            return Err(());
+        let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).map_err(|()| SvsmError::Firmware)?;
+        if let Some(_v) = find_table(&svsm_info_uuid, curr, len) {
+            return Err(SvsmError::Firmware);
         }
 
         // Search SEV_INFO_BLOCK_GUID
-        let sev_info_uuid = Uuid::from_str(SEV_INFO_BLOCK_GUID).unwrap();
+        let sev_info_uuid =
+            Uuid::from_str(SEV_INFO_BLOCK_GUID).map_err(|()| SvsmError::Firmware)?;
         let ret = find_table(&sev_info_uuid, curr, len);
-        if let Ok(tbl) = ret {
+        if let Some(tbl) = ret {
             let (base, len) = tbl;
             if len != mem::size_of::<u32>() {
-                return Err(());
+                return Err(SvsmError::Firmware);
             }
             let info_ptr = base as *const u32;
             meta_data.reset_ip = Some(info_ptr.read() as PhysAddr);
         }
 
         // Search and parse Meta Data
-        let sev_meta_uuid = Uuid::from_str(OVMF_SEV_META_DATA_GUID).unwrap();
+        let sev_meta_uuid =
+            Uuid::from_str(OVMF_SEV_META_DATA_GUID).map_err(|()| SvsmError::Firmware)?;
         let ret = find_table(&sev_meta_uuid, curr, len);
-        if let Ok(tbl) = ret {
+        if let Some(tbl) = ret {
             let (base, _len) = tbl;
             let off_ptr = base as *const u32;
             let offset = off_ptr.read_unaligned() as usize;
@@ -295,19 +298,19 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
                     SEV_META_DESC_TYPE_MEM => meta_data.add_valid_mem(base, len),
                     SEV_META_DESC_TYPE_SECRETS => {
                         if len != PAGE_SIZE {
-                            return Err(());
+                            return Err(SvsmError::Firmware);
                         }
                         meta_data.secrets_page = Some(base);
                     }
                     SEV_META_DESC_TYPE_CPUID => {
                         if len != PAGE_SIZE {
-                            return Err(());
+                            return Err(SvsmError::Firmware);
                         }
                         meta_data.cpuid_page = Some(base);
                     }
                     SEV_META_DESC_TYPE_CAA => {
                         if len != PAGE_SIZE {
-                            return Err(());
+                            return Err(SvsmError::Firmware);
                         }
                         meta_data.caa_page = Some(base);
                     }
@@ -320,7 +323,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, ()> {
     Ok(meta_data)
 }
 
-fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), ()> {
+fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
     let pstart: PhysAddr = region.base;
     let pend: PhysAddr = region.end();
 
@@ -335,14 +338,10 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), ()> {
         let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
         let vaddr = guard.virt_addr();
 
-        if pvalidate(vaddr, false, true).is_err() {
-            return Err(());
-        }
+        pvalidate(vaddr, false, true)?;
 
         // Make page accessible to VMPL1
-        if rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false).is_err() {
-            return Err(());
-        }
+        rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false)?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }
@@ -350,7 +349,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), ()> {
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), ()> {
+fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), SvsmError> {
     if regions.is_empty() {
         return Ok(());
     }
@@ -370,7 +369,7 @@ fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), ()> {
     validate_fw_memory_vec(next_vec)
 }
 
-pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), ()> {
+pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     // Initalize vector with regions from the FW
     let mut regions = fw_meta.valid_mem.clone();
 

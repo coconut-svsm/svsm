@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
 use core::arch::asm;
@@ -18,6 +19,12 @@ pub enum SevSnpError {
     // Not a real error value, but we want to keep track of this,
     // especially for protocol-specific messaging
     FAIL_UNCHANGED(u64),
+}
+
+impl From<SevSnpError> for SvsmError {
+    fn from(e: SevSnpError) -> Self {
+        Self::SevSnp(e)
+    }
 }
 
 impl SevSnpError {
@@ -43,7 +50,7 @@ impl fmt::Display for SevSnpError {
     }
 }
 
-fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SevSnpError> {
+fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
     for addr in (start..end).step_by(PAGE_SIZE) {
         pvalidate(addr, false, valid)?;
     }
@@ -51,7 +58,7 @@ fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(),
     Ok(())
 }
 
-pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SevSnpError> {
+pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
     let mut addr = start;
 
     while addr < end {
@@ -59,7 +66,7 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, true, valid).or_else(|err| match err {
-                SevSnpError::FAIL_SIZEMISMATCH(_) => {
+                SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
                     pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
                 }
                 _ => Err(err),
@@ -74,7 +81,7 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
     Ok(())
 }
 
-pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), SevSnpError> {
+pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), SvsmError> {
     let rax = vaddr;
     let rcx = huge_page as u64;
     let rdx = valid as u64;
@@ -99,9 +106,9 @@ pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), Se
 
     match ret {
         0 if changed => Ok(()),
-        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(0x10)),
-        1 => Err(SevSnpError::FAIL_INPUT(ret)),
-        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret)),
+        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(0x10).into()),
+        1 => Err(SevSnpError::FAIL_INPUT(ret).into()),
+        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
         _ => {
             log::error!("PVALIDATE: unexpected return value: {}", ret);
             unreachable!();
@@ -132,7 +139,7 @@ bitflags::bitflags! {
     }
 }
 
-pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), SevSnpError> {
+pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), SvsmError> {
     let rcx: usize = if huge { 1 } else { 0 };
     let rax: u64 = addr as u64;
     let rdx: u64 = flags.bits();
@@ -156,14 +163,14 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Sev
 
     if ex != 0 {
         // Report exceptions just as FAIL_INPUT
-        return Err(SevSnpError::FAIL_INPUT(1));
+        return Err(SevSnpError::FAIL_INPUT(1).into());
     }
 
     match ret {
         0 => Ok(()),
-        1 => Err(SevSnpError::FAIL_INPUT(ret)),
-        2 => Err(SevSnpError::FAIL_PERMISSION(ret)),
-        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret)),
+        1 => Err(SevSnpError::FAIL_INPUT(ret).into()),
+        2 => Err(SevSnpError::FAIL_PERMISSION(ret).into()),
+        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
         _ => {
             log::error!("RMPADJUST: Unexpected return value: {:#x}", ret);
             unreachable!();
@@ -171,22 +178,22 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Sev
     }
 }
 
-pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SevSnpError> {
+pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
     rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::NONE, huge)?;
     rmp_adjust(vaddr, RMPFlags::VMPL2 | RMPFlags::NONE, huge)?;
     rmp_adjust(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)
 }
 
-pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SevSnpError> {
+pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
     rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)
 }
 
-pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SevSnpError> {
+pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
     rmp_revoke_guest_access(vaddr, false)?;
     rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)
 }
 
-pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SevSnpError> {
+pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
     rmp_revoke_guest_access(vaddr, false)?;
     rmp_grant_guest_access(vaddr, false)
 }

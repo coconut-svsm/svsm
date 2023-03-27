@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::utils::{rmp_adjust, RMPFlags};
+use crate::error::SvsmError;
 use crate::mm::alloc::{allocate_pages, free_page};
 use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::{is_aligned, zero_mem_region};
@@ -186,7 +187,7 @@ impl VMSA {
     }
 }
 
-pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, ()> {
+pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
     assert!(vmpl.bits() < (VMPL_MAX as u64));
 
     // Make sure the VMSA page is not 2M aligned. Some hardware generations
@@ -202,9 +203,9 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, ()> {
 
     zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
 
-    if rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false).is_err() {
+    if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);
-        return Err(());
+        return Err(e.into());
     }
     Ok(vmsa_page)
 }

@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_pages, get_order};
 use crate::mm::virt_to_phys;
@@ -25,7 +26,7 @@ pub fn init_valid_bitmap_ptr(pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) 
     vb_ref.set_bitmap(bitmap);
 }
 
-pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), ()> {
+pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), SvsmError> {
     let order: usize = bitmap_alloc_order(pbase, pend);
     let bitmap_addr = allocate_pages(order)?;
 
@@ -37,7 +38,7 @@ pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), ()
     Ok(())
 }
 
-pub fn migrate_valid_bitmap() -> Result<(), ()> {
+pub fn migrate_valid_bitmap() -> Result<(), SvsmError> {
     let order: usize = VALID_BITMAP.lock().alloc_order();
     let bitmap_addr = allocate_pages(order)?;
 

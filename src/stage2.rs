@@ -17,6 +17,7 @@ use log;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
+use svsm::error::SvsmError;
 use svsm::fw_cfg::{FwCfg, MemoryRegion};
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -104,7 +105,7 @@ fn setup_env() {
     sev_status_verify();
 }
 
-fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
+fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), SvsmError> {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -230,7 +231,9 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
     init_valid_bitmap_alloc(r.start.try_into().unwrap(), r.end.try_into().unwrap())
         .expect("Failed to allocate valid-bitmap");
 
-    map_kernel_region(kernel_virt_base, &r).expect("Error mapping kernel region");
+    if let Err(e) = map_kernel_region(kernel_virt_base, &r) {
+        panic!("Error mapping kernel region: {:#?}", e);
+    }
     validate_kernel_region(kernel_virt_base, &r).expect("Validating kernel region failed");
 
     let mem_info = memory_info();

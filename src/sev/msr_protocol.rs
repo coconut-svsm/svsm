@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
+use crate::error::SvsmError;
 use crate::types::{PhysAddr, VirtAddr};
 use crate::utils::halt;
 
@@ -17,6 +18,12 @@ pub enum GhcbMsrError {
     // The data section of the response did not match our request,
     // or it was malformed altogether.
     DataMismatch,
+}
+
+impl From<GhcbMsrError> for SvsmError {
+    fn from(e: GhcbMsrError) -> Self {
+        Self::GhcbMsr(e)
+    }
 }
 
 #[non_exhaustive]

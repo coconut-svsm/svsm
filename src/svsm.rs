@@ -24,6 +24,7 @@ use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
+use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -33,7 +34,6 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::ghcb::GhcbError;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -118,7 +118,7 @@ static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::u
 
 pub static mut PERCPU: PerCpu = PerCpu::new();
 
-fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), ()> {
+fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
     let start = guard.virt_addr();
     let end = start + PAGE_SIZE;
@@ -137,7 +137,7 @@ fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
-fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), ()> {
+fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
     let start = guard.virt_addr();
 
@@ -174,7 +174,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
     Ok(())
 }
 
-fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), ()> {
+fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create(fw_addr, 0, false)?;
     let vaddr = guard.virt_addr();
 
@@ -183,7 +183,7 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), ()> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), ()> {
+pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     let cpuid_page = match fw_meta.cpuid_page {
         Some(addr) => addr,
         None => panic!("FW does not specify CPUID_PAGE location"),
@@ -206,7 +206,7 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     zero_caa_page(caa_page)
 }
 
-fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()> {
+fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     let caa = fw_meta.caa_page.unwrap();
     let cpu = this_cpu_mut();
 
@@ -217,7 +217,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), ()> {
     Ok(())
 }
 
-fn launch_fw() -> Result<(), GhcbError> {
+fn launch_fw() -> Result<(), SvsmError> {
     let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
     let vmsa = this_cpu_mut().guest_vmsa();
 
@@ -234,7 +234,7 @@ fn launch_fw() -> Result<(), GhcbError> {
     Ok(())
 }
 
-fn validate_flash() -> Result<(), ()> {
+fn validate_flash() -> Result<(), SvsmError> {
     let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     for (i, region) in fw_cfg.iter_flash_regions().enumerate() {
@@ -250,9 +250,9 @@ fn validate_flash() -> Result<(), ()> {
         for paddr in (pstart..pend).step_by(PAGE_SIZE) {
             let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
             let vaddr = guard.virt_addr();
-            if let Err(_) = rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
+            if let Err(e) = rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
-                return Err(());
+                return Err(e.into());
             }
         }
     }
@@ -397,15 +397,22 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = parse_fw_meta_data().expect("Failed to parse FW SEV meta-data");
+    let fw_meta = parse_fw_meta_data()
+        .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
 
     print_fw_meta(&fw_meta);
 
-    validate_fw_memory(&fw_meta).expect("Failed to validate firmware memory");
+    if let Err(e) = validate_fw_memory(&fw_meta) {
+        panic!("Failed to validate firmware memory: {:#?}", e);
+    }
 
-    copy_tables_to_fw(&fw_meta).expect("Failed to copy firmware tables");
+    if let Err(e) = copy_tables_to_fw(&fw_meta) {
+        panic!("Failed to copy firmware tables: {:#?}", e);
+    }
 
-    validate_flash().expect("Failed to validate flash memory");
+    if let Err(e) = validate_flash() {
+        panic!("Failed to validate flash memory: {:#?}", e);
+    }
 
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
