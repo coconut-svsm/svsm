@@ -333,7 +333,7 @@ impl PerCpu {
     }
 
     pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
-        if let Some(_) = self.svsm_vmsa {
+        if self.svsm_vmsa.is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
         }
