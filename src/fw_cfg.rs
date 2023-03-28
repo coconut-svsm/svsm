@@ -179,10 +179,16 @@ impl<'a> FwCfg<'a> {
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
-        match self.find_svsm_region() {
-            Ok(region) => Ok(region),
-            Err(_) => self.find_kernel_region_e820(),
+        let kernel_region = self
+            .find_svsm_region()
+            .or_else(|_| self.find_kernel_region_e820())?;
+
+        // Make sure that the kernel region doesn't overlap with the loader.
+        if kernel_region.start < 640 * 1024 {
+            return Err(());
         }
+
+        Ok(kernel_region)
     }
 
     // This needs to be &mut self to prevent iterator invalidation, where the caller
