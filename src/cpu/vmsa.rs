@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::sev::vmsa::{VMSASegment, VMSA};
-use crate::types::{SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
+use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
 
 use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
@@ -129,6 +129,6 @@ pub fn init_guest_vmsa(vmsa: *mut VMSA, rip: u64) {
     v.x87_ftw = 0x5555;
     v.x87_fcw = 0x0040;
 
-    v.vmpl = 1;
+    v.vmpl = GUEST_VMPL as u8;
     v.sev_features = read_msr(0xc0010131) >> 2;
 }
