@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::sev::vmsa::VMPL_MAX;
 use crate::types::VirtAddr;
 
 #[derive(Copy, Clone)]
@@ -14,10 +15,7 @@ pub struct SecretsPage {
     pub fms: u32,
     reserved_00c: u32,
     pub gosvw: [u8; 16],
-    pub vmpck0: [u8; 32],
-    pub vmpck1: [u8; 32],
-    pub vmpck2: [u8; 32],
-    pub vmpck3: [u8; 32],
+    pub vmpck: [[u8; 32]; VMPL_MAX],
     reserved_0a0: [u8; 96],
     pub vmsa_tweak_bmp: [u64; 8],
     pub svsm_base: u64,
