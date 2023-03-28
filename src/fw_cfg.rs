@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+use crate::mm::pagetable::max_phys_addr;
+
 use super::io::IOPort;
 use super::string::FixedString;
 use alloc::vec::Vec;
@@ -142,10 +144,12 @@ impl<'a> FwCfg<'a> {
     fn read_memory_region(&self) -> MemoryRegion {
         let start: u64 = self.read_le();
         let size: u64 = self.read_le();
-        MemoryRegion {
-            start,
-            end: start.saturating_add(size),
-        }
+        let end = start.saturating_add(size);
+
+        assert!(start <= max_phys_addr(), "{start:#018x} is out of range");
+        assert!(end <= max_phys_addr(), "{end:#018x} is out of range");
+
+        MemoryRegion { start, end }
     }
 
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
