@@ -49,6 +49,14 @@ pub struct MemoryRegion {
     pub end: u64,
 }
 
+impl MemoryRegion {
+    /// Returns `true` if the region overlaps with another region with given
+    /// start and end.
+    pub fn overlaps(&self, start: u64, end: u64) -> bool {
+        self.start < end && start < self.end
+    }
+}
+
 impl<'a> FwCfg<'a> {
     pub fn new(driver: &'a dyn IOPort) -> Self {
         FwCfg { driver }

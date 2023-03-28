@@ -6,7 +6,9 @@
 
 #[derive(Copy, Clone)]
 pub struct KernelLaunchInfo {
+    /// Start of the kernel in physical memory.
     pub kernel_start: u64,
+    /// Exclusive end of the kernel in physical memory.
     pub kernel_end: u64,
     pub virt_base: u64,
     pub cpuid_page: u64,
