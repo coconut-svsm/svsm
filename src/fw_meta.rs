@@ -340,8 +340,8 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
 
         pvalidate(vaddr, false, true)?;
 
-        // Make page accessible to VMPL1
-        rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false)?;
+        // Make page accessible to guest VMPL
+        rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false)?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }

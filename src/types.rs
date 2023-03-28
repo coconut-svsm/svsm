@@ -19,6 +19,8 @@ pub const SVSM_CS_FLAGS: u16 = 0x29b;
 pub const SVSM_DS_FLAGS: u16 = 0xc93;
 pub const SVSM_TR_FLAGS: u16 = 0x89;
 
+pub const GUEST_VMPL: usize = 1;
+
 pub type PhysAddr = usize;
 pub type VirtAddr = usize;
 

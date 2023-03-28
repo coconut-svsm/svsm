@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::error::SvsmError;
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::is_aligned;
 use core::arch::asm;
 use core::fmt;
@@ -128,6 +128,7 @@ bitflags::bitflags! {
         const VMPL1 = 1;
         const VMPL2 = 2;
         const VMPL3 = 3;
+        const GUEST_VMPL = GUEST_VMPL as u64;
         const READ = 1u64 << 8;
         const WRITE = 1u64 << 9;
         const X_USER = 1u64 << 10;
@@ -179,18 +180,20 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Svs
 }
 
 pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
-    rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::NONE, huge)?;
-    rmp_adjust(vaddr, RMPFlags::VMPL2 | RMPFlags::NONE, huge)?;
-    rmp_adjust(vaddr, RMPFlags::VMPL3 | RMPFlags::NONE, huge)
+    for vmpl in RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits() {
+        let vmpl = RMPFlags::from_bits_truncate(vmpl);
+        rmp_adjust(vaddr, vmpl | RMPFlags::NONE, huge)?;
+    }
+    Ok(())
 }
 
 pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
-    rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, huge)
+    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, huge)
 }
 
 pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
     rmp_revoke_guest_access(vaddr, false)?;
-    rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, false)
+    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::VMSA, false)
 }
 
 pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {

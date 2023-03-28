@@ -338,7 +338,7 @@ impl PerCpu {
             return Err(SvsmError::Mem);
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::VMPL1)?;
+        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
         self.svsm_vmsa = Some(VmsaRef::new(vaddr, paddr, false));
@@ -415,7 +415,7 @@ impl PerCpu {
     }
 
     pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
-        let vaddr = allocate_new_vmsa(RMPFlags::VMPL1)?;
+        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
         let vmsa = VMSA::from_virt_addr(vaddr);

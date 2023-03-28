@@ -38,7 +38,7 @@ use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::types::{PhysAddr, VirtAddr, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use svsm_paging::{init_page_table, invalidate_stage2};
 
@@ -157,8 +157,10 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         // Copy Table
         let mut fw_sp = target.as_mut();
 
-        // Zero VMCK0 key
-        fw_sp.vmpck[0].fill(0);
+        // Zero VMCK key for VMPLs with more privileges than the guest
+        for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
+            vmpck.fill(0);
+        }
 
         let &li = &*LAUNCH_INFO;
 
@@ -166,7 +168,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         fw_sp.svsm_size = li.kernel_end - li.kernel_start;
         fw_sp.svsm_caa = caa_addr as u64;
         fw_sp.svsm_max_version = 1;
-        fw_sp.svsm_guest_vmpl = 1;
+        fw_sp.svsm_guest_vmpl = GUEST_VMPL as u8;
     }
 
     Ok(())
@@ -227,7 +229,7 @@ fn launch_fw() -> Result<(), SvsmError> {
     log::info!("Launching Firmware");
     this_cpu_mut()
         .ghcb()
-        .ap_create(vmsa_pa, 0, 1, sev_features)?;
+        .ap_create(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
 
     Ok(())
 }
@@ -248,7 +250,7 @@ fn validate_flash() -> Result<(), SvsmError> {
         for paddr in (pstart..pend).step_by(PAGE_SIZE) {
             let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
             let vaddr = guard.virt_addr();
-            if let Err(e) = rmp_adjust(vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, false) {
+            if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(e.into());
             }

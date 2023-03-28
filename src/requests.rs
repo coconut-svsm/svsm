@@ -14,7 +14,7 @@ use crate::sev::utils::{
     rmp_set_guest_vmsa, RMPFlags, SevSnpError,
 };
 use crate::sev::vmsa::{GuestVMExit, VMSA};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PhysAddr, VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::{crosses_page, halt, is_aligned, page_align, page_offset};
 
 #[derive(Debug, Clone, Copy)]
@@ -151,7 +151,7 @@ fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), SvsmReqError> {
 
 // VMSA validity checks according to SVSM spec
 fn check_vmsa(new: &VMSA, sev_features: u64, svme_mask: u64) -> bool {
-    new.vmpl == RMPFlags::VMPL1.bits() as u8
+    new.vmpl == RMPFlags::GUEST_VMPL.bits() as u8
         && new.efer & svme_mask == svme_mask
         && new.sev_features == sev_features
 }
@@ -546,8 +546,8 @@ pub fn request_loop() {
         if update_mappings().is_ok() {
             this_cpu_mut()
                 .ghcb()
-                .run_vmpl(1)
-                .expect("Failed to run VMPL 1");
+                .run_vmpl(GUEST_VMPL as u64)
+                .expect("Failed to run guest VMPL");
         }
     }
 }
