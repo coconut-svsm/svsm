@@ -136,7 +136,7 @@ impl<'a> FwCfg<'a> {
         let size: u64 = self.read_le();
         MemoryRegion {
             start,
-            end: start + size,
+            end: start.saturating_add(size),
         }
     }
 
@@ -167,7 +167,8 @@ impl<'a> FwCfg<'a> {
             .copied()
             .ok_or(())?;
 
-        let start = (kernel_region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
+        let start =
+            (kernel_region.end.saturating_sub(KERNEL_REGION_SIZE)) & KERNEL_REGION_SIZE_MASK;
 
         if start < kernel_region.start {
             return Err(());
