@@ -158,9 +158,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         let mut fw_sp = target.as_mut();
 
         // Zero VMCK0 key
-        for i in 0..32 {
-            fw_sp.vmpck0[i] = 0;
-        }
+        fw_sp.vmpck0.fill(0);
 
         let &li = &*LAUNCH_INFO;
 
