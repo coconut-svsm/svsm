@@ -317,7 +317,7 @@ impl PerCpu {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        if self.ghcb == ptr::null_mut() {
+        if self.ghcb.is_null() {
             return Ok(());
         }
 
@@ -333,7 +333,7 @@ impl PerCpu {
     }
 
     pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
-        if let Some(_) = self.svsm_vmsa {
+        if self.svsm_vmsa.is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
         }
@@ -445,12 +445,8 @@ impl PerCpu {
 
     pub fn caa_addr(&self) -> Option<VirtAddr> {
         let locked = self.guest_vmsa.lock();
-
-        if locked.caa_phys().is_none() {
-            return None;
-        }
-
-        let offset = page_offset(locked.caa_phys().unwrap());
+        let caa_phys = locked.caa_phys()?;
+        let offset = page_offset(caa_phys);
 
         Some((SVSM_PERCPU_CAA_BASE + offset) as VirtAddr)
     }

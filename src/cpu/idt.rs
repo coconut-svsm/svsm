@@ -142,11 +142,9 @@ pub fn idt_base_limit() -> (u64, u32) {
 
 fn init_idt(idt: &mut Idt) {
     // Set IDT handlers
-    for i in 0..IDT_ENTRIES {
-        unsafe {
-            let handler = ((&idt_handler_array as *const u8) as VirtAddr) + (32 * i);
-            idt[i] = IdtEntry::entry(handler);
-        }
+    for (i, entry) in idt.iter_mut().enumerate() {
+        let handler = unsafe { ((&idt_handler_array as *const u8) as VirtAddr) + (32 * i) };
+        *entry = IdtEntry::entry(handler);
     }
 }
 
