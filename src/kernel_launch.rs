@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct KernelLaunchInfo {
     /// Start of the kernel in physical memory.
     pub kernel_start: u64,
