@@ -9,6 +9,9 @@
 #![feature(const_mut_refs)]
 pub mod svsm_paging;
 
+extern crate alloc;
+
+use alloc::vec::Vec;
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use core::arch::{asm, global_asm};
@@ -237,7 +240,35 @@ fn launch_fw() -> Result<(), SvsmError> {
 fn validate_flash() -> Result<(), SvsmError> {
     let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
-    for (i, region) in fw_cfg.iter_flash_regions().enumerate() {
+    let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+
+    // Sanity-check flash regions.
+    for region in flash_regions.iter() {
+        // Make sure that the regions are between 3GiB and 4GiB.
+        if !region.overlaps(3 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024) {
+            panic!("flash region in unexpected region");
+        }
+
+        // Make sure that no regions overlap with the kernel.
+        if region.overlaps(LAUNCH_INFO.kernel_start, LAUNCH_INFO.kernel_end) {
+            panic!("flash region overlaps with kernel");
+        }
+    }
+    // Make sure that regions don't overlap.
+    for (i, outer) in flash_regions.iter().enumerate() {
+        for inner in flash_regions[..i].iter() {
+            if outer.overlaps(inner.start, inner.end) {
+                panic!("flash regions overlap");
+            }
+        }
+    }
+    // Make sure that one regions ends at 4GiB.
+    let one_region_ends_at_4gib = flash_regions
+        .iter()
+        .any(|region| region.end == 4 * 1024 * 1024 * 1024);
+    assert!(one_region_ends_at_4gib);
+
+    for (i, region) in flash_regions.into_iter().enumerate() {
         let pstart = region.start as PhysAddr;
         let pend = region.end as PhysAddr;
         log::info!(

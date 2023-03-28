@@ -17,10 +17,11 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::is_aligned;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
-use core::ptr;
+use core::{cmp, ptr};
 
 const ENTRY_COUNT: usize = 512;
 static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
+static MAX_PHYS_ADDR: ImmutAfterInitCell<u64> = ImmutAfterInitCell::uninit();
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
@@ -52,10 +53,38 @@ fn init_encrypt_mask() {
     let c_bit = res.ebx & 0x3f;
     let mask = 1u64 << c_bit;
     unsafe { ENCRYPT_MASK.reinit(&(mask as usize)) };
+
+    // Find physical address size.
+    let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
+    let guest_phys_addr_size = (res.eax >> 16) & 0xff;
+    let host_phys_addr_size = res.eax & 0xff;
+    let phys_addr_size = if guest_phys_addr_size == 0 {
+        // When [GuestPhysAddrSize] is zero, refer to the PhysAddrSize field
+        // for the maximum guest physical address size.
+        // - APM3, E.4.7 Function 8000_0008h - Processor Capacity Parameters and Extended Feature Identification
+        host_phys_addr_size
+    } else {
+        guest_phys_addr_size
+    };
+
+    // If the C-bit is a physical address bit however, the guest physical
+    // address space is effectively reduced by 1 bit.
+    // - APM2, 15.34.6 Page Table Support
+    let effective_phys_addr_size = cmp::min(c_bit, phys_addr_size);
+
+    let max_addr = 1 << effective_phys_addr_size;
+    unsafe {
+        MAX_PHYS_ADDR.reinit(&max_addr);
+    }
 }
 
 fn encrypt_mask() -> usize {
     *ENCRYPT_MASK
+}
+
+/// Returns the exclusive end of the physical address space.
+pub fn max_phys_addr() -> u64 {
+    *MAX_PHYS_ADDR
 }
 
 fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {

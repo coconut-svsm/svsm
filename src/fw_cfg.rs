@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+use crate::mm::pagetable::max_phys_addr;
+
 use super::io::IOPort;
 use super::string::FixedString;
 use alloc::vec::Vec;
@@ -47,6 +49,14 @@ impl FwCfgFile {
 pub struct MemoryRegion {
     pub start: u64,
     pub end: u64,
+}
+
+impl MemoryRegion {
+    /// Returns `true` if the region overlaps with another region with given
+    /// start and end.
+    pub fn overlaps(&self, start: u64, end: u64) -> bool {
+        self.start < end && start < self.end
+    }
 }
 
 impl<'a> FwCfg<'a> {
@@ -134,10 +144,12 @@ impl<'a> FwCfg<'a> {
     fn read_memory_region(&self) -> MemoryRegion {
         let start: u64 = self.read_le();
         let size: u64 = self.read_le();
-        MemoryRegion {
-            start,
-            end: start + size,
-        }
+        let end = start.saturating_add(size);
+
+        assert!(start <= max_phys_addr(), "{start:#018x} is out of range");
+        assert!(end <= max_phys_addr(), "{end:#018x} is out of range");
+
+        MemoryRegion { start, end }
     }
 
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
@@ -167,7 +179,8 @@ impl<'a> FwCfg<'a> {
             .copied()
             .ok_or(())?;
 
-        let start = (kernel_region.end - KERNEL_REGION_SIZE) & KERNEL_REGION_SIZE_MASK;
+        let start =
+            (kernel_region.end.saturating_sub(KERNEL_REGION_SIZE)) & KERNEL_REGION_SIZE_MASK;
 
         if start < kernel_region.start {
             return Err(());
@@ -179,10 +192,16 @@ impl<'a> FwCfg<'a> {
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
-        match self.find_svsm_region() {
-            Ok(region) => Ok(region),
-            Err(_) => self.find_kernel_region_e820(),
+        let kernel_region = self
+            .find_svsm_region()
+            .or_else(|_| self.find_kernel_region_e820())?;
+
+        // Make sure that the kernel region doesn't overlap with the loader.
+        if kernel_region.start < 640 * 1024 {
+            return Err(());
         }
+
+        Ok(kernel_region)
     }
 
     // This needs to be &mut self to prevent iterator invalidation, where the caller
