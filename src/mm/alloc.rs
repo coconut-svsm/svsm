@@ -1447,6 +1447,51 @@ fn test_page_alloc_oom() {
     destroy_test_root_mem(test_mem_lock);
 }
 
+#[test]
+fn test_page_file() {
+    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let mut root_mem = ROOT_MEM.lock();
+
+    // Allocate page and check ref-count
+    let vaddr = root_mem.allocate_file_page().unwrap();
+    let info = root_mem.get_page_info(vaddr).unwrap();
+
+    match info {
+        Page::FilePage(fi) => assert!(fi.ref_count == 1),
+        _ => assert!(false),
+    }
+
+    // Get another reference and check ref-count
+    root_mem.get_file_page(vaddr).expect("Not a file page");
+    let info = root_mem.get_page_info(vaddr).unwrap();
+
+    match info {
+        Page::FilePage(fi) => assert!(fi.ref_count == 2),
+        _ => assert!(false),
+    }
+
+    // Drop reference and check ref-count
+    root_mem.put_file_page(vaddr).expect("Not a file page");
+    let info = root_mem.get_page_info(vaddr).unwrap();
+
+    match info {
+        Page::FilePage(fi) => assert!(fi.ref_count == 1),
+        _ => assert!(false),
+    }
+
+    // Drop last reference and check if page is released
+    root_mem.put_file_page(vaddr).expect("Not a file page");
+    let info = root_mem.get_page_info(vaddr).unwrap();
+
+    match info {
+        Page::Free(_) => assert!(true),
+        _ => assert!(false),
+    }
+
+    drop(root_mem);
+    destroy_test_root_mem(test_mem_lock);
+}
+
 #[cfg(test)]
 const TEST_SLAB_SIZES: [usize; 7] = [32, 64, 128, 256, 512, 1024, 2048];
 
