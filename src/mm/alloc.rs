@@ -50,6 +50,10 @@ impl PageStorageType {
     fn encode_slab(slab: VirtAddr) -> Self {
         PageStorageType(PAGE_TYPE_SLABPAGE | (slab as u64) & PAGE_TYPE_SLABPAGE_MASK)
     }
+
+    fn encode_refcount(&self, refcount: u64) -> PageStorageType {
+        PageStorageType(self.0 | refcount << PAGE_TYPE_SHIFT)
+    }
 }
 
 const PAGE_TYPE_SHIFT: u64 = 4;
@@ -68,6 +72,9 @@ const PAGE_TYPE_SLABPAGE: u64 = 2;
 const PAGE_TYPE_SLABPAGE_MASK: u64 = !PAGE_TYPE_MASK;
 
 const PAGE_TYPE_COMPOUND: u64 = 3;
+
+// File pages used for file and task data
+const PAGE_TYPE_FILE: u64 = 4;
 
 const PAGE_TYPE_RESERVED: u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
 
@@ -151,11 +158,33 @@ impl ReservedInfo {
     }
 }
 
+struct FileInfo {
+    /// Reference count
+    ref_count: u64,
+}
+
+impl FileInfo {
+    pub const fn new(ref_count: u64) -> Self {
+        FileInfo { ref_count }
+    }
+
+    pub fn encode(&self) -> PageStorageType {
+        PageStorageType::new(PAGE_TYPE_FILE).encode_refcount(self.ref_count)
+    }
+
+    pub fn decode(mem: PageStorageType) -> Self {
+        FileInfo {
+            ref_count: (mem.0 >> PAGE_TYPE_SHIFT),
+        }
+    }
+}
+
 enum Page {
     Free(FreeInfo),
     Allocated(AllocatedInfo),
     SlabPage(SlabPageInfo),
     CompoundPage(CompoundInfo),
+    FilePage(FileInfo),
     Reserved(ReservedInfo),
 }
 
@@ -166,6 +195,7 @@ impl Page {
             Page::Allocated(ai) => ai.encode(),
             Page::SlabPage(si) => si.encode(),
             Page::CompoundPage(ci) => ci.encode(),
+            Page::FilePage(fi) => fi.encode(),
             Page::Reserved(ri) => ri.encode(),
         }
     }
@@ -181,6 +211,8 @@ impl Page {
             Page::SlabPage(SlabPageInfo::decode(mem))
         } else if page_type == PAGE_TYPE_COMPOUND {
             Page::CompoundPage(CompoundInfo::decode(mem))
+        } else if page_type == PAGE_TYPE_FILE {
+            Page::FilePage(FileInfo::decode(mem))
         } else if page_type == PAGE_TYPE_RESERVED {
             Page::Reserved(ReservedInfo::decode(mem))
         } else {
@@ -407,6 +439,52 @@ impl MemoryRegion {
         }
     }
 
+    pub fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
+        self.refill_page_list(0)?;
+        if let Ok(pfn) = self.get_next_page(0) {
+            let pg = Page::FilePage(FileInfo::new(1));
+            self.write_page_info(pfn, pg);
+            let vaddr = self.start_virt + (pfn * PAGE_SIZE);
+            Ok(vaddr)
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
+
+    pub fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+        let page = self.get_page_info(vaddr)?;
+
+        match page {
+            Page::FilePage(mut fi) => {
+                let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
+                assert!(fi.ref_count > 0);
+                fi.ref_count += 1;
+                self.write_page_info(pfn, Page::FilePage(fi));
+                Ok(())
+            }
+            _ => Err(SvsmError::Mem),
+        }
+    }
+
+    pub fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+        let page = self.get_page_info(vaddr)?;
+
+        match page {
+            Page::FilePage(mut fi) => {
+                let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
+                assert!(fi.ref_count > 0);
+                fi.ref_count -= 1;
+                if fi.ref_count > 0 {
+                    self.write_page_info(pfn, Page::FilePage(fi));
+                } else {
+                    self.free_page(vaddr)
+                }
+                Ok(())
+            }
+            _ => Err(SvsmError::Mem),
+        }
+    }
+
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
         if order >= MAX_ORDER - 1 {
             return Err(SvsmError::Mem);
@@ -562,6 +640,9 @@ impl MemoryRegion {
                 let start_pfn = pfn & !mask;
                 self.free_page_order(start_pfn, ci.order);
             }
+            Page::FilePage(_) => {
+                self.free_page_order(pfn, 0);
+            }
             _ => {
                 panic!("Unexpected page type in MemoryRegion::free_page()");
             }
@@ -639,6 +720,18 @@ pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError>
 
 pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_zeroed_page()
+}
+
+pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
+    ROOT_MEM.lock().allocate_file_page()
+}
+
+pub fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
+    ROOT_MEM.lock().get_file_page(vaddr)
+}
+
+pub fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
+    ROOT_MEM.lock().put_file_page(vaddr)
 }
 
 pub fn free_page(vaddr: VirtAddr) {
