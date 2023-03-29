@@ -1180,7 +1180,7 @@ use crate::locking::LockGuard;
 #[cfg(test)]
 // Allocate a memory region from the standard Rust allocator and pass it to
 // root_mem_init().
-fn setup_test_root_mem(size: usize) -> LockGuard<'static, SvsmError> {
+fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
     extern crate alloc;
     use alloc::alloc::{alloc, handle_alloc_error};
 
@@ -1202,7 +1202,7 @@ fn setup_test_root_mem(size: usize) -> LockGuard<'static, SvsmError> {
 
 #[cfg(test)]
 // Undo the setup done from setup_test_root_mem().
-fn destroy_test_root_mem(lock: LockGuard<'static, SvsmError>) {
+fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
     extern crate alloc;
     use alloc::alloc::dealloc;
 
