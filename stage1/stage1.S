@@ -69,5 +69,10 @@ kernel_elf:
 	.align 4
 kernel_elf_end:
 
+kernel_fs_bin:
+	.incbin "stage1/svsm-fs.bin"
+	.align 4
+kernel_fs_bin_end:
+
 stage2_size:
 	.long	stage2_bin_end - stage2_bin
