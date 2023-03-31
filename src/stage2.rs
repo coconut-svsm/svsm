@@ -136,11 +136,24 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
     valid_bitmap_set_valid_range(paddr, paddr.offset(len));
 }
 
+// Launch info from stage1, usually at the bottom of the stack
+// The layout has to match the order in which the parts are pushed to the stack
+// in stage1/stage1.S
+#[repr(C, packed)]
+pub struct Stage1LaunchInfo {
+    kernel_elf_start: u32,
+    kernel_elf_end: u32,
+    kernel_fs_start: u32,
+    kernel_fs_end: u32,
+}
+
 #[no_mangle]
-pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAddr) {
+pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     setup_env();
 
-    // Find a suitable physical memory region to allocate to the SVSM kernel.
+    let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
+    let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
+
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
     let r = fw_cfg
         .find_kernel_region()
@@ -256,6 +269,8 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         heap_area_virt_start: u64::from(heap_area_virt_start),
         kernel_elf_stage2_virt_start: u64::from(kernel_elf_start),
         kernel_elf_stage2_virt_end: u64::from(kernel_elf_end),
+        kernel_fs_start: u64::from(launch_info.kernel_fs_start),
+        kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
     };
