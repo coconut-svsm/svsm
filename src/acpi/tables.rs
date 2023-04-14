@@ -27,7 +27,7 @@ pub struct RSDPDesc {
 impl RSDPDesc {
     fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
         let mut buf = mem::MaybeUninit::<Self>::uninit();
-        let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
+        let file = fw_cfg.file_selector("etc/acpi/rsdp").map_err(|_| ())?;
         let size = file.size() as usize;
 
         if size != mem::size_of::<Self>() {
@@ -177,7 +177,7 @@ struct ACPITableBuffer {
 
 impl ACPITableBuffer {
     pub fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
-        let file = fw_cfg.file_selector("etc/acpi/tables")?;
+        let file = fw_cfg.file_selector("etc/acpi/tables").map_err(|_| ())?;
         let size = file.size() as usize;
 
         let layout = Layout::array::<u8>(size).map_err(|_| ())?;
