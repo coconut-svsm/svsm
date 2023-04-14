@@ -25,37 +25,23 @@ pub struct RSDPDesc {
 }
 
 impl RSDPDesc {
-    pub const fn new() -> Self {
-        RSDPDesc {
-            sig: [0; 8],
-            chksum: 0,
-            oem_id: [0; 6],
-            rev: 0,
-            rsdt_addr: 0,
-        }
-    }
-
-    pub fn load(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
+    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
+        let mut buf = mem::MaybeUninit::<Self>::uninit();
         let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
         let size = file.size() as usize;
 
-        if file.size() as usize != mem::size_of::<RSDPDesc>() {
+        if size != mem::size_of::<Self>() {
             return Err(());
         }
 
         fw_cfg.select(file.selector());
-
-        unsafe {
-            let ptr = ptr::NonNull::new(self).unwrap();
-            let buf_ptr = ptr.as_ptr().cast::<u8>();
-
-            for i in 0..size {
-                let byte: u8 = fw_cfg.read_le();
-                buf_ptr.add(i).write(byte);
-            }
+        let ptr = buf.as_mut_ptr().cast::<u8>();
+        for i in 0..size {
+            let byte: u8 = fw_cfg.read_le();
+            unsafe { ptr.add(i).write(byte) };
         }
 
-        Ok(())
+        unsafe { Ok(buf.assume_init()) }
     }
 }
 
@@ -199,9 +185,7 @@ impl ACPITableBuffer {
     }
 
     fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
-        let mut desc: RSDPDesc = RSDPDesc::new();
-
-        desc.load(fw_cfg)?;
+        let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
         let mut rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
         let len = rsdt.content_length();
