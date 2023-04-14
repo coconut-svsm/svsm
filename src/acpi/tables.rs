@@ -146,7 +146,7 @@ impl ACPITable {
         }
     }
 
-    pub fn content(&mut self) -> *mut u8 {
+    pub fn content(&self) -> *const u8 {
         let offset = mem::size_of::<RawACPITableHeader>();
 
         unsafe { self.ptr.as_ptr().add(offset) }
@@ -187,7 +187,7 @@ impl ACPITableBuffer {
     fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
         let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
-        let mut rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
+        let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
         let len = rsdt.content_length();
 
         if len == 0 {
@@ -319,7 +319,7 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, ()> {
 
     buffer.load_from_fwcfg(fw_cfg)?;
 
-    let mut apic_table = buffer
+    let apic_table = buffer
         .acp_table_by_sig("APIC")
         .expect("MADT ACPI table not found");
     let len = apic_table.content_length();
