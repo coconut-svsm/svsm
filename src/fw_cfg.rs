@@ -103,11 +103,10 @@ impl<'a> FwCfg<'a> {
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, ()> {
-        let mut ret: Result<FwCfgFile, ()> = Err(());
         self.select(FW_CFG_FILE_DIR);
-        let mut n: u32 = self.read_be();
+        let n: u32 = self.read_be();
 
-        while n != 0 {
+        for _ in 0..n {
             let size: u32 = self.read_be();
             let select: u16 = self.read_be();
             let _unused: u16 = self.read_be();
@@ -117,17 +116,15 @@ impl<'a> FwCfg<'a> {
                 fs.push(c);
             }
 
-            //        log::info!("FwCfg File: {} Size: {}", fs, size);
-
             if fs == name {
-                ret = Ok(FwCfgFile {
+                return Ok(FwCfgFile {
                     size: size,
                     selector: select,
                 });
             }
-            n -= 1;
         }
-        ret
+
+        Err(())
     }
 
     fn find_svsm_region(&self) -> Result<MemoryRegion, ()> {
