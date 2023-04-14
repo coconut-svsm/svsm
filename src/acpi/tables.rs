@@ -176,12 +176,27 @@ struct ACPITableBuffer {
 }
 
 impl ACPITableBuffer {
-    pub const fn new() -> Self {
-        ACPITableBuffer {
-            ptr: ptr::NonNull::dangling(),
-            size: 0,
-            tables: Vec::new(),
+    pub fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
+        let file = fw_cfg.file_selector("etc/acpi/tables")?;
+        let size = file.size() as usize;
+
+        let layout = Layout::array::<u8>(size).map_err(|_| ())?;
+        let ptr = unsafe { alloc(layout) };
+        let ptr = ptr::NonNull::new(ptr).unwrap_or_else(|| handle_alloc_error(layout));
+
+        fw_cfg.select(file.selector());
+        for i in 0..size {
+            let byte: u8 = fw_cfg.read_le();
+            unsafe { ptr.as_ptr().add(i).write(byte) };
         }
+
+        let mut buf = Self {
+            ptr,
+            size,
+            tables: Vec::new(),
+        };
+        buf.load_tables(fw_cfg)?;
+        Ok(buf)
     }
 
     fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
@@ -213,37 +228,6 @@ impl ACPITableBuffer {
                 self.tables.push(meta);
             }
         }
-
-        Ok(())
-    }
-
-    pub fn load_from_fwcfg(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
-        if self.size != 0 {
-            return Err(());
-        }
-
-        let file = fw_cfg.file_selector("etc/acpi/tables")?;
-        let size = file.size() as usize;
-
-        unsafe {
-            let layout = Layout::array::<u8>(size).unwrap();
-            let ptr = match ptr::NonNull::new(alloc(layout)) {
-                Some(p) => p,
-                None => handle_alloc_error(layout),
-            };
-
-            self.ptr = ptr::NonNull::new(ptr.as_ptr()).unwrap();
-            self.size = size;
-
-            fw_cfg.select(file.selector());
-            for i in 0..size {
-                let byte: u8 = fw_cfg.read_le();
-                ptr.as_ptr().add(i).write(byte);
-            }
-        }
-
-        self.load_tables(fw_cfg)
-            .expect("Loading ACPI tables failed");
 
         Ok(())
     }
@@ -315,9 +299,7 @@ pub struct ACPICPUInfo {
 }
 
 pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, ()> {
-    let mut buffer = ACPITableBuffer::new();
-
-    buffer.load_from_fwcfg(fw_cfg)?;
+    let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer
         .acp_table_by_sig("APIC")
