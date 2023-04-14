@@ -401,14 +401,15 @@ impl GHCB {
             PageStateChangeOp::PscPsmash => PSC_OP_PSMASH,
             PageStateChangeOp::PscUnsmash => PSC_OP_UNSMASH,
         };
-        let pgsize: usize = match huge {
-            true => PAGE_SIZE_2M,
-            false => PAGE_SIZE,
-        };
 
         self.clear();
 
         while vaddr < end {
+            let huge = huge && is_aligned(vaddr, PAGE_SIZE_2M) && vaddr + PAGE_SIZE_2M <= end;
+            let pgsize: usize = match huge {
+                true => PAGE_SIZE_2M,
+                false => PAGE_SIZE,
+            };
             let entry = self.psc_entry(vaddr, op_mask, 0, huge);
             let offset: isize = (entries as isize) * 8 + 8;
             self.write_buffer(&entry, offset)?;

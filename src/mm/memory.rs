@@ -22,8 +22,10 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
 
     // Remove SVSM memory from guest memory map
     for mut region in regions.iter_mut() {
-        if (launch_info.kernel_start > region.start) && (launch_info.kernel_start < region.end) {
-            region.end = launch_info.kernel_start;
+        if (launch_info.kernel_region_phys_start > region.start)
+            && (launch_info.kernel_region_phys_start < region.end)
+        {
+            region.end = launch_info.kernel_region_phys_start;
         }
     }
 

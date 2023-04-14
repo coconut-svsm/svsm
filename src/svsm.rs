@@ -16,6 +16,7 @@ use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFW
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
+use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -27,6 +28,7 @@ use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
+use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
@@ -73,14 +75,6 @@ global_asm!(
 
         .globl  startup_64
     startup_64:
-        /* Clear BSS */
-        xorq    %rax, %rax
-        leaq    sbss(%rip), %rdi
-        leaq    ebss(%rip), %rcx
-        subq    %rdi, %rcx
-        shrq    $3, %rcx
-        rep stosq
-
         /* Setup stack */
         leaq bsp_stack_end(%rip), %rsp
 
@@ -103,18 +97,6 @@ global_asm!(
         "#,
     options(att_syntax)
 );
-
-extern "C" {
-    static _stext: u8;
-    static _etext: u8;
-    static _sdata: u8;
-    static _edata: u8;
-    static _sdataro: u8;
-    static _edataro: u8;
-    static _sbss: u8;
-    static _ebss: u8;
-    pub static heap_start: u8;
-}
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
@@ -167,8 +149,8 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
 
         let &li = &*LAUNCH_INFO;
 
-        fw_sp.svsm_base = li.kernel_start;
-        fw_sp.svsm_size = li.kernel_end - li.kernel_start;
+        fw_sp.svsm_base = li.kernel_region_phys_start;
+        fw_sp.svsm_size = li.kernel_region_phys_end - li.kernel_region_phys_start;
         fw_sp.svsm_caa = caa_addr as u64;
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = GUEST_VMPL as u8;
@@ -250,7 +232,7 @@ fn validate_flash() -> Result<(), SvsmError> {
         }
 
         // Make sure that no regions overlap with the kernel.
-        if region.overlaps(LAUNCH_INFO.kernel_start, LAUNCH_INFO.kernel_end) {
+        if region.overlaps(LAUNCH_INFO.kernel_region_phys_start, LAUNCH_INFO.kernel_region_phys_end) {
             panic!("flash region overlaps with kernel");
         }
     }
@@ -292,14 +274,11 @@ fn validate_flash() -> Result<(), SvsmError> {
 }
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
-    let mem_size = launch_info.kernel_end - launch_info.kernel_start;
-    let vstart = unsafe { (&heap_start as *const u8) as VirtAddr };
-    let vend = (launch_info.virt_base + mem_size) as VirtAddr;
-    let page_count = (vend - vstart) / PAGE_SIZE;
-    let heap_offset = vstart - launch_info.virt_base as VirtAddr;
-    let pstart = launch_info.kernel_start as PhysAddr + heap_offset;
-
-    root_mem_init(pstart, vstart, page_count);
+    root_mem_init(
+        launch_info.heap_area_phys_start as PhysAddr,
+        launch_info.heap_area_virt_start as VirtAddr,
+        launch_info.heap_area_size() as usize / PAGE_SIZE,
+    );
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
@@ -316,12 +295,11 @@ pub fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
-    let ksize: usize = (launch_info.kernel_end - launch_info.kernel_start) as usize;
-    let vstart: VirtAddr = launch_info.virt_base as VirtAddr;
-    let vend: VirtAddr = vstart + ksize;
-    let pstart: PhysAddr = launch_info.kernel_start as PhysAddr;
-
-    init_kernel_mapping_info(vstart, vend, pstart);
+    init_kernel_mapping_info(
+        launch_info.heap_area_virt_start as VirtAddr,
+        launch_info.heap_area_virt_end() as VirtAddr,
+        launch_info.heap_area_phys_start as PhysAddr,
+    );
 }
 
 #[no_mangle]
@@ -332,8 +310,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     mapping_info_init(&launch_info);
 
     init_valid_bitmap_ptr(
-        launch_info.kernel_start.try_into().unwrap(),
-        launch_info.kernel_end.try_into().unwrap(),
+        launch_info.kernel_region_phys_start.try_into().unwrap(),
+        launch_info.kernel_region_phys_end.try_into().unwrap(),
         vb_ptr,
     );
 
@@ -362,8 +340,17 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     memory_init(&launch_info);
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
 
+    let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
+        - launch_info.kernel_elf_stage2_virt_start) as usize;
+    let kernel_elf_buf_ptr = launch_info.kernel_elf_stage2_virt_start as *const u8;
+    let kernel_elf_buf = unsafe { slice::from_raw_parts(kernel_elf_buf_ptr, kernel_elf_len) };
+    let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
+        Ok(kernel_elf) => kernel_elf,
+        Err(e) => panic!("error reading kernel ELF: {}", e),
+    };
+
     paging_init();
-    init_page_table(&launch_info);
+    init_page_table(&launch_info, &kernel_elf);
 
     unsafe {
         let bsp_percpu = PerCpu::alloc(0)

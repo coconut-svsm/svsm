@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::heap_start;
 use svsm::cpu::percpu::this_cpu_mut;
+use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm;
@@ -14,62 +14,44 @@ use svsm::mm::PerCPUPageMappingGuard;
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::pvalidate;
 use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::utils::page_align_up;
 
-extern "C" {
-    static stext: u8;
-    static etext: u8;
-    static sdata: u8;
-    static edata: u8;
-    static sdataro: u8;
-    static edataro: u8;
-    static sbss: u8;
-    static ebss: u8;
-}
-
-pub fn init_page_table(launch_info: &KernelLaunchInfo) {
+pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let offset = (launch_info.virt_base - launch_info.kernel_start) as usize;
-
     let mut pgtable = PageTableRef::new(unsafe { &mut *(vaddr as *mut PageTable) });
 
-    /* Text segment */
-    let start: VirtAddr = (unsafe { &stext } as *const u8) as VirtAddr;
-    let end: VirtAddr = (unsafe { &etext } as *const u8) as VirtAddr;
-    let phys: PhysAddr = start - offset;
-    pgtable
-        .map_region(start, end, phys, PageTable::exec_flags())
-        .expect("Failed to map text segment");
+    // Install mappings for the kernel's ELF segments each.
+    // The memory backing the kernel ELF segments gets allocated back to back
+    // from the physical memory region by the Stage2 loader.
+    let mut phys = launch_info.kernel_region_phys_start as PhysAddr;
+    for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
+        let vaddr_start = segment.vaddr_range.vaddr_begin as VirtAddr;
+        let vaddr_end = segment.vaddr_range.vaddr_end as VirtAddr;
+        let aligned_vaddr_end = page_align_up(vaddr_end);
+        let segment_len = aligned_vaddr_end - vaddr_start;
+        let flags = if segment.flags.contains(elf::Elf64PhdrFlags::EXECUTE) {
+            PageTable::exec_flags()
+        } else if segment.flags.contains(elf::Elf64PhdrFlags::WRITE) {
+            PageTable::data_flags()
+        } else {
+            PageTable::data_ro_flags()
+        };
 
-    /* Writeble data */
-    let start: VirtAddr = (unsafe { &sdata } as *const u8) as VirtAddr;
-    let end: VirtAddr = (unsafe { &edata } as *const u8) as VirtAddr;
-    let phys: PhysAddr = start - offset;
-    pgtable
-        .map_region(start, end, phys, PageTable::data_flags())
-        .expect("Failed to map data segment");
+        pgtable
+            .map_region(vaddr_start, aligned_vaddr_end, phys, flags)
+            .expect("Failed to map kernel ELF segment");
 
-    /* Read-only data */
-    let start: VirtAddr = (unsafe { &sdataro } as *const u8) as VirtAddr;
-    let end: VirtAddr = (unsafe { &edataro } as *const u8) as VirtAddr;
-    let phys: PhysAddr = start - offset;
-    pgtable
-        .map_region(start, end, phys, PageTable::data_ro_flags())
-        .expect("Failed to map read-only data");
+        phys += segment_len;
+    }
 
-    /* BSS */
-    let start: VirtAddr = (unsafe { &sbss } as *const u8) as VirtAddr;
-    let end: VirtAddr = (unsafe { &ebss } as *const u8) as VirtAddr;
-    let phys: PhysAddr = start - offset;
+    // Map subsequent heap area.
     pgtable
-        .map_region(start, end, phys, PageTable::data_flags())
-        .expect("Failed to map bss segment");
-
-    /* Heap */
-    let start: VirtAddr = (unsafe { &heap_start } as *const u8) as VirtAddr;
-    let end: VirtAddr = (launch_info.kernel_end as VirtAddr) + offset;
-    let phys: PhysAddr = start - offset;
-    pgtable
-        .map_region(start, end, phys, PageTable::data_flags())
+        .map_region(
+            launch_info.heap_area_virt_start as VirtAddr,
+            launch_info.heap_area_virt_end() as VirtAddr,
+            launch_info.heap_area_phys_start as PhysAddr,
+            PageTable::data_flags(),
+        )
         .expect("Failed to map heap");
 
     pgtable.load();

@@ -10,15 +10,15 @@
 
 pub mod boot_stage2;
 
-extern crate compiler_builtins;
 use core::arch::asm;
 use core::panic::PanicInfo;
+use core::slice;
 use log;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
-use svsm::error::SvsmError;
-use svsm::fw_cfg::{FwCfg, MemoryRegion};
+use svsm::elf;
+use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
@@ -26,13 +26,15 @@ use svsm::mm::pagetable::{
     get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
     PageTableRef,
 };
-use svsm::mm::validate::{init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_2m};
+use svsm::mm::validate::{
+    init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
+};
 use svsm::serial::{SerialPort, SERIAL_PORT};
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
 use svsm::utils::{halt, is_aligned, page_align, page_align_up};
 
 extern "C" {
@@ -105,117 +107,30 @@ fn setup_env() {
     sev_status_verify();
 }
 
-fn map_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), SvsmError> {
+fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
-    let paddr = region.start as PhysAddr;
-    let size = (region.end - region.start) as usize;
 
     let mut pgtbl = get_init_pgtable_locked();
-
-    log::info!(
-        "Mapping kernel region {:#018x}-{:#018x} to {:#018x}",
-        vaddr,
-        vaddr + size,
-        paddr
-    );
-
-    pgtbl.map_region_2m(vaddr, vaddr + size, paddr, flags)
-}
-
-fn validate_kernel_region(vaddr: VirtAddr, region: &MemoryRegion) -> Result<(), ()> {
-    let pstart = region.start as PhysAddr;
-    let pend = region.end as PhysAddr;
-    let size: usize = pend - pstart;
-
-    assert!(is_aligned(pstart, PAGE_SIZE_2M));
-    assert!(is_aligned(pend, PAGE_SIZE_2M));
+    pgtbl
+        .map_region(vaddr, vaddr + len, paddr, flags)
+        .expect("Error mapping kernel region");
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(pstart, pend, true, PageStateChangeOp::PscPrivate)
+        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
-
-    pvalidate_range(vaddr, vaddr + size, true).expect("PVALIDATE kernel region failed");
-
-    for paddr in (pstart..pend).step_by(PAGE_SIZE_2M) {
-        valid_bitmap_set_valid_2m(paddr);
-    }
-
-    Ok(())
-}
-
-#[repr(C, packed)]
-struct KernelMetaData {
-    virt_addr: VirtAddr,
-    entry: VirtAddr,
-}
-
-struct KInfo {
-    k_image_start: PhysAddr,
-    k_image_end: PhysAddr,
-    phys_base: PhysAddr,
-    phys_end: PhysAddr,
-    virt_base: VirtAddr,
-    entry: VirtAddr,
-}
-
-unsafe fn copy_and_launch_kernel(kli: KInfo) {
-    let image_size = kli.k_image_end - kli.k_image_start;
-    let kernel_launch_info = KernelLaunchInfo {
-        kernel_start: kli.phys_base as u64,
-        kernel_end: kli.phys_end as u64,
-        virt_base: kli.virt_base as u64,
-        cpuid_page: 0x9f000u64,
-        secrets_page: 0x9e000u64,
-        ghcb: 0,
-    };
-
-    log::info!(
-        "  kernel_physical_start = {:#018x}",
-        kernel_launch_info.kernel_start
-    );
-    log::info!(
-        "  kernel_physical_end   = {:#018x}",
-        kernel_launch_info.kernel_end
-    );
-    log::info!(
-        "  kernel_virtual_base   = {:#018x}",
-        kernel_launch_info.virt_base
-    );
-    log::info!(
-        "  cpuid_page            = {:#018x}",
-        kernel_launch_info.cpuid_page
-    );
-    log::info!(
-        "  secrets_page          = {:#018x}",
-        kernel_launch_info.secrets_page
-    );
-    log::info!("Launching SVSM kernel...");
-
-    // Shut down the GHCB
-    shutdown_percpu();
-
-    let valid_bitmap: PhysAddr = valid_bitmap_addr();
-
-    compiler_builtins::mem::memcpy(
-        kli.virt_base as *mut u8,
-        kli.k_image_start as *const u8,
-        image_size,
-    );
-    asm!("jmp *%rax",
-          in("rax") kli.entry,
-          in("r8") &kernel_launch_info,
-          in("r9") valid_bitmap,
-          options(att_syntax));
+    pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr + len);
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
+pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAddr) {
     setup_env();
 
+    // Find a suitable physical memory region to allocate to the SVSM kernel.
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
     let r = fw_cfg
         .find_kernel_region()
@@ -223,33 +138,145 @@ pub extern "C" fn stage2_main(kernel_start: PhysAddr, kernel_end: PhysAddr) {
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-    let (kernel_virt_base, kernel_entry) = unsafe {
-        let kmd: *const KernelMetaData = kernel_start as *const KernelMetaData;
-        ((*kmd).virt_addr, (*kmd).entry)
-    };
-
-    init_valid_bitmap_alloc(r.start.try_into().unwrap(), r.end.try_into().unwrap())
+    let (kernel_region_phys_start, kernel_region_phys_end) = (r.start as usize, r.end as usize);
+    init_valid_bitmap_alloc(kernel_region_phys_start, kernel_region_phys_end)
         .expect("Failed to allocate valid-bitmap");
 
-    if let Err(e) = map_kernel_region(kernel_virt_base, &r) {
-        panic!("Error mapping kernel region: {:#?}", e);
+    // Read the SVSM kernel's ELF file metadata.
+    let kernel_elf_len = (kernel_elf_end - kernel_elf_start) as usize;
+    let kernel_elf_buf =
+        unsafe { slice::from_raw_parts(kernel_elf_start as *const u8, kernel_elf_len) };
+    let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
+        Ok(kernel_elf) => kernel_elf,
+        Err(e) => panic!("error reading kernel ELF: {}", e),
+    };
+
+    let kernel_vaddr_alloc_info = kernel_elf.image_load_vaddr_alloc_info();
+    let kernel_vaddr_alloc_base = kernel_vaddr_alloc_info.range.vaddr_begin;
+
+    // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
+    // segments' virtual address range might not necessarily be contiguous,
+    // track their total extent along the way. Physical memory is successively
+    // being taken from the physical memory region, the remaining space will be
+    // available as heap space for the SVSM kernel. Remember the end of all
+    // physical memory occupied by the loaded ELF image.
+    let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
+    let mut loaded_kernel_virt_end: VirtAddr = 0;
+    let mut loaded_kernel_phys_end = kernel_region_phys_start as PhysAddr;
+    for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
+        // All ELF segments should be aligned to the page size. If not, there's
+        // the risk of pvalidating a page twice, bail out if so. Note that the
+        // ELF reading code had already verified that the individual segments,
+        // with bounds specified as in the ELF file, are non-overlapping.
+        let vaddr_start = segment.vaddr_range.vaddr_begin as VirtAddr;
+        if !is_aligned(vaddr_start, PAGE_SIZE) {
+            panic!("kernel ELF segment not aligned to page boundary");
+        }
+
+        // Remember the mapping range's lower bound to pass it on the kernel
+        // later. Note that the segments are being iterated over here in
+        // increasing load order.
+        if loaded_kernel_virt_start.is_none() {
+            loaded_kernel_virt_start = Some(vaddr_start);
+        }
+
+        let vaddr_end = segment.vaddr_range.vaddr_end as VirtAddr;
+        let aligned_vaddr_end = page_align_up(vaddr_end);
+        loaded_kernel_virt_end = aligned_vaddr_end;
+
+        let segment_len = aligned_vaddr_end - vaddr_start;
+        let paddr_start = loaded_kernel_phys_end;
+        loaded_kernel_phys_end += segment_len;
+
+        map_and_validate(vaddr_start, paddr_start, segment_len);
+
+        let segment_buf = unsafe { slice::from_raw_parts_mut(vaddr_start as *mut u8, segment_len) };
+        let segment_contents = segment.file_contents;
+        let contents_len = segment_contents.len();
+        segment_buf[..contents_len].copy_from_slice(segment_contents);
+        segment_buf[contents_len..].fill(0);
     }
-    validate_kernel_region(kernel_virt_base, &r).expect("Validating kernel region failed");
+
+    let loaded_kernel_virt_start = match loaded_kernel_virt_start {
+        Some(loaded_kernel_virt_start) => loaded_kernel_virt_start,
+        None => {
+            panic!("no loadable segment found in kernel ELF");
+        }
+    };
+
+    // Apply relocations, if any.
+    let dyn_relocs = match kernel_elf
+        .apply_dyn_relas(elf::Elf64X86RelocProcessor::new(), kernel_vaddr_alloc_base)
+    {
+        Ok(dyn_relocs) => dyn_relocs,
+        Err(e) => {
+            panic!("failed to read ELF relocations : {}", e);
+        }
+    };
+    if let Some(dyn_relocs) = dyn_relocs {
+        for reloc in dyn_relocs {
+            let reloc = match reloc {
+                Ok(Some(reloc)) => reloc,
+                Ok(None) => continue,
+                Err(e) => {
+                    panic!("ELF relocation error: {}", e);
+                }
+            };
+            let dst = unsafe { slice::from_raw_parts_mut(reloc.dst as *mut u8, reloc.value_len) };
+            let src = &reloc.value[..reloc.value_len];
+            dst.copy_from_slice(src)
+        }
+    }
+
+    // Map the rest of the memory region to right after the kernel image.
+    let heap_area_phys_start = loaded_kernel_phys_end;
+    let heap_area_virt_start = loaded_kernel_virt_end;
+    let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
+    map_and_validate(heap_area_virt_start, heap_area_phys_start, heap_area_size);
+
+    // Build the handover information describing the memory layout and hand
+    // control to the SVSM kernel.
+    let launch_info = KernelLaunchInfo {
+        kernel_region_phys_start: kernel_region_phys_start as u64,
+        kernel_region_phys_end: kernel_region_phys_end as u64,
+        heap_area_phys_start: heap_area_phys_start as u64,
+        kernel_region_virt_start: loaded_kernel_virt_start as u64,
+        heap_area_virt_start: heap_area_virt_start as u64,
+        kernel_elf_stage2_virt_start: kernel_elf_start as u64,
+        kernel_elf_stage2_virt_end: kernel_elf_end as u64,
+        cpuid_page: 0x9f000u64,
+        secrets_page: 0x9e000u64,
+    };
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
 
+    log::info!(
+        "  kernel_region_phys_start = {:#018x}",
+        kernel_region_phys_start
+    );
+    log::info!(
+        "  kernel_region_phys_end   = {:#018x}",
+        kernel_region_phys_end
+    );
+    log::info!(
+        "  kernel_virtual_base   = {:#018x}",
+        loaded_kernel_virt_start
+    );
+
+    let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
+    let valid_bitmap: PhysAddr = valid_bitmap_addr();
+
+    // Shut down the GHCB
+    shutdown_percpu();
+
     unsafe {
-        copy_and_launch_kernel(KInfo {
-            k_image_start: kernel_start,
-            k_image_end: kernel_end,
-            phys_base: r.start as usize,
-            phys_end: r.end as usize,
-            virt_base: kernel_virt_base,
-            entry: kernel_entry,
-        });
-        // This should never return
-    }
+        asm!("jmp *%rax",
+             in("rax") kernel_entry,
+             in("r8") &launch_info,
+             in("r9") valid_bitmap,
+             options(att_syntax))
+    };
 
     panic!("Road ends here!");
 }
