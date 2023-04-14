@@ -141,11 +141,8 @@ impl ACPITable {
     }
 
     fn content_length(&self) -> usize {
-        if self.size <= mem::size_of::<RawACPITableHeader>() {
-            0
-        } else {
-            self.size - mem::size_of::<RawACPITableHeader>()
-        }
+        self.size
+            .saturating_sub(mem::size_of::<RawACPITableHeader>())
     }
 
     fn content(&self) -> *const u8 {
