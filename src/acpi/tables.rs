@@ -17,12 +17,12 @@ use core::ptr;
 use log;
 
 #[repr(C, packed)]
-pub struct RSDPDesc {
-    pub sig: [u8; 8],
-    pub chksum: u8,
-    pub oem_id: [u8; 6],
-    pub rev: u8,
-    pub rsdt_addr: u32,
+struct RSDPDesc {
+    sig: [u8; 8],
+    chksum: u8,
+    oem_id: [u8; 6],
+    rev: u8,
+    rsdt_addr: u32,
 }
 
 impl RSDPDesc {
@@ -74,8 +74,8 @@ struct ACPITableHeader {
 }
 
 impl ACPITableHeader {
-    pub const fn new(raw: RawACPITableHeader) -> Self {
-        ACPITableHeader {
+    const fn new(raw: RawACPITableHeader) -> Self {
+        Self {
             sig: raw.sig,
             len: raw.len,
             rev: raw.rev,
@@ -89,7 +89,7 @@ impl ACPITableHeader {
     }
 
     #[allow(dead_code)]
-    pub fn print_summary(&self) {
+    fn print_summary(&self) {
         let sig = FixedString::from(self.sig);
         let oem_id = FixedString::from(self.oem_id);
         let oem_table_id = FixedString::from(self.oem_table_id);
@@ -127,7 +127,7 @@ impl ACPITable {
 
             ptr::copy(ptr, buf.as_ptr(), size);
 
-            Ok(ACPITable {
+            Ok(Self {
                 header: ACPITableHeader::new(*raw_header),
                 ptr: buf,
                 size: size,
@@ -136,11 +136,11 @@ impl ACPITable {
     }
 
     #[allow(dead_code)]
-    pub fn signature(&self) -> FixedString<4> {
+    fn signature(&self) -> FixedString<4> {
         FixedString::from(self.header.sig)
     }
 
-    pub fn content_length(&self) -> usize {
+    fn content_length(&self) -> usize {
         if self.size <= mem::size_of::<RawACPITableHeader>() {
             0
         } else {
@@ -148,7 +148,7 @@ impl ACPITable {
         }
     }
 
-    pub fn content(&self) -> *const u8 {
+    fn content(&self) -> *const u8 {
         let offset = mem::size_of::<RawACPITableHeader>();
 
         unsafe { self.ptr.as_ptr().add(offset) }
@@ -156,18 +156,14 @@ impl ACPITable {
 }
 
 struct ACPITableMeta {
-    pub sig: FixedString<4>,
-    pub offset: usize,
+    sig: FixedString<4>,
+    offset: usize,
 }
 
 impl ACPITableMeta {
-    pub fn new(header: &RawACPITableHeader, offset: usize) -> Self {
+    fn new(header: &RawACPITableHeader, offset: usize) -> Self {
         let sig = FixedString::from(header.sig);
-
-        ACPITableMeta {
-            sig: sig,
-            offset: offset,
-        }
+        Self { sig, offset }
     }
 }
 
@@ -178,7 +174,7 @@ struct ACPITableBuffer {
 }
 
 impl ACPITableBuffer {
-    pub fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
         let file = fw_cfg.file_selector("etc/acpi/tables")?;
         let size = file.size() as usize;
 
@@ -245,7 +241,7 @@ impl ACPITableBuffer {
         }
     }
 
-    pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
+    fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
         let offset = self
             .tables
             .iter()
@@ -267,7 +263,7 @@ impl Drop for ACPITableBuffer {
     }
 }
 
-pub const MADT_HEADER_SIZE: usize = 8;
+const MADT_HEADER_SIZE: usize = 8;
 
 #[allow(dead_code)]
 #[repr(C, packed)]
