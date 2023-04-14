@@ -28,4 +28,6 @@ pub enum SvsmError {
     Firmware,
     // Errors related to firmware configuration contents
     FwCfg(FwCfgError),
+    // Errors related to ACPI parsing.
+    Acpi,
 }

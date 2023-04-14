@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
@@ -25,13 +26,13 @@ pub struct RSDPDesc {
 }
 
 impl RSDPDesc {
-    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
+    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
         let mut buf = mem::MaybeUninit::<Self>::uninit();
-        let file = fw_cfg.file_selector("etc/acpi/rsdp").map_err(|_| ())?;
+        let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
         let size = file.size() as usize;
 
         if size != mem::size_of::<Self>() {
-            return Err(());
+            return Err(SvsmError::Acpi);
         }
 
         fw_cfg.select(file.selector());
@@ -115,13 +116,14 @@ struct ACPITable {
 }
 
 impl ACPITable {
-    fn new(ptr: *const u8) -> Result<Self, ()> {
+    fn new(ptr: *const u8) -> Result<Self, SvsmError> {
         unsafe {
             let raw_header = ptr.cast::<RawACPITableHeader>();
             let size = (*raw_header).len as usize;
 
-            let layout = Layout::array::<u8>(size).unwrap();
-            let buf = ptr::NonNull::new(alloc(layout)).unwrap();
+            let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
+            let buf =
+                ptr::NonNull::new(alloc(layout)).unwrap_or_else(|| handle_alloc_error(layout));
 
             ptr::copy(ptr, buf.as_ptr(), size);
 
@@ -176,11 +178,11 @@ struct ACPITableBuffer {
 }
 
 impl ACPITableBuffer {
-    pub fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, ()> {
-        let file = fw_cfg.file_selector("etc/acpi/tables").map_err(|_| ())?;
+    pub fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+        let file = fw_cfg.file_selector("etc/acpi/tables")?;
         let size = file.size() as usize;
 
-        let layout = Layout::array::<u8>(size).map_err(|_| ())?;
+        let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
         let ptr = unsafe { alloc(layout) };
         let ptr = ptr::NonNull::new(ptr).unwrap_or_else(|| handle_alloc_error(layout));
 
@@ -199,14 +201,14 @@ impl ACPITableBuffer {
         Ok(buf)
     }
 
-    fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
+    fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), SvsmError> {
         let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
         let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
         let len = rsdt.content_length();
 
         if len == 0 {
-            return Err(());
+            return Err(SvsmError::Acpi);
         }
 
         let entries = len / 4;
@@ -219,7 +221,7 @@ impl ACPITableBuffer {
                 let offset = (*entry_ptr) as usize;
 
                 if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-                    return Err(());
+                    return Err(SvsmError::Acpi);
                 }
 
                 let raw_header = self.ptr.as_ptr().add(offset).cast::<RawACPITableHeader>();
@@ -232,9 +234,9 @@ impl ACPITableBuffer {
         Ok(())
     }
 
-    fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, ()> {
+    fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
         if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-            return Err(());
+            return Err(SvsmError::Acpi);
         }
 
         unsafe {
@@ -298,16 +300,14 @@ pub struct ACPICPUInfo {
     pub enabled: bool,
 }
 
-pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, ()> {
+pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError> {
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
-    let apic_table = buffer
-        .acp_table_by_sig("APIC")
-        .expect("MADT ACPI table not found");
+    let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
     let len = apic_table.content_length();
 
     if len == 0 {
-        return Err(());
+        return Err(SvsmError::Acpi);
     }
 
     let content = apic_table.content();
