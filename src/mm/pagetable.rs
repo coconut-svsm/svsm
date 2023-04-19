@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr};
 use crate::cpu::control_regs::write_cr3;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
@@ -12,7 +13,7 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::is_aligned;
 use bitflags::bitflags;
@@ -92,11 +93,11 @@ fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
 }
 
 fn strip_c_bit(paddr: PhysAddr) -> PhysAddr {
-    paddr & !encrypt_mask()
+    PhysAddr::from(paddr.bits() & !encrypt_mask())
 }
 
 fn set_c_bit(paddr: PhysAddr) -> PhysAddr {
-    paddr | encrypt_mask()
+    PhysAddr::from(paddr.bits() | encrypt_mask())
 }
 
 bitflags! {
@@ -114,15 +115,15 @@ bitflags! {
 
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct PTEntry(pub u64);
+pub struct PTEntry(PhysAddr);
 
 impl PTEntry {
     pub fn is_clear(&self) -> bool {
-        self.0 == 0
+        self.0.is_null()
     }
 
     pub fn clear(&mut self) {
-        self.0 = 0;
+        self.0 = PhysAddr::null();
     }
 
     pub fn present(&self) -> bool {
@@ -130,20 +131,22 @@ impl PTEntry {
     }
 
     pub fn raw(&self) -> u64 {
-        self.0
+        self.0.bits() as u64
     }
 
     pub fn flags(&self) -> PTEntryFlags {
-        PTEntryFlags::from_bits_truncate(self.0)
+        PTEntryFlags::from_bits_truncate(self.0.bits() as u64)
     }
 
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+        let addr = addr.bits() as u64;
         assert_eq!(addr & !0x000f_ffff_ffff_f000, 0);
-        self.0 = (addr as u64) | supported_flags(flags).bits();
+        self.0 = PhysAddr::from(addr | supported_flags(flags).bits());
     }
 
     pub fn address(&self) -> PhysAddr {
-        strip_c_bit((self.0 & 0x000f_ffff_ffff_f000) as PhysAddr)
+        let addr = PhysAddr::from(self.0.bits() & 0x000f_ffff_ffff_f000);
+        strip_c_bit(addr)
     }
 }
 
@@ -183,7 +186,7 @@ impl PageTable {
         write_cr3(self.cr3_value());
     }
 
-    pub fn cr3_value(&self) -> usize {
+    pub fn cr3_value(&self) -> PhysAddr {
         let pgtable: usize = (self as *const PageTable) as usize;
         let cr3 = virt_to_phys(pgtable);
         set_c_bit(cr3)
@@ -389,13 +392,13 @@ impl PageTable {
 
         assert!(flags.contains(PTEntryFlags::HUGE));
 
-        let addr_2m = entry.address() & 0x000f_ffff_fff0_0000;
+        let addr_2m = PhysAddr::from(entry.address().bits() & 0x000f_ffff_fff0_0000);
 
         flags.remove(PTEntryFlags::HUGE);
 
         // Prepare PTE leaf page
         for i in 0..512 {
-            let addr_4k = addr_2m + (i * PAGE_SIZE);
+            let addr_4k = addr_2m.offset(i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
                 (*page).entries[i].set(set_c_bit(addr_4k), flags);
@@ -473,7 +476,7 @@ impl PageTable {
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
         assert!(is_aligned(vaddr, PAGE_SIZE_2M));
-        assert!(is_aligned(paddr, PAGE_SIZE_2M));
+        assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.alloc_pte_2m(vaddr);
 
@@ -534,7 +537,7 @@ impl PageTable {
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
                     return Err(SvsmError::Mem);
                 }
-                Ok(entry.address() + offset)
+                Ok(entry.address().offset(offset))
             }
             Mapping::Level1(entry) => {
                 let offset = vaddr & (PAGE_SIZE_2M - 1);
@@ -544,7 +547,7 @@ impl PageTable {
                     return Err(SvsmError::Mem);
                 }
 
-                Ok(entry.address() + offset)
+                Ok(entry.address().offset(offset))
             }
             Mapping::Level2(_entry) => Err(SvsmError::Mem),
             Mapping::Level3(_entry) => Err(SvsmError::Mem),
@@ -560,7 +563,7 @@ impl PageTable {
     ) -> Result<(), SvsmError> {
         for addr in (start..end).step_by(PAGE_SIZE) {
             let offset = addr - start;
-            self.map_4k(addr, phys + offset, flags)?;
+            self.map_4k(addr, phys.offset(offset), flags)?;
         }
         Ok(())
     }
@@ -580,7 +583,7 @@ impl PageTable {
     ) -> Result<(), SvsmError> {
         for addr in (start..end).step_by(PAGE_SIZE_2M) {
             let offset = addr - start;
-            self.map_2m(addr, phys + offset, flags)?;
+            self.map_2m(addr, phys.offset(offset), flags)?;
         }
         Ok(())
     }
@@ -603,18 +606,18 @@ impl PageTable {
 
         while vaddr < end {
             if is_aligned(vaddr, PAGE_SIZE_2M)
-                && is_aligned(paddr, PAGE_SIZE_2M)
+                && paddr.is_aligned(PAGE_SIZE_2M)
                 && vaddr + PAGE_SIZE_2M <= end
                 && self.map_2m(vaddr, paddr, flags).is_ok()
             {
                 vaddr += PAGE_SIZE_2M;
-                paddr += PAGE_SIZE_2M;
+                paddr = paddr.offset(PAGE_SIZE_2M);
                 continue;
             }
 
             self.map_4k(vaddr, paddr, flags)?;
             vaddr += PAGE_SIZE;
-            paddr += PAGE_SIZE;
+            paddr = paddr.offset(PAGE_SIZE);
         }
 
         Ok(())

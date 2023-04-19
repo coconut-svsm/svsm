@@ -8,6 +8,7 @@ extern crate alloc;
 
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
+use crate::address::{Address, PhysAddr};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
@@ -22,9 +23,8 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
-use crate::types::{PhysAddr, VirtAddr};
+use crate::types::VirtAddr;
 use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
-use crate::utils::{page_align, page_offset};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use core::ptr;
@@ -433,12 +433,11 @@ impl PerCpu {
     pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let paddr_aligned = page_align(paddr);
         let flags = PageTable::data_flags();
-
         let vaddr = SVSM_PERCPU_CAA_BASE;
 
-        self.get_pgtable().map_4k(vaddr, paddr_aligned, flags)?;
+        self.get_pgtable()
+            .map_4k(vaddr, paddr.page_align(), flags)?;
 
         Ok(())
     }
@@ -446,7 +445,7 @@ impl PerCpu {
     pub fn caa_addr(&self) -> Option<VirtAddr> {
         let locked = self.guest_vmsa.lock();
         let caa_phys = locked.caa_phys()?;
-        let offset = page_offset(caa_phys);
+        let offset = caa_phys.page_offset();
 
         Some((SVSM_PERCPU_CAA_BASE + offset) as VirtAddr)
     }

@@ -4,12 +4,12 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_pages, get_order};
 use crate::mm::virt_to_phys;
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::util::is_aligned;
+use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
@@ -102,8 +102,8 @@ struct ValidBitmap {
 impl ValidBitmap {
     pub const fn new() -> Self {
         ValidBitmap {
-            pbase: 0,
-            pend: 0,
+            pbase: PhysAddr::null(),
+            pend: PhysAddr::null(),
             bitmap: ptr::null_mut(),
         }
     }
@@ -171,7 +171,7 @@ impl ValidBitmap {
 
         let (index, bit) = self.index(paddr);
 
-        assert!(is_aligned(paddr, PAGE_SIZE));
+        assert!(paddr.is_page_aligned());
         assert!(self.check_addr(paddr));
 
         unsafe {
@@ -188,7 +188,7 @@ impl ValidBitmap {
 
         let (index, bit) = self.index(paddr);
 
-        assert!(is_aligned(paddr, PAGE_SIZE));
+        assert!(paddr.is_page_aligned());
         assert!(self.check_addr(paddr));
 
         unsafe {
@@ -206,7 +206,7 @@ impl ValidBitmap {
         const NR_INDEX: isize = (PAGE_SIZE_2M / (PAGE_SIZE * 64)) as isize;
         let (index, _) = self.index(paddr);
 
-        assert!(is_aligned(paddr, PAGE_SIZE_2M));
+        assert!(paddr.is_aligned(PAGE_SIZE_2M));
         assert!(self.check_addr(paddr));
 
         for i in 0..NR_INDEX {

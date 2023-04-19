@@ -4,9 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::types::{PhysAddr, VirtAddr, PAGE_SHIFT, PAGE_SIZE};
+use crate::types::{VirtAddr, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
@@ -238,7 +239,7 @@ struct MemoryRegion {
 impl MemoryRegion {
     pub const fn new() -> Self {
         MemoryRegion {
-            start_phys: 0,
+            start_phys: PhysAddr::null(),
             start_virt: 0,
             page_count: 0,
             nr_pages: [0; MAX_ORDER],
@@ -249,13 +250,13 @@ impl MemoryRegion {
 
     #[allow(dead_code)]
     pub fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
-        let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
+        let end_phys = self.start_phys.offset(self.page_count * PAGE_SIZE);
 
         if paddr < self.start_phys || paddr >= end_phys {
             // For the initial stage2 identity mapping, the root page table
             // pages are static and outside of the heap memory region.
-            if self.start_phys as VirtAddr == self.start_virt {
-                return Some(paddr as VirtAddr);
+            if self.start_phys.bits() as VirtAddr == self.start_virt {
+                return Some(paddr.bits() as VirtAddr);
             }
             return None;
         }
@@ -275,7 +276,7 @@ impl MemoryRegion {
 
         let offset = vaddr - self.start_virt;
 
-        Some((self.start_phys + offset) as PhysAddr)
+        Some(self.start_phys.offset(offset))
     }
 
     fn page_info_virt_addr(&self, pfn: usize) -> VirtAddr {
@@ -1289,7 +1290,9 @@ fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
 
     let page_count = layout.size() / PAGE_SIZE;
     let lock = TEST_ROOT_MEM_LOCK.lock();
-    root_mem_init(ptr as PhysAddr, ptr as VirtAddr, page_count);
+    let vaddr = ptr as VirtAddr;
+    let paddr = PhysAddr::from(vaddr);
+    root_mem_init(paddr, vaddr, page_count);
     lock
 }
 
@@ -1301,7 +1304,7 @@ fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
 
     let mut root_mem = ROOT_MEM.lock();
     let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
-    unsafe { dealloc(root_mem.start_phys as *mut u8, layout) };
+    unsafe { dealloc(root_mem.start_virt as *mut u8, layout) };
     *root_mem = MemoryRegion::new();
 
     // Reset the Slabs

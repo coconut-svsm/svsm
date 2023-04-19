@@ -6,13 +6,12 @@
 
 extern crate alloc;
 
+use crate::address::{Address, PhysAddr};
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
 use crate::fw_cfg::{FwCfg, MemoryRegion};
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::RWLock;
-use crate::types::PhysAddr;
-use crate::utils::page_align;
 use alloc::vec::Vec;
 use log;
 
@@ -42,8 +41,8 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
 }
 
 pub fn valid_phys_address(paddr: PhysAddr) -> bool {
-    let page_addr = page_align(paddr);
-    let addr = paddr as u64;
+    let page_addr = paddr.page_align();
+    let addr = paddr.bits() as u64;
 
     if PERCPU_VMSAS.exists(page_addr) {
         return false;

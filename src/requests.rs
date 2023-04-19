@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::error::SvsmError;
@@ -15,8 +16,8 @@ use crate::sev::utils::{
     rmp_set_guest_vmsa, RMPFlags, SevSnpError,
 };
 use crate::sev::vmsa::{GuestVMExit, VMSA};
-use crate::types::{PhysAddr, VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::{crosses_page, halt, is_aligned, page_align, page_offset};
+use crate::types::{VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::halt;
 
 #[derive(Debug, Clone, Copy)]
 #[allow(non_camel_case_types, dead_code, clippy::upper_case_acronyms)]
@@ -159,17 +160,17 @@ fn check_vmsa(new: &VMSA, sev_features: u64, svme_mask: u64) -> bool {
 
 /// per-cpu request mapping area size (1GB)
 fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let paddr = params.rcx as PhysAddr;
-    let pcaa = params.rdx as PhysAddr;
+    let paddr = PhysAddr::from(params.rcx);
+    let pcaa = PhysAddr::from(params.rdx);
     let apic_id: u32 = (params.r8 & 0xffff_ffff) as u32;
 
     // Check VMSA address
-    if !valid_phys_address(paddr) || !is_aligned(paddr, PAGE_SIZE) {
+    if !valid_phys_address(paddr) || !paddr.is_page_aligned() {
         return Err(SvsmReqError::invalid_address());
     }
 
     // Check CAA address
-    if !valid_phys_address(pcaa) || !is_aligned(pcaa, 8) {
+    if !valid_phys_address(pcaa) || !pcaa.is_aligned(8) {
         return Err(SvsmReqError::invalid_address());
     }
 
@@ -215,7 +216,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let paddr = params.rcx as PhysAddr;
+    let paddr = PhysAddr::from(params.rcx);
 
     PERCPU_VMSAS
         .unregister(paddr, true)
@@ -313,9 +314,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
             PAGE_SIZE
         }
     };
-    let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
+    let paddr = PhysAddr::from(entry).page_align();
 
-    if !is_aligned(paddr, page_size_bytes) {
+    if !paddr.is_aligned(page_size_bytes) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -324,7 +325,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, paddr.offset(page_size_bytes), valign)?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -345,14 +346,14 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
 }
 
 fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let gpa: PhysAddr = params.rcx.try_into().unwrap();
+    let gpa = PhysAddr::from(params.rcx);
 
-    if !is_aligned(gpa, 8) || !valid_phys_address(gpa) {
+    if !gpa.is_aligned(8) || !valid_phys_address(gpa) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    let paddr = page_align(gpa);
-    let offset = page_offset(gpa);
+    let paddr = gpa.page_align();
+    let offset = gpa.page_offset();
 
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
@@ -404,14 +405,14 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let gpa: PhysAddr = params.rcx.try_into().unwrap();
+    let gpa = PhysAddr::from(params.rcx);
 
-    if !is_aligned(gpa, 8) || !valid_phys_address(gpa) || crosses_page(gpa, 8) {
+    if !gpa.is_aligned(8) || !valid_phys_address(gpa) || gpa.crosses_page(8) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
-    let offset = page_offset(gpa);
-    let paddr = page_align(gpa);
+    let offset = gpa.page_offset();
+    let paddr = gpa.page_align();
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;

@@ -6,13 +6,14 @@
 
 extern crate alloc;
 
+use crate::address::{Address, PhysAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::types::{VirtAddr, PAGE_SIZE};
 use crate::utils::{overlap, zero_mem_region};
 use alloc::vec::Vec;
 
@@ -38,7 +39,7 @@ impl SevPreValidMem {
 
     #[inline]
     fn end(&self) -> PhysAddr {
-        self.base + self.length
+        self.base.offset(self.length)
     }
 
     fn overlap(&self, other: &Self) -> bool {
@@ -228,7 +229,7 @@ const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
-    let pstart: PhysAddr = (4 * SIZE_1G) - PAGE_SIZE;
+    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
@@ -272,7 +273,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
                 return Err(SvsmError::Firmware);
             }
             let info_ptr = base as *const u32;
-            meta_data.reset_ip = Some(info_ptr.read() as PhysAddr);
+            meta_data.reset_ip = Some(PhysAddr::from(info_ptr.read() as usize));
         }
 
         // Search and parse Meta Data
@@ -292,7 +293,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             for i in 0..num_descs {
                 let desc = desc_ptr.offset(i).read();
                 let t = desc.t;
-                let base = desc.base as PhysAddr;
+                let base = PhysAddr::from(desc.base as usize);
                 let len = desc.len as usize;
                 match t {
                     SEV_META_DESC_TYPE_MEM => meta_data.add_valid_mem(base, len),
@@ -324,8 +325,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
 }
 
 fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
-    let pstart: PhysAddr = region.base;
-    let pend: PhysAddr = region.end();
+    let pstart = region.base;
+    let pend = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
@@ -334,7 +335,10 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
         .expect("GHCB PSC call failed to validate firmware memory");
 
-    for paddr in (pstart..pend).step_by(PAGE_SIZE) {
+    for paddr in (pstart.bits()..pend.bits())
+        .step_by(PAGE_SIZE)
+        .map(PhysAddr::from)
+    {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 

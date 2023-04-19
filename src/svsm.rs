@@ -18,6 +18,7 @@ use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::address::{Address, PhysAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -44,7 +45,7 @@ use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, GUEST_VMPL, PAGE_SIZE};
+use svsm::types::{VirtAddr, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use svsm_paging::{init_page_table, invalidate_stage2};
 
@@ -152,7 +153,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
 
         fw_sp.svsm_base = li.kernel_region_phys_start;
         fw_sp.svsm_size = li.kernel_region_phys_end - li.kernel_region_phys_start;
-        fw_sp.svsm_caa = caa_addr as u64;
+        fw_sp.svsm_caa = u64::from(caa_addr);
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = GUEST_VMPL as u8;
     }
@@ -255,8 +256,8 @@ fn validate_flash() -> Result<(), SvsmError> {
     assert!(one_region_ends_at_4gib);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
-        let pstart = region.start as PhysAddr;
-        let pend = region.end as PhysAddr;
+        let pstart = PhysAddr::from(region.start);
+        let pend = PhysAddr::from(region.end);
         log::info!(
             "Flash region {} at {:#018x} size {:018x}",
             i,
@@ -264,7 +265,10 @@ fn validate_flash() -> Result<(), SvsmError> {
             pend - pstart
         );
 
-        for paddr in (pstart..pend).step_by(PAGE_SIZE) {
+        for paddr in (pstart.bits()..pend.bits())
+            .step_by(PAGE_SIZE)
+            .map(PhysAddr::from)
+        {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
@@ -279,7 +283,7 @@ fn validate_flash() -> Result<(), SvsmError> {
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
-        launch_info.heap_area_phys_start as PhysAddr,
+        PhysAddr::from(launch_info.heap_area_phys_start),
         launch_info.heap_area_virt_start as VirtAddr,
         launch_info.heap_area_size() as usize / PAGE_SIZE,
     );
@@ -302,7 +306,7 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     init_kernel_mapping_info(
         launch_info.heap_area_virt_start as VirtAddr,
         launch_info.heap_area_virt_end() as VirtAddr,
-        launch_info.heap_area_phys_start as PhysAddr,
+        PhysAddr::from(launch_info.heap_area_phys_start),
     );
 }
 

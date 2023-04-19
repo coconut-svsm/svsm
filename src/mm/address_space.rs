@@ -4,7 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::types::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr};
+use crate::types::VirtAddr;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 #[derive(Copy, Clone)]
@@ -19,7 +20,7 @@ impl KernelMapping {
         KernelMapping {
             virt_start: 0,
             virt_end: 0,
-            phys_start: 0,
+            phys_start: PhysAddr::null(),
         }
     }
 }
@@ -27,7 +28,7 @@ impl KernelMapping {
 static KERNEL_MAPPING: ImmutAfterInitCell<KernelMapping> =
     ImmutAfterInitCell::new(KernelMapping::new());
 
-pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: VirtAddr) {
+pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAddr) {
     let km = KernelMapping {
         virt_start: vstart,
         virt_end: vend,
@@ -45,12 +46,12 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
 
     let offset: usize = vaddr - KERNEL_MAPPING.virt_start;
 
-    KERNEL_MAPPING.phys_start + offset
+    KERNEL_MAPPING.phys_start.offset(offset)
 }
 
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     let size: usize = KERNEL_MAPPING.virt_end - KERNEL_MAPPING.virt_start;
-    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start + size {
+    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start.offset(size) {
         panic!("Invalid physical address {:#018x}", paddr);
     }
 

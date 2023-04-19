@@ -14,6 +14,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 use log;
+use svsm::address::{Address, PhysAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
@@ -34,7 +35,7 @@ use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use svsm::types::{VirtAddr, PAGE_SIZE};
 use svsm::utils::{halt, is_aligned, page_align, page_align_up};
 
 extern "C" {
@@ -47,7 +48,7 @@ extern "C" {
 fn setup_stage2_allocator() {
     let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
     let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
-    let pstart = vstart as PhysAddr; // Identity mapping
+    let pstart = PhysAddr::from(vstart); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
     root_mem_init(pstart, vstart, nr_pages);
@@ -85,7 +86,7 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 
 fn setup_env() {
     install_console_logger("Stage2");
-    init_kernel_mapping_info(0, 640 * 1024, 0);
+    init_kernel_mapping_info(0, 640 * 1024, PhysAddr::null());
     register_cpuid_table(unsafe { &CPUID_PAGE });
     paging_init_early();
 
@@ -120,10 +121,15 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
+        .page_state_change(
+            paddr,
+            paddr.offset(len),
+            true,
+            PageStateChangeOp::PscPrivate,
+        )
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
-    valid_bitmap_set_valid_range(paddr, paddr + len);
+    valid_bitmap_set_valid_range(paddr, paddr.offset(len));
 }
 
 #[no_mangle]
@@ -138,14 +144,15 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-    let (kernel_region_phys_start, kernel_region_phys_end) = (r.start as usize, r.end as usize);
+    let kernel_region_phys_start = PhysAddr::from(r.start);
+    let kernel_region_phys_end = PhysAddr::from(r.end);
     init_valid_bitmap_alloc(kernel_region_phys_start, kernel_region_phys_end)
         .expect("Failed to allocate valid-bitmap");
 
     // Read the SVSM kernel's ELF file metadata.
-    let kernel_elf_len = (kernel_elf_end - kernel_elf_start) as usize;
+    let kernel_elf_len = kernel_elf_end - kernel_elf_start;
     let kernel_elf_buf =
-        unsafe { slice::from_raw_parts(kernel_elf_start as *const u8, kernel_elf_len) };
+        unsafe { slice::from_raw_parts(kernel_elf_start.bits() as *const u8, kernel_elf_len) };
     let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
         Ok(kernel_elf) => kernel_elf,
         Err(e) => panic!("error reading kernel ELF: {}", e),
@@ -162,7 +169,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
     let mut loaded_kernel_virt_end: VirtAddr = 0;
-    let mut loaded_kernel_phys_end = kernel_region_phys_start as PhysAddr;
+    let mut loaded_kernel_phys_end = PhysAddr::from(kernel_region_phys_start);
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the
@@ -186,7 +193,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
 
         let segment_len = aligned_vaddr_end - vaddr_start;
         let paddr_start = loaded_kernel_phys_end;
-        loaded_kernel_phys_end += segment_len;
+        loaded_kernel_phys_end = loaded_kernel_phys_end.offset(segment_len);
 
         map_and_validate(vaddr_start, paddr_start, segment_len);
 
@@ -237,13 +244,13 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
     let launch_info = KernelLaunchInfo {
-        kernel_region_phys_start: kernel_region_phys_start as u64,
-        kernel_region_phys_end: kernel_region_phys_end as u64,
-        heap_area_phys_start: heap_area_phys_start as u64,
+        kernel_region_phys_start: u64::from(kernel_region_phys_start),
+        kernel_region_phys_end: u64::from(kernel_region_phys_end),
+        heap_area_phys_start: u64::from(heap_area_phys_start),
         kernel_region_virt_start: loaded_kernel_virt_start as u64,
         heap_area_virt_start: heap_area_virt_start as u64,
-        kernel_elf_stage2_virt_start: kernel_elf_start as u64,
-        kernel_elf_stage2_virt_end: kernel_elf_end as u64,
+        kernel_elf_stage2_virt_start: u64::from(kernel_elf_start),
+        kernel_elf_stage2_virt_end: u64::from(kernel_elf_end),
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
     };
@@ -265,7 +272,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     );
 
     let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
-    let valid_bitmap: PhysAddr = valid_bitmap_addr();
+    let valid_bitmap = valid_bitmap_addr();
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -274,7 +281,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         asm!("jmp *%rax",
              in("rax") kernel_entry,
              in("r8") &launch_info,
-             in("r9") valid_bitmap,
+             in("r9") valid_bitmap.bits(),
              options(att_syntax))
     };
 
