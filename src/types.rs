@@ -7,6 +7,7 @@
 use crate::sev::vmsa::VMPL_MAX;
 
 pub const PAGE_SHIFT: usize = 12;
+pub const PAGE_SHIFT_2M: usize = 21;
 pub const PAGE_SIZE: usize = 1 << PAGE_SHIFT;
 pub const PAGE_SIZE_2M: usize = PAGE_SIZE * 512;
 

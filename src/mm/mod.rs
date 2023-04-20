@@ -8,6 +8,7 @@ pub mod address_space;
 pub mod alloc;
 pub mod guestmem;
 pub mod memory;
+pub mod virtualrange;
 pub mod pagetable;
 pub mod ptguards;
 pub mod stack;
