@@ -55,7 +55,7 @@ pub fn virt_range_init() {
     let mut pm4k = VIRTUAL_MAP_4K.lock();
     let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
     if page_count > BitmapAllocator1024::CAPACITY {
-        panic!("Attempted to allocate page map with more than 4K pages");
+        panic!("Attempted to allocate 4K page map with more than 1024 pages");
     }
     pm4k.start_virt = SVSM_PERCPU_TEMP_BASE_4K;
     pm4k.page_count = page_count;
@@ -64,7 +64,7 @@ pub fn virt_range_init() {
     let mut pm2m = VIRTUAL_MAP_2M.lock();
     let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
     if page_count > BitmapAllocator1024::CAPACITY {
-        panic!("Attempted to allocate page map with more than 4K pages");
+        panic!("Attempted to allocate 2M page map with more than 1024 pages");
     }
     pm2m.start_virt = SVSM_PERCPU_TEMP_BASE_2M;
     pm2m.page_count = page_count;

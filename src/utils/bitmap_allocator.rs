@@ -1,4 +1,8 @@
-
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2022-2023 SUSE LLC
+//
+// Author: Roy Hopkins <rhopkins@suse.de>
 
 pub trait BitmapAllocator {
     const CAPACITY: usize;
@@ -64,11 +68,11 @@ impl BitmapAllocator for BitmapAllocator64 {
 
     fn get(&self, offset: usize) -> bool {
         assert!(offset < BitmapAllocator64::CAPACITY);
-        return (self.bits & (1 << offset)) != 0
+        (self.bits & (1 << offset)) != 0
     }
 
     fn empty(&self) -> bool {
-        return self.bits == 0;
+        self.bits == 0
     }
 
     fn capacity(&self) -> usize {
@@ -163,7 +167,7 @@ impl<T: BitmapAllocator> BitmapAllocator for BitmapAllocatorTree<T> {
     }
 
     fn empty(&self) -> bool {
-        return self.bits == 0;
+        self.bits == 0
     }
 
     fn capacity(&self) -> usize {
@@ -222,7 +226,7 @@ fn alloc_aligned(ba: &mut impl BitmapAllocator, entries: usize, align: usize) ->
 
 #[cfg(test)]
 mod tests {
-    use crate::bitmapallocator::{BitmapAllocator64, BitmapAllocator};
+    use super::{BitmapAllocator64, BitmapAllocator};
 
     use super::BitmapAllocatorTree;
 
