@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use crate::error::SvsmError;
 use crate::mm::pagetable::max_phys_addr;
 
 use super::io::IOPort;
@@ -29,6 +30,22 @@ const KERNEL_REGION_SIZE_MASK: u64 = !(KERNEL_REGION_SIZE - 1);
 
 pub struct FwCfg<'a> {
     driver: &'a dyn IOPort,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum FwCfgError {
+    // Could not find the appropriate file selector.
+    FileNotFound,
+    // Unexpected file size.
+    FileSize(u32),
+    // Could not find an appropriate kernel region for the SVSM.
+    KernelRegion,
+}
+
+impl From<FwCfgError> for SvsmError {
+    fn from(err: FwCfgError) -> Self {
+        Self::FwCfg(err)
+    }
 }
 
 pub struct FwCfgFile {
@@ -102,12 +119,11 @@ impl<'a> FwCfg<'a> {
         self.driver.inb(FW_CFG_DATA) as char
     }
 
-    pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, ()> {
-        let mut ret: Result<FwCfgFile, ()> = Err(());
+    pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, SvsmError> {
         self.select(FW_CFG_FILE_DIR);
-        let mut n: u32 = self.read_be();
+        let n: u32 = self.read_be();
 
-        while n != 0 {
+        for _ in 0..n {
             let size: u32 = self.read_be();
             let select: u16 = self.read_be();
             let _unused: u16 = self.read_be();
@@ -117,24 +133,22 @@ impl<'a> FwCfg<'a> {
                 fs.push(c);
             }
 
-            //        log::info!("FwCfg File: {} Size: {}", fs, size);
-
             if fs == name {
-                ret = Ok(FwCfgFile {
+                return Ok(FwCfgFile {
                     size: size,
                     selector: select,
                 });
             }
-            n -= 1;
         }
-        ret
+
+        Err(SvsmError::FwCfg(FwCfgError::FileNotFound))
     }
 
-    fn find_svsm_region(&self) -> Result<MemoryRegion, ()> {
+    fn find_svsm_region(&self) -> Result<MemoryRegion, SvsmError> {
         let file = self.file_selector("etc/sev/svsm")?;
 
         if file.size != 16 {
-            return Err(());
+            return Err(SvsmError::FwCfg(FwCfgError::FileSize(file.size)));
         }
 
         self.select(file.selector);
@@ -152,7 +166,7 @@ impl<'a> FwCfg<'a> {
         MemoryRegion { start, end }
     }
 
-    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, ()> {
+    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, SvsmError> {
         let mut regions: Vec<MemoryRegion> = Vec::new();
         let file = self.file_selector("etc/e820")?;
         let entries = file.size / 20;
@@ -171,19 +185,19 @@ impl<'a> FwCfg<'a> {
         Ok(regions)
     }
 
-    fn find_kernel_region_e820(&self) -> Result<MemoryRegion, ()> {
+    fn find_kernel_region_e820(&self) -> Result<MemoryRegion, SvsmError> {
         let regions = self.get_memory_regions()?;
         let mut kernel_region = regions
             .iter()
             .max_by_key(|region| region.start)
             .copied()
-            .ok_or(())?;
+            .ok_or(SvsmError::FwCfg(FwCfgError::KernelRegion))?;
 
         let start =
             (kernel_region.end.saturating_sub(KERNEL_REGION_SIZE)) & KERNEL_REGION_SIZE_MASK;
 
         if start < kernel_region.start {
-            return Err(());
+            return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
         }
 
         kernel_region.start = start;
@@ -191,14 +205,14 @@ impl<'a> FwCfg<'a> {
         Ok(kernel_region)
     }
 
-    pub fn find_kernel_region(&self) -> Result<MemoryRegion, ()> {
+    pub fn find_kernel_region(&self) -> Result<MemoryRegion, SvsmError> {
         let kernel_region = self
             .find_svsm_region()
             .or_else(|_| self.find_kernel_region_e820())?;
 
         // Make sure that the kernel region doesn't overlap with the loader.
         if kernel_region.start < 640 * 1024 {
-            return Err(());
+            return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
         }
 
         Ok(kernel_region)

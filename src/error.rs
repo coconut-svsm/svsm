@@ -1,3 +1,4 @@
+use crate::fw_cfg::FwCfgError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
@@ -25,4 +26,8 @@ pub enum SvsmError {
     InvalidAddress,
     // Errors related to firmware parsing
     Firmware,
+    // Errors related to firmware configuration contents
+    FwCfg(FwCfgError),
+    // Errors related to ACPI parsing.
+    Acpi,
 }

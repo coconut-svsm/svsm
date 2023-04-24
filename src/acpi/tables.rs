@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
@@ -16,46 +17,32 @@ use core::ptr;
 use log;
 
 #[repr(C, packed)]
-pub struct RSDPDesc {
-    pub sig: [u8; 8],
-    pub chksum: u8,
-    pub oem_id: [u8; 6],
-    pub rev: u8,
-    pub rsdt_addr: u32,
+struct RSDPDesc {
+    sig: [u8; 8],
+    chksum: u8,
+    oem_id: [u8; 6],
+    rev: u8,
+    rsdt_addr: u32,
 }
 
 impl RSDPDesc {
-    pub const fn new() -> Self {
-        RSDPDesc {
-            sig: [0; 8],
-            chksum: 0,
-            oem_id: [0; 6],
-            rev: 0,
-            rsdt_addr: 0,
-        }
-    }
-
-    pub fn load(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
+    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+        let mut buf = mem::MaybeUninit::<Self>::uninit();
         let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
         let size = file.size() as usize;
 
-        if file.size() as usize != mem::size_of::<RSDPDesc>() {
-            return Err(());
+        if size != mem::size_of::<Self>() {
+            return Err(SvsmError::Acpi);
         }
 
         fw_cfg.select(file.selector());
-
-        unsafe {
-            let ptr = ptr::NonNull::new(self).unwrap();
-            let buf_ptr = ptr.as_ptr().cast::<u8>();
-
-            for i in 0..size {
-                let byte: u8 = fw_cfg.read_le();
-                buf_ptr.add(i).write(byte);
-            }
+        let ptr = buf.as_mut_ptr().cast::<u8>();
+        for i in 0..size {
+            let byte: u8 = fw_cfg.read_le();
+            unsafe { ptr.add(i).write(byte) };
         }
 
-        Ok(())
+        unsafe { Ok(buf.assume_init()) }
     }
 }
 
@@ -87,8 +74,8 @@ struct ACPITableHeader {
 }
 
 impl ACPITableHeader {
-    pub const fn new(raw: RawACPITableHeader) -> Self {
-        ACPITableHeader {
+    const fn new(raw: RawACPITableHeader) -> Self {
+        Self {
             sig: raw.sig,
             len: raw.len,
             rev: raw.rev,
@@ -102,7 +89,7 @@ impl ACPITableHeader {
     }
 
     #[allow(dead_code)]
-    pub fn print_summary(&self) {
+    fn print_summary(&self) {
         let sig = FixedString::from(self.sig);
         let oem_id = FixedString::from(self.oem_id);
         let oem_table_id = FixedString::from(self.oem_table_id);
@@ -129,17 +116,18 @@ struct ACPITable {
 }
 
 impl ACPITable {
-    fn new(ptr: *const u8) -> Result<Self, ()> {
+    fn new(ptr: *const u8) -> Result<Self, SvsmError> {
         unsafe {
             let raw_header = ptr.cast::<RawACPITableHeader>();
             let size = (*raw_header).len as usize;
 
-            let layout = Layout::array::<u8>(size).unwrap();
-            let buf = ptr::NonNull::new(alloc(layout)).unwrap();
+            let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
+            let buf =
+                ptr::NonNull::new(alloc(layout)).unwrap_or_else(|| handle_alloc_error(layout));
 
             ptr::copy(ptr, buf.as_ptr(), size);
 
-            Ok(ACPITable {
+            Ok(Self {
                 header: ACPITableHeader::new(*raw_header),
                 ptr: buf,
                 size: size,
@@ -148,19 +136,16 @@ impl ACPITable {
     }
 
     #[allow(dead_code)]
-    pub fn signature(&self) -> FixedString<4> {
+    fn signature(&self) -> FixedString<4> {
         FixedString::from(self.header.sig)
     }
 
-    pub fn content_length(&self) -> usize {
-        if self.size <= mem::size_of::<RawACPITableHeader>() {
-            0
-        } else {
-            self.size - mem::size_of::<RawACPITableHeader>()
-        }
+    fn content_length(&self) -> usize {
+        self.size
+            .saturating_sub(mem::size_of::<RawACPITableHeader>())
     }
 
-    pub fn content(&mut self) -> *mut u8 {
+    fn content(&self) -> *const u8 {
         let offset = mem::size_of::<RawACPITableHeader>();
 
         unsafe { self.ptr.as_ptr().add(offset) }
@@ -168,18 +153,14 @@ impl ACPITable {
 }
 
 struct ACPITableMeta {
-    pub sig: FixedString<4>,
-    pub offset: usize,
+    sig: FixedString<4>,
+    offset: usize,
 }
 
 impl ACPITableMeta {
-    pub fn new(header: &RawACPITableHeader, offset: usize) -> Self {
+    fn new(header: &RawACPITableHeader, offset: usize) -> Self {
         let sig = FixedString::from(header.sig);
-
-        ACPITableMeta {
-            sig: sig,
-            offset: offset,
-        }
+        Self { sig, offset }
     }
 }
 
@@ -190,24 +171,37 @@ struct ACPITableBuffer {
 }
 
 impl ACPITableBuffer {
-    pub const fn new() -> Self {
-        ACPITableBuffer {
-            ptr: ptr::NonNull::dangling(),
-            size: 0,
-            tables: Vec::new(),
+    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+        let file = fw_cfg.file_selector("etc/acpi/tables")?;
+        let size = file.size() as usize;
+
+        let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
+        let ptr = unsafe { alloc(layout) };
+        let ptr = ptr::NonNull::new(ptr).unwrap_or_else(|| handle_alloc_error(layout));
+
+        fw_cfg.select(file.selector());
+        for i in 0..size {
+            let byte: u8 = fw_cfg.read_le();
+            unsafe { ptr.as_ptr().add(i).write(byte) };
         }
+
+        let mut buf = Self {
+            ptr,
+            size,
+            tables: Vec::new(),
+        };
+        buf.load_tables(fw_cfg)?;
+        Ok(buf)
     }
 
-    fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
-        let mut desc: RSDPDesc = RSDPDesc::new();
+    fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), SvsmError> {
+        let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
-        desc.load(fw_cfg)?;
-
-        let mut rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
+        let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
         let len = rsdt.content_length();
 
         if len == 0 {
-            return Err(());
+            return Err(SvsmError::Acpi);
         }
 
         let entries = len / 4;
@@ -220,7 +214,7 @@ impl ACPITableBuffer {
                 let offset = (*entry_ptr) as usize;
 
                 if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-                    return Err(());
+                    return Err(SvsmError::Acpi);
                 }
 
                 let raw_header = self.ptr.as_ptr().add(offset).cast::<RawACPITableHeader>();
@@ -233,40 +227,9 @@ impl ACPITableBuffer {
         Ok(())
     }
 
-    pub fn load_from_fwcfg(&mut self, fw_cfg: &FwCfg) -> Result<(), ()> {
-        if self.size != 0 {
-            return Err(());
-        }
-
-        let file = fw_cfg.file_selector("etc/acpi/tables")?;
-        let size = file.size() as usize;
-
-        unsafe {
-            let layout = Layout::array::<u8>(size).unwrap();
-            let ptr = match ptr::NonNull::new(alloc(layout)) {
-                Some(p) => p,
-                None => handle_alloc_error(layout),
-            };
-
-            self.ptr = ptr::NonNull::new(ptr.as_ptr()).unwrap();
-            self.size = size;
-
-            fw_cfg.select(file.selector());
-            for i in 0..size {
-                let byte: u8 = fw_cfg.read_le();
-                ptr.as_ptr().add(i).write(byte);
-            }
-        }
-
-        self.load_tables(fw_cfg)
-            .expect("Loading ACPI tables failed");
-
-        Ok(())
-    }
-
-    fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, ()> {
+    fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
         if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-            return Err(());
+            return Err(SvsmError::Acpi);
         }
 
         unsafe {
@@ -275,7 +238,7 @@ impl ACPITableBuffer {
         }
     }
 
-    pub fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
+    fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
         let offset = self
             .tables
             .iter()
@@ -297,7 +260,7 @@ impl Drop for ACPITableBuffer {
     }
 }
 
-pub const MADT_HEADER_SIZE: usize = 8;
+const MADT_HEADER_SIZE: usize = 8;
 
 #[allow(dead_code)]
 #[repr(C, packed)]
@@ -330,18 +293,14 @@ pub struct ACPICPUInfo {
     pub enabled: bool,
 }
 
-pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, ()> {
-    let mut buffer = ACPITableBuffer::new();
+pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+    let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
-    buffer.load_from_fwcfg(fw_cfg)?;
-
-    let mut apic_table = buffer
-        .acp_table_by_sig("APIC")
-        .expect("MADT ACPI table not found");
+    let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
     let len = apic_table.content_length();
 
     if len == 0 {
-        return Err(());
+        return Err(SvsmError::Acpi);
     }
 
     let content = apic_table.content();
