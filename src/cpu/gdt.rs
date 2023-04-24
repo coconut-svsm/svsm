@@ -5,7 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::tss::{X86Tss, TSS_LIMIT};
-use crate::types::{VirtAddr, SVSM_CS, SVSM_DS, SVSM_TSS};
+use crate::address::VirtAddr;
+use crate::types::{SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
 use core::mem;
 
@@ -58,7 +59,10 @@ pub fn load_tss(tss: &X86Tss) {
     }
 }
 
-static mut GDT_DESC: GdtDesc = GdtDesc { size: 0, addr: 0 };
+static mut GDT_DESC: GdtDesc = GdtDesc {
+    size: 0,
+    addr: VirtAddr::null(),
+};
 
 pub fn gdt_base_limit() -> (u64, u32) {
     unsafe {
@@ -71,7 +75,7 @@ pub fn gdt_base_limit() -> (u64, u32) {
 
 pub fn load_gdt() {
     unsafe {
-        let vaddr = GDT.as_ptr() as VirtAddr;
+        let vaddr = VirtAddr::from(GDT.as_ptr());
 
         GDT_DESC.addr = vaddr;
         GDT_DESC.size = (GDT_SIZE * 8) - 1;

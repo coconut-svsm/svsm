@@ -4,11 +4,11 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
+use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
 use crate::cpu::idt::{is_exception_handler_return_site, X86Regs};
 #[cfg(feature = "enable-stacktrace")]
 use crate::mm::address_space::{STACK_SIZE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
-use crate::types::VirtAddr;
 #[cfg(feature = "enable-stacktrace")]
 use core::arch::asm;
 #[cfg(feature = "enable-stacktrace")]
@@ -23,7 +23,7 @@ struct StackBounds {
 #[cfg(feature = "enable-stacktrace")]
 impl StackBounds {
     fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
-        let end = match begin.checked_add(len) {
+        let end = match begin.checked_offset(len) {
             Some(end) => end,
             None => return false,
         };
@@ -67,16 +67,16 @@ impl StackUnwinder {
 
         let stacks: StacksBounds = [
             StackBounds {
-                bottom: SVSM_STACKS_INIT_TASK as VirtAddr,
-                top: (SVSM_STACKS_INIT_TASK + STACK_SIZE) as VirtAddr,
+                bottom: VirtAddr::from(SVSM_STACKS_INIT_TASK),
+                top: VirtAddr::from(SVSM_STACKS_INIT_TASK + STACK_SIZE),
             },
             StackBounds {
-                bottom: SVSM_STACK_IST_DF_BASE as VirtAddr,
-                top: (SVSM_STACK_IST_DF_BASE + STACK_SIZE) as VirtAddr,
+                bottom: VirtAddr::from(SVSM_STACK_IST_DF_BASE),
+                top: VirtAddr::from(SVSM_STACK_IST_DF_BASE + STACK_SIZE),
             },
         ];
 
-        Self::new(rbp as VirtAddr, stacks)
+        Self::new(VirtAddr::from(rbp), stacks)
     }
 
     fn new(rbp: VirtAddr, stacks: StacksBounds) -> Self {
@@ -112,7 +112,7 @@ impl StackUnwinder {
             }
         }
 
-        let stack_depth = stack.top - rsp as usize;
+        let stack_depth = stack.top - rsp;
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
@@ -134,10 +134,10 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
-        let rbp = unsafe { (rsp as *const VirtAddr).read_unaligned() };
-        let rsp = rsp + mem::size_of::<VirtAddr>();
-        let rip = unsafe { (rsp as *const VirtAddr).read_unaligned() };
-        let rsp = rsp + mem::size_of::<VirtAddr>();
+        let rbp = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
+        let rsp = rsp.offset(mem::size_of::<VirtAddr>());
+        let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
+        let rsp = rsp.offset(mem::size_of::<VirtAddr>());
 
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }
@@ -150,10 +150,10 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
-        let regs = unsafe { &*(rsp as *const X86Regs) };
-        let rbp = regs.rbp as VirtAddr;
-        let rip = regs.rip as VirtAddr;
-        let rsp = regs.rsp as VirtAddr;
+        let regs = unsafe { &*rsp.as_ptr::<X86Regs>() };
+        let rbp = VirtAddr::from(regs.rbp);
+        let rip = VirtAddr::from(regs.rip);
+        let rsp = VirtAddr::from(regs.rsp);
 
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }
@@ -166,7 +166,7 @@ impl StackUnwinder {
         // would point to the word at the top of the runtime stack.
         stacks.iter().any(|stack| {
             let word_size = mem::size_of::<VirtAddr>();
-            stack.top >= word_size && stack.top - word_size == rbp
+            stack.top.checked_sub(word_size) == Some(rbp)
         })
     }
 }

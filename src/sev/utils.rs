@@ -4,9 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::types::{VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::is_aligned;
+use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use core::arch::asm;
 use core::fmt;
 
@@ -51,7 +51,10 @@ impl fmt::Display for SevSnpError {
 }
 
 fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
-    for addr in (start..end).step_by(PAGE_SIZE) {
+    for addr in (start.bits()..end.bits())
+        .step_by(PAGE_SIZE)
+        .map(VirtAddr::from)
+    {
         pvalidate(addr, false, valid)?;
     }
 
@@ -62,19 +65,19 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
     let mut addr = start;
 
     while addr < end {
-        if is_aligned(addr, PAGE_SIZE_2M) && (addr + PAGE_SIZE_2M) <= end {
+        if addr.is_aligned(PAGE_SIZE_2M) && addr.offset(PAGE_SIZE_2M) <= end {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, true, valid).or_else(|err| match err {
                 SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                    pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
+                    pvalidate_range_4k(addr, addr.offset(PAGE_SIZE_2M), valid)
                 }
                 _ => Err(err),
             })?;
-            addr += PAGE_SIZE_2M;
+            addr = addr.offset(PAGE_SIZE_2M);
         } else {
             pvalidate(addr, false, valid)?;
-            addr += PAGE_SIZE;
+            addr = addr.offset(PAGE_SIZE);
         }
     }
 
@@ -82,7 +85,7 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
 }
 
 pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), SvsmError> {
-    let rax = vaddr;
+    let rax = vaddr.bits();
     let rcx = huge_page as u64;
     let rdx = valid as u64;
     let ret: u64;
@@ -142,7 +145,7 @@ bitflags::bitflags! {
 
 pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), SvsmError> {
     let rcx: usize = if huge { 1 } else { 0 };
-    let rax: u64 = addr as u64;
+    let rax: u64 = addr.bits() as u64;
     let rdx: u64 = flags.bits();
     let mut ret: u64;
     let mut ex: u64;

@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::error::SvsmError;
@@ -16,7 +16,7 @@ use crate::sev::utils::{
     rmp_set_guest_vmsa, RMPFlags, SevSnpError,
 };
 use crate::sev::vmsa::{GuestVMExit, VMSA};
-use crate::types::{VirtAddr, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::halt;
 
 #[derive(Debug, Clone, Copy)]
@@ -358,7 +358,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
 
-    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
+    let guest_page = GuestPtr::<PValidateRequest>::new(start.offset(offset));
     let mut request = guest_page.read()?;
 
     let entries = request.entries;
@@ -416,7 +416,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr() + offset;
+    let vaddr = mapping_guard.virt_addr().offset(offset);
 
     let pending = GuestPtr::<u64>::new(vaddr);
     pending.write(0)?;

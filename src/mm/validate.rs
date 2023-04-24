@@ -4,12 +4,12 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_pages, get_order};
 use crate::mm::virt_to_phys;
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
@@ -32,7 +32,7 @@ pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), Sv
 
     let mut vb_ref = VALID_BITMAP.lock();
     vb_ref.set_region(pbase, pend);
-    vb_ref.set_bitmap(bitmap_addr as *mut u64);
+    vb_ref.set_bitmap(bitmap_addr.as_mut_ptr::<u64>());
     vb_ref.clear_all();
 
     Ok(())
@@ -44,7 +44,7 @@ pub fn migrate_valid_bitmap() -> Result<(), SvsmError> {
 
     // lock again here because allocator path also takes VALID_BITMAP.lock()
     let mut vb_ref = VALID_BITMAP.lock();
-    vb_ref.migrate(bitmap_addr as *mut u64);
+    vb_ref.migrate(bitmap_addr.as_mut_ptr::<u64>());
     Ok(())
 }
 
@@ -123,7 +123,7 @@ impl ValidBitmap {
 
     pub fn bitmap_addr(&self) -> PhysAddr {
         assert!(!self.bitmap.is_null());
-        virt_to_phys(self.bitmap as VirtAddr)
+        virt_to_phys(VirtAddr::from(self.bitmap))
     }
 
     #[inline(always)]

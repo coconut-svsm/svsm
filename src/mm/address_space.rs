@@ -4,8 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr};
-use crate::types::VirtAddr;
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 #[derive(Copy, Clone)]
@@ -18,8 +17,8 @@ struct KernelMapping {
 impl KernelMapping {
     pub const fn new() -> Self {
         KernelMapping {
-            virt_start: 0,
-            virt_end: 0,
+            virt_start: VirtAddr::null(),
+            virt_end: VirtAddr::null(),
             phys_start: PhysAddr::null(),
         }
     }
@@ -57,7 +56,7 @@ pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 
     let offset: usize = paddr - KERNEL_MAPPING.phys_start;
 
-    KERNEL_MAPPING.virt_start + offset
+    KERNEL_MAPPING.virt_start.offset(offset)
 }
 
 // Address space definitions for SVSM virtual memory layout

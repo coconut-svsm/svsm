@@ -4,8 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::types::VirtAddr;
-use crate::utils::page_align;
+use crate::address::{Address, VirtAddr};
 use core::arch::asm;
 
 const INVLPGB_VALID_VA: u64 = 1u64 << 0;
@@ -52,8 +51,10 @@ pub fn flush_tlb_global_sync() {
 }
 
 pub fn flush_address(va: VirtAddr) {
-    let rax: u64 =
-        (page_align(va) as u64) | INVLPGB_VALID_VA | INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
+    let rax: u64 = (va.page_align().bits() as u64)
+        | INVLPGB_VALID_VA
+        | INVLPGB_VALID_ASID
+        | INVLPGB_VALID_GLOBAL;
     do_invlpgb(rax, 0, 0);
 }
 

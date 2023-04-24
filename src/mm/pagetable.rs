@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
@@ -13,9 +13,8 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::is_aligned;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::{cmp, ptr};
@@ -187,7 +186,7 @@ impl PageTable {
     }
 
     pub fn cr3_value(&self) -> PhysAddr {
-        let pgtable: usize = (self as *const PageTable) as usize;
+        let pgtable = VirtAddr::from(self as *const PageTable);
         let cr3 = virt_to_phys(pgtable);
         set_c_bit(cr3)
     }
@@ -229,11 +228,11 @@ impl PageTable {
 
     fn allocate_page_table() -> Result<*mut PTPage, SvsmError> {
         let ptr = allocate_zeroed_page()?;
-        Ok(ptr as *mut PTPage)
+        Ok(ptr.as_mut_ptr::<PTPage>())
     }
 
     fn index<const L: usize>(vaddr: VirtAddr) -> usize {
-        vaddr >> (12 + L * 9) & 0x1ff
+        vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
     fn entry_to_pagetable(entry: PTEntry) -> Option<&'static mut PTPage> {
@@ -243,7 +242,7 @@ impl PageTable {
         }
 
         let address = phys_to_virt(entry.address());
-        Some(unsafe { &mut *(address as *mut PTPage) })
+        Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
     }
 
     fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
@@ -301,7 +300,7 @@ impl PageTable {
             _ => return Mapping::Level3(entry),
         };
 
-        let paddr = virt_to_phys(page as VirtAddr);
+        let paddr = virt_to_phys(VirtAddr::from(page));
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
@@ -326,7 +325,7 @@ impl PageTable {
             _ => return Mapping::Level2(entry),
         };
 
-        let paddr = virt_to_phys(page as VirtAddr);
+        let paddr = virt_to_phys(VirtAddr::from(page));
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
@@ -351,7 +350,7 @@ impl PageTable {
             _ => return Mapping::Level1(entry),
         };
 
-        let paddr = virt_to_phys(page as VirtAddr);
+        let paddr = virt_to_phys(VirtAddr::from(page));
         let flags = PTEntryFlags::PRESENT
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
@@ -405,7 +404,7 @@ impl PageTable {
             }
         }
 
-        entry.set(set_c_bit(virt_to_phys(page as VirtAddr)), flags);
+        entry.set(set_c_bit(virt_to_phys(VirtAddr::from(page))), flags);
 
         flush_tlb_global_sync();
 
@@ -475,7 +474,7 @@ impl PageTable {
         paddr: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        assert!(is_aligned(vaddr, PAGE_SIZE_2M));
+        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.alloc_pte_2m(vaddr);
@@ -489,7 +488,7 @@ impl PageTable {
     }
 
     pub fn unmap_2m(&mut self, vaddr: VirtAddr) {
-        assert!(is_aligned(vaddr, PAGE_SIZE_2M));
+        assert!(vaddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.walk_addr(vaddr);
 
@@ -533,14 +532,14 @@ impl PageTable {
 
         match mapping {
             Mapping::Level0(entry) => {
-                let offset = vaddr & (PAGE_SIZE - 1);
+                let offset = vaddr.page_offset();
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
                     return Err(SvsmError::Mem);
                 }
                 Ok(entry.address().offset(offset))
             }
             Mapping::Level1(entry) => {
-                let offset = vaddr & (PAGE_SIZE_2M - 1);
+                let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
                 if !entry.flags().contains(PTEntryFlags::PRESENT)
                     || !entry.flags().contains(PTEntryFlags::HUGE)
                 {
@@ -561,7 +560,10 @@ impl PageTable {
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start..end).step_by(PAGE_SIZE) {
+        for addr in (start.bits()..end.bits())
+            .step_by(PAGE_SIZE)
+            .map(VirtAddr::from)
+        {
             let offset = addr - start;
             self.map_4k(addr, phys.offset(offset), flags)?;
         }
@@ -569,7 +571,10 @@ impl PageTable {
     }
 
     pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start..end).step_by(PAGE_SIZE) {
+        for addr in (start.bits()..end.bits())
+            .step_by(PAGE_SIZE)
+            .map(VirtAddr::from)
+        {
             self.unmap_4k(addr);
         }
     }
@@ -581,7 +586,10 @@ impl PageTable {
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start..end).step_by(PAGE_SIZE_2M) {
+        for addr in (start.bits()..end.bits())
+            .step_by(PAGE_SIZE_2M)
+            .map(VirtAddr::from)
+        {
             let offset = addr - start;
             self.map_2m(addr, phys.offset(offset), flags)?;
         }
@@ -589,7 +597,10 @@ impl PageTable {
     }
 
     pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start..end).step_by(PAGE_SIZE_2M) {
+        for addr in (start.bits()..end.bits())
+            .step_by(PAGE_SIZE_2M)
+            .map(VirtAddr::from)
+        {
             self.unmap_2m(addr);
         }
     }
@@ -605,18 +616,18 @@ impl PageTable {
         let mut paddr = phys;
 
         while vaddr < end {
-            if is_aligned(vaddr, PAGE_SIZE_2M)
+            if vaddr.is_aligned(PAGE_SIZE_2M)
                 && paddr.is_aligned(PAGE_SIZE_2M)
-                && vaddr + PAGE_SIZE_2M <= end
+                && vaddr.offset(PAGE_SIZE_2M) <= end
                 && self.map_2m(vaddr, paddr, flags).is_ok()
             {
-                vaddr += PAGE_SIZE_2M;
+                vaddr = vaddr.offset(PAGE_SIZE_2M);
                 paddr = paddr.offset(PAGE_SIZE_2M);
                 continue;
             }
 
             self.map_4k(vaddr, paddr, flags)?;
-            vaddr += PAGE_SIZE;
+            vaddr = vaddr.offset(PAGE_SIZE);
             paddr = paddr.offset(PAGE_SIZE);
         }
 
@@ -632,11 +643,11 @@ impl PageTable {
             match mapping {
                 Mapping::Level0(entry) => {
                     entry.clear();
-                    vaddr += PAGE_SIZE;
+                    vaddr = vaddr.offset(PAGE_SIZE);
                 }
                 Mapping::Level1(entry) => {
                     entry.clear();
-                    vaddr += PAGE_SIZE_2M;
+                    vaddr = vaddr.offset(PAGE_SIZE_2M);
                 }
                 _ => {
                     log::debug!("Can't unmap - address not mapped {:#x}", vaddr);

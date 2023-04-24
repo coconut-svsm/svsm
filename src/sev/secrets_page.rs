@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::VirtAddr;
 use crate::sev::vmsa::VMPL_MAX;
-use crate::types::VirtAddr;
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
@@ -29,7 +29,7 @@ pub struct SecretsPage {
 }
 
 pub fn copy_secrets_page(target: &mut SecretsPage, source: VirtAddr) {
-    let table = source as *const SecretsPage;
+    let table = source.as_ptr::<SecretsPage>();
 
     unsafe {
         *target = *table;

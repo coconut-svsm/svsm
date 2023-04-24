@@ -4,9 +4,10 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::types::{VirtAddr, PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
 use super::{
@@ -26,7 +27,7 @@ pub struct VirtualRange {
 impl VirtualRange {
     pub const fn new() -> VirtualRange {
         VirtualRange {
-            start_virt: 0,
+            start_virt: VirtAddr::null(),
             page_count: 0,
             bits: BitmapAllocator1024::new(),
         }
@@ -39,7 +40,7 @@ impl VirtualRange {
     ) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
         match self.bits.alloc(page_count + 1, alignment) {
-            Some(offset) => Ok(self.start_virt + (offset << PAGE_SHIFT)),
+            Some(offset) => Ok(self.start_virt.offset(offset << PAGE_SHIFT)),
             None => Err(SvsmError::Mem),
         }
     }
@@ -64,7 +65,7 @@ pub fn virt_range_init() {
     if page_count > BitmapAllocator1024::CAPACITY {
         panic!("Attempted to allocate 4K page map with more than 1024 pages");
     }
-    pm4k.start_virt = SVSM_PERCPU_TEMP_BASE_4K;
+    pm4k.start_virt = VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K);
     pm4k.page_count = page_count;
     pm4k.bits.set(0, page_count, false);
 
@@ -73,7 +74,7 @@ pub fn virt_range_init() {
     if page_count > BitmapAllocator1024::CAPACITY {
         panic!("Attempted to allocate 2M page map with more than 1024 pages");
     }
-    pm2m.start_virt = SVSM_PERCPU_TEMP_BASE_2M;
+    pm2m.start_virt = VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M);
     pm2m.page_count = page_count;
     pm2m.bits.set(0, page_count, false);
 }

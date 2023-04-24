@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::error::SvsmError;
@@ -16,7 +16,7 @@ use crate::mm::validate::{
 use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use core::cell::RefCell;
 use core::{mem, ptr};
 
@@ -136,7 +136,7 @@ pub enum GHCBIOSize {
 
 impl GHCB {
     pub fn init(&mut self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         if sev_snp_enabled() {
@@ -161,7 +161,7 @@ impl GHCB {
     }
 
     pub fn register(&self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         // Register GHCB GPA
@@ -169,7 +169,7 @@ impl GHCB {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
@@ -241,7 +241,7 @@ impl GHCB {
         self.sw_exit_info_2 = exit_info_2;
         self.set_valid(OFF_SW_EXIT_INFO_2);
 
-        let ghcb_address = (self as *const GHCB) as VirtAddr;
+        let ghcb_address = VirtAddr::from(self as *const GHCB);
         let ghcb_pa = u64::from(virt_to_phys(ghcb_address));
         write_msr(SEV_GHCB, ghcb_pa);
         raw_vmgexit();
@@ -425,7 +425,7 @@ impl GHCB {
                 };
                 self.write_buffer(&header, 0)?;
 
-                let buffer_va = self.buffer.as_ptr() as VirtAddr;
+                let buffer_va = VirtAddr::from(self.buffer.as_ptr());
                 let buffer_pa = u64::from(virt_to_phys(buffer_va));
                 self.set_sw_scratch(buffer_pa);
 

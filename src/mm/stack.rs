@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
@@ -13,7 +14,7 @@ use crate::mm::{phys_to_virt, virt_to_phys};
 use crate::mm::{
     STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
 };
-use crate::types::{VirtAddr, PAGE_SIZE};
+use crate::types::PAGE_SIZE;
 use crate::utils::ffs;
 
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
@@ -48,7 +49,7 @@ impl StackRange {
 
             self.alloc_bitmap[i] |= mask;
 
-            return Ok(self.start + (i * 64 + idx) * STACK_TOTAL_SIZE);
+            return Ok(self.start.offset((i * 64 + idx) * STACK_TOTAL_SIZE));
         }
 
         Err(SvsmError::Mem)
@@ -74,8 +75,8 @@ impl StackRange {
 }
 
 static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
-    SVSM_SHARED_STACK_BASE,
-    SVSM_SHARED_STACK_END,
+    VirtAddr::new(SVSM_SHARED_STACK_BASE),
+    VirtAddr::new(SVSM_SHARED_STACK_END),
 ));
 
 pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), SvsmError> {
@@ -83,7 +84,7 @@ pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Resul
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);
-        pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, flags)?;
+        pgtable.map_4k(stack.offset(i * PAGE_SIZE), paddr, flags)?;
     }
 
     Ok(())
@@ -96,15 +97,15 @@ pub fn allocate_stack() -> Result<VirtAddr, SvsmError> {
 }
 
 pub fn stack_base_pointer(stack: VirtAddr) -> VirtAddr {
-    (stack & !(STACK_SIZE - 1)) + STACK_SIZE
+    VirtAddr::from((stack.bits() & !(STACK_SIZE - 1)) + STACK_SIZE)
 }
 
 pub fn free_stack(stack: VirtAddr) {
-    let mut pages: [VirtAddr; STACK_PAGES] = [0; STACK_PAGES];
+    let mut pages: [VirtAddr; STACK_PAGES] = [VirtAddr::null(); STACK_PAGES];
 
     let mut pgtable = get_init_pgtable_locked();
     for (i, page) in pages.iter_mut().enumerate() {
-        let addr = stack + (i * PAGE_SIZE);
+        let addr = stack.offset(i * PAGE_SIZE);
         let paddr = pgtable
             .phys_addr(addr)
             .expect("Failed to get stack physical address");

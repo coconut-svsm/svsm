@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::types::VirtAddr;
 
 use core::arch::asm;
 use core::mem::{size_of, MaybeUninit};
@@ -24,7 +24,7 @@ unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
          ".quad (1b)",
          ".quad (2b)",
          ".popsection",
-            in(reg) v,
+            in(reg) v.bits(),
             out(reg) val,
             out("rcx") rcx,
             options(att_syntax, nostack));
@@ -51,7 +51,7 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
          ".quad (1b)",
          ".quad (2b)",
          ".popsection",
-            in(reg) v,
+            in(reg) v.bits(),
             out(reg) val,
             out("rcx") rcx,
             options(att_syntax, nostack));
@@ -78,7 +78,7 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
          ".quad (1b)",
          ".quad (2b)",
          ".popsection",
-            in(reg) v,
+            in(reg) v.bits(),
             out(reg) val,
             out("rcx") rcx,
             options(att_syntax, nostack));
@@ -105,7 +105,7 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
          ".quad (1b)",
          ".quad (2b)",
          ".popsection",
-            in(reg) v,
+            in(reg) v.bits(),
             out(reg) val,
             out("rcx") rcx,
             options(att_syntax, nostack));
@@ -151,11 +151,13 @@ where
 
 impl<T: Sized + Copy> GuestPtr<T> {
     pub fn new(v: VirtAddr) -> Self {
-        GuestPtr { ptr: v as *mut T }
+        Self {
+            ptr: v.as_mut_ptr::<T>(),
+        }
     }
 
     pub fn from_ptr(p: *mut T) -> Self {
-        GuestPtr { ptr: p }
+        Self { ptr: p }
     }
 
     pub fn read(&self) -> Result<T, SvsmError> {
@@ -183,7 +185,7 @@ impl<T: Sized + Copy> GuestPtr<T> {
     where
         N: Sized + Copy,
     {
-        GuestPtr::<N>::new(self.ptr as VirtAddr)
+        GuestPtr::<N>::from_ptr(self.ptr.cast::<N>())
     }
 
     pub fn offset(&self, count: isize) -> Self {

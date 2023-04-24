@@ -5,14 +5,14 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::pagetable::{get_init_pgtable_locked, PageTable};
-use crate::address::{Address, PhysAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::{flush_address_sync, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
 };
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
 struct RawPTMappingGuard {
     start: VirtAddr,
@@ -49,7 +49,7 @@ impl PerCPUPageMappingGuard {
             let vaddr = virt_alloc_range_2m(size, 0)?;
             if this_cpu_mut()
                 .get_pgtable()
-                .map_region_2m(vaddr, vaddr + size, paddr_start, flags)
+                .map_region_2m(vaddr, vaddr.offset(size), paddr_start, flags)
                 .is_err()
             {
                 virt_free_range_2m(vaddr, size);
@@ -60,7 +60,7 @@ impl PerCPUPageMappingGuard {
             let vaddr = virt_alloc_range_4k(size, 0)?;
             if this_cpu_mut()
                 .get_pgtable()
-                .map_region_4k(vaddr, vaddr + size, paddr_start, flags)
+                .map_region_4k(vaddr, vaddr.offset(size), paddr_start, flags)
                 .is_err()
             {
                 virt_free_range_4k(vaddr, size);
@@ -69,7 +69,8 @@ impl PerCPUPageMappingGuard {
             vaddr
         };
 
-        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);
+        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr.offset(size));
+
         Ok(PerCPUPageMappingGuard {
             mapping: Some(raw_mapping),
             huge,
