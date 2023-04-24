@@ -68,7 +68,7 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
     // because before that the stage2 page-table is still active, which is in
     // stage2 memory, causing invalidation of page-table pages.
     while paddr < pend {
-        let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+        let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
         pvalidate(vaddr, false, false)?;

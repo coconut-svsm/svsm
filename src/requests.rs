@@ -8,6 +8,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::{valid_phys_address, GuestPtr};
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
@@ -181,7 +182,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)?;
+    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
@@ -221,7 +222,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     // Map the VMSA
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr();
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
@@ -303,8 +304,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let huge = page_size == 1;
     let valid = (entry & 4) == 4;
     let ign_cf = (entry & 8) == 8;
+    let valign = if huge { VIRT_ALIGN_2M } else { VIRT_ALIGN_4K };
 
-    let alignment = {
+    let page_size_bytes = {
         if huge {
             PAGE_SIZE_2M
         } else {
@@ -313,7 +315,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     };
     let paddr: PhysAddr = (entry as usize) & !(PAGE_SIZE - 1);
 
-    if !is_aligned(paddr, alignment) {
+    if !is_aligned(paddr, page_size_bytes) {
         return Err(SvsmReqError::invalid_parameter());
     }
 
@@ -322,7 +324,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, 1, huge)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -352,7 +354,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = page_align(gpa);
     let offset = page_offset(gpa);
 
-    let guard = PerCPUPageMappingGuard::create(paddr, 0, false)?;
+    let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
@@ -412,7 +414,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let paddr = page_align(gpa);
 
     // Temporarily map new CAA to clear it
-    let mapping_guard = PerCPUPageMappingGuard::create(paddr, 1, false)?;
+    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);

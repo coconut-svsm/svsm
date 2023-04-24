@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::error::SvsmError;
 use crate::types::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -140,23 +139,3 @@ pub const SVSM_PERCPU_TEMP_END_4K: usize = SVSM_PERCPU_TEMP_BASE_4K + SIZE_LEVEL
 /// Start and End for PAGE_SIZEed temporary mappings
 pub const SVSM_PERCPU_TEMP_BASE_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL1;
 pub const SVSM_PERCPU_TEMP_END_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL2;
-
-/// Number of slots - only use half of them to leave guard pages between the mappings
-pub const SVSM_PERCPU_TEMP_4K_SLOTS: usize =
-    ((SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE) / 2;
-pub const SVSM_PERCPU_TEMP_2M_SLOTS: usize =
-    ((SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M) / 2;
-
-pub fn percpu_4k_slot_addr(slot: usize) -> Result<VirtAddr, SvsmError> {
-    if slot >= SVSM_PERCPU_TEMP_4K_SLOTS {
-        return Err(SvsmError::Mem);
-    }
-    Ok(SVSM_PERCPU_TEMP_BASE_4K + (2 * slot * PAGE_SIZE))
-}
-
-pub fn percpu_2m_slot_addr(slot: usize) -> Result<VirtAddr, SvsmError> {
-    if slot >= SVSM_PERCPU_TEMP_2M_SLOTS {
-        return Err(SvsmError::Mem);
-    }
-    Ok(SVSM_PERCPU_TEMP_BASE_2M + (2 * slot * PAGE_SIZE_2M))
-}
