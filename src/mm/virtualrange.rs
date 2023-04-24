@@ -4,12 +4,15 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
-use crate::types::{VirtAddr, PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M, PAGE_SHIFT_2M};
-use crate::locking::SpinLock;
 use crate::error::SvsmError;
-use crate::utils::bitmap_allocator::{BitmapAllocator1024, BitmapAllocator};
+use crate::locking::SpinLock;
+use crate::types::{VirtAddr, PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
-use super::{SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_END_2M};
+use super::{
+    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
+    SVSM_PERCPU_TEMP_END_4K,
+};
 
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
@@ -25,15 +28,19 @@ impl VirtualRange {
         VirtualRange {
             start_virt: 0,
             page_count: 0,
-            bits: BitmapAllocator1024::new()
+            bits: BitmapAllocator1024::new(),
         }
     }
 
-    pub fn map_pages(self: &mut Self, page_count: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
+    pub fn map_pages(
+        self: &mut Self,
+        page_count: usize,
+        alignment: usize,
+    ) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
         match self.bits.alloc(page_count + 1, alignment) {
             Some(offset) => Ok(self.start_virt + (offset << PAGE_SHIFT)),
-            None => Err(SvsmError::Mem)
+            None => Err(SvsmError::Mem),
         }
     }
 
@@ -77,9 +84,11 @@ pub fn virt_log_usage() {
     let unused_cap_4k = BitmapAllocator1024::CAPACITY - page_count4k;
     let unused_cap_2m = BitmapAllocator1024::CAPACITY - page_count2m;
 
-    log::info!("Virtual memory pages used: {} * 4K, {} * 2M", 
+    log::info!(
+        "Virtual memory pages used: {} * 4K, {} * 2M",
         VIRTUAL_MAP_4K.lock().used_pages() - unused_cap_4k,
-        VIRTUAL_MAP_2M.lock().used_pages() - unused_cap_2m);
+        VIRTUAL_MAP_2M.lock().used_pages() - unused_cap_2m
+    );
 }
 
 pub fn virt_alloc_range_4k(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
@@ -93,7 +102,9 @@ pub fn virt_alloc_range_4k(size_bytes: usize, alignment: usize) -> Result<VirtAd
 }
 
 pub fn virt_free_range_4k(vaddr: VirtAddr, size_bytes: usize) {
-    VIRTUAL_MAP_4K.lock().unmap_pages(vaddr, size_bytes >> PAGE_SHIFT);
+    VIRTUAL_MAP_4K
+        .lock()
+        .unmap_pages(vaddr, size_bytes >> PAGE_SHIFT);
 }
 
 pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
@@ -107,5 +118,7 @@ pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAd
 }
 
 pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
-    VIRTUAL_MAP_2M.lock().unmap_pages(vaddr, size_bytes >> PAGE_SHIFT_2M);
+    VIRTUAL_MAP_2M
+        .lock()
+        .unmap_pages(vaddr, size_bytes >> PAGE_SHIFT_2M);
 }

@@ -18,10 +18,10 @@ pub trait BitmapAllocator {
     fn used(&self) -> usize;
 }
 
-pub type BitmapAllocator1024 = BitmapAllocatorTree::<BitmapAllocator64>;
+pub type BitmapAllocator1024 = BitmapAllocatorTree<BitmapAllocator64>;
 
 pub struct BitmapAllocator64 {
-    bits: u64
+    bits: u64,
 }
 
 impl BitmapAllocator64 {
@@ -101,11 +101,23 @@ impl BitmapAllocatorTree<BitmapAllocator64> {
             bits: u16::MAX,
             // FIXME: Is there a better way of doing this in rust?
             child: [
-                BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(),
-                BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(),
-                BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(),
-                BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(), BitmapAllocator64::new(),
-            ]
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+                BitmapAllocator64::new(),
+            ],
         }
     }
 }
@@ -226,7 +238,7 @@ fn alloc_aligned(ba: &mut impl BitmapAllocator, entries: usize, align: usize) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{BitmapAllocator64, BitmapAllocator};
+    use super::{BitmapAllocator, BitmapAllocator64};
 
     use super::BitmapAllocatorTree;
 
@@ -294,7 +306,9 @@ mod tests {
 
     #[test]
     fn test_next_free() {
-        let mut b = BitmapAllocator64 { bits: !0x8000000000000101 };
+        let mut b = BitmapAllocator64 {
+            bits: !0x8000000000000101,
+        };
         assert_eq!(b.next_free(0), Some(0));
         assert_eq!(b.next_free(1), Some(8));
         assert_eq!(b.next_free(9), Some(63));
@@ -465,7 +479,10 @@ mod tests {
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 4 bits : 16 bit alignment
         assert_eq!(b.alloc(1000, 4), Some(0));
-        assert_eq!(b.alloc(BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY - 100, 4), None);
+        assert_eq!(
+            b.alloc(BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY - 100, 4),
+            None
+        );
         assert_eq!(b.used(), 1000);
     }
 
@@ -474,7 +491,10 @@ mod tests {
         let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 4 bits : 16 bit alignment
-        assert_eq!(b.alloc(BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY - 10, 4), Some(0));
+        assert_eq!(
+            b.alloc(BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY - 10, 4),
+            Some(0)
+        );
         assert_eq!(b.alloc(1, 4), None);
         b.free(0, 50);
         assert_eq!(b.alloc(1, 4), Some(0));

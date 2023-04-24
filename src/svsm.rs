@@ -35,8 +35,8 @@ use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
+use svsm::mm::virtualrange::{virt_log_usage, virt_range_init};
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
-use svsm::mm::virtualrange::{virt_range_init, virt_log_usage};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
@@ -233,7 +233,10 @@ fn validate_flash() -> Result<(), SvsmError> {
         }
 
         // Make sure that no regions overlap with the kernel.
-        if region.overlaps(LAUNCH_INFO.kernel_region_phys_start, LAUNCH_INFO.kernel_region_phys_end) {
+        if region.overlaps(
+            LAUNCH_INFO.kernel_region_phys_start,
+            LAUNCH_INFO.kernel_region_phys_end,
+        ) {
             panic!("flash region overlaps with kernel");
         }
     }
@@ -438,7 +441,7 @@ pub extern "C" fn svsm_main() {
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
     virt_log_usage();
-    
+
     if let Err(e) = launch_fw() {
         panic!("Failed to launch FW: {:#?}", e);
     }

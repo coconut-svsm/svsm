@@ -8,8 +8,10 @@ use super::pagetable::{get_init_pgtable_locked, PageTable};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::{flush_address_sync, flush_tlb_global_sync};
 use crate::error::SvsmError;
-use crate::mm::virtualrange::{ virt_alloc_range_4k, virt_alloc_range_2m, virt_free_range_4k, virt_free_range_2m};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE_2M, PAGE_SIZE};
+use crate::mm::virtualrange::{
+    virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
+};
+use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
 
 struct RawPTMappingGuard {
     start: VirtAddr,
@@ -24,11 +26,15 @@ impl RawPTMappingGuard {
 
 pub struct PerCPUPageMappingGuard {
     mapping: Option<RawPTMappingGuard>,
-    huge: bool
+    huge: bool,
 }
 
 impl PerCPUPageMappingGuard {
-    pub fn create(paddr_start: PhysAddr, paddr_end: PhysAddr, alignment: usize) -> Result<Self, SvsmError> {
+    pub fn create(
+        paddr_start: PhysAddr,
+        paddr_end: PhysAddr,
+        alignment: usize,
+    ) -> Result<Self, SvsmError> {
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
         assert!((size & align_mask) == 0);
@@ -36,17 +42,26 @@ impl PerCPUPageMappingGuard {
         assert!((paddr_end & align_mask) == 0);
 
         let flags = PageTable::data_flags();
-        let huge = ((paddr_start & (PAGE_SIZE_2M - 1)) == 0) && ((paddr_end & (PAGE_SIZE_2M - 1)) == 0);
+        let huge =
+            ((paddr_start & (PAGE_SIZE_2M - 1)) == 0) && ((paddr_end & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {
             let vaddr = virt_alloc_range_2m(size, 0)?;
-            if this_cpu_mut().get_pgtable().map_region_2m(vaddr, vaddr + size, paddr_start, flags).is_err() {
+            if this_cpu_mut()
+                .get_pgtable()
+                .map_region_2m(vaddr, vaddr + size, paddr_start, flags)
+                .is_err()
+            {
                 virt_free_range_2m(vaddr, size);
                 return Err(SvsmError::Mem);
             }
             vaddr
         } else {
             let vaddr = virt_alloc_range_4k(size, 0)?;
-            if this_cpu_mut().get_pgtable().map_region_4k(vaddr, vaddr + size, paddr_start, flags).is_err() {
+            if this_cpu_mut()
+                .get_pgtable()
+                .map_region_4k(vaddr, vaddr + size, paddr_start, flags)
+                .is_err()
+            {
                 virt_free_range_4k(vaddr, size);
                 return Err(SvsmError::Mem);
             }
