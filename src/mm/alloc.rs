@@ -7,6 +7,7 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
+use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
@@ -672,6 +673,50 @@ impl MemoryRegion {
     }
 }
 
+pub struct PageRef {
+    virt_addr: VirtAddr,
+    phys_addr: PhysAddr,
+}
+
+impl PageRef {
+    pub const fn new(virt_addr: VirtAddr, phys_addr: PhysAddr) -> Self {
+        PageRef {
+            virt_addr,
+            phys_addr,
+        }
+    }
+
+    pub fn as_ref(&self) -> &[u8; PAGE_SIZE] {
+        let ptr = self.virt_addr.as_mut_ptr() as *mut [u8; PAGE_SIZE];
+        unsafe { ptr.as_mut().unwrap() }
+    }
+
+    pub fn as_mut_ref(&mut self) -> &mut [u8; PAGE_SIZE] {
+        let ptr = self.virt_addr.as_mut_ptr() as *mut [u8; PAGE_SIZE];
+        unsafe { ptr.as_mut().unwrap() }
+    }
+
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.virt_addr
+    }
+}
+
+impl Clone for PageRef {
+    fn clone(&self) -> Self {
+        get_file_page(self.virt_addr).expect("Failed to get page reference");
+        PageRef {
+            virt_addr: self.virt_addr,
+            phys_addr: self.phys_addr,
+        }
+    }
+}
+
+impl Drop for PageRef {
+    fn drop(&mut self) {
+        put_file_page(self.virt_addr).expect("Failed to drop page reference");
+    }
+}
+
 pub fn print_memory_info(info: &MemInfo) {
     let mut pages_4k = 0;
     let mut free_pages_4k = 0;
@@ -715,6 +760,13 @@ pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
 
 pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_file_page()
+}
+
+pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
+    let v = allocate_file_page()?;
+    let p = virt_to_phys(v);
+
+    Ok(PageRef::new(v, p))
 }
 
 pub fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
