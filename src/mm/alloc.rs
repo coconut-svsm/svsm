@@ -759,7 +759,9 @@ pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
 }
 
 pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_file_page()
+    let vaddr = ROOT_MEM.lock().allocate_file_page()?;
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+    Ok(vaddr)
 }
 
 pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
