@@ -5,5 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 mod api;
+mod ramfs;
 
 pub use api::*;
