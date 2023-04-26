@@ -1,3 +1,4 @@
+use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
@@ -30,4 +31,6 @@ pub enum SvsmError {
     FwCfg(FwCfgError),
     // Errors related to ACPI parsing.
     Acpi,
+    // Errors from file systems
+    FileSystem(FsError),
 }

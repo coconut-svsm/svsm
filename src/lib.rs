@@ -17,6 +17,7 @@ pub mod cpu;
 pub mod debug;
 pub mod elf;
 pub mod error;
+pub mod fs;
 pub mod fw_cfg;
 pub mod fw_meta;
 pub mod io;
