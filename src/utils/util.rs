@@ -5,27 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::types::PAGE_SIZE;
 use core::arch::asm;
 
 pub fn align_up(addr: usize, align: usize) -> usize {
     (addr + (align - 1)) & !(align - 1)
-}
-
-pub fn page_offset(addr: usize) -> usize {
-    addr & (PAGE_SIZE - 1)
-}
-
-pub fn page_align(addr: usize) -> usize {
-    addr & !(PAGE_SIZE - 1)
-}
-
-pub fn page_align_up(addr: usize) -> usize {
-    (addr + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
-}
-
-pub fn is_aligned(addr: usize, align: usize) -> bool {
-    (addr & (align - 1)) == 0
 }
 
 #[inline(always)]
@@ -56,13 +39,6 @@ where
     T: core::cmp::PartialOrd,
 {
     x1 <= y2 && y1 <= x2
-}
-
-pub fn crosses_page(start: usize, size: usize) -> bool {
-    let x1 = start / PAGE_SIZE;
-    let x2 = (start + size - 1) / PAGE_SIZE;
-
-    x1 != x2
 }
 
 pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
