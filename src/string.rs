@@ -7,6 +7,7 @@
 use core::fmt;
 use core::mem::MaybeUninit;
 
+#[derive(Copy, Clone, Debug)]
 pub struct FixedString<const T: usize> {
     len: usize,
     data: [char; T],
@@ -72,6 +73,20 @@ impl<const N: usize> PartialEq<&str> for FixedString<N> {
             }
         }
         true
+    }
+}
+
+impl<const N: usize> PartialEq<FixedString<N>> for FixedString<N> {
+    fn eq(&self, other: &FixedString<N>) -> bool {
+        if self.len != other.len {
+            return false;
+        }
+
+        self.data
+            .iter()
+            .zip(&other.data)
+            .take(self.len)
+            .all(|(a, b)| *a == *b)
     }
 }
 
