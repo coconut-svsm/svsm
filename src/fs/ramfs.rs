@@ -4,15 +4,18 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-extern crate alloc;
 use super::*;
+
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::{allocate_file_page_ref, PageRef};
 use crate::types::PAGE_SIZE;
 use crate::utils::{page_align_up, page_offset, zero_mem_region};
 
+extern crate alloc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+
 use core::cmp::{max, min};
 
 struct RawRamFile {
@@ -195,6 +198,74 @@ impl File for RamFile {
     }
 }
 
+pub struct RamDirectory {
+    entries: RWLock<Vec<DirectoryEntry>>,
+}
+
+unsafe impl Sync for RamDirectory {}
+
+impl RamDirectory {
+    pub fn new() -> Self {
+        RamDirectory {
+            entries: RWLock::new(Vec::new()),
+        }
+    }
+
+    fn has_entry(&self, name: &FileName) -> bool {
+        self.entries
+            .lock_read()
+            .iter()
+            .any(|entry| entry.name == *name)
+    }
+}
+
+impl Directory for RamDirectory {
+    fn list(&self) -> Vec<FileName> {
+        self.entries
+            .lock_read()
+            .iter()
+            .map(|e| e.name)
+            .collect::<Vec<_>>()
+    }
+
+    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+        for e in self.entries.lock_read().iter() {
+            if e.name == name {
+                return Ok(e.entry.clone());
+            }
+        }
+
+        Err(SvsmError::FileSystem(FsError::file_not_found()))
+    }
+
+    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+        if self.has_entry(&name) {
+            return Err(SvsmError::FileSystem(FsError::file_exists()));
+        }
+
+        let new_file = Arc::new(RamFile::new());
+        self.entries
+            .lock_write()
+            .push(DirectoryEntry::new(name, DirEntry::File(new_file.clone())));
+
+        Ok(new_file)
+    }
+
+    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+        if self.has_entry(&name) {
+            return Err(SvsmError::FileSystem(FsError::file_exists()));
+        }
+
+        let new_dir = Arc::new(RamDirectory::new());
+        self.entries.lock_write().push(DirectoryEntry::new(
+            name,
+            DirEntry::Directory(new_dir.clone()),
+        ));
+
+        Ok(new_dir)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +351,29 @@ mod tests {
         drop(file);
 
         destroy_test_root_mem(test_mem_lock);
+    }
+
+    #[test]
+    fn test_ram_directory() {
+        let f_name = FileName::from("file1");
+        let d_name = FileName::from("dir1");
+
+        let ram_dir = RamDirectory::new();
+
+        ram_dir.create_file(f_name).expect("Failed to create file");
+        ram_dir
+            .create_directory(d_name)
+            .expect("Failed to create directory");
+
+        let list = ram_dir.list();
+        assert_eq!(list, [f_name, d_name]);
+
+        let entry = ram_dir.lookup_entry(f_name).expect("Failed to lookup file");
+        assert!(entry.is_file());
+
+        let entry = ram_dir
+            .lookup_entry(d_name)
+            .expect("Failed to lookup directory");
+        assert!(entry.is_dir());
     }
 }

@@ -46,8 +46,8 @@ pub trait File {
 pub trait Directory {
     fn list(&self) -> Vec<FileName>;
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError>;
-    fn create_file(&mut self, name: FileName) -> Result<Arc<dyn File>, SvsmError>;
-    fn create_directory(&mut self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError>;
+    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError>;
+    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError>;
 }
 
 pub enum DirEntry {
