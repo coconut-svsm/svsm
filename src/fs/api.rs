@@ -48,6 +48,7 @@ pub trait Directory {
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError>;
     fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError>;
     fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError>;
+    fn unlink(&self, name: FileName) -> Result<(), SvsmError>;
 }
 
 pub enum DirEntry {

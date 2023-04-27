@@ -264,6 +264,19 @@ impl Directory for RamDirectory {
 
         Ok(new_dir)
     }
+
+    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
+        let mut vec = self.entries.lock_write();
+        let pos = vec.iter().position(|e| e.name == name);
+
+        match pos {
+            Some(idx) => {
+                vec.swap_remove(idx);
+                Ok(())
+            }
+            None => Err(SvsmError::FileSystem(FsError::file_not_found())),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -375,5 +388,10 @@ mod tests {
             .lookup_entry(d_name)
             .expect("Failed to lookup directory");
         assert!(entry.is_dir());
+
+        ram_dir.unlink(d_name).expect("Failed to unlink directory");
+
+        let list = ram_dir.list();
+        assert_eq!(list, [f_name]);
     }
 }
