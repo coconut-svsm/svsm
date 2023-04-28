@@ -31,6 +31,7 @@ use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
 use svsm::elf;
 use svsm::error::SvsmError;
+use svsm::fs::initialize_fs;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -410,6 +411,8 @@ pub extern "C" fn svsm_main() {
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     init_memory_map(&fw_cfg, &LAUNCH_INFO).expect("Failed to init guest memory map");
+
+    initialize_fs();
 
     let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
