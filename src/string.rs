@@ -31,6 +31,10 @@ impl<const T: usize> FixedString<T> {
         self.data[l] = c;
         self.len += 1;
     }
+
+    pub fn length(&self) -> usize {
+        self.len
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for FixedString<N> {
