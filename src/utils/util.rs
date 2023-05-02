@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
+use crate::types::PAGE_SIZE;
 use core::arch::asm;
 
 pub fn align_up(addr: usize, align: usize) -> usize {
@@ -32,6 +33,14 @@ pub fn halt() {
     unsafe {
         asm!("hlt", options(att_syntax));
     }
+}
+
+pub fn page_align_up(x: usize) -> usize {
+    (x + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
+}
+
+pub fn page_offset(x: usize) -> usize {
+    x & (PAGE_SIZE - 1)
 }
 
 pub fn overlap<T>(x1: T, x2: T, y1: T, y2: T) -> bool
