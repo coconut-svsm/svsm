@@ -18,6 +18,7 @@ use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -44,7 +45,7 @@ use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, GUEST_VMPL, PAGE_SIZE};
+use svsm::types::{GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use svsm_paging::{init_page_table, invalidate_stage2};
 
@@ -107,9 +108,9 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let start = guard.virt_addr();
-    let end = start + PAGE_SIZE;
+    let end = start.offset(PAGE_SIZE);
 
-    let target = ptr::NonNull::new(start as *mut SnpCpuidTable).unwrap();
+    let target = ptr::NonNull::new(start.as_mut_ptr::<SnpCpuidTable>()).unwrap();
 
     // Zero target
     zero_mem_region(start, end);
@@ -127,7 +128,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let start = guard.virt_addr();
 
-    let mut target = ptr::NonNull::new(start as *mut SecretsPage).unwrap();
+    let mut target = ptr::NonNull::new(start.as_mut_ptr::<SecretsPage>()).unwrap();
 
     // Zero target
     unsafe {
@@ -152,7 +153,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
 
         fw_sp.svsm_base = li.kernel_region_phys_start;
         fw_sp.svsm_size = li.kernel_region_phys_end - li.kernel_region_phys_start;
-        fw_sp.svsm_caa = caa_addr as u64;
+        fw_sp.svsm_caa = u64::from(caa_addr);
         fw_sp.svsm_max_version = 1;
         fw_sp.svsm_guest_vmpl = GUEST_VMPL as u8;
     }
@@ -164,7 +165,7 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let vaddr = guard.virt_addr();
 
-    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+    zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
 
     Ok(())
 }
@@ -255,8 +256,8 @@ fn validate_flash() -> Result<(), SvsmError> {
     assert!(one_region_ends_at_4gib);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
-        let pstart = region.start as PhysAddr;
-        let pend = region.end as PhysAddr;
+        let pstart = PhysAddr::from(region.start);
+        let pend = PhysAddr::from(region.end);
         log::info!(
             "Flash region {} at {:#018x} size {:018x}",
             i,
@@ -264,7 +265,10 @@ fn validate_flash() -> Result<(), SvsmError> {
             pend - pstart
         );
 
-        for paddr in (pstart..pend).step_by(PAGE_SIZE) {
+        for paddr in (pstart.bits()..pend.bits())
+            .step_by(PAGE_SIZE)
+            .map(PhysAddr::from)
+        {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
@@ -279,8 +283,8 @@ fn validate_flash() -> Result<(), SvsmError> {
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
-        launch_info.heap_area_phys_start as PhysAddr,
-        launch_info.heap_area_virt_start as VirtAddr,
+        PhysAddr::from(launch_info.heap_area_phys_start),
+        VirtAddr::from(launch_info.heap_area_virt_start),
         launch_info.heap_area_size() as usize / PAGE_SIZE,
     );
 }
@@ -293,23 +297,23 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 
 pub fn boot_stack_info() {
     unsafe {
-        let vaddr = (&bsp_stack_end as *const u8) as VirtAddr;
+        let vaddr = VirtAddr::from(&bsp_stack_end as *const u8);
         log::info!("Boot stack starts        @ {:#018x}", vaddr);
     }
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     init_kernel_mapping_info(
-        launch_info.heap_area_virt_start as VirtAddr,
-        launch_info.heap_area_virt_end() as VirtAddr,
-        launch_info.heap_area_phys_start as PhysAddr,
+        VirtAddr::from(launch_info.heap_area_virt_start),
+        VirtAddr::from(launch_info.heap_area_virt_end()),
+        PhysAddr::from(launch_info.heap_area_phys_start),
     );
 }
 
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     let launch_info: KernelLaunchInfo = *li;
-    let vb_ptr = vb_addr as *mut u64;
+    let vb_ptr = vb_addr.as_mut_ptr::<u64>();
 
     mapping_info_init(&launch_info);
 
@@ -326,13 +330,13 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
         LAUNCH_INFO.init(li);
     }
 
-    let cpuid_table_virt = launch_info.cpuid_page as VirtAddr;
-    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt as *const SnpCpuidTable)) };
+    let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
+    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>())) };
     register_cpuid_table(&CPUID_PAGE);
     dump_cpuid_table();
 
     unsafe {
-        let secrets_page_virt = launch_info.secrets_page as VirtAddr;
+        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
         copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
     }
 
@@ -395,7 +399,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     unsafe {
         asm!("movq  %rax, %rsp
               jmp   svsm_main",
-              in("rax") bp,
+              in("rax") bp.bits(),
               options(att_syntax));
     }
 }

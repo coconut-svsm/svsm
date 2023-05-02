@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::features::cpu_has_pge;
+use crate::address::{Address, PhysAddr};
 use bitflags::bitflags;
 use core::arch::asm;
 
@@ -86,20 +87,20 @@ pub fn write_cr2(cr2: usize) {
     }
 }
 
-pub fn read_cr3() -> usize {
+pub fn read_cr3() -> PhysAddr {
     let ret: usize;
     unsafe {
         asm!("mov %cr3, %rax",
              out("rax") ret,
              options(att_syntax));
     }
-    ret
+    PhysAddr::from(ret)
 }
 
-pub fn write_cr3(cr3: usize) {
+pub fn write_cr3(cr3: PhysAddr) {
     unsafe {
         asm!("mov %rax, %cr3",
-             in("rax") cr3,
+             in("rax") cr3.bits(),
              options(att_syntax));
     }
 }

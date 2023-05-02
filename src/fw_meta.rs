@@ -6,13 +6,14 @@
 
 extern crate alloc;
 
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::types::PAGE_SIZE;
 use crate::utils::{overlap, zero_mem_region};
 use alloc::vec::Vec;
 
@@ -38,7 +39,7 @@ impl SevPreValidMem {
 
     #[inline]
     fn end(&self) -> PhysAddr {
-        self.base + self.length
+        self.base.offset(self.length)
     }
 
     fn overlap(&self, other: &Self) -> bool {
@@ -174,22 +175,22 @@ const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
-unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Option<(VirtAddr, usize)> {
+unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: usize) -> Option<(VirtAddr, usize)> {
     let mut curr = start;
-    let end = start - len;
+    let end = start.sub(len);
 
     while curr >= end {
-        curr -= mem::size_of::<Uuid>();
+        curr = curr.sub(mem::size_of::<Uuid>());
 
-        let ptr = curr as *const u8;
+        let ptr = curr.as_ptr::<u8>();
         let curr_uuid = Uuid::from_mem(ptr);
 
-        curr -= mem::size_of::<u16>();
+        curr = curr.sub(mem::size_of::<u16>());
         if curr < end {
             break;
         }
 
-        let len_ptr = curr as *const u16;
+        let len_ptr = curr.as_ptr::<u16>();
         let orig_len = len_ptr.read() as usize;
 
         if len < mem::size_of::<Uuid>() + mem::size_of::<u16>() {
@@ -197,7 +198,7 @@ unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: VirtAddr) -> Option<(Vir
         }
         let len = orig_len - (mem::size_of::<Uuid>() + mem::size_of::<u16>());
 
-        curr -= len;
+        curr = curr.sub(len);
 
         if *uuid == curr_uuid {
             return Some((curr, len));
@@ -228,20 +229,20 @@ const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
-    let pstart: PhysAddr = (4 * SIZE_1G) - PAGE_SIZE;
+    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
     let mut meta_data = SevFWMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
     let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
     let vstart = guard.virt_addr();
-    let vend: VirtAddr = vstart + PAGE_SIZE;
+    let vend = vstart.offset(PAGE_SIZE);
 
-    let mut curr = vend - 32;
+    let mut curr = vend.sub(32);
 
     let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID).map_err(|()| SvsmError::Firmware)?;
 
-    curr -= mem::size_of::<Uuid>();
-    let ptr = curr as *const u8;
+    curr = curr.sub(mem::size_of::<Uuid>());
+    let ptr = curr.as_ptr::<u8>();
 
     unsafe {
         let uuid = Uuid::from_mem(ptr);
@@ -250,8 +251,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             return Err(SvsmError::Firmware);
         }
 
-        curr -= mem::size_of::<u16>();
-        let ptr = curr as *const u16;
+        curr = curr.sub(mem::size_of::<u16>());
+        let ptr = curr.as_ptr::<u16>();
 
         let full_len = ptr.read() as usize;
         let len = full_len - mem::size_of::<u16>() + mem::size_of::<Uuid>();
@@ -271,8 +272,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             if len != mem::size_of::<u32>() {
                 return Err(SvsmError::Firmware);
             }
-            let info_ptr = base as *const u32;
-            meta_data.reset_ip = Some(info_ptr.read() as PhysAddr);
+            let info_ptr = base.as_ptr::<u32>();
+            meta_data.reset_ip = Some(PhysAddr::from(info_ptr.read() as usize));
         }
 
         // Search and parse Meta Data
@@ -281,10 +282,10 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         let ret = find_table(&sev_meta_uuid, curr, len);
         if let Some(tbl) = ret {
             let (base, _len) = tbl;
-            let off_ptr = base as *const u32;
+            let off_ptr = base.as_ptr::<u32>();
             let offset = off_ptr.read_unaligned() as usize;
 
-            let meta_ptr = (vend - offset) as *const SevMetaDataHeader;
+            let meta_ptr = vend.sub(offset).as_ptr::<SevMetaDataHeader>();
             //let len = meta_ptr.read().len;
             let num_descs = meta_ptr.read().num_desc as isize;
             let desc_ptr = meta_ptr.offset(1).cast::<SevMetaDataDesc>();
@@ -292,7 +293,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             for i in 0..num_descs {
                 let desc = desc_ptr.offset(i).read();
                 let t = desc.t;
-                let base = desc.base as PhysAddr;
+                let base = PhysAddr::from(desc.base as usize);
                 let len = desc.len as usize;
                 match t {
                     SEV_META_DESC_TYPE_MEM => meta_data.add_valid_mem(base, len),
@@ -324,8 +325,8 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
 }
 
 fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
-    let pstart: PhysAddr = region.base;
-    let pend: PhysAddr = region.end();
+    let pstart = region.base;
+    let pend = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
@@ -334,7 +335,10 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
         .expect("GHCB PSC call failed to validate firmware memory");
 
-    for paddr in (pstart..pend).step_by(PAGE_SIZE) {
+    for paddr in (pstart.bits()..pend.bits())
+        .step_by(PAGE_SIZE)
+        .map(PhysAddr::from)
+    {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
@@ -343,7 +347,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         // Make page accessible to guest VMPL
         rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false)?;
 
-        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
     }
 
     Ok(())

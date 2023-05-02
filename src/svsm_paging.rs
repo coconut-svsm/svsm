@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::cpu::percpu::this_cpu_mut;
 use svsm::elf;
 use svsm::error::SvsmError;
@@ -13,21 +14,20 @@ use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use svsm::mm::PerCPUPageMappingGuard;
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::pvalidate;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use svsm::utils::page_align_up;
+use svsm::types::PAGE_SIZE;
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let mut pgtable = PageTableRef::new(unsafe { &mut *(vaddr as *mut PageTable) });
+    let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
 
     // Install mappings for the kernel's ELF segments each.
     // The memory backing the kernel ELF segments gets allocated back to back
     // from the physical memory region by the Stage2 loader.
-    let mut phys = launch_info.kernel_region_phys_start as PhysAddr;
+    let mut phys = PhysAddr::from(launch_info.kernel_region_phys_start);
     for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
-        let vaddr_start = segment.vaddr_range.vaddr_begin as VirtAddr;
-        let vaddr_end = segment.vaddr_range.vaddr_end as VirtAddr;
-        let aligned_vaddr_end = page_align_up(vaddr_end);
+        let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
+        let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
+        let aligned_vaddr_end = vaddr_end.page_align_up();
         let segment_len = aligned_vaddr_end - vaddr_start;
         let flags = if segment.flags.contains(elf::Elf64PhdrFlags::EXECUTE) {
             PageTable::exec_flags()
@@ -41,15 +41,15 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
             .map_region(vaddr_start, aligned_vaddr_end, phys, flags)
             .expect("Failed to map kernel ELF segment");
 
-        phys += segment_len;
+        phys = phys.offset(segment_len);
     }
 
     // Map subsequent heap area.
     pgtable
         .map_region(
-            launch_info.heap_area_virt_start as VirtAddr,
-            launch_info.heap_area_virt_end() as VirtAddr,
-            launch_info.heap_area_phys_start as PhysAddr,
+            VirtAddr::from(launch_info.heap_area_virt_start),
+            VirtAddr::from(launch_info.heap_area_virt_end()),
+            PhysAddr::from(launch_info.heap_area_phys_start),
             PageTable::data_flags(),
         )
         .expect("Failed to map heap");
@@ -60,8 +60,8 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
 }
 
 pub fn invalidate_stage2() -> Result<(), SvsmError> {
-    let pstart: PhysAddr = 0;
-    let pend = pstart + (640 * 1024);
+    let pstart = PhysAddr::null();
+    let pend = pstart.offset(640 * 1024);
     let mut paddr = pstart;
 
     // Stage2 memory must be invalidated when already on the SVSM page-table,
@@ -73,7 +73,7 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
 
         pvalidate(vaddr, false, false)?;
 
-        paddr += PAGE_SIZE;
+        paddr = paddr.offset(PAGE_SIZE);
     }
 
     this_cpu_mut()

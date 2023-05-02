@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::Address;
 use crate::sev::vmsa::{VMSASegment, VMSA};
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
 
@@ -62,7 +63,7 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
     vmsa.idt = svsm_idt_segment();
 
     vmsa.cr0 = read_cr0().bits();
-    vmsa.cr3 = read_cr3() as u64;
+    vmsa.cr3 = read_cr3().bits() as u64;
     vmsa.cr4 = read_cr4().bits();
     vmsa.efer = read_efer().bits();
 

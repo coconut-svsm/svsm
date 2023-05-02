@@ -5,10 +5,11 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::utils::{rmp_adjust, RMPFlags};
+use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::alloc::{allocate_pages, free_page};
-use crate::types::{VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::{is_aligned, zero_mem_region};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::zero_mem_region;
 
 pub const VMPL_MAX: usize = 4;
 
@@ -172,10 +173,7 @@ pub struct VMSA {
 
 impl VMSA {
     pub fn from_virt_addr(v: VirtAddr) -> &'static mut VMSA {
-        unsafe {
-            let ptr = v as *mut VMSA;
-            ptr.as_mut().unwrap()
-        }
+        unsafe { v.as_mut_ptr::<VMSA>().as_mut().unwrap() }
     }
 
     pub fn enable(&mut self) {
@@ -193,15 +191,15 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
     // Make sure the VMSA page is not 2M aligned. Some hardware generations
     // can't handle this properly.
     let mut vmsa_page = allocate_pages(0)?;
-    if is_aligned(vmsa_page, PAGE_SIZE_2M) {
+    if vmsa_page.is_aligned(PAGE_SIZE_2M) {
         free_page(vmsa_page);
         vmsa_page = allocate_pages(1)?;
-        if is_aligned(vmsa_page, PAGE_SIZE_2M) {
-            vmsa_page += PAGE_SIZE;
+        if vmsa_page.is_aligned(PAGE_SIZE_2M) {
+            vmsa_page = vmsa_page.offset(PAGE_SIZE);
         }
     }
 
-    zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
+    zero_mem_region(vmsa_page, vmsa_page.offset(PAGE_SIZE));
 
     if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);

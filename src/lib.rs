@@ -11,6 +11,7 @@
 #![feature(sync_unsafe_cell)]
 
 pub mod acpi;
+pub mod address;
 pub mod console;
 pub mod cpu;
 pub mod debug;

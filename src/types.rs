@@ -27,7 +27,4 @@ pub const GUEST_VMPL: usize = 1;
 #[allow(clippy::assertions_on_constants)]
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);
 
-pub type PhysAddr = usize;
-pub type VirtAddr = usize;
-
 pub const MAX_CPUS: usize = 512;

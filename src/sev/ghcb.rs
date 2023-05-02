@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::error::SvsmError;
@@ -15,8 +16,7 @@ use crate::mm::validate::{
 use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::is_aligned;
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use core::cell::RefCell;
 use core::{mem, ptr};
 
@@ -136,7 +136,7 @@ pub enum GHCBIOSize {
 
 impl GHCB {
     pub fn init(&mut self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         if sev_snp_enabled() {
@@ -161,7 +161,7 @@ impl GHCB {
     }
 
     pub fn register(&self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         // Register GHCB GPA
@@ -169,14 +169,14 @@ impl GHCB {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        let vaddr = (self as *const GHCB) as VirtAddr;
+        let vaddr = VirtAddr::from(self as *const GHCB);
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
         get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
 
         // Unregister GHCB PA
-        register_ghcb_gpa_msr(0usize)?;
+        register_ghcb_gpa_msr(PhysAddr::null())?;
 
         // Make page guest-invalid
         validate_page_msr(paddr)?;
@@ -241,8 +241,8 @@ impl GHCB {
         self.sw_exit_info_2 = exit_info_2;
         self.set_valid(OFF_SW_EXIT_INFO_2);
 
-        let ghcb_address = (self as *const GHCB) as VirtAddr;
-        let ghcb_pa: u64 = virt_to_phys(ghcb_address) as u64;
+        let ghcb_address = VirtAddr::from(self as *const GHCB);
+        let ghcb_pa = u64::from(virt_to_phys(ghcb_address));
         write_msr(SEV_GHCB, ghcb_pa);
         raw_vmgexit();
 
@@ -374,9 +374,10 @@ impl GHCB {
     }
 
     pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
-        assert!(!huge || is_aligned(paddr, PAGE_SIZE_2M));
+        assert!(!huge || paddr.is_aligned(PAGE_SIZE_2M));
 
-        let mut entry: u64 = ((paddr as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
+        let mut entry: u64 =
+            ((paddr.bits() as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
         if huge {
             entry |= PSC_FLAG_HUGE;
         }
@@ -394,7 +395,7 @@ impl GHCB {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
         let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
-        let mut vaddr = start;
+        let mut paddr = start;
         let op_mask: u64 = match op {
             PageStateChangeOp::PscPrivate => PSC_OP_PRIVATE,
             PageStateChangeOp::PscShared => PSC_OP_SHARED,
@@ -404,17 +405,17 @@ impl GHCB {
 
         self.clear();
 
-        while vaddr < end {
-            let huge = huge && is_aligned(vaddr, PAGE_SIZE_2M) && vaddr + PAGE_SIZE_2M <= end;
+        while paddr < end {
+            let huge = huge && paddr.is_aligned(PAGE_SIZE_2M) && paddr.offset(PAGE_SIZE_2M) <= end;
             let pgsize: usize = match huge {
                 true => PAGE_SIZE_2M,
                 false => PAGE_SIZE,
             };
-            let entry = self.psc_entry(vaddr, op_mask, 0, huge);
+            let entry = self.psc_entry(paddr, op_mask, 0, huge);
             let offset: isize = (entries as isize) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
-            vaddr += pgsize;
+            paddr = paddr.offset(pgsize);
 
             if entries == max_entries {
                 let header = PageStateChangeHeader {
@@ -424,8 +425,8 @@ impl GHCB {
                 };
                 self.write_buffer(&header, 0)?;
 
-                let buffer_va = self.buffer.as_ptr() as VirtAddr;
-                let buffer_pa: u64 = virt_to_phys(buffer_va) as u64;
+                let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+                let buffer_pa = u64::from(virt_to_phys(buffer_va));
                 self.set_sw_scratch(buffer_pa);
 
                 if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
@@ -461,7 +462,7 @@ impl GHCB {
     ) -> Result<(), SvsmError> {
         self.clear();
         let exit_info_1: u64 = 1 | (vmpl & 0xf) << 16 | apic_id << 32;
-        let exit_info_2: u64 = vmsa_gpa as u64;
+        let exit_info_2: u64 = vmsa_gpa.into();
         self.set_rax(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
         Ok(())

@@ -5,13 +5,14 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::pagetable::{get_init_pgtable_locked, PageTable};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::{flush_address_sync, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
 };
-use crate::types::{PhysAddr, VirtAddr, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
 struct RawPTMappingGuard {
     start: VirtAddr,
@@ -38,17 +39,17 @@ impl PerCPUPageMappingGuard {
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
         assert!((size & align_mask) == 0);
-        assert!((paddr_start & align_mask) == 0);
-        assert!((paddr_end & align_mask) == 0);
+        assert!((paddr_start.bits() & align_mask) == 0);
+        assert!((paddr_end.bits() & align_mask) == 0);
 
         let flags = PageTable::data_flags();
-        let huge =
-            ((paddr_start & (PAGE_SIZE_2M - 1)) == 0) && ((paddr_end & (PAGE_SIZE_2M - 1)) == 0);
+        let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
+            && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {
             let vaddr = virt_alloc_range_2m(size, 0)?;
             if this_cpu_mut()
                 .get_pgtable()
-                .map_region_2m(vaddr, vaddr + size, paddr_start, flags)
+                .map_region_2m(vaddr, vaddr.offset(size), paddr_start, flags)
                 .is_err()
             {
                 virt_free_range_2m(vaddr, size);
@@ -59,7 +60,7 @@ impl PerCPUPageMappingGuard {
             let vaddr = virt_alloc_range_4k(size, 0)?;
             if this_cpu_mut()
                 .get_pgtable()
-                .map_region_4k(vaddr, vaddr + size, paddr_start, flags)
+                .map_region_4k(vaddr, vaddr.offset(size), paddr_start, flags)
                 .is_err()
             {
                 virt_free_range_4k(vaddr, size);
@@ -68,7 +69,8 @@ impl PerCPUPageMappingGuard {
             vaddr
         };
 
-        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);
+        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr.offset(size));
+
         Ok(PerCPUPageMappingGuard {
             mapping: Some(raw_mapping),
             huge,
@@ -76,7 +78,7 @@ impl PerCPUPageMappingGuard {
     }
 
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
-        Self::create(paddr, paddr + PAGE_SIZE, 0)
+        Self::create(paddr, paddr.offset(PAGE_SIZE), 0)
     }
 
     pub fn virt_addr(&self) -> VirtAddr {

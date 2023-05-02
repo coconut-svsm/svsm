@@ -4,9 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::{Address, PhysAddr};
 use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
 use crate::error::SvsmError;
-use crate::types::{PhysAddr, VirtAddr};
 use crate::utils::halt;
 
 use super::utils::raw_vmgexit;
@@ -65,8 +65,8 @@ pub fn verify_ghcb_version() {
     );
 }
 
-pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), GhcbMsrError> {
-    let mut info: u64 = addr as u64;
+pub fn register_ghcb_gpa_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
+    let mut info = addr.bits() as u64;
 
     info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
     write_msr(SEV_GHCB, info);
@@ -77,7 +77,7 @@ pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), GhcbMsrError> {
         return Err(GhcbMsrError::InfoMismatch);
     }
 
-    if (info & !0xfff) != (addr as u64) {
+    if (info & !0xfff) != (addr.bits() as u64) {
         return Err(GhcbMsrError::DataMismatch);
     }
 
@@ -85,7 +85,7 @@ pub fn register_ghcb_gpa_msr(addr: VirtAddr) -> Result<(), GhcbMsrError> {
 }
 
 fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrError> {
-    let mut info: u64 = (addr as u64) & 0x000f_ffff_ffff_f000;
+    let mut info: u64 = (addr.bits() as u64) & 0x000f_ffff_ffff_f000;
 
     if valid {
         info |= 1u64 << 52;

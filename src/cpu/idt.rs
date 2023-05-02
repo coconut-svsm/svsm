@@ -7,8 +7,9 @@
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use super::vc::handle_vc_exception;
+use crate::address::{Address, VirtAddr};
 use crate::cpu::extable::handle_exception_table;
-use crate::types::{VirtAddr, SVSM_CS};
+use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
 
@@ -85,8 +86,8 @@ const IDT_IST_MASK: u64 = 0x7;
 const IDT_IST_SHIFT: u64 = 32;
 
 impl IdtEntry {
-    const fn create(target: VirtAddr, cs: u16, ist: u8) -> Self {
-        let vaddr = target as u64;
+    fn create(target: VirtAddr, cs: u16, ist: u8) -> Self {
+        let vaddr = target.bits() as u64;
         let cs_mask = (cs as u64) << IDT_CS_SHIFT;
         let ist_mask = ((ist as u64) & IDT_IST_MASK) << IDT_IST_SHIFT;
         let low = (vaddr & IDT_TARGET_MASK_1) << IDT_TARGET_MASK_1_SHIFT
@@ -103,11 +104,11 @@ impl IdtEntry {
         }
     }
 
-    pub const fn entry(target: VirtAddr) -> Self {
+    pub fn entry(target: VirtAddr) -> Self {
         IdtEntry::create(target, SVSM_CS, 0)
     }
 
-    pub const fn ist_entry(target: VirtAddr, ist: u8) -> Self {
+    pub fn ist_entry(target: VirtAddr, ist: u8) -> Self {
         IdtEntry::create(target, SVSM_CS, ist)
     }
 
@@ -121,7 +122,7 @@ const IDT_ENTRIES: usize = 256;
 #[repr(C, packed)]
 struct IdtDesc {
     size: u16,
-    address: usize,
+    address: VirtAddr,
 }
 
 extern "C" {
@@ -142,21 +143,21 @@ pub fn idt_base_limit() -> (u64, u32) {
 
 fn init_idt(idt: &mut Idt) {
     // Set IDT handlers
+    let handlers = unsafe { VirtAddr::from(&idt_handler_array as *const u8) };
     for (i, entry) in idt.iter_mut().enumerate() {
-        let handler = unsafe { ((&idt_handler_array as *const u8) as VirtAddr) + (32 * i) };
-        *entry = IdtEntry::entry(handler);
+        *entry = IdtEntry::entry(handlers.offset(32 * i));
     }
 }
 
 unsafe fn init_ist_vectors(idt: &mut Idt) {
-    let handler = ((&idt_handler_array as *const u8) as VirtAddr) + (32 * DF_VECTOR);
+    let handler = VirtAddr::from(&idt_handler_array as *const u8).offset(32 * DF_VECTOR);
     idt[DF_VECTOR] = IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap());
 }
 
 fn load_idt(idt: &Idt) {
     let desc: IdtDesc = IdtDesc {
         size: (IDT_ENTRIES * 16) as u16,
-        address: idt.as_ptr() as VirtAddr,
+        address: VirtAddr::from(idt.as_ptr()),
     };
 
     unsafe {
@@ -232,7 +233,8 @@ extern "C" {
 
 #[cfg(feature = "enable-stacktrace")]
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
-    rip == unsafe { &generic_idt_handler_return } as *const u8 as VirtAddr
+    let addr = unsafe { VirtAddr::from(&generic_idt_handler_return as *const u8) };
+    addr == rip
 }
 
 // Entry Code

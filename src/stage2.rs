@@ -14,6 +14,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 use log;
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
@@ -34,8 +35,8 @@ use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PhysAddr, VirtAddr, PAGE_SIZE};
-use svsm::utils::{halt, is_aligned, page_align, page_align_up};
+use svsm::types::PAGE_SIZE;
+use svsm::utils::halt;
 
 extern "C" {
     pub static heap_start: u8;
@@ -45,9 +46,9 @@ extern "C" {
 }
 
 fn setup_stage2_allocator() {
-    let vstart = unsafe { page_align_up((&heap_start as *const u8) as VirtAddr) };
-    let vend = unsafe { page_align((&heap_end as *const u8) as VirtAddr) };
-    let pstart = vstart as PhysAddr; // Identity mapping
+    let vstart = unsafe { VirtAddr::from(&heap_start as *const u8).page_align_up() };
+    let vend = unsafe { VirtAddr::from(&heap_end as *const u8).page_align() };
+    let pstart = PhysAddr::from(vstart.bits()); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
     root_mem_init(pstart, vstart, nr_pages);
@@ -85,7 +86,11 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 
 fn setup_env() {
     install_console_logger("Stage2");
-    init_kernel_mapping_info(0, 640 * 1024, 0);
+    init_kernel_mapping_info(
+        VirtAddr::null(),
+        VirtAddr::from(640 * 1024 as usize),
+        PhysAddr::null(),
+    );
     register_cpuid_table(unsafe { &CPUID_PAGE });
     paging_init_early();
 
@@ -115,15 +120,20 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 
     let mut pgtbl = get_init_pgtable_locked();
     pgtbl
-        .map_region(vaddr, vaddr + len, paddr, flags)
+        .map_region(vaddr, vaddr.offset(len), paddr, flags)
         .expect("Error mapping kernel region");
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
+        .page_state_change(
+            paddr,
+            paddr.offset(len),
+            true,
+            PageStateChangeOp::PscPrivate,
+        )
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
-    pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
-    valid_bitmap_set_valid_range(paddr, paddr + len);
+    pvalidate_range(vaddr, vaddr.offset(len), true).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr.offset(len));
 }
 
 #[no_mangle]
@@ -138,14 +148,15 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-    let (kernel_region_phys_start, kernel_region_phys_end) = (r.start as usize, r.end as usize);
+    let kernel_region_phys_start = PhysAddr::from(r.start);
+    let kernel_region_phys_end = PhysAddr::from(r.end);
     init_valid_bitmap_alloc(kernel_region_phys_start, kernel_region_phys_end)
         .expect("Failed to allocate valid-bitmap");
 
     // Read the SVSM kernel's ELF file metadata.
-    let kernel_elf_len = (kernel_elf_end - kernel_elf_start) as usize;
+    let kernel_elf_len = kernel_elf_end - kernel_elf_start;
     let kernel_elf_buf =
-        unsafe { slice::from_raw_parts(kernel_elf_start as *const u8, kernel_elf_len) };
+        unsafe { slice::from_raw_parts(kernel_elf_start.bits() as *const u8, kernel_elf_len) };
     let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
         Ok(kernel_elf) => kernel_elf,
         Err(e) => panic!("error reading kernel ELF: {}", e),
@@ -161,15 +172,15 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     // available as heap space for the SVSM kernel. Remember the end of all
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
-    let mut loaded_kernel_virt_end: VirtAddr = 0;
-    let mut loaded_kernel_phys_end = kernel_region_phys_start as PhysAddr;
+    let mut loaded_kernel_virt_end = VirtAddr::null();
+    let mut loaded_kernel_phys_end = PhysAddr::from(kernel_region_phys_start);
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the
         // ELF reading code had already verified that the individual segments,
         // with bounds specified as in the ELF file, are non-overlapping.
-        let vaddr_start = segment.vaddr_range.vaddr_begin as VirtAddr;
-        if !is_aligned(vaddr_start, PAGE_SIZE) {
+        let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
+        if !vaddr_start.is_page_aligned() {
             panic!("kernel ELF segment not aligned to page boundary");
         }
 
@@ -180,17 +191,18 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
             loaded_kernel_virt_start = Some(vaddr_start);
         }
 
-        let vaddr_end = segment.vaddr_range.vaddr_end as VirtAddr;
-        let aligned_vaddr_end = page_align_up(vaddr_end);
+        let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
+        let aligned_vaddr_end = vaddr_end.page_align_up();
         loaded_kernel_virt_end = aligned_vaddr_end;
 
         let segment_len = aligned_vaddr_end - vaddr_start;
         let paddr_start = loaded_kernel_phys_end;
-        loaded_kernel_phys_end += segment_len;
+        loaded_kernel_phys_end = loaded_kernel_phys_end.offset(segment_len);
 
         map_and_validate(vaddr_start, paddr_start, segment_len);
 
-        let segment_buf = unsafe { slice::from_raw_parts_mut(vaddr_start as *mut u8, segment_len) };
+        let segment_buf =
+            unsafe { slice::from_raw_parts_mut(vaddr_start.as_mut_ptr::<u8>(), segment_len) };
         let segment_contents = segment.file_contents;
         let contents_len = segment_contents.len();
         segment_buf[..contents_len].copy_from_slice(segment_contents);
@@ -237,13 +249,13 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
     let launch_info = KernelLaunchInfo {
-        kernel_region_phys_start: kernel_region_phys_start as u64,
-        kernel_region_phys_end: kernel_region_phys_end as u64,
-        heap_area_phys_start: heap_area_phys_start as u64,
-        kernel_region_virt_start: loaded_kernel_virt_start as u64,
-        heap_area_virt_start: heap_area_virt_start as u64,
-        kernel_elf_stage2_virt_start: kernel_elf_start as u64,
-        kernel_elf_stage2_virt_end: kernel_elf_end as u64,
+        kernel_region_phys_start: u64::from(kernel_region_phys_start),
+        kernel_region_phys_end: u64::from(kernel_region_phys_end),
+        heap_area_phys_start: u64::from(heap_area_phys_start),
+        kernel_region_virt_start: u64::from(loaded_kernel_virt_start),
+        heap_area_virt_start: u64::from(heap_area_virt_start),
+        kernel_elf_stage2_virt_start: u64::from(kernel_elf_start),
+        kernel_elf_stage2_virt_end: u64::from(kernel_elf_end),
         cpuid_page: 0x9f000u64,
         secrets_page: 0x9e000u64,
     };
@@ -265,7 +277,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
     );
 
     let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
-    let valid_bitmap: PhysAddr = valid_bitmap_addr();
+    let valid_bitmap = valid_bitmap_addr();
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -274,7 +286,7 @@ pub extern "C" fn stage2_main(kernel_elf_start: PhysAddr, kernel_elf_end: PhysAd
         asm!("jmp *%rax",
              in("rax") kernel_entry,
              in("r8") &launch_info,
-             in("r9") valid_bitmap,
+             in("r9") valid_bitmap.bits(),
              options(att_syntax))
     };
 
