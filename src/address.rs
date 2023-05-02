@@ -123,10 +123,25 @@ impl From<PhysAddr> for u64 {
 
 // Substracting two addresses produces an usize instead of an address,
 // since we normally do this to compute the size of a memory region.
-impl ops::Sub for PhysAddr {
+impl ops::Sub<PhysAddr> for PhysAddr {
     type Output = InnerAddr;
-    fn sub(self, other: Self) -> Self::Output {
+    fn sub(self, other: PhysAddr) -> Self::Output {
         self.0 - other.0
+    }
+}
+
+// Adding and subtracting usize to PhysAddr gives a new PhysAddr
+impl ops::Sub<InnerAddr> for PhysAddr {
+    type Output = Self;
+    fn sub(self, other: InnerAddr) -> Self {
+        PhysAddr::from(self.0 - other)
+    }
+}
+
+impl ops::Add<InnerAddr> for PhysAddr {
+    type Output = Self;
+    fn add(self, other: InnerAddr) -> Self {
+        PhysAddr::from(self.0 + other)
     }
 }
 
@@ -205,10 +220,25 @@ impl<T> From<*mut T> for VirtAddr {
     }
 }
 
-impl ops::Sub for VirtAddr {
+impl ops::Sub<VirtAddr> for VirtAddr {
     type Output = InnerAddr;
-    fn sub(self, other: Self) -> Self::Output {
+    fn sub(self, other: VirtAddr) -> Self::Output {
         self.0 - other.0
+    }
+}
+
+impl ops::Sub<usize> for VirtAddr {
+    type Output = Self;
+    fn sub(self, other: usize) -> Self {
+        VirtAddr::from(self.0 - other)
+    }
+}
+
+impl ops::Add<InnerAddr> for VirtAddr {
+    type Output = VirtAddr;
+
+    fn add(self, other: InnerAddr) -> Self {
+        VirtAddr::from(self.0 + other)
     }
 }
 
