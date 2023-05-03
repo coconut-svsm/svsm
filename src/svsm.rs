@@ -338,6 +338,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     unsafe {
         let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
         copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
+        zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
     }
 
     cr0_init();
