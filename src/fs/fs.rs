@@ -171,6 +171,25 @@ fn walk_path(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
     Ok(current_dir)
 }
 
+fn walk_path_create(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
+    let mut current_dir = unsafe { FS_ROOT.root_dir() };
+
+    for item in path_items.iter() {
+        let dir_name = FileName::from(*item);
+        let lookup = current_dir.lookup_entry(dir_name);
+        let dir_entry = match lookup {
+            Ok(entry) => entry,
+            Err(_) => DirEntry::Directory(current_dir.create_directory(dir_name)?),
+        };
+        current_dir = match dir_entry {
+            DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
+            DirEntry::Directory(dir) => dir,
+        };
+    }
+
+    Ok(current_dir)
+}
+
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.pop().unwrap());
@@ -188,6 +207,21 @@ pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.pop().unwrap());
     let current_dir = walk_path(&path_items)?;
+    let file = current_dir.create_file(file_name)?;
+
+    Ok(FileHandle::new(&file))
+}
+
+/// Creates a file with all sub-directories
+pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
+    let mut path_items = split_path(path)?;
+    let file_name = FileName::from(path_items.pop().unwrap());
+    let current_dir = walk_path_create(&path_items)?;
+
+    if file_name.length() == 0 {
+        return Err(SvsmError::FileSystem(FsError::inval()));
+    }
+
     let file = current_dir.create_file(file_name)?;
 
     Ok(FileHandle::new(&file))
