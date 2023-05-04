@@ -10,7 +10,7 @@ extern "C" {
 }
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::X86Regs;
+use crate::cpu::idt::common::X86Regs;
 use core::mem;
 
 #[repr(C, packed)]

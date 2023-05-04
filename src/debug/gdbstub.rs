@@ -12,8 +12,8 @@
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
+    use crate::cpu::idt::common::X86Regs;
     use crate::cpu::percpu::this_cpu;
-    use crate::cpu::X86Regs;
     use crate::error::SvsmError;
     use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
@@ -423,7 +423,7 @@ pub mod svsm_gdbstub {
 
 #[cfg(not(feature = "enable-gdb"))]
 pub mod svsm_gdbstub {
-    use crate::cpu::X86Regs;
+    use crate::cpu::idt::common::X86Regs;
 
     pub fn gdbstub_start() -> Result<(), u64> {
         Ok(())

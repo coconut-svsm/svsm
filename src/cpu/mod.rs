@@ -16,8 +16,6 @@ pub mod percpu;
 pub mod smp;
 pub mod tlb;
 pub mod tss;
-pub mod vc;
 pub mod vmsa;
 
-pub use idt::X86Regs;
 pub use tlb::*;

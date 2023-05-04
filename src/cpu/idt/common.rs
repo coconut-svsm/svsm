@@ -4,12 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::control_regs::read_cr2;
-use super::tss::IST_DF;
-use super::vc::handle_vc_exception;
 use crate::address::{Address, VirtAddr};
-use crate::cpu::extable::handle_exception_table;
-use crate::debug::gdbstub::svsm_gdbstub::handle_bp_exception;
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -66,7 +61,7 @@ pub struct X86Regs {
 
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
-struct IdtEntry {
+pub struct IdtEntry {
     low: u64,
     high: u64,
 }
@@ -85,6 +80,9 @@ const IDT_CS_SHIFT: u64 = 16;
 
 const IDT_IST_MASK: u64 = 0x7;
 const IDT_IST_SHIFT: u64 = 32;
+
+pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
+pub const X86_TRAP_DB: usize = 0x01;
 
 impl IdtEntry {
     fn create(target: VirtAddr, cs: u16, ist: u8) -> Self {
@@ -123,13 +121,9 @@ struct IdtDesc {
     address: VirtAddr,
 }
 
-extern "C" {
-    static idt_handler_array: u8;
-}
+pub type Idt = [IdtEntry; IDT_ENTRIES];
 
-type Idt = [IdtEntry; IDT_ENTRIES];
-
-static mut GLOBAL_IDT: Idt = [IdtEntry::no_handler(); IDT_ENTRIES];
+pub static mut GLOBAL_IDT: Idt = [IdtEntry::no_handler(); IDT_ENTRIES];
 
 pub fn idt_base_limit() -> (u64, u32) {
     unsafe {
@@ -139,20 +133,7 @@ pub fn idt_base_limit() -> (u64, u32) {
     }
 }
 
-fn init_idt(idt: &mut Idt) {
-    // Set IDT handlers
-    let handlers = unsafe { VirtAddr::from(&idt_handler_array as *const u8) };
-    for (i, entry) in idt.iter_mut().enumerate() {
-        *entry = IdtEntry::entry(handlers + (32 * i));
-    }
-}
-
-unsafe fn init_ist_vectors(idt: &mut Idt) {
-    let handler = VirtAddr::from(&idt_handler_array as *const u8) + (32 * DF_VECTOR);
-    idt[DF_VECTOR] = IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap());
-}
-
-fn load_idt(idt: &Idt) {
+pub fn load_idt(idt: &Idt) {
     let desc: IdtDesc = IdtDesc {
         size: (IDT_ENTRIES * 16) as u16,
         address: VirtAddr::from(idt.as_ptr()),
@@ -160,69 +141,6 @@ fn load_idt(idt: &Idt) {
 
     unsafe {
         asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
-    }
-}
-
-pub fn early_idt_init() {
-    unsafe {
-        init_idt(&mut GLOBAL_IDT);
-        load_idt(&GLOBAL_IDT);
-    }
-}
-
-pub fn idt_init() {
-    // Set IST vectors
-    unsafe {
-        init_ist_vectors(&mut GLOBAL_IDT);
-    }
-}
-
-#[no_mangle]
-fn generic_idt_handler(regs: &mut X86Regs) {
-    if regs.vector == DF_VECTOR {
-        let cr2 = read_cr2();
-        let rip = regs.rip;
-        let rsp = regs.rsp;
-        panic!(
-            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
-            rip, rsp, cr2
-        );
-    } else if regs.vector == GP_VECTOR {
-        let rip = regs.rip;
-        let err = regs.error_code;
-
-        if !handle_exception_table(regs) {
-            panic!(
-                "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
-                rip, err
-            );
-        }
-    } else if regs.vector == PF_VECTOR {
-        let cr2 = read_cr2();
-        let rip = regs.rip;
-        let err = regs.error_code;
-
-        if !handle_exception_table(regs) {
-            panic!(
-                "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
-                rip, cr2, err
-            );
-        }
-    } else if regs.vector == VC_VECTOR {
-        handle_vc_exception(regs);
-    } else if regs.vector == BP_VECTOR {
-        handle_bp_exception(regs);
-    } else {
-        let err = regs.error_code;
-        let vec = regs.vector;
-        let rip = regs.rip;
-
-        if !handle_exception_table(regs) {
-            panic!(
-                "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-                vec, rip, err
-            );
-        }
     }
 }
 
@@ -237,30 +155,8 @@ pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
     addr == rip
 }
 
-// Entry Code
 global_asm!(
     r#"
-        .text
-    push_regs:
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-
-        movq    %rsp, %rdi
-        call    generic_idt_handler
-
         /* Needed by the stack unwinder to recognize exception frames. */
         .globl generic_idt_handler_return
     generic_idt_handler_return:
@@ -284,20 +180,6 @@ global_asm!(
         addq    $16, %rsp /* Skip vector and error code */
 
         iretq
-
-        .align 32
-        .globl idt_handler_array
-    idt_handler_array:
-        i = 0
-        .rept 32
-        .align 32
-        .if ((0x20027d00 >> i) & 1) == 0
-        pushq   $0
-        .endif
-        pushq   $i  /* Vector Number */
-        jmp push_regs
-        i = i + 1
-        .endr
         "#,
     options(att_syntax)
 );
