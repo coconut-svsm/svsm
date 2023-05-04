@@ -33,6 +33,12 @@ impl VirtualRange {
         }
     }
 
+    pub fn init(&mut self, start_virt: VirtAddr, page_count: usize) {
+        self.start_virt = start_virt;
+        self.page_count = page_count;
+        self.bits.set(0, page_count, false);
+    }
+
     pub fn map_pages(
         self: &mut Self,
         page_count: usize,
@@ -65,18 +71,14 @@ pub fn virt_range_init() {
     if page_count > BitmapAllocator1024::CAPACITY {
         panic!("Attempted to allocate 4K page map with more than 1024 pages");
     }
-    pm4k.start_virt = VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K);
-    pm4k.page_count = page_count;
-    pm4k.bits.set(0, page_count, false);
+    pm4k.init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K), page_count);
 
     let mut pm2m = VIRTUAL_MAP_2M.lock();
     let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
     if page_count > BitmapAllocator1024::CAPACITY {
         panic!("Attempted to allocate 2M page map with more than 1024 pages");
     }
-    pm2m.start_virt = VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M);
-    pm2m.page_count = page_count;
-    pm2m.bits.set(0, page_count, false);
+    pm2m.init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M), page_count);
 }
 
 pub fn virt_log_usage() {
