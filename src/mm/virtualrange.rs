@@ -21,6 +21,7 @@ pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
 pub struct VirtualRange {
     start_virt: VirtAddr,
     page_count: usize,
+    page_shift: usize,
     bits: BitmapAllocator1024,
 }
 
@@ -31,13 +32,15 @@ impl VirtualRange {
         VirtualRange {
             start_virt: VirtAddr::null(),
             page_count: 0,
+            page_shift: PAGE_SHIFT,
             bits: BitmapAllocator1024::new(),
         }
     }
 
-    pub fn init(&mut self, start_virt: VirtAddr, page_count: usize) {
+    pub fn init(&mut self, start_virt: VirtAddr, page_count: usize, page_shift: usize) {
         self.start_virt = start_virt;
         self.page_count = page_count;
+        self.page_shift = page_shift;
         self.bits.set(0, page_count, false);
     }
 
@@ -48,13 +51,13 @@ impl VirtualRange {
     ) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
         match self.bits.alloc(page_count + 1, alignment) {
-            Some(offset) => Ok(self.start_virt.offset(offset << PAGE_SHIFT)),
+            Some(offset) => Ok(self.start_virt.offset(offset << self.page_shift)),
             None => Err(SvsmError::Mem),
         }
     }
 
     pub fn free(self: &mut Self, vaddr: VirtAddr, page_count: usize) {
-        let offset = (vaddr - self.start_virt) >> PAGE_SHIFT;
+        let offset = (vaddr - self.start_virt) >> self.page_shift;
         // Add 1 to the page count for the VM guard
         self.bits.free(offset, page_count + 1);
     }
@@ -107,3 +110,83 @@ pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
         .vrange_2m
         .free(vaddr, size_bytes >> PAGE_SHIFT_2M);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::VirtualRange;
+    use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SHIFT_2M, PAGE_SIZE_2M};
+    use crate::address::VirtAddr;
+
+    #[test]
+    fn test_alloc_no_overlap_4k() {
+        let mut range = VirtualRange::new();
+        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
+
+        // Test that we get two virtual addresses that do
+        // not overlap when using 4k pages.
+        let v1 = range.alloc(12, 0);
+        let v2 = range.alloc(12, 0);
+        let v1 = u64::from(v1.unwrap());
+        let v2 = u64::from(v2.unwrap());
+
+        assert!(v1 < v2);
+        assert!((v1 + (12 * PAGE_SIZE as u64)) < v2);
+    }
+
+    #[test]
+    fn test_alloc_no_overlap_2m() {
+        let mut range = VirtualRange::new();
+        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
+
+        // Test that we get two virtual addresses that do
+        // not overlap when using 2M pages.
+        let v1 = range.alloc(12, 0);
+        let v2 = range.alloc(12, 0);
+        let v1 = u64::from(v1.unwrap());
+        let v2 = u64::from(v2.unwrap());
+
+        assert!(v1 < v2);
+        assert!((v1 + (12 * PAGE_SIZE_2M as u64)) < v2);
+    }
+
+    #[test]
+    fn test_free_4k() {
+        let mut range = VirtualRange::new();
+        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT);
+
+        // This checks that freeing an allocated range giving the size
+        // of the virtual region in bytes does indeed free the correct amount
+        // of pages for 4K ranges.
+        let v1 = range.alloc(26, 0).unwrap();
+        // Page count will be 1 higher due to guard page.
+        assert_eq!(range.used_pages(), 27);
+
+        // If the page size calculation is wrong then there will be a mismatch between
+        // the requested and freed page count.
+        range.free(v1, 12);
+        assert_eq!(range.used_pages(), 14);
+        range.free(VirtAddr::new(u64::from(v1) as usize + (13 * PAGE_SIZE)), 13);
+        assert_eq!(range.used_pages(), 0);
+    }
+
+    #[test]
+    fn test_free_2m() {
+        let mut range = VirtualRange::new();
+        range.init(VirtAddr::new(0x1000000), 1024, PAGE_SHIFT_2M);
+
+        // This checks that freeing an allocated range giving the size
+        // of the virtual region in bytes does indeed free the correct amount
+        // of pages for 4K ranges.
+        let v1 = range.alloc(26, 0).unwrap();
+        // Page count will be 1 higher due to guard page.
+        assert_eq!(range.used_pages(), 27);
+
+        // If the page size calculation is wrong then there will be a mismatch between
+        // the requested and freed page count.
+        range.free(v1, 12);
+        assert_eq!(range.used_pages(), 14);
+        range.free(VirtAddr::new(u64::from(v1) as usize + (13 * PAGE_SIZE_2M)), 13);
+        assert_eq!(range.used_pages(), 0);
+    }
+
+ }
