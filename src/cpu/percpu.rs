@@ -16,14 +16,16 @@ use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
+use crate::mm::virtualrange::VirtualRange;
 use crate::mm::{
-    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_VMSA_BASE,
-    SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_TEMP_BASE_2M,
+    SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K,
+    SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
-use crate::types::{SVSM_TR_FLAGS, SVSM_TSS};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use core::ptr;
@@ -178,6 +180,11 @@ pub struct PerCpu {
     svsm_vmsa: Option<VmsaRef>,
     guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
+
+    /// Address allocator for per-cpu 4k temporary mappings
+    pub vrange_4k: VirtualRange,
+    /// Address allocator for per-cpu 2m temporary mappings
+    pub vrange_2m: VirtualRange,
 }
 
 impl PerCpu {
@@ -193,6 +200,8 @@ impl PerCpu {
             svsm_vmsa: None,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             reset_ip: 0xffff_fff0u64,
+            vrange_4k: VirtualRange::new(),
+            vrange_2m: VirtualRange::new(),
         }
     }
 
@@ -296,6 +305,9 @@ impl PerCpu {
 
         // Setup TSS
         self.setup_tss();
+
+        // Initialize allocator for temporary mappings
+        self.virt_range_init();
 
         Ok(())
     }
@@ -466,6 +478,20 @@ impl PerCpu {
             limit: TSS_LIMIT as u32,
             base: (&self.tss as *const X86Tss) as u64,
         }
+    }
+
+    pub fn virt_range_init(&mut self) {
+        // Initialize 4k range
+        let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
+        assert!(page_count <= VirtualRange::CAPACITY);
+        self.vrange_4k
+            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K), page_count);
+
+        // Initialize 2M range
+        let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
+        assert!(page_count <= VirtualRange::CAPACITY);
+        self.vrange_2m
+            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M), page_count);
     }
 }
 

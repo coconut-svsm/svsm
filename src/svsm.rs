@@ -36,7 +36,7 @@ use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
-use svsm::mm::virtualrange::{virt_log_usage, virt_range_init};
+use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
@@ -359,8 +359,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
 
     paging_init();
     init_page_table(&launch_info, &kernel_elf);
-
-    virt_range_init();
 
     unsafe {
         let bsp_percpu = PerCpu::alloc(0)
