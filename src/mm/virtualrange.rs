@@ -39,7 +39,7 @@ impl VirtualRange {
         self.bits.set(0, page_count, false);
     }
 
-    pub fn map_pages(
+    pub fn alloc(
         self: &mut Self,
         page_count: usize,
         alignment: usize,
@@ -51,7 +51,7 @@ impl VirtualRange {
         }
     }
 
-    pub fn unmap_pages(self: &mut Self, vaddr: VirtAddr, page_count: usize) {
+    pub fn free(self: &mut Self, vaddr: VirtAddr, page_count: usize) {
         let offset = (vaddr - self.start_virt) >> PAGE_SHIFT;
         // Add 1 to the page count for the VM guard
         self.bits.free(offset, page_count + 1);
@@ -101,13 +101,11 @@ pub fn virt_alloc_range_4k(size_bytes: usize, alignment: usize) -> Result<VirtAd
     }
     let page_count = size_bytes >> PAGE_SHIFT;
     let mut pm = VIRTUAL_MAP_4K.lock();
-    pm.map_pages(page_count, alignment)
+    pm.alloc(page_count, alignment)
 }
 
 pub fn virt_free_range_4k(vaddr: VirtAddr, size_bytes: usize) {
-    VIRTUAL_MAP_4K
-        .lock()
-        .unmap_pages(vaddr, size_bytes >> PAGE_SHIFT);
+    VIRTUAL_MAP_4K.lock().free(vaddr, size_bytes >> PAGE_SHIFT);
 }
 
 pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
@@ -117,11 +115,11 @@ pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAd
     }
     let page_count = size_bytes >> PAGE_SHIFT_2M;
     let mut pm = VIRTUAL_MAP_2M.lock();
-    pm.map_pages(page_count, alignment)
+    pm.alloc(page_count, alignment)
 }
 
 pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
     VIRTUAL_MAP_2M
         .lock()
-        .unmap_pages(vaddr, size_bytes >> PAGE_SHIFT_2M);
+        .free(vaddr, size_bytes >> PAGE_SHIFT_2M);
 }
