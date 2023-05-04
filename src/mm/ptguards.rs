@@ -4,10 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::pagetable::{get_init_pgtable_locked, PageTable};
+use super::pagetable::PageTable;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
-use crate::cpu::tlb::{flush_address_sync, flush_tlb_global_sync};
+use crate::cpu::tlb::flush_address_sync;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
@@ -98,38 +98,6 @@ impl Drop for PerCPUPageMappingGuard {
                 virt_free_range_4k(m.start, size);
             }
             flush_address_sync(m.start);
-        }
-    }
-}
-
-pub struct PTMappingGuard {
-    mapping: Option<RawPTMappingGuard>,
-}
-
-impl PTMappingGuard {
-    pub fn create(start: VirtAddr, end: VirtAddr, phys: PhysAddr) -> Self {
-        let raw_mapping = RawPTMappingGuard::new(start, end);
-        match get_init_pgtable_locked().map_region_4k(start, end, phys, PageTable::data_flags()) {
-            Ok(()) => PTMappingGuard {
-                mapping: Some(raw_mapping),
-            },
-            Err(_e) => PTMappingGuard { mapping: None },
-        }
-    }
-
-    pub fn check_mapping(&self) -> Result<(), SvsmError> {
-        match self.mapping {
-            Some(_) => Ok(()),
-            None => Err(SvsmError::Mem),
-        }
-    }
-}
-
-impl Drop for PTMappingGuard {
-    fn drop(&mut self) {
-        if let Some(m) = &self.mapping {
-            get_init_pgtable_locked().unmap_region_4k(m.start, m.end);
-            flush_tlb_global_sync();
         }
     }
 }
