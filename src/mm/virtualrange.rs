@@ -5,8 +5,8 @@
 // Author: Roy Hopkins <rhopkins@suse.de>
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
@@ -25,6 +25,8 @@ pub struct VirtualRange {
 }
 
 impl VirtualRange {
+    pub const CAPACITY: usize = BitmapAllocator1024::CAPACITY;
+
     pub const fn new() -> VirtualRange {
         VirtualRange {
             start_virt: VirtAddr::null(),
@@ -62,25 +64,6 @@ impl VirtualRange {
     }
 }
 
-static VIRTUAL_MAP_4K: SpinLock<VirtualRange> = SpinLock::new(VirtualRange::new());
-static VIRTUAL_MAP_2M: SpinLock<VirtualRange> = SpinLock::new(VirtualRange::new());
-
-pub fn virt_range_init() {
-    let mut pm4k = VIRTUAL_MAP_4K.lock();
-    let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-    if page_count > BitmapAllocator1024::CAPACITY {
-        panic!("Attempted to allocate 4K page map with more than 1024 pages");
-    }
-    pm4k.init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K), page_count);
-
-    let mut pm2m = VIRTUAL_MAP_2M.lock();
-    let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-    if page_count > BitmapAllocator1024::CAPACITY {
-        panic!("Attempted to allocate 2M page map with more than 1024 pages");
-    }
-    pm2m.init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M), page_count);
-}
-
 pub fn virt_log_usage() {
     let page_count4k = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
     let page_count2m = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
@@ -88,9 +71,10 @@ pub fn virt_log_usage() {
     let unused_cap_2m = BitmapAllocator1024::CAPACITY - page_count2m;
 
     log::info!(
-        "Virtual memory pages used: {} * 4K, {} * 2M",
-        VIRTUAL_MAP_4K.lock().used_pages() - unused_cap_4k,
-        VIRTUAL_MAP_2M.lock().used_pages() - unused_cap_2m
+        "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
+        this_cpu().get_apic_id(),
+        this_cpu().vrange_4k.used_pages() - unused_cap_4k,
+        this_cpu().vrange_2m.used_pages() - unused_cap_2m
     );
 }
 
@@ -100,12 +84,13 @@ pub fn virt_alloc_range_4k(size_bytes: usize, alignment: usize) -> Result<VirtAd
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT;
-    let mut pm = VIRTUAL_MAP_4K.lock();
-    pm.alloc(page_count, alignment)
+    this_cpu_mut().vrange_4k.alloc(page_count, alignment)
 }
 
 pub fn virt_free_range_4k(vaddr: VirtAddr, size_bytes: usize) {
-    VIRTUAL_MAP_4K.lock().free(vaddr, size_bytes >> PAGE_SHIFT);
+    this_cpu_mut()
+        .vrange_4k
+        .free(vaddr, size_bytes >> PAGE_SHIFT);
 }
 
 pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
@@ -114,12 +99,11 @@ pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAd
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT_2M;
-    let mut pm = VIRTUAL_MAP_2M.lock();
-    pm.alloc(page_count, alignment)
+    this_cpu_mut().vrange_2m.alloc(page_count, alignment)
 }
 
 pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
-    VIRTUAL_MAP_2M
-        .lock()
+    this_cpu_mut()
+        .vrange_2m
         .free(vaddr, size_bytes >> PAGE_SHIFT_2M);
 }
