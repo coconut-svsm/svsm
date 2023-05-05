@@ -25,7 +25,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS, PAGE_SHIFT, PAGE_SHIFT_2M};
 use alloc::vec::Vec;
 use core::cell::SyncUnsafeCell;
 use core::ptr;
@@ -485,13 +485,13 @@ impl PerCpu {
         let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
         assert!(page_count <= VirtualRange::CAPACITY);
         self.vrange_4k
-            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K), page_count);
+            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K), page_count, PAGE_SHIFT);
 
         // Initialize 2M range
         let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
         assert!(page_count <= VirtualRange::CAPACITY);
         self.vrange_2m
-            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M), page_count);
+            .init(VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M), page_count, PAGE_SHIFT_2M);
     }
 }
 
