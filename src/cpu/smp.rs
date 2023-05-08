@@ -10,7 +10,6 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{this_cpu_mut, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::request_loop;
-use alloc::vec::Vec;
 
 fn start_cpu(apic_id: u32) {
     unsafe {
@@ -45,7 +44,7 @@ fn start_cpu(apic_id: u32) {
     }
 }
 
-pub fn start_secondary_cpus(cpus: &Vec<ACPICPUInfo>) {
+pub fn start_secondary_cpus(cpus: &[ACPICPUInfo]) {
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
