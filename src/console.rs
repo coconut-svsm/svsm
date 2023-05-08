@@ -127,13 +127,13 @@ pub fn install_console_logger(component: &'static str) {
     let logger = ConsoleLogger::new(component);
     unsafe { CONSOLE_LOGGER.init(&logger) };
 
-    if let Err(_) = log::set_logger(&*CONSOLE_LOGGER) {
+    if let Err(e) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had
         // installed another logger before. No logs will appear at the console.
         // Print an error string.
         _print(format_args!(
-            "[{}]: ERROR: failed to install console logger",
-            component
+            "[{}]: ERROR: failed to install console logger: {:?}",
+            component, e,
         ));
     }
 
