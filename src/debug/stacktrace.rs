@@ -23,11 +23,10 @@ struct StackBounds {
 #[cfg(feature = "enable-stacktrace")]
 impl StackBounds {
     fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
-        let end = match begin.checked_offset(len) {
-            Some(end) => end,
-            None => return false,
-        };
-        return begin >= self.bottom && end <= self.top;
+        match begin.checked_offset(len) {
+            Some(end) => begin >= self.bottom && end <= self.top,
+            None => false,
+        }
     }
 }
 

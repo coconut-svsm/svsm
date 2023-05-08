@@ -149,12 +149,7 @@ impl FromStr for Uuid {
 
 impl PartialEq for Uuid {
     fn eq(&self, other: &Self) -> bool {
-        for (a, b) in self.data.iter().zip(&other.data) {
-            if a != b {
-                return false;
-            }
-        }
-        return true;
+        self.data.iter().zip(&other.data).all(|(a, b)| a == b)
     }
 }
 
