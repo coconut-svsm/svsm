@@ -15,18 +15,7 @@ struct KernelMapping {
     phys_start: PhysAddr,
 }
 
-impl KernelMapping {
-    pub const fn new() -> Self {
-        KernelMapping {
-            virt_start: VirtAddr::null(),
-            virt_end: VirtAddr::null(),
-            phys_start: PhysAddr::null(),
-        }
-    }
-}
-
-static KERNEL_MAPPING: ImmutAfterInitCell<KernelMapping> =
-    ImmutAfterInitCell::new(KernelMapping::new());
+static KERNEL_MAPPING: ImmutAfterInitCell<KernelMapping> = ImmutAfterInitCell::uninit();
 
 pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAddr) {
     let km = KernelMapping {
