@@ -57,13 +57,8 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 
     fn next_free(&self, start: usize) -> Option<usize> {
-        assert!(start < BitmapAllocator64::CAPACITY);
-        for offset in start..BitmapAllocator64::CAPACITY {
-            if ((1 << offset) & self.bits) == 0 {
-                return Some(offset);
-            }
-        }
-        None
+        assert!(start < Self::CAPACITY);
+        (start..Self::CAPACITY).find(|offset| ((1 << offset) & self.bits) == 0)
     }
 
     fn get(&self, offset: usize) -> bool {
