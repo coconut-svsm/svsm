@@ -90,7 +90,7 @@ impl log::Log for ConsoleLogger {
 
         // The logger being uninitialized is impossible, as that would mean it
         // wouldn't have been registered with the log library.
-        let component: &'static str = &self.component.name;
+        let component = self.component.name;
         // Log format/detail depends on the level.
         match record.metadata().level() {
             log::Level::Error | log::Level::Warn => {
