@@ -98,10 +98,7 @@ impl IdtEntry {
             | ist_mask;
         let high = (vaddr & IDT_TARGET_MASK_3) >> IDT_TARGET_MASK_3_SHIFT;
 
-        IdtEntry {
-            low: low,
-            high: high,
-        }
+        IdtEntry { low, high }
     }
 
     pub fn entry(target: VirtAddr) -> Self {
