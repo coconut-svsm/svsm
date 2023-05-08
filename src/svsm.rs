@@ -327,12 +327,16 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     load_gdt();
     early_idt_init();
 
-    unsafe {
-        LAUNCH_INFO.init(li);
-    }
+    LAUNCH_INFO
+        .init(li)
+        .expect("Already initialized launch info");
 
     let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
-    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>())) };
+    unsafe {
+        CPUID_PAGE
+            .init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>()))
+            .expect("Already initialized CPUID page")
+    };
     register_cpuid_table(&CPUID_PAGE);
     dump_cpuid_table();
 

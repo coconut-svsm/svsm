@@ -32,7 +32,7 @@ pub fn paging_init_early() {
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    FEATURE_MASK.reinit(&feature_mask);
 }
 
 pub fn paging_init() {
@@ -45,7 +45,7 @@ pub fn paging_init() {
     if !cpu_has_pge() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    FEATURE_MASK.reinit(&feature_mask);
 }
 
 fn init_encrypt_mask() {
@@ -53,7 +53,7 @@ fn init_encrypt_mask() {
     let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
     let c_bit = res.ebx & 0x3f;
     let mask = 1u64 << c_bit;
-    unsafe { ENCRYPT_MASK.reinit(&(mask as usize)) };
+    ENCRYPT_MASK.reinit(&(mask as usize));
 
     // Find physical address size.
     let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
@@ -74,9 +74,7 @@ fn init_encrypt_mask() {
     let effective_phys_addr_size = cmp::min(c_bit, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
-    unsafe {
-        MAX_PHYS_ADDR.reinit(&max_addr);
-    }
+    MAX_PHYS_ADDR.reinit(&max_addr);
 
     // KVM currently sets all bits when executing the launch update for the
     // launch vCPU's VMSA, but the firmware will truncate the gPA to the limit
@@ -85,9 +83,7 @@ fn init_encrypt_mask() {
     // future. This can be removed once the patches for that land.
     let launch_vmsa_addr = (1u64 << phys_addr_size) - 0x1000;
     let launch_vmsa_addr = PhysAddr::from(launch_vmsa_addr);
-    unsafe {
-        LAUNCH_VMSA_ADDR.reinit(&launch_vmsa_addr);
-    }
+    LAUNCH_VMSA_ADDR.reinit(&launch_vmsa_addr);
 }
 
 fn encrypt_mask() -> usize {

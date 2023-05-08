@@ -23,9 +23,9 @@ pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAd
         virt_end: vend,
         phys_start: pstart,
     };
-    unsafe {
-        KERNEL_MAPPING.init(&km);
-    }
+    KERNEL_MAPPING
+        .init(&km)
+        .expect("Already initialized kernel mapping info");
 }
 
 #[cfg(not(test))]

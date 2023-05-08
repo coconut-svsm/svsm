@@ -9,6 +9,14 @@ use core::marker::Copy;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
+#[cfg(debug_assertions)]
+use core::sync::atomic::{AtomicBool, Ordering};
+
+#[derive(Clone, Copy, Debug)]
+pub enum ImmutAfterInitError {
+    AlreadyInit,
+    Uninitialized,
+}
 
 /// A memory location which is effectively immutable after initalization code
 /// has run.
@@ -52,19 +60,63 @@ use core::ops::Deref;
 /// }
 /// ```
 ///
-#[repr(transparent)]
 pub struct ImmutAfterInitCell<T: Copy> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
+    // Used to keep track of the initialization state. Even though this
+    // is atomic, the data structure does not guarantee thread safety.
+    #[cfg(debug_assertions)]
+    init: AtomicBool,
 }
 
 impl<T: Copy> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
     /// initialized by means of [`Self::init()`] before first usage.
     pub const fn uninit() -> Self {
-        ImmutAfterInitCell {
+        Self {
             data: UnsafeCell::new(MaybeUninit::uninit()),
+            #[cfg(debug_assertions)]
+            init: AtomicBool::new(false),
         }
+    }
+
+    fn set_init(&self) {
+        #[cfg(debug_assertions)]
+        self.init.store(true, Ordering::Relaxed);
+    }
+
+    fn check_init(&self) -> Result<(), ImmutAfterInitError> {
+        #[cfg(debug_assertions)]
+        if !self.init.load(Ordering::Relaxed) {
+            return Err(ImmutAfterInitError::Uninitialized);
+        }
+        Ok(())
+    }
+
+    fn check_uninit(&self) -> Result<(), ImmutAfterInitError> {
+        #[cfg(debug_assertions)]
+        if self.init.load(Ordering::Relaxed) {
+            return Err(ImmutAfterInitError::AlreadyInit);
+        }
+        Ok(())
+    }
+
+    // The caller must check the initialization status to avoid double init bugs
+    unsafe fn set_inner(&self, v: &T) {
+        self.set_init();
+        (*self.data.get())
+            .as_mut_ptr()
+            .copy_from_nonoverlapping(v as *const T, 1)
+    }
+
+    // The caller must ensure that the cell is initialized
+    unsafe fn get_inner(&self) -> &T {
+        (*self.data.get()).assume_init_ref()
+    }
+
+    fn try_get_inner(&self) -> Result<&T, ImmutAfterInitError> {
+        self.check_init()?;
+        unsafe { Ok(self.get_inner()) }
     }
 
     /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
@@ -72,26 +124,30 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     /// Must **not** get called on an already initialized instance!
     ///
     /// * `v` - Initialization value.
-    pub unsafe fn init(&self, v: &T) {
-        core::ptr::copy_nonoverlapping(v as *const T, (*self.data.get()).as_mut_ptr(), 1);
+    pub fn init(&self, v: &T) -> Result<(), ImmutAfterInitError> {
+        self.check_uninit()?;
+        unsafe { self.set_inner(v) };
+        Ok(())
     }
 
     /// Reinitialize an initialized `ImmutAfterInitCell` instance from a value.
     ///
     /// Must **not** get called while any borrow via [`Self::deref()`] or
-    /// [`ImmutAfterInitRef::deref()`]is alive!
+    /// [`ImmutAfterInitRef::deref()`] is alive!
     ///
     /// * `v` - Initialization value.
-    pub unsafe fn reinit(&self, v: &T) {
-        self.init(v);
+    pub fn reinit(&self, v: &T) {
+        unsafe { self.set_inner(v) }
     }
 
     /// Create an initialized `ImmutAfterInitCell` instance from a value.
     ///
     /// * `v` - Initialization value.
     pub const fn new(v: T) -> Self {
-        ImmutAfterInitCell {
+        Self {
             data: UnsafeCell::new(MaybeUninit::new(v)),
+            #[cfg(debug_assertions)]
+            init: AtomicBool::new(true),
         }
     }
 }
@@ -102,7 +158,7 @@ impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     /// Dereference the wrapped value. Must **only ever** get called on an
     /// initialized instance!
     fn deref(&self) -> &T {
-        unsafe { (&*self.data.get()).assume_init_ref() }
+        self.try_get_inner().unwrap()
     }
 }
 
@@ -178,7 +234,6 @@ unsafe impl<T: Copy> Sync for ImmutAfterInitCell<T> {}
 /// }
 /// ```
 ///
-#[repr(transparent)]
 pub struct ImmutAfterInitRef<'a, T: 'a> {
     #[doc(hidden)]
     ptr: ImmutAfterInitCell<*const T>,
@@ -206,11 +261,11 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
     ///         to. By convention, the referenced value must have been
     ///         initialized already.
-    pub unsafe fn init_from_ref<'b>(&self, r: &'b T)
+    pub fn init_from_ref<'b>(&self, r: &'b T) -> Result<(), ImmutAfterInitError>
     where
         'b: 'a,
     {
-        self.ptr.init(&(r as *const T));
+        self.ptr.init(&(r as *const T))
     }
 
     /// Create an initialized `ImmutAfterInitRef` instance pointing to a value
@@ -243,11 +298,14 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
     ///            convention, the referenced value must have been initialized
     ///            already.
-    pub unsafe fn init_from_cell<'b>(&self, cell: &'b ImmutAfterInitCell<T>)
+    pub fn init_from_cell<'b>(
+        &self,
+        cell: &'b ImmutAfterInitCell<T>,
+    ) -> Result<(), ImmutAfterInitError>
     where
         'b: 'a,
     {
-        self.ptr.init(&(*cell.data.get()).as_ptr());
+        self.ptr.init(&(cell.try_get_inner()? as *const T))
     }
 }
 
