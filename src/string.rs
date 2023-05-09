@@ -103,3 +103,33 @@ impl<const T: usize> fmt::Display for FixedString<T> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+    use super::*;
+    use alloc::string::String;
+    use core::fmt::Write;
+
+    #[test]
+    fn from_u8_array1() {
+        let st = FixedString::from([b'a', b'b', b'c', b'd', b'z']);
+        assert_eq!(st, "abcdz");
+        assert_eq!(st.len, 5);
+    }
+
+    #[test]
+    fn from_u8_array2() {
+        let st = FixedString::from([b'a', b'b', b'c', b'\0', b'd', b'e']);
+        assert_eq!(st, "abc");
+        assert_eq!(st.len, 3);
+    }
+
+    #[test]
+    fn display() {
+        let mut buf = String::new();
+        let st = FixedString::from([b's', b'v', b's', b'm', b'\0', b'x', b'y']);
+        write!(&mut buf, "{}", st).unwrap();
+        assert_eq!(buf.as_str(), "svsm");
+    }
+}
