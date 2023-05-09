@@ -6,8 +6,6 @@
 
 #![no_std]
 #![feature(const_mut_refs)]
-#![feature(maybe_uninit_uninit_array)]
-#![feature(maybe_uninit_array_assume_init)]
 
 pub mod acpi;
 pub mod address;

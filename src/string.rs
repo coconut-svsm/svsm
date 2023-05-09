@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use core::array;
 use core::fmt;
 use core::mem::MaybeUninit;
 
@@ -39,7 +40,7 @@ impl<const T: usize> FixedString<T> {
 
 impl<const N: usize> From<[u8; N]> for FixedString<N> {
     fn from(arr: [u8; N]) -> FixedString<N> {
-        let mut data = MaybeUninit::<char>::uninit_array::<N>();
+        let mut data: [MaybeUninit<char>; N] = array::from_fn(|_| MaybeUninit::uninit());
         let mut len = N;
 
         for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
@@ -50,7 +51,7 @@ impl<const N: usize> From<[u8; N]> for FixedString<N> {
             d.write(val as char);
         }
 
-        let data = unsafe { MaybeUninit::array_assume_init(data) };
+        let data = unsafe { *(data.as_ptr().cast::<[char; N]>()) };
         FixedString { data, len }
     }
 }
