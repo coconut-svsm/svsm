@@ -130,7 +130,7 @@ impl ACPITable {
             Ok(Self {
                 header: ACPITableHeader::new(*raw_header),
                 ptr: buf,
-                size: size,
+                size,
             })
         }
     }
@@ -319,15 +319,15 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
                 let apic_id: u32 = (*lapic_ptr).apic_id as u32;
                 let flags: u32 = (*lapic_ptr).flags;
                 cpus.push(ACPICPUInfo {
-                    apic_id: apic_id,
+                    apic_id,
                     enabled: (flags & 1) == 1,
                 });
             } else if t == 9 {
                 let x2apic_ptr = entry_ptr.cast::<RawMADTEntryLocalX2Apic>();
-                let apic_id: u32 = (*x2apic_ptr).apic_id as u32;
+                let apic_id: u32 = (*x2apic_ptr).apic_id;
                 let flags: u32 = (*x2apic_ptr).flags;
                 cpus.push(ACPICPUInfo {
-                    apic_id: apic_id,
+                    apic_id,
                     enabled: (flags & 1) == 1,
                 });
             }

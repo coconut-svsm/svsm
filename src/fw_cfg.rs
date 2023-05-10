@@ -125,7 +125,7 @@ impl<'a> FwCfg<'a> {
 
         for _ in 0..n {
             let size: u32 = self.read_be();
-            let select: u16 = self.read_be();
+            let selector: u16 = self.read_be();
             let _unused: u16 = self.read_be();
             let mut fs = FixedString::<56>::new();
             for _ in 0..56 {
@@ -134,10 +134,7 @@ impl<'a> FwCfg<'a> {
             }
 
             if fs == name {
-                return Ok(FwCfgFile {
-                    size: size,
-                    selector: select,
-                });
+                return Ok(FwCfgFile { size, selector });
             }
         }
 

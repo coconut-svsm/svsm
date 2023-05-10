@@ -38,10 +38,7 @@ struct PerCpuInfo {
 
 impl PerCpuInfo {
     const fn new(apic_id: u32, addr: VirtAddr) -> Self {
-        PerCpuInfo {
-            apic_id: apic_id,
-            addr: addr,
-        }
+        Self { apic_id, addr }
     }
 }
 

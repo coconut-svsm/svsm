@@ -62,7 +62,7 @@ impl<T> SpinLock<T> {
                 Ordering::Acquire,
                 Ordering::Relaxed,
             );
-            if let Ok(_) = result {
+            if result.is_ok() {
                 return Ok(LockGuard {
                     holder: &self.holder,
                     data: unsafe { &mut *self.data.get() },

@@ -42,7 +42,7 @@ fn check_exception_table(rip: VirtAddr) -> VirtAddr {
         }
     }
 
-    return rip;
+    rip
 }
 
 pub fn dump_exception_table() {
@@ -78,5 +78,5 @@ pub fn handle_exception_table(regs: &mut X86Regs) -> bool {
         return true;
     }
 
-    return false;
+    false
 }

@@ -44,11 +44,7 @@ impl VirtualRange {
         self.bits.set(0, page_count, false);
     }
 
-    pub fn alloc(
-        self: &mut Self,
-        page_count: usize,
-        alignment: usize,
-    ) -> Result<VirtAddr, SvsmError> {
+    pub fn alloc(&mut self, page_count: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
         match self.bits.alloc(page_count + 1, alignment) {
             Some(offset) => Ok(self.start_virt.offset(offset << self.page_shift)),
@@ -56,7 +52,7 @@ impl VirtualRange {
         }
     }
 
-    pub fn free(self: &mut Self, vaddr: VirtAddr, page_count: usize) {
+    pub fn free(&mut self, vaddr: VirtAddr, page_count: usize) {
         let offset = (vaddr - self.start_virt) >> self.page_shift;
         // Add 1 to the page count for the VM guard
         self.bits.free(offset, page_count + 1);
