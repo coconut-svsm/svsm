@@ -6,7 +6,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(rustc_private)]
 
 pub mod boot_stage2;
 
