@@ -1,0 +1,7 @@
+{
+    "git.autoRepositoryDetection": false,
+    "git.ignoredRepositories": ["edk2", "openssl", "berkeley-softfloat-3", "cmocka", "oniguruma", "brotli", "jannson", "googletest", "boringssl", "pyca-cryptography", "wycheproof", "krb5"],
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml"
+    ]
+}
