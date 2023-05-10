@@ -5,7 +5,6 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 #![no_std]
-#![feature(const_mut_refs)]
 
 pub mod acpi;
 pub mod address;

@@ -6,7 +6,7 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs, rustc_private)]
+#![feature(rustc_private)]
 
 pub mod boot_stage2;
 
@@ -102,7 +102,7 @@ fn setup_env() {
     init_percpu();
 
     unsafe {
-        WRITER.lock().set(&mut CONSOLE_SERIAL);
+        WRITER.lock().set(&CONSOLE_SERIAL);
     }
     init_console();
 

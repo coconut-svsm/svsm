@@ -15,11 +15,11 @@ pub trait ConsoleWriter {
 }
 
 pub struct Console {
-    writer: *mut dyn ConsoleWriter,
+    writer: *const dyn ConsoleWriter,
 }
 
 impl Console {
-    pub fn set(&mut self, w: *mut dyn ConsoleWriter) {
+    pub fn set(&mut self, w: *const dyn ConsoleWriter) {
         self.writer = w;
     }
 }
@@ -42,7 +42,7 @@ impl fmt::Write for Console {
 
 pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
     Console {
-        writer: &mut DEFAULT_SERIAL_PORT,
+        writer: &DEFAULT_SERIAL_PORT,
     }
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
