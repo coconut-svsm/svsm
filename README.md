@@ -64,8 +64,6 @@ any way:
   * vTPM emulation
 * Attestation support
 * Persistency layer (needed for TPM and others)
-* Carry FW as payload of SVSM to make the SVSM binary a drop-in
-  replacement for the FW when launching QEMU
 * Live migration
 
 Acknowledgments

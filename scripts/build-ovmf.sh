@@ -26,9 +26,9 @@ source edksetup.sh --reconfig >> $LOG_FILE 2>> $LOG_FILE
 
 if [[ $1 == "debug" ]]; then
     echo "Building OVMF(debug). Build output logged to edk2/$LOG_FILE."
-    build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -p OvmfPkg/OvmfPkgX64.dsc >> $LOG_FILE 2>> $LOG_FILE
+    build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -D SVSM_MODULE_FILE=../svsm.bin -p OvmfPkg/OvmfPkgSvsmX64.dsc >> $LOG_FILE 2>> $LOG_FILE
 else
     echo "Building OVMF(release). Build output logged to edk2/$LOG_FILE."
-    build -a X64 -b RELEASE -t GCC5 -p OvmfPkg/OvmfPkgX64.dsc >> $LOG_FILE 2>> $LOG_FILE
+    build -a X64 -b RELEASE -t GCC5 -D SVSM_MODULE_FILE=../svsm.bin -p OvmfPkg/OvmfPkgSvsmX64.dsc >> $LOG_FILE 2>> $LOG_FILE
 fi
 popd

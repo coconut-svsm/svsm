@@ -171,9 +171,13 @@ $ make RELEASE=1
 
 to build the SVSM with the release target. 
 
-In addition, the special version of OVMF that supports COCONUT-SVSM will be
-built. The firmware volumes for debug and release can be found in their
-respective directories: 
+
+When the build is finished there will be the file ```svsm.bin``` in the
+top-directory of the repository. This contains the binary image for the SVSM
+module. However, the makefile also builds a firmware volume that contains the
+SVSM module embedded alongside the special build of OVMF. This firmware volume is
+the file which needs to be passed to QEMU. The firmware volumes for debug and
+release can be found in their respective directories:
 
 ```
 $ cp ovmf/debug/* /path/to/firmware/
@@ -210,13 +214,13 @@ run SEV-SNP guests. An ```sev-snp-guest``` object needs to be defined to
 enable SEV-SNP protection for the guest. The 'svsm=on' parameter makes
 QEMU reserve a small amount of guest memory for the SVSM.
 
-Further, the OVMF binaries and the SVSM binary need to be passed to
-QEMU. This happens via pflash drives:
+Further, the OVMF binaries with embedded SVSM binary need to be passed to
+QEMU. This happens via pflash drives where the standard OVMF firmware is
+replaced with the version built using the COCONUT-SVSM Makefile:
 
 ```
   -drive if=pflash,format=raw,unit=0,file=/path/to/firmware/OVMF_CODE.fd,readonly=on \
   -drive if=pflash,format=raw,unit=1,file=/path/to/firmware/OVMF_VARS.fd,snapshot=on \
-  -drive if=pflash,format=raw,unit=2,file=/path/to/svsm/svsm.bin,readonly=on \
 ```
 
 With these extensions QEMU will launch an SEV-SNP protected guest with
@@ -235,7 +239,6 @@ $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -no-reboot \
   -drive if=pflash,format=raw,unit=0,file=/path/to/firmware/OVMF_CODE.fd,readonly=on \
   -drive if=pflash,format=raw,unit=1,file=/path/to/firmware/OVMF_VARS.fd,snapshot=on \
-  -drive if=pflash,format=raw,unit=2,file=/path/to/svsm/svsm.bin,readonly=on \
   -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
   -drive file=/path/to/guest/image.qcow2,if=none,id=disk0,format=qcow2,snapshot=off \
   -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \

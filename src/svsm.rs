@@ -12,7 +12,7 @@ pub mod svsm_paging;
 extern crate alloc;
 
 use alloc::vec::Vec;
-use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
+use svsm::ovmf::OvmfFw;
 
 use core::arch::{asm, global_asm};
 use core::panic::PanicInfo;
@@ -25,8 +25,8 @@ use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::{early_idt_init, idt_init};
+use svsm::cpu::percpu::this_cpu;
 use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::stacktrace::print_stack;
 use svsm::elf;
@@ -39,7 +39,7 @@ use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
-use svsm::requests::{request_loop, update_mappings};
+use svsm::requests::request_loop;
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
 use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
@@ -171,55 +171,13 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let cpuid_page = match fw_meta.cpuid_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify CPUID_PAGE location"),
-    };
+pub fn copy_tables_to_fw(fw: &OvmfFw) -> Result<(), SvsmError> {
+    let (cpuid_page, secrets_page, caa_page) = fw.tables();
 
     copy_cpuid_table_to_fw(cpuid_page)?;
-
-    let secrets_page = match fw_meta.secrets_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify SECRETS_PAGE location"),
-    };
-
-    let caa_page = match fw_meta.caa_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify CAA_PAGE location"),
-    };
-
     copy_secrets_page_to_fw(secrets_page, caa_page)?;
 
     zero_caa_page(caa_page)
-}
-
-fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let caa = fw_meta.caa_page.unwrap();
-    let cpu = this_cpu_mut();
-
-    cpu.alloc_guest_vmsa()?;
-    cpu.update_guest_caa(caa);
-    update_mappings()?;
-
-    Ok(())
-}
-
-fn launch_fw() -> Result<(), SvsmError> {
-    let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
-    let vmsa = this_cpu_mut().guest_vmsa();
-
-    log::info!("VMSA PA: {:#x}", vmsa_pa);
-
-    vmsa.enable();
-    let sev_features = vmsa.sev_features;
-
-    log::info!("Launching Firmware");
-    this_cpu_mut()
-        .ghcb()
-        .ap_create(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
-
-    Ok(())
 }
 
 fn validate_flash() -> Result<(), SvsmError> {
@@ -430,16 +388,9 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = parse_fw_meta_data()
-        .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
+    let fw = OvmfFw::new();
 
-    print_fw_meta(&fw_meta);
-
-    if let Err(e) = validate_fw_memory(&fw_meta) {
-        panic!("Failed to validate firmware memory: {:#?}", e);
-    }
-
-    if let Err(e) = copy_tables_to_fw(&fw_meta) {
+    if let Err(e) = copy_tables_to_fw(&fw) {
         panic!("Failed to copy firmware tables: {:#?}", e);
     }
 
@@ -447,11 +398,11 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to validate flash memory: {:#?}", e);
     }
 
-    prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
+    fw.prepare_launch().expect("Failed to setup guest VMSA");
 
     virt_log_usage();
 
-    if let Err(e) = launch_fw() {
+    if let Err(e) = fw.launch() {
         panic!("Failed to launch FW: {:#?}", e);
     }
 

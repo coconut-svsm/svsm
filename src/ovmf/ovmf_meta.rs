@@ -22,6 +22,12 @@ use core::fmt;
 use core::mem;
 use core::str::FromStr;
 
+/*
+ * First page below 4GB contains SVSM metadata. Second page
+ * below 4GB contains OVMF metadata.
+ */
+const OVMF_METADATA_PHYS: u64 = (4 * SIZE_1G as u64) - (2 * PAGE_SIZE as u64);
+
 #[derive(Copy, Clone)]
 pub struct SevPreValidMem {
     base: PhysAddr,
@@ -53,7 +59,7 @@ impl SevPreValidMem {
     }
 }
 
-pub struct SevFWMetaData {
+pub struct SevOVMFMetaData {
     pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
     pub secrets_page: Option<PhysAddr>,
@@ -61,9 +67,9 @@ pub struct SevFWMetaData {
     pub valid_mem: Vec<SevPreValidMem>,
 }
 
-impl SevFWMetaData {
+impl SevOVMFMetaData {
     pub const fn new() -> Self {
-        SevFWMetaData {
+        SevOVMFMetaData {
             reset_ip: None,
             cpuid_page: None,
             secrets_page: None,
@@ -223,9 +229,9 @@ const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
-pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
-    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
-    let mut meta_data = SevFWMetaData::new();
+pub fn parse_ovmf_meta_data() -> Result<SevOVMFMetaData, SvsmError> {
+    let pstart = PhysAddr::from(OVMF_METADATA_PHYS);
+    let mut meta_data = SevOVMFMetaData::new();
 
     // Map meta-data location, it starts at 32 bytes below 4GiB
     let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
@@ -279,7 +285,13 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             let (base, _len) = tbl;
             let off_ptr = base.as_ptr::<u32>();
             let offset = off_ptr.read_unaligned() as usize;
-
+            // The offset provided as part of the metadata is the offset from the end of the
+            // firmware volume (4GB) and not the end of the metadata page. Subtract the
+            // offset of the metdata page to get the actual offset. This should fall within
+            // the current virtual page.
+            let metadata_offset = (4 * SIZE_1G) - OVMF_METADATA_PHYS as usize;
+            assert!((offset < metadata_offset) && (offset >= (metadata_offset - PAGE_SIZE)));
+            let offset = offset & (PAGE_SIZE - 1);
             let meta_ptr = vend.sub(offset).as_ptr::<SevMetaDataHeader>();
             //let len = meta_ptr.read().len;
             let num_descs = meta_ptr.read().num_desc as isize;
@@ -319,7 +331,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
     Ok(meta_data)
 }
 
-fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
+fn validate_ovmf_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
     let pstart = region.base;
     let pend = region.end();
 
@@ -348,7 +360,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), SvsmError> {
+fn validate_ovmf_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), SvsmError> {
     if regions.is_empty() {
         return Ok(());
     }
@@ -364,59 +376,59 @@ fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), SvsmError>
         }
     }
 
-    validate_fw_mem_region(region)?;
-    validate_fw_memory_vec(next_vec)
+    validate_ovmf_mem_region(region)?;
+    validate_ovmf_memory_vec(next_vec)
 }
 
-pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    // Initalize vector with regions from the FW
-    let mut regions = fw_meta.valid_mem.clone();
+pub fn validate_ovmf_memory(ovmf_meta: &SevOVMFMetaData) -> Result<(), SvsmError> {
+    // Initalize vector with regions from the OVMF FW
+    let mut regions = ovmf_meta.valid_mem.clone();
 
     // Add region for CPUID page if present
-    if let Some(cpuid_paddr) = fw_meta.cpuid_page {
+    if let Some(cpuid_paddr) = ovmf_meta.cpuid_page {
         regions.push(SevPreValidMem::new_4k(cpuid_paddr));
     }
 
     // Add region for Secrets page if present
-    if let Some(secrets_paddr) = fw_meta.secrets_page {
+    if let Some(secrets_paddr) = ovmf_meta.secrets_page {
         regions.push(SevPreValidMem::new_4k(secrets_paddr));
     }
 
     // Add region for CAA page if present
-    if let Some(caa_paddr) = fw_meta.caa_page {
+    if let Some(caa_paddr) = ovmf_meta.caa_page {
         regions.push(SevPreValidMem::new_4k(caa_paddr));
     }
 
     // Sort regions by base address
     regions.sort_unstable_by(|a, b| a.base.cmp(&b.base));
 
-    validate_fw_memory_vec(regions)
+    validate_ovmf_memory_vec(regions)
 }
 
-pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
-    log::info!("FW Meta Data");
+pub fn print_ovmf_meta(ovmf_meta: &SevOVMFMetaData) {
+    log::info!("OVMF FW Meta Data");
 
-    match fw_meta.reset_ip {
+    match ovmf_meta.reset_ip {
         Some(ip) => log::info!("  Reset RIP    : {:#010x}", ip),
         None => log::info!("  Reset RIP    : None"),
     };
 
-    match fw_meta.cpuid_page {
+    match ovmf_meta.cpuid_page {
         Some(addr) => log::info!("  CPUID Page   : {:#010x}", addr),
         None => log::info!("  CPUID Page   : None"),
     };
 
-    match fw_meta.secrets_page {
+    match ovmf_meta.secrets_page {
         Some(addr) => log::info!("  Secrets Page : {:#010x}", addr),
         None => log::info!("  Secrets Page : None"),
     };
 
-    match fw_meta.caa_page {
+    match ovmf_meta.caa_page {
         Some(addr) => log::info!("  CAA Page     : {:#010x}", addr),
         None => log::info!("  CAA Page     : None"),
     };
 
-    for region in &fw_meta.valid_mem {
+    for region in &ovmf_meta.valid_mem {
         log::info!(
             "  Pre-Validated Region {:#018x}-{:#018x}",
             region.base,
