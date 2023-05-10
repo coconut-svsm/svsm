@@ -2,9 +2,12 @@
 *.bin
 *.elf
 *.swp
+*.fd
 *~
 target/
 gen_meta
 stage1/stage1
 print-meta
+ovmf/release
+ovmf/debug
 .idea/

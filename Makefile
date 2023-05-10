@@ -1,9 +1,15 @@
 ifdef RELEASE
 TARGET_PATH="release"
 CARGO_ARGS="--release"
+OVMF_BUILD_ARGS=
+OVMF_BUILD_DIR=edk2/Build/OvmfX64/RELEASE_GCC5/FV
+OVMF_OUTPUT_DIR=ovmf/release
 else
 TARGET_PATH="debug"
 CARGO_ARGS=
+OVMF_BUILD_ARGS=debug
+OVMF_BUILD_DIR=edk2/Build/OvmfX64/DEBUG_GCC5/FV
+OVMF_OUTPUT_DIR=ovmf/debug
 endif
 
 STAGE2_ELF = "target/svsm-target/${TARGET_PATH}/stage2"
@@ -12,7 +18,7 @@ FS_FILE ?= none
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
-all: svsm.bin
+all: svsm.bin ovmf
 
 test:
 	cd src/
@@ -52,8 +58,13 @@ stage1/stage1: ${STAGE1_OBJS}
 svsm.bin: stage1/stage1
 	objcopy -O binary $< $@
 
+ovmf: svsm.bin
+	scripts/build-ovmf.sh ${OVMF_BUILD_ARGS}
+	mkdir -p ${OVMF_OUTPUT_DIR}
+	cp ${OVMF_BUILD_DIR}/OVMF_CODE.fd ${OVMF_BUILD_DIR}/OVMF_VARS.fd ${OVMF_BUILD_DIR}/OVMF.fd ${OVMF_OUTPUT_DIR}
+
 clean:
 	cargo clean
-	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin ${STAGE1_OBJS} gen_meta
+	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin ${STAGE1_OBJS} gen_meta ${OVMF_OUTPUT_DIR}/*.fd
 
-.PHONY: stage1/stage2.bin stage1/kernel.elf svsm.bin clean stage1/svsm-fs.bin
+.PHONY: stage1/stage2.bin stage1/kernel.elf svsm.bin clean ovmf stage1/svsm-fs.bin

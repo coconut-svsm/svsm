@@ -107,41 +107,17 @@ Building the guest firmware
 A special OVMF build is required to launch a guest on top of the
 COCONUT-SVSM. The changes also build on the EDK2 patches from AMD for
 linux-svsm. But these changes were re-based and enhanced to support the
-COCONUT-SVSM code base. To build the OVMF binary for the guest, checkout
-this repository:
+COCONUT-SVSM code base. 
 
-```
-$ git clone https://github.com/coconut-svsm/edk2.git
-$ cd edk2/
-$ git checkout svsm
-$ git submodule init
-$ git submodule update
-```
+The source code for the special OVMF build is included as a submodule of
+the COCONUT-SVSM repository and is built along with the COCONUT-SVSM 
+using the provided Makefile so no extra steps are required to build OVMF.
 
-Also make sure to have the build dependencies for OVMF installed. On
-openSUSE you can do this by:
+However, the build dependencies for OVMF must be installed prior to building
+COCONUT-SVSM. On openSUSE you can do this by:
 
 ```
 $ sudo zypper si -d qemu-ovmf-x86_64
-```
-
-Then go back to the EDK2 source directory and follow these steps to
-build the firmware:
-
-```
-$ export PYTHON3_ENABLE=TRUE
-$ export PYTHON_COMMAND=python3
-$ make -j16 -C BaseTools/
-$ source ./edksetup.sh
-$ build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -p OvmfPkg/OvmfPkgX64.dsc
-```
-
-This will build the OVMF code and variable binaries to use with QEMU.
-You can copy them to a known location after the build is complete:
-
-```
-$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF_CODE.fd /path/to/firmware/
-$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF_VARS.fd /path/to/firmware/
 ```
 
 Preparing the guest image
@@ -177,6 +153,7 @@ Then checkout the SVSM repository and build the SVSM binary:
 
 ```
 $ git clone https://github.com/coconut-svsm/svsm
+$ git submodule update --init --recursive
 $ cd svsm
 ```
 
@@ -192,9 +169,16 @@ to get a debug build of the SVSM or
 $ make RELEASE=1
 ```
 
-to build the SVSM with the release target. When the build is finished
-there is the ```svsm.bin``` file in the top-directory of the repository. This
-is the file which needs to be passed to QEMU.
+to build the SVSM with the release target. 
+
+In addition, the special version of OVMF that supports COCONUT-SVSM will be
+built. The firmware volumes for debug and release can be found in their
+respective directories: 
+
+```
+$ cp ovmf/debug/* /path/to/firmware/
+$ cp ovmf/release/* /path/to/firmware/
+```
 
 The project also contains a number of unit-tests which can be run by
 
