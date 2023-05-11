@@ -9,6 +9,7 @@ use super::tss::IST_DF;
 use super::vc::handle_vc_exception;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::extable::handle_exception_table;
+use crate::debug::gdbstub::svsm_gdbstub::handle_bp_exception;
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -16,7 +17,7 @@ use core::mem;
 pub const _DE_VECTOR: usize = 0;
 pub const _DB_VECTOR: usize = 1;
 pub const _NMI_VECTOR: usize = 2;
-pub const _BP_VECTOR: usize = 3;
+pub const BP_VECTOR: usize = 3;
 pub const _OF_VECTOR: usize = 4;
 pub const _BR_VECTOR: usize = 5;
 pub const _UD_VECTOR: usize = 6;
@@ -209,6 +210,8 @@ fn generic_idt_handler(regs: &mut X86Regs) {
         }
     } else if regs.vector == VC_VECTOR {
         handle_vc_exception(regs);
+    } else if regs.vector == BP_VECTOR {
+        handle_bp_exception(regs);
     } else {
         let err = regs.error_code;
         let vec = regs.vector;
