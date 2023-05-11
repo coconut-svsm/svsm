@@ -3,7 +3,7 @@ TARGET_PATH="release"
 CARGO_ARGS="--release"
 else
 TARGET_PATH="debug"
-CARGO_ARGS=
+CARGO_ARGS=--features enable-gdb
 endif
 
 STAGE2_ELF = "target/svsm-target/${TARGET_PATH}/stage2"
