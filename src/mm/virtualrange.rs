@@ -110,8 +110,8 @@ pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
 #[cfg(test)]
 mod tests {
     use super::VirtualRange;
-    use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SHIFT_2M, PAGE_SIZE_2M};
     use crate::address::VirtAddr;
+    use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 
     #[test]
     fn test_alloc_no_overlap_4k() {
@@ -181,8 +181,10 @@ mod tests {
         // the requested and freed page count.
         range.free(v1, 12);
         assert_eq!(range.used_pages(), 14);
-        range.free(VirtAddr::new(u64::from(v1) as usize + (13 * PAGE_SIZE_2M)), 13);
+        range.free(
+            VirtAddr::new(u64::from(v1) as usize + (13 * PAGE_SIZE_2M)),
+            13,
+        );
         assert_eq!(range.used_pages(), 0);
     }
-
- }
+}
