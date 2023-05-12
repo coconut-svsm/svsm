@@ -15,6 +15,8 @@ use crate::locking::RWLock;
 use alloc::vec::Vec;
 use log;
 
+use super::pagetable::LAUNCH_VMSA_ADDR;
+
 static MEMORY_MAP: RWLock<Vec<MemoryRegion>> = RWLock::new(Vec::new());
 
 pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
@@ -45,6 +47,9 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     let addr = paddr.bits() as u64;
 
     if PERCPU_VMSAS.exists(page_addr) {
+        return false;
+    }
+    if page_addr == *LAUNCH_VMSA_ADDR {
         return false;
     }
 
