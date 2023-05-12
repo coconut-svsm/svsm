@@ -1,0 +1,43 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            profile: minimal
+            override: true
+            components: rustfmt, rust-src
+
+      # ubuntu-latest does not have binutils 2.39, which we need for
+      # ld to work, so build all the objects without performing the
+      # final linking step.
+      - name: Build
+        run: make stage1/stage1.o stage1/reset.o
+
+      - name: Run tests
+        run: make test
+
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
