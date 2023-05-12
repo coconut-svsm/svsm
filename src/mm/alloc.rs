@@ -602,7 +602,7 @@ impl MemoryRegion {
 
     fn free_page_order(&mut self, pfn: usize, order: usize) {
         match self.try_to_merge_page(pfn, order) {
-            Err(_e) => {
+            Err(_) => {
                 self.free_page_raw(pfn, order);
             }
             Ok(new_pfn) => {
@@ -612,15 +612,13 @@ impl MemoryRegion {
     }
 
     pub fn free_page(&mut self, vaddr: VirtAddr) {
-        let res = self.get_page_info(vaddr);
-
-        if let Err(_e) = res {
+        let Ok(res) = self.get_page_info(vaddr) else {
             return;
-        }
+        };
 
         let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
 
-        match res.unwrap() {
+        match res {
             Page::Allocated(ai) => {
                 self.free_page_order(pfn, ai.order);
             }
@@ -1228,11 +1226,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             ret = allocate_pages(order);
         }
 
-        if let Err(_e) = ret {
-            return ptr::null_mut();
-        }
-
-        ret.unwrap().as_mut_ptr::<u8>()
+        ret.map(|addr| addr.as_mut_ptr::<u8>())
+            .unwrap_or_else(|_| ptr::null_mut())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
@@ -1240,7 +1235,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 
         let result = ROOT_MEM.lock().get_page_info(virt_addr);
 
-        if let Err(_e) = result {
+        if result.is_err() {
             panic!("Freeing unknown memory");
         }
 
@@ -1276,9 +1271,10 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
         // drop lock here so slab initialization does not deadlock
     }
 
-    if let Err(_e) = SLAB_PAGE_SLAB.lock().init() {
-        panic!("Failed to initialize SLAB_PAGE_SLAB");
-    }
+    SLAB_PAGE_SLAB
+        .lock()
+        .init()
+        .expect("Failed to initialize SLAB_PAGE_SLAB");
 }
 
 pub fn print_alloc_info() {
