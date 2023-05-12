@@ -47,11 +47,21 @@ startup_32:
 	shrl	$2, %ecx
 	rep movsl
 
-	leal	kernel_elf(%ebp), %edi
-	leal	kernel_elf_end(%ebp), %esi
-
 	/* Setup stack for stage 2*/
 	movl	$STAGE2_START, %esp
+
+	/* Write startup information to stage2 stack */
+	leal	kernel_fs_bin_end(%ebp), %edi
+	pushl	%edi
+
+	leal	kernel_fs_bin(%ebp), %edi
+	pushl	%edi
+
+	leal	kernel_elf_end(%ebp), %edi
+	pushl	%edi
+
+	leal	kernel_elf(%ebp), %edi
+	pushl	%edi
 
 	/* Jump to stage 2 */
 	movl	$STAGE2_START, %eax
@@ -68,6 +78,11 @@ kernel_elf:
 	.incbin "stage1/kernel.elf"
 	.align 4
 kernel_elf_end:
+
+kernel_fs_bin:
+	.incbin "stage1/svsm-fs.bin"
+	.align 4
+kernel_fs_bin_end:
 
 stage2_size:
 	.long	stage2_bin_end - stage2_bin

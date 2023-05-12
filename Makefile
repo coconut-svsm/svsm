@@ -8,6 +8,7 @@ endif
 
 STAGE2_ELF = "target/svsm-target/${TARGET_PATH}/stage2"
 KERNEL_ELF = "target/svsm-target/${TARGET_PATH}/svsm"
+FS_FILE ?= none
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
@@ -34,7 +35,15 @@ stage1/kernel.elf:
 	cargo build ${CARGO_ARGS} --bin svsm
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/kernel.elf
+stage1/svsm-fs.bin:
+ifneq ($(FS_FILE), none)
+	cp -f $(FS_FILE) stage1/svsm-fs.bin
+endif
+	touch stage1/svsm-fs.bin
+
+stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/kernel.elf stage1/svsm-fs.bin
+	cc -c -o $@ stage1/stage1.S
+
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
 
 stage1/stage1: ${STAGE1_OBJS}
@@ -47,4 +56,4 @@ clean:
 	cargo clean
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin ${STAGE1_OBJS} gen_meta
 
-.PHONY: stage1/stage2.bin stage1/kernel.elf svsm.bin clean
+.PHONY: stage1/stage2.bin stage1/kernel.elf svsm.bin clean stage1/svsm-fs.bin

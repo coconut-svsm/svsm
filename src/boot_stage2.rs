@@ -16,6 +16,8 @@ global_asm!(
         .globl startup_32
         startup_32:
 
+        /* Save pointer to startup structure in ESI */
+        movl %esp, %esi
         /*
          * Load a GDT. Despite the naming, it contains valid
          * entries for both, "legacy" 32bit and long mode each.
@@ -187,8 +189,6 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
-        pushq   %rdi
-
         /* Clear out .bss and transfer control to the main stage2 code. */
         xorq %rax, %rax
         leaq _bss(%rip), %rdi
@@ -197,7 +197,7 @@ global_asm!(
         shrq $3, %rcx
         rep stosq
 
-        popq    %rdi
+        movq %rsi, %rdi
         jmp stage2_main
 
         .data
