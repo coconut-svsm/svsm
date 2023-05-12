@@ -921,9 +921,7 @@ impl SlabCommon {
     }
 
     fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), SvsmError> {
-        if let Err(_e) = self.page.init(slab_vaddr, self.item_size) {
-            return Err(SvsmError::Mem);
-        }
+        self.page.init(slab_vaddr, self.item_size)?;
 
         self.capacity = self.page.get_capacity() as u32;
         self.free = self.capacity;
@@ -1039,9 +1037,9 @@ impl SlabPageSlab {
         let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage>() };
 
         *slab_page = SlabPage::new();
-        if let Err(_e) = slab_page.init(None, self.common.item_size) {
+        if let Err(e) = slab_page.init(None, self.common.item_size) {
             self.common.deallocate_slot(page_vaddr);
-            return Err(SvsmError::Mem);
+            return Err(e);
         }
 
         self.common.add_slab_page(slab_page);
@@ -1080,10 +1078,7 @@ impl SlabPageSlab {
     }
 
     fn allocate(&mut self) -> Result<*mut SlabPage, SvsmError> {
-        if self.grow_slab().is_err() {
-            return Err(SvsmError::Mem);
-        }
-
+        self.grow_slab()?;
         Ok(unsafe { &mut *self.common.allocate_slot().as_mut_ptr::<SlabPage>() })
     }
 
@@ -1111,25 +1106,22 @@ impl Slab {
 
     fn grow_slab(&mut self) -> Result<(), SvsmError> {
         if self.common.capacity == 0 {
-            if let Err(_e) = self.init() {
-                return Err(SvsmError::Mem);
-            }
-            return Ok(());
+            return self.init();
         }
 
         if self.common.free != 0 {
             return Ok(());
         }
 
-        let slab_page = match SLAB_PAGE_SLAB.lock().allocate() {
-            Ok(slab_page) => unsafe { &mut *slab_page },
-            Err(_) => return Err(SvsmError::Mem),
-        };
+        let slab_page = SLAB_PAGE_SLAB
+            .lock()
+            .allocate()
+            .map(|ptr| unsafe { &mut *ptr })?;
         let slab_vaddr = VirtAddr::from(self as *mut Slab);
         *slab_page = SlabPage::new();
-        if let Err(_e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
+        if let Err(e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(slab_page);
-            return Err(SvsmError::Mem);
+            return Err(e);
         }
 
         self.common.add_slab_page(&mut *slab_page);
@@ -1171,10 +1163,7 @@ impl Slab {
     }
 
     fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
-        if let Err(_e) = self.grow_slab() {
-            return Err(SvsmError::Mem);
-        }
-
+        self.grow_slab()?;
         Ok(self.common.allocate_slot())
     }
 
