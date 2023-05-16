@@ -685,12 +685,12 @@ impl PageRef {
     }
 
     pub fn as_ref(&self) -> &[u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_mut_ptr() as *mut [u8; PAGE_SIZE];
-        unsafe { ptr.as_mut().unwrap() }
+        let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
+        unsafe { ptr.as_ref().unwrap() }
     }
 
     pub fn as_mut_ref(&mut self) -> &mut [u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_mut_ptr() as *mut [u8; PAGE_SIZE];
+        let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_mut().unwrap() }
     }
 
