@@ -1,0 +1,4 @@
+[submodule "edk2"]
+	path = edk2
+	url = https://github.com/coconut-svsm/edk2.git
+	branch = svsm
