@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use core::array;
 use core::fmt;
 use core::mem::MaybeUninit;
 
@@ -39,7 +40,7 @@ impl<const T: usize> FixedString<T> {
 
 impl<const N: usize> From<[u8; N]> for FixedString<N> {
     fn from(arr: [u8; N]) -> FixedString<N> {
-        let mut data = MaybeUninit::<char>::uninit_array::<N>();
+        let mut data: [MaybeUninit<char>; N] = array::from_fn(|_| MaybeUninit::uninit());
         let mut len = N;
 
         for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
@@ -50,7 +51,7 @@ impl<const N: usize> From<[u8; N]> for FixedString<N> {
             d.write(val as char);
         }
 
-        let data = unsafe { MaybeUninit::array_assume_init(data) };
+        let data = unsafe { *(data.as_ptr().cast::<[char; N]>()) };
         FixedString { data, len }
     }
 }
@@ -100,5 +101,35 @@ impl<const T: usize> fmt::Display for FixedString<T> {
             write!(f, "{}", *b)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+    use super::*;
+    use alloc::string::String;
+    use core::fmt::Write;
+
+    #[test]
+    fn from_u8_array1() {
+        let st = FixedString::from([b'a', b'b', b'c', b'd', b'z']);
+        assert_eq!(st, "abcdz");
+        assert_eq!(st.len, 5);
+    }
+
+    #[test]
+    fn from_u8_array2() {
+        let st = FixedString::from([b'a', b'b', b'c', b'\0', b'd', b'e']);
+        assert_eq!(st, "abc");
+        assert_eq!(st.len, 3);
+    }
+
+    #[test]
+    fn display() {
+        let mut buf = String::new();
+        let st = FixedString::from([b's', b'v', b's', b'm', b'\0', b'x', b'y']);
+        write!(&mut buf, "{}", st).unwrap();
+        assert_eq!(buf.as_str(), "svsm");
     }
 }

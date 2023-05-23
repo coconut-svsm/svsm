@@ -6,7 +6,6 @@
 
 #![no_std]
 #![no_main]
-#![feature(const_mut_refs)]
 pub mod svsm_paging;
 
 extern crate alloc;

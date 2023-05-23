@@ -27,7 +27,7 @@ use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::vec::Vec;
-use core::cell::SyncUnsafeCell;
+use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -45,21 +45,21 @@ impl PerCpuInfo {
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 
-// We use a SyncUnsafeCell to allow for a static with interior
-// mutability. It is like an UnsafeCell except it implements Sync,
-// which allows the compiler to know that it is going to be accessed
-// from multiple threads, but synchronization is left to the user. In
-// our case we do not use any synchronization because writes to the
-// structure only occur at initialization, from CPU 0, and reads
+// We use an UnsafeCell to allow for a static with interior
+// mutability. Normally, we would need to guarantee synchronization
+// on the backing datatype, but this is not needed because writes to
+// the structure only occur at initialization, from CPU 0, and reads
 // should only occur after all writes are done.
 pub struct PerCpuAreas {
-    areas: SyncUnsafeCell<Vec<PerCpuInfo>>,
+    areas: UnsafeCell<Vec<PerCpuInfo>>,
 }
+
+unsafe impl Sync for PerCpuAreas {}
 
 impl PerCpuAreas {
     const fn new() -> Self {
         Self {
-            areas: SyncUnsafeCell::new(Vec::new()),
+            areas: UnsafeCell::new(Vec::new()),
         }
     }
 

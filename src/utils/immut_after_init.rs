@@ -183,7 +183,7 @@ pub struct ImmutAfterInitRef<'a, T: 'a> {
     #[doc(hidden)]
     ptr: ImmutAfterInitCell<*const T>,
     #[doc(hidden)]
-    _phantom: PhantomData<&'a mut &'a T>,
+    _phantom: PhantomData<&'a &'a T>,
 }
 
 impl<'a, T> ImmutAfterInitRef<'a, T> {
@@ -248,19 +248,6 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
         'b: 'a,
     {
         self.ptr.init(&(*cell.data.get()).as_ptr());
-    }
-
-    /// Create an initialized `ImmutAfterInitRef` instance pointing to a value
-    /// wrapped in a [`ImmutAfterInitCell`].
-    ///
-    /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
-    ///            convention, the referenced value must have been initialized
-    ///            already.
-    pub const fn new_from_cell(cell: &'a ImmutAfterInitCell<T>) -> Self {
-        Self {
-            ptr: ImmutAfterInitCell::new(unsafe { &*cell.data.get() }.as_ptr()),
-            _phantom: PhantomData,
-        }
     }
 }
 
