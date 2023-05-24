@@ -47,24 +47,26 @@ impl PerCPUPageMappingGuard {
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {
             let vaddr = virt_alloc_range_2m(size, 0)?;
-            if this_cpu_mut()
-                .get_pgtable()
-                .map_region_2m(vaddr, vaddr.offset(size), paddr_start, flags)
-                .is_err()
-            {
+            if let Err(e) = this_cpu_mut().get_pgtable().map_region_2m(
+                vaddr,
+                vaddr.offset(size),
+                paddr_start,
+                flags,
+            ) {
                 virt_free_range_2m(vaddr, size);
-                return Err(SvsmError::Mem);
+                return Err(e);
             }
             vaddr
         } else {
             let vaddr = virt_alloc_range_4k(size, 0)?;
-            if this_cpu_mut()
-                .get_pgtable()
-                .map_region_4k(vaddr, vaddr.offset(size), paddr_start, flags)
-                .is_err()
-            {
+            if let Err(e) = this_cpu_mut().get_pgtable().map_region_4k(
+                vaddr,
+                vaddr.offset(size),
+                paddr_start,
+                flags,
+            ) {
                 virt_free_range_4k(vaddr, size);
-                return Err(SvsmError::Mem);
+                return Err(e);
             }
             vaddr
         };
