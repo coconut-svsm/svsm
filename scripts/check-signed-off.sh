@@ -27,8 +27,8 @@ for c in ${commits[@]}; do
 
 	if [ "$commit_email" != "$sign_email" ]; then
 		echo "Author email mismatch on commit $c"
-		echo "    Commit author name: $commit_name"
-		echo "    Signed-off-by name: $sign_name"
+		echo "    Commit author email: $commit_email"
+		echo "    Signed-off-by email: $sign_email"
 		exit 1
 	fi
 
