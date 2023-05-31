@@ -156,7 +156,7 @@ fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
     Ok(path_items)
 }
 
-fn walk_path(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
     for item in path_items.iter() {
@@ -171,7 +171,7 @@ fn walk_path(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
     Ok(current_dir)
 }
 
-fn walk_path_create(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
     for item in path_items.iter() {
