@@ -1135,9 +1135,7 @@ impl Slab {
         let mut next_page_vaddr = self.common.page.get_next_page();
         let mut freed_one = false;
 
-        if self.common.free_pages <= 1 {
-            return;
-        } else if 2 * self.common.free < self.common.capacity {
+        if self.common.free_pages <= 1 || 2 * self.common.free < self.common.capacity {
             return;
         }
 
