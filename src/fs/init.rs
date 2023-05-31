@@ -153,7 +153,7 @@ pub fn populate_ram_fs(kernel_fs_start: u64, kernel_fs_end: u64) -> Result<(), S
             .get(start..end)
             .ok_or(SvsmError::FileSystem(FsError::inval()))?;
         file.truncate(0)?;
-        let written = file.write(&file_data)?;
+        let written = file.write(file_data)?;
         if written != fh.file_size() {
             log::error!("Incomplete data write to {}", fh.file_name());
             return Err(SvsmError::FileSystem(FsError::inval()));
