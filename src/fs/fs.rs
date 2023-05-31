@@ -39,8 +39,8 @@ impl RawFileHandle {
 
     pub fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         let result = self.file.write(buf, self.current);
-        if result.is_ok() {
-            self.current += result.unwrap();
+        if let Ok(num) = result {
+            self.current += num;
         }
         result
     }
