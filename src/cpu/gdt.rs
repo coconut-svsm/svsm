@@ -42,7 +42,7 @@ pub fn load_tss(tss: &X86Tss) {
     // Address
     desc0 |= (addr & 0x00ff_ffffu64) << 16;
     desc0 |= (addr & 0xff00_0000u64) << 32;
-    desc1 |= (addr >> 32) as u64;
+    desc1 |= addr >> 32;
 
     // Present
     desc0 |= 1u64 << 47;
