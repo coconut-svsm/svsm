@@ -106,9 +106,7 @@ fn real_mode_sys_seg(flags: u16) -> VMSASegment {
     }
 }
 
-pub fn init_guest_vmsa(vmsa: *mut VMSA, rip: u64) {
-    let v = unsafe { vmsa.as_mut().unwrap() };
-
+pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {
     v.cr0 = 0x6000_0010;
     v.rflags = 0x2;
     v.rip = rip & 0xffff;
