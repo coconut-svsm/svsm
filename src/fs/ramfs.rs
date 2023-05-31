@@ -70,7 +70,7 @@ impl RawRamFile {
 
         assert!(page_end <= PAGE_SIZE);
 
-        let page_buf = self.pages[index].as_mut_ref();
+        let page_buf = self.pages[index].as_mut();
         page_buf[page_index..page_end].copy_from_slice(buf);
     }
 

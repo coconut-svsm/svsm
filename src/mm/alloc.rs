@@ -684,18 +684,22 @@ impl PageRef {
         }
     }
 
-    pub fn as_ref(&self) -> &[u8; PAGE_SIZE] {
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.virt_addr
+    }
+}
+
+impl AsRef<[u8; PAGE_SIZE]> for PageRef {
+    fn as_ref(&self) -> &[u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_ref().unwrap() }
     }
+}
 
-    pub fn as_mut_ref(&mut self) -> &mut [u8; PAGE_SIZE] {
+impl AsMut<[u8; PAGE_SIZE]> for PageRef {
+    fn as_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_mut().unwrap() }
-    }
-
-    pub fn virt_addr(&self) -> VirtAddr {
-        self.virt_addr
     }
 }
 
