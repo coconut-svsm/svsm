@@ -143,7 +143,7 @@ fn uninitialize_fs() {
 }
 
 fn split_path_allow_empty(path: &str) -> Vec<&str> {
-    path.split('/').filter(|x| x.len() > 0).collect()
+    path.split('/').filter(|x| !x.is_empty()).collect()
 }
 
 fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
