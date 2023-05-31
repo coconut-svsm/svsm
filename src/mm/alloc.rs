@@ -367,7 +367,7 @@ impl MemoryRegion {
     }
 
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
-        if order < 1 || order >= MAX_ORDER {
+        if !(1..MAX_ORDER).contains(&order) {
             return Err(SvsmError::Mem);
         }
 
