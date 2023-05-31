@@ -52,7 +52,7 @@ pub fn load_tss(tss: &X86Tss) {
 
     unsafe {
         let idx = (SVSM_TSS / 8) as usize;
-        GDT[idx + 0] = desc0;
+        GDT[idx] = desc0;
         GDT[idx + 1] = desc1;
 
         asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));
