@@ -185,16 +185,12 @@ impl Iterator for StackUnwinder {
                     UnwoundStackFrame::Valid(cur_frame) => {
                         if cur_frame.is_last {
                             self.next_frame = None
+                        } else if cur_frame.is_exception_frame {
+                            self.next_frame =
+                                Some(Self::unwind_exception_frame(cur_frame.rsp, &self.stacks));
                         } else {
-                            if cur_frame.is_exception_frame {
-                                self.next_frame =
-                                    Some(Self::unwind_exception_frame(cur_frame.rsp, &self.stacks));
-                            } else {
-                                self.next_frame = Some(Self::unwind_framepointer_frame(
-                                    cur_frame.rbp,
-                                    &self.stacks,
-                                ));
-                            }
+                            self.next_frame =
+                                Some(Self::unwind_framepointer_frame(cur_frame.rbp, &self.stacks));
                         }
                     }
                 };

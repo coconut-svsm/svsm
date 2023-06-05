@@ -42,7 +42,7 @@ pub fn load_tss(tss: &X86Tss) {
     // Address
     desc0 |= (addr & 0x00ff_ffffu64) << 16;
     desc0 |= (addr & 0xff00_0000u64) << 32;
-    desc1 |= (addr >> 32) as u64;
+    desc1 |= addr >> 32;
 
     // Present
     desc0 |= 1u64 << 47;
@@ -52,7 +52,7 @@ pub fn load_tss(tss: &X86Tss) {
 
     unsafe {
         let idx = (SVSM_TSS / 8) as usize;
-        GDT[idx + 0] = desc0;
+        GDT[idx] = desc0;
         GDT[idx + 1] = desc1;
 
         asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));

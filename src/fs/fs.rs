@@ -39,8 +39,8 @@ impl RawFileHandle {
 
     pub fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         let result = self.file.write(buf, self.current);
-        if result.is_ok() {
-            self.current += result.unwrap();
+        if let Ok(num) = result {
+            self.current += num;
         }
         result
     }
@@ -143,7 +143,7 @@ fn uninitialize_fs() {
 }
 
 fn split_path_allow_empty(path: &str) -> Vec<&str> {
-    path.split('/').filter(|x| x.len() > 0).collect()
+    path.split('/').filter(|x| !x.is_empty()).collect()
 }
 
 fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
@@ -156,7 +156,7 @@ fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
     Ok(path_items)
 }
 
-fn walk_path(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
     for item in path_items.iter() {
@@ -171,7 +171,7 @@ fn walk_path(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
     Ok(current_dir)
 }
 
-fn walk_path_create(path_items: &Vec<&str>) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
     for item in path_items.iter() {

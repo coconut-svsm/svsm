@@ -367,7 +367,7 @@ impl MemoryRegion {
     }
 
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
-        if order < 1 || order >= MAX_ORDER {
+        if !(1..MAX_ORDER).contains(&order) {
             return Err(SvsmError::Mem);
         }
 
@@ -684,18 +684,22 @@ impl PageRef {
         }
     }
 
-    pub fn as_ref(&self) -> &[u8; PAGE_SIZE] {
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.virt_addr
+    }
+}
+
+impl AsRef<[u8; PAGE_SIZE]> for PageRef {
+    fn as_ref(&self) -> &[u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_ref().unwrap() }
     }
+}
 
-    pub fn as_mut_ref(&mut self) -> &mut [u8; PAGE_SIZE] {
+impl AsMut<[u8; PAGE_SIZE]> for PageRef {
+    fn as_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_mut().unwrap() }
-    }
-
-    pub fn virt_addr(&self) -> VirtAddr {
-        self.virt_addr
     }
 }
 
@@ -1131,9 +1135,7 @@ impl Slab {
         let mut next_page_vaddr = self.common.page.get_next_page();
         let mut freed_one = false;
 
-        if self.common.free_pages <= 1 {
-            return;
-        } else if 2 * self.common.free < self.common.capacity {
+        if self.common.free_pages <= 1 || 2 * self.common.free < self.common.capacity {
             return;
         }
 
