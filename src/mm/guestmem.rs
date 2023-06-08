@@ -10,13 +10,12 @@ use crate::error::SvsmError;
 use core::arch::asm;
 use core::mem::{size_of, MaybeUninit};
 
-#[allow(dead_code)]
 #[inline]
-unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
+pub unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
-    asm!("1: movb ({0}), {1}",
+    asm!("1: movb ({0}), %al",
          "   xorq %rcx, %rcx",
          "2:",
          ".pushsection \"__exception_table\",\"a\"",
@@ -25,13 +24,37 @@ unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
          ".quad (2b)",
          ".popsection",
             in(reg) v.bits(),
-            out(reg) val,
+            out("rax") val,
             out("rcx") rcx,
             options(att_syntax, nostack));
 
     let ret: u8 = (val & 0xff) as u8;
     if rcx == 0 {
         Ok(ret)
+    } else {
+        Err(SvsmError::InvalidAddress)
+    }
+}
+
+#[inline]
+pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
+    let mut rcx: u64;
+
+    asm!("1: movb %al, ({0})",
+         "   xorq %rcx, %rcx",
+         "2:",
+         ".pushsection \"__exception_table\",\"a\"",
+         ".balign 16",
+         ".quad (1b)",
+         ".quad (2b)",
+         ".popsection",
+            in(reg) v.bits(),
+            in("rax") val as u64,
+            out("rcx") rcx,
+            options(att_syntax, nostack));
+
+    if rcx == 0 {
+        Ok(())
     } else {
         Err(SvsmError::InvalidAddress)
     }

@@ -27,6 +27,7 @@ use svsm::cpu::idt::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
+use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::elf;
 use svsm::error::SvsmError;
@@ -405,6 +406,18 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
+    // The GDB stub can be started earlier, just after the console is initialised
+    // in svsm_start() above. It uses a lot of stack though so if you want to move
+    // it earlier then you need to set bsp_stack to 64K in the inline assembler
+    // above:
+    //
+    //     bsp_stack:
+    //        .fill 65536, 1, 0
+    gdbstub_start().expect("Could not start GDB stub");
+    // Uncomment the line below if you want to wait for
+    // a remote GDB connection
+    //debug_break();
+
     invalidate_stage2().expect("Failed to invalidate Stage2 memory");
 
     let fw_cfg = FwCfg::new(&CONSOLE_IO);
@@ -466,6 +479,7 @@ fn panic(info: &PanicInfo) -> ! {
     print_stack(3);
 
     loop {
+        debug_break();
         halt();
     }
 }

@@ -5,21 +5,17 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::locking::SpinLock;
-use crate::serial::DEFAULT_SERIAL_PORT;
+use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
-pub trait ConsoleWriter {
-    fn put_byte(&self, _ch: u8) {}
-}
-
 pub struct Console {
-    writer: *const dyn ConsoleWriter,
+    writer: *const dyn Terminal,
 }
 
 impl Console {
-    pub fn set(&mut self, w: *const dyn ConsoleWriter) {
+    pub fn set(&mut self, w: *mut dyn Terminal) {
         self.writer = w;
     }
 }

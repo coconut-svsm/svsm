@@ -5,7 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::io::{IOPort, DEFAULT_IO_DRIVER};
-use crate::console::ConsoleWriter;
 
 pub const SERIAL_PORT: u16 = 0x3f8;
 const BAUD: u32 = 9600;
@@ -23,7 +22,15 @@ pub const _MSR: u16 = 6; // Modem Status
 pub const DLL: u16 = 0; // Divisor Latch Low
 pub const DLH: u16 = 1; // Divisor Latch High
 
+pub const RCVRDY: u8 = 0x01;
 pub const XMTRDY: u8 = 0x20;
+
+pub trait Terminal {
+    fn put_byte(&self, _ch: u8) {}
+    fn get_byte(&self) -> u8 {
+        0
+    }
+}
 
 pub struct SerialPort<'a> {
     pub driver: &'a dyn IOPort,
@@ -53,7 +60,7 @@ impl<'a> SerialPort<'a> {
     }
 }
 
-impl<'a> ConsoleWriter for SerialPort<'a> {
+impl<'a> Terminal for SerialPort<'a> {
     fn put_byte(&self, ch: u8) {
         let driver = &self.driver;
         let port = self.port;
@@ -66,6 +73,18 @@ impl<'a> ConsoleWriter for SerialPort<'a> {
         }
 
         driver.outb(port + TXR, ch)
+    }
+
+    fn get_byte(&self) -> u8 {
+        let driver = &self.driver;
+        let port = self.port;
+
+        loop {
+            let rcv = driver.inb(port + LSR);
+            if (rcv & RCVRDY) == RCVRDY {
+                return driver.inb(port);
+            }
+        }
     }
 }
 
