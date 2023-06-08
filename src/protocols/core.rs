@@ -10,7 +10,7 @@ use crate::cpu::percpu::{this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::{valid_phys_address, GuestPtr};
+use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::sev::utils::{
@@ -19,6 +19,7 @@ use crate::sev::utils::{
 };
 use crate::sev::vmsa::VMSA;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::zero_mem_region;
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
@@ -239,6 +240,32 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     })?;
 
     if valid {
+        // Zero out a page when it is validated and before giving other VMPLs
+        // access to it. This is necessary to prevent a possible HV attack:
+        //
+        // Attack scenario:
+        //   1) SVSM stores secrets in VMPL0 memory at GPA A
+        //   2) HV invalidates GPA A and maps the SPA to GPA B, which is in the
+        //      OS range of GPAs
+        //   3) Guest OS asks SVSM to validate GPA B
+        //   4) SVSM validates page and gives OS access
+        //   5) OS can now read SVSM secrets from GPA B
+        //
+        // The SVSM will not notice the attack until it tries to access GPA A
+        // again. Prevent it by clearing every page before giving access to
+        // other VMPLs.
+        //
+        // Be careful to not clear GPAs which the HV might have mapped
+        // read-only, as the write operation might cause infinite #NPF loops.
+        //
+        // Special thanks to Tom Lendacky for reporting the issue and tracking
+        // down the #NPF loops.
+        //
+        if writable_phys_addr(paddr) {
+            zero_mem_region(vaddr, vaddr + page_size_bytes);
+        } else {
+            log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
+        }
         rmp_grant_guest_access(vaddr, huge)?;
     }
 
