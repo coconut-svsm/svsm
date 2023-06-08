@@ -300,11 +300,17 @@ in the terminal:
 Debugging using GDB
 -------------------
 
-Debug builds of the SVSM incorporate a GDB stub that can be used to provide full
-source-level debugging of the SVSM kernel code. The GDB stub remains dormant
-until a CPU exception occurs, either through a kernel panic or via a debug
-breakpoint, at which time the GDB stub will await a serial port connection and
-display this message in the console:
+The SVSM can be built to incorporate a GDB stub that can be used to provide full
+source-level debugging of the SVSM kernel code. To enable the GDB stub pass
+```FEATURES=enable-gdb``` to the ```make``` comannd line:
+
+```
+$ make FEATURES=enable-gdb
+```
+
+The GDB stub remains dormant until a CPU exception occurs, either through a
+kernel panic or via a debug breakpoint, at which time the GDB stub will await a
+serial port connection and display this message in the console:
 
 ```
 [SVSM] ***********************************

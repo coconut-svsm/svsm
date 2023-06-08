@@ -1,10 +1,13 @@
+FEATURES ?= "default"
+CARGO_ARGS = --features ${FEATURES}
+
 ifdef RELEASE
 TARGET_PATH="release"
-CARGO_ARGS="--release"
+CARGO_ARGS += --release
 else
 TARGET_PATH="debug"
-CARGO_ARGS=--features enable-gdb
 endif
+
 
 STAGE2_ELF = "target/svsm-target/${TARGET_PATH}/stage2"
 KERNEL_ELF = "target/svsm-target/${TARGET_PATH}/svsm"
