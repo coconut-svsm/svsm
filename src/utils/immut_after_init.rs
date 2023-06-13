@@ -12,6 +12,13 @@ use core::ops::Deref;
 #[cfg(debug_assertions)]
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(not(debug_assertions))]
+pub type ImmutAfterInitResult<T> = Result<T, core::convert::Infallible>;
+
+#[cfg(debug_assertions)]
+pub type ImmutAfterInitResult<T> = Result<T, ImmutAfterInitError>;
+
+#[cfg(debug_assertions)]
 #[derive(Clone, Copy, Debug)]
 pub enum ImmutAfterInitError {
     AlreadyInit,
@@ -85,7 +92,7 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         self.init.store(true, Ordering::Relaxed);
     }
 
-    fn check_init(&self) -> Result<(), ImmutAfterInitError> {
+    fn check_init(&self) -> ImmutAfterInitResult<()> {
         #[cfg(debug_assertions)]
         if !self.init.load(Ordering::Relaxed) {
             return Err(ImmutAfterInitError::Uninitialized);
@@ -93,7 +100,7 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         Ok(())
     }
 
-    fn check_uninit(&self) -> Result<(), ImmutAfterInitError> {
+    fn check_uninit(&self) -> ImmutAfterInitResult<()> {
         #[cfg(debug_assertions)]
         if self.init.load(Ordering::Relaxed) {
             return Err(ImmutAfterInitError::AlreadyInit);
@@ -114,7 +121,7 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         (*self.data.get()).assume_init_ref()
     }
 
-    fn try_get_inner(&self) -> Result<&T, ImmutAfterInitError> {
+    fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
         self.check_init()?;
         unsafe { Ok(self.get_inner()) }
     }
@@ -124,7 +131,7 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     /// Must **not** get called on an already initialized instance!
     ///
     /// * `v` - Initialization value.
-    pub fn init(&self, v: &T) -> Result<(), ImmutAfterInitError> {
+    pub fn init(&self, v: &T) -> ImmutAfterInitResult<()> {
         self.check_uninit()?;
         unsafe { self.set_inner(v) };
         Ok(())
@@ -261,7 +268,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
     ///         to. By convention, the referenced value must have been
     ///         initialized already.
-    pub fn init_from_ref<'b>(&self, r: &'b T) -> Result<(), ImmutAfterInitError>
+    pub fn init_from_ref<'b>(&self, r: &'b T) -> ImmutAfterInitResult<()>
     where
         'b: 'a,
     {
@@ -298,10 +305,7 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
     ///            convention, the referenced value must have been initialized
     ///            already.
-    pub fn init_from_cell<'b>(
-        &self,
-        cell: &'b ImmutAfterInitCell<T>,
-    ) -> Result<(), ImmutAfterInitError>
+    pub fn init_from_cell<'b>(&self, cell: &'b ImmutAfterInitCell<T>) -> ImmutAfterInitResult<()>
     where
         'b: 'a,
     {
