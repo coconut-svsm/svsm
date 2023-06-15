@@ -143,7 +143,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         *dst = SECRETS_PAGE;
 
         // Copy Table
-        let mut fw_sp = target.as_mut();
+        let fw_sp = target.as_mut();
 
         // Zero VMCK key for VMPLs with more privileges than the guest
         for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
