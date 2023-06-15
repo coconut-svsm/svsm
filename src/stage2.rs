@@ -184,7 +184,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
     let mut loaded_kernel_virt_end = VirtAddr::null();
-    let mut loaded_kernel_phys_end = PhysAddr::from(kernel_region_phys_start);
+    let mut loaded_kernel_phys_end = kernel_region_phys_start;
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the
