@@ -86,7 +86,7 @@ fn setup_env() {
     install_console_logger("Stage2");
     init_kernel_mapping_info(
         VirtAddr::null(),
-        VirtAddr::from(640 * 1024 as usize),
+        VirtAddr::from(640 * 1024usize),
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
