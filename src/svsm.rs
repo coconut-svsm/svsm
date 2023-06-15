@@ -54,8 +54,6 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use core::ptr;
 
-use log;
-
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
     pub static bsp_stack_end: u8;

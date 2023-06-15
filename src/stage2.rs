@@ -12,7 +12,6 @@ pub mod boot_stage2;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
-use log;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
