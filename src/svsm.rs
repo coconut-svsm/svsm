@@ -272,7 +272,7 @@ fn validate_flash() -> Result<(), SvsmError> {
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
