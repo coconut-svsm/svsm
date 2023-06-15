@@ -12,8 +12,6 @@ use super::*;
 
 extern crate alloc;
 use alloc::slice;
-use alloc::string::String;
-use alloc::vec::Vec;
 
 const PACKIT_MAGIC: [u8; 4] = [0x50, 0x4b, 0x49, 0x54];
 
@@ -57,14 +55,14 @@ impl PackItHeader {
     }
 }
 
-struct FileHeader {
+struct FileHeader<'a> {
     name_len: u16,
     file_size: u64,
-    name: String,
+    name: &'a str,
 }
 
-impl FileHeader {
-    fn load(buf: &[u8]) -> Result<Self, SvsmError> {
+impl<'a> FileHeader<'a> {
+    fn load(buf: &'a [u8]) -> Result<Self, SvsmError> {
         if buf.len() < 12 {
             log::error!("Unexpected end of archive");
             return Err(SvsmError::FileSystem(FsError::inval()));
@@ -82,7 +80,7 @@ impl FileHeader {
             return Err(SvsmError::FileSystem(FsError::inval()));
         }
 
-        let Ok(name) = String::from_utf8(Vec::from(&buf[12..header_len])) else {
+        let Ok(name) = core::str::from_utf8(&buf[12..header_len]) else {
             log::error!("Invalid filename in archive");
             return Err(SvsmError::FileSystem(FsError::inval()));
         };
@@ -100,7 +98,7 @@ impl FileHeader {
     }
 
     fn file_name(&self) -> &str {
-        self.name.as_str()
+        self.name
     }
 
     fn file_size(&self) -> usize {
