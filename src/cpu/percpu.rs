@@ -465,7 +465,7 @@ impl PerCpu {
         let caa_phys = locked.caa_phys()?;
         let offset = caa_phys.page_offset();
 
-        Some(VirtAddr::from(SVSM_PERCPU_CAA_BASE).offset(offset))
+        Some(VirtAddr::from(SVSM_PERCPU_CAA_BASE) + offset)
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {

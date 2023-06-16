@@ -143,12 +143,12 @@ fn init_idt(idt: &mut Idt) {
     // Set IDT handlers
     let handlers = unsafe { VirtAddr::from(&idt_handler_array as *const u8) };
     for (i, entry) in idt.iter_mut().enumerate() {
-        *entry = IdtEntry::entry(handlers.offset(32 * i));
+        *entry = IdtEntry::entry(handlers + (32 * i));
     }
 }
 
 unsafe fn init_ist_vectors(idt: &mut Idt) {
-    let handler = VirtAddr::from(&idt_handler_array as *const u8).offset(32 * DF_VECTOR);
+    let handler = VirtAddr::from(&idt_handler_array as *const u8) + (32 * DF_VECTOR);
     idt[DF_VECTOR] = IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap());
 }
 

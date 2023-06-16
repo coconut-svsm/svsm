@@ -44,10 +44,6 @@ pub trait Address:
         self.is_aligned(PAGE_SIZE)
     }
 
-    fn offset(&self, off: InnerAddr) -> Self {
-        Self::from(self.bits() + off)
-    }
-
     fn checked_offset(&self, off: InnerAddr) -> Option<Self> {
         self.bits().checked_add(off).map(|addr| addr.into())
     }

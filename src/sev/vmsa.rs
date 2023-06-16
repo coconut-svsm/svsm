@@ -195,11 +195,11 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
         free_page(vmsa_page);
         vmsa_page = allocate_pages(1)?;
         if vmsa_page.is_aligned(PAGE_SIZE_2M) {
-            vmsa_page = vmsa_page.offset(PAGE_SIZE);
+            vmsa_page = vmsa_page + PAGE_SIZE;
         }
     }
 
-    zero_mem_region(vmsa_page, vmsa_page.offset(PAGE_SIZE));
+    zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
 
     if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
         free_page(vmsa_page);

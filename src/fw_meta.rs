@@ -39,7 +39,7 @@ impl SevPreValidMem {
 
     #[inline]
     fn end(&self) -> PhysAddr {
-        self.base.offset(self.length)
+        self.base + self.length
     }
 
     fn overlap(&self, other: &Self) -> bool {
@@ -230,7 +230,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
     // Map meta-data location, it starts at 32 bytes below 4GiB
     let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
     let vstart = guard.virt_addr();
-    let vend = vstart.offset(PAGE_SIZE);
+    let vend = vstart + PAGE_SIZE;
 
     let mut curr = vend.sub(32);
 
@@ -342,7 +342,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         // Make page accessible to guest VMPL
         rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false)?;
 
-        zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }
 
     Ok(())

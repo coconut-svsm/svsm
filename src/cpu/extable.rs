@@ -35,7 +35,7 @@ fn check_exception_table(rip: VirtAddr) -> VirtAddr {
                 return end;
             }
 
-            current = current.offset(mem::size_of::<ExceptionTableEntry>());
+            current = current + mem::size_of::<ExceptionTableEntry>();
             if current >= ex_table_end {
                 break;
             }
@@ -59,7 +59,7 @@ pub fn dump_exception_table() {
 
             log::info!("Extable Entry {:#018x}-{:#018x}", start, end);
 
-            current = current.offset(mem::size_of::<ExceptionTableEntry>());
+            current = current + mem::size_of::<ExceptionTableEntry>();
             if current >= ex_table_end {
                 break;
             }
