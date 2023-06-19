@@ -5,7 +5,6 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 use core::cell::UnsafeCell;
-use core::marker::Copy;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
