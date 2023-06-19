@@ -16,7 +16,7 @@ pub mod virtualrange;
 
 pub use address_space::*;
 pub use guestmem::GuestPtr;
-pub use memory::valid_phys_address;
+pub use memory::{valid_phys_address, writable_phys_addr};
 pub use ptguards::*;
 
 pub use alloc::{

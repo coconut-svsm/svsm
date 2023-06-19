@@ -77,6 +77,10 @@ pub trait Address:
 pub struct PhysAddr(InnerAddr);
 
 impl PhysAddr {
+    pub const fn new(p: InnerAddr) -> Self {
+        Self(p)
+    }
+
     pub const fn null() -> Self {
         Self(0)
     }
