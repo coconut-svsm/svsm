@@ -54,8 +54,6 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use core::ptr;
 
-use log;
-
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
     pub static bsp_stack_end: u8;
@@ -143,7 +141,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         *dst = SECRETS_PAGE;
 
         // Copy Table
-        let mut fw_sp = target.as_mut();
+        let fw_sp = target.as_mut();
 
         // Zero VMCK key for VMPLs with more privileges than the guest
         for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
@@ -274,7 +272,7 @@ fn validate_flash() -> Result<(), SvsmError> {
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
-                return Err(e.into());
+                return Err(e);
             }
         }
     }

@@ -12,7 +12,6 @@ pub mod boot_stage2;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
-use log;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -87,7 +86,7 @@ fn setup_env() {
     install_console_logger("Stage2");
     init_kernel_mapping_info(
         VirtAddr::null(),
-        VirtAddr::from(640 * 1024 as usize),
+        VirtAddr::from(640 * 1024usize),
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
@@ -185,7 +184,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
     let mut loaded_kernel_virt_end = VirtAddr::null();
-    let mut loaded_kernel_phys_end = PhysAddr::from(kernel_region_phys_start);
+    let mut loaded_kernel_phys_end = kernel_region_phys_start;
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the

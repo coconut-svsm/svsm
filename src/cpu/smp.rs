@@ -24,7 +24,7 @@ fn start_cpu(apic_id: u32) {
             .alloc_svsm_vmsa()
             .expect("Failed to allocate AP SVSM VMSA");
 
-        let vmsa = percpu.get_svsm_vmsa().unwrap();
+        let mut vmsa = percpu.get_svsm_vmsa().unwrap();
         init_svsm_vmsa(vmsa.vmsa());
         percpu.prepare_svsm_vmsa(start_rip);
 

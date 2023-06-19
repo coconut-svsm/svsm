@@ -98,7 +98,7 @@ impl VmsaRef {
         }
     }
 
-    pub fn vmsa(&self) -> &mut VMSA {
+    pub fn vmsa(&mut self) -> &mut VMSA {
         let ptr = self.vaddr.as_mut_ptr::<VMSA>();
         unsafe { ptr.as_mut().unwrap() }
     }
@@ -362,12 +362,13 @@ impl PerCpu {
     }
 
     pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
-        let vmsa = self.svsm_vmsa.unwrap();
+        let mut vmsa = self.svsm_vmsa.unwrap();
+        let vmsa_ref = vmsa.vmsa();
 
-        vmsa.vmsa().tr = self.vmsa_tr_segment();
-        vmsa.vmsa().rip = start_rip;
-        vmsa.vmsa().rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.tr = self.vmsa_tr_segment();
+        vmsa_ref.rip = start_rip;
+        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -418,7 +419,7 @@ impl PerCpu {
         self.guest_vmsa.lock()
     }
 
-    pub fn guest_vmsa(&self) -> &mut VMSA {
+    pub fn guest_vmsa(&mut self) -> &mut VMSA {
         let locked = self.guest_vmsa.lock();
 
         assert!(locked.vmsa_phys().is_some());
