@@ -12,7 +12,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
@@ -46,6 +46,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
+use svsm::task::{create_initial_task, TASK_FLAG_SHARE_PT};
 use svsm::types::{GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
@@ -394,13 +395,15 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
-    // Enable runtime stack and jump to main function
-    unsafe {
-        asm!("movq  %rax, %rsp
-              jmp   svsm_main",
-              in("rax") bp.bits(),
-              options(att_syntax));
-    }
+    // Create the root task that runs the entry point then handles the request loop
+    create_initial_task(
+        svsm_main,
+        TASK_FLAG_SHARE_PT,
+        Some(this_cpu().get_apic_id()),
+    )
+    .expect("Failed to create initial task");
+
+    panic!("SVSM entry point terminated unexpectedly");
 }
 
 #[no_mangle]
