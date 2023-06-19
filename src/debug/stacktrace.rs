@@ -134,9 +134,9 @@ impl StackUnwinder {
         }
 
         let rbp = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
-        let rsp = rsp.offset(mem::size_of::<VirtAddr>());
+        let rsp = rsp + mem::size_of::<VirtAddr>();
         let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
-        let rsp = rsp.offset(mem::size_of::<VirtAddr>());
+        let rsp = rsp + mem::size_of::<VirtAddr>();
 
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }

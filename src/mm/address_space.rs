@@ -4,7 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr, VirtAddr};
+#[cfg(test)]
+use crate::address::Address;
+use crate::address::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 #[derive(Copy, Clone)]
@@ -36,19 +38,19 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
 
     let offset: usize = vaddr - KERNEL_MAPPING.virt_start;
 
-    KERNEL_MAPPING.phys_start.offset(offset)
+    KERNEL_MAPPING.phys_start + offset
 }
 
 #[cfg(not(test))]
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     let size: usize = KERNEL_MAPPING.virt_end - KERNEL_MAPPING.virt_start;
-    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start.offset(size) {
+    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start + size {
         panic!("Invalid physical address {:#018x}", paddr);
     }
 
     let offset: usize = paddr - KERNEL_MAPPING.phys_start;
 
-    KERNEL_MAPPING.virt_start.offset(offset)
+    KERNEL_MAPPING.virt_start + offset
 }
 
 #[cfg(test)]

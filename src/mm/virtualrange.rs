@@ -4,7 +4,7 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
-use crate::address::{Address, VirtAddr};
+use crate::address::VirtAddr;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
@@ -47,7 +47,7 @@ impl VirtualRange {
     pub fn alloc(&mut self, page_count: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
         // Always reserve an extra page to leave a guard between virtual memory allocations
         match self.bits.alloc(page_count + 1, alignment) {
-            Some(offset) => Ok(self.start_virt.offset(offset << self.page_shift)),
+            Some(offset) => Ok(self.start_virt + (offset << self.page_shift)),
             None => Err(SvsmError::Mem),
         }
     }

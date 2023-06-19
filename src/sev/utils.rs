@@ -65,19 +65,19 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
     let mut addr = start;
 
     while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr.offset(PAGE_SIZE_2M) <= end {
+        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, true, valid).or_else(|err| match err {
                 SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                    pvalidate_range_4k(addr, addr.offset(PAGE_SIZE_2M), valid)
+                    pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
                 }
                 _ => Err(err),
             })?;
-            addr = addr.offset(PAGE_SIZE_2M);
+            addr = addr + PAGE_SIZE_2M;
         } else {
             pvalidate(addr, false, valid)?;
-            addr = addr.offset(PAGE_SIZE);
+            addr = addr + PAGE_SIZE;
         }
     }
 

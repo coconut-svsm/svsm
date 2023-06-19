@@ -217,7 +217,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, paddr.offset(page_size_bytes), valign)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -276,7 +276,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
 
-    let guest_page = GuestPtr::<PValidateRequest>::new(start.offset(offset));
+    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
     let mut request = guest_page.read()?;
 
     let entries = request.entries;
@@ -334,7 +334,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr().offset(offset);
+    let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);
     pending.write(0)?;

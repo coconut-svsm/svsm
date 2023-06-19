@@ -118,20 +118,15 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 
     let mut pgtbl = get_init_pgtable_locked();
     pgtbl
-        .map_region(vaddr, vaddr.offset(len), paddr, flags)
+        .map_region(vaddr, vaddr + len, paddr, flags)
         .expect("Error mapping kernel region");
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(
-            paddr,
-            paddr.offset(len),
-            true,
-            PageStateChangeOp::PscPrivate,
-        )
+        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
-    pvalidate_range(vaddr, vaddr.offset(len), true).expect("PVALIDATE kernel region failed");
-    valid_bitmap_set_valid_range(paddr, paddr.offset(len));
+    pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr + len);
 }
 
 // Launch info from stage1, usually at the bottom of the stack
@@ -208,7 +203,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
         let segment_len = aligned_vaddr_end - vaddr_start;
         let paddr_start = loaded_kernel_phys_end;
-        loaded_kernel_phys_end = loaded_kernel_phys_end.offset(segment_len);
+        loaded_kernel_phys_end = loaded_kernel_phys_end + segment_len;
 
         map_and_validate(vaddr_start, paddr_start, segment_len);
 

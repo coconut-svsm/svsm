@@ -406,7 +406,7 @@ impl GHCB {
         self.clear();
 
         while paddr < end {
-            let huge = huge && paddr.is_aligned(PAGE_SIZE_2M) && paddr.offset(PAGE_SIZE_2M) <= end;
+            let huge = huge && paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= end;
             let pgsize: usize = match huge {
                 true => PAGE_SIZE_2M,
                 false => PAGE_SIZE,
@@ -415,7 +415,7 @@ impl GHCB {
             let offset: isize = (entries as isize) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
-            paddr = paddr.offset(pgsize);
+            paddr = paddr + pgsize;
 
             if entries == max_entries {
                 let header = PageStateChangeHeader {

@@ -405,7 +405,7 @@ impl PageTable {
 
         // Prepare PTE leaf page
         for i in 0..512 {
-            let addr_4k = addr_2m.offset(i * PAGE_SIZE);
+            let addr_4k = addr_2m + (i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
                 (*page).entries[i].set(set_c_bit(addr_4k), flags);
@@ -544,7 +544,7 @@ impl PageTable {
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
                     return Err(SvsmError::Mem);
                 }
-                Ok(entry.address().offset(offset))
+                Ok(entry.address() + offset)
             }
             Mapping::Level1(entry) => {
                 let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
@@ -554,7 +554,7 @@ impl PageTable {
                     return Err(SvsmError::Mem);
                 }
 
-                Ok(entry.address().offset(offset))
+                Ok(entry.address() + offset)
             }
             Mapping::Level2(_entry) => Err(SvsmError::Mem),
             Mapping::Level3(_entry) => Err(SvsmError::Mem),
@@ -573,7 +573,7 @@ impl PageTable {
             .map(VirtAddr::from)
         {
             let offset = addr - start;
-            self.map_4k(addr, phys.offset(offset), flags)?;
+            self.map_4k(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -599,7 +599,7 @@ impl PageTable {
             .map(VirtAddr::from)
         {
             let offset = addr - start;
-            self.map_2m(addr, phys.offset(offset), flags)?;
+            self.map_2m(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -626,17 +626,17 @@ impl PageTable {
         while vaddr < end {
             if vaddr.is_aligned(PAGE_SIZE_2M)
                 && paddr.is_aligned(PAGE_SIZE_2M)
-                && vaddr.offset(PAGE_SIZE_2M) <= end
+                && vaddr + PAGE_SIZE_2M <= end
                 && self.map_2m(vaddr, paddr, flags).is_ok()
             {
-                vaddr = vaddr.offset(PAGE_SIZE_2M);
-                paddr = paddr.offset(PAGE_SIZE_2M);
+                vaddr = vaddr + PAGE_SIZE_2M;
+                paddr = paddr + PAGE_SIZE_2M;
                 continue;
             }
 
             self.map_4k(vaddr, paddr, flags)?;
-            vaddr = vaddr.offset(PAGE_SIZE);
-            paddr = paddr.offset(PAGE_SIZE);
+            vaddr = vaddr + PAGE_SIZE;
+            paddr = paddr + PAGE_SIZE;
         }
 
         Ok(())
@@ -651,11 +651,11 @@ impl PageTable {
             match mapping {
                 Mapping::Level0(entry) => {
                     entry.clear();
-                    vaddr = vaddr.offset(PAGE_SIZE);
+                    vaddr = vaddr + PAGE_SIZE;
                 }
                 Mapping::Level1(entry) => {
                     entry.clear();
-                    vaddr = vaddr.offset(PAGE_SIZE_2M);
+                    vaddr = vaddr + PAGE_SIZE_2M;
                 }
                 _ => {
                     log::debug!("Can't unmap - address not mapped {:#x}", vaddr);

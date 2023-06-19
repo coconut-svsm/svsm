@@ -185,7 +185,7 @@ pub fn populate_ram_fs(kernel_fs_start: u64, kernel_fs_end: u64) -> Result<(), S
     log::info!("Unpacking FS archive...");
 
     let guard = PerCPUPageMappingGuard::create(pstart.page_align(), pend.page_align_up(), 0)?;
-    let vstart = guard.virt_addr().offset(pstart.page_offset());
+    let vstart = guard.virt_addr() + pstart.page_offset();
 
     let data: &[u8] = unsafe { slice::from_raw_parts(vstart.as_ptr(), size) };
     let archive = FsArchive::load(data)?;

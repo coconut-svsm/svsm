@@ -107,7 +107,7 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let start = guard.virt_addr();
-    let end = start.offset(PAGE_SIZE);
+    let end = start + PAGE_SIZE;
 
     let target = ptr::NonNull::new(start.as_mut_ptr::<SnpCpuidTable>()).unwrap();
 
@@ -164,7 +164,7 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let vaddr = guard.virt_addr();
 
-    zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
 
     Ok(())
 }
