@@ -142,25 +142,26 @@ fn uninitialize_fs() {
     }
 }
 
-fn split_path_allow_empty(path: &str) -> Vec<&str> {
-    path.split('/').filter(|x| !x.is_empty()).collect()
+fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
+    path.split('/').filter(|x| !x.is_empty())
 }
 
-fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
-    let path_items = split_path_allow_empty(path);
-
-    if path_items.is_empty() {
-        return Err(SvsmError::FileSystem(FsError::inval()));
-    }
-
+fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIterator, SvsmError> {
+    let mut path_items = split_path_allow_empty(path).peekable();
+    path_items
+        .peek()
+        .ok_or(SvsmError::FileSystem(FsError::inval()))?;
     Ok(path_items)
 }
 
-fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+where
+    I: Iterator<Item = &'a str>,
+{
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
-    for item in path_items.iter() {
-        let dir_name = FileName::from(*item);
+    for item in path_items {
+        let dir_name = FileName::from(item);
         let dir_entry = current_dir.lookup_entry(dir_name)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -171,11 +172,14 @@ fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     Ok(current_dir)
 }
 
-fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path_create<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+where
+    I: Iterator<Item = &'a str>,
+{
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
-    for item in path_items.iter() {
-        let dir_name = FileName::from(*item);
+    for item in path_items {
+        let dir_name = FileName::from(item);
         let lookup = current_dir.lookup_entry(dir_name);
         let dir_entry = match lookup {
             Ok(entry) => entry,
@@ -192,8 +196,8 @@ fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError
 
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
 
     let dir_entry = current_dir.lookup_entry(file_name)?;
 
@@ -205,8 +209,8 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
 
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
     let file = current_dir.create_file(file_name)?;
 
     Ok(FileHandle::new(&file))
@@ -215,8 +219,8 @@ pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
 /// Creates a file with all sub-directories
 pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path_create(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path_create(path_items)?;
 
     if file_name.length() == 0 {
         return Err(SvsmError::FileSystem(FsError::inval()));
@@ -229,8 +233,8 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let dir_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let dir_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
 
     current_dir.create_directory(dir_name)?;
 
@@ -239,15 +243,15 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
 
 pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.pop().unwrap());
-    let dir = walk_path(&path_items)?;
+    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let dir = walk_path(path_items)?;
 
     dir.unlink(entry_name)
 }
 
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
     let items = split_path_allow_empty(path);
-    let dir = walk_path(&items)?;
+    let dir = walk_path(items)?;
     Ok(dir.list())
 }
 

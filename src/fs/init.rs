@@ -12,11 +12,10 @@ use super::*;
 
 extern crate alloc;
 use alloc::slice;
-use alloc::string::String;
-use alloc::vec::Vec;
 
 const PACKIT_MAGIC: [u8; 4] = [0x50, 0x4b, 0x49, 0x54];
 
+#[derive(Clone, Copy, Debug)]
 struct PackItHeader {
     /// Header Magic (PKIT)
     magic: [u8; 4],
@@ -57,14 +56,68 @@ impl PackItHeader {
     }
 }
 
-struct FileHeader {
-    name_len: u16,
-    file_size: u64,
-    name: String,
+#[derive(Clone, Debug)]
+struct FsArchive<'a> {
+    _hdr: PackItHeader,
+    data: &'a [u8],
+    current: usize,
 }
 
-impl FileHeader {
-    fn load(buf: &[u8]) -> Result<Self, SvsmError> {
+impl<'a> FsArchive<'a> {
+    fn load(data: &'a [u8]) -> Result<Self, SvsmError> {
+        let _hdr = PackItHeader::load(data)?;
+        let current = _hdr.len();
+        Ok(Self {
+            _hdr,
+            data,
+            current,
+        })
+    }
+}
+
+impl<'a> core::iter::Iterator for FsArchive<'a> {
+    type Item = Result<FsFile<'a>, SvsmError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current >= self.data.len() {
+            return None;
+        }
+
+        let hdr = match FileHeader::load(&self.data[self.current..]) {
+            Ok(hdr) => hdr,
+            Err(e) => return Some(Err(e)),
+        };
+
+        let Some(start) = self.current.checked_add(hdr.header_size()) else {
+            return Some(Err(SvsmError::FileSystem(FsError::inval())));
+        };
+        let Some(end) = start.checked_add(hdr.file_size()) else {
+            return Some(Err(SvsmError::FileSystem(FsError::inval())));
+        };
+        let Some(data) = self.data.get(start..end) else {
+            return Some(Err(SvsmError::FileSystem(FsError::inval())));
+        };
+
+        self.current += hdr.total_size();
+
+        Some(Ok(FsFile { hdr, data }))
+    }
+}
+
+struct FsFile<'a> {
+    hdr: FileHeader<'a>,
+    data: &'a [u8],
+}
+
+#[derive(Clone, Debug)]
+struct FileHeader<'a> {
+    name_len: u16,
+    file_size: u64,
+    name: &'a str,
+}
+
+impl<'a> FileHeader<'a> {
+    fn load(buf: &'a [u8]) -> Result<Self, SvsmError> {
         if buf.len() < 12 {
             log::error!("Unexpected end of archive");
             return Err(SvsmError::FileSystem(FsError::inval()));
@@ -82,7 +135,7 @@ impl FileHeader {
             return Err(SvsmError::FileSystem(FsError::inval()));
         }
 
-        let Ok(name) = String::from_utf8(Vec::from(&buf[12..header_len])) else {
+        let Ok(name) = core::str::from_utf8(&buf[12..header_len]) else {
             log::error!("Invalid filename in archive");
             return Err(SvsmError::FileSystem(FsError::inval()));
         };
@@ -100,7 +153,7 @@ impl FileHeader {
     }
 
     fn file_name(&self) -> &str {
-        self.name.as_str()
+        self.name
     }
 
     fn file_size(&self) -> usize {
@@ -135,32 +188,19 @@ pub fn populate_ram_fs(kernel_fs_start: u64, kernel_fs_end: u64) -> Result<(), S
     let vstart = guard.virt_addr().offset(pstart.page_offset());
 
     let data: &[u8] = unsafe { slice::from_raw_parts(vstart.as_ptr(), size) };
-    let hdr = PackItHeader::load(data)?;
+    let archive = FsArchive::load(data)?;
 
-    let mut current = hdr.len();
-    while current < size {
-        let fh = FileHeader::load(&data[current..])?;
-
-        let start = current
-            .checked_add(fh.header_size())
-            .ok_or(SvsmError::FileSystem(FsError::inval()))?;
-        let end = start
-            .checked_add(fh.file_size())
-            .ok_or(SvsmError::FileSystem(FsError::inval()))?;
-
-        let file = create_all(fh.file_name())?;
-        let file_data = data
-            .get(start..end)
-            .ok_or(SvsmError::FileSystem(FsError::inval()))?;
-        file.truncate(0)?;
-        let written = file.write(file_data)?;
-        if written != fh.file_size() {
-            log::error!("Incomplete data write to {}", fh.file_name());
+    for file in archive {
+        let file = file?;
+        let handle = create_all(file.hdr.file_name())?;
+        handle.truncate(0)?;
+        let written = handle.write(file.data)?;
+        if written != file.hdr.file_size() {
+            log::error!("Incomplete data write to {}", file.hdr.file_name());
             return Err(SvsmError::FileSystem(FsError::inval()));
         }
 
-        log::info!("  Unpacked {}", fh.file_name());
-        current += fh.total_size();
+        log::info!("  Unpacked {}", file.hdr.file_name());
     }
 
     log::info!("Unpacking done");
