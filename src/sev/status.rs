@@ -139,7 +139,9 @@ fn sev_flags() -> SEVStatusFlags {
 
 pub fn sev_status_init() {
     let status: SEVStatusFlags = read_sev_status();
-    unsafe { SEV_FLAGS.init(&status) };
+    SEV_FLAGS
+        .init(&status)
+        .expect("Already initialized SEV flags");
 }
 
 pub fn sev_es_enabled() -> bool {
