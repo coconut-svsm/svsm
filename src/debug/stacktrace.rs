@@ -6,7 +6,8 @@
 
 use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
-use crate::cpu::idt::{is_exception_handler_return_site, X86Regs};
+use crate::cpu::idt::is_exception_handler_return_site;
+use crate::cpu::idt::X86ExceptionContext;
 #[cfg(feature = "enable-stacktrace")]
 use crate::mm::address_space::{STACK_SIZE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
 #[cfg(feature = "enable-stacktrace")]
@@ -144,15 +145,15 @@ impl StackUnwinder {
     fn unwind_exception_frame(rsp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
         if !stacks
             .iter()
-            .any(|stack| stack.range_is_on_stack(rsp, mem::size_of::<X86Regs>()))
+            .any(|stack| stack.range_is_on_stack(rsp, mem::size_of::<X86ExceptionContext>()))
         {
             return UnwoundStackFrame::Invalid;
         }
 
-        let regs = unsafe { &*rsp.as_ptr::<X86Regs>() };
-        let rbp = VirtAddr::from(regs.rbp);
-        let rip = VirtAddr::from(regs.rip);
-        let rsp = VirtAddr::from(regs.rsp);
+        let ctx = unsafe { &*rsp.as_ptr::<X86ExceptionContext>() };
+        let rbp = VirtAddr::from(ctx.regs.rbp);
+        let rip = VirtAddr::from(ctx.frame.rip);
+        let rsp = VirtAddr::from(ctx.frame.rsp);
 
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }

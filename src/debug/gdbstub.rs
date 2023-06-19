@@ -13,7 +13,7 @@
 pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
     use crate::cpu::percpu::this_cpu;
-    use crate::cpu::X86Regs;
+    use crate::cpu::X86ExceptionContext;
     use crate::error::SvsmError;
     use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
@@ -49,12 +49,12 @@ pub mod svsm_gdbstub {
         Ok(())
     }
 
-    pub fn handle_bp_exception(regs: &mut X86Regs) {
-        handle_stop(regs, true);
+    pub fn handle_bp_exception(ctx: &mut X86ExceptionContext) {
+        handle_stop(ctx, true);
     }
 
-    pub fn handle_db_exception(regs: &mut X86Regs) {
-        handle_stop(regs, false);
+    pub fn handle_db_exception(ctx: &mut X86ExceptionContext) {
+        handle_stop(ctx, false);
     }
 
     pub fn debug_break() {
@@ -81,19 +81,19 @@ pub mod svsm_gdbstub {
         target: GdbStubTarget,
     }
 
-    fn handle_stop(regs: &mut X86Regs, bp_exception: bool) {
+    fn handle_stop(ctx: &mut X86ExceptionContext, bp_exception: bool) {
         let SvsmGdbStub { gdb, mut target } = unsafe {
             GDB_STATE.take().unwrap_or_else(|| {
                 panic!("GDB stub not initialised!");
             })
         };
 
-        target.set_regs(regs);
+        target.set_regs(ctx);
 
         // If the current address is on a breakpoint then we need to
         // move the IP back by one byte
-        if bp_exception && target.is_breakpoint(regs.rip - 1) {
-            regs.rip -= 1;
+        if bp_exception && target.is_breakpoint(ctx.frame.rip - 1) {
+            ctx.frame.rip -= 1;
         }
 
         let mut new_gdb = match gdb {
@@ -134,9 +134,9 @@ pub mod svsm_gdbstub {
             };
         }
         if target.is_single_step {
-            regs.flags |= 0x100;
+            ctx.frame.flags |= 0x100;
         } else {
-            regs.flags &= !0x100;
+            ctx.frame.flags &= !0x100;
         }
         unsafe {
             GDB_STATE = Some(SvsmGdbStub {
@@ -181,7 +181,7 @@ pub mod svsm_gdbstub {
     }
 
     struct GdbStubTarget {
-        regs: usize,
+        ctx: usize,
         breakpoints: [GdbStubBreakpoint; MAX_BREAKPOINTS],
         is_single_step: bool,
     }
@@ -189,7 +189,7 @@ pub mod svsm_gdbstub {
     impl GdbStubTarget {
         pub const fn new() -> Self {
             Self {
-                regs: 0,
+                ctx: 0,
                 breakpoints: [GdbStubBreakpoint {
                     addr: VirtAddr::null(),
                     inst: 0,
@@ -198,8 +198,8 @@ pub mod svsm_gdbstub {
             }
         }
 
-        pub fn set_regs(&mut self, regs: &X86Regs) {
-            self.regs = (regs as *const _) as usize;
+        pub fn set_regs(&mut self, ctx: &X86ExceptionContext) {
+            self.ctx = (ctx as *const _) as usize;
         }
 
         fn is_breakpoint(&self, rip: usize) -> bool {
@@ -248,30 +248,30 @@ pub mod svsm_gdbstub {
             regs: &mut <Self::Arch as gdbstub::arch::Arch>::Registers,
         ) -> gdbstub::target::TargetResult<(), Self> {
             unsafe {
-                let context = (self.regs as *mut X86Regs).as_mut().unwrap();
+                let context = (self.ctx as *mut X86ExceptionContext).as_mut().unwrap();
 
-                regs.rip = context.rip as u64;
+                regs.rip = context.frame.rip as u64;
                 regs.regs = [
-                    context.rax as u64,
-                    context.rbx as u64,
-                    context.rcx as u64,
-                    context.rdx as u64,
-                    context.rsi as u64,
-                    context.rdi as u64,
-                    context.rbp as u64,
-                    context.rsp as u64,
-                    context.r8 as u64,
-                    context.r9 as u64,
-                    context.r10 as u64,
-                    context.r11 as u64,
-                    context.r12 as u64,
-                    context.r13 as u64,
-                    context.r14 as u64,
-                    context.r15 as u64,
+                    context.regs.rax as u64,
+                    context.regs.rbx as u64,
+                    context.regs.rcx as u64,
+                    context.regs.rdx as u64,
+                    context.regs.rsi as u64,
+                    context.regs.rdi as u64,
+                    context.regs.rbp as u64,
+                    context.frame.rsp as u64,
+                    context.regs.r8 as u64,
+                    context.regs.r9 as u64,
+                    context.regs.r10 as u64,
+                    context.regs.r11 as u64,
+                    context.regs.r12 as u64,
+                    context.regs.r13 as u64,
+                    context.regs.r14 as u64,
+                    context.regs.r15 as u64,
                 ];
-                regs.eflags = context.flags as u32;
-                regs.segments.cs = context.cs as u32;
-                regs.segments.ss = context.ss as u32;
+                regs.eflags = context.frame.flags as u32;
+                regs.segments.cs = context.frame.cs as u32;
+                regs.segments.ss = context.frame.ss as u32;
             }
 
             Ok(())
@@ -282,28 +282,28 @@ pub mod svsm_gdbstub {
             regs: &<Self::Arch as gdbstub::arch::Arch>::Registers,
         ) -> gdbstub::target::TargetResult<(), Self> {
             unsafe {
-                let context = (self.regs as *mut X86Regs).as_mut().unwrap();
+                let context = (self.ctx as *mut X86ExceptionContext).as_mut().unwrap();
 
-                context.rip = regs.rip as usize;
-                context.rax = regs.regs[0] as usize;
-                context.rbx = regs.regs[1] as usize;
-                context.rcx = regs.regs[2] as usize;
-                context.rdx = regs.regs[3] as usize;
-                context.rsi = regs.regs[4] as usize;
-                context.rdi = regs.regs[5] as usize;
-                context.rbp = regs.regs[6] as usize;
-                context.rsp = regs.regs[7] as usize;
-                context.r8 = regs.regs[8] as usize;
-                context.r9 = regs.regs[9] as usize;
-                context.r10 = regs.regs[10] as usize;
-                context.r11 = regs.regs[11] as usize;
-                context.r12 = regs.regs[12] as usize;
-                context.r13 = regs.regs[13] as usize;
-                context.r14 = regs.regs[14] as usize;
-                context.r15 = regs.regs[15] as usize;
-                context.flags = regs.eflags as usize;
-                context.cs = regs.segments.cs as usize;
-                context.ss = regs.segments.ss as usize;
+                context.frame.rip = regs.rip as usize;
+                context.regs.rax = regs.regs[0] as usize;
+                context.regs.rbx = regs.regs[1] as usize;
+                context.regs.rcx = regs.regs[2] as usize;
+                context.regs.rdx = regs.regs[3] as usize;
+                context.regs.rsi = regs.regs[4] as usize;
+                context.regs.rdi = regs.regs[5] as usize;
+                context.regs.rbp = regs.regs[6] as usize;
+                context.frame.rsp = regs.regs[7] as usize;
+                context.regs.r8 = regs.regs[8] as usize;
+                context.regs.r9 = regs.regs[9] as usize;
+                context.regs.r10 = regs.regs[10] as usize;
+                context.regs.r11 = regs.regs[11] as usize;
+                context.regs.r12 = regs.regs[12] as usize;
+                context.regs.r13 = regs.regs[13] as usize;
+                context.regs.r14 = regs.regs[14] as usize;
+                context.regs.r15 = regs.regs[15] as usize;
+                context.frame.flags = regs.eflags as usize;
+                context.frame.cs = regs.segments.cs as usize;
+                context.frame.ss = regs.segments.ss as usize;
             }
             Ok(())
         }
@@ -433,15 +433,15 @@ pub mod svsm_gdbstub {
 
 #[cfg(not(feature = "enable-gdb"))]
 pub mod svsm_gdbstub {
-    use crate::cpu::X86Regs;
+    use crate::cpu::X86ExceptionContext;
 
     pub fn gdbstub_start() -> Result<(), u64> {
         Ok(())
     }
 
-    pub fn handle_bp_exception(_regs: &mut X86Regs) {}
+    pub fn handle_bp_exception(_ctx: &mut X86ExceptionContext) {}
 
-    pub fn handle_db_exception(_regs: &mut X86Regs) {}
+    pub fn handle_db_exception(_ctx: &mut X86ExceptionContext) {}
 
     pub fn debug_break() {}
 }
