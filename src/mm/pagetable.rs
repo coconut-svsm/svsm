@@ -217,6 +217,10 @@ impl PageTable {
         })
     }
 
+    pub fn copy_entry(&mut self, other: &PageTable, entry: usize) {
+        self.root.entries[entry] = (*other).root.entries[entry];
+    }
+
     pub fn exec_flags() -> PTEntryFlags {
         PTEntryFlags::PRESENT | PTEntryFlags::GLOBAL | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
     }
@@ -233,6 +237,14 @@ impl PageTable {
     pub fn data_ro_flags() -> PTEntryFlags {
         PTEntryFlags::PRESENT
             | PTEntryFlags::GLOBAL
+            | PTEntryFlags::NX
+            | PTEntryFlags::ACCESSED
+            | PTEntryFlags::DIRTY
+    }
+
+    pub fn task_data_flags() -> PTEntryFlags {
+        PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
             | PTEntryFlags::NX
             | PTEntryFlags::ACCESSED
             | PTEntryFlags::DIRTY

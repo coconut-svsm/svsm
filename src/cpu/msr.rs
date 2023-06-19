@@ -50,3 +50,17 @@ pub fn rdtsc() -> u64 {
     }
     (eax as u64) | (edx as u64) << 32
 }
+
+pub fn read_flags() -> u64 {
+    let rax: u64;
+    unsafe {
+        asm!(
+            r#"
+                pushfq
+                pop     %rax
+            "#,
+             out("rax") rax,
+             options(att_syntax));
+    }
+    rax
+}

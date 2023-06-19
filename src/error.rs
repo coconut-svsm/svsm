@@ -33,4 +33,6 @@ pub enum SvsmError {
     Acpi,
     // Errors from file systems
     FileSystem(FsError),
+    // Task management errors,
+    Task,
 }

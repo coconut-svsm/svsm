@@ -5,32 +5,7 @@
 // Author: Roy Hopkins <rhopkins@suse.de>
 
 #[repr(C, packed)]
-pub struct X86Regs {
-    pub r15: usize,
-    pub r14: usize,
-    pub r13: usize,
-    pub r12: usize,
-    pub r11: usize,
-    pub r10: usize,
-    pub r9: usize,
-    pub r8: usize,
-    pub rbp: usize,
-    pub rdi: usize,
-    pub rsi: usize,
-    pub rdx: usize,
-    pub rcx: usize,
-    pub rbx: usize,
-    pub rax: usize,
-    pub vector: usize,
-    pub error_code: usize,
-    pub rip: usize,
-    pub cs: usize,
-    pub flags: usize,
-    pub rsp: usize,
-    pub ss: usize,
-}
-
-#[repr(C, packed)]
+#[derive(Default)]
 pub struct X86GeneralRegs {
     pub r15: usize,
     pub r14: usize,
@@ -50,6 +25,7 @@ pub struct X86GeneralRegs {
 }
 
 #[repr(C, packed)]
+#[derive(Default)]
 pub struct X86SegmentRegs {
     pub cs: usize,
     pub ds: usize,

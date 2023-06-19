@@ -25,6 +25,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
+use crate::task::TaskPointer;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
@@ -182,6 +183,8 @@ pub struct PerCpu {
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
+
+    pub current_task: Option<TaskPointer>,
 }
 
 impl PerCpu {
@@ -199,6 +202,7 @@ impl PerCpu {
             reset_ip: 0xffff_fff0u64,
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
+            current_task: None,
         }
     }
 
