@@ -197,24 +197,15 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
-    let page_size: u64 = entry & 3;
+    let (page_size_bytes, valign, huge) = match entry & 3 {
+        0 => (PAGE_SIZE, VIRT_ALIGN_4K, false),
+        1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, true),
+        _ => return Err(SvsmReqError::invalid_parameter()),
+    };
 
-    if page_size > 1 {
-        return Err(SvsmReqError::invalid_parameter());
-    }
-
-    let huge = page_size == 1;
     let valid = (entry & 4) == 4;
     let ign_cf = (entry & 8) == 8;
-    let valign = if huge { VIRT_ALIGN_2M } else { VIRT_ALIGN_4K };
 
-    let page_size_bytes = {
-        if huge {
-            PAGE_SIZE_2M
-        } else {
-            PAGE_SIZE
-        }
-    };
     let paddr = PhysAddr::from(entry).page_align();
 
     if !paddr.is_aligned(page_size_bytes) {
