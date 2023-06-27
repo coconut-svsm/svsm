@@ -154,8 +154,7 @@ pub mod svsm_gdbstub {
         }
 
         pub fn read(&mut self) -> Result<u8, &'static str> {
-            let res = unsafe { Ok(GDB_SERIAL.get_byte()) };
-            res
+            unsafe { Ok(GDB_SERIAL.get_byte()) }
         }
     }
 
