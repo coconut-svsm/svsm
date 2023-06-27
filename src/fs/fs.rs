@@ -22,14 +22,14 @@ struct RawFileHandle {
 }
 
 impl RawFileHandle {
-    pub fn new(file: &Arc<dyn File>) -> Self {
+    fn new(file: &Arc<dyn File>) -> Self {
         RawFileHandle {
             file: file.clone(),
             current: 0,
         }
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         let result = self.file.read(buf, self.current);
         if let Ok(v) = result {
             self.current += v;
@@ -37,7 +37,7 @@ impl RawFileHandle {
         result
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         let result = self.file.write(buf, self.current);
         if let Ok(num) = result {
             self.current += num;
@@ -45,15 +45,15 @@ impl RawFileHandle {
         result
     }
 
-    pub fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
+    fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
         self.file.truncate(offset)
     }
 
-    pub fn seek(&mut self, pos: usize) {
+    fn seek(&mut self, pos: usize) {
         self.current = min(pos, self.file.size());
     }
 
-    pub fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.file.size()
     }
 }
@@ -102,25 +102,25 @@ struct SvsmFs {
 unsafe impl Sync for SvsmFs {}
 
 impl SvsmFs {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         SvsmFs { root: None }
     }
 
-    pub fn initialize(&mut self, root: &Arc<RamDirectory>) {
+    fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());
     }
 
     #[cfg(test)]
-    pub fn uninitialize(&mut self) {
+    fn uninitialize(&mut self) {
         self.root = None;
     }
 
-    pub fn initialized(&self) -> bool {
+    fn initialized(&self) -> bool {
         self.root.is_some()
     }
 
-    pub fn root_dir(&self) -> Arc<dyn Directory> {
+    fn root_dir(&self) -> Arc<dyn Directory> {
         assert!(self.initialized());
         self.root.as_ref().unwrap().clone()
     }
