@@ -19,6 +19,19 @@ impl<'a, T> Drop for LockGuard<'a, T> {
     }
 }
 
+impl<'a, T> Deref for LockGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.data
+    }
+}
+
+impl<'a, T> DerefMut for LockGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.data
+    }
+}
+
 pub struct SpinLock<T> {
     current: AtomicU64,
     holder: AtomicU64,
@@ -75,18 +88,5 @@ impl<T> SpinLock<T> {
 
     pub fn unlock(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
-    }
-}
-
-impl<'a, T> Deref for LockGuard<'a, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        self.data
-    }
-}
-
-impl<'a, T> DerefMut for LockGuard<'a, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.data
     }
 }
