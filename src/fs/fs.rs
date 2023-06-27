@@ -281,21 +281,20 @@ mod tests {
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
-        assert!(create("test1/file1").is_err());
+        create("test1/file1").unwrap_err();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Check double-create
-        assert!(mkdir("test1").is_err());
+        mkdir("test1").unwrap_err();
 
         // Check if it appears in the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test1")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test1")]);
 
         // Try again - should succeed now
-        assert!(create("test1/file1").is_ok());
+        create("test1/file1").unwrap();
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -306,29 +305,27 @@ mod tests {
         let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
-        assert!(create("test1").is_ok());
+        create("test1").unwrap();
 
         // Check if it appears in the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test1")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test1")]);
 
         // Try creating again as file - should fail
-        assert!(create("test1").is_err());
+        create("test1").unwrap_err();
 
         // Try creating again as directory - should fail
-        assert!(mkdir("test1").is_err());
+        mkdir("test1").unwrap_err();
 
         // Try creating again as directory - should fail
-        assert!(mkdir("test2").is_ok());
+        mkdir("test2").unwrap();
 
         // Unlink file
-        assert!(unlink("test1").is_ok());
+        unlink("test1").unwrap();
 
         // Check if it is removed from the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test2")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test2")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -340,26 +337,24 @@ mod tests {
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
-        assert!(create("test1/test2/file1").is_err());
+        create("test1/test2/file1").unwrap_err();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Create sub-directory
-        assert!(mkdir("test1/test2").is_ok());
+        mkdir("test1/test2").unwrap();
 
         // Check if it appears in the listing
-        let list = list_dir("test1/");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("test2")]);
+        let list = list_dir("test1/").unwrap();
+        assert_eq!(list, [FileName::from("test2")]);
 
         // Try again - should succeed now
-        assert!(create("test1/test2/file1").is_ok());
+        create("test1/test2/file1").unwrap();
 
         // Check if it appears in the listing
-        let list = list_dir("test1/test2/");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("file1")]);
+        let list = list_dir("test1/test2/").unwrap();
+        assert_eq!(list, [FileName::from("file1")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -371,30 +366,25 @@ mod tests {
         initialize_fs();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Creating files
-        assert!(create("test1/file1").is_ok());
-        assert!(create("test1/file2").is_ok());
+        create("test1/file1").unwrap();
+        create("test1/file2").unwrap();
 
         // Check if they appears in the listing
-        let list = list_dir("test1");
-        assert!(list.is_ok());
-        assert_eq!(
-            list.unwrap(),
-            [FileName::from("file1"), FileName::from("file2")]
-        );
+        let list = list_dir("test1").unwrap();
+        assert_eq!(list, [FileName::from("file1"), FileName::from("file2")]);
 
         // Unlink non-existent file
-        assert!(unlink("test2").is_err());
+        unlink("test2").unwrap_err();
 
         // Unlink existing file
-        assert!(unlink("test1/file1").is_ok());
+        unlink("test1/file1").unwrap();
 
         // Check if it is removed from the listing
-        let list = list_dir("test1");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("file2")]);
+        let list = list_dir("test1").unwrap();
+        assert_eq!(list, [FileName::from("file2")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -406,37 +396,35 @@ mod tests {
         initialize_fs();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Try again - should succeed now
-        assert!(create("test1/file1").is_ok());
+        create("test1/file1").unwrap();
 
         // Try to open non-existent file
-        assert!(open("test1/file2").is_err());
+        open("test1/file2").unwrap_err();
 
-        let result = open("test1/file1");
-        assert!(result.is_ok());
+        let fh = open("test1/file1").unwrap();
 
-        let fh = result.unwrap();
         assert!(fh.size() == 0);
 
         let mut buf: [u8; 512] = [0xff; 512];
-        let result = write(&fh, &mut buf);
-        assert_eq!(result.unwrap(), 512);
+        let result = write(&fh, &mut buf).unwrap();
+        assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 512);
 
         fh.seek(256);
         let mut buf2: [u8; 512] = [0xcc; 512];
-        let result = write(&fh, &mut buf2);
-        assert!(result.is_ok());
+        let result = write(&fh, &mut buf2).unwrap();
+        assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 768);
 
         let mut buf3: [u8; 1024] = [0; 1024];
         fh.seek(0);
-        let result = read(&fh, &mut buf3);
-        assert_eq!(result.unwrap(), 768);
+        let result = read(&fh, &mut buf3).unwrap();
+        assert_eq!(result, 768);
 
         for i in 0..buf3.len() {
             let expected: u8 = if i < 256 {
@@ -460,38 +448,29 @@ mod tests {
         initialize_fs();
 
         // Try again - should succeed now
-        let result = create("file");
-        assert!(result.is_ok());
-
-        let fh1 = result.unwrap();
+        let fh1 = create("file").unwrap();
         assert_eq!(fh1.size(), 0);
 
         let buf1: [u8; 6144] = [0xff; 6144];
-        let result = fh1.write(&buf1);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 6144);
+        let result = fh1.write(&buf1).unwrap();
+        assert_eq!(result, 6144);
         assert_eq!(fh1.size(), 6144);
 
-        let result = open("file");
-        assert!(result.is_ok());
-
-        let fh2 = result.unwrap();
+        let fh2 = open("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
         let mut buf2: [u8; 4096] = [0; 4096];
-        let result = fh2.read(&mut buf2);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 4096);
+        let result = fh2.read(&mut buf2).unwrap();
+        assert_eq!(result, 4096);
 
         for i in 0..buf2.len() {
             assert_eq!(buf2[i], 0xff);
         }
 
-        assert!(fh1.truncate(2048).is_ok());
+        fh1.truncate(2048).unwrap();
 
-        let result = fh2.read(&mut buf2);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
+        let result = fh2.read(&mut buf2).unwrap();
+        assert_eq!(result, 0);
 
         drop(fh2);
         drop(fh1);
