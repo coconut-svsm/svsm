@@ -312,14 +312,13 @@ pub mod svsm_gdbstub {
             start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
             data: &mut [u8],
         ) -> gdbstub::target::TargetResult<(), Self> {
-            for offset in 0..data.len() {
+            let start_addr = VirtAddr::from(start_addr);
+            for (off, dst) in data.iter_mut().enumerate() {
                 unsafe {
-                    match read_u8(VirtAddr::from(start_addr + offset as u64)) {
-                        Ok(val) => data[offset] = val,
-                        Err(_) => {
-                            return Err(TargetError::NonFatal);
-                        }
-                    }
+                    let Ok(val) = read_u8(start_addr + off) else {
+                        return Err(TargetError::NonFatal);
+                    };
+                    *dst = val;
                 }
             }
             Ok(())
@@ -330,9 +329,10 @@ pub mod svsm_gdbstub {
             start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
             data: &[u8],
         ) -> gdbstub::target::TargetResult<(), Self> {
-            for offset in 0..data.len() {
+            let start_addr = VirtAddr::from(start_addr);
+            for (off, src) in data.iter().enumerate() {
                 unsafe {
-                    if write_u8(VirtAddr::from(start_addr + offset as u64), data[offset]).is_err() {
+                    if write_u8(start_addr + off, *src).is_err() {
                         return Err(TargetError::NonFatal);
                     }
                 }
