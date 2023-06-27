@@ -115,7 +115,6 @@ pub mod svsm_gdbstub {
                     let byte = gdb_inner
                         .borrow_conn()
                         .read()
-                        .map_err(|_| 1 as u64)
                         .expect("Failed to read from GDB port");
                     match gdb_inner.incoming_data(&mut target, byte) {
                         Ok(gdb) => gdb,
