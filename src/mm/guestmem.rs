@@ -10,6 +10,7 @@ use crate::error::SvsmError;
 use core::arch::asm;
 use core::mem::{size_of, MaybeUninit};
 
+#[allow(dead_code)]
 #[inline]
 pub unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     let mut rcx: u64;
@@ -36,6 +37,7 @@ pub unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     }
 }
 
+#[allow(dead_code)]
 #[inline]
 pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     let mut rcx: u64;
