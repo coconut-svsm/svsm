@@ -202,10 +202,7 @@ pub mod svsm_gdbstub {
         }
 
         fn is_breakpoint(&self, rip: usize) -> bool {
-            self.breakpoints
-                .iter()
-                .find(|&b| b.addr.bits() == rip)
-                .is_some()
+            self.breakpoints.iter().any(|b| b.addr.bits() == rip)
         }
 
         fn write_bp_address(addr: VirtAddr, value: u8) -> Result<(), SvsmError> {
