@@ -217,7 +217,7 @@ pub mod svsm_gdbstub {
             };
 
             let guard = PerCPUPageMappingGuard::create_4k(phys.page_align())?;
-            return unsafe { write_u8(guard.virt_addr() + phys.page_offset(), value) };
+            unsafe { write_u8(guard.virt_addr() + phys.page_offset(), value) }
         }
     }
 
