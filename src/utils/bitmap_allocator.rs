@@ -4,6 +4,8 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+use core::fmt::Debug;
+
 pub trait BitmapAllocator {
     const CAPACITY: usize;
 
@@ -20,6 +22,7 @@ pub trait BitmapAllocator {
 
 pub type BitmapAllocator1024 = BitmapAllocatorTree<BitmapAllocator64>;
 
+#[derive(Debug)]
 pub struct BitmapAllocator64 {
     bits: u64,
 }
@@ -85,7 +88,8 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 }
 
-pub struct BitmapAllocatorTree<T: BitmapAllocator> {
+#[derive(Debug)]
+pub struct BitmapAllocatorTree<T: BitmapAllocator + Debug> {
     bits: u16,
     child: [T; 16],
 }
@@ -117,7 +121,7 @@ impl BitmapAllocatorTree<BitmapAllocator64> {
     }
 }
 
-impl<T: BitmapAllocator> BitmapAllocator for BitmapAllocatorTree<T> {
+impl<T: BitmapAllocator + Debug> BitmapAllocator for BitmapAllocatorTree<T> {
     const CAPACITY: usize = T::CAPACITY * 16;
 
     fn alloc(&mut self, entries: usize, align: usize) -> Option<usize> {

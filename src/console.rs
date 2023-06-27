@@ -10,6 +10,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
+#[derive(Debug)]
 pub struct Console {
     writer: *const dyn Terminal,
 }
@@ -56,12 +57,12 @@ pub fn _print(args: fmt::Arguments) {
     WRITER.lock().write_fmt(args).unwrap();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ConsoleLoggerComponent {
     name: &'static str,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ConsoleLogger {
     component: ConsoleLoggerComponent,
 }

@@ -8,6 +8,8 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use core::fmt::Debug;
+
 use crate::error::SvsmError;
 use crate::string::FixedString;
 use packit::PackItError;
@@ -56,14 +58,14 @@ impl FsError {
     impl_fs_err!(file_not_found, FileNotFound);
 }
 
-pub trait File {
+pub trait File: Debug {
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError>;
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError>;
     fn truncate(&self, size: usize) -> Result<usize, SvsmError>;
     fn size(&self) -> usize;
 }
 
-pub trait Directory {
+pub trait Directory: Debug {
     fn list(&self) -> Vec<FileName>;
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError>;
     fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError>;
@@ -71,6 +73,7 @@ pub trait Directory {
     fn unlink(&self, name: FileName) -> Result<(), SvsmError>;
 }
 
+#[derive(Debug)]
 pub enum DirEntry {
     File(Arc<dyn File>),
     Directory(Arc<dyn Directory>),
@@ -95,6 +98,7 @@ impl Clone for DirEntry {
     }
 }
 
+#[derive(Debug)]
 pub struct DirectoryEntry {
     pub name: FileName,
     pub entry: DirEntry,

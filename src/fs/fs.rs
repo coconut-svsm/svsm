@@ -16,6 +16,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 struct RawFileHandle {
     file: Arc<dyn File>,
     current: usize,
@@ -58,6 +59,7 @@ impl RawFileHandle {
     }
 }
 
+#[derive(Debug)]
 pub struct FileHandle {
     // Use a SpinLock here because the read operation also needs to be mutable
     // (changes file pointer). Parallel reads are still possible with multiple
@@ -95,6 +97,7 @@ impl FileHandle {
     }
 }
 
+#[derive(Debug)]
 struct SvsmFs {
     root: Option<Arc<RamDirectory>>,
 }

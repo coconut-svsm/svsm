@@ -21,6 +21,7 @@ use crate::utils::ffs;
 const MAX_STACKS: usize = 1024;
 const BMP_QWORDS: usize = MAX_STACKS / 64;
 
+#[derive(Debug)]
 struct StackRange {
     start: VirtAddr,
     end: VirtAddr,

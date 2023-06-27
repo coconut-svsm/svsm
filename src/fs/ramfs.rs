@@ -18,6 +18,7 @@ use alloc::vec::Vec;
 
 use core::cmp::{max, min};
 
+#[derive(Debug)]
 struct RawRamFile {
     capacity: usize,
     size: usize,
@@ -165,6 +166,7 @@ impl RawRamFile {
     }
 }
 
+#[derive(Debug)]
 pub struct RamFile {
     rawfile: RWLock<RawRamFile>,
 }
@@ -198,6 +200,7 @@ impl File for RamFile {
     }
 }
 
+#[derive(Debug)]
 pub struct RamDirectory {
     entries: RWLock<Vec<DirectoryEntry>>,
 }
