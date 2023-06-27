@@ -51,7 +51,7 @@ impl<T> SpinLock<T> {
         }
     }
 
-    pub fn try_lock(&self) -> Result<LockGuard<T>, ()> {
+    pub fn try_lock(&self) -> Option<LockGuard<T>> {
         let current = self.current.load(Ordering::Relaxed);
         let holder = self.holder.load(Ordering::Acquire);
 
@@ -63,14 +63,14 @@ impl<T> SpinLock<T> {
                 Ordering::Relaxed,
             );
             if result.is_ok() {
-                return Ok(LockGuard {
+                return Some(LockGuard {
                     holder: &self.holder,
                     data: unsafe { &mut *self.data.get() },
                 });
             }
         }
 
-        Err(())
+        None
     }
 
     pub fn unlock(&mut self) {
