@@ -212,11 +212,11 @@ pub mod svsm_gdbstub {
             let Ok(phys) = this_cpu().get_pgtable().phys_addr(addr) else {
                 // The virtual address is not one that SVSM has mapped. Try safely
                 // writing it to the original virtual address
-                return unsafe { write_u8(addr, value) };
+                return write_u8(addr, value);
             };
 
             let guard = PerCPUPageMappingGuard::create_4k(phys.page_align())?;
-            unsafe { write_u8(guard.virt_addr() + phys.page_offset(), value) }
+            write_u8(guard.virt_addr() + phys.page_offset(), value)
         }
     }
 
@@ -310,12 +310,10 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
-                unsafe {
-                    let Ok(val) = read_u8(start_addr + off) else {
-                        return Err(TargetError::NonFatal);
-                    };
-                    *dst = val;
-                }
+                let Ok(val) = read_u8(start_addr + off) else {
+                    return Err(TargetError::NonFatal);
+                };
+                *dst = val;
             }
             Ok(())
         }
@@ -327,10 +325,8 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             let start_addr = VirtAddr::from(start_addr);
             for (off, src) in data.iter().enumerate() {
-                unsafe {
-                    if write_u8(start_addr + off, *src).is_err() {
-                        return Err(TargetError::NonFatal);
-                    }
+                if write_u8(start_addr + off, *src).is_err() {
+                    return Err(TargetError::NonFatal);
                 }
             }
             Ok(())
@@ -397,8 +393,7 @@ pub mod svsm_gdbstub {
             // The breakpoint works by taking the opcode at the bp address, storing
             // it and replacing it with an INT3 instruction
             let vaddr = VirtAddr::from(addr);
-            let inst = unsafe { read_u8(vaddr) };
-            let Ok(inst) = inst else {
+            let Ok(inst) = read_u8(vaddr) else {
                 return Ok(false);
             };
             let Ok(_) = GdbStubTarget::write_bp_address(vaddr, INT3_INSTR) else {
