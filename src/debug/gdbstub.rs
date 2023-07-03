@@ -391,7 +391,7 @@ pub mod svsm_gdbstub {
             _kind: <Self::Arch as gdbstub::arch::Arch>::BreakpointKind,
         ) -> gdbstub::target::TargetResult<bool, Self> {
             // Find a free breakpoint slot
-            let Some(free_bp) = self.breakpoints.iter().position(|&b| b.addr.is_null() ) else {
+            let Some(free_bp) = self.breakpoints.iter_mut().find(|b| b.addr.is_null()) else {
                 return Ok(false);
             };
             // The breakpoint works by taking the opcode at the bp address, storing
@@ -404,7 +404,7 @@ pub mod svsm_gdbstub {
             let Ok(_) = GdbStubTarget::write_bp_address(vaddr, INT3_INSTR) else {
                 return Ok(false);
             };
-            self.breakpoints[free_bp] = GdbStubBreakpoint { addr: vaddr, inst };
+            *free_bp = GdbStubBreakpoint { addr: vaddr, inst };
             Ok(true)
         }
 
@@ -414,13 +414,13 @@ pub mod svsm_gdbstub {
             _kind: <Self::Arch as gdbstub::arch::Arch>::BreakpointKind,
         ) -> gdbstub::target::TargetResult<bool, Self> {
             let vaddr = VirtAddr::from(addr);
-            let Some(matching_bp) = self.breakpoints.iter().position(|&b| b.addr == vaddr) else {
+            let Some(bp) = self.breakpoints.iter_mut().find(|b| b.addr == vaddr) else {
                 return Ok(false);
             };
-            let Ok(_) = GdbStubTarget::write_bp_address(vaddr, self.breakpoints[matching_bp].inst) else {
+            let Ok(_) = GdbStubTarget::write_bp_address(vaddr, bp.inst) else {
                 return Ok(false);
             };
-            self.breakpoints[matching_bp].addr = VirtAddr::null();
+            bp.addr = VirtAddr::null();
             Ok(true)
         }
     }
