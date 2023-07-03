@@ -206,6 +206,7 @@ pub struct RamDirectory {
 }
 
 unsafe impl Sync for RamDirectory {}
+unsafe impl Send for RamDirectory {}
 
 impl RamDirectory {
     pub fn new() -> Self {
