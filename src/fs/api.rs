@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 
 use crate::error::SvsmError;
 use crate::string::FixedString;
+use packit::PackItError;
 
 /// Maximum supported length for a single filename
 const MAX_FILENAME_LENGTH: usize = 64;
@@ -20,6 +21,25 @@ pub enum FsError {
     Inval,
     FileExists,
     FileNotFound,
+    PackIt(PackItError),
+}
+
+impl From<FsError> for SvsmError {
+    fn from(e: FsError) -> Self {
+        Self::FileSystem(e)
+    }
+}
+
+impl From<PackItError> for FsError {
+    fn from(e: PackItError) -> Self {
+        Self::PackIt(e)
+    }
+}
+
+impl From<PackItError> for SvsmError {
+    fn from(e: PackItError) -> Self {
+        Self::from(FsError::from(e))
+    }
 }
 
 macro_rules! impl_fs_err {
