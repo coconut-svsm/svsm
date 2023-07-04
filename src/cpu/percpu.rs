@@ -31,6 +31,7 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Debug)]
 struct PerCpuInfo {
     apic_id: u32,
     addr: VirtAddr,
@@ -50,6 +51,7 @@ pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 // on the backing datatype, but this is not needed because writes to
 // the structure only occur at initialization, from CPU 0, and reads
 // should only occur after all writes are done.
+#[derive(Debug)]
 pub struct PerCpuAreas {
     areas: UnsafeCell<Vec<PerCpuInfo>>,
 }
@@ -82,7 +84,7 @@ impl PerCpuAreas {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VmsaRef {
     pub vaddr: VirtAddr,
     pub paddr: PhysAddr,
@@ -104,6 +106,7 @@ impl VmsaRef {
     }
 }
 
+#[derive(Debug)]
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
 }
@@ -116,6 +119,7 @@ impl IstStacks {
     }
 }
 
+#[derive(Debug)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -166,6 +170,7 @@ impl GuestVmsaRef {
     }
 }
 
+#[derive(Debug)]
 pub struct PerCpu {
     online: AtomicBool,
     apic_id: u32,
@@ -515,6 +520,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     }
 }
 
+#[derive(Debug)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,
@@ -536,6 +542,7 @@ impl VmsaRegistryEntry {
 // PERCPU VMSAs to apic_id map
 pub static PERCPU_VMSAS: PerCpuVmsas = PerCpuVmsas::new();
 
+#[derive(Debug)]
 pub struct PerCpuVmsas {
     vmsas: RWLock<Vec<VmsaRegistryEntry>>,
 }

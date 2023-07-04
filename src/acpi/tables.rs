@@ -16,6 +16,7 @@ use core::mem;
 use core::ptr;
 use log;
 
+#[derive(Debug)]
 #[repr(C, packed)]
 struct RSDPDesc {
     sig: [u8; 8],
@@ -46,7 +47,7 @@ impl RSDPDesc {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 struct RawACPITableHeader {
     sig: [u8; 4],
@@ -60,6 +61,7 @@ struct RawACPITableHeader {
     compiler_rev: u32,
 }
 
+#[derive(Debug)]
 #[allow(dead_code)]
 struct ACPITableHeader {
     sig: [u8; 4],
@@ -109,6 +111,7 @@ impl ACPITableHeader {
     }
 }
 
+#[derive(Debug)]
 struct ACPITable {
     header: ACPITableHeader,
     ptr: ptr::NonNull<u8>,
@@ -152,6 +155,7 @@ impl ACPITable {
     }
 }
 
+#[derive(Debug)]
 struct ACPITableMeta {
     sig: FixedString<4>,
     offset: usize,
@@ -164,6 +168,7 @@ impl ACPITableMeta {
     }
 }
 
+#[derive(Debug)]
 struct ACPITableBuffer {
     ptr: ptr::NonNull<u8>,
     size: usize,
@@ -262,6 +267,7 @@ impl Drop for ACPITableBuffer {
 
 const MADT_HEADER_SIZE: usize = 8;
 
+#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryHeader {
@@ -269,6 +275,7 @@ struct RawMADTEntryHeader {
     entry_len: u8,
 }
 
+#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalApic {
@@ -278,6 +285,7 @@ struct RawMADTEntryLocalApic {
     flags: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalX2Apic {
@@ -288,6 +296,7 @@ struct RawMADTEntryLocalX2Apic {
     acpi_id: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ACPICPUInfo {
     pub apic_id: u32,
     pub enabled: bool,

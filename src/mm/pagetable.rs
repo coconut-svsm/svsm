@@ -677,6 +677,7 @@ pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
     INIT_PGTABLE.lock()
 }
 
+#[derive(Debug)]
 pub struct PageTableRef {
     pgtable_ptr: *mut PageTable,
 }

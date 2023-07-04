@@ -48,6 +48,7 @@ impl From<FwCfgError> for SvsmError {
     }
 }
 
+#[derive(Debug)]
 pub struct FwCfgFile {
     size: u32,
     selector: u16,
@@ -62,7 +63,7 @@ impl FwCfgFile {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct MemoryRegion {
     pub start: u64,
     pub end: u64,

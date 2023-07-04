@@ -25,7 +25,7 @@ jobs:
             toolchain: nightly
             profile: minimal
             override: true
-            components: rustfmt, rust-src
+            components: rustfmt, rust-src, clippy
 
       # ubuntu-latest does not have binutils 2.39, which we need for
       # ld to work, so build all the objects without performing the
@@ -41,3 +41,9 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-features -- -D warnings -A clippy::bad_bit_mask

@@ -15,6 +15,7 @@ use core::mem::size_of;
 use core::ptr;
 use log;
 
+#[derive(Debug)]
 struct PageStorageType(u64);
 
 // Support allocations up to order-5 (128kb)
@@ -223,11 +224,13 @@ impl Page {
     }
 }
 
+#[derive(Debug)]
 pub struct MemInfo {
     pub total_pages: [usize; MAX_ORDER],
     pub free_pages: [usize; MAX_ORDER],
 }
 
+#[derive(Debug)]
 struct MemoryRegion {
     start_phys: PhysAddr,
     start_virt: VirtAddr,
@@ -671,6 +674,7 @@ impl MemoryRegion {
     }
 }
 
+#[derive(Debug)]
 pub struct PageRef {
     virt_addr: VirtAddr,
     phys_addr: PhysAddr,
@@ -789,6 +793,7 @@ pub fn memory_info() -> MemInfo {
     ROOT_MEM.lock().memory_info()
 }
 
+#[derive(Debug)]
 struct SlabPage {
     vaddr: VirtAddr,
     capacity: u16,
@@ -898,6 +903,7 @@ impl SlabPage {
     }
 }
 
+#[derive(Debug)]
 #[repr(align(16))]
 struct SlabCommon {
     item_size: u16,
@@ -1008,6 +1014,7 @@ impl SlabCommon {
     }
 }
 
+#[derive(Debug)]
 struct SlabPageSlab {
     common: SlabCommon,
 }
@@ -1090,6 +1097,7 @@ impl SlabPageSlab {
     }
 }
 
+#[derive(Debug)]
 struct Slab {
     common: SlabCommon,
 }
@@ -1175,6 +1183,7 @@ impl Slab {
 
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
+#[derive(Debug)]
 pub struct SvsmAllocator {
     slab_size_32: SpinLock<Slab>,
     slab_size_64: SpinLock<Slab>,
