@@ -10,7 +10,7 @@ use crate::cpu::percpu::{this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::{valid_phys_address, GuestPtr};
+use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::sev::utils::{
@@ -19,6 +19,7 @@ use crate::sev::utils::{
 };
 use crate::sev::vmsa::VMSA;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::zero_mem_region;
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
@@ -196,24 +197,15 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
-    let page_size: u64 = entry & 3;
+    let (page_size_bytes, valign, huge) = match entry & 3 {
+        0 => (PAGE_SIZE, VIRT_ALIGN_4K, false),
+        1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, true),
+        _ => return Err(SvsmReqError::invalid_parameter()),
+    };
 
-    if page_size > 1 {
-        return Err(SvsmReqError::invalid_parameter());
-    }
-
-    let huge = page_size == 1;
     let valid = (entry & 4) == 4;
     let ign_cf = (entry & 8) == 8;
-    let valign = if huge { VIRT_ALIGN_2M } else { VIRT_ALIGN_4K };
 
-    let page_size_bytes = {
-        if huge {
-            PAGE_SIZE_2M
-        } else {
-            PAGE_SIZE
-        }
-    };
     let paddr = PhysAddr::from(entry).page_align();
 
     if !paddr.is_aligned(page_size_bytes) {
@@ -225,7 +217,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, paddr.offset(page_size_bytes), valign)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
     if !valid {
@@ -239,6 +231,32 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     })?;
 
     if valid {
+        // Zero out a page when it is validated and before giving other VMPLs
+        // access to it. This is necessary to prevent a possible HV attack:
+        //
+        // Attack scenario:
+        //   1) SVSM stores secrets in VMPL0 memory at GPA A
+        //   2) HV invalidates GPA A and maps the SPA to GPA B, which is in the
+        //      OS range of GPAs
+        //   3) Guest OS asks SVSM to validate GPA B
+        //   4) SVSM validates page and gives OS access
+        //   5) OS can now read SVSM secrets from GPA B
+        //
+        // The SVSM will not notice the attack until it tries to access GPA A
+        // again. Prevent it by clearing every page before giving access to
+        // other VMPLs.
+        //
+        // Be careful to not clear GPAs which the HV might have mapped
+        // read-only, as the write operation might cause infinite #NPF loops.
+        //
+        // Special thanks to Tom Lendacky for reporting the issue and tracking
+        // down the #NPF loops.
+        //
+        if writable_phys_addr(paddr) {
+            zero_mem_region(vaddr, vaddr + page_size_bytes);
+        } else {
+            log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
+        }
         rmp_grant_guest_access(vaddr, huge)?;
     }
 
@@ -258,7 +276,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let start = guard.virt_addr();
 
-    let guest_page = GuestPtr::<PValidateRequest>::new(start.offset(offset));
+    let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
     let mut request = guest_page.read()?;
 
     let entries = request.entries;
@@ -316,7 +334,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Temporarily map new CAA to clear it
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr().offset(offset);
+    let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<u64>::new(vaddr);
     pending.write(0)?;

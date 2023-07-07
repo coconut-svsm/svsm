@@ -169,9 +169,10 @@ configuration from the distribution like for the host kernel.
 Building the COCONUT-SVSM
 -------------------------
 
-Building the SVSM itself requires a recent Rust-nightly compiler and
-build environment installed. Please refer to [https://rustup.rs/](https://rustup.rs/)
-on how to get this environment installed.
+Building the SVSM itself requires:
+- a recent Rust-nightly compiler and build environment installed. Please refer to
+  [https://rustup.rs/](https://rustup.rs/) on how to get this environment installed.
+- `binutils` >= 2.39
 
 Then checkout the SVSM repository and build the SVSM binary:
 

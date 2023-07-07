@@ -10,6 +10,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
+#[derive(Debug)]
 pub struct Console {
     writer: *const dyn Terminal,
 }
@@ -44,7 +45,7 @@ pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
 pub fn init_console() {
-    unsafe { CONSOLE_INITIALIZED.reinit(&true) };
+    CONSOLE_INITIALIZED.reinit(&true);
 }
 
 #[doc(hidden)]
@@ -56,12 +57,12 @@ pub fn _print(args: fmt::Arguments) {
     WRITER.lock().write_fmt(args).unwrap();
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ConsoleLoggerComponent {
     name: &'static str,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ConsoleLogger {
     component: ConsoleLoggerComponent,
 }
@@ -121,7 +122,9 @@ static CONSOLE_LOGGER: ImmutAfterInitCell<ConsoleLogger> = ImmutAfterInitCell::u
 
 pub fn install_console_logger(component: &'static str) {
     let logger = ConsoleLogger::new(component);
-    unsafe { CONSOLE_LOGGER.init(&logger) };
+    CONSOLE_LOGGER
+        .init(&logger)
+        .expect("Already initialized console logger");
 
     if let Err(e) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had

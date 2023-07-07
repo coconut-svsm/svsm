@@ -32,7 +32,7 @@ pub fn paging_init_early() {
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    FEATURE_MASK.reinit(&feature_mask);
 }
 
 pub fn paging_init() {
@@ -45,7 +45,7 @@ pub fn paging_init() {
     if !cpu_has_pge() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    unsafe { FEATURE_MASK.reinit(&feature_mask) };
+    FEATURE_MASK.reinit(&feature_mask);
 }
 
 fn init_encrypt_mask() {
@@ -53,7 +53,7 @@ fn init_encrypt_mask() {
     let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
     let c_bit = res.ebx & 0x3f;
     let mask = 1u64 << c_bit;
-    unsafe { ENCRYPT_MASK.reinit(&(mask as usize)) };
+    ENCRYPT_MASK.reinit(&(mask as usize));
 
     // Find physical address size.
     let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
@@ -74,9 +74,7 @@ fn init_encrypt_mask() {
     let effective_phys_addr_size = cmp::min(c_bit, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
-    unsafe {
-        MAX_PHYS_ADDR.reinit(&max_addr);
-    }
+    MAX_PHYS_ADDR.reinit(&max_addr);
 
     // KVM currently sets all bits when executing the launch update for the
     // launch vCPU's VMSA, but the firmware will truncate the gPA to the limit
@@ -85,9 +83,7 @@ fn init_encrypt_mask() {
     // future. This can be removed once the patches for that land.
     let launch_vmsa_addr = (1u64 << phys_addr_size) - 0x1000;
     let launch_vmsa_addr = PhysAddr::from(launch_vmsa_addr);
-    unsafe {
-        LAUNCH_VMSA_ADDR.reinit(&launch_vmsa_addr);
-    }
+    LAUNCH_VMSA_ADDR.reinit(&launch_vmsa_addr);
 }
 
 fn encrypt_mask() -> usize {
@@ -421,7 +417,7 @@ impl PageTable {
 
         // Prepare PTE leaf page
         for i in 0..512 {
-            let addr_4k = addr_2m.offset(i * PAGE_SIZE);
+            let addr_4k = addr_2m + (i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
                 (*page).entries[i].set(set_c_bit(addr_4k), flags);
@@ -560,7 +556,7 @@ impl PageTable {
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
                     return Err(SvsmError::Mem);
                 }
-                Ok(entry.address().offset(offset))
+                Ok(entry.address() + offset)
             }
             Mapping::Level1(entry) => {
                 let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
@@ -570,7 +566,7 @@ impl PageTable {
                     return Err(SvsmError::Mem);
                 }
 
-                Ok(entry.address().offset(offset))
+                Ok(entry.address() + offset)
             }
             Mapping::Level2(_entry) => Err(SvsmError::Mem),
             Mapping::Level3(_entry) => Err(SvsmError::Mem),
@@ -589,7 +585,7 @@ impl PageTable {
             .map(VirtAddr::from)
         {
             let offset = addr - start;
-            self.map_4k(addr, phys.offset(offset), flags)?;
+            self.map_4k(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -615,7 +611,7 @@ impl PageTable {
             .map(VirtAddr::from)
         {
             let offset = addr - start;
-            self.map_2m(addr, phys.offset(offset), flags)?;
+            self.map_2m(addr, phys + offset, flags)?;
         }
         Ok(())
     }
@@ -642,17 +638,17 @@ impl PageTable {
         while vaddr < end {
             if vaddr.is_aligned(PAGE_SIZE_2M)
                 && paddr.is_aligned(PAGE_SIZE_2M)
-                && vaddr.offset(PAGE_SIZE_2M) <= end
+                && vaddr + PAGE_SIZE_2M <= end
                 && self.map_2m(vaddr, paddr, flags).is_ok()
             {
-                vaddr = vaddr.offset(PAGE_SIZE_2M);
-                paddr = paddr.offset(PAGE_SIZE_2M);
+                vaddr = vaddr + PAGE_SIZE_2M;
+                paddr = paddr + PAGE_SIZE_2M;
                 continue;
             }
 
             self.map_4k(vaddr, paddr, flags)?;
-            vaddr = vaddr.offset(PAGE_SIZE);
-            paddr = paddr.offset(PAGE_SIZE);
+            vaddr = vaddr + PAGE_SIZE;
+            paddr = paddr + PAGE_SIZE;
         }
 
         Ok(())
@@ -667,11 +663,11 @@ impl PageTable {
             match mapping {
                 Mapping::Level0(entry) => {
                     entry.clear();
-                    vaddr = vaddr.offset(PAGE_SIZE);
+                    vaddr = vaddr + PAGE_SIZE;
                 }
                 Mapping::Level1(entry) => {
                     entry.clear();
-                    vaddr = vaddr.offset(PAGE_SIZE_2M);
+                    vaddr = vaddr + PAGE_SIZE_2M;
                 }
                 _ => {
                     log::debug!("Can't unmap - address not mapped {:#x}", vaddr);
@@ -693,6 +689,7 @@ pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
     INIT_PGTABLE.lock()
 }
 
+#[derive(Debug)]
 pub struct PageTableRef {
     pgtable_ptr: *mut PageTable,
 }

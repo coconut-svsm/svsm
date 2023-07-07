@@ -47,31 +47,29 @@ impl PerCPUPageMappingGuard {
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {
             let vaddr = virt_alloc_range_2m(size, 0)?;
-            if let Err(e) = this_cpu_mut().get_pgtable().map_region_2m(
-                vaddr,
-                vaddr.offset(size),
-                paddr_start,
-                flags,
-            ) {
+            if let Err(e) =
+                this_cpu_mut()
+                    .get_pgtable()
+                    .map_region_2m(vaddr, vaddr + size, paddr_start, flags)
+            {
                 virt_free_range_2m(vaddr, size);
                 return Err(e);
             }
             vaddr
         } else {
             let vaddr = virt_alloc_range_4k(size, 0)?;
-            if let Err(e) = this_cpu_mut().get_pgtable().map_region_4k(
-                vaddr,
-                vaddr.offset(size),
-                paddr_start,
-                flags,
-            ) {
+            if let Err(e) =
+                this_cpu_mut()
+                    .get_pgtable()
+                    .map_region_4k(vaddr, vaddr + size, paddr_start, flags)
+            {
                 virt_free_range_4k(vaddr, size);
                 return Err(e);
             }
             vaddr
         };
 
-        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr.offset(size));
+        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);
 
         Ok(PerCPUPageMappingGuard {
             mapping: Some(raw_mapping),
@@ -80,7 +78,7 @@ impl PerCPUPageMappingGuard {
     }
 
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
-        Self::create(paddr, paddr.offset(PAGE_SIZE), 0)
+        Self::create(paddr, paddr + PAGE_SIZE, 0)
     }
 
     pub fn virt_addr(&self) -> VirtAddr {

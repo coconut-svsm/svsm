@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use core::arch::{asm, global_asm};
+use core::fmt;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -39,6 +40,7 @@ pub enum TaskState {
     TERMINATED,
 }
 
+#[derive(Debug)]
 pub struct TaskStack {
     pub virt_base: VirtAddr,
     pub virt_top: VirtAddr,
@@ -102,7 +104,7 @@ pub trait TaskRuntime {
 }
 
 /// Tracks task runtime based on the CPU timestamp counter
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct TscRuntime {
     runtime: u64,
@@ -136,7 +138,7 @@ impl TaskRuntime for TscRuntime {
 
 /// Tracks task runtime based on the number of times the task has been
 /// scheduled
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct CountRuntime {
     count: u64,
@@ -170,7 +172,7 @@ impl TaskRuntime for CountRuntime {
 type TaskRuntimeImpl = CountRuntime;
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct TaskContext {
     pub seg: X86SegmentRegs,
     pub regs: X86GeneralRegs,
@@ -201,6 +203,19 @@ pub struct Task {
 
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
+}
+
+impl fmt::Debug for Task {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Task")
+            .field("rsp", &self.rsp)
+            .field("stack", &self.stack)
+            .field("state", &self.state)
+            .field("affinity", &self.affinity)
+            .field("id", &self.id)
+            .field("runtime", &self.runtime)
+            .finish()
+    }
 }
 
 impl Task {

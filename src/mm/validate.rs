@@ -93,6 +93,7 @@ pub fn valid_bitmap_valid_addr(paddr: PhysAddr) -> bool {
     vb_ref.check_addr(paddr)
 }
 
+#[derive(Debug)]
 struct ValidBitmap {
     pbase: PhysAddr,
     pend: PhysAddr,

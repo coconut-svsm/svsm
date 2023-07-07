@@ -12,7 +12,6 @@ pub mod boot_stage2;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
-use log;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -87,7 +86,7 @@ fn setup_env() {
     install_console_logger("Stage2");
     init_kernel_mapping_info(
         VirtAddr::null(),
-        VirtAddr::from(640 * 1024 as usize),
+        VirtAddr::from(640 * 1024usize),
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
@@ -119,20 +118,15 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 
     let mut pgtbl = get_init_pgtable_locked();
     pgtbl
-        .map_region(vaddr, vaddr.offset(len), paddr, flags)
+        .map_region(vaddr, vaddr + len, paddr, flags)
         .expect("Error mapping kernel region");
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(
-            paddr,
-            paddr.offset(len),
-            true,
-            PageStateChangeOp::PscPrivate,
-        )
+        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
-    pvalidate_range(vaddr, vaddr.offset(len), true).expect("PVALIDATE kernel region failed");
-    valid_bitmap_set_valid_range(paddr, paddr.offset(len));
+    pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr + len);
 }
 
 // Launch info from stage1, usually at the bottom of the stack
@@ -185,7 +179,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
     let mut loaded_kernel_virt_end = VirtAddr::null();
-    let mut loaded_kernel_phys_end = PhysAddr::from(kernel_region_phys_start);
+    let mut loaded_kernel_phys_end = kernel_region_phys_start;
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the
@@ -209,7 +203,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
         let segment_len = aligned_vaddr_end - vaddr_start;
         let paddr_start = loaded_kernel_phys_end;
-        loaded_kernel_phys_end = loaded_kernel_phys_end.offset(segment_len);
+        loaded_kernel_phys_end = loaded_kernel_phys_end + segment_len;
 
         map_and_validate(vaddr_start, paddr_start, segment_len);
 

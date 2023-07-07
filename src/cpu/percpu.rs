@@ -32,6 +32,7 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[derive(Debug)]
 struct PerCpuInfo {
     apic_id: u32,
     addr: VirtAddr,
@@ -51,6 +52,7 @@ pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 // on the backing datatype, but this is not needed because writes to
 // the structure only occur at initialization, from CPU 0, and reads
 // should only occur after all writes are done.
+#[derive(Debug)]
 pub struct PerCpuAreas {
     areas: UnsafeCell<Vec<PerCpuInfo>>,
 }
@@ -83,7 +85,7 @@ impl PerCpuAreas {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct VmsaRef {
     pub vaddr: VirtAddr,
     pub paddr: PhysAddr,
@@ -99,12 +101,13 @@ impl VmsaRef {
         }
     }
 
-    pub fn vmsa(&self) -> &mut VMSA {
+    pub fn vmsa(&mut self) -> &mut VMSA {
         let ptr = self.vaddr.as_mut_ptr::<VMSA>();
         unsafe { ptr.as_mut().unwrap() }
     }
 }
 
+#[derive(Debug)]
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
 }
@@ -117,6 +120,7 @@ impl IstStacks {
     }
 }
 
+#[derive(Debug)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -167,6 +171,7 @@ impl GuestVmsaRef {
     }
 }
 
+#[derive(Debug)]
 pub struct PerCpu {
     online: AtomicBool,
     apic_id: u32,
@@ -366,12 +371,13 @@ impl PerCpu {
     }
 
     pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
-        let vmsa = self.svsm_vmsa.unwrap();
+        let mut vmsa = self.svsm_vmsa.unwrap();
+        let vmsa_ref = vmsa.vmsa();
 
-        vmsa.vmsa().tr = self.vmsa_tr_segment();
-        vmsa.vmsa().rip = start_rip;
-        vmsa.vmsa().rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa.vmsa().cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.tr = self.vmsa_tr_segment();
+        vmsa_ref.rip = start_rip;
+        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -422,7 +428,7 @@ impl PerCpu {
         self.guest_vmsa.lock()
     }
 
-    pub fn guest_vmsa(&self) -> &mut VMSA {
+    pub fn guest_vmsa(&mut self) -> &mut VMSA {
         let locked = self.guest_vmsa.lock();
 
         assert!(locked.vmsa_phys().is_some());
@@ -469,7 +475,7 @@ impl PerCpu {
         let caa_phys = locked.caa_phys()?;
         let offset = caa_phys.page_offset();
 
-        Some(VirtAddr::from(SVSM_PERCPU_CAA_BASE).offset(offset))
+        Some(VirtAddr::from(SVSM_PERCPU_CAA_BASE) + offset)
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
@@ -518,6 +524,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     }
 }
 
+#[derive(Debug)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,
@@ -539,6 +546,7 @@ impl VmsaRegistryEntry {
 // PERCPU VMSAs to apic_id map
 pub static PERCPU_VMSAS: PerCpuVmsas = PerCpuVmsas::new();
 
+#[derive(Debug)]
 pub struct PerCpuVmsas {
     vmsas: RWLock<Vec<VmsaRegistryEntry>>,
 }

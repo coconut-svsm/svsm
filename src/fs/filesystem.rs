@@ -16,20 +16,21 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 struct RawFileHandle {
     file: Arc<dyn File>,
     current: usize,
 }
 
 impl RawFileHandle {
-    pub fn new(file: &Arc<dyn File>) -> Self {
+    fn new(file: &Arc<dyn File>) -> Self {
         RawFileHandle {
             file: file.clone(),
             current: 0,
         }
     }
 
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         let result = self.file.read(buf, self.current);
         if let Ok(v) = result {
             self.current += v;
@@ -37,7 +38,7 @@ impl RawFileHandle {
         result
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         let result = self.file.write(buf, self.current);
         if let Ok(num) = result {
             self.current += num;
@@ -45,19 +46,20 @@ impl RawFileHandle {
         result
     }
 
-    pub fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
+    fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
         self.file.truncate(offset)
     }
 
-    pub fn seek(&mut self, pos: usize) {
+    fn seek(&mut self, pos: usize) {
         self.current = min(pos, self.file.size());
     }
 
-    pub fn size(&self) -> usize {
+    fn size(&self) -> usize {
         self.file.size()
     }
 }
 
+#[derive(Debug)]
 pub struct FileHandle {
     // Use a SpinLock here because the read operation also needs to be mutable
     // (changes file pointer). Parallel reads are still possible with multiple
@@ -95,6 +97,7 @@ impl FileHandle {
     }
 }
 
+#[derive(Debug)]
 struct SvsmFs {
     root: Option<Arc<RamDirectory>>,
 }
@@ -102,25 +105,25 @@ struct SvsmFs {
 unsafe impl Sync for SvsmFs {}
 
 impl SvsmFs {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         SvsmFs { root: None }
     }
 
-    pub fn initialize(&mut self, root: &Arc<RamDirectory>) {
+    fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());
     }
 
     #[cfg(test)]
-    pub fn uninitialize(&mut self) {
+    fn uninitialize(&mut self) {
         self.root = None;
     }
 
-    pub fn initialized(&self) -> bool {
+    fn initialized(&self) -> bool {
         self.root.is_some()
     }
 
-    pub fn root_dir(&self) -> Arc<dyn Directory> {
+    fn root_dir(&self) -> Arc<dyn Directory> {
         assert!(self.initialized());
         self.root.as_ref().unwrap().clone()
     }
@@ -142,25 +145,26 @@ fn uninitialize_fs() {
     }
 }
 
-fn split_path_allow_empty(path: &str) -> Vec<&str> {
-    path.split('/').filter(|x| !x.is_empty()).collect()
+fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
+    path.split('/').filter(|x| !x.is_empty())
 }
 
-fn split_path(path: &str) -> Result<Vec<&str>, SvsmError> {
-    let path_items = split_path_allow_empty(path);
-
-    if path_items.is_empty() {
-        return Err(SvsmError::FileSystem(FsError::inval()));
-    }
-
+fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIterator, SvsmError> {
+    let mut path_items = split_path_allow_empty(path).peekable();
+    path_items
+        .peek()
+        .ok_or(SvsmError::FileSystem(FsError::inval()))?;
     Ok(path_items)
 }
 
-fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+where
+    I: Iterator<Item = &'a str>,
+{
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
-    for item in path_items.iter() {
-        let dir_name = FileName::from(*item);
+    for item in path_items {
+        let dir_name = FileName::from(item);
         let dir_entry = current_dir.lookup_entry(dir_name)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -171,11 +175,14 @@ fn walk_path(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
     Ok(current_dir)
 }
 
-fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError> {
+fn walk_path_create<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+where
+    I: Iterator<Item = &'a str>,
+{
     let mut current_dir = unsafe { FS_ROOT.root_dir() };
 
-    for item in path_items.iter() {
-        let dir_name = FileName::from(*item);
+    for item in path_items {
+        let dir_name = FileName::from(item);
         let lookup = current_dir.lookup_entry(dir_name);
         let dir_entry = match lookup {
             Ok(entry) => entry,
@@ -192,8 +199,8 @@ fn walk_path_create(path_items: &[&str]) -> Result<Arc<dyn Directory>, SvsmError
 
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
 
     let dir_entry = current_dir.lookup_entry(file_name)?;
 
@@ -205,8 +212,8 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
 
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
     let file = current_dir.create_file(file_name)?;
 
     Ok(FileHandle::new(&file))
@@ -215,8 +222,8 @@ pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
 /// Creates a file with all sub-directories
 pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path_create(&path_items)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path_create(path_items)?;
 
     if file_name.length() == 0 {
         return Err(SvsmError::FileSystem(FsError::inval()));
@@ -229,8 +236,8 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let dir_name = FileName::from(path_items.pop().unwrap());
-    let current_dir = walk_path(&path_items)?;
+    let dir_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(path_items)?;
 
     current_dir.create_directory(dir_name)?;
 
@@ -239,15 +246,15 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
 
 pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
-    let entry_name = FileName::from(path_items.pop().unwrap());
-    let dir = walk_path(&path_items)?;
+    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let dir = walk_path(path_items)?;
 
     dir.unlink(entry_name)
 }
 
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
     let items = split_path_allow_empty(path);
-    let dir = walk_path(&items)?;
+    let dir = walk_path(items)?;
     Ok(dir.list())
 }
 
@@ -274,21 +281,20 @@ mod tests {
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
-        assert!(create("test1/file1").is_err());
+        create("test1/file1").unwrap_err();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Check double-create
-        assert!(mkdir("test1").is_err());
+        mkdir("test1").unwrap_err();
 
         // Check if it appears in the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test1")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test1")]);
 
         // Try again - should succeed now
-        assert!(create("test1/file1").is_ok());
+        create("test1/file1").unwrap();
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -299,29 +305,27 @@ mod tests {
         let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
-        assert!(create("test1").is_ok());
+        create("test1").unwrap();
 
         // Check if it appears in the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test1")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test1")]);
 
         // Try creating again as file - should fail
-        assert!(create("test1").is_err());
+        create("test1").unwrap_err();
 
         // Try creating again as directory - should fail
-        assert!(mkdir("test1").is_err());
+        mkdir("test1").unwrap_err();
 
         // Try creating again as directory - should fail
-        assert!(mkdir("test2").is_ok());
+        mkdir("test2").unwrap();
 
         // Unlink file
-        assert!(unlink("test1").is_ok());
+        unlink("test1").unwrap();
 
         // Check if it is removed from the listing
-        let root_list = list_dir("");
-        assert!(root_list.is_ok());
-        assert_eq!(root_list.unwrap(), [FileName::from("test2")]);
+        let root_list = list_dir("").unwrap();
+        assert_eq!(root_list, [FileName::from("test2")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -333,26 +337,24 @@ mod tests {
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
-        assert!(create("test1/test2/file1").is_err());
+        create("test1/test2/file1").unwrap_err();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Create sub-directory
-        assert!(mkdir("test1/test2").is_ok());
+        mkdir("test1/test2").unwrap();
 
         // Check if it appears in the listing
-        let list = list_dir("test1/");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("test2")]);
+        let list = list_dir("test1/").unwrap();
+        assert_eq!(list, [FileName::from("test2")]);
 
         // Try again - should succeed now
-        assert!(create("test1/test2/file1").is_ok());
+        create("test1/test2/file1").unwrap();
 
         // Check if it appears in the listing
-        let list = list_dir("test1/test2/");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("file1")]);
+        let list = list_dir("test1/test2/").unwrap();
+        assert_eq!(list, [FileName::from("file1")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -364,30 +366,25 @@ mod tests {
         initialize_fs();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Creating files
-        assert!(create("test1/file1").is_ok());
-        assert!(create("test1/file2").is_ok());
+        create("test1/file1").unwrap();
+        create("test1/file2").unwrap();
 
         // Check if they appears in the listing
-        let list = list_dir("test1");
-        assert!(list.is_ok());
-        assert_eq!(
-            list.unwrap(),
-            [FileName::from("file1"), FileName::from("file2")]
-        );
+        let list = list_dir("test1").unwrap();
+        assert_eq!(list, [FileName::from("file1"), FileName::from("file2")]);
 
         // Unlink non-existent file
-        assert!(unlink("test2").is_err());
+        unlink("test2").unwrap_err();
 
         // Unlink existing file
-        assert!(unlink("test1/file1").is_ok());
+        unlink("test1/file1").unwrap();
 
         // Check if it is removed from the listing
-        let list = list_dir("test1");
-        assert!(list.is_ok());
-        assert_eq!(list.unwrap(), [FileName::from("file2")]);
+        let list = list_dir("test1").unwrap();
+        assert_eq!(list, [FileName::from("file2")]);
 
         uninitialize_fs();
         destroy_test_root_mem(test_mem_lock);
@@ -399,37 +396,35 @@ mod tests {
         initialize_fs();
 
         // Create directory
-        assert!(mkdir("test1").is_ok());
+        mkdir("test1").unwrap();
 
         // Try again - should succeed now
-        assert!(create("test1/file1").is_ok());
+        create("test1/file1").unwrap();
 
         // Try to open non-existent file
-        assert!(open("test1/file2").is_err());
+        open("test1/file2").unwrap_err();
 
-        let result = open("test1/file1");
-        assert!(result.is_ok());
+        let fh = open("test1/file1").unwrap();
 
-        let fh = result.unwrap();
         assert!(fh.size() == 0);
 
         let mut buf: [u8; 512] = [0xff; 512];
-        let result = write(&fh, &mut buf);
-        assert_eq!(result.unwrap(), 512);
+        let result = write(&fh, &mut buf).unwrap();
+        assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 512);
 
         fh.seek(256);
         let mut buf2: [u8; 512] = [0xcc; 512];
-        let result = write(&fh, &mut buf2);
-        assert!(result.is_ok());
+        let result = write(&fh, &mut buf2).unwrap();
+        assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 768);
 
         let mut buf3: [u8; 1024] = [0; 1024];
         fh.seek(0);
-        let result = read(&fh, &mut buf3);
-        assert_eq!(result.unwrap(), 768);
+        let result = read(&fh, &mut buf3).unwrap();
+        assert_eq!(result, 768);
 
         for i in 0..buf3.len() {
             let expected: u8 = if i < 256 {
@@ -453,38 +448,29 @@ mod tests {
         initialize_fs();
 
         // Try again - should succeed now
-        let result = create("file");
-        assert!(result.is_ok());
-
-        let fh1 = result.unwrap();
+        let fh1 = create("file").unwrap();
         assert_eq!(fh1.size(), 0);
 
         let buf1: [u8; 6144] = [0xff; 6144];
-        let result = fh1.write(&buf1);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 6144);
+        let result = fh1.write(&buf1).unwrap();
+        assert_eq!(result, 6144);
         assert_eq!(fh1.size(), 6144);
 
-        let result = open("file");
-        assert!(result.is_ok());
-
-        let fh2 = result.unwrap();
+        let fh2 = open("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
         let mut buf2: [u8; 4096] = [0; 4096];
-        let result = fh2.read(&mut buf2);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 4096);
+        let result = fh2.read(&mut buf2).unwrap();
+        assert_eq!(result, 4096);
 
         for i in 0..buf2.len() {
             assert_eq!(buf2[i], 0xff);
         }
 
-        assert!(fh1.truncate(2048).is_ok());
+        fh1.truncate(2048).unwrap();
 
-        let result = fh2.read(&mut buf2);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
+        let result = fh2.read(&mut buf2).unwrap();
+        assert_eq!(result, 0);
 
         drop(fh2);
         drop(fh1);

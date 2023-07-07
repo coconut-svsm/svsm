@@ -21,6 +21,7 @@ use crate::utils::ffs;
 const MAX_STACKS: usize = 1024;
 const BMP_QWORDS: usize = MAX_STACKS / 64;
 
+#[derive(Debug)]
 struct StackRange {
     start: VirtAddr,
     end: VirtAddr,
@@ -49,7 +50,7 @@ impl StackRange {
 
             self.alloc_bitmap[i] |= mask;
 
-            return Ok(self.start.offset((i * 64 + idx) * STACK_TOTAL_SIZE));
+            return Ok(self.start + ((i * 64 + idx) * STACK_TOTAL_SIZE));
         }
 
         Err(SvsmError::Mem)
@@ -84,7 +85,7 @@ pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Resul
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);
-        pgtable.map_4k(stack.offset(i * PAGE_SIZE), paddr, flags)?;
+        pgtable.map_4k(stack + (i * PAGE_SIZE), paddr, flags)?;
     }
 
     Ok(())
@@ -105,7 +106,7 @@ pub fn free_stack(stack: VirtAddr) {
 
     let mut pgtable = get_init_pgtable_locked();
     for (i, page) in pages.iter_mut().enumerate() {
-        let addr = stack.offset(i * PAGE_SIZE);
+        let addr = stack + (i * PAGE_SIZE);
         let paddr = pgtable
             .phys_addr(addr)
             .expect("Failed to get stack physical address");

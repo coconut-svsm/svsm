@@ -44,16 +44,8 @@ pub trait Address:
         self.is_aligned(PAGE_SIZE)
     }
 
-    fn offset(&self, off: InnerAddr) -> Self {
-        Self::from(self.bits() + off)
-    }
-
     fn checked_offset(&self, off: InnerAddr) -> Option<Self> {
         self.bits().checked_add(off).map(|addr| addr.into())
-    }
-
-    fn sub(&self, off: InnerAddr) -> Self {
-        Self::from(self.bits() - off)
     }
 
     fn checked_sub(&self, off: InnerAddr) -> Option<Self> {
@@ -77,6 +69,10 @@ pub trait Address:
 pub struct PhysAddr(InnerAddr);
 
 impl PhysAddr {
+    pub const fn new(p: InnerAddr) -> Self {
+        Self(p)
+    }
+
     pub const fn null() -> Self {
         Self(0)
     }

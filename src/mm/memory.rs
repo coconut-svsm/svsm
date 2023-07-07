@@ -95,3 +95,15 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
         .iter()
         .any(|region| addr >= region.start && addr < region.end)
 }
+
+const ISA_RANGE_START: PhysAddr = PhysAddr::new(0xa0000);
+const ISA_RANGE_END: PhysAddr = PhysAddr::new(0x100000);
+
+pub fn writable_phys_addr(paddr: PhysAddr) -> bool {
+    // The ISA range is not writable
+    if paddr >= ISA_RANGE_START && paddr < ISA_RANGE_END {
+        return false;
+    }
+
+    valid_phys_address(paddr)
+}

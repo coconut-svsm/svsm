@@ -25,6 +25,7 @@ pub mod svsm_gdbstub {
     use crate::svsm_console::SVSMIOPort;
     use crate::task::{is_current_task, TaskContext, TaskState, INITIAL_TASK_ID, TASKS};
     use core::arch::asm;
+    use core::fmt;
     use core::sync::atomic::{AtomicBool, Ordering};
     use gdbstub::common::{Signal, Tid};
     use gdbstub::conn::Connection;
@@ -151,6 +152,12 @@ pub mod svsm_gdbstub {
     struct SvsmGdbStub<'a> {
         gdb: GdbStubStateMachine<'a, GdbStubTarget, GdbStubConnection>,
         target: GdbStubTarget,
+    }
+
+    impl<'a> fmt::Debug for SvsmGdbStub<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "SvsmGdbStub")
+        }
     }
 
     #[no_mangle]
@@ -303,11 +310,11 @@ pub mod svsm_gdbstub {
             let Ok(phys) = this_cpu().get_pgtable().phys_addr(addr) else {
                 // The virtual address is not one that SVSM has mapped. Try safely
                 // writing it to the original virtual address
-                return unsafe { write_u8(addr, value) };
+                return write_u8(addr, value);
             };
 
             let guard = PerCPUPageMappingGuard::create_4k(phys.page_align())?;
-            unsafe { write_u8(guard.virt_addr().offset(phys.page_offset()), value) }
+            write_u8(guard.virt_addr() + phys.page_offset(), value)
         }
     }
 
@@ -460,15 +467,12 @@ pub mod svsm_gdbstub {
             // Switch to the task pagetable if necessary. The switch back will
             // happen automatically when the variable falls out of scope
             let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
-            for (offset, value) in data.iter_mut().enumerate() {
-                unsafe {
-                    match read_u8(VirtAddr::from(start_addr + offset as u64)) {
-                        Ok(val) => *value = val,
-                        Err(_) => {
-                            return Err(TargetError::NonFatal);
-                        }
-                    }
-                }
+            let start_addr = VirtAddr::from(start_addr);
+            for (off, dst) in data.iter_mut().enumerate() {
+                let Ok(val) = read_u8(start_addr + off) else {
+                    return Err(TargetError::NonFatal);
+                };
+                *dst = val;
             }
             Ok(())
         }
@@ -479,11 +483,10 @@ pub mod svsm_gdbstub {
             data: &[u8],
             _tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
-            for (offset, value) in data.iter().enumerate() {
-                unsafe {
-                    if write_u8(VirtAddr::from(start_addr + offset as u64), *value).is_err() {
-                        return Err(TargetError::NonFatal);
-                    }
+            let start_addr = VirtAddr::from(start_addr);
+            for (off, src) in data.iter().enumerate() {
+                if write_u8(start_addr + off, *src).is_err() {
+                    return Err(TargetError::NonFatal);
                 }
             }
             Ok(())
@@ -636,20 +639,19 @@ pub mod svsm_gdbstub {
             _kind: <Self::Arch as gdbstub::arch::Arch>::BreakpointKind,
         ) -> gdbstub::target::TargetResult<bool, Self> {
             // Find a free breakpoint slot
-            let Some(free_bp) = self.breakpoints.iter().position(|&b| b.addr.is_null() ) else {
+            let Some(free_bp) = self.breakpoints.iter_mut().find(|b| b.addr.is_null()) else {
                 return Ok(false);
             };
             // The breakpoint works by taking the opcode at the bp address, storing
             // it and replacing it with an INT3 instruction
             let vaddr = VirtAddr::from(addr);
-            let inst = unsafe { read_u8(vaddr) };
-            let Ok(inst) = inst else {
+            let Ok(inst) = read_u8(vaddr) else {
                 return Ok(false);
             };
             let Ok(_) = GdbStubTarget::write_bp_address(vaddr, INT3_INSTR) else {
                 return Ok(false);
             };
-            self.breakpoints[free_bp] = GdbStubBreakpoint { addr: vaddr, inst };
+            *free_bp = GdbStubBreakpoint { addr: vaddr, inst };
             Ok(true)
         }
 
@@ -659,13 +661,13 @@ pub mod svsm_gdbstub {
             _kind: <Self::Arch as gdbstub::arch::Arch>::BreakpointKind,
         ) -> gdbstub::target::TargetResult<bool, Self> {
             let vaddr = VirtAddr::from(addr);
-            let Some(matching_bp) = self.breakpoints.iter().position(|&b| b.addr == vaddr) else {
+            let Some(bp) = self.breakpoints.iter_mut().find(|b| b.addr == vaddr) else {
                 return Ok(false);
             };
-            let Ok(_) = GdbStubTarget::write_bp_address(vaddr, self.breakpoints[matching_bp].inst) else {
+            let Ok(_) = GdbStubTarget::write_bp_address(vaddr, bp.inst) else {
                 return Ok(false);
             };
-            self.breakpoints[matching_bp].addr = VirtAddr::null();
+            bp.addr = VirtAddr::null();
             Ok(true)
         }
     }

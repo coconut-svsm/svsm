@@ -35,7 +35,9 @@ pub struct SnpCpuidTable {
 }
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
-    unsafe { CPUID_PAGE.init_from_ref(table) };
+    CPUID_PAGE
+        .init_from_ref(table)
+        .expect("Could not initialize CPUID page");
 }
 
 pub struct CpuidResult {

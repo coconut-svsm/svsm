@@ -39,7 +39,7 @@ impl SevPreValidMem {
 
     #[inline]
     fn end(&self) -> PhysAddr {
-        self.base.offset(self.length)
+        self.base + self.length
     }
 
     fn overlap(&self, other: &Self) -> bool {
@@ -172,15 +172,15 @@ const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
 unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: usize) -> Option<(VirtAddr, usize)> {
     let mut curr = start;
-    let end = start.sub(len);
+    let end = start - len;
 
     while curr >= end {
-        curr = curr.sub(mem::size_of::<Uuid>());
+        curr = curr - mem::size_of::<Uuid>();
 
         let ptr = curr.as_ptr::<u8>();
         let curr_uuid = Uuid::from_mem(ptr);
 
-        curr = curr.sub(mem::size_of::<u16>());
+        curr = curr - mem::size_of::<u16>();
         if curr < end {
             break;
         }
@@ -193,7 +193,7 @@ unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: usize) -> Option<(VirtAd
         }
         let len = orig_len - (mem::size_of::<Uuid>() + mem::size_of::<u16>());
 
-        curr = curr.sub(len);
+        curr = curr - len;
 
         if *uuid == curr_uuid {
             return Some((curr, len));
@@ -230,13 +230,13 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
     // Map meta-data location, it starts at 32 bytes below 4GiB
     let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
     let vstart = guard.virt_addr();
-    let vend = vstart.offset(PAGE_SIZE);
+    let vend = vstart + PAGE_SIZE;
 
-    let mut curr = vend.sub(32);
+    let mut curr = vend - 32;
 
     let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID).map_err(|()| SvsmError::Firmware)?;
 
-    curr = curr.sub(mem::size_of::<Uuid>());
+    curr = curr - mem::size_of::<Uuid>();
     let ptr = curr.as_ptr::<u8>();
 
     unsafe {
@@ -246,7 +246,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             return Err(SvsmError::Firmware);
         }
 
-        curr = curr.sub(mem::size_of::<u16>());
+        curr = curr - mem::size_of::<u16>();
         let ptr = curr.as_ptr::<u16>();
 
         let full_len = ptr.read() as usize;
@@ -280,7 +280,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
             let off_ptr = base.as_ptr::<u32>();
             let offset = off_ptr.read_unaligned() as usize;
 
-            let meta_ptr = vend.sub(offset).as_ptr::<SevMetaDataHeader>();
+            let meta_ptr = (vend - offset).as_ptr::<SevMetaDataHeader>();
             //let len = meta_ptr.read().len;
             let num_descs = meta_ptr.read().num_desc as isize;
             let desc_ptr = meta_ptr.offset(1).cast::<SevMetaDataDesc>();
@@ -342,7 +342,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         // Make page accessible to guest VMPL
         rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false)?;
 
-        zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }
 
     Ok(())

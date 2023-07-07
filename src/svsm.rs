@@ -54,8 +54,6 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use core::ptr;
 
-use log;
-
 extern "C" {
     pub static mut SECRETS_PAGE: SecretsPage;
     pub static bsp_stack_end: u8;
@@ -109,7 +107,7 @@ pub static mut PERCPU: PerCpu = PerCpu::new();
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let start = guard.virt_addr();
-    let end = start.offset(PAGE_SIZE);
+    let end = start + PAGE_SIZE;
 
     let target = ptr::NonNull::new(start.as_mut_ptr::<SnpCpuidTable>()).unwrap();
 
@@ -143,7 +141,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         *dst = SECRETS_PAGE;
 
         // Copy Table
-        let mut fw_sp = target.as_mut();
+        let fw_sp = target.as_mut();
 
         // Zero VMCK key for VMPLs with more privileges than the guest
         for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
@@ -166,7 +164,7 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let vaddr = guard.virt_addr();
 
-    zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
 
     Ok(())
 }
@@ -274,7 +272,7 @@ fn validate_flash() -> Result<(), SvsmError> {
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
@@ -327,12 +325,16 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
     load_gdt();
     early_idt_init();
 
-    unsafe {
-        LAUNCH_INFO.init(li);
-    }
+    LAUNCH_INFO
+        .init(li)
+        .expect("Already initialized launch info");
 
     let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
-    unsafe { CPUID_PAGE.init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>())) };
+    unsafe {
+        CPUID_PAGE
+            .init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>()))
+            .expect("Already initialized CPUID page")
+    };
     register_cpuid_table(&CPUID_PAGE);
     dump_cpuid_table();
 

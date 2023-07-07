@@ -41,7 +41,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
             .map_region(vaddr_start, aligned_vaddr_end, phys, flags)
             .expect("Failed to map kernel ELF segment");
 
-        phys = phys.offset(segment_len);
+        phys = phys + segment_len;
     }
 
     // Map subsequent heap area.
@@ -61,7 +61,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
 
 pub fn invalidate_stage2() -> Result<(), SvsmError> {
     let pstart = PhysAddr::null();
-    let pend = pstart.offset(640 * 1024);
+    let pend = pstart + (640 * 1024);
     let mut paddr = pstart;
 
     // Stage2 memory must be invalidated when already on the SVSM page-table,
@@ -73,7 +73,7 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
 
         pvalidate(vaddr, false, false)?;
 
-        paddr = paddr.offset(PAGE_SIZE);
+        paddr = paddr + PAGE_SIZE;
     }
 
     this_cpu_mut()

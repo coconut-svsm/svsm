@@ -15,6 +15,7 @@ use core::mem::size_of;
 use core::ptr;
 use log;
 
+#[derive(Debug)]
 struct PageStorageType(u64);
 
 // Support allocations up to order-5 (128kb)
@@ -223,11 +224,13 @@ impl Page {
     }
 }
 
+#[derive(Debug)]
 pub struct MemInfo {
     pub total_pages: [usize; MAX_ORDER],
     pub free_pages: [usize; MAX_ORDER],
 }
 
+#[derive(Debug)]
 struct MemoryRegion {
     start_phys: PhysAddr,
     start_virt: VirtAddr,
@@ -251,7 +254,7 @@ impl MemoryRegion {
 
     #[allow(dead_code)]
     pub fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
-        let end_phys = self.start_phys.offset(self.page_count * PAGE_SIZE);
+        let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
         if paddr < self.start_phys || paddr >= end_phys {
             // For the initial stage2 identity mapping, the root page table
@@ -264,12 +267,12 @@ impl MemoryRegion {
 
         let offset = paddr - self.start_phys;
 
-        Some(self.start_virt.offset(offset))
+        Some(self.start_virt + offset)
     }
 
     #[allow(dead_code)]
     pub fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        let end_virt = self.start_virt.offset(self.page_count * PAGE_SIZE);
+        let end_virt = self.start_virt + (self.page_count * PAGE_SIZE);
 
         if vaddr < self.start_virt || vaddr >= end_virt {
             return None;
@@ -277,13 +280,13 @@ impl MemoryRegion {
 
         let offset = vaddr - self.start_virt;
 
-        Some(self.start_phys.offset(offset))
+        Some(self.start_phys + offset)
     }
 
     fn page_info_virt_addr(&self, pfn: usize) -> VirtAddr {
         let size = size_of::<PageStorageType>();
         let virt = self.start_virt;
-        virt.offset(pfn * size)
+        virt + (pfn * size)
     }
 
     fn check_pfn(&self, pfn: usize) {
@@ -294,7 +297,7 @@ impl MemoryRegion {
 
     fn check_virt_addr(&self, vaddr: VirtAddr) -> bool {
         let start = self.start_virt;
-        let end = self.start_virt.offset(self.page_count * PAGE_SIZE);
+        let end = self.start_virt + (self.page_count * PAGE_SIZE);
 
         vaddr >= start && vaddr < end
     }
@@ -409,7 +412,7 @@ impl MemoryRegion {
         let pfn = self.get_next_page(order)?;
         let pg = Page::Allocated(AllocatedInfo { order });
         self.write_page_info(pfn, pg);
-        Ok(self.start_virt.offset(pfn * PAGE_SIZE))
+        Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
     pub fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
@@ -419,7 +422,7 @@ impl MemoryRegion {
     pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, SvsmError> {
         let vaddr = self.allocate_page()?;
 
-        zero_mem_region(vaddr, vaddr.offset(PAGE_SIZE));
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
 
         Ok(vaddr)
     }
@@ -432,7 +435,7 @@ impl MemoryRegion {
         assert_eq!(slab_vaddr.bits() & (PAGE_TYPE_MASK as usize), 0);
         let pg = Page::SlabPage(SlabPageInfo { slab: slab_vaddr });
         self.write_page_info(pfn, pg);
-        Ok(self.start_virt.offset(pfn * PAGE_SIZE))
+        Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
     pub fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
@@ -440,7 +443,7 @@ impl MemoryRegion {
         let pfn = self.get_next_page(0)?;
         let pg = Page::FilePage(FileInfo::new(1));
         self.write_page_info(pfn, pg);
-        Ok(self.start_virt.offset(pfn * PAGE_SIZE))
+        Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
     pub fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
@@ -671,6 +674,7 @@ impl MemoryRegion {
     }
 }
 
+#[derive(Debug)]
 pub struct PageRef {
     virt_addr: VirtAddr,
     phys_addr: PhysAddr,
@@ -789,6 +793,7 @@ pub fn memory_info() -> MemInfo {
     ROOT_MEM.lock().memory_info()
 }
 
+#[derive(Debug)]
 struct SlabPage {
     vaddr: VirtAddr,
     capacity: u16,
@@ -871,7 +876,7 @@ impl SlabPage {
             if self.used_bitmap[idx] & mask == 0 {
                 self.used_bitmap[idx] |= mask;
                 self.free -= 1;
-                return Ok(self.vaddr.offset((self.item_size * i) as usize));
+                return Ok(self.vaddr + ((self.item_size * i) as usize));
             }
         }
 
@@ -879,7 +884,7 @@ impl SlabPage {
     }
 
     pub fn free(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        if vaddr < self.vaddr || vaddr >= self.vaddr.offset(PAGE_SIZE) {
+        if vaddr < self.vaddr || vaddr >= self.vaddr + PAGE_SIZE {
             return Err(SvsmError::Mem);
         }
 
@@ -898,6 +903,7 @@ impl SlabPage {
     }
 }
 
+#[derive(Debug)]
 #[repr(align(16))]
 struct SlabCommon {
     item_size: u16,
@@ -1008,6 +1014,7 @@ impl SlabCommon {
     }
 }
 
+#[derive(Debug)]
 struct SlabPageSlab {
     common: SlabCommon,
 }
@@ -1090,6 +1097,7 @@ impl SlabPageSlab {
     }
 }
 
+#[derive(Debug)]
 struct Slab {
     common: SlabCommon,
 }
@@ -1175,6 +1183,7 @@ impl Slab {
 
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
+#[derive(Debug)]
 pub struct SvsmAllocator {
     slab_size_32: SpinLock<Slab>,
     slab_size_64: SpinLock<Slab>,

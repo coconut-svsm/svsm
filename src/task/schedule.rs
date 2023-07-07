@@ -19,6 +19,7 @@ use intrusive_collections::{intrusive_adapter, Bound, KeyAdapter, RBTree, RBTree
 
 pub type TaskPointer = Rc<TaskNode>;
 
+#[derive(Debug)]
 pub struct TaskNode {
     link: RBTreeLink,
     pub task: RefCell<Box<Task>>,
@@ -32,6 +33,7 @@ impl<'a> KeyAdapter<'a> for TaskNodeAdapter {
     }
 }
 
+#[derive(Debug)]
 pub struct TaskRBTree {
     tree: Option<RBTree<TaskNodeAdapter>>,
 }
