@@ -9,7 +9,7 @@ extern crate alloc;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
-use alloc::alloc::{alloc, dealloc, handle_alloc_error};
+use alloc::alloc::{alloc, handle_alloc_error};
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::mem;
@@ -170,8 +170,7 @@ impl ACPITableMeta {
 
 #[derive(Debug)]
 struct ACPITableBuffer {
-    ptr: ptr::NonNull<u8>,
-    size: usize,
+    buf: Vec<u8>,
     tables: Vec<ACPITableMeta>,
 }
 
@@ -180,23 +179,23 @@ impl ACPITableBuffer {
         let file = fw_cfg.file_selector("etc/acpi/tables")?;
         let size = file.size() as usize;
 
-        let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
-        let ptr = unsafe { alloc(layout) };
-        let ptr = ptr::NonNull::new(ptr).unwrap_or_else(|| handle_alloc_error(layout));
+        let mut buf = Vec::<u8>::new();
+        buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
+        let ptr = buf.as_mut_ptr();
 
         fw_cfg.select(file.selector());
         for i in 0..size {
             let byte: u8 = fw_cfg.read_le();
-            unsafe { ptr.as_ptr().add(i).write(byte) };
+            unsafe { ptr.add(i).write(byte) };
         }
+        unsafe { buf.set_len(size) }
 
-        let mut buf = Self {
-            ptr,
-            size,
+        let mut acpibuf = Self {
+            buf,
             tables: Vec::new(),
         };
-        buf.load_tables(fw_cfg)?;
-        Ok(buf)
+        acpibuf.load_tables(fw_cfg)?;
+        Ok(acpibuf)
     }
 
     fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), SvsmError> {
@@ -218,11 +217,11 @@ impl ACPITableBuffer {
                 let entry_ptr = content.add(i);
                 let offset = (*entry_ptr) as usize;
 
-                if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
+                if offset + mem::size_of::<RawACPITableHeader>() >= self.buf.len() {
                     return Err(SvsmError::Acpi);
                 }
 
-                let raw_header = self.ptr.as_ptr().add(offset).cast::<RawACPITableHeader>();
+                let raw_header = self.buf.as_ptr().add(offset).cast::<RawACPITableHeader>();
                 let meta = ACPITableMeta::new(raw_header.as_ref().unwrap(), offset);
 
                 self.tables.push(meta);
@@ -233,12 +232,12 @@ impl ACPITableBuffer {
     }
 
     fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
-        if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
+        if offset + mem::size_of::<RawACPITableHeader>() >= self.buf.len() {
             return Err(SvsmError::Acpi);
         }
 
         unsafe {
-            let ptr = self.ptr.as_ptr().add(offset);
+            let ptr = self.buf.as_ptr().add(offset);
             ACPITable::new(ptr)
         }
     }
@@ -251,17 +250,6 @@ impl ACPITableBuffer {
             .map(|entry| entry.offset)?;
 
         self.acpi_table_from_offset(offset).ok()
-    }
-}
-
-impl Drop for ACPITableBuffer {
-    fn drop(&mut self) {
-        if self.size != 0 {
-            unsafe {
-                let layout = Layout::array::<u8>(self.size).unwrap();
-                dealloc(self.ptr.as_ptr(), layout);
-            }
-        }
     }
 }
 
