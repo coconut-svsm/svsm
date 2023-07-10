@@ -115,21 +115,19 @@ struct ACPITable {
 }
 
 impl ACPITable {
-    fn new(ptr: *const u8) -> Result<Self, SvsmError> {
-        unsafe {
-            let raw_header = ptr.cast::<RawACPITableHeader>();
-            let size = (*raw_header).len as usize;
+    fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
+        let raw_header = ptr.as_ptr().cast::<RawACPITableHeader>();
+        let size = unsafe { (*raw_header).len as usize };
+        let content = ptr.get(..size).ok_or(SvsmError::Acpi)?;
 
-            let mut buf = Vec::<u8>::new();
-            buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
-            buf.as_mut_ptr().copy_from_nonoverlapping(ptr, size);
-            buf.set_len(size);
+        let mut buf = Vec::<u8>::new();
+        // Allow for a failable allocation before copying
+        buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
+        buf.extend_from_slice(content);
 
-            Ok(Self {
-                header: ACPITableHeader::new(*raw_header),
-                buf,
-            })
-        }
+        let header = unsafe { ACPITableHeader::new(*raw_header) };
+
+        Ok(Self { header, buf })
     }
 
     #[allow(dead_code)]
@@ -237,10 +235,8 @@ impl ACPITableBuffer {
             return Err(SvsmError::Acpi);
         }
 
-        unsafe {
-            let ptr = self.buf.as_ptr().add(offset);
-            ACPITable::new(ptr)
-        }
+        let buf = self.buf.get(offset..).ok_or(SvsmError::Acpi)?;
+        ACPITable::new(buf)
     }
 
     fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
