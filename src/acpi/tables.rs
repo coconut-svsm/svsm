@@ -286,22 +286,29 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
             let t: u8 = (*entry_ptr).entry_type;
             let l: u8 = (*entry_ptr).entry_len;
             offset += l as usize;
-            if t == 0 {
-                let lapic_ptr = entry_ptr.cast::<RawMADTEntryLocalApic>();
-                let apic_id: u32 = (*lapic_ptr).apic_id as u32;
-                let flags: u32 = (*lapic_ptr).flags;
-                cpus.push(ACPICPUInfo {
-                    apic_id,
-                    enabled: (flags & 1) == 1,
-                });
-            } else if t == 9 {
-                let x2apic_ptr = entry_ptr.cast::<RawMADTEntryLocalX2Apic>();
-                let apic_id: u32 = (*x2apic_ptr).apic_id;
-                let flags: u32 = (*x2apic_ptr).flags;
-                cpus.push(ACPICPUInfo {
-                    apic_id,
-                    enabled: (flags & 1) == 1,
-                });
+
+            match t {
+                0 => {
+                    let lapic_ptr = entry_ptr.cast::<RawMADTEntryLocalApic>();
+                    let apic_id: u32 = (*lapic_ptr).apic_id as u32;
+                    let flags: u32 = (*lapic_ptr).flags;
+                    cpus.push(ACPICPUInfo {
+                        apic_id,
+                        enabled: (flags & 1) == 1,
+                    });
+                }
+                9 => {
+                    let x2apic_ptr = entry_ptr.cast::<RawMADTEntryLocalX2Apic>();
+                    let apic_id: u32 = (*x2apic_ptr).apic_id;
+                    let flags: u32 = (*x2apic_ptr).flags;
+                    cpus.push(ACPICPUInfo {
+                        apic_id,
+                        enabled: (flags & 1) == 1,
+                    });
+                }
+                _ => {
+                    log::info!("Ignoring MADT entry with type {}", t);
+                }
             }
         }
     }
