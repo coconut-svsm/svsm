@@ -209,7 +209,7 @@ impl ACPITableBuffer {
                 .as_ptr()
                 .cast::<RawACPITableHeader>();
 
-            let meta = unsafe { ACPITableMeta::new(raw_header.as_ref().unwrap(), offset) };
+            let meta = unsafe { ACPITableMeta::new(&*raw_header, offset) };
 
             self.tables.push(meta);
         }
