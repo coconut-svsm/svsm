@@ -9,11 +9,8 @@ extern crate alloc;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
-use alloc::alloc::{alloc, handle_alloc_error};
 use alloc::vec::Vec;
-use core::alloc::Layout;
 use core::mem;
-use core::ptr;
 use log;
 
 #[derive(Debug)]
@@ -114,8 +111,7 @@ impl ACPITableHeader {
 #[derive(Debug)]
 struct ACPITable {
     header: ACPITableHeader,
-    ptr: ptr::NonNull<u8>,
-    size: usize,
+    buf: Vec<u8>,
 }
 
 impl ACPITable {
@@ -124,16 +120,14 @@ impl ACPITable {
             let raw_header = ptr.cast::<RawACPITableHeader>();
             let size = (*raw_header).len as usize;
 
-            let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
-            let buf =
-                ptr::NonNull::new(alloc(layout)).unwrap_or_else(|| handle_alloc_error(layout));
-
-            ptr::copy(ptr, buf.as_ptr(), size);
+            let mut buf = Vec::<u8>::new();
+            buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
+            buf.as_mut_ptr().copy_from_nonoverlapping(ptr, size);
+            buf.set_len(size);
 
             Ok(Self {
                 header: ACPITableHeader::new(*raw_header),
-                ptr: buf,
-                size,
+                buf,
             })
         }
     }
@@ -144,14 +138,15 @@ impl ACPITable {
     }
 
     fn content_length(&self) -> usize {
-        self.size
+        self.buf
+            .len()
             .saturating_sub(mem::size_of::<RawACPITableHeader>())
     }
 
     fn content(&self) -> *const u8 {
         let offset = mem::size_of::<RawACPITableHeader>();
 
-        unsafe { self.ptr.as_ptr().add(offset) }
+        unsafe { self.buf.as_ptr().add(offset) }
     }
 }
 
