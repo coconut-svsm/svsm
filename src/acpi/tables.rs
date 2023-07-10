@@ -217,11 +217,13 @@ impl ACPITableBuffer {
                 let entry_ptr = content.add(i);
                 let offset = (*entry_ptr) as usize;
 
-                if offset + mem::size_of::<RawACPITableHeader>() >= self.buf.len() {
-                    return Err(SvsmError::Acpi);
-                }
+                let raw_header = offset
+                    .checked_add(mem::size_of::<RawACPITableHeader>())
+                    .and_then(|end| self.buf.get(offset..end))
+                    .ok_or(SvsmError::Acpi)?
+                    .as_ptr()
+                    .cast::<RawACPITableHeader>();
 
-                let raw_header = self.buf.as_ptr().add(offset).cast::<RawACPITableHeader>();
                 let meta = ACPITableMeta::new(raw_header.as_ref().unwrap(), offset);
 
                 self.tables.push(meta);
@@ -232,7 +234,11 @@ impl ACPITableBuffer {
     }
 
     fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
-        if offset + mem::size_of::<RawACPITableHeader>() >= self.buf.len() {
+        let header_end = offset
+            .checked_add(mem::size_of::<RawACPITableHeader>())
+            .ok_or(SvsmError::Acpi)?;
+
+        if header_end >= self.buf.len() {
             return Err(SvsmError::Acpi);
         }
 
