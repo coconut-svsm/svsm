@@ -116,7 +116,11 @@ struct ACPITable {
 
 impl ACPITable {
     fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
-        let raw_header = ptr.as_ptr().cast::<RawACPITableHeader>();
+        let raw_header = ptr
+            .get(..mem::size_of::<RawACPITableHeader>())
+            .ok_or(SvsmError::Acpi)?
+            .as_ptr()
+            .cast::<RawACPITableHeader>();
         let size = unsafe { (*raw_header).len as usize };
         let content = ptr.get(..size).ok_or(SvsmError::Acpi)?;
 
@@ -227,14 +231,6 @@ impl ACPITableBuffer {
     }
 
     fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
-        let header_end = offset
-            .checked_add(mem::size_of::<RawACPITableHeader>())
-            .ok_or(SvsmError::Acpi)?;
-
-        if header_end >= self.buf.len() {
-            return Err(SvsmError::Acpi);
-        }
-
         let buf = self.buf.get(offset..).ok_or(SvsmError::Acpi)?;
         ACPITable::new(buf)
     }
