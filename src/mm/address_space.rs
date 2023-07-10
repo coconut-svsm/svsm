@@ -150,3 +150,24 @@ pub const SVSM_PERCPU_TEMP_END_4K: usize = SVSM_PERCPU_TEMP_BASE_4K + SIZE_LEVEL
 /// Start and End for PAGE_SIZEed temporary mappings
 pub const SVSM_PERCPU_TEMP_BASE_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL1;
 pub const SVSM_PERCPU_TEMP_END_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL2;
+
+/// Per-task memory map
+/// Use the region from 0xfffffe0000000000 - 0xffffff0000000000 for tasks
+pub const PGTABLE_LVL3_IDX_PERTASK: usize = 508;
+/// Layout of the per-task memory space is:
+///
+/// +------------------+------------------+-------------------------------------+
+/// | Start            | End              | Size | Description                  |
+/// +------------------+------------------+------+------------------------------+
+/// | fffffeffffff0000 | ffffff0000000000 | 64K  | Task stack                   |
+/// +------------------+------------------+------+------------------------------+
+/// | fffffe0000000000 | fffffe0004000000 | 64M  | Dynamic memory allocation    |
+/// +------------------+------------------+------+------------------------------+
+pub const SVSM_PERTASK_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_PERTASK << ((3 * 9) + 12));
+
+/// Virtual addresses for dynamic memory allocation
+pub const SVSM_PERTASK_DYNAMIC_MEMORY: usize = SVSM_PERTASK_BASE;
+
+/// Task stack
+pub const SVSM_PERTASK_STACK_BASE: usize = SVSM_PERTASK_BASE + 0xffffff0000;
+pub const SVSM_PERTASK_STACK_TOP: usize = SVSM_PERTASK_STACK_BASE + 0x10000;
