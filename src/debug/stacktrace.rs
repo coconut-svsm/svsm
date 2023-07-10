@@ -6,7 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
-use crate::cpu::idt::{is_exception_handler_return_site, X86Regs};
+use crate::cpu::idt::common::{is_exception_handler_return_site, X86Regs};
 #[cfg(feature = "enable-stacktrace")]
 use crate::mm::address_space::{STACK_SIZE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
 #[cfg(feature = "enable-stacktrace")]
