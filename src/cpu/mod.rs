@@ -13,11 +13,13 @@ pub mod gdt;
 pub mod idt;
 pub mod msr;
 pub mod percpu;
+pub mod registers;
 pub mod smp;
 pub mod tlb;
 pub mod tss;
 pub mod vc;
 pub mod vmsa;
 
-pub use idt::X86Regs;
+pub use idt::X86ExceptionContext;
+pub use registers::{X86GeneralRegs, X86InterruptFrame, X86SegmentRegs};
 pub use tlb::*;
