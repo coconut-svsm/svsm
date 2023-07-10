@@ -26,6 +26,7 @@ pub mod serial;
 pub mod sev;
 pub mod string;
 pub mod svsm_console;
+pub mod svsm_paging;
 pub mod types;
 pub mod utils;
 

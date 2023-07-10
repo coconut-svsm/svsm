@@ -4,17 +4,17 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use svsm::address::{Address, PhysAddr, VirtAddr};
-use svsm::cpu::percpu::this_cpu_mut;
-use svsm::elf;
-use svsm::error::SvsmError;
-use svsm::kernel_launch::KernelLaunchInfo;
-use svsm::mm;
-use svsm::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
-use svsm::mm::PerCPUPageMappingGuard;
-use svsm::sev::ghcb::PageStateChangeOp;
-use svsm::sev::pvalidate;
-use svsm::types::PAGE_SIZE;
+use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::percpu::this_cpu_mut;
+use crate::elf;
+use crate::error::SvsmError;
+use crate::kernel_launch::KernelLaunchInfo;
+use crate::mm;
+use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
+use crate::mm::PerCPUPageMappingGuard;
+use crate::sev::ghcb::PageStateChangeOp;
+use crate::sev::pvalidate;
+use crate::types::PAGE_SIZE;
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
