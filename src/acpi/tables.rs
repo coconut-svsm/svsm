@@ -144,6 +144,11 @@ impl ACPITable {
         // Zero-length slices are valid, but we do not want them
         self.buf.get(offset..).filter(|b| !b.is_empty())
     }
+
+    fn content_ptr<T>(&self, offset: usize) -> Option<*const T> {
+        let end = offset.checked_add(mem::size_of::<T>())?;
+        Some(self.content()?.get(offset..end)?.as_ptr().cast::<T>())
+    }
 }
 
 #[derive(Debug)]
@@ -274,43 +279,46 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
-    let content_slice = apic_table.content().ok_or(SvsmError::Acpi)?;
-    let content = content_slice.as_ptr();
+    let content = apic_table.content().ok_or(SvsmError::Acpi)?;
 
     let mut cpus: Vec<ACPICPUInfo> = Vec::new();
 
-    unsafe {
-        let mut offset = MADT_HEADER_SIZE;
-        while offset < content_slice.len() {
-            let entry_ptr = content.add(offset).cast::<RawMADTEntryHeader>();
-            let t: u8 = (*entry_ptr).entry_type;
-            let l: u8 = (*entry_ptr).entry_len;
-            offset += l as usize;
+    let mut offset = MADT_HEADER_SIZE;
+    while offset < content.len() {
+        let entry_ptr = apic_table
+            .content_ptr::<RawMADTEntryHeader>(offset)
+            .ok_or(SvsmError::Acpi)?;
+        let (madt_type, entry_len) = unsafe { ((*entry_ptr).entry_type, (*entry_ptr).entry_len) };
 
-            match t {
-                0 => {
-                    let lapic_ptr = entry_ptr.cast::<RawMADTEntryLocalApic>();
-                    let apic_id: u32 = (*lapic_ptr).apic_id as u32;
-                    let flags: u32 = (*lapic_ptr).flags;
-                    cpus.push(ACPICPUInfo {
-                        apic_id,
-                        enabled: (flags & 1) == 1,
-                    });
-                }
-                9 => {
-                    let x2apic_ptr = entry_ptr.cast::<RawMADTEntryLocalX2Apic>();
-                    let apic_id: u32 = (*x2apic_ptr).apic_id;
-                    let flags: u32 = (*x2apic_ptr).flags;
-                    cpus.push(ACPICPUInfo {
-                        apic_id,
-                        enabled: (flags & 1) == 1,
-                    });
-                }
-                _ => {
-                    log::info!("Ignoring MADT entry with type {}", t);
-                }
+        match madt_type {
+            0 => {
+                let lapic_ptr = apic_table
+                    .content_ptr::<RawMADTEntryLocalApic>(offset)
+                    .ok_or(SvsmError::Acpi)?;
+                let (apic_id, flags) = unsafe { ((*lapic_ptr).apic_id as u32, (*lapic_ptr).flags) };
+                cpus.push(ACPICPUInfo {
+                    apic_id,
+                    enabled: (flags & 1) == 1,
+                });
+            }
+            9 => {
+                let x2apic_ptr = apic_table
+                    .content_ptr::<RawMADTEntryLocalX2Apic>(offset)
+                    .ok_or(SvsmError::Acpi)?;
+                let (apic_id, flags) = unsafe { ((*x2apic_ptr).apic_id, (*x2apic_ptr).flags) };
+                cpus.push(ACPICPUInfo {
+                    apic_id,
+                    enabled: (flags & 1) == 1,
+                });
+            }
+            _ => {
+                log::info!("Ignoring MADT entry with type {}", madt_type);
             }
         }
+
+        offset = offset
+            .checked_add(entry_len as usize)
+            .ok_or(SvsmError::Acpi)?;
     }
 
     Ok(cpus)
