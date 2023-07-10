@@ -6,7 +6,6 @@
 
 #![no_std]
 #![no_main]
-pub mod svsm_paging;
 
 extern crate alloc;
 
@@ -46,9 +45,9 @@ use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
+use svsm::svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
-use svsm_paging::{init_page_table, invalidate_stage2};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 

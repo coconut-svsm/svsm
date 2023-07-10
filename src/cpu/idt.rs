@@ -7,6 +7,7 @@
 use super::control_regs::read_cr2;
 use super::tss::IST_DF;
 use super::vc::handle_vc_exception;
+use super::{X86GeneralRegs, X86InterruptFrame};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::extable::handle_exception_table;
 use crate::debug::gdbstub::svsm_gdbstub::handle_bp_exception;
@@ -39,29 +40,11 @@ pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
 #[repr(C, packed)]
-pub struct X86Regs {
-    pub r15: usize,
-    pub r14: usize,
-    pub r13: usize,
-    pub r12: usize,
-    pub r11: usize,
-    pub r10: usize,
-    pub r9: usize,
-    pub r8: usize,
-    pub rbp: usize,
-    pub rdi: usize,
-    pub rsi: usize,
-    pub rdx: usize,
-    pub rcx: usize,
-    pub rbx: usize,
-    pub rax: usize,
+pub struct X86ExceptionContext {
+    pub regs: X86GeneralRegs,
     pub vector: usize,
     pub error_code: usize,
-    pub rip: usize,
-    pub cs: usize,
-    pub flags: usize,
-    pub rsp: usize,
-    pub ss: usize,
+    pub frame: X86InterruptFrame,
 }
 
 #[derive(Copy, Clone)]
@@ -178,46 +161,46 @@ pub fn idt_init() {
 }
 
 #[no_mangle]
-fn generic_idt_handler(regs: &mut X86Regs) {
-    if regs.vector == DF_VECTOR {
+fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
+    if ctx.vector == DF_VECTOR {
         let cr2 = read_cr2();
-        let rip = regs.rip;
-        let rsp = regs.rsp;
+        let rip = ctx.frame.rip;
+        let rsp = ctx.frame.rsp;
         panic!(
             "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
             rip, rsp, cr2
         );
-    } else if regs.vector == GP_VECTOR {
-        let rip = regs.rip;
-        let err = regs.error_code;
+    } else if ctx.vector == GP_VECTOR {
+        let rip = ctx.frame.rip;
+        let err = ctx.error_code;
 
-        if !handle_exception_table(regs) {
+        if !handle_exception_table(ctx) {
             panic!(
                 "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
                 rip, err
             );
         }
-    } else if regs.vector == PF_VECTOR {
+    } else if ctx.vector == PF_VECTOR {
         let cr2 = read_cr2();
-        let rip = regs.rip;
-        let err = regs.error_code;
+        let rip = ctx.frame.rip;
+        let err = ctx.error_code;
 
-        if !handle_exception_table(regs) {
+        if !handle_exception_table(ctx) {
             panic!(
                 "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
                 rip, cr2, err
             );
         }
-    } else if regs.vector == VC_VECTOR {
-        handle_vc_exception(regs);
-    } else if regs.vector == BP_VECTOR {
-        handle_bp_exception(regs);
+    } else if ctx.vector == VC_VECTOR {
+        handle_vc_exception(ctx);
+    } else if ctx.vector == BP_VECTOR {
+        handle_bp_exception(ctx);
     } else {
-        let err = regs.error_code;
-        let vec = regs.vector;
-        let rip = regs.rip;
+        let err = ctx.error_code;
+        let vec = ctx.vector;
+        let rip = ctx.frame.rip;
 
-        if !handle_exception_table(regs) {
+        if !handle_exception_table(ctx) {
             panic!(
                 "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
                 vec, rip, err
