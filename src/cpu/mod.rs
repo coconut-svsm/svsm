@@ -11,6 +11,7 @@ pub mod extable;
 pub mod features;
 pub mod gdt;
 pub mod idt;
+pub mod line_buffer;
 pub mod msr;
 pub mod percpu;
 pub mod smp;

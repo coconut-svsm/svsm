@@ -9,6 +9,7 @@ extern crate alloc;
 use super::gdt::load_tss;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::line_buffer::LineBuffer;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
@@ -182,6 +183,7 @@ pub struct PerCpu {
     svsm_vmsa: Option<VmsaRef>,
     guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
+    ln_buf: LineBuffer,
 
     /// Address allocator for per-cpu 4k temporary mappings
     pub vrange_4k: VirtualRange,
@@ -202,6 +204,7 @@ impl PerCpu {
             svsm_vmsa: None,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             reset_ip: 0xffff_fff0u64,
+            ln_buf: LineBuffer::new(),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
         }
@@ -501,6 +504,10 @@ impl PerCpu {
             page_count,
             PAGE_SHIFT_2M,
         );
+    }
+
+    pub fn get_line_buffer(&mut self) -> &mut LineBuffer {
+        &mut self.ln_buf
     }
 }
 
