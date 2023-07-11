@@ -1308,19 +1308,6 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
         .expect("Failed to initialize SLAB_PAGE_SLAB");
 }
 
-pub fn print_alloc_info() {
-    for i in 0..MAX_ORDER {
-        let nr_pages = ROOT_MEM.lock().nr_pages[i];
-        let free_pages = ROOT_MEM.lock().free_pages[i];
-        log::trace!(
-            "Order-{}: Pages: {:#04} Free Pages: {:#04}",
-            i,
-            nr_pages,
-            free_pages
-        );
-    }
-}
-
 #[cfg(test)]
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 
