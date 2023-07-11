@@ -6,4 +6,4 @@
 
 mod tasks;
 
-pub use tasks::{Task, TaskContext, TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT};
+pub use tasks::{Task, TaskContext, TaskError, TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT};

@@ -3,6 +3,7 @@ use crate::fw_cfg::FwCfgError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
+use crate::task::TaskError;
 
 // As a general rule, functions private to a given module may use the
 // leaf error types. Public functions should return an SvsmError
@@ -33,4 +34,6 @@ pub enum SvsmError {
     Acpi,
     // Errors from file systems
     FileSystem(FsError),
+    // Task management errors,
+    Task(TaskError),
 }
