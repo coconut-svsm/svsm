@@ -35,12 +35,39 @@ pub fn get_order(size: usize) -> usize {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[repr(u64)]
+enum PageType {
+    Free = 0,
+    Allocated = 1,
+    SlabPage = 2,
+    Compound = 3,
+    // File pages used for file and task data
+    File = 4,
+    Reserved = (1u64 << PAGE_TYPE_SHIFT) - 1,
+}
+
+impl TryFrom<u64> for PageType {
+    type Error = SvsmError;
+    fn try_from(val: u64) -> Result<Self, Self::Error> {
+        match val {
+            v if v == Self::Free as u64 => Ok(Self::Free),
+            v if v == Self::Allocated as u64 => Ok(Self::Allocated),
+            v if v == Self::SlabPage as u64 => Ok(Self::SlabPage),
+            v if v == Self::Compound as u64 => Ok(Self::Compound),
+            v if v == Self::File as u64 => Ok(Self::File),
+            v if v == Self::Reserved as u64 => Ok(Self::Reserved),
+            _ => Err(SvsmError::Mem),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 struct PageStorageType(u64);
 
 impl PageStorageType {
-    pub const fn new(t: u64) -> Self {
-        Self(t)
+    pub const fn new(t: PageType) -> Self {
+        Self(t as u64)
     }
 
     fn encode_order(self, order: usize) -> Self {
@@ -52,7 +79,7 @@ impl PageStorageType {
     }
 
     fn encode_slab(slab: VirtAddr) -> Self {
-        Self(PAGE_TYPE_SLABPAGE | (slab.bits() as u64) & PAGE_TYPE_SLABPAGE_MASK)
+        Self(PageType::SlabPage as u64 | (slab.bits() as u64) & PAGE_TYPE_SLABPAGE_MASK)
     }
 
     fn encode_refcount(self, refcount: u64) -> Self {
@@ -74,29 +101,22 @@ impl PageStorageType {
     fn decode_refcount(&self) -> u64 {
         self.0 >> PAGE_TYPE_SHIFT
     }
+
+    fn page_type(&self) -> Result<PageType, SvsmError> {
+        PageType::try_from(self.0 & PAGE_TYPE_MASK)
+    }
 }
 
 const PAGE_TYPE_SHIFT: u64 = 4;
 const PAGE_TYPE_MASK: u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
 
-const PAGE_TYPE_FREE: u64 = 0;
 const PAGE_FREE_NEXT_SHIFT: u64 = 12;
 const PAGE_FREE_NEXT_MASK: u64 = !((1u64 << PAGE_FREE_NEXT_SHIFT) - 1);
-
-const PAGE_TYPE_ALLOCATED: u64 = 1;
 
 const PAGE_ORDER_MASK: u64 = (1u64 << (PAGE_FREE_NEXT_SHIFT - PAGE_TYPE_SHIFT)) - 1;
 
 // SLAB pages are always order-0
-const PAGE_TYPE_SLABPAGE: u64 = 2;
 const PAGE_TYPE_SLABPAGE_MASK: u64 = !PAGE_TYPE_MASK;
-
-const PAGE_TYPE_COMPOUND: u64 = 3;
-
-// File pages used for file and task data
-const PAGE_TYPE_FILE: u64 = 4;
-
-const PAGE_TYPE_RESERVED: u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
 
 struct FreeInfo {
     next_page: usize,
@@ -105,7 +125,7 @@ struct FreeInfo {
 
 impl FreeInfo {
     pub fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PAGE_TYPE_FREE)
+        PageStorageType::new(PageType::Free)
             .encode_order(self.order)
             .encode_next(self.next_page)
     }
@@ -123,7 +143,7 @@ struct AllocatedInfo {
 
 impl AllocatedInfo {
     pub fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PAGE_TYPE_ALLOCATED).encode_order(self.order)
+        PageStorageType::new(PageType::Allocated).encode_order(self.order)
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
@@ -153,7 +173,7 @@ struct CompoundInfo {
 
 impl CompoundInfo {
     pub fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PAGE_TYPE_COMPOUND).encode_order(self.order)
+        PageStorageType::new(PageType::Compound).encode_order(self.order)
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
@@ -166,7 +186,7 @@ struct ReservedInfo {}
 
 impl ReservedInfo {
     fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PAGE_TYPE_RESERVED)
+        PageStorageType::new(PageType::Reserved)
     }
 
     pub fn decode(_mem: PageStorageType) -> Self {
@@ -185,7 +205,7 @@ impl FileInfo {
     }
 
     pub fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PAGE_TYPE_FILE).encode_refcount(self.ref_count)
+        PageStorageType::new(PageType::File).encode_refcount(self.ref_count)
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
@@ -216,22 +236,17 @@ impl Page {
     }
 
     pub fn from_mem(mem: PageStorageType) -> Self {
-        let page_type = mem.0 & PAGE_TYPE_MASK;
+        let Ok(page_type) = mem.page_type() else {
+            panic!("Unknown page type in {:?}", mem);
+        };
 
-        if page_type == PAGE_TYPE_FREE {
-            Page::Free(FreeInfo::decode(mem))
-        } else if page_type == PAGE_TYPE_ALLOCATED {
-            Page::Allocated(AllocatedInfo::decode(mem))
-        } else if page_type == PAGE_TYPE_SLABPAGE {
-            Page::SlabPage(SlabPageInfo::decode(mem))
-        } else if page_type == PAGE_TYPE_COMPOUND {
-            Page::CompoundPage(CompoundInfo::decode(mem))
-        } else if page_type == PAGE_TYPE_FILE {
-            Page::FilePage(FileInfo::decode(mem))
-        } else if page_type == PAGE_TYPE_RESERVED {
-            Page::Reserved(ReservedInfo::decode(mem))
-        } else {
-            panic!("Unknown Page Type {}", page_type);
+        match page_type {
+            PageType::Free => Self::Free(FreeInfo::decode(mem)),
+            PageType::Allocated => Self::Allocated(AllocatedInfo::decode(mem)),
+            PageType::SlabPage => Self::SlabPage(SlabPageInfo::decode(mem)),
+            PageType::Compound => Self::CompoundPage(CompoundInfo::decode(mem)),
+            PageType::File => Self::FilePage(FileInfo::decode(mem)),
+            PageType::Reserved => Self::Reserved(ReservedInfo::decode(mem)),
         }
     }
 }
