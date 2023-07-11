@@ -74,7 +74,7 @@ impl PageStorageType {
     // SLAB pages are always order-0
     const SLAB_MASK: u64 = !Self::TYPE_MASK;
 
-    pub const fn new(t: PageType) -> Self {
+    const fn new(t: PageType) -> Self {
         Self(t as u64)
     }
 
@@ -121,13 +121,13 @@ struct FreeInfo {
 }
 
 impl FreeInfo {
-    pub fn encode(&self) -> PageStorageType {
+    fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Free)
             .encode_order(self.order)
             .encode_next(self.next_page)
     }
 
-    pub fn decode(mem: PageStorageType) -> Self {
+    fn decode(mem: PageStorageType) -> Self {
         let next_page = mem.decode_next();
         let order = mem.decode_order();
         Self { next_page, order }
@@ -139,11 +139,11 @@ struct AllocatedInfo {
 }
 
 impl AllocatedInfo {
-    pub fn encode(&self) -> PageStorageType {
+    fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Allocated).encode_order(self.order)
     }
 
-    pub fn decode(mem: PageStorageType) -> Self {
+    fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         AllocatedInfo { order }
     }
@@ -154,11 +154,11 @@ struct SlabPageInfo {
 }
 
 impl SlabPageInfo {
-    pub fn encode(&self) -> PageStorageType {
+    fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::SlabPage).encode_slab(self.slab)
     }
 
-    pub fn decode(mem: PageStorageType) -> Self {
+    fn decode(mem: PageStorageType) -> Self {
         let slab = mem.decode_slab();
         Self { slab }
     }
@@ -169,11 +169,11 @@ struct CompoundInfo {
 }
 
 impl CompoundInfo {
-    pub fn encode(&self) -> PageStorageType {
+    fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Compound).encode_order(self.order)
     }
 
-    pub fn decode(mem: PageStorageType) -> Self {
+    fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         Self { order }
     }
@@ -186,7 +186,7 @@ impl ReservedInfo {
         PageStorageType::new(PageType::Reserved)
     }
 
-    pub fn decode(_mem: PageStorageType) -> Self {
+    fn decode(_mem: PageStorageType) -> Self {
         ReservedInfo {}
     }
 }
@@ -197,15 +197,15 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    pub const fn new(ref_count: u64) -> Self {
+    const fn new(ref_count: u64) -> Self {
         FileInfo { ref_count }
     }
 
-    pub fn encode(&self) -> PageStorageType {
+    fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::File).encode_refcount(self.ref_count)
     }
 
-    pub fn decode(mem: PageStorageType) -> Self {
+    fn decode(mem: PageStorageType) -> Self {
         let ref_count = mem.decode_refcount();
         Self { ref_count }
     }
@@ -221,7 +221,7 @@ enum Page {
 }
 
 impl Page {
-    pub fn to_mem(&self) -> PageStorageType {
+    fn to_mem(&self) -> PageStorageType {
         match self {
             Page::Free(fi) => fi.encode(),
             Page::Allocated(ai) => ai.encode(),
@@ -232,7 +232,7 @@ impl Page {
         }
     }
 
-    pub fn from_mem(mem: PageStorageType) -> Self {
+    fn from_mem(mem: PageStorageType) -> Self {
         let Ok(page_type) = mem.page_type() else {
             panic!("Unknown page type in {:?}", mem);
         };
@@ -250,8 +250,8 @@ impl Page {
 
 #[derive(Debug)]
 pub struct MemInfo {
-    pub total_pages: [usize; MAX_ORDER],
-    pub free_pages: [usize; MAX_ORDER],
+    total_pages: [usize; MAX_ORDER],
+    free_pages: [usize; MAX_ORDER],
 }
 
 #[derive(Debug)]
@@ -265,8 +265,8 @@ struct MemoryRegion {
 }
 
 impl MemoryRegion {
-    pub const fn new() -> Self {
-        MemoryRegion {
+    const fn new() -> Self {
+        Self {
             start_phys: PhysAddr::null(),
             start_virt: VirtAddr::null(),
             page_count: 0,
@@ -277,7 +277,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
+    fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
         let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
         if paddr < self.start_phys || paddr >= end_phys {
@@ -295,7 +295,7 @@ impl MemoryRegion {
     }
 
     #[allow(dead_code)]
-    pub fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
+    fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
         let end_virt = self.start_virt + (self.page_count * PAGE_SIZE);
 
         if vaddr < self.start_virt || vaddr >= end_virt {
@@ -347,7 +347,7 @@ impl MemoryRegion {
         Page::from_mem(info)
     }
 
-    pub fn get_page_info(&self, vaddr: VirtAddr) -> Result<Page, SvsmError> {
+    fn get_page_info(&self, vaddr: VirtAddr) -> Result<Page, SvsmError> {
         if vaddr.is_null() || !self.check_virt_addr(vaddr) {
             return Err(SvsmError::Mem);
         }
@@ -431,7 +431,7 @@ impl MemoryRegion {
         self.split_page(pfn, order + 1)
     }
 
-    pub fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
+    fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(order)?;
         let pfn = self.get_next_page(order)?;
         let pg = Page::Allocated(AllocatedInfo { order });
@@ -439,11 +439,11 @@ impl MemoryRegion {
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
-    pub fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
         self.allocate_pages(0)
     }
 
-    pub fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, SvsmError> {
         let vaddr = self.allocate_page()?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
@@ -451,7 +451,7 @@ impl MemoryRegion {
         Ok(vaddr)
     }
 
-    pub fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
+    fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(0)?;
 
         let slab_vaddr = slab.unwrap_or(VirtAddr::null());
@@ -462,7 +462,7 @@ impl MemoryRegion {
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
-    pub fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(0)?;
         let pfn = self.get_next_page(0)?;
         let pg = Page::FilePage(FileInfo::new(1));
@@ -470,7 +470,7 @@ impl MemoryRegion {
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
-    pub fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let page = self.get_page_info(vaddr)?;
 
         match page {
@@ -485,7 +485,7 @@ impl MemoryRegion {
         }
     }
 
-    pub fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let page = self.get_page_info(vaddr)?;
 
         match page {
@@ -638,7 +638,7 @@ impl MemoryRegion {
         }
     }
 
-    pub fn free_page(&mut self, vaddr: VirtAddr) {
+    fn free_page(&mut self, vaddr: VirtAddr) {
         let Ok(res) = self.get_page_info(vaddr) else {
             return;
         };
@@ -666,14 +666,14 @@ impl MemoryRegion {
         }
     }
 
-    pub fn memory_info(&self) -> MemInfo {
+    fn memory_info(&self) -> MemInfo {
         MemInfo {
             total_pages: self.nr_pages,
             free_pages: self.free_pages,
         }
     }
 
-    pub fn init_memory(&mut self) {
+    fn init_memory(&mut self) {
         let size = size_of::<PageStorageType>();
         let meta_pages = align_up(self.page_count * size, PAGE_SIZE) / PAGE_SIZE;
 
@@ -828,7 +828,7 @@ struct SlabPage {
 }
 
 impl SlabPage {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         SlabPage {
             vaddr: VirtAddr::null(),
             capacity: 0,
@@ -839,11 +839,7 @@ impl SlabPage {
         }
     }
 
-    pub fn init(
-        &mut self,
-        slab_vaddr: Option<VirtAddr>,
-        mut item_size: u16,
-    ) -> Result<(), SvsmError> {
+    fn init(&mut self, slab_vaddr: Option<VirtAddr>, mut item_size: u16) -> Result<(), SvsmError> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -864,7 +860,7 @@ impl SlabPage {
         Ok(())
     }
 
-    pub fn destroy(&mut self) {
+    fn destroy(&mut self) {
         if self.vaddr.is_null() {
             return;
         }
@@ -872,23 +868,23 @@ impl SlabPage {
         free_page(self.vaddr);
     }
 
-    pub fn get_capacity(&self) -> u16 {
+    fn get_capacity(&self) -> u16 {
         self.capacity
     }
 
-    pub fn get_free(&self) -> u16 {
+    fn get_free(&self) -> u16 {
         self.free
     }
 
-    pub fn get_next_page(&self) -> VirtAddr {
+    fn get_next_page(&self) -> VirtAddr {
         self.next_page
     }
 
-    pub fn set_next_page(&mut self, next_page: VirtAddr) {
+    fn set_next_page(&mut self, next_page: VirtAddr) {
         self.next_page = next_page;
     }
 
-    pub fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
         if self.free == 0 {
             return Err(SvsmError::Mem);
         }
@@ -907,7 +903,7 @@ impl SlabPage {
         Err(SvsmError::Mem)
     }
 
-    pub fn free(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn free(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         if vaddr < self.vaddr || vaddr >= self.vaddr + PAGE_SIZE {
             return Err(SvsmError::Mem);
         }
