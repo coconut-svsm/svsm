@@ -1,11 +1,12 @@
-FEATURES ?= "default"
-CARGO_ARGS = --features ${FEATURES}
-
 ifdef RELEASE
 TARGET_PATH="release"
+FEATURES ?= "default-release"
+CARGO_ARGS = --features ${FEATURES}
 CARGO_ARGS += --release
 else
 TARGET_PATH="debug"
+FEATURES ?= "default-debug"
+CARGO_ARGS = --features ${FEATURES}
 endif
 
 
