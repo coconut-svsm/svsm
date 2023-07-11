@@ -491,8 +491,10 @@ impl MemoryRegion {
         match page {
             Page::FilePage(mut fi) => {
                 let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
-                assert!(fi.ref_count > 0);
-                fi.ref_count -= 1;
+                fi.ref_count = fi
+                    .ref_count
+                    .checked_sub(1)
+                    .expect("page refcount underflow");
                 if fi.ref_count > 0 {
                     self.write_page_info(pfn, Page::FilePage(fi));
                 } else {
