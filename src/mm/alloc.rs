@@ -43,7 +43,7 @@ enum PageType {
     Compound = 3,
     // File pages used for file and task data
     File = 4,
-    Reserved = (1u64 << PAGE_TYPE_SHIFT) - 1,
+    Reserved = (1u64 << PageStorageType::TYPE_SHIFT) - 1,
 }
 
 impl TryFrom<u64> for PageType {
@@ -66,57 +66,54 @@ impl TryFrom<u64> for PageType {
 struct PageStorageType(u64);
 
 impl PageStorageType {
+    const TYPE_SHIFT: u64 = 4;
+    const TYPE_MASK: u64 = (1u64 << Self::TYPE_SHIFT) - 1;
+    const NEXT_SHIFT: u64 = 12;
+    const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
+    const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
+    // SLAB pages are always order-0
+    const SLAB_MASK: u64 = !Self::TYPE_MASK;
+
     pub const fn new(t: PageType) -> Self {
         Self(t as u64)
     }
 
     fn encode_order(self, order: usize) -> Self {
-        Self(self.0 | ((order as u64) & PAGE_ORDER_MASK) << PAGE_TYPE_SHIFT)
+        Self(self.0 | ((order as u64) & Self::ORDER_MASK) << Self::TYPE_SHIFT)
     }
 
     fn encode_next(self, next_page: usize) -> Self {
-        Self(self.0 | (next_page as u64) << PAGE_FREE_NEXT_SHIFT)
+        Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
     }
 
     fn encode_slab(slab: VirtAddr) -> Self {
-        Self(PageType::SlabPage as u64 | (slab.bits() as u64) & PAGE_TYPE_SLABPAGE_MASK)
+        Self(PageType::SlabPage as u64 | (slab.bits() as u64) & Self::SLAB_MASK)
     }
 
     fn encode_refcount(self, refcount: u64) -> Self {
-        Self(self.0 | refcount << PAGE_TYPE_SHIFT)
+        Self(self.0 | refcount << Self::TYPE_SHIFT)
     }
 
     fn decode_order(&self) -> usize {
-        ((self.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize
+        ((self.0 >> Self::TYPE_SHIFT) & Self::ORDER_MASK) as usize
     }
 
     fn decode_next(&self) -> usize {
-        ((self.0 & PAGE_FREE_NEXT_MASK) >> PAGE_FREE_NEXT_SHIFT) as usize
+        ((self.0 & Self::NEXT_MASK) >> Self::NEXT_SHIFT) as usize
     }
 
     fn decode_slab(&self) -> VirtAddr {
-        VirtAddr::from(self.0 & PAGE_TYPE_SLABPAGE_MASK)
+        VirtAddr::from(self.0 & Self::SLAB_MASK)
     }
 
     fn decode_refcount(&self) -> u64 {
-        self.0 >> PAGE_TYPE_SHIFT
+        self.0 >> Self::TYPE_SHIFT
     }
 
     fn page_type(&self) -> Result<PageType, SvsmError> {
-        PageType::try_from(self.0 & PAGE_TYPE_MASK)
+        PageType::try_from(self.0 & Self::TYPE_MASK)
     }
 }
-
-const PAGE_TYPE_SHIFT: u64 = 4;
-const PAGE_TYPE_MASK: u64 = (1u64 << PAGE_TYPE_SHIFT) - 1;
-
-const PAGE_FREE_NEXT_SHIFT: u64 = 12;
-const PAGE_FREE_NEXT_MASK: u64 = !((1u64 << PAGE_FREE_NEXT_SHIFT) - 1);
-
-const PAGE_ORDER_MASK: u64 = (1u64 << (PAGE_FREE_NEXT_SHIFT - PAGE_TYPE_SHIFT)) - 1;
-
-// SLAB pages are always order-0
-const PAGE_TYPE_SLABPAGE_MASK: u64 = !PAGE_TYPE_MASK;
 
 struct FreeInfo {
     next_page: usize,
@@ -459,7 +456,7 @@ impl MemoryRegion {
 
         let slab_vaddr = slab.unwrap_or(VirtAddr::null());
         let pfn = self.get_next_page(0)?;
-        assert_eq!(slab_vaddr.bits() & (PAGE_TYPE_MASK as usize), 0);
+        assert_eq!(slab_vaddr.bits() & (PageStorageType::TYPE_MASK as usize), 0);
         let pg = Page::SlabPage(SlabPageInfo { slab: slab_vaddr });
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
