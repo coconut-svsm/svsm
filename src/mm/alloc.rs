@@ -58,6 +58,22 @@ impl PageStorageType {
     fn encode_refcount(self, refcount: u64) -> Self {
         Self(self.0 | refcount << PAGE_TYPE_SHIFT)
     }
+
+    fn decode_order(&self) -> usize {
+        ((self.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize
+    }
+
+    fn decode_next(&self) -> usize {
+        ((self.0 & PAGE_FREE_NEXT_MASK) >> PAGE_FREE_NEXT_SHIFT) as usize
+    }
+
+    fn decode_slab(&self) -> VirtAddr {
+        VirtAddr::from(self.0 & PAGE_TYPE_SLABPAGE_MASK)
+    }
+
+    fn decode_refcount(&self) -> u64 {
+        self.0 >> PAGE_TYPE_SHIFT
+    }
 }
 
 const PAGE_TYPE_SHIFT: u64 = 4;
@@ -95,12 +111,9 @@ impl FreeInfo {
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
-        let next = ((mem.0 & PAGE_FREE_NEXT_MASK) >> PAGE_FREE_NEXT_SHIFT) as usize;
-        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
-        FreeInfo {
-            next_page: next,
-            order,
-        }
+        let next_page = mem.decode_next();
+        let order = mem.decode_order();
+        Self { next_page, order }
     }
 }
 
@@ -114,7 +127,7 @@ impl AllocatedInfo {
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
-        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
+        let order = mem.decode_order();
         AllocatedInfo { order }
     }
 }
@@ -129,9 +142,8 @@ impl SlabPageInfo {
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
-        SlabPageInfo {
-            slab: VirtAddr::from(mem.0 & PAGE_TYPE_SLABPAGE_MASK),
-        }
+        let slab = mem.decode_slab();
+        Self { slab }
     }
 }
 
@@ -145,8 +157,8 @@ impl CompoundInfo {
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
-        let order = ((mem.0 >> PAGE_TYPE_SHIFT) & PAGE_ORDER_MASK) as usize;
-        CompoundInfo { order }
+        let order = mem.decode_order();
+        Self { order }
     }
 }
 
@@ -177,9 +189,8 @@ impl FileInfo {
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
-        FileInfo {
-            ref_count: (mem.0 >> PAGE_TYPE_SHIFT),
-        }
+        let ref_count = mem.decode_refcount();
+        Self { ref_count }
     }
 }
 
