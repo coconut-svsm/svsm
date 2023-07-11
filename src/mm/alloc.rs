@@ -15,9 +15,6 @@ use core::mem::size_of;
 use core::ptr;
 use log;
 
-#[derive(Debug)]
-struct PageStorageType(u64);
-
 // Support allocations up to order-5 (128kb)
 pub const MAX_ORDER: usize = 6;
 
@@ -37,25 +34,29 @@ pub fn get_order(size: usize) -> usize {
     order
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+struct PageStorageType(u64);
+
 impl PageStorageType {
     pub const fn new(t: u64) -> Self {
-        PageStorageType(t)
+        Self(t)
     }
 
-    fn encode_order(&self, order: usize) -> PageStorageType {
-        PageStorageType(self.0 | ((order as u64) & PAGE_ORDER_MASK) << PAGE_TYPE_SHIFT)
+    fn encode_order(self, order: usize) -> Self {
+        Self(self.0 | ((order as u64) & PAGE_ORDER_MASK) << PAGE_TYPE_SHIFT)
     }
 
-    fn encode_next(&self, next_page: usize) -> PageStorageType {
-        PageStorageType(self.0 | (next_page as u64) << PAGE_FREE_NEXT_SHIFT)
+    fn encode_next(self, next_page: usize) -> Self {
+        Self(self.0 | (next_page as u64) << PAGE_FREE_NEXT_SHIFT)
     }
 
     fn encode_slab(slab: VirtAddr) -> Self {
-        PageStorageType(PAGE_TYPE_SLABPAGE | (slab.bits() as u64) & PAGE_TYPE_SLABPAGE_MASK)
+        Self(PAGE_TYPE_SLABPAGE | (slab.bits() as u64) & PAGE_TYPE_SLABPAGE_MASK)
     }
 
-    fn encode_refcount(&self, refcount: u64) -> PageStorageType {
-        PageStorageType(self.0 | refcount << PAGE_TYPE_SHIFT)
+    fn encode_refcount(self, refcount: u64) -> Self {
+        Self(self.0 | refcount << PAGE_TYPE_SHIFT)
     }
 }
 
