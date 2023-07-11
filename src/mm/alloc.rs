@@ -86,8 +86,8 @@ impl PageStorageType {
         Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
     }
 
-    fn encode_slab(slab: VirtAddr) -> Self {
-        Self(PageType::SlabPage as u64 | (slab.bits() as u64) & Self::SLAB_MASK)
+    fn encode_slab(self, slab: VirtAddr) -> Self {
+        Self(self.0 | (slab.bits() as u64) & Self::SLAB_MASK)
     }
 
     fn encode_refcount(self, refcount: u64) -> Self {
@@ -155,7 +155,7 @@ struct SlabPageInfo {
 
 impl SlabPageInfo {
     pub fn encode(&self) -> PageStorageType {
-        PageStorageType::encode_slab(self.slab)
+        PageStorageType::new(PageType::SlabPage).encode_slab(self.slab)
     }
 
     pub fn decode(mem: PageStorageType) -> Self {
