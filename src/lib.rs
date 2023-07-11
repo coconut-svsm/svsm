@@ -19,6 +19,8 @@ pub mod fw_meta;
 pub mod io;
 pub mod kernel_launch;
 pub mod locking;
+pub mod log_buffer;
+pub mod migrate;
 pub mod mm;
 pub mod protocols;
 pub mod requests;

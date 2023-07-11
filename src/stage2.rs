@@ -13,12 +13,15 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::address::{Address, PhysAddr, VirtAddr};
-use svsm::console::{init_console, install_console_logger, WRITER};
+use svsm::console::{init_console, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::line_buffer::install_buffer_logger;
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
 use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::log_buffer::LB;
+use svsm::migrate::MigrateInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::pagetable::{
@@ -83,7 +86,6 @@ static mut CONSOLE_SERIAL: SerialPort = SerialPort {
 };
 
 fn setup_env() {
-    install_console_logger("Stage2");
     init_kernel_mapping_info(
         VirtAddr::null(),
         VirtAddr::from(640 * 1024usize),
@@ -102,7 +104,10 @@ fn setup_env() {
     unsafe {
         WRITER.lock().set(&mut CONSOLE_SERIAL);
     }
+
     init_console();
+
+    install_buffer_logger("Stage2");
 
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
@@ -286,6 +291,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
     let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
     let valid_bitmap = valid_bitmap_addr();
+    let migrate_info = unsafe { MigrateInfo::new(VirtAddr::from(valid_bitmap.bits()), &LB) };
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -294,7 +300,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         asm!("jmp *%rax",
              in("rax") kernel_entry,
              in("r8") &launch_info,
-             in("r9") valid_bitmap.bits(),
+             in("r9") &migrate_info,
              options(att_syntax))
     };
 
