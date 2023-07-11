@@ -105,7 +105,10 @@ fn setup_env() {
         WRITER.lock().set(&mut CONSOLE_SERIAL);
     }
 
-    init_console();
+    #[cfg(feature = "enable-console-log")]
+    {
+        init_console();
+    }
 
     install_buffer_logger("Stage2");
 

@@ -27,6 +27,8 @@ packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.0" }
 [build-dependencies]
 
 [features]
-default = ["enable-stacktrace"]
+default-release = ["enable-stacktrace"]
+default-debug = ["enable-stacktrace", "enable-console-log"]
 enable-stacktrace = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
+enable-console-log = []
