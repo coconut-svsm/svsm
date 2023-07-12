@@ -57,6 +57,7 @@ struct TaskSwitch {
 pub struct RunQueue {
     tree: Option<RBTree<TaskTreeAdapter>>,
     current_task: Option<TaskPointer>,
+    terminated_task: Option<TaskPointer>,
     id: u32,
     task_switch: TaskSwitch,
 }
@@ -69,6 +70,7 @@ impl RunQueue {
         Self {
             tree: None,
             current_task: None,
+            terminated_task: None,
             id,
             task_switch: TaskSwitch {
                 previous_task: None,
@@ -159,13 +161,30 @@ impl RunQueue {
 
     fn update_current_task(&mut self) -> Option<TaskPointer> {
         let task_node = self.current_task.take()?;
-        task_node.task.lock_write().runtime.schedule_out();
+        let task_state = {
+            let mut task = task_node.task.lock_write();
+            task.runtime.schedule_out();
+            task.state
+        };
 
-        // Reinsert the node into the tree so the position is updated with the new runtime
-        let mut task_cursor = unsafe { self.tree().cursor_mut_from_ptr(task_node.as_ref()) };
-        task_cursor.remove();
-        self.tree().insert(task_node.clone());
-        Some(task_node)
+        if task_state == TaskState::TERMINATED {
+            // The current task has terminated. Make sure it doesn't get added back
+            // into the runtime tree, but also we need to make sure we keep a
+            // reference to the task because the current stack is owned by it.
+            // Put it in a holding location which will be cleared by the next
+            // active task.
+            unsafe {
+                self.deallocate(task_node.clone());
+            }
+            self.terminated_task = Some(task_node);
+            None
+        } else {
+            // Reinsert the node into the tree so the position is updated with the new runtime
+            let mut task_cursor = unsafe { self.tree().cursor_mut_from_ptr(task_node.as_ref()) };
+            task_cursor.remove();
+            self.tree().insert(task_node.clone());
+            Some(task_node)
+        }
     }
 
     /// Helper function that determines if a task is a candidate for allocating
@@ -232,6 +251,21 @@ impl RunQueue {
             self.task_switch.next_task = None;
         }
     }
+
+    /// Deallocate a task from a per CPU runqueue but leave it in the global task list
+    /// where it can be reallocated if still in the RUNNING state.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the function is passed a valid task_node as
+    /// this function dereferences the pointer contained within the task_node. A
+    /// [`TaskPointer`] uses an [`Arc`] to manage the lifetime of the contained pointer
+    /// making it difficult to pass an invalid pointer to this function.
+    unsafe fn deallocate(&mut self, task_node: TaskPointer) {
+        let mut cursor = self.tree().cursor_mut_from_ptr(task_node.as_ref());
+        cursor.remove();
+        task_node.task.lock_write().allocation = None;
+    }
 }
 
 /// Global task list
@@ -261,6 +295,16 @@ impl TaskList {
             cursor.move_next();
         }
         None
+    }
+
+    fn terminate(&mut self, task_node: TaskPointer) {
+        // Set the task state as terminated. If the task being terminated is the
+        // current task then the task context will still need to be in scope until
+        // the next schedule() has completed. Schedule will keep a reference to this
+        // task until some time after the context switch.
+        task_node.task.lock_write().state = TaskState::TERMINATED;
+        let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task_node.as_ref()) };
+        cursor.remove();
     }
 }
 
@@ -309,6 +353,15 @@ pub fn is_current_task(id: u32) -> bool {
     }
 }
 
+pub unsafe fn current_task_terminated() {
+    let mut rq = this_cpu().runqueue().lock_write();
+    let task_node = rq
+        .current_task
+        .as_mut()
+        .expect("Task termination handler called when there is no current task");
+    TASKLIST.lock().terminate(task_node.clone());
+}
+
 pub fn schedule() {
     this_cpu_mut().allocate_tasks();
 
@@ -318,4 +371,12 @@ pub fn schedule() {
             (*next_task).set_current(prev_task);
         }
     }
+
+    // We're now in the context of the new task. If the previous task had terminated
+    // then we can release it's reference here.
+    let _ = this_cpu_mut()
+        .runqueue()
+        .lock_write()
+        .terminated_task
+        .take();
 }

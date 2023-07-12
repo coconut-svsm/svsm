@@ -23,6 +23,8 @@ use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
 
+use super::schedule::{current_task_terminated, schedule};
+
 pub const INITIAL_TASK_ID: u32 = 1;
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
@@ -293,7 +295,10 @@ impl Task {
 }
 
 extern "C" fn task_exit() {
-    panic!("Current task has exited");
+    unsafe {
+        current_task_terminated();
+    }
+    schedule();
 }
 
 #[allow(unused)]
