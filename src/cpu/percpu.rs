@@ -25,6 +25,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
+use crate::task::RunQueue;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -191,6 +192,9 @@ pub struct PerCpu {
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
+
+    /// Task list that has been assigned for scheduling on this CPU
+    runqueue: RWLock<RunQueue>,
 }
 
 impl PerCpu {
@@ -209,6 +213,7 @@ impl PerCpu {
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
+            runqueue: RWLock::new(RunQueue::new(apic_id)),
         }
     }
 
@@ -554,6 +559,17 @@ impl PerCpu {
     /// * `pt` - The page table to populate the the PerCpu range into
     pub fn populate_page_table(&self, pt: &mut PageTableRef) {
         self.vm_range.populate(pt);
+    }
+
+    /// Allocate any candidate unallocated tasks from the global task list to our
+    /// CPU runqueue.
+    pub fn allocate_tasks(&mut self) {
+        self.runqueue.lock_write().allocate();
+    }
+
+    /// Access the PerCpu runqueue protected with a lock
+    pub fn runqueue(&self) -> &RWLock<RunQueue> {
+        &self.runqueue
     }
 }
 
