@@ -152,6 +152,7 @@ type TaskRuntimeImpl = CountRuntime;
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct TaskContext {
+    pub rsp: u64,
     pub regs: X86GeneralRegs,
     pub flags: u64,
     pub ret_addr: u64,
@@ -341,6 +342,7 @@ global_asm!(
         pushq   %r13
         pushq   %r14
         pushq   %r15
+        pushq   %rsp
         
         // Save the current stack pointer
         testq   %rsi, %rsi
@@ -356,9 +358,13 @@ global_asm!(
         // Switch to the new task stack
         movq    (%rbx), %rsp
 
+        // We've already restored rsp
+        addq        $8, %rsp
+
         mov         %rbx, %rdi
         call        on_switch
 
+        // Restore the task context
         popq        %r15
         popq        %r14
         popq        %r13

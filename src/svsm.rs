@@ -418,13 +418,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
-    // The GDB stub can be started earlier, just after the console is initialised
-    // in svsm_start() above. It uses a lot of stack though so if you want to move
-    // it earlier then you need to set bsp_stack to 64K in the inline assembler
-    // above:
-    //
-    //     bsp_stack:
-    //        .fill 65536, 1, 0
+    // If required, the GDB stub can be started earlier, just after the console
+    // is initialised in svsm_start() above.
     gdbstub_start().expect("Could not start GDB stub");
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
