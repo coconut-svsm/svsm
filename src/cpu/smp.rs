@@ -51,7 +51,7 @@ pub fn start_secondary_cpus(cpus: &[ACPICPUInfo]) {
         start_cpu(c.apic_id);
         count += 1;
     }
-    log::info!("Brough {} AP(s) online", count);
+    log::info!("Brought {} AP(s) online", count);
 }
 
 #[no_mangle]
