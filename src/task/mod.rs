@@ -4,6 +4,8 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+mod schedule;
 mod tasks;
 
+pub use schedule::{create_task, TaskNode, TaskPointer, TASKLIST};
 pub use tasks::{Task, TaskContext, TaskError, TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT};
