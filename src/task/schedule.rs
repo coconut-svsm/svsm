@@ -10,6 +10,7 @@ use core::ptr::null_mut;
 
 use super::Task;
 use super::{tasks::TaskRuntime, TaskState, INITIAL_TASK_ID};
+use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
 use alloc::boxed::Box;
@@ -265,6 +266,17 @@ impl TaskList {
 
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
+fn task_switch_hook(_: &Task) {
+    // Then unlock the spinlocks that protect the previous and new tasks.
+
+    // SAFETY: Unlocking the tasks is a safe operation at this point because
+    // we do not use the task pointers beyond the task switch itself which
+    // is complete at the time of this hook.
+    unsafe {
+        this_cpu_mut().runqueue().lock_write().unlock_tasks();
+    }
+}
+
 pub fn create_task(
     entry: extern "C" fn(),
     flags: u16,
@@ -272,11 +284,38 @@ pub fn create_task(
 ) -> Result<TaskPointer, SvsmError> {
     let mut task = Task::create(entry, flags)?;
     task.set_affinity(affinity);
+    task.set_on_switch_hook(Some(task_switch_hook));
     let node = Arc::new(TaskNode {
         tree_link: RBTreeAtomicLink::default(),
         list_link: LinkedListAtomicLink::default(),
         task: RWLock::new(task),
     });
-    TASKLIST.lock().list().push_front(node.clone());
+    {
+        // Ensure the tasklist lock is released before schedule() is called
+        // otherwise the lock will be held when switching to a new context
+        let mut tl = TASKLIST.lock();
+        tl.list().push_front(node.clone());
+    }
+    schedule();
+
     Ok(node)
+}
+
+/// Check to see if the task scheduled on the current processor has the given id
+pub fn is_current_task(id: u32) -> bool {
+    match &this_cpu().runqueue().lock_read().current_task {
+        Some(current_task) => current_task.task.lock_read().id == id,
+        None => id == INITIAL_TASK_ID,
+    }
+}
+
+pub fn schedule() {
+    this_cpu_mut().allocate_tasks();
+
+    let (next_task, prev_task) = this_cpu().runqueue().lock_write().schedule();
+    if !next_task.is_null() {
+        unsafe {
+            (*next_task).set_current(prev_task);
+        }
+    }
 }
