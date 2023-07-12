@@ -9,11 +9,8 @@ extern crate alloc;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
-use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use alloc::vec::Vec;
-use core::alloc::Layout;
 use core::mem;
-use core::ptr;
 use log;
 
 #[derive(Debug)]
@@ -114,28 +111,27 @@ impl ACPITableHeader {
 #[derive(Debug)]
 struct ACPITable {
     header: ACPITableHeader,
-    ptr: ptr::NonNull<u8>,
-    size: usize,
+    buf: Vec<u8>,
 }
 
 impl ACPITable {
-    fn new(ptr: *const u8) -> Result<Self, SvsmError> {
-        unsafe {
-            let raw_header = ptr.cast::<RawACPITableHeader>();
-            let size = (*raw_header).len as usize;
+    fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
+        let raw_header = ptr
+            .get(..mem::size_of::<RawACPITableHeader>())
+            .ok_or(SvsmError::Acpi)?
+            .as_ptr()
+            .cast::<RawACPITableHeader>();
+        let size = unsafe { (*raw_header).len as usize };
+        let content = ptr.get(..size).ok_or(SvsmError::Acpi)?;
 
-            let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
-            let buf =
-                ptr::NonNull::new(alloc(layout)).unwrap_or_else(|| handle_alloc_error(layout));
+        let mut buf = Vec::<u8>::new();
+        // Allow for a failable allocation before copying
+        buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
+        buf.extend_from_slice(content);
 
-            ptr::copy(ptr, buf.as_ptr(), size);
+        let header = unsafe { ACPITableHeader::new(*raw_header) };
 
-            Ok(Self {
-                header: ACPITableHeader::new(*raw_header),
-                ptr: buf,
-                size,
-            })
-        }
+        Ok(Self { header, buf })
     }
 
     #[allow(dead_code)]
@@ -143,15 +139,15 @@ impl ACPITable {
         FixedString::from(self.header.sig)
     }
 
-    fn content_length(&self) -> usize {
-        self.size
-            .saturating_sub(mem::size_of::<RawACPITableHeader>())
+    fn content(&self) -> Option<&[u8]> {
+        let offset = mem::size_of::<RawACPITableHeader>();
+        // Zero-length slices are valid, but we do not want them
+        self.buf.get(offset..).filter(|b| !b.is_empty())
     }
 
-    fn content(&self) -> *const u8 {
-        let offset = mem::size_of::<RawACPITableHeader>();
-
-        unsafe { self.ptr.as_ptr().add(offset) }
+    fn content_ptr<T>(&self, offset: usize) -> Option<*const T> {
+        let end = offset.checked_add(mem::size_of::<T>())?;
+        Some(self.content()?.get(offset..end)?.as_ptr().cast::<T>())
     }
 }
 
@@ -170,8 +166,7 @@ impl ACPITableMeta {
 
 #[derive(Debug)]
 struct ACPITableBuffer {
-    ptr: ptr::NonNull<u8>,
-    size: usize,
+    buf: Vec<u8>,
     tables: Vec<ACPITableMeta>,
 }
 
@@ -180,67 +175,56 @@ impl ACPITableBuffer {
         let file = fw_cfg.file_selector("etc/acpi/tables")?;
         let size = file.size() as usize;
 
-        let layout = Layout::array::<u8>(size).map_err(|_| SvsmError::Mem)?;
-        let ptr = unsafe { alloc(layout) };
-        let ptr = ptr::NonNull::new(ptr).unwrap_or_else(|| handle_alloc_error(layout));
+        let mut buf = Vec::<u8>::new();
+        buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
+        let ptr = buf.as_mut_ptr();
 
         fw_cfg.select(file.selector());
         for i in 0..size {
             let byte: u8 = fw_cfg.read_le();
-            unsafe { ptr.as_ptr().add(i).write(byte) };
+            unsafe { ptr.add(i).write(byte) };
         }
+        unsafe { buf.set_len(size) }
 
-        let mut buf = Self {
-            ptr,
-            size,
+        let mut acpibuf = Self {
+            buf,
             tables: Vec::new(),
         };
-        buf.load_tables(fw_cfg)?;
-        Ok(buf)
+        acpibuf.load_tables(fw_cfg)?;
+        Ok(acpibuf)
     }
 
     fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), SvsmError> {
         let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
         let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
-        let len = rsdt.content_length();
+        let content = rsdt.content().ok_or(SvsmError::Acpi)?;
+        let offsets = unsafe {
+            let ptr = content.as_ptr().cast::<u32>();
+            let size = content.len() / mem::size_of::<u32>();
+            core::slice::from_raw_parts(ptr, size)
+        };
 
-        if len == 0 {
-            return Err(SvsmError::Acpi);
-        }
+        for offset in offsets.iter() {
+            let offset = *offset as usize;
+            let raw_header = offset
+                .checked_add(mem::size_of::<RawACPITableHeader>())
+                .and_then(|end| self.buf.get(offset..end))
+                .ok_or(SvsmError::Acpi)?
+                .as_ptr()
+                .cast::<RawACPITableHeader>();
 
-        let entries = len / 4;
+            let meta = unsafe { ACPITableMeta::new(&*raw_header, offset) };
 
-        let content = rsdt.content().cast::<u32>();
-
-        for i in 0..entries {
-            unsafe {
-                let entry_ptr = content.add(i);
-                let offset = (*entry_ptr) as usize;
-
-                if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-                    return Err(SvsmError::Acpi);
-                }
-
-                let raw_header = self.ptr.as_ptr().add(offset).cast::<RawACPITableHeader>();
-                let meta = ACPITableMeta::new(raw_header.as_ref().unwrap(), offset);
-
-                self.tables.push(meta);
-            }
+            self.tables.push(meta);
         }
 
         Ok(())
     }
 
     fn acpi_table_from_offset(&self, offset: usize) -> Result<ACPITable, SvsmError> {
-        if offset + mem::size_of::<RawACPITableHeader>() >= self.size {
-            return Err(SvsmError::Acpi);
-        }
-
-        unsafe {
-            let ptr = self.ptr.as_ptr().add(offset);
-            ACPITable::new(ptr)
-        }
+        let buf = self.buf.get(offset..).ok_or(SvsmError::Acpi)?;
+        ACPITable::new(buf)
     }
 
     fn acp_table_by_sig(&self, sig: &str) -> Option<ACPITable> {
@@ -251,17 +235,6 @@ impl ACPITableBuffer {
             .map(|entry| entry.offset)?;
 
         self.acpi_table_from_offset(offset).ok()
-    }
-}
-
-impl Drop for ACPITableBuffer {
-    fn drop(&mut self) {
-        if self.size != 0 {
-            unsafe {
-                let layout = Layout::array::<u8>(self.size).unwrap();
-                dealloc(self.ptr.as_ptr(), layout);
-            }
-        }
     }
 }
 
@@ -306,41 +279,46 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
-    let len = apic_table.content_length();
-
-    if len == 0 {
-        return Err(SvsmError::Acpi);
-    }
-
-    let content = apic_table.content();
+    let content = apic_table.content().ok_or(SvsmError::Acpi)?;
 
     let mut cpus: Vec<ACPICPUInfo> = Vec::new();
 
-    unsafe {
-        let mut offset = MADT_HEADER_SIZE;
-        while offset < len {
-            let entry_ptr = content.add(offset).cast::<RawMADTEntryHeader>();
-            let t: u8 = (*entry_ptr).entry_type;
-            let l: u8 = (*entry_ptr).entry_len;
-            offset += l as usize;
-            if t == 0 {
-                let lapic_ptr = entry_ptr.cast::<RawMADTEntryLocalApic>();
-                let apic_id: u32 = (*lapic_ptr).apic_id as u32;
-                let flags: u32 = (*lapic_ptr).flags;
-                cpus.push(ACPICPUInfo {
-                    apic_id,
-                    enabled: (flags & 1) == 1,
-                });
-            } else if t == 9 {
-                let x2apic_ptr = entry_ptr.cast::<RawMADTEntryLocalX2Apic>();
-                let apic_id: u32 = (*x2apic_ptr).apic_id;
-                let flags: u32 = (*x2apic_ptr).flags;
+    let mut offset = MADT_HEADER_SIZE;
+    while offset < content.len() {
+        let entry_ptr = apic_table
+            .content_ptr::<RawMADTEntryHeader>(offset)
+            .ok_or(SvsmError::Acpi)?;
+        let (madt_type, entry_len) = unsafe { ((*entry_ptr).entry_type, (*entry_ptr).entry_len) };
+
+        match madt_type {
+            0 => {
+                let lapic_ptr = apic_table
+                    .content_ptr::<RawMADTEntryLocalApic>(offset)
+                    .ok_or(SvsmError::Acpi)?;
+                let (apic_id, flags) = unsafe { ((*lapic_ptr).apic_id as u32, (*lapic_ptr).flags) };
                 cpus.push(ACPICPUInfo {
                     apic_id,
                     enabled: (flags & 1) == 1,
                 });
             }
+            9 => {
+                let x2apic_ptr = apic_table
+                    .content_ptr::<RawMADTEntryLocalX2Apic>(offset)
+                    .ok_or(SvsmError::Acpi)?;
+                let (apic_id, flags) = unsafe { ((*x2apic_ptr).apic_id, (*x2apic_ptr).flags) };
+                cpus.push(ACPICPUInfo {
+                    apic_id,
+                    enabled: (flags & 1) == 1,
+                });
+            }
+            _ => {
+                log::info!("Ignoring MADT entry with type {}", madt_type);
+            }
         }
+
+        offset = offset
+            .checked_add(entry_len as usize)
+            .ok_or(SvsmError::Acpi)?;
     }
 
     Ok(cpus)
