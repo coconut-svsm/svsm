@@ -198,6 +198,10 @@ pub struct Task {
     /// u32:  The APIC ID of the CPU that the task must run on
     pub affinity: Option<u32>,
 
+    // APIC ID of the CPU that task has been assigned to. If 'None' then
+    // the task is not currently assigned to a CPU
+    pub allocation: Option<u32>,
+
     /// ID of the task
     pub id: u32,
 
@@ -239,6 +243,7 @@ impl Task {
             vm_kernel_range,
             state: TaskState::RUNNING,
             affinity: None,
+            allocation: None,
             id: TASK_ID_ALLOCATOR.next_id(),
             runtime: TaskRuntimeImpl::default(),
         });
