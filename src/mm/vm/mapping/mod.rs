@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 pub mod api;
+pub mod file_mapping;
 pub mod kernel_stack;
 pub mod phys_mem;
 pub mod rawalloc;
@@ -12,6 +13,7 @@ pub mod reserved;
 pub mod vmalloc;
 
 pub use api::{Mapping, VMMAdapter, VirtualMapping, VMM};
+pub use file_mapping::{VMFileMapping, VMFileMappingPermission};
 pub use kernel_stack::VMKernelStack;
 pub use phys_mem::VMPhysMem;
 pub use rawalloc::RawAllocMapping;

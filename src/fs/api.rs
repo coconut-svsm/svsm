@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::error::SvsmError;
+use crate::mm::PageRef;
 use crate::string::FixedString;
 use packit::PackItError;
 
@@ -64,6 +65,7 @@ pub trait File: Debug + Send + Sync {
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError>;
     fn truncate(&self, size: usize) -> Result<usize, SvsmError>;
     fn size(&self) -> usize;
+    fn mapping(&self, offset: usize) -> Option<PageRef>;
 }
 
 pub trait Directory: Debug + Send + Sync {

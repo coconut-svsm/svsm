@@ -9,7 +9,7 @@ use super::*;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::{allocate_file_page_ref, PageRef};
-use crate::types::PAGE_SIZE;
+use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{page_align_up, page_offset, zero_mem_region};
 
 extern crate alloc;
@@ -164,6 +164,13 @@ impl RawRamFile {
     fn size(&self) -> usize {
         self.size
     }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        if offset > self.size() {
+            return None;
+        }
+        self.pages.get(offset >> PAGE_SHIFT).cloned()
+    }
 }
 
 #[derive(Debug)]
@@ -195,6 +202,10 @@ impl File for RamFile {
 
     fn size(&self) -> usize {
         self.rawfile.lock_read().size()
+    }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.rawfile.lock_read().mapping(offset)
     }
 }
 
