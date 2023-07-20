@@ -449,6 +449,15 @@ impl<'a> VMRMapping<'a> {
         Ok(Self { vmr, va })
     }
 
+    pub fn new_at(
+        vmr: &'a mut VMR,
+        mapping: Arc<Mapping>,
+        va: VirtAddr,
+    ) -> Result<Self, SvsmError> {
+        let va = vmr.insert_at(va, mapping)?;
+        Ok(Self { vmr, va })
+    }
+
     pub fn virt_addr(&self) -> VirtAddr {
         self.va
     }

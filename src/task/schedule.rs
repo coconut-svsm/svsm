@@ -12,7 +12,9 @@ use super::Task;
 use super::{tasks::TaskRuntime, TaskState, INITIAL_TASK_ID};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
-use crate::locking::{RWLock, SpinLock};
+use crate::locking::RWLock;
+use crate::locking::SpinLock;
+use crate::module::Module;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use intrusive_collections::{
@@ -95,6 +97,10 @@ impl RunQueue {
             }
         }
         None
+    }
+
+    pub fn current_task(&self) -> Option<TaskPointer> {
+        self.current_task.as_ref().cloned()
     }
 
     pub fn current_task_id(&self) -> u32 {
@@ -343,6 +349,31 @@ pub fn create_task(
     schedule();
 
     Ok(node)
+}
+
+pub fn create_task_for_module(
+    module: &mut Module,
+    flags: u16,
+    affinity: Option<u32>,
+) -> Result<(), SvsmError> {
+    let mut task = Task::create(module.entry_point(), flags)?;
+    task.set_affinity(affinity);
+    task.set_on_switch_hook(Some(task_switch_hook));
+
+    let node = Arc::new(TaskNode {
+        tree_link: RBTreeAtomicLink::default(),
+        list_link: LinkedListAtomicLink::default(),
+        task: RWLock::new(task),
+    });
+    if module.assign(node.clone()).is_ok() {
+        // Ensure the tasklist lock is released before schedule() is called
+        // otherwise the lock will be held when switching to a new context
+        let mut tl = TASKLIST.lock();
+        tl.list().push_front(node);
+    }
+    schedule();
+
+    Ok(())
 }
 
 /// Check to see if the task scheduled on the current processor has the given id

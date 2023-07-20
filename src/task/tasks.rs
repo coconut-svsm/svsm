@@ -21,7 +21,11 @@ use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
-use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use crate::mm::{
+    PAGE_SIZE, SVSM_PERTASK_BASE, SVSM_PERTASK_BASE_CPL3, SVSM_PERTASK_END, SVSM_PERTASK_END_CPL3,
+    SVSM_PERTASK_STACK_BASE,
+};
+use crate::types::PAGE_SHIFT;
 
 use super::schedule::{current_task_terminated, schedule};
 
@@ -36,10 +40,14 @@ pub enum TaskState {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TaskError {
-    // Attempt to close a non-terminated task
+    /// Attempt to close a non-terminated task
     NotTerminated,
-    // A closed task could not be removed from the task list
+    /// A closed task could not be removed from the task list
     CloseFailed,
+    /// The task system has not been initialised
+    NotInitialised,
+    /// Memory allocation error,
+    Alloc,
 }
 
 impl From<TaskError> for SvsmError {
@@ -168,6 +176,9 @@ pub struct Task {
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
+    /// Task virtual memory range for use at CPL 3
+    vm_user_range: VMR,
+
     /// Current state of the task
     pub state: TaskState,
 
@@ -219,10 +230,18 @@ impl Task {
 
         vm_kernel_range.populate(&mut pgtable);
 
+        let mut vm_user_range = VMR::new(
+            SVSM_PERTASK_BASE_CPL3,
+            SVSM_PERTASK_END_CPL3,
+            PTEntryFlags::USER,
+        );
+        vm_user_range.initialize()?;
+
         let task: Box<Task> = Box::new(Task {
             rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
+            vm_user_range,
             state: TaskState::RUNNING,
             affinity: None,
             allocation: None,
@@ -258,6 +277,28 @@ impl Task {
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
+    }
+
+    pub fn vmr_user(&mut self) -> &mut VMR {
+        &mut self.vm_user_range
+    }
+
+    pub fn virtual_alloc(
+        &mut self,
+        size_bytes: usize,
+        _alignment: usize,
+    ) -> Result<VirtAddr, SvsmError> {
+        // Each bit in our bitmap represents a 4K page
+        if (size_bytes & (PAGE_SIZE - 1)) != 0 {
+            return Err(SvsmError::Mem);
+        }
+        let _page_count = size_bytes >> PAGE_SHIFT;
+        // TODO: Implement virtual_alloc
+        Err(SvsmError::Mem)
+    }
+
+    pub fn virtual_free(&mut self, _vaddr: VirtAddr, _size_bytes: usize) {
+        // TODO: Implement virtual_free
     }
 
     pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
