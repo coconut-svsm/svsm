@@ -15,7 +15,7 @@ pub mod svsm_gdbstub {
 
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
-    use crate::cpu::idt::X86ExceptionContext;
+    use crate::cpu::idt::{X86ExceptionContext, BP_VECTOR};
     use crate::cpu::percpu::{this_cpu, this_cpu_mut};
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
@@ -66,10 +66,15 @@ pub mod svsm_gdbstub {
     enum ExceptionType {
         Debug,
         SwBreakpoint,
+        PageFault,
     }
 
-    pub fn handle_bp_exception(ctx: &mut X86ExceptionContext) {
-        handle_exception(ctx, ExceptionType::SwBreakpoint);
+    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
+        let tp = match exception {
+            BP_VECTOR => ExceptionType::SwBreakpoint,
+            _ => ExceptionType::PageFault,
+        };
+        handle_exception(ctx, tp);
     }
 
     pub fn handle_db_exception(ctx: &mut X86ExceptionContext) {
@@ -259,6 +264,11 @@ pub mod svsm_gdbstub {
                     MultiThreadStopReason::SignalWithThread {
                         tid,
                         signal: Signal::SIGINT,
+                    }
+                } else if exception_type == ExceptionType::PageFault {
+                    MultiThreadStopReason::SignalWithThread {
+                        tid,
+                        signal: Signal::SIGSEGV,
                     }
                 } else {
                     MultiThreadStopReason::SwBreak(tid)
@@ -707,7 +717,7 @@ pub mod svsm_gdbstub {
         Ok(())
     }
 
-    pub fn handle_bp_exception(_ctx: &mut X86ExceptionContext) {}
+    pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
 
     pub fn handle_db_exception(_ctx: &mut X86ExceptionContext) {}
 
