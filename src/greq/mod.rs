@@ -4,4 +4,5 @@
 //
 // Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
 
+pub mod driver;
 pub mod msg;

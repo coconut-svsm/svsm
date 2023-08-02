@@ -32,6 +32,7 @@ use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
+use svsm::greq::driver::guest_request_driver_init;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -470,6 +471,8 @@ pub extern "C" fn svsm_main() {
     if let Err(e) = validate_flash() {
         panic!("Failed to validate flash memory: {:#?}", e);
     }
+
+    guest_request_driver_init();
 
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
