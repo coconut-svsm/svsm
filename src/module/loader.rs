@@ -47,7 +47,7 @@ impl ModuleLoader {
 #[derive(Debug)]
 pub struct Module {
     file_segments: Vec<(VirtAddr, Arc<Mapping>)>,
-    entry_point: extern "C" fn(),
+    entry_point: extern "C" fn(u64),
     task_node: Option<Arc<TaskNode>>,
 }
 
@@ -59,7 +59,7 @@ struct SegmentInfo {
 }
 
 impl Module {
-    pub fn entry_point(&self) -> extern "C" fn() {
+    pub fn entry_point(&self) -> extern "C" fn(u64) {
         self.entry_point
     }
 
@@ -72,7 +72,7 @@ impl Module {
         Ok(())
     }
 
-    fn get_segment_info(path: &str) -> Result<(extern "C" fn(), Vec<SegmentInfo>), SvsmError> {
+    fn get_segment_info(path: &str) -> Result<(extern "C" fn(u64), Vec<SegmentInfo>), SvsmError> {
         // Temporarily map the file's physical memory into the percpu virtual address space
         let file = open(path)?;
         let file_size = file.size();

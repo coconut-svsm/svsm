@@ -29,6 +29,10 @@ use crate::types::PAGE_SHIFT;
 
 use super::schedule::{current_task_terminated, schedule};
 
+extern "C" {
+    static task_entry: u64;
+}
+
 pub const INITIAL_TASK_ID: u32 = 1;
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
@@ -215,7 +219,11 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<Box<Task>, SvsmError> {
+    pub fn create(
+        entry: extern "C" fn(u64),
+        param: u64,
+        flags: u16,
+    ) -> Result<Box<Task>, SvsmError> {
         let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
             this_cpu().get_pgtable().clone_shared()?
         } else {
@@ -225,7 +233,7 @@ impl Task {
         let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
         vm_kernel_range.initialize()?;
 
-        let (stack, rsp_offset) = Self::allocate_stack(entry)?;
+        let (stack, rsp_offset) = Self::allocate_stack(entry, param)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
@@ -305,7 +313,10 @@ impl Task {
         self.on_switch_hook = hook;
     }
 
-    fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
+    fn allocate_stack(
+        entry: extern "C" fn(u64),
+        param: u64,
+    ) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
         let stack = VMKernelStack::new()?;
         let offset = stack.top_of_stack(VirtAddr::from(0u64));
 
@@ -319,7 +330,11 @@ impl Task {
         // 'Push' the task frame onto the stack
         unsafe {
             // flags
-            stack_ptr.offset(-3).write(read_flags());
+            stack_ptr.offset(-5).write(read_flags());
+            // Task entry point
+            stack_ptr.offset(-4).write(&task_entry as *const u64 as u64);
+            // Parameter to entry point
+            stack_ptr.offset(-3).write(param);
             // ret_addr
             stack_ptr.offset(-2).write(entry as *const () as u64);
             // Task termination handler for when entry point returns
@@ -328,7 +343,7 @@ impl Task {
 
         Ok((
             mapping,
-            offset - (size_of::<TaskContext>() + size_of::<u64>()),
+            offset - (size_of::<TaskContext>() + 3 * size_of::<u64>()),
         ))
     }
 
@@ -368,6 +383,12 @@ extern "C" fn on_switch(new_task: &mut Task) {
 global_asm!(
     r#"
         .text
+
+    .globl task_entry
+    task_entry:
+        pop     %rdi        // Parameter to entry point
+        // Next item on the stack is the entry point address
+        ret         
 
     switch_context:
         // Save the current context. The layout must match the TaskContext structure.

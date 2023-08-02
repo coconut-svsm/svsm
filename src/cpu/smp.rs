@@ -70,6 +70,7 @@ fn start_ap() {
     // Create the task making sure the task only runs on this new AP
     create_task(
         ap_request_loop,
+        0,
         TASK_FLAG_SHARE_PT,
         Some(this_cpu().get_apic_id()),
     )
@@ -77,7 +78,7 @@ fn start_ap() {
 }
 
 #[no_mangle]
-pub extern "C" fn ap_request_loop() {
+pub extern "C" fn ap_request_loop(_param: u64) {
     request_loop();
     panic!("Returned from request_loop!");
 }

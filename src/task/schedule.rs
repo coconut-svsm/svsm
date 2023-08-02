@@ -328,11 +328,12 @@ fn task_switch_hook(_: &Task) {
 }
 
 pub fn create_task(
-    entry: extern "C" fn(),
+    entry: extern "C" fn(u64),
+    param: u64,
     flags: u16,
     affinity: Option<u32>,
 ) -> Result<TaskPointer, SvsmError> {
-    let mut task = Task::create(entry, flags)?;
+    let mut task = Task::create(entry, param, flags)?;
     task.set_affinity(affinity);
     task.set_on_switch_hook(Some(task_switch_hook));
     let node = Arc::new(TaskNode {
@@ -356,7 +357,7 @@ pub fn create_task_for_module(
     flags: u16,
     affinity: Option<u32>,
 ) -> Result<(), SvsmError> {
-    let mut task = Task::create(module.entry_point(), flags)?;
+    let mut task = Task::create(module.entry_point(), 0, flags)?;
     task.set_affinity(affinity);
     task.set_on_switch_hook(Some(task_switch_hook));
 
