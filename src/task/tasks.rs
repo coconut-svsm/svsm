@@ -20,10 +20,10 @@ use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
-use crate::mm::vm::{Mapping, VMKernelStack, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMUserStack, VMR};
 use crate::mm::{
     PAGE_SIZE, SVSM_PERTASK_BASE, SVSM_PERTASK_BASE_CPL3, SVSM_PERTASK_END, SVSM_PERTASK_END_CPL3,
-    SVSM_PERTASK_STACK_BASE,
+    SVSM_PERTASK_STACK_BASE, SVSM_PERTASK_STACK_BASE_CPL3,
 };
 use crate::types::PAGE_SHIFT;
 
@@ -58,6 +58,12 @@ impl From<TaskError> for SvsmError {
     fn from(e: TaskError) -> Self {
         Self::Task(e)
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UserParams {
+    entry_point: usize,
+    param: u64,
 }
 
 pub const TASK_FLAG_SHARE_PT: u16 = 0x01;
@@ -257,6 +263,7 @@ impl Task {
             PTEntryFlags::USER,
         );
         vm_user_range.initialize()?;
+        vm_user_range.populate(&mut pgtable);
 
         let task: Box<Task> = Box::new(Task {
             rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
@@ -271,6 +278,18 @@ impl Task {
             runtime: TaskRuntimeImpl::default(),
             on_switch_hook: None,
         });
+        Ok(task)
+    }
+
+    pub fn user_create(entry: usize, param: u64, flags: u16) -> Result<Box<Task>, SvsmError> {
+        // Launch via the user-mode entry point
+        let entry_param = Box::new(UserParams {
+            entry_point: entry,
+            param,
+        });
+
+        let mut task = Self::create(launch_user_entry, Box::into_raw(entry_param) as u64, flags)?;
+        task.init_user_mode()?;
         Ok(task)
     }
 
@@ -361,11 +380,79 @@ impl Task {
         ))
     }
 
+    fn init_user_mode(&mut self) -> Result<(), SvsmError> {
+        let stack = VMUserStack::new()?;
+        let offset = stack.top_of_stack(VirtAddr::from(0u64));
+        let mapping = Arc::new(Mapping::new(stack));
+        self.vm_user_range
+            .insert_at(SVSM_PERTASK_STACK_BASE_CPL3, mapping)?;
+
+        self.user = Some(UserTask {
+            user_rsp: offset.bits() as u64,
+            kernel_rsp: 0,
+        });
+        Ok(())
+    }
+
     fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
         // Base the new task page table on the initial SVSM kernel page table.
         // When the pagetable is schedule to a CPU, the per CPU entry will also
         // be added to the pagetable.
         get_init_pgtable_locked().clone_shared()
+    }
+}
+
+extern "C" fn launch_user_entry(entry: u64) {
+    unsafe {
+        let params = *Box::from_raw(entry as *mut UserParams);
+        let task_node = this_cpu()
+            .runqueue()
+            .lock_read()
+            .current_task()
+            .expect("Task entry point called when not the current task.");
+        let (user_rsp, kernel_rsp) = {
+            let task = task_node.task.lock_write();
+            let user = task
+                .user
+                .as_ref()
+                .expect("User entry point called from kernel task");
+            let kernel_rsp = &user.kernel_rsp as *const u64;
+            (user.user_rsp, kernel_rsp)
+        };
+
+        asm!(
+            r#"
+                // user mode might change non-volatile registers
+                push    %rbx
+                push    %rbp
+                push    %r12
+                push    %r13
+                push    %r14
+                push    %r15
+
+                // Save the address after the sysretq so when the task
+                // exits it can jump there.
+                leaq    1f(%rip), %r8
+                pushq   %r8
+
+                movq    %rsp, (%rsi)
+                movq    %rax, %rsp
+                movq    $0x202, %r11
+                sysretq
+
+            1:
+                pop     %r15
+                pop     %r14
+                pop     %r13
+                pop     %r12
+                pop     %rbp
+                pop     %rbx
+            "#,
+            in("rcx") params.entry_point,
+            in("rdi") params.param,
+            in("rax") user_rsp,
+            in("rsi") kernel_rsp,
+            options(att_syntax));
     }
 }
 
