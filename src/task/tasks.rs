@@ -62,7 +62,7 @@ impl From<TaskError> for SvsmError {
 
 #[derive(Clone, Copy, Debug)]
 struct UserParams {
-    entry_point: usize,
+    entry_point: extern "C" fn(u64),
     param: u64,
 }
 
@@ -281,7 +281,11 @@ impl Task {
         Ok(task)
     }
 
-    pub fn user_create(entry: usize, param: u64, flags: u16) -> Result<Box<Task>, SvsmError> {
+    pub fn user_create(
+        entry: extern "C" fn(u64),
+        param: u64,
+        flags: u16,
+    ) -> Result<Box<Task>, SvsmError> {
         // Launch via the user-mode entry point
         let entry_param = Box::new(UserParams {
             entry_point: entry,
