@@ -48,7 +48,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
-use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
+use svsm::task::{create_task, init_syscall, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
@@ -435,6 +435,8 @@ pub extern "C" fn svsm_main(_param: u64) {
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
+
+    init_syscall();
 
     ModuleLoader::enumerate().expect("Failed to initialise loadable modules");
 
