@@ -171,8 +171,21 @@ pub struct TaskContext {
 }
 
 #[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+pub struct UserTask {
+    pub user_rsp: u64,
+    pub kernel_rsp: u64,
+}
+
+#[repr(C)]
 pub struct Task {
+    /// Current kernel stack pointer. This must always be the first entry
+    /// in this struct
     pub rsp: u64,
+
+    // For tasks that support user mode this contains the current user mode
+    // state. For tasks that are kernel mode only, contains None.
+    pub user: Option<UserTask>,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
@@ -247,6 +260,7 @@ impl Task {
 
         let task: Box<Task> = Box::new(Task {
             rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
+            user: None,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
             vm_user_range,
