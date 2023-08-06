@@ -7,6 +7,8 @@
 use crate::address::VirtAddr;
 use crate::sev::vmsa::VMPL_MAX;
 
+pub const VMPCK_SIZE: usize = 32;
+
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct SecretsPage {
@@ -15,7 +17,7 @@ pub struct SecretsPage {
     pub fms: u32,
     reserved_00c: u32,
     pub gosvw: [u8; 16],
-    pub vmpck: [[u8; 32]; VMPL_MAX],
+    pub vmpck: [[u8; VMPCK_SIZE]; VMPL_MAX],
     reserved_0a0: [u8; 96],
     pub vmsa_tweak_bmp: [u64; 8],
     pub svsm_base: u64,
