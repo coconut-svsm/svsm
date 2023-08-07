@@ -81,10 +81,10 @@ struct Uuid {
     data: [u8; 16],
 }
 
-fn from_hex(c: char) -> Result<u8, ()> {
+fn from_hex(c: char) -> Result<u8, SvsmError> {
     match c.to_digit(16) {
         Some(d) => Ok(d as u8),
-        None => Err(()),
+        None => Err(SvsmError::Firmware),
     }
 }
 
@@ -118,7 +118,7 @@ impl Uuid {
 }
 
 impl FromStr for Uuid {
-    type Err = ();
+    type Err = SvsmError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut uuid = Uuid::new();
         let mut buf: u8 = 0;
@@ -234,7 +234,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
 
     let mut curr = vend - 32;
 
-    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID).map_err(|()| SvsmError::Firmware)?;
+    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
 
     curr = curr - mem::size_of::<Uuid>();
     let ptr = curr.as_ptr::<u8>();
@@ -253,14 +253,13 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         let len = full_len - (mem::size_of::<u16>() + mem::size_of::<Uuid>());
 
         // First check if this is the SVSM itself instead of OVMF
-        let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).map_err(|()| SvsmError::Firmware)?;
+        let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID)?;
         if let Some(_v) = find_table(&svsm_info_uuid, curr, len) {
             return Err(SvsmError::Firmware);
         }
 
         // Search SEV_INFO_BLOCK_GUID
-        let sev_info_uuid =
-            Uuid::from_str(SEV_INFO_BLOCK_GUID).map_err(|()| SvsmError::Firmware)?;
+        let sev_info_uuid = Uuid::from_str(SEV_INFO_BLOCK_GUID)?;
         let ret = find_table(&sev_info_uuid, curr, len);
         if let Some(tbl) = ret {
             let (base, len) = tbl;
@@ -272,8 +271,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         }
 
         // Search and parse Meta Data
-        let sev_meta_uuid =
-            Uuid::from_str(OVMF_SEV_META_DATA_GUID).map_err(|()| SvsmError::Firmware)?;
+        let sev_meta_uuid = Uuid::from_str(OVMF_SEV_META_DATA_GUID)?;
         let ret = find_table(&sev_meta_uuid, curr, len);
         if let Some(tbl) = ret {
             let (base, _len) = tbl;
