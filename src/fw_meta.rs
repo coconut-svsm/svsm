@@ -250,7 +250,7 @@ pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
         let ptr = curr.as_ptr::<u16>();
 
         let full_len = ptr.read() as usize;
-        let len = full_len - mem::size_of::<u16>() + mem::size_of::<Uuid>();
+        let len = full_len - (mem::size_of::<u16>() + mem::size_of::<Uuid>());
 
         // First check if this is the SVSM itself instead of OVMF
         let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).map_err(|()| SvsmError::Firmware)?;
