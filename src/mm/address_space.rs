@@ -85,10 +85,11 @@ pub const SIZE_LEVEL0: usize = 1usize << ((9 * 0) + 12);
 // Stack definitions
 // The GDB stub requires a larger stack.
 #[cfg(feature = "enable-gdb")]
-pub const STACK_PAGES: usize = 16;
+pub const STACK_PAGES_GDB: usize = 12;
 #[cfg(not(feature = "enable-gdb"))]
-pub const STACK_PAGES: usize = 4;
+pub const STACK_PAGES_GDB: usize = 0;
 
+pub const STACK_PAGES: usize = 4 + STACK_PAGES_GDB;
 pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
