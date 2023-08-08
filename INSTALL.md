@@ -38,9 +38,10 @@ $ git checkout svsm-host
 ```
 
 Build, install and boot a kernel from that branch. For best chances of
-success use a kernel configuration provided by the distribution. On
-openSUSE (other distributions may vary) the kernel configuration can be
-obtained by:
+success use a kernel configuration provided by the distribution. Make
+sure the configuration includes support for AMD Secure Processor which is
+a requirement for SEV support (CONFIG_KVM_AMD_SEV). On openSUSE (other
+distributions may vary) the kernel configuration can be obtained by:
 
 ```
 $ gunzip -c /proc/config.gz > .config
