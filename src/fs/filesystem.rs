@@ -262,7 +262,7 @@ pub fn read(fh: &FileHandle, buf: &mut [u8]) -> Result<usize, SvsmError> {
     fh.read(buf)
 }
 
-pub fn write(fh: &FileHandle, buf: &mut [u8]) -> Result<usize, SvsmError> {
+pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
 }
 
