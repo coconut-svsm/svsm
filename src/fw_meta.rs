@@ -22,7 +22,7 @@ use core::fmt;
 use core::mem::{align_of, size_of, size_of_val};
 use core::str::FromStr;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SevPreValidMem {
     base: PhysAddr,
     length: usize,
@@ -53,6 +53,7 @@ impl SevPreValidMem {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SevFWMetaData {
     pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
@@ -77,15 +78,16 @@ impl SevFWMetaData {
     }
 }
 
-struct Uuid {
-    data: [u8; 16],
-}
-
 fn from_hex(c: char) -> Result<u8, SvsmError> {
     match c.to_digit(16) {
         Some(d) => Ok(d as u8),
         None => Err(SvsmError::Firmware),
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct Uuid {
+    data: [u8; 16],
 }
 
 impl Uuid {
@@ -166,6 +168,7 @@ const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct SevMetaDataHeader {
     signature: [u8; 4],
@@ -174,6 +177,7 @@ struct SevMetaDataHeader {
     num_desc: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct SevMetaDataDesc {
     base: u32,
