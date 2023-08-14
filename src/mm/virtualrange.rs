@@ -19,7 +19,7 @@ use super::{
 pub const VIRT_ALIGN_4K: usize = PAGE_SHIFT - 12;
 pub const VIRT_ALIGN_2M: usize = PAGE_SHIFT_2M - 12;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct VirtualRange {
     start_virt: VirtAddr,
     page_count: usize,

@@ -9,6 +9,7 @@ pub mod errors;
 
 use crate::sev::vmsa::{GuestVMExit, VMSA};
 
+#[derive(Debug, Default)]
 pub struct RequestParams {
     pub guest_exit_code: GuestVMExit,
     sev_features: u64,

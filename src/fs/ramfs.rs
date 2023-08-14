@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 
 use core::cmp::{max, min};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct RawRamFile {
     capacity: usize,
     size: usize,

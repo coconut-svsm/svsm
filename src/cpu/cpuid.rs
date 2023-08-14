@@ -11,7 +11,7 @@ const SNP_CPUID_MAX_COUNT: usize = 64;
 
 static CPUID_PAGE: ImmutAfterInitRef<SnpCpuidTable> = ImmutAfterInitRef::uninit();
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Debug)]
 #[repr(C, packed)]
 pub struct SnpCpuidFn {
     eax_in: u32,
@@ -25,13 +25,24 @@ pub struct SnpCpuidFn {
     reserved_1: u64,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct SnpCpuidTable {
     count: u32,
     reserved_1: u32,
     reserved_2: u64,
     func: [SnpCpuidFn; SNP_CPUID_MAX_COUNT],
+}
+
+impl Default for SnpCpuidTable {
+    fn default() -> Self {
+        SnpCpuidTable {
+            count: Default::default(),
+            reserved_1: Default::default(),
+            reserved_2: Default::default(),
+            func: [SnpCpuidFn::default(); SNP_CPUID_MAX_COUNT],
+        }
+    }
 }
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {

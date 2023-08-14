@@ -45,12 +45,14 @@ const OFF_VERSION: u16 = 0xffa;
 const OFF_USAGE: u16 = 0xffc;
 
 #[repr(C, packed)]
+#[derive(Debug, Default)]
 pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
     reserved: u32,
 }
 
+#[derive(Debug)]
 pub enum PageStateChangeOp {
     PscPrivate,
     PscShared,
