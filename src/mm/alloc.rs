@@ -248,13 +248,13 @@ impl Page {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MemInfo {
     total_pages: [usize; MAX_ORDER],
     free_pages: [usize; MAX_ORDER],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct MemoryRegion {
     start_phys: PhysAddr,
     start_virt: VirtAddr,
@@ -819,7 +819,7 @@ pub fn memory_info() -> MemInfo {
     ROOT_MEM.lock().memory_info()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SlabPage {
     vaddr: VirtAddr,
     capacity: u16,
@@ -925,7 +925,7 @@ impl SlabPage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[repr(align(16))]
 struct SlabCommon {
     item_size: u16,
@@ -1119,7 +1119,7 @@ impl SlabPageSlab {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Slab {
     common: SlabCommon,
 }

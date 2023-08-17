@@ -64,7 +64,7 @@ pub trait Address:
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct PhysAddr(InnerAddr);
 
@@ -143,7 +143,7 @@ impl ops::Add<InnerAddr> for PhysAddr {
 
 impl Address for PhysAddr {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 pub struct VirtAddr(InnerAddr);
 

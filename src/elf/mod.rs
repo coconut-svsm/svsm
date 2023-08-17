@@ -182,7 +182,7 @@ pub type Elf64Xword = u64;
 pub type Elf64Sxword = i64;
 pub type Elf64char = u8;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Default)]
 pub struct Elf64AddrRange {
     pub vaddr_begin: Elf64Addr,
     pub vaddr_end: Elf64Addr,
@@ -228,6 +228,7 @@ impl cmp::PartialOrd for Elf64AddrRange {
     }
 }
 
+#[derive(Default, Debug)]
 pub struct Elf64FileRange {
     pub offset_begin: usize,
     pub offset_end: usize,
@@ -249,6 +250,7 @@ impl convert::TryFrom<(Elf64Off, Elf64Xword)> for Elf64FileRange {
     }
 }
 
+#[derive(Default, Debug)]
 pub struct Elf64File<'a> {
     elf_file_buf: &'a [u8],
     elf_hdr: Elf64Hdr,
@@ -645,7 +647,7 @@ impl<'a> Elf64File<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Elf64Hdr {
     #[allow(unused)]
     e_ident: [Elf64char; 16],
@@ -954,7 +956,7 @@ impl Elf64Shdr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Elf64LoadSegments {
     segments: Vec<(Elf64AddrRange, Elf64Half)>,
 }
@@ -1237,6 +1239,7 @@ impl<'a> Iterator for Elf64ImageLoadSegmentIterator<'a> {
     }
 }
 
+#[derive(Debug, Default)]
 struct Elf64Strtab<'a> {
     strtab_buf: &'a [u8],
 }

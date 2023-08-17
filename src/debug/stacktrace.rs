@@ -16,6 +16,7 @@ use core::arch::asm;
 use core::mem;
 
 #[cfg(feature = "enable-stacktrace")]
+#[derive(Debug, Default)]
 struct StackBounds {
     bottom: VirtAddr,
     top: VirtAddr,
@@ -31,7 +32,7 @@ impl StackBounds {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct StackFrame {
     pub rbp: VirtAddr,
     pub rsp: VirtAddr,

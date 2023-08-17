@@ -5,7 +5,7 @@
 // Author: Roy Hopkins <rhopkins@suse.de>
 
 #[repr(C, packed)]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct X86GeneralRegs {
     pub r15: usize,
     pub r14: usize,
@@ -36,6 +36,7 @@ pub struct X86SegmentRegs {
 }
 
 #[repr(C, packed)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct X86InterruptFrame {
     pub rip: usize,
     pub cs: usize,

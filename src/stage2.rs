@@ -132,6 +132,7 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 // Launch info from stage1, usually at the bottom of the stack
 // The layout has to match the order in which the parts are pushed to the stack
 // in stage1/stage1.S
+#[derive(Default, Debug)]
 #[repr(C, packed)]
 pub struct Stage1LaunchInfo {
     kernel_elf_start: u32,
