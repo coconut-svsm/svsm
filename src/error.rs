@@ -1,3 +1,4 @@
+use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
 use crate::sev::ghcb::GhcbError;
@@ -36,4 +37,6 @@ pub enum SvsmError {
     FileSystem(FsError),
     // Task management errors,
     Task(TaskError),
+    // Errors from #VC handler
+    Vc(VcError),
 }
