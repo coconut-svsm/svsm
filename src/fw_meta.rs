@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
@@ -19,10 +19,10 @@ use alloc::vec::Vec;
 
 use core::cmp;
 use core::fmt;
-use core::mem;
+use core::mem::{align_of, size_of, size_of_val};
 use core::str::FromStr;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SevPreValidMem {
     base: PhysAddr,
     length: usize,
@@ -53,6 +53,7 @@ impl SevPreValidMem {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SevFWMetaData {
     pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
@@ -77,48 +78,45 @@ impl SevFWMetaData {
     }
 }
 
-struct Uuid {
-    data: [u8; 16],
-}
-
-fn from_hex(c: char) -> Result<u8, ()> {
+fn from_hex(c: char) -> Result<u8, SvsmError> {
     match c.to_digit(16) {
         Some(d) => Ok(d as u8),
-        None => Err(()),
+        None => Err(SvsmError::Firmware),
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+struct Uuid {
+    data: [u8; 16],
 }
 
 impl Uuid {
     pub const fn new() -> Self {
         Uuid { data: [0; 16] }
     }
+}
 
-    pub unsafe fn from_mem(ptr: *const u8) -> Self {
-        Uuid {
+impl TryFrom<&[u8]> for Uuid {
+    type Error = ();
+    fn try_from(mem: &[u8]) -> Result<Self, Self::Error> {
+        let arr: &[u8; 16] = mem.try_into().map_err(|_| ())?;
+        Ok(Self::from(arr))
+    }
+}
+
+impl From<&[u8; 16]> for Uuid {
+    fn from(mem: &[u8; 16]) -> Self {
+        Self {
             data: [
-                ptr.offset(3).read(),
-                ptr.offset(2).read(),
-                ptr.offset(1).read(),
-                ptr.offset(0).read(),
-                ptr.offset(5).read(),
-                ptr.offset(4).read(),
-                ptr.offset(7).read(),
-                ptr.offset(6).read(),
-                ptr.offset(8).read(),
-                ptr.offset(9).read(),
-                ptr.offset(10).read(),
-                ptr.offset(11).read(),
-                ptr.offset(12).read(),
-                ptr.offset(13).read(),
-                ptr.offset(14).read(),
-                ptr.offset(15).read(),
+                mem[3], mem[2], mem[1], mem[0], mem[5], mem[4], mem[7], mem[6], mem[8], mem[9],
+                mem[10], mem[11], mem[12], mem[13], mem[14], mem[15],
             ],
         }
     }
 }
 
 impl FromStr for Uuid {
-    type Err = ();
+    type Err = SvsmError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut uuid = Uuid::new();
         let mut buf: u8 = 0;
@@ -170,39 +168,7 @@ const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
-unsafe fn find_table(uuid: &Uuid, start: VirtAddr, len: usize) -> Option<(VirtAddr, usize)> {
-    let mut curr = start;
-    let end = start - len;
-
-    while curr >= end {
-        curr = curr - mem::size_of::<Uuid>();
-
-        let ptr = curr.as_ptr::<u8>();
-        let curr_uuid = Uuid::from_mem(ptr);
-
-        curr = curr - mem::size_of::<u16>();
-        if curr < end {
-            break;
-        }
-
-        let len_ptr = curr.as_ptr::<u16>();
-        let orig_len = len_ptr.read() as usize;
-
-        if len < mem::size_of::<Uuid>() + mem::size_of::<u16>() {
-            break;
-        }
-        let len = orig_len - (mem::size_of::<Uuid>() + mem::size_of::<u16>());
-
-        curr = curr - len;
-
-        if *uuid == curr_uuid {
-            return Some((curr, len));
-        }
-    }
-
-    None
-}
-
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct SevMetaDataHeader {
     signature: [u8; 4],
@@ -211,6 +177,7 @@ struct SevMetaDataHeader {
     num_desc: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct SevMetaDataDesc {
     base: u32,
@@ -223,100 +190,205 @@ const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
-pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
-    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
-    let mut meta_data = SevFWMetaData::new();
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct RawMetaHeader {
+    len: u16,
+    uuid: [u8; size_of::<Uuid>()],
+}
 
-    // Map meta-data location, it starts at 32 bytes below 4GiB
-    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
-    let vstart = guard.virt_addr();
-    let vend = vstart + PAGE_SIZE;
+impl RawMetaHeader {
+    fn data_len(&self) -> Option<usize> {
+        let full_len = self.len as usize;
+        full_len.checked_sub(size_of::<Self>())
+    }
+}
 
-    let mut curr = vend - 32;
+#[derive(Debug, Clone, Copy)]
+#[repr(C, packed)]
+struct RawMetaBuffer {
+    data: [u8; PAGE_SIZE - size_of::<RawMetaHeader>() - 32],
+    header: RawMetaHeader,
+    _pad: [u8; 32],
+}
 
-    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID).map_err(|()| SvsmError::Firmware)?;
+// Compile-time size checks
+const _: () = assert!(size_of::<RawMetaBuffer>() == PAGE_SIZE);
+const _: () = assert!(size_of::<RawMetaHeader>() == size_of::<u16>() + size_of::<Uuid>());
 
-    curr = curr - mem::size_of::<Uuid>();
-    let ptr = curr.as_ptr::<u8>();
+/// Find a table with the given UUID in the given memory slice, and return a
+/// subslice into its data
+fn find_table<'a>(uuid: &Uuid, mem: &'a [u8]) -> Option<&'a [u8]> {
+    let mut idx = mem.len();
 
-    unsafe {
-        let uuid = Uuid::from_mem(ptr);
-
-        if uuid != meta_uuid {
-            return Err(SvsmError::Firmware);
+    while idx != 0 {
+        let hdr_start = idx.checked_sub(size_of::<RawMetaHeader>())?;
+        let hdr_start_ptr = mem.get(hdr_start..idx)?.as_ptr().cast::<RawMetaHeader>();
+        if hdr_start_ptr.align_offset(align_of::<RawMetaHeader>()) != 0 {
+            log::error!("Misaligned firmware metadata table");
+            return None;
         }
 
-        curr = curr - mem::size_of::<u16>();
-        let ptr = curr.as_ptr::<u16>();
+        // Safety: we have checked the pointer is within bounds and aligned
+        let hdr = unsafe { hdr_start_ptr.read() };
 
-        let full_len = ptr.read() as usize;
-        let len = full_len - mem::size_of::<u16>() + mem::size_of::<Uuid>();
+        let data_len = hdr.data_len()?;
+        idx = hdr_start.checked_sub(data_len)?;
 
-        // First check if this is the SVSM itself instead of OVMF
-        let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID).map_err(|()| SvsmError::Firmware)?;
-        if let Some(_v) = find_table(&svsm_info_uuid, curr, len) {
-            return Err(SvsmError::Firmware);
-        }
-
-        // Search SEV_INFO_BLOCK_GUID
-        let sev_info_uuid =
-            Uuid::from_str(SEV_INFO_BLOCK_GUID).map_err(|()| SvsmError::Firmware)?;
-        let ret = find_table(&sev_info_uuid, curr, len);
-        if let Some(tbl) = ret {
-            let (base, len) = tbl;
-            if len != mem::size_of::<u32>() {
-                return Err(SvsmError::Firmware);
-            }
-            let info_ptr = base.as_ptr::<u32>();
-            meta_data.reset_ip = Some(PhysAddr::from(info_ptr.read() as usize));
-        }
-
-        // Search and parse Meta Data
-        let sev_meta_uuid =
-            Uuid::from_str(OVMF_SEV_META_DATA_GUID).map_err(|()| SvsmError::Firmware)?;
-        let ret = find_table(&sev_meta_uuid, curr, len);
-        if let Some(tbl) = ret {
-            let (base, _len) = tbl;
-            let off_ptr = base.as_ptr::<u32>();
-            let offset = off_ptr.read_unaligned() as usize;
-
-            let meta_ptr = (vend - offset).as_ptr::<SevMetaDataHeader>();
-            //let len = meta_ptr.read().len;
-            let num_descs = meta_ptr.read().num_desc as isize;
-            let desc_ptr = meta_ptr.offset(1).cast::<SevMetaDataDesc>();
-
-            for i in 0..num_descs {
-                let desc = desc_ptr.offset(i).read();
-                let t = desc.t;
-                let base = PhysAddr::from(desc.base as usize);
-                let len = desc.len as usize;
-                match t {
-                    SEV_META_DESC_TYPE_MEM => meta_data.add_valid_mem(base, len),
-                    SEV_META_DESC_TYPE_SECRETS => {
-                        if len != PAGE_SIZE {
-                            return Err(SvsmError::Firmware);
-                        }
-                        meta_data.secrets_page = Some(base);
-                    }
-                    SEV_META_DESC_TYPE_CPUID => {
-                        if len != PAGE_SIZE {
-                            return Err(SvsmError::Firmware);
-                        }
-                        meta_data.cpuid_page = Some(base);
-                    }
-                    SEV_META_DESC_TYPE_CAA => {
-                        if len != PAGE_SIZE {
-                            return Err(SvsmError::Firmware);
-                        }
-                        meta_data.caa_page = Some(base);
-                    }
-                    _ => log::info!("Unknown metadata item type: {}", t),
-                }
-            }
+        let raw_uuid = hdr.uuid;
+        let curr_uuid = Uuid::from(&raw_uuid);
+        if *uuid == curr_uuid {
+            return Some(&mem[idx..idx + data_len]);
         }
     }
 
+    None
+}
+
+pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
+    let mut meta_data = SevFWMetaData::new();
+    // Map meta-data location, it starts at 32 bytes below 4GiB
+    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
+    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
+    let vstart = guard.virt_addr();
+
+    // Safety: RawMetaBuffer has a size of one page and it has no invalid
+    // representations.
+    let raw_meta = unsafe { &*vstart.as_ptr::<RawMetaBuffer>() };
+
+    // Check the UUID
+    let raw_uuid = raw_meta.header.uuid;
+    let uuid = Uuid::from(&raw_uuid);
+    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
+    if uuid != meta_uuid {
+        return Err(SvsmError::Firmware);
+    }
+
+    // Get the tables and their length
+    let data_len = raw_meta.header.data_len().ok_or(SvsmError::Firmware)?;
+    let data_start = size_of_val(&raw_meta.data)
+        .checked_sub(data_len)
+        .ok_or(SvsmError::Firmware)?;
+    let raw_data = raw_meta.data.get(data_start..).ok_or(SvsmError::Firmware)?;
+
+    // First check if this is the SVSM itself instead of OVMF
+    let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID)?;
+    if find_table(&svsm_info_uuid, raw_data).is_some() {
+        return Err(SvsmError::Firmware);
+    }
+
+    // Search SEV_INFO_BLOCK_GUID
+    let sev_info_uuid = Uuid::from_str(SEV_INFO_BLOCK_GUID)?;
+    if let Some(tbl) = find_table(&sev_info_uuid, raw_data) {
+        let bytes: [u8; 4] = tbl.try_into().map_err(|_| SvsmError::Firmware)?;
+        let reset_ip = u32::from_le_bytes(bytes) as usize;
+        meta_data.reset_ip = Some(PhysAddr::from(reset_ip));
+    }
+
+    // Search and parse SEV metadata
+    parse_sev_meta(&mut meta_data, raw_meta, raw_data)?;
     Ok(meta_data)
+}
+
+fn parse_sev_meta(
+    meta: &mut SevFWMetaData,
+    raw_meta: &RawMetaBuffer,
+    raw_data: &[u8],
+) -> Result<(), SvsmError> {
+    // Find SEV metadata table
+    let sev_meta_uuid = Uuid::from_str(OVMF_SEV_META_DATA_GUID)?;
+    let Some(tbl) = find_table(&sev_meta_uuid, raw_data) else {
+        log::warn!("Could not find SEV metadata in firmware");
+        return Ok(());
+    };
+
+    // Find the location of the metadata header. We need to adjust the offset
+    // since it is computed by taking into account the trailing header and
+    // padding, and it is computed backwards.
+    let bytes: [u8; 4] = tbl.try_into().map_err(|_| SvsmError::Firmware)?;
+    let sev_meta_offset = (u32::from_le_bytes(bytes) as usize)
+        .checked_sub(size_of_val(&raw_meta.header) + size_of_val(&raw_meta._pad))
+        .ok_or(SvsmError::Firmware)?;
+    // Now compute the start and end of the SEV metadata header
+    let sev_meta_start = size_of_val(&raw_meta.data)
+        .checked_sub(sev_meta_offset)
+        .ok_or(SvsmError::Firmware)?;
+    let sev_meta_end = sev_meta_start + size_of::<SevMetaDataHeader>();
+    // Bounds check the header and get a pointer to it
+    let sev_meta_hdr_ptr = raw_meta
+        .data
+        .get(sev_meta_start..sev_meta_end)
+        .ok_or(SvsmError::Firmware)?
+        .as_ptr()
+        .cast::<SevMetaDataHeader>();
+
+    // Check that the header pointer is aligned. This also guarantees that
+    // descriptors down the line will be aligned. If the pointer was not
+    // aligned we would need to use ptr::read_unaligned(), so simply check
+    // beforehand and use ptr::read(), as there's no reason for the metadata
+    // to be misaligned.
+    if sev_meta_hdr_ptr.align_offset(align_of::<SevMetaDataHeader>()) != 0 {
+        log::error!("Misaligned SEV metadata header");
+        return Err(SvsmError::Firmware);
+    }
+    // Safety: we have checked the pointer is within bounds and aligned.
+    let sev_meta_hdr = unsafe { sev_meta_hdr_ptr.read() };
+
+    // Now find the descriptors
+    let num_desc = sev_meta_hdr.num_desc as usize;
+    let sev_descs_start = sev_meta_end;
+    let sev_descs_len = num_desc
+        .checked_mul(size_of::<SevMetaDataDesc>())
+        .ok_or(SvsmError::Firmware)?;
+    let sev_descs_end = sev_descs_start
+        .checked_add(sev_descs_len)
+        .ok_or(SvsmError::Firmware)?;
+
+    // We have a variable number of descriptors following the header.
+    // Unfortunately flexible array members in Rust are not fully supported,
+    // so we cannot avoid using raw pointers.
+    let sev_descs_ptr = raw_meta
+        .data
+        .get(sev_descs_start..sev_descs_end)
+        .ok_or(SvsmError::Firmware)?
+        .as_ptr()
+        .cast::<SevMetaDataDesc>();
+
+    for i in 0..num_desc {
+        // Safety: We have checked that the descriptors are within bounds of
+        // the metadata memory. Since the descriptors follow the header, and
+        // the header is properly aligned, the descriptors must be so as
+        // well.
+        let desc = unsafe { sev_descs_ptr.add(i).read() };
+        let t = desc.t;
+        let base = PhysAddr::from(desc.base as usize);
+        let len = desc.len as usize;
+
+        match t {
+            SEV_META_DESC_TYPE_MEM => meta.add_valid_mem(base, len),
+            SEV_META_DESC_TYPE_SECRETS => {
+                if len != PAGE_SIZE {
+                    return Err(SvsmError::Firmware);
+                }
+                meta.secrets_page = Some(base);
+            }
+            SEV_META_DESC_TYPE_CPUID => {
+                if len != PAGE_SIZE {
+                    return Err(SvsmError::Firmware);
+                }
+                meta.cpuid_page = Some(base);
+            }
+            SEV_META_DESC_TYPE_CAA => {
+                if len != PAGE_SIZE {
+                    return Err(SvsmError::Firmware);
+                }
+                meta.caa_page = Some(base);
+            }
+            _ => log::info!("Unknown metadata item type: {}", t),
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
