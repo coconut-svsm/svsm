@@ -12,6 +12,10 @@ pub fn align_up(addr: usize, align: usize) -> usize {
     (addr + (align - 1)) & !(align - 1)
 }
 
+pub fn align_down(addr: usize, align: usize) -> usize {
+    addr & !(align - 1)
+}
+
 #[inline(always)]
 pub fn ffs(val: u64) -> usize {
     let mut ret: usize;
