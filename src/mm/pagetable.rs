@@ -11,8 +11,8 @@ use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
-use crate::mm::alloc::allocate_zeroed_page;
-use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
+use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_PERCPU, PGTABLE_LVL3_IDX_SHARED};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use bitflags::bitflags;
@@ -268,6 +268,12 @@ impl PageTable {
         Ok(ptr.as_mut_ptr::<PTPage>())
     }
 
+    pub fn free_page_table(pgtbl: &mut PageTable) {
+        pgtbl.free();
+        let addr = VirtAddr::from(pgtbl as *const PageTable);
+        free_page(addr);
+    }
+
     fn index<const L: usize>(vaddr: VirtAddr) -> usize {
         vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
@@ -323,6 +329,46 @@ impl PageTable {
 
     pub fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
+    }
+
+    fn free_pgtbl_lvl1(page: &PTPage) {
+        for idx in 0..ENTRY_COUNT {
+            let entry = page[idx];
+
+            if PageTable::entry_to_pagetable(entry).is_some() {
+                free_page(phys_to_virt(entry.address()));
+            }
+        }
+    }
+
+    fn free_pgtbl_lvl2(page: &PTPage) {
+        for idx in 0..ENTRY_COUNT {
+            let entry = page[idx];
+
+            if let Some(l1_page) = PageTable::entry_to_pagetable(entry) {
+                PageTable::free_pgtbl_lvl1(l1_page);
+                free_page(phys_to_virt(entry.address()));
+            }
+        }
+    }
+    fn free_pgtbl_lvl3(page: &PTPage) {
+        for idx in 0..ENTRY_COUNT {
+            // Do not free the per-cpu and shared parts of the page-table
+            if idx == PGTABLE_LVL3_IDX_PERCPU || idx == PGTABLE_LVL3_IDX_SHARED {
+                continue;
+            }
+
+            let entry = page[idx];
+
+            if let Some(l2_page) = PageTable::entry_to_pagetable(entry) {
+                PageTable::free_pgtbl_lvl2(l2_page);
+                free_page(phys_to_virt(entry.address()));
+            }
+        }
+    }
+
+    pub fn free(&mut self) {
+        PageTable::free_pgtbl_lvl3(&self.root);
     }
 
     fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
