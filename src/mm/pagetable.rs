@@ -197,6 +197,12 @@ pub struct PageTable {
     root: PTPage,
 }
 
+impl Drop for PageTable {
+    fn drop(&mut self) {
+        self.free();
+    }
+}
+
 impl PageTable {
     pub fn load(&self) {
         write_cr3(self.cr3_value());
