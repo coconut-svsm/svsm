@@ -4,6 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+// For bitflags definitions
+#![allow(clippy::bad_bit_mask)]
+
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
