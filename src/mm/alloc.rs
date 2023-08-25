@@ -19,19 +19,10 @@ use log;
 pub const MAX_ORDER: usize = 6;
 
 pub fn get_order(size: usize) -> usize {
-    let mut val = (size - 1) >> PAGE_SHIFT;
-    let mut order: usize = 0;
-
-    loop {
-        if val == 0 {
-            break;
-        }
-
-        order += 1;
-        val >>= 1;
-    }
-
-    order
+    (size
+        .checked_next_power_of_two()
+        .map_or(usize::BITS, usize::ilog2) as usize)
+        .saturating_sub(PAGE_SHIFT)
 }
 
 #[derive(Clone, Copy, Debug)]
