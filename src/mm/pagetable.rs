@@ -108,6 +108,7 @@ fn set_c_bit(paddr: PhysAddr) -> PhysAddr {
 }
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct PTEntryFlags: u64 {
         const PRESENT       = 1 << 0;
         const WRITABLE      = 1 << 1;
