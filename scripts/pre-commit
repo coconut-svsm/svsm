@@ -37,7 +37,7 @@ for file in `git diff --name-only --staged`; do
     fi
 done
 
-cargo clippy --all-features -- -D warnings -A clippy::bad_bit_mask || exit 1
+cargo clippy --all-features -- -D warnings || exit 1
 
 exit $RET
 
