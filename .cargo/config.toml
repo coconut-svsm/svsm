@@ -1,8 +1,7 @@
-[unstable]
-build-std = ["alloc", "core", "compiler_builtins"]
-build-std-features = ["compiler-builtins-mem"]
-
 [build]
-target = "svsm-target.json"
-rustflags = ["-C", "force-frame-pointers"]
+target = "x86_64-unknown-none"
+rustflags = [
+	"-C", "force-frame-pointers",
+	"-C", "linker-flavor=ld",
+]
 
