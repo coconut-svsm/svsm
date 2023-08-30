@@ -171,8 +171,9 @@ Building the COCONUT-SVSM
 -------------------------
 
 Building the SVSM itself requires:
-- a recent Rust-nightly compiler and build environment installed. Please refer to
+- a recent Rust compiler and build environment installed. Please refer to
   [https://rustup.rs/](https://rustup.rs/) on how to get this environment installed.
+- `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
 - `binutils` >= 2.39
 
 Then checkout the SVSM repository and build the SVSM binary:
@@ -341,7 +342,7 @@ If you have the source code available on the host system then you can add the
 debug symbols and use source-level debugging:
 
 ```
-(gdb) symbol-file target/svsm-target/debug/svsm
+(gdb) symbol-file target/x86_64-unknown-none/debug/svsm
 ```
 
 Note that some GDB features are not available for debugging the SVSM kernel due
