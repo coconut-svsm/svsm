@@ -19,6 +19,8 @@ pub use guestmem::GuestPtr;
 pub use memory::{valid_phys_address, writable_phys_addr};
 pub use ptguards::*;
 
+pub use pagetable::PageTablePart;
+
 pub use alloc::{
     allocate_file_page, allocate_file_page_ref, get_file_page, put_file_page, PageRef,
 };
