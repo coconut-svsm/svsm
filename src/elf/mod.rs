@@ -777,6 +777,7 @@ pub struct Elf64Phdr {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct Elf64PhdrFlags : Elf64Word {
         const EXECUTE = 0x01;
         const WRITE   = 0x02;
@@ -866,6 +867,7 @@ pub struct Elf64Shdr {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct Elf64ShdrFlags : Elf64Xword {
         const WRITE            = 0x001;
         const ALLOC            = 0x002;
