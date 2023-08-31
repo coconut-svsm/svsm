@@ -19,10 +19,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install latest nightly
+      - name: Install latest stable
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
+            toolchain: stable
+            target: x86_64-unknown-none
             profile: minimal
             override: true
             components: rustfmt, rust-src, clippy

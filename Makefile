@@ -8,9 +8,8 @@ else
 TARGET_PATH="debug"
 endif
 
-
-STAGE2_ELF = "target/svsm-target/${TARGET_PATH}/stage2"
-KERNEL_ELF = "target/svsm-target/${TARGET_PATH}/svsm"
+STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
+KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 FS_FILE ?= none
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
@@ -18,8 +17,7 @@ STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 all: svsm.bin
 
 test:
-	cd src/
-	cargo test --target=x86_64-unknown-linux-gnu -Z build-std
+	cargo test --target=x86_64-unknown-linux-gnu
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
