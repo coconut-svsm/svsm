@@ -60,7 +60,7 @@ BuildSvsmReuse()
     # Create and start the the container if it's not running
     if [ -z ${CONTAINER_ID} ] ; then
 
-        CONTAINER_ID=$(docker ps -q -f name=coconut-build)
+        CONTAINER_ID=$(docker ps -q -a -f name=${CONTAINER_NAME})
 
         if [ -z ${CONTAINER_ID} ] ; then
             docker create \
