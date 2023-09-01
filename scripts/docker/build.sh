@@ -7,6 +7,19 @@ DOCKER_FILE=$WORKDIR/scripts/docker/opensuse-rust.docker
 IMAGE_NAME=opensuse-rust
 CONTAINER_NAME=coconut-build
 
+DOCKER_CMD=$(command -v podman || command -v docker) || {
+                echo >&2 "ERR: docker (or podman) not found";
+                exit 1
+            }
+
+EXTRA_DOCKER_OPTS=""
+MOUNT_OPTS=""
+
+if [[ "${DOCKER_CMD}" = *podman ]]; then
+    EXTRA_DOCKER_OPTS=" --userns keep-id "
+    MOUNT_OPTS=",relabel=shared,rw=true"
+fi
+
 # Command line arguments
 ARG_REUSE=0
 
@@ -55,27 +68,28 @@ ParseOptions()
 ####
 BuildSvsmReuse()
 {
-    CONTAINER_ID=$(docker ps -q -f name=${CONTAINER_NAME})
+    CONTAINER_ID=$("${DOCKER_CMD}" ps -q -f name=${CONTAINER_NAME})
 
     # Create and start the the container if it's not running
     if [ -z ${CONTAINER_ID} ] ; then
 
-        CONTAINER_ID=$(docker ps -q -a -f name=${CONTAINER_NAME})
+        CONTAINER_ID=$("${DOCKER_CMD}" ps -q -a -f name=${CONTAINER_NAME})
 
         if [ -z ${CONTAINER_ID} ] ; then
-            docker create \
+            "${DOCKER_CMD}" create \
                 -it --name=${CONTAINER_NAME} \
                 --workdir=${WORKDIR} \
                 --user ${USER} \
-                --mount type=bind,source=${WORKDIR},target=${WORKDIR} \
+                --mount type=bind,source=${WORKDIR},target=${WORKDIR}${MOUNT_OPTS} \
+                $EXTRA_DOCKER_OPTS \
                 ${IMAGE_NAME} \
                 /bin/bash
         fi
 
-        docker start ${CONTAINER_NAME}
+        "${DOCKER_CMD}" start ${CONTAINER_NAME}
     fi
 
-    docker exec \
+    "${DOCKER_CMD}" exec \
         -it ${CONTAINER_NAME} \
         /bin/bash -c "source $HOME/.cargo/env && make clean && make"
 }
@@ -85,13 +99,14 @@ BuildSvsmReuse()
 ####
 BuildSvsmDelete()
 {
-    docker run \
-        --rm -it \
-        --workdir=${WORKDIR} \
-        --user ${USER} \
-        --mount type=bind,source=${WORKDIR},target=${WORKDIR} \
-        ${IMAGE_NAME} \
-        /bin/bash -c "source $HOME/.cargo/env && make clean && make"
+      "${DOCKER_CMD}" run \
+          --rm -it \
+          --workdir=${WORKDIR} \
+          --user ${USER} \
+          --mount type=bind,source=${WORKDIR},target=${WORKDIR}${MOUNT_OPTS} \
+          $EXTRA_DOCKER_OPTS \
+          ${IMAGE_NAME} \
+          /bin/bash -c "source $HOME/.cargo/env && make clean && make"
 }
 
 ####
@@ -99,22 +114,22 @@ BuildSvsmDelete()
 ####
 BuildDockerImage()
 {
-    IMAGE_ID=$(docker images -q ${IMAGE_NAME})
+    IMAGE_ID=$("${DOCKER_CMD}" images -q ${IMAGE_NAME})
 
     # Build the container image if it's the first time
     if [ -z ${IMAGE_ID} ] ; then
-        docker build -t ${IMAGE_NAME} --build-arg USER_NAME=${USER} --build-arg USER_ID=$(id -u) -f ${DOCKER_FILE} .
+        "${DOCKER_CMD}" build \
+            -t ${IMAGE_NAME} \
+            --build-arg USER_NAME=${USER} \
+            --build-arg USER_ID=$(id -u) \
+            -f ${DOCKER_FILE} \
+            .
     fi
 }
 
 ####
 #### Main block
 ####
-
-if ! command -v docker &> /dev/null ; then
-    echo "ERR: docker not found"
-    exit
-fi
 
 ParseOptions $@
 
