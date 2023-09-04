@@ -1,8 +1,8 @@
 #!/bin/bash
 
-CURDIR=$(dirname $(realpath "$0"))
-WORKDIR=$(realpath ${CURDIR}/../..)
-DOCKER_FILE=$WORKDIR/scripts/docker/opensuse-rust.docker
+CURDIR=$(dirname "$(realpath "$0")")
+WORKDIR=$(realpath "${CURDIR}/../..")
+DOCKER_FILE="${WORKDIR}/scripts/docker/opensuse-rust.docker"
 
 IMAGE_NAME=opensuse-rust
 CONTAINER_NAME=coconut-build
@@ -78,9 +78,9 @@ BuildSvsmReuse()
         if [ -z ${CONTAINER_ID} ] ; then
             "${DOCKER_CMD}" create \
                 -it --name=${CONTAINER_NAME} \
-                --workdir=${WORKDIR} \
+                --workdir="${WORKDIR}" \
                 --user ${USER} \
-                --mount type=bind,source=${WORKDIR},target=${WORKDIR}${MOUNT_OPTS} \
+                --mount type=bind,source="${WORKDIR}",target="${WORKDIR}"${MOUNT_OPTS} \
                 $EXTRA_DOCKER_OPTS \
                 ${IMAGE_NAME} \
                 /bin/bash
@@ -101,9 +101,9 @@ BuildSvsmDelete()
 {
       "${DOCKER_CMD}" run \
           --rm -it \
-          --workdir=${WORKDIR} \
+          --workdir="${WORKDIR}" \
           --user ${USER} \
-          --mount type=bind,source=${WORKDIR},target=${WORKDIR}${MOUNT_OPTS} \
+          --mount type=bind,source="${WORKDIR}",target="${WORKDIR}"${MOUNT_OPTS} \
           $EXTRA_DOCKER_OPTS \
           ${IMAGE_NAME} \
           /bin/bash -c "source $HOME/.cargo/env && make clean && make"
@@ -122,7 +122,7 @@ BuildDockerImage()
             -t ${IMAGE_NAME} \
             --build-arg USER_NAME=${USER} \
             --build-arg USER_ID=$(id -u) \
-            -f ${DOCKER_FILE} \
+            -f "${DOCKER_FILE}" \
             .
     fi
 }
