@@ -2,7 +2,7 @@
 
 CURDIR=$(dirname "$(realpath "$0")")
 WORKDIR=$(realpath "${CURDIR}/../..")
-DOCKER_FILE="${WORKDIR}/scripts/docker/opensuse-rust.docker"
+DOCKER_FILE="${WORKDIR}/scripts/container/opensuse-rust.docker"
 
 IMAGE_NAME=opensuse-rust
 CONTAINER_NAME=coconut-build
