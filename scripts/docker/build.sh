@@ -52,12 +52,12 @@ ParseOptions()
                 ;;
             h) # Display help
                 Help
-                exit
+                exit 0
                 ;;
             \?) # Invalid option
                 echo -e "ERR: Invalid option\n"
                 Help
-                exit
+                exit 1
                 ;;
         esac
     done
