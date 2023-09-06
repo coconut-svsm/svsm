@@ -68,12 +68,12 @@ impl StackUnwinder {
 
         let stacks: StacksBounds = [
             StackBounds {
-                bottom: VirtAddr::from(SVSM_STACKS_INIT_TASK),
-                top: VirtAddr::from(SVSM_STACKS_INIT_TASK + STACK_SIZE),
+                bottom: SVSM_STACKS_INIT_TASK,
+                top: SVSM_STACKS_INIT_TASK + STACK_SIZE,
             },
             StackBounds {
-                bottom: VirtAddr::from(SVSM_STACK_IST_DF_BASE),
-                top: VirtAddr::from(SVSM_STACK_IST_DF_BASE + STACK_SIZE),
+                bottom: SVSM_STACK_IST_DF_BASE,
+                top: SVSM_STACK_IST_DF_BASE + STACK_SIZE,
             },
         ];
 

@@ -242,7 +242,7 @@ impl PerCpu {
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
-        let addr = VirtAddr::from(SVSM_STACKS_INIT_TASK);
+        let addr = SVSM_STACKS_INIT_TASK;
         allocate_stack_addr(addr, &mut self.get_pgtable())
             .expect("Failed to allocate per-cpu init stack");
         self.init_stack = Some(addr);
@@ -250,7 +250,7 @@ impl PerCpu {
     }
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        let addr = VirtAddr::from(SVSM_STACK_IST_DF_BASE);
+        let addr = SVSM_STACK_IST_DF_BASE;
         allocate_stack_addr(addr, &mut self.get_pgtable())
             .expect("Failed to allocate percpu double-fault stack");
 
@@ -285,8 +285,7 @@ impl PerCpu {
         let paddr = virt_to_phys(vaddr);
         let flags = PageTable::data_flags();
 
-        self.get_pgtable()
-            .map_4k(VirtAddr::from(SVSM_PERCPU_BASE), paddr, flags)
+        self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
 
     pub fn setup(&mut self) -> Result<(), SvsmError> {
@@ -378,17 +377,16 @@ impl PerCpu {
 
     pub fn unmap_guest_vmsa(&self) {
         assert!(self.apic_id == this_cpu().get_apic_id());
-        self.get_pgtable()
-            .unmap_4k(VirtAddr::from(SVSM_PERCPU_VMSA_BASE));
+        self.get_pgtable().unmap_4k(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.apic_id == this_cpu().get_apic_id());
 
         let flags = PageTable::data_flags();
-        let vaddr = VirtAddr::from(SVSM_PERCPU_VMSA_BASE);
 
-        self.get_pgtable().map_4k(vaddr, paddr, flags)?;
+        self.get_pgtable()
+            .map_4k(SVSM_PERCPU_VMSA_BASE, paddr, flags)?;
 
         Ok(())
     }
@@ -429,12 +427,7 @@ impl PerCpu {
 
         assert!(locked.vmsa_phys().is_some());
 
-        unsafe {
-            VirtAddr::from(SVSM_PERCPU_VMSA_BASE)
-                .as_mut_ptr::<VMSA>()
-                .as_mut()
-                .unwrap()
-        }
+        unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() }
     }
 
     pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
@@ -450,18 +443,16 @@ impl PerCpu {
     }
 
     pub fn unmap_caa(&self) {
-        self.get_pgtable()
-            .unmap_4k(VirtAddr::from(SVSM_PERCPU_CAA_BASE));
+        self.get_pgtable().unmap_4k(SVSM_PERCPU_CAA_BASE);
     }
 
     pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let flags = PageTable::data_flags();
-        let vaddr = VirtAddr::from(SVSM_PERCPU_CAA_BASE);
 
         self.get_pgtable()
-            .map_4k(vaddr, paddr.page_align(), flags)?;
+            .map_4k(SVSM_PERCPU_CAA_BASE, paddr.page_align(), flags)?;
 
         Ok(())
     }
@@ -471,7 +462,7 @@ impl PerCpu {
         let caa_phys = locked.caa_phys()?;
         let offset = caa_phys.page_offset();
 
-        Some(VirtAddr::from(SVSM_PERCPU_CAA_BASE) + offset)
+        Some(SVSM_PERCPU_CAA_BASE + offset)
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
@@ -487,37 +478,25 @@ impl PerCpu {
         // Initialize 4k range
         let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_4k.init(
-            VirtAddr::from(SVSM_PERCPU_TEMP_BASE_4K),
-            page_count,
-            PAGE_SHIFT,
-        );
+        self.vrange_4k
+            .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
 
         // Initialize 2M range
         let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_2m.init(
-            VirtAddr::from(SVSM_PERCPU_TEMP_BASE_2M),
-            page_count,
-            PAGE_SHIFT_2M,
-        );
+        self.vrange_2m
+            .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
     }
 }
 
 unsafe impl Sync for PerCpu {}
 
 pub fn this_cpu() -> &'static PerCpu {
-    unsafe {
-        let ptr = SVSM_PERCPU_BASE as *mut PerCpu;
-        ptr.as_ref().unwrap()
-    }
+    unsafe { SVSM_PERCPU_BASE.as_ptr::<PerCpu>().as_ref().unwrap() }
 }
 
 pub fn this_cpu_mut() -> &'static mut PerCpu {
-    unsafe {
-        let ptr = SVSM_PERCPU_BASE as *mut PerCpu;
-        ptr.as_mut().unwrap()
-    }
+    unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
 }
 
 #[derive(Debug)]

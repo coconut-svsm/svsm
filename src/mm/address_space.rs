@@ -123,38 +123,38 @@ pub const SVSM_SHARED_STACK_END: VirtAddr = SVSM_SHARED_STACK_BASE.const_add(SIZ
 pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 
 /// Base Address of shared memory region
-pub const SVSM_PERCPU_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_PERCPU << ((3 * 9) + 12));
+pub const SVSM_PERCPU_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERCPU);
 
 /// PerCPU CAA mappings
-pub const SVSM_PERCPU_CAA_BASE: usize = SVSM_PERCPU_BASE + (2 * SIZE_LEVEL0);
+pub const SVSM_PERCPU_CAA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(2 * SIZE_LEVEL0);
 
 /// PerCPU VMSA mappings
-pub const SVSM_PERCPU_VMSA_BASE: usize = SVSM_PERCPU_BASE + (4 * SIZE_LEVEL0);
+pub const SVSM_PERCPU_VMSA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(4 * SIZE_LEVEL0);
 
 /// Region for PerCPU Stacks
-pub const SVSM_PERCPU_STACKS_BASE: usize = SVSM_PERCPU_BASE + SIZE_LEVEL1;
+pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL1);
 
 /// Stack address of the per-cpu init task
-pub const SVSM_STACKS_INIT_TASK: usize = SVSM_PERCPU_STACKS_BASE;
+pub const SVSM_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
 
 ///  IST Stacks base address
-pub const SVSM_STACKS_IST_BASE: usize = SVSM_STACKS_INIT_TASK + STACK_TOTAL_SIZE;
+pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_STACKS_INIT_TASK.const_add(STACK_TOTAL_SIZE);
 
 /// DoubleFault IST stack base address
-pub const SVSM_STACK_IST_DF_BASE: usize = SVSM_STACKS_IST_BASE;
+pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
 
 /// Base Address for temporary mappings - used by page-table guards
-pub const SVSM_PERCPU_TEMP_BASE: usize = SVSM_PERCPU_BASE + SIZE_LEVEL2;
+pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
 
 // Below is space for 512 temporary 4k mappings and 511 temporary 2M mappings
 
 /// Start and End for PAGE_SIZEed temporary mappings
-pub const SVSM_PERCPU_TEMP_BASE_4K: usize = SVSM_PERCPU_TEMP_BASE;
-pub const SVSM_PERCPU_TEMP_END_4K: usize = SVSM_PERCPU_TEMP_BASE_4K + SIZE_LEVEL1;
+pub const SVSM_PERCPU_TEMP_BASE_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE;
+pub const SVSM_PERCPU_TEMP_END_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE_4K.const_add(SIZE_LEVEL1);
 
 /// Start and End for PAGE_SIZEed temporary mappings
-pub const SVSM_PERCPU_TEMP_BASE_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL1;
-pub const SVSM_PERCPU_TEMP_END_2M: usize = SVSM_PERCPU_TEMP_BASE + SIZE_LEVEL2;
+pub const SVSM_PERCPU_TEMP_BASE_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL1);
+pub const SVSM_PERCPU_TEMP_END_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL2);
 
 /// Per-task memory map
 /// Use the region from 0xfffffe0000000000 - 0xffffff0000000000 for tasks
