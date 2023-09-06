@@ -76,8 +76,8 @@ impl StackRange {
 }
 
 static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
-    VirtAddr::new(SVSM_SHARED_STACK_BASE),
-    VirtAddr::new(SVSM_SHARED_STACK_END),
+    SVSM_SHARED_STACK_BASE,
+    SVSM_SHARED_STACK_END,
 ));
 
 pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), SvsmError> {

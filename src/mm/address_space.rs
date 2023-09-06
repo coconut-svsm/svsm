@@ -105,15 +105,19 @@ const fn sign_extend(addr: usize) -> usize {
     }
 }
 
+const fn virt_from_idx(idx: usize) -> VirtAddr {
+    VirtAddr::new(idx << ((3 * 9) + 12))
+}
+
 /// Level3 page-table index shared between all CPUs
 pub const PGTABLE_LVL3_IDX_SHARED: usize = 511;
 
 /// Base Address of shared memory region
-pub const SVSM_SHARED_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_SHARED << ((3 * 9) + 12));
+pub const SVSM_SHARED_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_SHARED);
 
 /// Mapping range for shared stacks
-pub const SVSM_SHARED_STACK_BASE: usize = SVSM_SHARED_BASE + (256 * SIZE_1G);
-pub const SVSM_SHARED_STACK_END: usize = SVSM_SHARED_STACK_BASE + SIZE_1G;
+pub const SVSM_SHARED_STACK_BASE: VirtAddr = SVSM_SHARED_BASE.const_add(256 * SIZE_1G);
+pub const SVSM_SHARED_STACK_END: VirtAddr = SVSM_SHARED_STACK_BASE.const_add(SIZE_1G);
 
 /// PerCPU mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
