@@ -176,6 +176,10 @@ impl VirtAddr {
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         self.0 as *mut T
     }
+
+    pub const fn const_add(&self, offset: usize) -> Self {
+        VirtAddr::new(self.0 + offset)
+    }
 }
 
 impl fmt::Display for VirtAddr {
