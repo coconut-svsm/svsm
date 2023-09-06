@@ -94,17 +94,6 @@ pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
 
-const SIGN_BIT: usize = 47;
-
-const fn sign_extend(addr: usize) -> usize {
-    let mask = 1usize << SIGN_BIT;
-    if (addr & mask) == mask {
-        addr | 0xffff_0000_0000_0000
-    } else {
-        addr
-    }
-}
-
 const fn virt_from_idx(idx: usize) -> VirtAddr {
     VirtAddr::new(idx << ((3 * 9) + 12))
 }
@@ -168,11 +157,11 @@ pub const PGTABLE_LVL3_IDX_PERTASK: usize = 508;
 /// +------------------+------------------+------+------------------------------+
 /// | fffffe0000000000 | fffffe0004000000 | 64M  | Dynamic memory allocation    |
 /// +------------------+------------------+------+------------------------------+
-pub const SVSM_PERTASK_BASE: usize = sign_extend(PGTABLE_LVL3_IDX_PERTASK << ((3 * 9) + 12));
+pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
 
 /// Virtual addresses for dynamic memory allocation
-pub const SVSM_PERTASK_DYNAMIC_MEMORY: usize = SVSM_PERTASK_BASE;
+pub const SVSM_PERTASK_DYNAMIC_MEMORY: VirtAddr = SVSM_PERTASK_BASE;
 
 /// Task stack
-pub const SVSM_PERTASK_STACK_BASE: usize = SVSM_PERTASK_BASE + 0xffffff0000;
-pub const SVSM_PERTASK_STACK_TOP: usize = SVSM_PERTASK_STACK_BASE + 0x10000;
+pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE.const_add(0xffffff0000);
+pub const SVSM_PERTASK_STACK_TOP: VirtAddr = SVSM_PERTASK_STACK_BASE.const_add(0x10000);
