@@ -88,8 +88,4 @@ impl<T: Debug> SpinLock<T> {
 
         None
     }
-
-    pub fn unlock(&mut self) {
-        self.holder.fetch_add(1, Ordering::Release);
-    }
 }
