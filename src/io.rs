@@ -32,6 +32,7 @@ pub trait IOPort {
     }
 }
 
+#[derive(Default, Debug)]
 pub struct DefaultIOPort {}
 
 impl IOPort for DefaultIOPort {}

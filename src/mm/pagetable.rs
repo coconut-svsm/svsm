@@ -108,6 +108,7 @@ fn set_c_bit(paddr: PhysAddr) -> PhysAddr {
 }
 
 bitflags! {
+    #[derive(Copy, Clone)]
     pub struct PTEntryFlags: u64 {
         const PRESENT       = 1 << 0;
         const WRITABLE      = 1 << 1;
@@ -121,7 +122,7 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct PTEntry(PhysAddr);
 
 impl PTEntry {
@@ -158,8 +159,16 @@ impl PTEntry {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct PTPage {
     entries: [PTEntry; ENTRY_COUNT],
+}
+
+impl Default for PTPage {
+    fn default() -> Self {
+        let entries = [PTEntry::default(); ENTRY_COUNT];
+        PTPage { entries }
+    }
 }
 
 impl Index<usize> for PTPage {
@@ -184,6 +193,7 @@ pub enum Mapping<'a> {
 }
 
 #[repr(C)]
+#[derive(Default, Debug)]
 pub struct PageTable {
     root: PTPage,
 }

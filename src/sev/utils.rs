@@ -138,8 +138,8 @@ bitflags::bitflags! {
         const X_SUPER = 1u64 << 11;
         const BIT_VMSA = 1u64 << 16;
         const NONE = 0;
-        const RWX = Self::READ.bits | Self::WRITE.bits | Self::X_USER.bits | Self::X_SUPER.bits;
-        const VMSA = Self::READ.bits | Self::BIT_VMSA.bits;
+        const RWX = Self::READ.bits() | Self::WRITE.bits() | Self::X_USER.bits() | Self::X_SUPER.bits();
+        const VMSA = Self::READ.bits() | Self::BIT_VMSA.bits();
     }
 }
 

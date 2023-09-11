@@ -61,7 +61,7 @@ impl RSDPDesc {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 #[repr(C, packed)]
 /// Raw header of an ACPI table. It corresponds to the beginning
 /// portion of ACPI tables, before any specific table data
@@ -86,7 +86,7 @@ struct RawACPITableHeader {
     compiler_rev: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[allow(dead_code)]
 /// Higher level representation of the raw ACPI table header
 struct ACPITableHeader {

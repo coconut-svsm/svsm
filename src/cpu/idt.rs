@@ -40,6 +40,7 @@ pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
 #[repr(C, packed)]
+#[derive(Default, Debug)]
 pub struct X86ExceptionContext {
     pub regs: X86GeneralRegs,
     pub vector: usize,
@@ -47,7 +48,7 @@ pub struct X86ExceptionContext {
     pub frame: X86InterruptFrame,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Debug)]
 #[repr(C, packed)]
 struct IdtEntry {
     low: u64,

@@ -31,14 +31,15 @@ pub const INITIAL_TASK_ID: u32 = 1;
 
 const STACK_SIZE: usize = 65536;
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
     RUNNING,
     SCHEDULED,
+    #[default]
     TERMINATED,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TaskStack {
     pub virt_base: VirtAddr,
     pub virt_top: VirtAddr,
@@ -47,6 +48,7 @@ pub struct TaskStack {
 
 pub const TASK_FLAG_SHARE_PT: u16 = 0x01;
 
+#[derive(Debug, Default)]
 struct TaskIDAllocator {
     next_id: AtomicU32,
 }

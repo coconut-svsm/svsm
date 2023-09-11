@@ -11,6 +11,7 @@ use core::fmt::{self, Write};
 use log;
 
 bitflags! {
+    #[derive(Copy, Clone, PartialEq, Eq)]
     pub struct SEVStatusFlags: u64 {
         const SEV           = 1 << 0;
         const SEV_ES        = 1 << 1;

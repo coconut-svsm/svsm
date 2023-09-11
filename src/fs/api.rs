@@ -18,8 +18,9 @@ use packit::PackItError;
 const MAX_FILENAME_LENGTH: usize = 64;
 pub type FileName = FixedString<MAX_FILENAME_LENGTH>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum FsError {
+    #[default]
     Inval,
     FileExists,
     FileNotFound,
