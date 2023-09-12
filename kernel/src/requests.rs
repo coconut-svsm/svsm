@@ -11,7 +11,8 @@ use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
-use crate::protocols::RequestParams;
+
+use crate::protocols::{RequestParams, SVSM_CORE_PROTOCOL};
 use crate::types::GUEST_VMPL;
 use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
@@ -59,7 +60,7 @@ fn request_loop_once(
     }
 
     match protocol {
-        0 => core_protocol_request(request, params).map(|_| true),
+        SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }
