@@ -1,0 +1,3 @@
+[submodule "libmstpm/deps/openssl"]
+	path = libmstpm/deps/openssl
+	url = https://github.com/openssl/openssl.git
