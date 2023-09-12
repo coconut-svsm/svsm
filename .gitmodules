@@ -1,3 +1,6 @@
 [submodule "libmstpm/deps/openssl"]
 	path = libmstpm/deps/openssl
 	url = https://github.com/openssl/openssl.git
+[submodule "libmstpm/deps/ms-tpm-20-ref"]
+	path = libmstpm/deps/ms-tpm-20-ref
+	url = https://github.com/microsoft/ms-tpm-20-ref.git
