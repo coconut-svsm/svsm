@@ -203,27 +203,8 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// }
 /// ```
 ///
-/// Also, a `ImmutAfterInitRef` can get initialized by dereferencing another,
-/// possibly temporary `ImmutAfterInitRef`, with the temporary again either
-/// dereferencing a [`ImmutAfterInitCell`]'s contents,
-/// ```
-/// # use svsm::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
-/// static RX : ImmutAfterInitRef::<'static, i32> = ImmutAfterInitRef::uninit();
-///
-/// fn init_rx(r : ImmutAfterInitRef<'static, i32>) {
-///     unsafe { RX.init_from_ref(r.get()) };
-/// }
-///
-/// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
-///
-/// fn main() {
-///     unsafe { X.init(&123) };
-///
-///     init_rx(ImmutAfterInitRef::new_from_cell(&X));
-///     assert_eq!(*RX, 123);
-/// }
-/// ```
-/// or a plain value directly:
+/// Also, an `ImmutAfterInitRef` can be initialized by obtaining a reference
+/// from another `ImmutAfterInitRef`:
 /// ```
 /// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
 /// static RX : ImmutAfterInitRef::<'static, i32> = ImmutAfterInitRef::uninit();
