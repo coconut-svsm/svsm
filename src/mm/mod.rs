@@ -13,6 +13,7 @@ pub mod ptguards;
 pub mod stack;
 pub mod validate;
 pub mod virtualrange;
+pub mod vm;
 
 pub use address_space::*;
 pub use guestmem::GuestPtr;
