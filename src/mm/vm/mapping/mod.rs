@@ -8,10 +8,12 @@ pub mod api;
 pub mod kernel_stack;
 pub mod phys_mem;
 pub mod rawalloc;
+pub mod reserved;
 pub mod vmalloc;
 
 pub use api::{Mapping, VMMAdapter, VirtualMapping, VMM};
 pub use kernel_stack::VMKernelStack;
 pub use phys_mem::VMPhysMem;
 pub use rawalloc::RawAllocMapping;
+pub use reserved::VMReserved;
 pub use vmalloc::VMalloc;
