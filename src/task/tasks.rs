@@ -273,8 +273,8 @@ impl Task {
         zero_mem_region(pages, pages + stack_size);
 
         let task_stack = TaskStack {
-            virt_base: VirtAddr::from(SVSM_PERTASK_STACK_BASE),
-            virt_top: VirtAddr::from(SVSM_PERTASK_STACK_TOP),
+            virt_base: SVSM_PERTASK_STACK_BASE,
+            virt_top: SVSM_PERTASK_STACK_TOP,
             phys: virt_to_phys(pages),
         };
 
@@ -302,8 +302,7 @@ impl Task {
             stack_ptr.offset(-1).write(task_exit as *const () as u64);
         }
 
-        let initial_rsp =
-            VirtAddr::from(SVSM_PERTASK_STACK_TOP - (size_of::<TaskContext>() + size_of::<u64>()));
+        let initial_rsp = SVSM_PERTASK_STACK_TOP - (size_of::<TaskContext>() + size_of::<u64>());
         Ok((task_stack, initial_rsp))
     }
 

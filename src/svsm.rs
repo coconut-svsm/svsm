@@ -309,9 +309,9 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: VirtAddr) {
+pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
-    let vb_ptr = vb_addr.as_mut_ptr::<u64>();
+    let vb_ptr = VirtAddr::new(vb_addr).as_mut_ptr::<u64>();
 
     mapping_info_init(&launch_info);
 

@@ -11,6 +11,17 @@ use core::ops;
 // The backing type to represent an address;
 type InnerAddr = usize;
 
+const SIGN_BIT: usize = 47;
+
+const fn sign_extend(addr: InnerAddr) -> InnerAddr {
+    let mask = 1usize << SIGN_BIT;
+    if (addr & mask) == mask {
+        addr | !((1usize << SIGN_BIT) - 1)
+    } else {
+        addr & ((1usize << SIGN_BIT) - 1)
+    }
+}
+
 pub trait Address:
     Copy + From<InnerAddr> + Into<InnerAddr> + PartialEq + Eq + PartialOrd + Ord
 {
@@ -155,7 +166,7 @@ impl VirtAddr {
     // const traits experimental, so for now we need this to make up
     // for the lack of VirtAddr::from() in const contexts.
     pub const fn new(addr: InnerAddr) -> Self {
-        Self(addr)
+        Self(sign_extend(addr))
     }
 
     pub fn as_ptr<T>(&self) -> *const T {
@@ -164,6 +175,10 @@ impl VirtAddr {
 
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         self.0 as *mut T
+    }
+
+    pub const fn const_add(&self, offset: usize) -> Self {
+        VirtAddr::new(self.0 + offset)
     }
 }
 
@@ -181,7 +196,7 @@ impl fmt::LowerHex for VirtAddr {
 
 impl From<InnerAddr> for VirtAddr {
     fn from(addr: InnerAddr) -> Self {
-        Self(addr)
+        Self(sign_extend(addr))
     }
 }
 
@@ -219,7 +234,7 @@ impl<T> From<*mut T> for VirtAddr {
 impl ops::Sub<VirtAddr> for VirtAddr {
     type Output = InnerAddr;
     fn sub(self, other: VirtAddr) -> Self::Output {
-        self.0 - other.0
+        sign_extend(self.0 - other.0)
     }
 }
 
@@ -238,4 +253,16 @@ impl ops::Add<InnerAddr> for VirtAddr {
     }
 }
 
-impl Address for VirtAddr {}
+impl Address for VirtAddr {
+    fn checked_offset(&self, off: InnerAddr) -> Option<Self> {
+        self.bits()
+            .checked_add(off)
+            .map(|addr| sign_extend(addr).into())
+    }
+
+    fn checked_sub(&self, off: InnerAddr) -> Option<Self> {
+        self.bits()
+            .checked_sub(off)
+            .map(|addr| sign_extend(addr).into())
+    }
+}
