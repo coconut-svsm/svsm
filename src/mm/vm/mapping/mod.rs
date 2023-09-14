@@ -5,9 +5,11 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 pub mod api;
+pub mod kernel_stack;
 pub mod rawalloc;
 pub mod vmalloc;
 
 pub use api::{Mapping, VMMAdapter, VirtualMapping, VMM};
+pub use kernel_stack::VMKernelStack;
 pub use rawalloc::RawAllocMapping;
 pub use vmalloc::VMalloc;
