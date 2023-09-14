@@ -263,7 +263,7 @@ impl PageTable {
         Ok(ptr.as_mut_ptr::<PTPage>())
     }
 
-    fn index<const L: usize>(vaddr: VirtAddr) -> usize {
+    pub fn index<const L: usize>(vaddr: VirtAddr) -> usize {
         vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
