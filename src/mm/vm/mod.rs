@@ -5,8 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 mod mapping;
+mod range;
 
 pub use mapping::{
     Mapping, RawAllocMapping, VMKernelStack, VMMAdapter, VMPhysMem, VMReserved, VMalloc,
     VirtualMapping, VMM,
 };
+pub use range::{VMR, VMR_GRANULE};
