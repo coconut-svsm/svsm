@@ -5,5 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 pub mod api;
+pub mod rawalloc;
 
 pub use api::{Mapping, VMMAdapter, VirtualMapping, VMM};
+pub use rawalloc::RawAllocMapping;
