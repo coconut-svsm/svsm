@@ -6,4 +6,4 @@
 
 mod mapping;
 
-pub use mapping::{Mapping, RawAllocMapping, VMMAdapter, VirtualMapping, VMM};
+pub use mapping::{Mapping, RawAllocMapping, VMMAdapter, VMalloc, VirtualMapping, VMM};

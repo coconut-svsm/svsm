@@ -6,6 +6,8 @@
 
 pub mod api;
 pub mod rawalloc;
+pub mod vmalloc;
 
 pub use api::{Mapping, VMMAdapter, VirtualMapping, VMM};
 pub use rawalloc::RawAllocMapping;
+pub use vmalloc::VMalloc;
