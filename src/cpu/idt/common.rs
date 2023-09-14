@@ -5,7 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::insn::Instruction;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
@@ -44,7 +43,6 @@ pub struct X86ExceptionContext {
     pub vector: usize,
     pub error_code: usize,
     pub frame: X86InterruptFrame,
-    pub insn: Instruction,
 }
 
 #[derive(Copy, Clone, Default, Debug)]

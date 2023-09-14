@@ -8,7 +8,7 @@ use super::super::control_regs::read_cr2;
 use super::super::extable::handle_exception_table;
 use super::super::percpu::this_cpu;
 use super::super::tss::IST_DF;
-use super::super::vc::stage2_handle_vc_exception;
+use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
 use super::common::{
     load_idt, Idt, IdtEntry, BP_VECTOR, DF_VECTOR, GLOBAL_IDT, GP_VECTOR, PF_VECTOR, VC_VECTOR,
@@ -46,7 +46,7 @@ pub fn idt_init() {
 }
 
 #[no_mangle]
-pub fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
+pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
     if ctx.vector == DF_VECTOR {
         let cr2 = read_cr2();
         let rip = ctx.frame.rip;
@@ -82,7 +82,7 @@ pub fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
             );
         }
     } else if ctx.vector == VC_VECTOR {
-        stage2_handle_vc_exception(ctx);
+        handle_vc_exception(ctx);
     } else if ctx.vector == BP_VECTOR {
         handle_debug_exception(ctx, ctx.vector);
     } else {
