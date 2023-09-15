@@ -15,9 +15,8 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
-use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{VMPhysMem, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -256,20 +255,23 @@ impl PerCpu {
         *my_pgtable = pgtable;
     }
 
+    fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
+        let stack = VMKernelStack::new()?;
+        let top_of_stack = stack.top_of_stack(base);
+        let mapping = Arc::new(Mapping::new(stack));
+
+        self.vm_range.insert_at(base, mapping)?;
+
+        Ok(top_of_stack)
+    }
+
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
-        let addr = SVSM_STACKS_INIT_TASK;
-        allocate_stack_addr(addr, &mut self.get_pgtable())
-            .expect("Failed to allocate per-cpu init stack");
-        self.init_stack = Some(addr);
+        self.init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
         Ok(())
     }
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        let addr = SVSM_STACK_IST_DF_BASE;
-        allocate_stack_addr(addr, &mut self.get_pgtable())
-            .expect("Failed to allocate percpu double-fault stack");
-
-        self.ist.double_fault_stack = Some(addr);
+        self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
         Ok(())
     }
 
@@ -288,11 +290,15 @@ impl PerCpu {
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
-        stack_base_pointer(self.init_stack.unwrap())
+        self.init_stack.unwrap()
+    }
+
+    pub fn get_top_of_df_stack(&self) -> VirtAddr {
+        self.ist.double_fault_stack.unwrap()
     }
 
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = stack_base_pointer(self.ist.double_fault_stack.unwrap());
+        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
