@@ -429,16 +429,15 @@ impl PerCpu {
 
     pub fn unmap_guest_vmsa(&self) {
         assert!(self.apic_id == this_cpu().get_apic_id());
-        self.get_pgtable().unmap_4k(SVSM_PERCPU_VMSA_BASE);
+        // Ignore errors - the mapping might or might not be there
+        let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.apic_id == this_cpu().get_apic_id());
-
-        let flags = PageTable::data_flags();
-
-        self.get_pgtable()
-            .map_4k(SVSM_PERCPU_VMSA_BASE, paddr, flags)?;
+        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
 
         Ok(())
     }
@@ -495,16 +494,15 @@ impl PerCpu {
     }
 
     pub fn unmap_caa(&self) {
-        self.get_pgtable().unmap_4k(SVSM_PERCPU_CAA_BASE);
+        // Ignore errors - the mapping might or might not be there
+        let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
     }
 
     pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let flags = PageTable::data_flags();
-
-        self.get_pgtable()
-            .map_4k(SVSM_PERCPU_CAA_BASE, paddr.page_align(), flags)?;
+        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
     }
