@@ -16,7 +16,7 @@ use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMReserved, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -319,6 +319,20 @@ impl PerCpu {
         Ok(())
     }
 
+    fn initialize_vm_ranges(&mut self) -> Result<(), SvsmError> {
+        let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
+        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
+
+        let size_2m = SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M;
+        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
+
+        Ok(())
+    }
+
     pub fn dump_vm_ranges(&self) {
         self.vm_range.dump_ranges();
     }
@@ -329,6 +343,9 @@ impl PerCpu {
 
         // Map PerCpu data in own page-table
         self.map_self()?;
+
+        // Reserve ranges for temporary mappings
+        self.initialize_vm_ranges()?;
 
         // Setup GHCB
         self.setup_ghcb()?;
