@@ -114,6 +114,9 @@ pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 /// Base Address of shared memory region
 pub const SVSM_PERCPU_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERCPU);
 
+/// End Address of per-cpu memory region
+pub const SVSM_PERCPU_END: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL3);
+
 /// PerCPU CAA mappings
 pub const SVSM_PERCPU_CAA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(2 * SIZE_LEVEL0);
 

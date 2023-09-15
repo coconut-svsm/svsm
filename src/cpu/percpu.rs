@@ -14,13 +14,14 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::virtualrange::VirtualRange;
+use crate::mm::vm::VMR;
 use crate::mm::{
-    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_TEMP_BASE_2M,
-    SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K,
-    SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
+    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
@@ -183,14 +184,23 @@ pub struct PerCpu {
     guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
 
+    /// PerCpu Virtual Memory Range
+    vm_range: VMR,
+
     /// Address allocator for per-cpu 4k temporary mappings
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
 }
 
+impl Default for PerCpu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerCpu {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         PerCpu {
             online: AtomicBool::new(false),
             apic_id: 0,
@@ -202,6 +212,7 @@ impl PerCpu {
             svsm_vmsa: None,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             reset_ip: 0xffff_fff0u64,
+            vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
         }
@@ -231,8 +242,11 @@ impl PerCpu {
     }
 
     fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
-        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
+        self.vm_range.initialize()?;
+        let mut pgtable_ref = get_init_pgtable_locked().clone_shared()?;
+        self.vm_range.populate(&mut pgtable_ref);
         self.set_pgtable(pgtable_ref);
+
         Ok(())
     }
 
@@ -286,6 +300,10 @@ impl PerCpu {
         let flags = PageTable::data_flags();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
+    }
+
+    pub fn dump_vm_ranges(&self) {
+        self.vm_range.dump_ranges();
     }
 
     pub fn setup(&mut self) -> Result<(), SvsmError> {
