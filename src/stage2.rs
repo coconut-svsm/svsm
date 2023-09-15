@@ -52,8 +52,6 @@ fn setup_stage2_allocator() {
     root_mem_init(pstart, vstart, nr_pages);
 }
 
-pub static mut PERCPU: PerCpu = PerCpu::new();
-
 fn init_percpu() {
     unsafe {
         let bsp_percpu = PerCpu::alloc(0)
@@ -69,11 +67,9 @@ fn init_percpu() {
 }
 
 fn shutdown_percpu() {
-    unsafe {
-        PERCPU
-            .shutdown()
-            .expect("Failed to shut down percpu data (including GHCB)");
-    }
+    this_cpu_mut()
+        .shutdown()
+        .expect("Failed to shut down percpu data (including GHCB)");
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
