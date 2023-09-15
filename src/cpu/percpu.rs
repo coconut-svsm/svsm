@@ -17,7 +17,7 @@ use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::VMR;
+use crate::mm::vm::{VMPhysMem, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -27,6 +27,7 @@ use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ptr;
@@ -294,12 +295,22 @@ impl PerCpu {
         self.tss.ist_stacks[IST_DF] = stack_base_pointer(self.ist.double_fault_stack.unwrap());
     }
 
-    pub fn map_self(&mut self) -> Result<(), SvsmError> {
+    pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
         let flags = PageTable::data_flags();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
+    }
+
+    pub fn map_self(&mut self) -> Result<(), SvsmError> {
+        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let paddr = virt_to_phys(vaddr);
+
+        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
+
+        Ok(())
     }
 
     pub fn dump_vm_ranges(&self) {
