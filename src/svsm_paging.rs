@@ -13,7 +13,7 @@ use crate::mm;
 use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
-use crate::sev::pvalidate;
+use crate::sev::{pvalidate, PvalidateOp};
 use crate::types::{PageSize, PAGE_SIZE};
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
@@ -71,7 +71,7 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, PageSize::Regular, false)?;
+        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
 
         paddr = paddr + PAGE_SIZE;
     }

@@ -23,7 +23,7 @@ use core::{mem, ptr};
 use super::msr_protocol::{
     invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
 };
-use super::pvalidate;
+use super::{pvalidate, PvalidateOp};
 
 // TODO: Fix this when Rust gets decent compile time struct offset support
 const OFF_CPL: u16 = 0xcb;
@@ -143,7 +143,7 @@ impl GHCB {
 
         if sev_snp_enabled() {
             // Make page invalid
-            pvalidate(vaddr, PageSize::Regular, false)?;
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
 
             // Let the Hypervisor take the page back
             invalidate_page_msr(paddr)?;
@@ -184,7 +184,7 @@ impl GHCB {
         validate_page_msr(paddr)?;
 
         // Make page guest-valid
-        pvalidate(vaddr, PageSize::Regular, true)?;
+        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
 
         // Needs guarding for Stage2 GHCB
         if valid_bitmap_valid_addr(paddr) {

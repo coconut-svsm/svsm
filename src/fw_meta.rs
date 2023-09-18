@@ -12,7 +12,7 @@ use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
-use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
+use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{overlap, zero_mem_region};
 use alloc::vec::Vec;
@@ -414,7 +414,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, PageSize::Regular, true)?;
+        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
 
         // Make page accessible to guest VMPL
         rmp_adjust(

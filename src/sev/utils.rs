@@ -50,7 +50,7 @@ impl fmt::Display for SevSnpError {
     }
 }
 
-fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
+fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: PvalidateOp) -> Result<(), SvsmError> {
     for addr in (start.bits()..end.bits())
         .step_by(PAGE_SIZE)
         .map(VirtAddr::from)
@@ -61,7 +61,11 @@ fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(),
     Ok(())
 }
 
-pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
+pub fn pvalidate_range(
+    start: VirtAddr,
+    end: VirtAddr,
+    valid: PvalidateOp,
+) -> Result<(), SvsmError> {
     let mut addr = start;
 
     while addr < end {
@@ -84,7 +88,15 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
     Ok(())
 }
 
-pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: bool) -> Result<(), SvsmError> {
+/// The desired state of the page passed to PVALIDATE.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+pub enum PvalidateOp {
+    Invalid = 0,
+    Valid = 1,
+}
+
+pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<(), SvsmError> {
     let rax = vaddr.bits();
     let rcx: u64 = match size {
         PageSize::Regular => 0,

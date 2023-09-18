@@ -15,7 +15,7 @@ use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
-    rmp_set_guest_vmsa, RMPFlags, SevSnpError,
+    rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,
 };
 use crate::sev::vmsa::VMSA;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
@@ -203,7 +203,10 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         _ => return Err(SvsmReqError::invalid_parameter()),
     };
 
-    let valid = (entry & 4) == 4;
+    let valid = match (entry & 4) == 4 {
+        true => PvalidateOp::Valid,
+        false => PvalidateOp::Invalid,
+    };
     let ign_cf = (entry & 8) == 8;
 
     let paddr = PhysAddr::from(entry).page_align();
@@ -220,7 +223,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
-    if !valid {
+    if valid == PvalidateOp::Invalid {
         *flush |= true;
         rmp_revoke_guest_access(vaddr, huge)?;
     }
@@ -230,7 +233,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         _ => Err(err),
     })?;
 
-    if valid {
+    if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
         // access to it. This is necessary to prevent a possible HV attack:
         //
