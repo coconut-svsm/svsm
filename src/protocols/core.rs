@@ -18,7 +18,7 @@ use crate::sev::utils::{
     rmp_set_guest_vmsa, RMPFlags, SevSnpError,
 };
 use crate::sev::vmsa::VMSA;
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
@@ -198,8 +198,8 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
     let (page_size_bytes, valign, huge) = match entry & 3 {
-        0 => (PAGE_SIZE, VIRT_ALIGN_4K, false),
-        1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, true),
+        0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
+        1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, PageSize::Huge),
         _ => return Err(SvsmReqError::invalid_parameter()),
     };
 

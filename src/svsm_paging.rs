@@ -14,7 +14,7 @@ use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::pvalidate;
-use crate::types::PAGE_SIZE;
+use crate::types::{PageSize, PAGE_SIZE};
 
 pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
@@ -71,14 +71,14 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, false, false)?;
+        pvalidate(vaddr, PageSize::Regular, false)?;
 
         paddr = paddr + PAGE_SIZE;
     }
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(paddr, pend, false, PageStateChangeOp::PscShared)
+        .page_state_change(paddr, pend, PageSize::Regular, PageStateChangeOp::PscShared)
         .expect("Failed to invalidate Stage2 memory");
 
     Ok(())

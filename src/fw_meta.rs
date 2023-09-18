@@ -13,7 +13,7 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
-use crate::types::PAGE_SIZE;
+use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{overlap, zero_mem_region};
 use alloc::vec::Vec;
 
@@ -399,7 +399,12 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
+        .page_state_change(
+            pstart,
+            pend,
+            PageSize::Regular,
+            PageStateChangeOp::PscPrivate,
+        )
         .expect("GHCB PSC call failed to validate firmware memory");
 
     for paddr in (pstart.bits()..pend.bits())
@@ -409,10 +414,14 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, false, true)?;
+        pvalidate(vaddr, PageSize::Regular, true)?;
 
         // Make page accessible to guest VMPL
-        rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false)?;
+        rmp_adjust(
+            vaddr,
+            RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+            PageSize::Regular,
+        )?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     }

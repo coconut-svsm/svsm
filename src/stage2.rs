@@ -33,7 +33,7 @@ use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::PAGE_SIZE;
+use svsm::types::{PageSize, PAGE_SIZE};
 use svsm::utils::halt;
 
 extern "C" {
@@ -119,7 +119,12 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(paddr, paddr + len, true, PageStateChangeOp::PscPrivate)
+        .page_state_change(
+            paddr,
+            paddr + len,
+            PageSize::Huge,
+            PageStateChangeOp::PscPrivate,
+        )
         .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     pvalidate_range(vaddr, vaddr + len, true).expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + len);
