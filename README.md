@@ -39,6 +39,14 @@ Detailed installation instructions are in the [INSTALL.md](INSTALL.md)
 file. It walks through the process of building all the necessary parts
 to get a virtual machine powered by the COCONUT-SVSM up and running.
 
+Community
+---------
+
+Development discussions happen on the
+[project mailing list](https://mail.8bytes.org/cgi-bin/mailman/listinfo/svsm-devel)
+(svsm-devel@coconut-svsm.dev). Regular development calls are scheduled via the
+mailing list.
+
 Reporting Bugs
 --------------
 
