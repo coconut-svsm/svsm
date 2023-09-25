@@ -46,7 +46,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
-use svsm::types::{GUEST_VMPL, PAGE_SIZE};
+use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
@@ -267,7 +267,11 @@ fn validate_flash() -> Result<(), SvsmError> {
         {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
-            if let Err(e) = rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, false) {
+            if let Err(e) = rmp_adjust(
+                vaddr,
+                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                PageSize::Regular,
+            ) {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(e);
             }

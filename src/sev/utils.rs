@@ -6,7 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use core::arch::asm;
 use core::fmt;
 
@@ -50,25 +50,29 @@ impl fmt::Display for SevSnpError {
     }
 }
 
-fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
+fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: PvalidateOp) -> Result<(), SvsmError> {
     for addr in (start.bits()..end.bits())
         .step_by(PAGE_SIZE)
         .map(VirtAddr::from)
     {
-        pvalidate(addr, false, valid)?;
+        pvalidate(addr, PageSize::Regular, valid)?;
     }
 
     Ok(())
 }
 
-pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<(), SvsmError> {
+pub fn pvalidate_range(
+    start: VirtAddr,
+    end: VirtAddr,
+    valid: PvalidateOp,
+) -> Result<(), SvsmError> {
     let mut addr = start;
 
     while addr < end {
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
-            pvalidate(addr, true, valid).or_else(|err| match err {
+            pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
                 SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
                     pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
                 }
@@ -76,7 +80,7 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
             })?;
             addr = addr + PAGE_SIZE_2M;
         } else {
-            pvalidate(addr, false, valid)?;
+            pvalidate(addr, PageSize::Regular, valid)?;
             addr = addr + PAGE_SIZE;
         }
     }
@@ -84,9 +88,20 @@ pub fn pvalidate_range(start: VirtAddr, end: VirtAddr, valid: bool) -> Result<()
     Ok(())
 }
 
-pub fn pvalidate(vaddr: VirtAddr, huge_page: bool, valid: bool) -> Result<(), SvsmError> {
+/// The desired state of the page passed to PVALIDATE.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+pub enum PvalidateOp {
+    Invalid = 0,
+    Valid = 1,
+}
+
+pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<(), SvsmError> {
     let rax = vaddr.bits();
-    let rcx = huge_page as u64;
+    let rcx: u64 = match size {
+        PageSize::Regular => 0,
+        PageSize::Huge => 1,
+    };
     let rdx = valid as u64;
     let ret: u64;
     let cf: u64;
@@ -143,8 +158,11 @@ bitflags::bitflags! {
     }
 }
 
-pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), SvsmError> {
-    let rcx: usize = if huge { 1 } else { 0 };
+pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(), SvsmError> {
+    let rcx: u64 = match size {
+        PageSize::Regular => 0,
+        PageSize::Huge => 1,
+    };
     let rax: u64 = addr.bits() as u64;
     let rdx: u64 = flags.bits();
     let mut ret: u64;
@@ -182,24 +200,28 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, huge: bool) -> Result<(), Svs
     }
 }
 
-pub fn rmp_revoke_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
+pub fn rmp_revoke_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
     for vmpl in RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits() {
         let vmpl = RMPFlags::from_bits_truncate(vmpl);
-        rmp_adjust(vaddr, vmpl | RMPFlags::NONE, huge)?;
+        rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size)?;
     }
     Ok(())
 }
 
-pub fn rmp_grant_guest_access(vaddr: VirtAddr, huge: bool) -> Result<(), SvsmError> {
-    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, huge)
+pub fn rmp_grant_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
+    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, size)
 }
 
 pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
-    rmp_revoke_guest_access(vaddr, false)?;
-    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::VMSA, false)
+    rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
+    rmp_adjust(
+        vaddr,
+        RMPFlags::GUEST_VMPL | RMPFlags::VMSA,
+        PageSize::Regular,
+    )
 }
 
 pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
-    rmp_revoke_guest_access(vaddr, false)?;
-    rmp_grant_guest_access(vaddr, false)
+    rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
+    rmp_grant_guest_access(vaddr, PageSize::Regular)
 }

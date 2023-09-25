@@ -8,7 +8,7 @@ use super::utils::{rmp_adjust, RMPFlags};
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::alloc::{allocate_pages, free_page};
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
 
 pub const VMPL_MAX: usize = 4;
@@ -318,7 +318,7 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
 
     zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
 
-    if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, false) {
+    if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, PageSize::Regular) {
         free_page(vmsa_page);
         return Err(e);
     }
@@ -326,6 +326,7 @@ pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
 }
 
 pub fn free_vmsa(vaddr: VirtAddr) {
-    rmp_adjust(vaddr, RMPFlags::RWX | RMPFlags::VMPL0, false).expect("Failed to free VMSA page");
+    rmp_adjust(vaddr, RMPFlags::RWX | RMPFlags::VMPL0, PageSize::Regular)
+        .expect("Failed to free VMSA page");
     free_page(vaddr);
 }
