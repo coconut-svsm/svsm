@@ -419,7 +419,7 @@ impl GHCB {
             entries += 1;
             paddr = paddr + pgsize;
 
-            if entries == max_entries {
+            if entries == max_entries || paddr >= end {
                 let header = PageStateChangeHeader {
                     cur_entry: 0,
                     end_entry: entries - 1,
