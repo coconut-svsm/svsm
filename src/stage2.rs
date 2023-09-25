@@ -157,8 +157,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
-    let kernel_region_phys_start = PhysAddr::from(r.start);
-    let kernel_region_phys_end = PhysAddr::from(r.end);
+    let kernel_region_phys_start = r.start();
+    let kernel_region_phys_end = r.end();
     init_valid_bitmap_alloc(kernel_region_phys_start, kernel_region_phys_end)
         .expect("Failed to allocate valid-bitmap");
 

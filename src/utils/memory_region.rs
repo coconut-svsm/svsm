@@ -188,4 +188,19 @@ where
             .step_by(size)
             .map(A::from)
     }
+
+    /// Check whether an address is within this region.
+    ///
+    /// ```rust
+    /// # use svsm::address::VirtAddr;
+    /// # use svsm::types::{PAGE_SIZE, PageSize};
+    /// # use svsm::utils::MemoryRegion;
+    /// let region = MemoryRegion::new(VirtAddr::from(0xffffff0000u64), PAGE_SIZE);
+    /// assert!(region.contains(VirtAddr::from(0xffffff0000u64)));
+    /// assert!(region.contains(VirtAddr::from(0xffffff0fffu64)));
+    /// assert!(!region.contains(VirtAddr::from(0xffffff1000u64)));
+    /// ```
+    pub fn contains(&self, addr: A) -> bool {
+        self.start() <= addr && addr < self.end()
+    }
 }
