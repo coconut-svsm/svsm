@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use crate::address::{Address, PhysAddr};
+use crate::address::PhysAddr;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
@@ -14,44 +14,12 @@ use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, PAGE_SIZE};
-use crate::utils::{overlap, zero_mem_region};
+use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
 
-use core::cmp;
 use core::fmt;
 use core::mem::{align_of, size_of, size_of_val};
 use core::str::FromStr;
-
-#[derive(Copy, Clone, Debug)]
-pub struct SevPreValidMem {
-    base: PhysAddr,
-    length: usize,
-}
-
-impl SevPreValidMem {
-    fn new(base: PhysAddr, length: usize) -> Self {
-        Self { base, length }
-    }
-
-    fn new_4k(base: PhysAddr) -> Self {
-        Self::new(base, PAGE_SIZE)
-    }
-
-    #[inline]
-    fn end(&self) -> PhysAddr {
-        self.base + self.length
-    }
-
-    fn overlap(&self, other: &Self) -> bool {
-        overlap(self.base, self.end(), other.base, other.end())
-    }
-
-    fn merge(self, other: Self) -> Self {
-        let base = cmp::min(self.base, other.base);
-        let length = cmp::max(self.end(), other.end()) - base;
-        Self::new(base, length)
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct SevFWMetaData {
@@ -59,7 +27,7 @@ pub struct SevFWMetaData {
     pub cpuid_page: Option<PhysAddr>,
     pub secrets_page: Option<PhysAddr>,
     pub caa_page: Option<PhysAddr>,
-    pub valid_mem: Vec<SevPreValidMem>,
+    pub valid_mem: Vec<MemoryRegion<PhysAddr>>,
 }
 
 impl SevFWMetaData {
@@ -74,7 +42,7 @@ impl SevFWMetaData {
     }
 
     pub fn add_valid_mem(&mut self, base: PhysAddr, len: usize) {
-        self.valid_mem.push(SevPreValidMem::new(base, len));
+        self.valid_mem.push(MemoryRegion::new(base, len));
     }
 }
 
@@ -391,8 +359,8 @@ fn parse_sev_meta(
     Ok(())
 }
 
-fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
-    let pstart = region.base;
+fn validate_fw_mem_region(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+    let pstart = region.start();
     let pend = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
@@ -407,10 +375,7 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
         )
         .expect("GHCB PSC call failed to validate firmware memory");
 
-    for paddr in (pstart.bits()..pend.bits())
-        .step_by(PAGE_SIZE)
-        .map(PhysAddr::from)
-    {
+    for paddr in region.iter_pages(PageSize::Regular) {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
@@ -429,17 +394,17 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions: Vec<SevPreValidMem>) -> Result<(), SvsmError> {
+fn validate_fw_memory_vec(regions: Vec<MemoryRegion<PhysAddr>>) -> Result<(), SvsmError> {
     if regions.is_empty() {
         return Ok(());
     }
 
-    let mut next_vec: Vec<SevPreValidMem> = Vec::new();
+    let mut next_vec = Vec::new();
     let mut region = regions[0];
 
     for next in regions.into_iter().skip(1) {
-        if region.overlap(&next) {
-            region = region.merge(next);
+        if region.contiguous(&next) {
+            region = region.merge(&next);
         } else {
             next_vec.push(next);
         }
@@ -455,21 +420,21 @@ pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 
     // Add region for CPUID page if present
     if let Some(cpuid_paddr) = fw_meta.cpuid_page {
-        regions.push(SevPreValidMem::new_4k(cpuid_paddr));
+        regions.push(MemoryRegion::new(cpuid_paddr, PAGE_SIZE));
     }
 
     // Add region for Secrets page if present
     if let Some(secrets_paddr) = fw_meta.secrets_page {
-        regions.push(SevPreValidMem::new_4k(secrets_paddr));
+        regions.push(MemoryRegion::new(secrets_paddr, PAGE_SIZE));
     }
 
     // Add region for CAA page if present
     if let Some(caa_paddr) = fw_meta.caa_page {
-        regions.push(SevPreValidMem::new_4k(caa_paddr));
+        regions.push(MemoryRegion::new(caa_paddr, PAGE_SIZE));
     }
 
     // Sort regions by base address
-    regions.sort_unstable_by(|a, b| a.base.cmp(&b.base));
+    regions.sort_unstable_by_key(|a| a.start());
 
     validate_fw_memory_vec(regions)
 }
@@ -500,7 +465,7 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     for region in &fw_meta.valid_mem {
         log::info!(
             "  Pre-Validated Region {:#018x}-{:#018x}",
-            region.base,
+            region.start(),
             region.end()
         );
     }
