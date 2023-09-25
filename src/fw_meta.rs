@@ -11,7 +11,7 @@ use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
-use crate::sev::ghcb::PageStateChangeOp;
+use crate::sev::ghcb::{PageStateChangeOp, PageStateChangeSize};
 use crate::sev::{pvalidate, rmp_adjust, RMPFlags};
 use crate::types::PAGE_SIZE;
 use crate::utils::{overlap, zero_mem_region};
@@ -399,7 +399,12 @@ fn validate_fw_mem_region(region: SevPreValidMem) -> Result<(), SvsmError> {
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(pstart, pend, false, PageStateChangeOp::PscPrivate)
+        .page_state_change(
+            pstart,
+            pend,
+            PageStateChangeSize::RegularPage,
+            PageStateChangeOp::PscPrivate,
+        )
         .expect("GHCB PSC call failed to validate firmware memory");
 
     for paddr in (pstart.bits()..pend.bits())

@@ -12,7 +12,7 @@ use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm;
 use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::sev::ghcb::PageStateChangeOp;
+use crate::sev::ghcb::{PageStateChangeOp, PageStateChangeSize};
 use crate::sev::pvalidate;
 use crate::types::PAGE_SIZE;
 
@@ -78,7 +78,12 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
 
     this_cpu_mut()
         .ghcb()
-        .page_state_change(paddr, pend, false, PageStateChangeOp::PscShared)
+        .page_state_change(
+            paddr,
+            pend,
+            PageStateChangeSize::RegularPage,
+            PageStateChangeOp::PscShared,
+        )
         .expect("Failed to invalidate Stage2 memory");
 
     Ok(())

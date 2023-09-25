@@ -60,6 +60,12 @@ pub enum PageStateChangeOp {
     PscUnsmash,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageStateChangeSize {
+    RegularPage,
+    HugePage,
+}
+
 const PSC_GFN_MASK: u64 = ((1u64 << 52) - 1) & !0xfffu64;
 
 const PSC_OP_SHIFT: u8 = 52;
@@ -375,12 +381,18 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
-        assert!(!huge || paddr.is_aligned(PAGE_SIZE_2M));
+    pub fn psc_entry(
+        &self,
+        paddr: PhysAddr,
+        op_mask: u64,
+        current_page: u64,
+        size: PageStateChangeSize,
+    ) -> u64 {
+        assert!(size == PageStateChangeSize::RegularPage || paddr.is_aligned(PAGE_SIZE_2M));
 
         let mut entry: u64 =
             ((paddr.bits() as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
-        if huge {
+        if size == PageStateChangeSize::HugePage {
             entry |= PSC_FLAG_HUGE;
         }
 
@@ -391,7 +403,7 @@ impl GHCB {
         &mut self,
         start: PhysAddr,
         end: PhysAddr,
-        huge: bool,
+        size: PageStateChangeSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
@@ -408,12 +420,16 @@ impl GHCB {
         self.clear();
 
         while paddr < end {
-            let huge = huge && paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= end;
-            let pgsize: usize = match huge {
-                true => PAGE_SIZE_2M,
-                false => PAGE_SIZE,
+            let (size, pgsize) = if size == PageStateChangeSize::HugePage
+                && paddr.is_aligned(PAGE_SIZE_2M)
+                && paddr + PAGE_SIZE_2M <= end
+            {
+                (PageStateChangeSize::HugePage, PAGE_SIZE_2M)
+            } else {
+                (PageStateChangeSize::RegularPage, PAGE_SIZE)
             };
-            let entry = self.psc_entry(paddr, op_mask, 0, huge);
+
+            let entry = self.psc_entry(paddr, op_mask, 0, size);
             let offset: isize = (entries as isize) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
