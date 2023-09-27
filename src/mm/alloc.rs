@@ -1388,11 +1388,11 @@ fn test_page_alloc_all_compound() {
 
     let info_before = root_mem.memory_info();
     let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
-    for o in 0..MAX_ORDER {
+    for (o, alloc) in allocs.iter_mut().enumerate().take(MAX_ORDER) {
         for _i in 0..info_before.free_pages[o] {
             let pages = root_mem.allocate_pages(o).unwrap();
             assert!(!pages.is_null());
-            allocs[o].push(pages);
+            alloc.push(pages);
         }
     }
     let info_after = root_mem.memory_info();
@@ -1400,8 +1400,8 @@ fn test_page_alloc_all_compound() {
         assert_eq!(info_after.free_pages[o], 0);
     }
 
-    for o in 0..MAX_ORDER {
-        for pages in &allocs[o][..] {
+    for alloc in allocs.iter().take(MAX_ORDER) {
+        for pages in &alloc[..] {
             root_mem.free_page(*pages);
         }
     }
@@ -1458,11 +1458,11 @@ fn test_page_alloc_oom() {
 
     let info_before = root_mem.memory_info();
     let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
-    for o in 0..MAX_ORDER {
+    for (o, alloc) in allocs.iter_mut().enumerate().take(MAX_ORDER) {
         for _i in 0..info_before.free_pages[o] {
             let pages = root_mem.allocate_pages(o).unwrap();
             assert!(!pages.is_null());
-            allocs[o].push(pages);
+            alloc.push(pages);
         }
     }
     let info_after = root_mem.memory_info();
@@ -1471,12 +1471,12 @@ fn test_page_alloc_oom() {
     }
 
     let page = root_mem.allocate_page();
-    if let Ok(_) = page {
+    if page.is_ok() {
         panic!("unexpected page allocation success after memory exhaustion");
     }
 
-    for o in 0..MAX_ORDER {
-        for pages in &allocs[o][..] {
+    for alloc in allocs.iter().take(MAX_ORDER) {
+        for pages in &alloc[..] {
             root_mem.free_page(*pages);
         }
     }
@@ -1495,37 +1495,25 @@ fn test_page_file() {
     let vaddr = root_mem.allocate_file_page().unwrap();
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 1),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 1));
 
     // Get another reference and check ref-count
     root_mem.get_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 2),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 2));
 
     // Drop reference and check ref-count
     root_mem.put_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 1),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 1));
 
     // Drop last reference and check if page is released
     root_mem.put_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::Free(_) => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::Free { .. }));
 
     drop(root_mem);
     destroy_test_root_mem(test_mem_lock);
@@ -1557,7 +1545,7 @@ fn test_slab_alloc_free_many() {
                 assert_ne!(p, ptr::null_mut());
                 allocs[j].push(p);
             }
-            j = j + 1;
+            j += 1;
         }
 
         j = 0;
@@ -1568,7 +1556,7 @@ fn test_slab_alloc_free_many() {
             for p in &allocs[j][..] {
                 unsafe { ALLOCATOR.dealloc(*p, layout) };
             }
-            j = j + 1;
+            j += 1;
         }
     }
 
