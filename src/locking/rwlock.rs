@@ -155,3 +155,46 @@ impl<T: Debug> RWLock<T> {
         }
     }
 }
+
+mod tests {
+
+    #[test]
+    fn test_lock_rw() {
+        use crate::locking::*;
+        let rwlock = RWLock::new(42);
+
+        // Acquire a read lock and check the initial value
+        let read_guard = rwlock.lock_read();
+        assert_eq!(*read_guard, 42);
+
+        drop(read_guard);
+
+        let read_guard2 = rwlock.lock_read();
+        assert_eq!(*read_guard2, 42);
+
+        // Create another RWLock instance for modification
+        let rwlock_modify = RWLock::new(0);
+
+        let mut write_guard = rwlock_modify.lock_write();
+        *write_guard = 99;
+        assert_eq!(*write_guard, 99);
+
+        drop(write_guard);
+
+        let read_guard = rwlock.lock_read();
+        assert_eq!(*read_guard, 42);
+
+        // Let's test two concurrent readers on a new RWLock instance
+        let rwlock_concurrent = RWLock::new(123);
+
+        let read_guard1 = rwlock_concurrent.lock_read();
+        let read_guard2 = rwlock_concurrent.lock_read();
+
+        // Assert that both readers can access the same value (123)
+        assert_eq!(*read_guard1, 123);
+        assert_eq!(*read_guard2, 123);
+
+        drop(read_guard1);
+        drop(read_guard2);
+    }
+}
