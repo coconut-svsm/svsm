@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug)]
 pub struct ReadLockGuard<'a, T: Debug> {
     rwlock: &'a AtomicU64,
-    data: &'a mut T,
+    data: &'a T,
 }
 
 impl<'a, T: Debug> Drop for ReadLockGuard<'a, T> {
@@ -124,7 +124,7 @@ impl<T: Debug> RWLock<T> {
 
         ReadLockGuard {
             rwlock: &self.rwlock,
-            data: unsafe { &mut *self.data.get() },
+            data: unsafe { &*self.data.get() },
         }
     }
 
