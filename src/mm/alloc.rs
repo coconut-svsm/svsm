@@ -1181,6 +1181,19 @@ impl SvsmAllocator {
         }
     }
 
+    /// Resets the internal state. This is equivalent to reassigning `self`
+    /// with `Self::new()`.
+    #[cfg(test)]
+    fn reset(&self) {
+        *self.slab_size_32.lock() = Slab::new(32);
+        *self.slab_size_64.lock() = Slab::new(64);
+        *self.slab_size_128.lock() = Slab::new(128);
+        *self.slab_size_256.lock() = Slab::new(256);
+        *self.slab_size_512.lock() = Slab::new(512);
+        *self.slab_size_1024.lock() = Slab::new(1024);
+        *self.slab_size_2048.lock() = Slab::new(2048);
+    }
+
     fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
         if size <= 32 {
             Some(&self.slab_size_32)
@@ -1246,7 +1259,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 
 #[cfg_attr(any(target_os = "none"), global_allocator)]
 #[cfg_attr(not(target_os = "none"), allow(dead_code))]
-static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
+static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     {
@@ -1308,7 +1321,7 @@ pub fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
 
     // Reset the Slabs
     *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();
-    unsafe { ALLOCATOR = SvsmAllocator::new() };
+    ALLOCATOR.reset();
 
     drop(lock);
 }
