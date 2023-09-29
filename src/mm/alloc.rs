@@ -1259,8 +1259,9 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             .unwrap_or_else(|_| ptr::null_mut())
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let virt_addr = VirtAddr::from(ptr);
+        let size = layout.size();
 
         let info = ROOT_MEM
             .lock()
@@ -1271,11 +1272,9 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             Page::Allocated(_ai) => {
                 free_page(virt_addr);
             }
-            Page::SlabPage(si) => {
-                assert!(!si.slab.is_null());
-                let slab = si.slab.as_mut_ptr::<Slab>();
-
-                (*slab).deallocate(virt_addr);
+            Page::SlabPage(_si) => {
+                let slab = self.get_slab(size).expect("Invalid page info");
+                slab.lock().deallocate(virt_addr);
             }
             _ => {
                 panic!("Freeing memory on unsupported page type");
