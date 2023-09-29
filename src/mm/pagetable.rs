@@ -736,3 +736,8 @@ impl DerefMut for PageTableRef {
         unsafe { &mut *self.pgtable_ptr }
     }
 }
+
+/// SAFETY: `PageTableRef` is more or less equivalent to a mutable reference to
+///         a PageTable and so if `&mut PageTable` implements `Send` so does
+///         `PageTableRef`.
+unsafe impl Send for PageTableRef where &'static mut PageTable: Send {}
