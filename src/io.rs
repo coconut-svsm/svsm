@@ -6,7 +6,7 @@
 
 use core::arch::asm;
 
-pub trait IOPort {
+pub trait IOPort: Sync {
     fn outb(&self, port: u16, value: u8) {
         unsafe { asm!("outb %al, %dx", in("al") value, in("dx") port, options(att_syntax)) }
     }
