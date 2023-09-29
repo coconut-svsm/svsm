@@ -59,11 +59,6 @@ pub fn load_tss(tss: &X86Tss) {
     }
 }
 
-static mut GDT_DESC: GdtDesc = GdtDesc {
-    size: 0,
-    addr: VirtAddr::null(),
-};
-
 pub fn gdt_base_limit() -> (u64, u32) {
     unsafe {
         let gdt_entries = GDT_SIZE as usize;
@@ -75,10 +70,10 @@ pub fn gdt_base_limit() -> (u64, u32) {
 
 pub fn load_gdt() {
     unsafe {
-        let vaddr = VirtAddr::from(GDT.as_ptr());
-
-        GDT_DESC.addr = vaddr;
-        GDT_DESC.size = (GDT_SIZE * 8) - 1;
+        let gdt_desc: GdtDesc = GdtDesc {
+            size: (GDT_SIZE * 8) - 1,
+            addr: VirtAddr::from(GDT.as_ptr()),
+        };
 
         asm!(r#" /* Load GDT */
              lgdt   (%rax)
@@ -97,7 +92,7 @@ pub fn load_gdt() {
              lretq
         1:
              "#,
-            in("rax") &GDT_DESC,
+            in("rax") &gdt_desc,
             in("rdx") SVSM_CS,
             in("rcx") SVSM_DS,
             options(att_syntax));
