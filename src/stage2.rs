@@ -96,7 +96,7 @@ fn setup_env() {
     init_percpu();
 
     unsafe {
-        WRITER.lock().set(&mut CONSOLE_SERIAL);
+        WRITER.lock().set(&CONSOLE_SERIAL);
     }
     init_console();
 
