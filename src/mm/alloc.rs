@@ -1257,13 +1257,10 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         let virt_addr = VirtAddr::from(ptr);
 
-        let result = ROOT_MEM.lock().get_page_info(virt_addr);
-
-        if result.is_err() {
-            panic!("Freeing unknown memory");
-        }
-
-        let info = result.unwrap();
+        let info = ROOT_MEM
+            .lock()
+            .get_page_info(virt_addr)
+            .expect("Freeing unknown memory");
 
         match info {
             Page::Allocated(_ai) => {
