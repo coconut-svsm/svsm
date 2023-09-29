@@ -46,10 +46,8 @@ impl fmt::Debug for Console {
     }
 }
 
-pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
-    Console {
-        writer: Some(&DEFAULT_SERIAL_PORT),
-    }
+pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
+    writer: Some(&DEFAULT_SERIAL_PORT),
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 

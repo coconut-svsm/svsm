@@ -73,7 +73,7 @@ fn shutdown_percpu() {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static mut CONSOLE_SERIAL: SerialPort = SerialPort {
+static CONSOLE_SERIAL: SerialPort = SerialPort {
     driver: &CONSOLE_IO,
     port: SERIAL_PORT,
 };
@@ -95,9 +95,7 @@ fn setup_env() {
     setup_stage2_allocator();
     init_percpu();
 
-    unsafe {
-        WRITER.lock().set(&CONSOLE_SERIAL);
-    }
+    WRITER.lock().set(&CONSOLE_SERIAL);
     init_console();
 
     // Console is fully working now and any unsupported configuration can be
