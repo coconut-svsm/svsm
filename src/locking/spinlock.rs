@@ -5,47 +5,46 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
 #[must_use = "if unused the SpinLock will immediately unlock"]
-pub struct LockGuard<'a, T: Debug> {
+pub struct LockGuard<'a, T> {
     holder: &'a AtomicU64,
     data: &'a mut T,
 }
 
-impl<'a, T: Debug> Drop for LockGuard<'a, T> {
+impl<'a, T> Drop for LockGuard<'a, T> {
     fn drop(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
     }
 }
 
-impl<'a, T: Debug> Deref for LockGuard<'a, T> {
+impl<'a, T> Deref for LockGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl<'a, T: Debug> DerefMut for LockGuard<'a, T> {
+impl<'a, T> DerefMut for LockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
 #[derive(Debug)]
-pub struct SpinLock<T: Debug> {
+pub struct SpinLock<T> {
     current: AtomicU64,
     holder: AtomicU64,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Debug + Send> Send for SpinLock<T> {}
-unsafe impl<T: Debug + Send> Sync for SpinLock<T> {}
+unsafe impl<T: Send> Send for SpinLock<T> {}
+unsafe impl<T: Send> Sync for SpinLock<T> {}
 
-impl<T: Debug> SpinLock<T> {
+impl<T> SpinLock<T> {
     pub const fn new(data: T) -> Self {
         SpinLock {
             current: AtomicU64::new(0),

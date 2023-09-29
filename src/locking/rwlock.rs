@@ -5,24 +5,23 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
 #[must_use = "if unused the RWLock will immediately unlock"]
-pub struct ReadLockGuard<'a, T: Debug> {
+pub struct ReadLockGuard<'a, T> {
     rwlock: &'a AtomicU64,
     data: &'a T,
 }
 
-impl<'a, T: Debug> Drop for ReadLockGuard<'a, T> {
+impl<'a, T> Drop for ReadLockGuard<'a, T> {
     fn drop(&mut self) {
         self.rwlock.fetch_sub(1, Ordering::Release);
     }
 }
 
-impl<'a, T: Debug> Deref for ReadLockGuard<'a, T> {
+impl<'a, T> Deref for ReadLockGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
@@ -31,38 +30,38 @@ impl<'a, T: Debug> Deref for ReadLockGuard<'a, T> {
 
 #[derive(Debug)]
 #[must_use = "if unused the RWLock will immediately unlock"]
-pub struct WriteLockGuard<'a, T: Debug> {
+pub struct WriteLockGuard<'a, T> {
     rwlock: &'a AtomicU64,
     data: &'a mut T,
 }
 
-impl<'a, T: Debug> Drop for WriteLockGuard<'a, T> {
+impl<'a, T> Drop for WriteLockGuard<'a, T> {
     fn drop(&mut self) {
         // There are no readers - safe to just set lock to 0
         self.rwlock.store(0, Ordering::Release);
     }
 }
 
-impl<'a, T: Debug> Deref for WriteLockGuard<'a, T> {
+impl<'a, T> Deref for WriteLockGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl<'a, T: Debug> DerefMut for WriteLockGuard<'a, T> {
+impl<'a, T> DerefMut for WriteLockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
 #[derive(Debug)]
-pub struct RWLock<T: Debug> {
+pub struct RWLock<T> {
     rwlock: AtomicU64,
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Debug> Sync for RWLock<T> {}
+unsafe impl<T> Sync for RWLock<T> {}
 
 #[inline]
 fn split_val(val: u64) -> (u64, u64) {
@@ -74,7 +73,7 @@ fn compose_val(readers: u64, writers: u64) -> u64 {
     (readers & 0xffff_ffffu64) | (writers << 32)
 }
 
-impl<T: Debug> RWLock<T> {
+impl<T> RWLock<T> {
     pub const fn new(data: T) -> Self {
         RWLock {
             rwlock: AtomicU64::new(0),
