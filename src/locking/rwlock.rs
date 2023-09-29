@@ -61,7 +61,8 @@ pub struct RWLock<T> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T> Sync for RWLock<T> {}
+unsafe impl<T: Send> Send for RWLock<T> {}
+unsafe impl<T: Send + Sync> Sync for RWLock<T> {}
 
 #[inline]
 fn split_val(val: u64) -> (u64, u64) {
