@@ -25,7 +25,7 @@ pub const DLH: u16 = 1; // Divisor Latch High
 pub const RCVRDY: u8 = 0x01;
 pub const XMTRDY: u8 = 0x20;
 
-pub trait Terminal {
+pub trait Terminal: Sync {
     fn put_byte(&self, _ch: u8) {}
     fn get_byte(&self) -> u8 {
         0
