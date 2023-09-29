@@ -1219,36 +1219,41 @@ impl SvsmAllocator {
             slab_size_2048: SpinLock::new(Slab::new(2048)),
         }
     }
+
+    fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
+        if size <= 32 {
+            Some(&self.slab_size_32)
+        } else if size <= 64 {
+            Some(&self.slab_size_64)
+        } else if size <= 128 {
+            Some(&self.slab_size_128)
+        } else if size <= 256 {
+            Some(&self.slab_size_256)
+        } else if size <= 512 {
+            Some(&self.slab_size_512)
+        } else if size <= 1024 {
+            Some(&self.slab_size_1024)
+        } else if size <= 2048 {
+            Some(&self.slab_size_2048)
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ret: Result<VirtAddr, SvsmError>;
         let size = layout.size();
-
-        if size <= 32 {
-            ret = self.slab_size_32.lock().allocate();
-        } else if size <= 64 {
-            ret = self.slab_size_64.lock().allocate();
-        } else if size <= 128 {
-            ret = self.slab_size_128.lock().allocate();
-        } else if size <= 256 {
-            ret = self.slab_size_256.lock().allocate();
-        } else if size <= 512 {
-            ret = self.slab_size_512.lock().allocate();
-        } else if size <= 1024 {
-            ret = self.slab_size_1024.lock().allocate();
-        } else if size <= 2048 {
-            ret = self.slab_size_2048.lock().allocate();
-        } else if size <= 4096 {
-            ret = allocate_page();
-        } else {
-            let order = get_order(size);
-            if order >= MAX_ORDER {
-                return ptr::null_mut();
+        let ret = match self.get_slab(size) {
+            Some(slab) => slab.lock().allocate(),
+            None => {
+                let order = get_order(size);
+                if order >= MAX_ORDER {
+                    return ptr::null_mut();
+                }
+                allocate_pages(order)
             }
-            ret = allocate_pages(order);
-        }
+        };
 
         ret.map(|addr| addr.as_mut_ptr::<u8>())
             .unwrap_or_else(|_| ptr::null_mut())
