@@ -1197,7 +1197,7 @@ impl Slab {
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
 #[derive(Debug)]
-pub struct SvsmAllocator {
+struct SvsmAllocator {
     slab_size_32: SpinLock<Slab>,
     slab_size_64: SpinLock<Slab>,
     slab_size_128: SpinLock<Slab>,
@@ -1208,7 +1208,7 @@ pub struct SvsmAllocator {
 }
 
 impl SvsmAllocator {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         SvsmAllocator {
             slab_size_32: SpinLock::new(Slab::new(32)),
             slab_size_64: SpinLock::new(Slab::new(64)),
@@ -1284,7 +1284,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 }
 
 #[cfg_attr(not(any(test, doctest)), global_allocator)]
-pub static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
+#[cfg_attr(any(test, doctest), allow(dead_code))]
+static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     {
