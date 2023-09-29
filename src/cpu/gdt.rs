@@ -10,7 +10,7 @@ use crate::types::{SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
 use core::mem;
 
-#[repr(packed)]
+#[repr(C, packed(2))]
 pub struct GdtDesc {
     size: u16,
     addr: VirtAddr,
