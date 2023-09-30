@@ -951,16 +951,6 @@ impl SlabCommon {
         self.free += capacity;
     }
 
-    fn remove_slab_page(&mut self, prev_page: &mut SlabPage, old_page: &SlabPage) {
-        let capacity = old_page.get_capacity() as u32;
-        self.pages -= 1;
-        self.free_pages -= 1;
-        self.capacity -= capacity;
-        self.free -= capacity;
-
-        prev_page.set_next_page(old_page.get_next_page());
-    }
-
     fn allocate_slot(&mut self) -> VirtAddr {
         // Caller must make sure there's at least one free slot.
         assert_ne!(self.free, 0);
@@ -1025,7 +1015,15 @@ impl SlabCommon {
             let capacity = slab_page.get_capacity();
             let free = slab_page.get_free();
             if free == capacity {
-                self.remove_slab_page(unsafe { &mut *last_page }, slab_page);
+                let prev_page: &mut SlabPage = unsafe { &mut *last_page };
+                let capacity = slab_page.get_capacity() as u32;
+                self.pages -= 1;
+                self.free_pages -= 1;
+                self.capacity -= capacity;
+                self.free -= capacity;
+
+                prev_page.set_next_page(slab_page.get_next_page());
+
                 slab_page.destroy();
 
                 return slab_page;
