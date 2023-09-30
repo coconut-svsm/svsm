@@ -1003,8 +1003,8 @@ impl SlabCommon {
 
     /// Finds an unused slab page and removes it from the slab.
     fn free_one_page(&mut self) -> *mut SlabPage {
-        let mut last_page = &mut self.page as *mut SlabPage;
-        let mut next_page_vaddr = self.page.get_next_page();
+        let mut last_page = &mut self.page;
+        let mut next_page_vaddr = last_page.get_next_page();
         loop {
             if next_page_vaddr.is_null() {
                 break;
@@ -1015,14 +1015,13 @@ impl SlabCommon {
             let capacity = slab_page.get_capacity();
             let free = slab_page.get_free();
             if free == capacity {
-                let prev_page: &mut SlabPage = unsafe { &mut *last_page };
                 let capacity = slab_page.get_capacity() as u32;
                 self.pages -= 1;
                 self.free_pages -= 1;
                 self.capacity -= capacity;
                 self.free -= capacity;
 
-                prev_page.set_next_page(slab_page.get_next_page());
+                last_page.set_next_page(slab_page.get_next_page());
 
                 slab_page.destroy();
 
