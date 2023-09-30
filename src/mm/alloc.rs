@@ -1010,6 +1010,32 @@ impl SlabCommon {
             page = unsafe { &mut *next_page.as_mut_ptr::<SlabPage>() };
         }
     }
+
+    /// Finds an unused slab page and removes it from the slab.
+    fn free_one_page(&mut self) -> *mut SlabPage {
+        let mut last_page = &mut self.page as *mut SlabPage;
+        let mut next_page_vaddr = self.page.get_next_page();
+        loop {
+            if next_page_vaddr.is_null() {
+                break;
+            }
+            let slab_page = unsafe { &mut *next_page_vaddr.as_mut_ptr::<SlabPage>() };
+            next_page_vaddr = slab_page.get_next_page();
+
+            let capacity = slab_page.get_capacity();
+            let free = slab_page.get_free();
+            if free == capacity {
+                self.remove_slab_page(unsafe { &mut *last_page }, slab_page);
+                slab_page.destroy();
+
+                return slab_page;
+            } else {
+                last_page = slab_page;
+            }
+        }
+
+        unreachable!("couldn't find page to free")
+    }
 }
 
 #[derive(Debug)]
@@ -1057,30 +1083,8 @@ impl SlabPageSlab {
     fn shrink_slab(&mut self) {
         // The SlabPageSlab uses SlabPages on its own and freeing a SlabPage can empty another SlabPage.
         while self.common.free_pages > 1 {
-            let mut last_page = &mut self.common.page as *mut SlabPage;
-            let mut next_page_vaddr = self.common.page.get_next_page();
-            let mut freed_one = false;
-            loop {
-                if next_page_vaddr.is_null() {
-                    break;
-                }
-                let slab_page = unsafe { &mut *next_page_vaddr.as_mut_ptr::<SlabPage>() };
-                next_page_vaddr = slab_page.get_next_page();
-
-                let capacity = slab_page.get_capacity();
-                let free = slab_page.get_free();
-                if free == capacity {
-                    self.common
-                        .remove_slab_page(unsafe { &mut *last_page }, slab_page);
-                    slab_page.destroy();
-                    self.common
-                        .deallocate_slot(VirtAddr::from(slab_page as *mut SlabPage));
-                    freed_one = true;
-                } else {
-                    last_page = slab_page;
-                }
-            }
-            assert!(freed_one);
+            let slab_page = self.common.free_one_page();
+            self.common.deallocate_slot(VirtAddr::from(slab_page));
         }
     }
 
@@ -1135,35 +1139,12 @@ impl Slab {
     }
 
     fn shrink_slab(&mut self) {
-        let mut last_page = &mut self.common.page as *mut SlabPage;
-        let mut next_page_vaddr = self.common.page.get_next_page();
-        let mut freed_one = false;
-
         if self.common.free_pages <= 1 || 2 * self.common.free < self.common.capacity {
             return;
         }
 
-        loop {
-            if next_page_vaddr.is_null() {
-                break;
-            }
-            let slab_page = unsafe { &mut *(next_page_vaddr.as_mut_ptr::<SlabPage>()) };
-            next_page_vaddr = slab_page.get_next_page();
-
-            let capacity = slab_page.get_capacity();
-            let free = slab_page.get_free();
-            if free == capacity {
-                self.common
-                    .remove_slab_page(unsafe { &mut *last_page }, slab_page);
-                slab_page.destroy();
-                SLAB_PAGE_SLAB.lock().deallocate(slab_page);
-                freed_one = true;
-                break;
-            } else {
-                last_page = slab_page;
-            }
-        }
-        assert!(freed_one);
+        let slab_page = self.common.free_one_page();
+        SLAB_PAGE_SLAB.lock().deallocate(slab_page);
     }
 
     fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
