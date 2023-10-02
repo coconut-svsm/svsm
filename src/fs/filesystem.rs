@@ -110,7 +110,7 @@ impl SvsmFs {
         self.root = Some(root.clone());
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, fuzzing))]
     fn uninitialize(&mut self) {
         self.root = None;
     }
@@ -134,8 +134,8 @@ pub fn initialize_fs() {
     }
 }
 
-#[cfg(test)]
-fn uninitialize_fs() {
+#[cfg(any(test, fuzzing))]
+pub fn uninitialize_fs() {
     unsafe {
         FS_ROOT.uninitialize();
     }

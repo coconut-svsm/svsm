@@ -1,0 +1,33 @@
+[package]
+name = "svsm-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.svsm]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fw_meta"
+path = "fuzz_targets/fw_meta.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "acpi"
+path = "fuzz_targets/acpi.rs"
+test = false
+doc = false

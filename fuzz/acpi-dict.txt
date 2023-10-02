@@ -1,0 +1,4 @@
+"etc/acpi/rsdp"
+"etc/acpi/tables"
+"APIC"
+"\x00\x00\x00\x14"
