@@ -15,5 +15,5 @@ pub mod utils;
 pub use status::sev_status_init;
 pub use status::sev_status_verify;
 pub use status::{sev_es_enabled, sev_snp_enabled};
-pub use utils::{pvalidate, pvalidate_range, SevSnpError};
+pub use utils::{pvalidate, pvalidate_range, PvalidateOp, SevSnpError};
 pub use utils::{rmp_adjust, RMPFlags};

@@ -62,8 +62,6 @@ impl PageStorageType {
     const NEXT_SHIFT: u64 = 12;
     const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
     const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
-    // SLAB pages are always order-0
-    const SLAB_MASK: u64 = !Self::TYPE_MASK;
 
     const fn new(t: PageType) -> Self {
         Self(t as u64)
@@ -77,10 +75,6 @@ impl PageStorageType {
         Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
     }
 
-    fn encode_slab(self, slab: VirtAddr) -> Self {
-        Self(self.0 | (slab.bits() as u64) & Self::SLAB_MASK)
-    }
-
     fn encode_refcount(self, refcount: u64) -> Self {
         Self(self.0 | refcount << Self::TYPE_SHIFT)
     }
@@ -91,10 +85,6 @@ impl PageStorageType {
 
     fn decode_next(&self) -> usize {
         ((self.0 & Self::NEXT_MASK) >> Self::NEXT_SHIFT) as usize
-    }
-
-    fn decode_slab(&self) -> VirtAddr {
-        VirtAddr::from(self.0 & Self::SLAB_MASK)
     }
 
     fn decode_refcount(&self) -> u64 {
@@ -140,18 +130,15 @@ impl AllocatedInfo {
     }
 }
 
-struct SlabPageInfo {
-    slab: VirtAddr,
-}
+struct SlabPageInfo;
 
 impl SlabPageInfo {
     fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PageType::SlabPage).encode_slab(self.slab)
+        PageStorageType::new(PageType::SlabPage)
     }
 
-    fn decode(mem: PageStorageType) -> Self {
-        let slab = mem.decode_slab();
-        Self { slab }
+    fn decode(_mem: PageStorageType) -> Self {
+        Self
     }
 }
 
@@ -442,13 +429,11 @@ impl MemoryRegion {
         Ok(vaddr)
     }
 
-    fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
+    fn allocate_slab_page(&mut self) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(0)?;
 
-        let slab_vaddr = slab.unwrap_or(VirtAddr::null());
         let pfn = self.get_next_page(0)?;
-        assert_eq!(slab_vaddr.bits() & (PageStorageType::TYPE_MASK as usize), 0);
-        let pg = Page::SlabPage(SlabPageInfo { slab: slab_vaddr });
+        let pg = Page::SlabPage(SlabPageInfo);
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
@@ -773,8 +758,8 @@ pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
     ROOT_MEM.lock().allocate_pages(order)
 }
 
-pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_slab_page(slab)
+pub fn allocate_slab_page() -> Result<VirtAddr, SvsmError> {
+    ROOT_MEM.lock().allocate_slab_page()
 }
 
 pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
@@ -832,7 +817,7 @@ impl SlabPage {
         }
     }
 
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>, mut item_size: u16) -> Result<(), SvsmError> {
+    fn init(&mut self, mut item_size: u16) -> Result<(), SvsmError> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -844,7 +829,7 @@ impl SlabPage {
             item_size = 32;
         }
 
-        let vaddr = allocate_slab_page(slab_vaddr)?;
+        let vaddr = allocate_slab_page()?;
         self.vaddr = vaddr;
         self.item_size = item_size;
         self.capacity = (PAGE_SIZE as u16) / item_size;
@@ -941,8 +926,8 @@ impl SlabCommon {
         }
     }
 
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), SvsmError> {
-        self.page.init(slab_vaddr, self.item_size)?;
+    fn init(&mut self) -> Result<(), SvsmError> {
+        self.page.init(self.item_size)?;
 
         self.capacity = self.page.get_capacity() as u32;
         self.free = self.capacity;
@@ -1040,7 +1025,7 @@ impl SlabPageSlab {
     }
 
     fn init(&mut self) -> Result<(), SvsmError> {
-        self.common.init(None)
+        self.common.init()
     }
 
     fn grow_slab(&mut self) -> Result<(), SvsmError> {
@@ -1059,7 +1044,7 @@ impl SlabPageSlab {
         let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage>() };
 
         *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(None, self.common.item_size) {
+        if let Err(e) = slab_page.init(self.common.item_size) {
             self.common.deallocate_slot(page_vaddr);
             return Err(e);
         }
@@ -1123,8 +1108,7 @@ impl Slab {
     }
 
     fn init(&mut self) -> Result<(), SvsmError> {
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
-        self.common.init(Some(slab_vaddr))
+        self.common.init()
     }
 
     fn grow_slab(&mut self) -> Result<(), SvsmError> {
@@ -1140,9 +1124,8 @@ impl Slab {
             .lock()
             .allocate()
             .map(|ptr| unsafe { &mut *ptr })?;
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
         *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
+        if let Err(e) = slab_page.init(self.common.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(slab_page);
             return Err(e);
         }
@@ -1197,7 +1180,7 @@ impl Slab {
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
 #[derive(Debug)]
-pub struct SvsmAllocator {
+struct SvsmAllocator {
     slab_size_32: SpinLock<Slab>,
     slab_size_64: SpinLock<Slab>,
     slab_size_128: SpinLock<Slab>,
@@ -1208,7 +1191,7 @@ pub struct SvsmAllocator {
 }
 
 impl SvsmAllocator {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         SvsmAllocator {
             slab_size_32: SpinLock::new(Slab::new(32)),
             slab_size_64: SpinLock::new(Slab::new(64)),
@@ -1219,61 +1202,62 @@ impl SvsmAllocator {
             slab_size_2048: SpinLock::new(Slab::new(2048)),
         }
     }
+
+    fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
+        if size <= 32 {
+            Some(&self.slab_size_32)
+        } else if size <= 64 {
+            Some(&self.slab_size_64)
+        } else if size <= 128 {
+            Some(&self.slab_size_128)
+        } else if size <= 256 {
+            Some(&self.slab_size_256)
+        } else if size <= 512 {
+            Some(&self.slab_size_512)
+        } else if size <= 1024 {
+            Some(&self.slab_size_1024)
+        } else if size <= 2048 {
+            Some(&self.slab_size_2048)
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ret: Result<VirtAddr, SvsmError>;
         let size = layout.size();
-
-        if size <= 32 {
-            ret = self.slab_size_32.lock().allocate();
-        } else if size <= 64 {
-            ret = self.slab_size_64.lock().allocate();
-        } else if size <= 128 {
-            ret = self.slab_size_128.lock().allocate();
-        } else if size <= 256 {
-            ret = self.slab_size_256.lock().allocate();
-        } else if size <= 512 {
-            ret = self.slab_size_512.lock().allocate();
-        } else if size <= 1024 {
-            ret = self.slab_size_1024.lock().allocate();
-        } else if size <= 2048 {
-            ret = self.slab_size_2048.lock().allocate();
-        } else if size <= 4096 {
-            ret = allocate_page();
-        } else {
-            let order = get_order(size);
-            if order >= MAX_ORDER {
-                return ptr::null_mut();
+        let ret = match self.get_slab(size) {
+            Some(slab) => slab.lock().allocate(),
+            None => {
+                let order = get_order(size);
+                if order >= MAX_ORDER {
+                    return ptr::null_mut();
+                }
+                allocate_pages(order)
             }
-            ret = allocate_pages(order);
-        }
+        };
 
         ret.map(|addr| addr.as_mut_ptr::<u8>())
             .unwrap_or_else(|_| ptr::null_mut())
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let virt_addr = VirtAddr::from(ptr);
+        let size = layout.size();
 
-        let result = ROOT_MEM.lock().get_page_info(virt_addr);
-
-        if result.is_err() {
-            panic!("Freeing unknown memory");
-        }
-
-        let info = result.unwrap();
+        let info = ROOT_MEM
+            .lock()
+            .get_page_info(virt_addr)
+            .expect("Freeing unknown memory");
 
         match info {
             Page::Allocated(_ai) => {
                 free_page(virt_addr);
             }
-            Page::SlabPage(si) => {
-                assert!(!si.slab.is_null());
-                let slab = si.slab.as_mut_ptr::<Slab>();
-
-                (*slab).deallocate(virt_addr);
+            Page::SlabPage(_si) => {
+                let slab = self.get_slab(size).expect("Invalid page info");
+                slab.lock().deallocate(virt_addr);
             }
             _ => {
                 panic!("Freeing memory on unsupported page type");
@@ -1282,8 +1266,9 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     }
 }
 
-#[cfg_attr(not(test), global_allocator)]
-pub static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
+#[cfg_attr(not(any(test, doctest)), global_allocator)]
+#[cfg_attr(any(test, doctest), allow(dead_code))]
+static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     {
@@ -1388,11 +1373,11 @@ fn test_page_alloc_all_compound() {
 
     let info_before = root_mem.memory_info();
     let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
-    for o in 0..MAX_ORDER {
+    for (o, alloc) in allocs.iter_mut().enumerate().take(MAX_ORDER) {
         for _i in 0..info_before.free_pages[o] {
             let pages = root_mem.allocate_pages(o).unwrap();
             assert!(!pages.is_null());
-            allocs[o].push(pages);
+            alloc.push(pages);
         }
     }
     let info_after = root_mem.memory_info();
@@ -1400,8 +1385,8 @@ fn test_page_alloc_all_compound() {
         assert_eq!(info_after.free_pages[o], 0);
     }
 
-    for o in 0..MAX_ORDER {
-        for pages in &allocs[o][..] {
+    for alloc in allocs.iter().take(MAX_ORDER) {
+        for pages in &alloc[..] {
             root_mem.free_page(*pages);
         }
     }
@@ -1458,11 +1443,11 @@ fn test_page_alloc_oom() {
 
     let info_before = root_mem.memory_info();
     let mut allocs: [Vec<VirtAddr>; MAX_ORDER] = Default::default();
-    for o in 0..MAX_ORDER {
+    for (o, alloc) in allocs.iter_mut().enumerate().take(MAX_ORDER) {
         for _i in 0..info_before.free_pages[o] {
             let pages = root_mem.allocate_pages(o).unwrap();
             assert!(!pages.is_null());
-            allocs[o].push(pages);
+            alloc.push(pages);
         }
     }
     let info_after = root_mem.memory_info();
@@ -1471,12 +1456,12 @@ fn test_page_alloc_oom() {
     }
 
     let page = root_mem.allocate_page();
-    if let Ok(_) = page {
+    if page.is_ok() {
         panic!("unexpected page allocation success after memory exhaustion");
     }
 
-    for o in 0..MAX_ORDER {
-        for pages in &allocs[o][..] {
+    for alloc in allocs.iter().take(MAX_ORDER) {
+        for pages in &alloc[..] {
             root_mem.free_page(*pages);
         }
     }
@@ -1495,37 +1480,25 @@ fn test_page_file() {
     let vaddr = root_mem.allocate_file_page().unwrap();
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 1),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 1));
 
     // Get another reference and check ref-count
     root_mem.get_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 2),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 2));
 
     // Drop reference and check ref-count
     root_mem.put_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::FilePage(fi) => assert!(fi.ref_count == 1),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::FilePage(ref fi) if fi.ref_count == 1));
 
     // Drop last reference and check if page is released
     root_mem.put_file_page(vaddr).expect("Not a file page");
     let info = root_mem.get_page_info(vaddr).unwrap();
 
-    match info {
-        Page::Free(_) => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(info, Page::Free { .. }));
 
     drop(root_mem);
     destroy_test_root_mem(test_mem_lock);
@@ -1557,7 +1530,7 @@ fn test_slab_alloc_free_many() {
                 assert_ne!(p, ptr::null_mut());
                 allocs[j].push(p);
             }
-            j = j + 1;
+            j += 1;
         }
 
         j = 0;
@@ -1568,7 +1541,7 @@ fn test_slab_alloc_free_many() {
             for p in &allocs[j][..] {
                 unsafe { ALLOCATOR.dealloc(*p, layout) };
             }
-            j = j + 1;
+            j += 1;
         }
     }
 

@@ -408,15 +408,15 @@ mod tests {
 
         assert!(fh.size() == 0);
 
-        let mut buf: [u8; 512] = [0xff; 512];
-        let result = write(&fh, &mut buf).unwrap();
+        let buf: [u8; 512] = [0xff; 512];
+        let result = write(&fh, &buf).unwrap();
         assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 512);
 
         fh.seek(256);
-        let mut buf2: [u8; 512] = [0xcc; 512];
-        let result = write(&fh, &mut buf2).unwrap();
+        let buf2: [u8; 512] = [0xcc; 512];
+        let result = write(&fh, &buf2).unwrap();
         assert_eq!(result, 512);
 
         assert_eq!(fh.size(), 768);
@@ -426,7 +426,7 @@ mod tests {
         let result = read(&fh, &mut buf3).unwrap();
         assert_eq!(result, 768);
 
-        for i in 0..buf3.len() {
+        for (i, elem) in buf3.iter().enumerate() {
             let expected: u8 = if i < 256 {
                 0xff
             } else if i < 768 {
@@ -434,7 +434,7 @@ mod tests {
             } else {
                 0x0
             };
-            assert!(buf3[i] == expected);
+            assert!(*elem == expected);
         }
 
         drop(fh);
@@ -463,8 +463,8 @@ mod tests {
         let result = fh2.read(&mut buf2).unwrap();
         assert_eq!(result, 4096);
 
-        for i in 0..buf2.len() {
-            assert_eq!(buf2[i], 0xff);
+        for elem in &buf2 {
+            assert_eq!(*elem, 0xff);
         }
 
         fh1.truncate(2048).unwrap();

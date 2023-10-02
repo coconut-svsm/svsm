@@ -147,6 +147,18 @@ fn load_idt(idt: &Idt) {
     }
 }
 
+pub fn triple_fault() {
+    let desc: IdtDesc = IdtDesc {
+        size: 0,
+        address: VirtAddr::from(0u64),
+    };
+
+    unsafe {
+        asm!("lidt (%rax)
+              int3", in("rax") &desc, options(att_syntax));
+    }
+}
+
 pub fn early_idt_init() {
     unsafe {
         init_idt(&mut GLOBAL_IDT);

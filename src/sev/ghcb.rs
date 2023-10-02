@@ -16,14 +16,14 @@ use crate::mm::validate::{
 use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE_2M};
 use core::cell::RefCell;
 use core::{mem, ptr};
 
 use super::msr_protocol::{
     invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
 };
-use super::pvalidate;
+use super::{pvalidate, PvalidateOp};
 
 // TODO: Fix this when Rust gets decent compile time struct offset support
 const OFF_CPL: u16 = 0xcb;
@@ -143,7 +143,7 @@ impl GHCB {
 
         if sev_snp_enabled() {
             // Make page invalid
-            pvalidate(vaddr, false, false)?;
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
 
             // Let the Hypervisor take the page back
             invalidate_page_msr(paddr)?;
@@ -184,7 +184,7 @@ impl GHCB {
         validate_page_msr(paddr)?;
 
         // Make page guest-valid
-        pvalidate(vaddr, false, true)?;
+        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
 
         // Needs guarding for Stage2 GHCB
         if valid_bitmap_valid_addr(paddr) {
@@ -375,12 +375,18 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn psc_entry(&self, paddr: PhysAddr, op_mask: u64, current_page: u64, huge: bool) -> u64 {
-        assert!(!huge || paddr.is_aligned(PAGE_SIZE_2M));
+    pub fn psc_entry(
+        &self,
+        paddr: PhysAddr,
+        op_mask: u64,
+        current_page: u64,
+        size: PageSize,
+    ) -> u64 {
+        assert!(size == PageSize::Regular || paddr.is_aligned(PAGE_SIZE_2M));
 
         let mut entry: u64 =
             ((paddr.bits() as u64) & PSC_GFN_MASK) | op_mask | (current_page & 0xfffu64);
-        if huge {
+        if size == PageSize::Huge {
             entry |= PSC_FLAG_HUGE;
         }
 
@@ -391,7 +397,7 @@ impl GHCB {
         &mut self,
         start: PhysAddr,
         end: PhysAddr,
-        huge: bool,
+        size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
@@ -408,18 +414,22 @@ impl GHCB {
         self.clear();
 
         while paddr < end {
-            let huge = huge && paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= end;
-            let pgsize: usize = match huge {
-                true => PAGE_SIZE_2M,
-                false => PAGE_SIZE,
+            let size = if size == PageSize::Huge
+                && paddr.is_aligned(PAGE_SIZE_2M)
+                && paddr + PAGE_SIZE_2M <= end
+            {
+                PageSize::Huge
+            } else {
+                PageSize::Regular
             };
-            let entry = self.psc_entry(paddr, op_mask, 0, huge);
+            let pgsize = usize::from(size);
+            let entry = self.psc_entry(paddr, op_mask, 0, size);
             let offset: isize = (entries as isize) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
             paddr = paddr + pgsize;
 
-            if entries == max_entries {
+            if entries == max_entries || paddr >= end {
                 let header = PageStateChangeHeader {
                     cur_entry: 0,
                     end_entry: entries - 1,
