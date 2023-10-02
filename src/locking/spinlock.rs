@@ -91,3 +91,23 @@ impl<T: Debug> SpinLock<T> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spin_lock() {
+        let spin_lock = SpinLock::new(0);
+
+        let mut guard = spin_lock.lock();
+        *guard += 1;
+
+        // Ensure the locked data is updated.
+        assert_eq!(*guard, 1);
+
+        // Try to lock again; it should fail and return None.
+        let try_lock_result = spin_lock.try_lock();
+        assert!(try_lock_result.is_none());
+    }
+}
