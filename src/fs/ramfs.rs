@@ -296,12 +296,12 @@ mod tests {
         let mut buf1 = [0xffu8; 512];
 
         // Write first buffer at offset 0
-        file.write(&mut buf1, 0).expect("Failed to write file data");
+        file.write(&buf1, 0).expect("Failed to write file data");
         assert!(file.size() == 512);
 
         // Write second buffer at offset 4096 - 256 - cross-page write
         let mut buf2 = [0xaau8; 512];
-        file.write(&mut buf2, PAGE_SIZE - 256)
+        file.write(&buf2, PAGE_SIZE - 256)
             .expect("Failed to write file cross-page");
         assert!(file.size() == PAGE_SIZE + 256);
 
@@ -336,7 +336,7 @@ mod tests {
         let size = file.read(&mut buf3, 0).expect("Failed to read whole file");
         assert!(size == PAGE_SIZE + 256);
 
-        for i in 0..buf3.len() {
+        for (i, elem) in buf3.iter().enumerate() {
             let expected: u8 = if i < 512 {
                 0xff
             } else if i < PAGE_SIZE - 256 {
@@ -346,7 +346,7 @@ mod tests {
             } else {
                 0xcc
             };
-            assert!(buf3[i] == expected);
+            assert!(*elem == expected);
         }
 
         assert_eq!(file.truncate(1024).unwrap(), 1024);
@@ -359,9 +359,9 @@ mod tests {
         let size = file.read(&mut buf3, 0).expect("Failed to read whole file");
         assert!(size == 1024);
 
-        for i in 0..1024 {
+        for (i, elem) in buf3.iter().enumerate().take(1024) {
             let expected: u8 = if i < 512 { 0xff } else { 0 };
-            assert!(buf3[i] == expected);
+            assert!(*elem == expected);
         }
 
         // file needs to be dropped before memory allocator is destroyed
