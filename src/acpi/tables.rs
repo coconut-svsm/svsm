@@ -199,14 +199,11 @@ impl ACPITableBuffer {
 
         let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
         let content = rsdt.content().ok_or(SvsmError::Acpi)?;
-        let offsets = unsafe {
-            let ptr = content.as_ptr().cast::<u32>();
-            let size = content.len() / mem::size_of::<u32>();
-            core::slice::from_raw_parts(ptr, size)
-        };
+        let offsets = content
+            .chunks_exact(mem::size_of::<u32>())
+            .map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize);
 
-        for offset in offsets.iter() {
-            let offset = *offset as usize;
+        for offset in offsets {
             let raw_header = offset
                 .checked_add(mem::size_of::<RawACPITableHeader>())
                 .and_then(|end| self.buf.get(offset..end))
