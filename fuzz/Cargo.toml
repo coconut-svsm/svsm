@@ -8,6 +8,7 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
+arbitrary = { version = "1.3.0", features = ["derive"] }
 libfuzzer-sys = "0.4"
 
 [dependencies.svsm]
@@ -29,5 +30,11 @@ doc = false
 [[bin]]
 name = "acpi"
 path = "fuzz_targets/acpi.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fs"
+path = "fuzz_targets/fs.rs"
 test = false
 doc = false
