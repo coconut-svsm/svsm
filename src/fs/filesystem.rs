@@ -93,6 +93,10 @@ impl FileHandle {
     pub fn size(&self) -> usize {
         self.handle.lock().size()
     }
+
+    pub fn position(&self) -> usize {
+        self.handle.lock().current
+    }
 }
 
 #[derive(Debug)]
