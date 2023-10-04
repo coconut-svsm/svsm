@@ -17,7 +17,7 @@ use crate::utils::MemoryRegion;
 
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: Option<MemoryRegion<VirtAddr>>,
+    mapping: MemoryRegion<VirtAddr>,
     huge: bool,
 }
 
@@ -63,7 +63,7 @@ impl PerCPUPageMappingGuard {
         let raw_mapping = MemoryRegion::new(vaddr, size);
 
         Ok(PerCPUPageMappingGuard {
-            mapping: Some(raw_mapping),
+            mapping: raw_mapping,
             huge,
         })
     }
@@ -73,26 +73,23 @@ impl PerCPUPageMappingGuard {
     }
 
     pub fn virt_addr(&self) -> VirtAddr {
-        self.mapping.as_ref().unwrap().start()
+        self.mapping.start()
     }
 }
 
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
-        if let Some(m) = &self.mapping {
-            let size = m.len();
-            if self.huge {
-                this_cpu_mut()
-                    .get_pgtable()
-                    .unmap_region_2m(m.start(), m.end());
-                virt_free_range_2m(m.start(), size);
-            } else {
-                this_cpu_mut()
-                    .get_pgtable()
-                    .unmap_region_4k(m.start(), m.end());
-                virt_free_range_4k(m.start(), size);
-            }
-            flush_address_sync(m.start());
+        let start = self.mapping.start();
+        let end = self.mapping.end();
+        let size = self.mapping.len();
+
+        if self.huge {
+            this_cpu_mut().get_pgtable().unmap_region_2m(start, end);
+            virt_free_range_2m(start, size);
+        } else {
+            this_cpu_mut().get_pgtable().unmap_region_4k(start, end);
+            virt_free_range_4k(start, size);
         }
+        flush_address_sync(start);
     }
 }
