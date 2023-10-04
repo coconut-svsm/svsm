@@ -13,21 +13,11 @@ use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
 };
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
-
-struct RawPTMappingGuard {
-    start: VirtAddr,
-    end: VirtAddr,
-}
-
-impl RawPTMappingGuard {
-    pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
-        RawPTMappingGuard { start, end }
-    }
-}
+use crate::utils::MemoryRegion;
 
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: Option<RawPTMappingGuard>,
+    mapping: Option<MemoryRegion<VirtAddr>>,
     huge: bool,
 }
 
@@ -70,7 +60,7 @@ impl PerCPUPageMappingGuard {
             vaddr
         };
 
-        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);
+        let raw_mapping = MemoryRegion::new(vaddr, size);
 
         Ok(PerCPUPageMappingGuard {
             mapping: Some(raw_mapping),
@@ -83,22 +73,26 @@ impl PerCPUPageMappingGuard {
     }
 
     pub fn virt_addr(&self) -> VirtAddr {
-        self.mapping.as_ref().unwrap().start
+        self.mapping.as_ref().unwrap().start()
     }
 }
 
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
         if let Some(m) = &self.mapping {
-            let size = m.end - m.start;
+            let size = m.len();
             if self.huge {
-                this_cpu_mut().get_pgtable().unmap_region_2m(m.start, m.end);
-                virt_free_range_2m(m.start, size);
+                this_cpu_mut()
+                    .get_pgtable()
+                    .unmap_region_2m(m.start(), m.end());
+                virt_free_range_2m(m.start(), size);
             } else {
-                this_cpu_mut().get_pgtable().unmap_region_4k(m.start, m.end);
-                virt_free_range_4k(m.start, size);
+                this_cpu_mut()
+                    .get_pgtable()
+                    .unmap_region_4k(m.start(), m.end());
+                virt_free_range_4k(m.start(), size);
             }
-            flush_address_sync(m.start);
+            flush_address_sync(m.start());
         }
     }
 }
