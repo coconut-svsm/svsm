@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::max_phys_addr;
 
@@ -154,14 +155,17 @@ impl<'a> FwCfg<'a> {
     }
 
     fn read_memory_region(&self) -> MemoryRegion {
-        let start: u64 = self.read_le();
-        let size: u64 = self.read_le();
-        let end = start.saturating_add(size);
+        let start = PhysAddr::from(self.read_le::<u64>());
+        let size = self.read_le::<u64>();
+        let end = start.saturating_add(size as usize);
 
         assert!(start <= max_phys_addr(), "{start:#018x} is out of range");
         assert!(end <= max_phys_addr(), "{end:#018x} is out of range");
 
-        MemoryRegion { start, end }
+        MemoryRegion {
+            start: start.into(),
+            end: end.into(),
+        }
     }
 
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, SvsmError> {
