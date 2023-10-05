@@ -25,6 +25,7 @@ impl RawPTMappingGuard {
     }
 }
 
+#[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
     mapping: Option<RawPTMappingGuard>,
     huge: bool,
