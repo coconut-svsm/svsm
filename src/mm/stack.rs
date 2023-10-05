@@ -15,6 +15,7 @@ use crate::mm::{
     STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
 };
 use crate::types::PAGE_SIZE;
+use crate::utils::MemoryRegion;
 
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS: usize = 1024;
@@ -22,16 +23,15 @@ const BMP_QWORDS: usize = MAX_STACKS / 64;
 
 #[derive(Debug)]
 struct StackRange {
-    start: VirtAddr,
-    end: VirtAddr,
+    region: MemoryRegion<VirtAddr>,
     alloc_bitmap: [u64; BMP_QWORDS],
 }
 
 impl StackRange {
     pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
+        let region = MemoryRegion::from_addresses(start, end);
         StackRange {
-            start,
-            end,
+            region,
             alloc_bitmap: [0; BMP_QWORDS],
         }
     }
@@ -49,16 +49,16 @@ impl StackRange {
 
             self.alloc_bitmap[i] |= mask;
 
-            return Ok(self.start + ((i * 64 + idx) * STACK_TOTAL_SIZE));
+            return Ok(self.region.start() + ((i * 64 + idx) * STACK_TOTAL_SIZE));
         }
 
         Err(SvsmError::Mem)
     }
 
     pub fn dealloc(&mut self, stack: VirtAddr) {
-        assert!(stack >= self.start && stack < self.end);
+        assert!(self.region.contains(stack));
 
-        let offset = stack - self.start;
+        let offset = stack - self.region.start();
         let idx = offset / (STACK_TOTAL_SIZE);
 
         assert!((offset % (STACK_TOTAL_SIZE)) <= STACK_SIZE);
