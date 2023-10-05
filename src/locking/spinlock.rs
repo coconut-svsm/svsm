@@ -10,6 +10,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
+#[must_use = "if unused the SpinLock will immediately unlock"]
 pub struct LockGuard<'a, T: Debug> {
     holder: &'a AtomicU64,
     data: &'a mut T,

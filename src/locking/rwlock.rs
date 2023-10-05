@@ -10,6 +10,7 @@ use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug)]
+#[must_use = "if unused the RWLock will immediately unlock"]
 pub struct ReadLockGuard<'a, T: Debug> {
     rwlock: &'a AtomicU64,
     data: &'a T,
@@ -29,6 +30,7 @@ impl<'a, T: Debug> Deref for ReadLockGuard<'a, T> {
 }
 
 #[derive(Debug)]
+#[must_use = "if unused the RWLock will immediately unlock"]
 pub struct WriteLockGuard<'a, T: Debug> {
     rwlock: &'a AtomicU64,
     data: &'a mut T,
