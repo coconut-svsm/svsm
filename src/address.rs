@@ -63,6 +63,10 @@ pub trait Address:
         self.bits().checked_sub(off).map(|addr| addr.into())
     }
 
+    fn saturating_add(&self, off: InnerAddr) -> Self {
+        Self::from(self.bits().saturating_add(off))
+    }
+
     fn page_offset(&self) -> usize {
         self.bits() & (PAGE_SIZE - 1)
     }
