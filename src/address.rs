@@ -55,7 +55,7 @@ pub trait Address:
         self.is_aligned(PAGE_SIZE)
     }
 
-    fn checked_offset(&self, off: InnerAddr) -> Option<Self> {
+    fn checked_add(&self, off: InnerAddr) -> Option<Self> {
         self.bits().checked_add(off).map(|addr| addr.into())
     }
 
@@ -262,7 +262,7 @@ impl ops::Add<InnerAddr> for VirtAddr {
 }
 
 impl Address for VirtAddr {
-    fn checked_offset(&self, off: InnerAddr) -> Option<Self> {
+    fn checked_add(&self, off: InnerAddr) -> Option<Self> {
         self.bits()
             .checked_add(off)
             .map(|addr| sign_extend(addr).into())

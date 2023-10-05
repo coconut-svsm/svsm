@@ -38,7 +38,7 @@ where
     /// assert!(region.is_none());
     /// ```
     pub fn checked_new(start: A, len: usize) -> Option<Self> {
-        let end = start.checked_offset(len)?;
+        let end = start.checked_add(len)?;
         Some(Self { start, end })
     }
 
