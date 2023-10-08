@@ -1332,12 +1332,14 @@ impl Drop for TestRootMem<'_> {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 fn test_root_mem_setup() {
     let test_mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     drop(test_mem_lock);
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate one page and free it again, verify that memory_info() reflects it.
 fn test_page_alloc_one() {
     let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
@@ -1352,6 +1354,7 @@ fn test_page_alloc_one() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate and free all available compound pages, verify that memory_info()
 // reflects it.
 fn test_page_alloc_all_compound() {
@@ -1384,6 +1387,7 @@ fn test_page_alloc_all_compound() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate and free all available 4k pages, verify that memory_info()
 // reflects it.
 fn test_page_alloc_all_single() {
@@ -1416,6 +1420,7 @@ fn test_page_alloc_all_single() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate and free all available compound pages, verify that any subsequent
 // allocation fails.
 fn test_page_alloc_oom() {
@@ -1453,6 +1458,7 @@ fn test_page_alloc_oom() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 fn test_page_file() {
     let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
@@ -1486,6 +1492,7 @@ fn test_page_file() {
 const TEST_SLAB_SIZES: [usize; 7] = [32, 64, 128, 256, 512, 1024, 2048];
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate and free a couple of objects for each slab size.
 fn test_slab_alloc_free_many() {
     extern crate alloc;
@@ -1525,6 +1532,7 @@ fn test_slab_alloc_free_many() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate enough objects so that the SlabPageSlab will need a SlabPage for
 // itself twice.
 fn test_slab_page_slab_for_self() {
@@ -1561,6 +1569,7 @@ fn test_slab_page_slab_for_self() {
 }
 
 #[test]
+#[cfg_attr(test_in_svsm, ignore = "FIXME")]
 // Allocate enough objects to hit an OOM situation and verify null gets
 // returned at some point.
 fn test_slab_oom() {

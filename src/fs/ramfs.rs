@@ -284,6 +284,7 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_file_read_write() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
