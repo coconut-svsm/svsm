@@ -25,7 +25,8 @@ intrusive-collections = "0.9.6"
 log = { version = "0.4.17", features = ["max_level_info", "release_max_level_info"] }
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.0" }
 
-[build-dependencies]
+[target."x86_64-unknown-none".dev-dependencies]
+test = { version = "0.1.0", path = "test" }
 
 [features]
 default = ["enable-stacktrace"]

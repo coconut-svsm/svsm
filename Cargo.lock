@@ -137,6 +137,7 @@ dependencies = [
  "intrusive-collections",
  "log",
  "packit",
+ "test",
 ]
 
 [[package]]
@@ -149,6 +150,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "test"
+version = "0.1.0"
 
 [[package]]
 name = "unicode-ident"

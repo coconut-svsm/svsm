@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-#![no_std]
-#![no_main]
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
 
 extern crate alloc;
 
@@ -478,6 +478,9 @@ pub extern "C" fn svsm_main() {
     if let Err(e) = launch_fw() {
         panic!("Failed to launch FW: {:#?}", e);
     }
+
+    #[cfg(test)]
+    crate::test_main();
 
     request_loop();
 

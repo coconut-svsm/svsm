@@ -17,4 +17,15 @@ fn main() {
     println!("cargo:rustc-link-arg-bin=svsm=--no-relax");
     println!("cargo:rustc-link-arg-bin=svsm=-Tsvsm.lds");
     println!("cargo:rustc-link-arg-bin=svsm=-no-pie");
+
+    // Extra linker args for tests.
+    println!("cargo:rerun-if-env-changed=LINK_TEST");
+    if std::env::var("LINK_TEST").is_ok() {
+        println!("cargo:rustc-cfg=test_in_svsm");
+        println!("cargo:rustc-link-arg=-nostdlib");
+        println!("cargo:rustc-link-arg=--build-id=none");
+        println!("cargo:rustc-link-arg=--no-relax");
+        println!("cargo:rustc-link-arg=-Tsvsm.lds");
+        println!("cargo:rustc-link-arg=-no-pie");
+    }
 }
