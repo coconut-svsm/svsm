@@ -18,7 +18,6 @@ all: svsm.bin
 
 test:
 	cargo test --target=x86_64-unknown-linux-gnu
-	RUSTFLAGS="--cfg doctest" cargo test --target=x86_64-unknown-linux-gnu --doc
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<

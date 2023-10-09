@@ -1244,8 +1244,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     }
 }
 
-#[cfg_attr(not(any(test, doctest)), global_allocator)]
-#[cfg_attr(any(test, doctest), allow(dead_code))]
+#[cfg_attr(any(target_os = "none"), global_allocator)]
+#[cfg_attr(not(target_os = "none"), allow(dead_code))]
 static mut ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
