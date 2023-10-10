@@ -21,26 +21,26 @@ To run the SVSM a host machine with an AMD EPYC Generation 3 or newer
 processor is required. Also make sure that SEV-SNP is enabled in the
 BIOS settings.
 
-A patched host kernel which has the SEV-SNP host patches as well as the
-SVSM support patches applied is needed on the host machine.
+A patched kernel which has the SEV-SNP host patches as well as the SVSM
+support patches applied is needed on the host machine.
 
-A repository based on the SNP-v8 patch-set with support for unmapped
-private memory and SVSM support on-top is available here:
+A repository based on the SNP-host patches with support for
+`guest-memfd` and SVSM support on-top is available here:
 [https://github.com/coconut-svsm/linux](https://github.com/coconut-svsm/linux).
-It is based on the code written by AMD to support [linux-svsm](https://github.com/AMDESE/linux-svsm/).
+It is based on kernel 6.5 and code written by AMD to support [linux-svsm](https://github.com/AMDESE/linux-svsm/).
 
-To use it, check out the svsm-host branch:
+To use it, check out the svsm branch:
 
 ```
 $ git clone https://github.com/coconut-svsm/linux
 $ cd linux
-$ git checkout svsm-host
+$ git checkout svsm
 ```
 
 Build, install and boot a kernel from that branch. For best chances of
 success use a kernel configuration provided by the distribution. Make
 sure the configuration includes support for AMD Secure Processor which is
-a requirement for SEV support (CONFIG_KVM_AMD_SEV). On openSUSE (other
+a requirement for SEV support (`CONFIG_KVM_AMD_SEV`). On openSUSE (other
 distributions may vary) the kernel configuration can be obtained by:
 
 ```
@@ -87,7 +87,7 @@ with the SVSM changes:
 ```
 $ git clone https://github.com/coconut-svsm/qemu
 $ cd qemu
-$ git checkout svsm
+$ git checkout svsm-v8.0.0
 ```
 
 Now the right branch is checked out and you can continue with the build.
@@ -149,9 +149,9 @@ Preparing the guest image
 -------------------------
 
 The guest image for the SEV-SNP SVSM guest needs to have a kernel
-installed that supports running in a lower-privileged VMPL than VMPL0
-and supports the SVSM request protocol. If you already experimented with
-the linux-svsm you can re-use the guest image.
+installed that supports the SVSM request protocol and running in a
+lower-privileged VMPL than VMPL0. If you already experimented with the
+linux-svsm you can re-use the guest image.
 
 Otherwise you need to build a new guest kernel. From within the guest
 image, do:
@@ -159,7 +159,7 @@ image, do:
 ```
 $ git clone https://github.com/coconut-svsm/linux
 $ cd linux
-$ git checkout svsm-guest
+$ git checkout svsm
 ```
 
 Build a kernel from that branch and install it in the guest image. For
