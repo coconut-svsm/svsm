@@ -14,6 +14,7 @@ pub mod acpi;
 pub mod address;
 pub mod console;
 pub mod cpu;
+pub mod crypto;
 pub mod debug;
 pub mod elf;
 pub mod error;
