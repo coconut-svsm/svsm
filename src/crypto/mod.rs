@@ -75,3 +75,7 @@ pub mod aead {
     /// Aes256Gcm type
     pub struct Aes256Gcm;
 }
+
+// Crypto implementations supported. Only one of them must be compiled-in.
+
+pub mod rustcrypto;
