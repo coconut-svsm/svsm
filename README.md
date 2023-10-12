@@ -76,6 +76,17 @@ any way:
   replacement for the FW when launching QEMU
 * Live migration
 
+Documentation
+-------------
+
+Coconut-SVSM components are documented using rustdoc, a tool that produces
+a user-friendly, browsable website explaining the code's contents. To
+generate and open the documentation, simply execute the following command:
+
+```
+$ make doc
+```
+
 Acknowledgments
 ---------------
 
