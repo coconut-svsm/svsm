@@ -12,23 +12,6 @@ pub fn align_up(addr: usize, align: usize) -> usize {
     (addr + (align - 1)) & !(align - 1)
 }
 
-#[inline(always)]
-pub fn ffs(val: u64) -> usize {
-    let mut ret: usize;
-
-    unsafe {
-        asm!("bsf   %rax, %rsi
-              jz    1f
-              jmp   2f
-        1:    xorq  %rsi, %rsi
-              not   %rsi
-        2:", in("rax") val, out("rsi") ret,
-        options(att_syntax));
-    }
-
-    ret
-}
-
 pub fn halt() {
     unsafe {
         asm!("hlt", options(att_syntax));
