@@ -286,9 +286,10 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
             .content_ptr::<RawMADTEntryHeader>(offset)
             .ok_or(SvsmError::Acpi)?;
         let (madt_type, entry_len) = unsafe { ((*entry_ptr).entry_type, (*entry_ptr).entry_len) };
+        let entry_len = usize::from(entry_len);
 
         match madt_type {
-            0 => {
+            0 if entry_len == mem::size_of::<RawMADTEntryLocalApic>() => {
                 let lapic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalApic>(offset)
                     .ok_or(SvsmError::Acpi)?;
@@ -298,7 +299,7 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
                     enabled: (flags & 1) == 1,
                 });
             }
-            9 => {
+            9 if entry_len == mem::size_of::<RawMADTEntryLocalX2Apic>() => {
                 let x2apic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalX2Apic>(offset)
                     .ok_or(SvsmError::Acpi)?;
@@ -308,14 +309,19 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError>
                     enabled: (flags & 1) == 1,
                 });
             }
+            _ if entry_len == 0 => {
+                log::warn!(
+                    "Found zero-length MADT entry with type {}, stopping",
+                    madt_type
+                );
+                break;
+            }
             _ => {
                 log::info!("Ignoring MADT entry with type {}", madt_type);
             }
         }
 
-        offset = offset
-            .checked_add(entry_len as usize)
-            .ok_or(SvsmError::Acpi)?;
+        offset = offset.checked_add(entry_len).ok_or(SvsmError::Acpi)?;
     }
 
     Ok(cpus)
