@@ -22,7 +22,7 @@ use core::{cmp, ptr};
 const ENTRY_COUNT: usize = 512;
 static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static MAX_PHYS_ADDR: ImmutAfterInitCell<u64> = ImmutAfterInitCell::uninit();
-pub static LAUNCH_VMSA_ADDR: ImmutAfterInitCell<PhysAddr> = ImmutAfterInitCell::uninit();
+pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
@@ -75,15 +75,6 @@ fn init_encrypt_mask() {
 
     let max_addr = 1 << effective_phys_addr_size;
     MAX_PHYS_ADDR.reinit(&max_addr);
-
-    // KVM currently sets all bits when executing the launch update for the
-    // launch vCPU's VMSA, but the firmware will truncate the gPA to the limit
-    // specified in Fn8000_0008h_EAX.
-    // FIXME: It looks like this will be changed to a fixed address in the
-    // future. This can be removed once the patches for that land.
-    let launch_vmsa_addr = (1u64 << phys_addr_size) - 0x1000;
-    let launch_vmsa_addr = PhysAddr::from(launch_vmsa_addr);
-    LAUNCH_VMSA_ADDR.reinit(&launch_vmsa_addr);
 }
 
 fn encrypt_mask() -> usize {

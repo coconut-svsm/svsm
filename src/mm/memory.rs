@@ -86,7 +86,7 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     if PERCPU_VMSAS.exists(page_addr) {
         return false;
     }
-    if page_addr == *LAUNCH_VMSA_ADDR {
+    if page_addr == LAUNCH_VMSA_ADDR {
         return false;
     }
 
