@@ -15,7 +15,6 @@ use crate::mm::{
     STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
 };
 use crate::types::PAGE_SIZE;
-use crate::utils::ffs;
 
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS: usize = 1024;
@@ -40,7 +39,7 @@ impl StackRange {
     pub fn alloc(&mut self) -> Result<VirtAddr, SvsmError> {
         for i in 0..BMP_QWORDS {
             let val = !self.alloc_bitmap[i];
-            let idx = ffs(val);
+            let idx = val.trailing_zeros() as usize;
 
             if idx >= 64 {
                 continue;
