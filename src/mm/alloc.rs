@@ -6,6 +6,8 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
+#[cfg(test)]
+use crate::locking::LockGuard;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
@@ -1265,67 +1267,72 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
 }
 
 #[cfg(test)]
+/// A global lock on global memory. Should only be acquired via
+/// [`TestRootMem::setup()`].
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
-
-#[cfg(test)]
-use crate::locking::LockGuard;
-
-#[cfg(test)]
-// Allocate a memory region from the standard Rust allocator and pass it to
-// root_mem_init().
-pub fn setup_test_root_mem(size: usize) -> LockGuard<'static, ()> {
-    extern crate alloc;
-    use alloc::alloc::{alloc, handle_alloc_error};
-
-    let layout = Layout::from_size_align(size, PAGE_SIZE)
-        .unwrap()
-        .pad_to_align();
-    let ptr = unsafe { alloc(layout) };
-    if ptr.is_null() {
-        handle_alloc_error(layout);
-    } else if ptr as usize & (PAGE_SIZE - 1) != 0 {
-        panic!("test memory region allocation not aligned to page size");
-    }
-
-    let page_count = layout.size() / PAGE_SIZE;
-    let lock = TEST_ROOT_MEM_LOCK.lock();
-    let vaddr = VirtAddr::from(ptr);
-    let paddr = PhysAddr::from(vaddr.bits()); // Identity mapping
-    root_mem_init(paddr, vaddr, page_count);
-    lock
-}
-
-#[cfg(test)]
-// Undo the setup done from setup_test_root_mem().
-pub fn destroy_test_root_mem(lock: LockGuard<'static, ()>) {
-    extern crate alloc;
-    use alloc::alloc::dealloc;
-
-    let mut root_mem = ROOT_MEM.lock();
-    let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
-    unsafe { dealloc(root_mem.start_virt.as_mut_ptr::<u8>(), layout) };
-    *root_mem = MemoryRegion::new();
-
-    // Reset the Slabs
-    *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();
-    unsafe { ALLOCATOR = SvsmAllocator::new() };
-
-    drop(lock);
-}
 
 #[cfg(test)]
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
+#[cfg(test)]
+/// A dummy struct to acquire a lock over global memory
+pub struct TestRootMem<'a>(LockGuard<'a, ()>);
+
+#[cfg(test)]
+impl TestRootMem<'_> {
+    /// Acquire a lock on global memory and initialize it
+    #[must_use = "memory guard must be held for the whole test"]
+    pub fn setup(size: usize) -> Self {
+        extern crate alloc;
+        use alloc::alloc::{alloc, handle_alloc_error};
+
+        let layout = Layout::from_size_align(size, PAGE_SIZE)
+            .unwrap()
+            .pad_to_align();
+        let ptr = unsafe { alloc(layout) };
+        if ptr.is_null() {
+            handle_alloc_error(layout);
+        } else if ptr as usize & (PAGE_SIZE - 1) != 0 {
+            panic!("test memory region allocation not aligned to page size");
+        }
+
+        let page_count = layout.size() / PAGE_SIZE;
+        let guard = Self(TEST_ROOT_MEM_LOCK.lock());
+        let vaddr = VirtAddr::from(ptr);
+        let paddr = PhysAddr::from(vaddr.bits()); // Identity mapping
+        root_mem_init(paddr, vaddr, page_count);
+        guard
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestRootMem<'_> {
+    /// Destroy the global memory before dropping the lock over it
+    fn drop(&mut self) {
+        extern crate alloc;
+        use alloc::alloc::dealloc;
+
+        let mut root_mem = ROOT_MEM.lock();
+        let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
+        unsafe { dealloc(root_mem.start_virt.as_mut_ptr::<u8>(), layout) };
+        *root_mem = MemoryRegion::new();
+
+        // Reset the Slabs
+        *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();
+        unsafe { ALLOCATOR = SvsmAllocator::new() };
+    }
+}
+
 #[test]
 fn test_root_mem_setup() {
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
-    destroy_test_root_mem(test_mem_lock);
+    let test_mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+    drop(test_mem_lock);
 }
 
 #[test]
 // Allocate one page and free it again, verify that memory_info() reflects it.
 fn test_page_alloc_one() {
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1334,9 +1341,6 @@ fn test_page_alloc_one() {
     assert_ne!(info_before.free_pages, root_mem.memory_info().free_pages);
     root_mem.free_page(page);
     assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
-
-    drop(root_mem);
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
@@ -1346,7 +1350,7 @@ fn test_page_alloc_all_compound() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1369,9 +1373,6 @@ fn test_page_alloc_all_compound() {
         }
     }
     assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
-
-    drop(root_mem);
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
@@ -1381,7 +1382,7 @@ fn test_page_alloc_all_single() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1404,9 +1405,6 @@ fn test_page_alloc_all_single() {
         root_mem.free_page(*page);
     }
     assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
-
-    drop(root_mem);
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
@@ -1416,7 +1414,7 @@ fn test_page_alloc_oom() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     let info_before = root_mem.memory_info();
@@ -1444,14 +1442,11 @@ fn test_page_alloc_oom() {
         }
     }
     assert_eq!(info_before.free_pages, root_mem.memory_info().free_pages);
-
-    drop(root_mem);
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
 fn test_page_file() {
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
 
     // Allocate page and check ref-count
@@ -1477,9 +1472,6 @@ fn test_page_file() {
     let info = root_mem.get_page_info(vaddr).unwrap();
 
     assert!(matches!(info, Page::Free { .. }));
-
-    drop(root_mem);
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[cfg(test)]
@@ -1491,7 +1483,7 @@ fn test_slab_alloc_free_many() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
     // Run it twice to make sure some objects will get freed and allocated again.
     for _i in 0..2 {
@@ -1522,8 +1514,6 @@ fn test_slab_alloc_free_many() {
             j += 1;
         }
     }
-
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
@@ -1533,7 +1523,7 @@ fn test_slab_page_slab_for_self() {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+    let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
     const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
     const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
@@ -1560,8 +1550,6 @@ fn test_slab_page_slab_for_self() {
 
     assert_ne!(SLAB_PAGE_SLAB.lock().common.free, 0);
     assert!(SLAB_PAGE_SLAB.lock().common.free_pages < 2);
-
-    destroy_test_root_mem(test_mem_lock);
 }
 
 #[test]
@@ -1572,7 +1560,7 @@ fn test_slab_oom() {
     use alloc::vec::Vec;
 
     const TEST_MEMORY_SIZE: usize = 256 * PAGE_SIZE;
-    let test_mem_lock = setup_test_root_mem(TEST_MEMORY_SIZE);
+    let _mem_lock = TestRootMem::setup(TEST_MEMORY_SIZE);
 
     const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
     let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE)
@@ -1598,6 +1586,4 @@ fn test_slab_oom() {
     for p in allocs {
         unsafe { ALLOCATOR.dealloc(p, layout) };
     }
-
-    destroy_test_root_mem(test_mem_lock);
 }
