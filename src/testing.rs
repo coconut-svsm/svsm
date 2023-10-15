@@ -1,7 +1,7 @@
 use log::info;
 use test::ShouldPanic;
 
-use crate::sev::msr_protocol::request_termination_msr;
+use crate::{cpu::percpu::this_cpu_mut, sev::ghcb::GHCBIOSize};
 
 pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
     info!("running {} tests", test_cases.len());
@@ -29,5 +29,14 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 
     info!("All tests passed!");
 
-    request_termination_msr();
+    exit();
+}
+
+fn exit() -> ! {
+    const QEMU_EXIT_PORT: u16 = 0xf4;
+    this_cpu_mut()
+        .ghcb()
+        .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)
+        .unwrap();
+    unreachable!();
 }
