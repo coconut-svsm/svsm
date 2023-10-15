@@ -14,7 +14,7 @@ FS_FILE ?= none
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
-all: svsm.bin
+all: stage1/kernel.elf svsm.bin
 
 test:
 	cargo test --target=x86_64-unknown-linux-gnu
@@ -42,7 +42,7 @@ ifneq ($(FS_FILE), none)
 endif
 	touch stage1/svsm-fs.bin
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/kernel.elf stage1/svsm-fs.bin
+stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin
 	cc -c -o $@ stage1/stage1.S
 
 stage1/reset.o:  stage1/reset.S stage1/meta.bin

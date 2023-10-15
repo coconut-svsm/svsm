@@ -32,7 +32,7 @@ jobs:
       # ld to work, so build all the objects without performing the
       # final linking step.
       - name: Build
-        run: make FEATURES="default,enable-gdb" stage1/stage1.o stage1/reset.o
+        run: make FEATURES="default,enable-gdb" stage1/kernel.elf stage1/stage1.o stage1/reset.o
 
       - name: Run tests
         run: make test
