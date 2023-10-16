@@ -290,7 +290,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static mut CONSOLE_SERIAL: SerialPort = SerialPort {
+static CONSOLE_SERIAL: SerialPort = SerialPort {
     driver: &CONSOLE_IO,
     port: SERIAL_PORT,
 };
@@ -381,9 +381,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     }
     idt_init();
 
-    unsafe {
-        WRITER.lock().set(&mut CONSOLE_SERIAL);
-    }
+    WRITER.lock().set(&CONSOLE_SERIAL);
     init_console();
     install_console_logger("SVSM");
 

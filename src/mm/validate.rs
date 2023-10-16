@@ -287,3 +287,5 @@ impl ValidBitmap {
         }
     }
 }
+
+unsafe impl Send for ValidBitmap {}

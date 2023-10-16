@@ -67,8 +67,6 @@ pub struct FileHandle {
     handle: SpinLock<RawFileHandle>,
 }
 
-unsafe impl Sync for FileHandle {}
-
 impl FileHandle {
     pub fn new(file: &Arc<dyn File>) -> Self {
         FileHandle {
@@ -101,8 +99,6 @@ impl FileHandle {
 struct SvsmFs {
     root: Option<Arc<RamDirectory>>,
 }
-
-unsafe impl Sync for SvsmFs {}
 
 impl SvsmFs {
     const fn new() -> Self {

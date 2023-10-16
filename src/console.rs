@@ -10,26 +10,21 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
-#[derive(Debug)]
 pub struct Console {
-    writer: *const dyn Terminal,
+    writer: Option<&'static dyn Terminal>,
 }
 
 impl Console {
-    pub fn set(&mut self, w: *mut dyn Terminal) {
-        self.writer = w;
+    pub fn set(&mut self, w: &'static dyn Terminal) {
+        self.writer = Some(w);
     }
 }
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        if self.writer.is_null() {
-            return Ok(());
-        }
-
-        for ch in s.bytes() {
-            unsafe {
-                (*self.writer).put_byte(ch);
+        if let Some(writer) = self.writer {
+            for ch in s.bytes() {
+                writer.put_byte(ch);
             }
         }
 
@@ -37,10 +32,22 @@ impl fmt::Write for Console {
     }
 }
 
-pub static WRITER: SpinLock<Console> = SpinLock::new(unsafe {
-    Console {
-        writer: &DEFAULT_SERIAL_PORT,
+impl fmt::Debug for Console {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Console")
+            .field(
+                "writer",
+                &format_args!(
+                    "{:?}",
+                    self.writer.as_ref().map(|writer| writer as *const _)
+                ),
+            )
+            .finish()
     }
+}
+
+pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
+    writer: Some(&DEFAULT_SERIAL_PORT),
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 

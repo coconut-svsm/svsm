@@ -8,7 +8,6 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::error::SvsmError;
-use crate::io::IOPort;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -17,12 +16,9 @@ use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
-use core::cell::RefCell;
 use core::{mem, ptr};
 
-use super::msr_protocol::{
-    invalidate_page_msr, register_ghcb_gpa_msr, request_termination_msr, validate_page_msr,
-};
+use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
 // TODO: Fix this when Rust gets decent compile time struct offset support
@@ -484,52 +480,5 @@ impl GHCB {
         self.clear();
         self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)?;
         Ok(())
-    }
-}
-
-pub struct GHCBIOPort<'a> {
-    pub ghcb: RefCell<&'a mut GHCB>,
-}
-
-impl<'a> GHCBIOPort<'a> {
-    pub fn new(ghcb: RefCell<&'a mut GHCB>) -> Self {
-        GHCBIOPort { ghcb }
-    }
-}
-unsafe impl<'a> Sync for GHCBIOPort<'a> {}
-
-impl<'a> IOPort for GHCBIOPort<'a> {
-    fn outb(&self, port: u16, value: u8) {
-        let mut g = self.ghcb.borrow_mut();
-        let ret = g.ioio_out(port, GHCBIOSize::Size8, value as u64);
-        if ret.is_err() {
-            request_termination_msr();
-        }
-    }
-
-    fn inb(&self, port: u16) -> u8 {
-        let mut g = self.ghcb.borrow_mut();
-        let ret = g.ioio_in(port, GHCBIOSize::Size8);
-        match ret {
-            Ok(v) => (v & 0xff) as u8,
-            Err(_e) => request_termination_msr(),
-        }
-    }
-
-    fn outw(&self, port: u16, value: u16) {
-        let mut g = self.ghcb.borrow_mut();
-        let ret = g.ioio_out(port, GHCBIOSize::Size16, value as u64);
-        if ret.is_err() {
-            request_termination_msr();
-        }
-    }
-
-    fn inw(&self, port: u16) -> u16 {
-        let mut g = self.ghcb.borrow_mut();
-        let ret = g.ioio_in(port, GHCBIOSize::Size16);
-        match ret {
-            Ok(v) => (v & 0xffff) as u16,
-            Err(_e) => request_termination_msr(),
-        }
     }
 }

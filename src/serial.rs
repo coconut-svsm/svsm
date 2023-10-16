@@ -25,7 +25,7 @@ pub const DLH: u16 = 1; // Divisor Latch High
 pub const RCVRDY: u8 = 0x01;
 pub const XMTRDY: u8 = 0x20;
 
-pub trait Terminal {
+pub trait Terminal: Sync {
     fn put_byte(&self, _ch: u8) {}
     fn get_byte(&self) -> u8 {
         0
@@ -88,7 +88,7 @@ impl<'a> Terminal for SerialPort<'a> {
     }
 }
 
-pub static mut DEFAULT_SERIAL_PORT: SerialPort = SerialPort {
+pub static DEFAULT_SERIAL_PORT: SerialPort = SerialPort {
     driver: &DEFAULT_IO_DRIVER,
     port: SERIAL_PORT,
 };

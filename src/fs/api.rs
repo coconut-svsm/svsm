@@ -59,14 +59,14 @@ impl FsError {
     impl_fs_err!(file_not_found, FileNotFound);
 }
 
-pub trait File: Debug {
+pub trait File: Debug + Send + Sync {
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError>;
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError>;
     fn truncate(&self, size: usize) -> Result<usize, SvsmError>;
     fn size(&self) -> usize;
 }
 
-pub trait Directory: Debug {
+pub trait Directory: Debug + Send + Sync {
     fn list(&self) -> Vec<FileName>;
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError>;
     fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError>;

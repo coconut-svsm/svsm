@@ -171,8 +171,6 @@ pub struct RamFile {
     rawfile: RWLock<RawRamFile>,
 }
 
-unsafe impl Sync for RamFile {}
-
 impl RamFile {
     #[allow(dead_code)]
     pub fn new() -> Self {
@@ -204,9 +202,6 @@ impl File for RamFile {
 pub struct RamDirectory {
     entries: RWLock<Vec<DirectoryEntry>>,
 }
-
-unsafe impl Sync for RamDirectory {}
-unsafe impl Send for RamDirectory {}
 
 impl RamDirectory {
     pub fn new() -> Self {

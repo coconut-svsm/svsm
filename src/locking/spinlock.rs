@@ -42,7 +42,8 @@ pub struct SpinLock<T: Debug> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Debug> Sync for SpinLock<T> {}
+unsafe impl<T: Debug + Send> Send for SpinLock<T> {}
+unsafe impl<T: Debug + Send> Sync for SpinLock<T> {}
 
 impl<T: Debug> SpinLock<T> {
     pub const fn new(data: T) -> Self {
