@@ -9,6 +9,7 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
+use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
@@ -414,7 +415,10 @@ fn validate_fw_memory_vec(regions: Vec<MemoryRegion<PhysAddr>>) -> Result<(), Sv
     validate_fw_memory_vec(next_vec)
 }
 
-pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
+pub fn validate_fw_memory(
+    fw_meta: &SevFWMetaData,
+    launch_info: &KernelLaunchInfo,
+) -> Result<(), SvsmError> {
     // Initalize vector with regions from the FW
     let mut regions = fw_meta.valid_mem.clone();
 
@@ -435,6 +439,13 @@ pub fn validate_fw_memory(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 
     // Sort regions by base address
     regions.sort_unstable_by_key(|a| a.start());
+
+    let kernel_region = launch_info.kernel_region();
+    for region in regions.iter() {
+        if region.overlap(&kernel_region) {
+            panic!("FwMeta region ovelaps with kernel");
+        }
+    }
 
     validate_fw_memory_vec(regions)
 }

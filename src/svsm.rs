@@ -442,7 +442,7 @@ pub extern "C" fn svsm_main() {
 
     print_fw_meta(&fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta) {
+    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
         panic!("Failed to validate firmware memory: {:#?}", e);
     }
 
