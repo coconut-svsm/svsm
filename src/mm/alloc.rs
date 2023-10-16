@@ -695,6 +695,10 @@ impl PageRef {
     pub fn virt_addr(&self) -> VirtAddr {
         self.virt_addr
     }
+
+    pub fn phys_addr(&self) -> PhysAddr {
+        self.phys_addr
+    }
 }
 
 impl AsRef<[u8; PAGE_SIZE]> for PageRef {

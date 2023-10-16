@@ -4,7 +4,7 @@
 //
 // Author: Carlos López <carlos.lopez@suse.com>
 
-use crate::types::PAGE_SIZE;
+use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use core::fmt;
 use core::ops;
 
@@ -72,6 +72,10 @@ pub trait Address:
         let x1 = start / PAGE_SIZE;
         let x2 = (start + size - 1) / PAGE_SIZE;
         x1 != x2
+    }
+
+    fn pfn(&self) -> InnerAddr {
+        self.bits() >> PAGE_SHIFT
     }
 }
 

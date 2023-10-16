@@ -8,8 +8,9 @@ use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
 use crate::cpu::idt::is_exception_handler_return_site;
 use crate::cpu::idt::X86ExceptionContext;
+use crate::cpu::percpu::this_cpu;
 #[cfg(feature = "enable-stacktrace")]
-use crate::mm::address_space::{STACK_SIZE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE};
+use crate::mm::address_space::STACK_SIZE;
 #[cfg(feature = "enable-stacktrace")]
 use core::arch::asm;
 #[cfg(feature = "enable-stacktrace")]
@@ -66,14 +67,17 @@ impl StackUnwinder {
                  options(att_syntax));
         };
 
+        let top_of_init_stack = this_cpu().get_top_of_stack();
+        let top_of_df_stack = this_cpu().get_top_of_df_stack();
+
         let stacks: StacksBounds = [
             StackBounds {
-                bottom: SVSM_STACKS_INIT_TASK,
-                top: SVSM_STACKS_INIT_TASK + STACK_SIZE,
+                bottom: top_of_init_stack - STACK_SIZE,
+                top: top_of_init_stack,
             },
             StackBounds {
-                bottom: SVSM_STACK_IST_DF_BASE,
-                top: SVSM_STACK_IST_DF_BASE + STACK_SIZE,
+                bottom: top_of_df_stack - STACK_SIZE,
+                top: top_of_df_stack,
             },
         ];
 

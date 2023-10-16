@@ -14,18 +14,19 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
-use crate::mm::stack::{allocate_stack_addr, stack_base_pointer};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMReserved, VMR};
 use crate::mm::{
-    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_TEMP_BASE_2M,
-    SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K,
-    SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
+    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ptr;
@@ -183,14 +184,23 @@ pub struct PerCpu {
     guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
 
+    /// PerCpu Virtual Memory Range
+    vm_range: VMR,
+
     /// Address allocator for per-cpu 4k temporary mappings
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
 }
 
+impl Default for PerCpu {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PerCpu {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         PerCpu {
             online: AtomicBool::new(false),
             apic_id: 0,
@@ -202,6 +212,7 @@ impl PerCpu {
             svsm_vmsa: None,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             reset_ip: 0xffff_fff0u64,
+            vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
         }
@@ -231,8 +242,11 @@ impl PerCpu {
     }
 
     fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
-        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
+        self.vm_range.initialize()?;
+        let mut pgtable_ref = get_init_pgtable_locked().clone_shared()?;
+        self.vm_range.populate(&mut pgtable_ref);
         self.set_pgtable(pgtable_ref);
+
         Ok(())
     }
 
@@ -241,20 +255,23 @@ impl PerCpu {
         *my_pgtable = pgtable;
     }
 
+    fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
+        let stack = VMKernelStack::new()?;
+        let top_of_stack = stack.top_of_stack(base);
+        let mapping = Arc::new(Mapping::new(stack));
+
+        self.vm_range.insert_at(base, mapping)?;
+
+        Ok(top_of_stack)
+    }
+
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
-        let addr = SVSM_STACKS_INIT_TASK;
-        allocate_stack_addr(addr, &mut self.get_pgtable())
-            .expect("Failed to allocate per-cpu init stack");
-        self.init_stack = Some(addr);
+        self.init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
         Ok(())
     }
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        let addr = SVSM_STACK_IST_DF_BASE;
-        allocate_stack_addr(addr, &mut self.get_pgtable())
-            .expect("Failed to allocate percpu double-fault stack");
-
-        self.ist.double_fault_stack = Some(addr);
+        self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
         Ok(())
     }
 
@@ -273,19 +290,51 @@ impl PerCpu {
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
-        stack_base_pointer(self.init_stack.unwrap())
+        self.init_stack.unwrap()
+    }
+
+    pub fn get_top_of_df_stack(&self) -> VirtAddr {
+        self.ist.double_fault_stack.unwrap()
     }
 
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = stack_base_pointer(self.ist.double_fault_stack.unwrap());
+        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
     }
 
-    pub fn map_self(&mut self) -> Result<(), SvsmError> {
+    pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
         let flags = PageTable::data_flags();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
+    }
+
+    pub fn map_self(&mut self) -> Result<(), SvsmError> {
+        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let paddr = virt_to_phys(vaddr);
+
+        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
+
+        Ok(())
+    }
+
+    fn initialize_vm_ranges(&mut self) -> Result<(), SvsmError> {
+        let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
+        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
+
+        let size_2m = SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M;
+        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
+
+        Ok(())
+    }
+
+    pub fn dump_vm_ranges(&self) {
+        self.vm_range.dump_ranges();
     }
 
     pub fn setup(&mut self) -> Result<(), SvsmError> {
@@ -294,6 +343,9 @@ impl PerCpu {
 
         // Map PerCpu data in own page-table
         self.map_self()?;
+
+        // Reserve ranges for temporary mappings
+        self.initialize_vm_ranges()?;
 
         // Setup GHCB
         self.setup_ghcb()?;
@@ -377,16 +429,15 @@ impl PerCpu {
 
     pub fn unmap_guest_vmsa(&self) {
         assert!(self.apic_id == this_cpu().get_apic_id());
-        self.get_pgtable().unmap_4k(SVSM_PERCPU_VMSA_BASE);
+        // Ignore errors - the mapping might or might not be there
+        let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.apic_id == this_cpu().get_apic_id());
-
-        let flags = PageTable::data_flags();
-
-        self.get_pgtable()
-            .map_4k(SVSM_PERCPU_VMSA_BASE, paddr, flags)?;
+        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range
+            .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
 
         Ok(())
     }
@@ -443,16 +494,15 @@ impl PerCpu {
     }
 
     pub fn unmap_caa(&self) {
-        self.get_pgtable().unmap_4k(SVSM_PERCPU_CAA_BASE);
+        // Ignore errors - the mapping might or might not be there
+        let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
     }
 
     pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let flags = PageTable::data_flags();
-
-        self.get_pgtable()
-            .map_4k(SVSM_PERCPU_CAA_BASE, paddr.page_align(), flags)?;
+        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
     }

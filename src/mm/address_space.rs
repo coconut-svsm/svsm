@@ -85,11 +85,11 @@ pub const SIZE_LEVEL0: usize = 1usize << ((9 * 0) + 12);
 // Stack definitions
 // The GDB stub requires a larger stack.
 #[cfg(feature = "enable-gdb")]
-pub const STACK_PAGES_GDB: usize = 12;
+pub const STACK_PAGES_GDB: usize = 8;
 #[cfg(not(feature = "enable-gdb"))]
 pub const STACK_PAGES_GDB: usize = 0;
 
-pub const STACK_PAGES: usize = 4 + STACK_PAGES_GDB;
+pub const STACK_PAGES: usize = 8 + STACK_PAGES_GDB;
 pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
@@ -113,6 +113,9 @@ pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 
 /// Base Address of shared memory region
 pub const SVSM_PERCPU_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERCPU);
+
+/// End Address of per-cpu memory region
+pub const SVSM_PERCPU_END: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL3);
 
 /// PerCPU CAA mappings
 pub const SVSM_PERCPU_CAA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(2 * SIZE_LEVEL0);

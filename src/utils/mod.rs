@@ -8,4 +8,4 @@ pub mod bitmap_allocator;
 pub mod immut_after_init;
 pub mod util;
 
-pub use util::{align_up, halt, overlap, page_align_up, page_offset, zero_mem_region};
+pub use util::{align_down, align_up, halt, overlap, page_align_up, page_offset, zero_mem_region};
