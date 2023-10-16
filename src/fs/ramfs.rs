@@ -281,11 +281,11 @@ impl Directory for RamDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::alloc::{destroy_test_root_mem, setup_test_root_mem, DEFAULT_TEST_MEMORY_SIZE};
+    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
     fn test_ramfs_file_read_write() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
         let file = RamFile::new();
         let mut buf1 = [0xffu8; 512];
@@ -361,8 +361,6 @@ mod tests {
 
         // file needs to be dropped before memory allocator is destroyed
         drop(file);
-
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
