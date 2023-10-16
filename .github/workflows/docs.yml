@@ -1,0 +1,16 @@
+name: Docs
+
+on: [pull_request]
+
+jobs:
+  check:
+    name: Check commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Generate Documentation
+        run: make doc
