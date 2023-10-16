@@ -273,11 +273,11 @@ pub fn seek(fh: &FileHandle, pos: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::alloc::{destroy_test_root_mem, setup_test_root_mem, DEFAULT_TEST_MEMORY_SIZE};
+    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
     fn create_dir() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
@@ -297,12 +297,11 @@ mod tests {
         create("test1/file1").unwrap();
 
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
     fn create_and_unlink_file() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         create("test1").unwrap();
@@ -328,12 +327,11 @@ mod tests {
         assert_eq!(root_list, [FileName::from("test2")]);
 
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
     fn create_sub_dir() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         // Create file - should fail as directory does not exist yet
@@ -357,12 +355,11 @@ mod tests {
         assert_eq!(list, [FileName::from("file1")]);
 
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
     fn test_unlink() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         // Create directory
@@ -387,12 +384,11 @@ mod tests {
         assert_eq!(list, [FileName::from("file2")]);
 
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
     fn test_open_read_write_seek() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         // Create directory
@@ -439,12 +435,11 @@ mod tests {
 
         drop(fh);
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 
     #[test]
     fn test_multiple_file_handles() {
-        let test_mem_lock = setup_test_root_mem(DEFAULT_TEST_MEMORY_SIZE);
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
 
         // Try again - should succeed now
@@ -475,6 +470,5 @@ mod tests {
         drop(fh2);
         drop(fh1);
         uninitialize_fs();
-        destroy_test_root_mem(test_mem_lock);
     }
 }
