@@ -126,10 +126,10 @@ impl ValidBitmap {
     }
 
     #[inline(always)]
-    fn index(&self, paddr: PhysAddr) -> (isize, usize) {
+    fn index(&self, paddr: PhysAddr) -> (usize, usize) {
         let page_offset = (paddr - self.region.start()) / PAGE_SIZE;
-        let index: isize = (page_offset / 64).try_into().unwrap();
-        let bit: usize = page_offset % 64;
+        let index = page_offset / 64;
+        let bit = page_offset % 64;
 
         (index, bit)
     }
@@ -174,9 +174,9 @@ impl ValidBitmap {
         assert!(self.check_addr(paddr));
 
         unsafe {
-            let mut val: u64 = ptr::read(self.bitmap.offset(index));
+            let mut val: u64 = ptr::read(self.bitmap.add(index));
             val |= 1u64 << bit;
-            ptr::write(self.bitmap.offset(index), val);
+            ptr::write(self.bitmap.add(index), val);
         }
     }
 
@@ -191,9 +191,9 @@ impl ValidBitmap {
         assert!(self.check_addr(paddr));
 
         unsafe {
-            let mut val: u64 = ptr::read(self.bitmap.offset(index));
+            let mut val: u64 = ptr::read(self.bitmap.add(index));
             val &= !(1u64 << bit);
-            ptr::write(self.bitmap.offset(index), val);
+            ptr::write(self.bitmap.add(index), val);
         }
     }
 
@@ -202,7 +202,7 @@ impl ValidBitmap {
             return;
         }
 
-        const NR_INDEX: isize = (PAGE_SIZE_2M / (PAGE_SIZE * 64)) as isize;
+        const NR_INDEX: usize = PAGE_SIZE_2M / (PAGE_SIZE * 64);
         let (index, _) = self.index(paddr);
 
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
@@ -210,7 +210,7 @@ impl ValidBitmap {
 
         for i in 0..NR_INDEX {
             unsafe {
-                ptr::write(self.bitmap.offset(index + i), val);
+                ptr::write(self.bitmap.add(index + i), val);
             }
         }
     }
@@ -223,10 +223,10 @@ impl ValidBitmap {
         self.set_2m(paddr, 0u64);
     }
 
-    fn modify_bitmap_word(&mut self, index: isize, mask: u64, new_val: u64) {
-        let val = unsafe { ptr::read(self.bitmap.offset(index)) };
+    fn modify_bitmap_word(&mut self, index: usize, mask: u64, new_val: u64) {
+        let val = unsafe { ptr::read(self.bitmap.add(index)) };
         let val = (val & !mask) | (new_val & mask);
-        unsafe { ptr::write(self.bitmap.offset(index), val) };
+        unsafe { ptr::write(self.bitmap.add(index), val) };
     }
 
     fn set_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr, new_val: bool) {
@@ -246,7 +246,7 @@ impl ValidBitmap {
             self.modify_bitmap_word(index_head, mask_head, new_val);
 
             for index in (index_head + 1)..index_tail {
-                unsafe { ptr::write(self.bitmap.offset(index), new_val) };
+                unsafe { ptr::write(self.bitmap.add(index), new_val) };
             }
 
             if bit_tail_end != 0 {
@@ -279,7 +279,7 @@ impl ValidBitmap {
 
         unsafe {
             let mask: u64 = 1u64 << bit;
-            let val: u64 = ptr::read(self.bitmap.offset(index));
+            let val: u64 = ptr::read(self.bitmap.add(index));
 
             (val & mask) == mask
         }
