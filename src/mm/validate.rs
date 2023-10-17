@@ -101,26 +101,26 @@ struct ValidBitmap {
 }
 
 impl ValidBitmap {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         ValidBitmap {
             region: MemoryRegion::from_addresses(PhysAddr::null(), PhysAddr::null()),
             bitmap: ptr::null_mut(),
         }
     }
 
-    pub fn set_region(&mut self, region: MemoryRegion<PhysAddr>) {
+    fn set_region(&mut self, region: MemoryRegion<PhysAddr>) {
         self.region = region;
     }
 
-    pub fn set_bitmap(&mut self, bitmap: *mut u64) {
+    fn set_bitmap(&mut self, bitmap: *mut u64) {
         self.bitmap = bitmap;
     }
 
-    pub fn check_addr(&self, paddr: PhysAddr) -> bool {
+    fn check_addr(&self, paddr: PhysAddr) -> bool {
         self.region.contains(paddr)
     }
 
-    pub fn bitmap_addr(&self) -> PhysAddr {
+    fn bitmap_addr(&self) -> PhysAddr {
         assert!(!self.bitmap.is_null());
         virt_to_phys(VirtAddr::from(self.bitmap))
     }
@@ -134,7 +134,7 @@ impl ValidBitmap {
         (index, bit)
     }
 
-    pub fn clear_all(&mut self) {
+    fn clear_all(&mut self) {
         let (mut i, bit) = self.index(self.region.end());
         if bit != 0 {
             i += 1;
@@ -146,11 +146,11 @@ impl ValidBitmap {
         }
     }
 
-    pub fn alloc_order(&self) -> usize {
+    fn alloc_order(&self) -> usize {
         bitmap_alloc_order(self.region)
     }
 
-    pub fn migrate(&mut self, new_bitmap: *mut u64) {
+    fn migrate(&mut self, new_bitmap: *mut u64) {
         let (count, _) = self.index(self.region.end());
 
         unsafe {
@@ -163,7 +163,7 @@ impl ValidBitmap {
         !self.bitmap.is_null()
     }
 
-    pub fn set_valid_4k(&mut self, paddr: PhysAddr) {
+    fn set_valid_4k(&mut self, paddr: PhysAddr) {
         if !self.initialized() {
             return;
         }
@@ -180,7 +180,7 @@ impl ValidBitmap {
         }
     }
 
-    pub fn clear_valid_4k(&mut self, paddr: PhysAddr) {
+    fn clear_valid_4k(&mut self, paddr: PhysAddr) {
         if !self.initialized() {
             return;
         }
@@ -215,11 +215,11 @@ impl ValidBitmap {
         }
     }
 
-    pub fn set_valid_2m(&mut self, paddr: PhysAddr) {
+    fn set_valid_2m(&mut self, paddr: PhysAddr) {
         self.set_2m(paddr, !0u64);
     }
 
-    pub fn clear_valid_2m(&mut self, paddr: PhysAddr) {
+    fn clear_valid_2m(&mut self, paddr: PhysAddr) {
         self.set_2m(paddr, 0u64);
     }
 
@@ -260,15 +260,15 @@ impl ValidBitmap {
         }
     }
 
-    pub fn set_valid_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr) {
+    fn set_valid_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr) {
         self.set_range(paddr_begin, paddr_end, true);
     }
 
-    pub fn clear_valid_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr) {
+    fn clear_valid_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr) {
         self.set_range(paddr_begin, paddr_end, false);
     }
 
-    pub fn is_valid_4k(&self, paddr: PhysAddr) -> bool {
+    fn is_valid_4k(&self, paddr: PhysAddr) -> bool {
         if !self.initialized() {
             return false;
         }
