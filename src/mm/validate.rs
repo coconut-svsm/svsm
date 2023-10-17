@@ -135,14 +135,9 @@ impl ValidBitmap {
     }
 
     fn clear_all(&mut self) {
-        let (mut i, bit) = self.index(self.region.end());
-        if bit != 0 {
-            i += 1;
-        }
-        let index: usize = i.try_into().unwrap();
-
+        let len = self.bitmap_len();
         unsafe {
-            ptr::write_bytes(self.bitmap, 0, index);
+            ptr::write_bytes(self.bitmap, 0, len);
         }
     }
 
@@ -150,11 +145,16 @@ impl ValidBitmap {
         bitmap_alloc_order(self.region)
     }
 
-    fn migrate(&mut self, new_bitmap: *mut u64) {
-        let (count, _) = self.index(self.region.end());
+    /// The number of u64's in the bitmap
+    fn bitmap_len(&self) -> usize {
+        let num_pages = self.region.len() / PAGE_SIZE;
+        num_pages.div_ceil(u64::BITS as usize)
+    }
 
+    fn migrate(&mut self, new_bitmap: *mut u64) {
+        let count = self.bitmap_len();
         unsafe {
-            ptr::copy_nonoverlapping(self.bitmap, new_bitmap, count as usize);
+            ptr::copy_nonoverlapping(self.bitmap, new_bitmap, count);
         }
         self.bitmap = new_bitmap;
     }
