@@ -193,17 +193,11 @@ pub struct PerCpu {
     pub vrange_2m: VirtualRange,
 }
 
-impl Default for PerCpu {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl PerCpu {
-    pub fn new() -> Self {
+    fn new(apic_id: u32) -> Self {
         PerCpu {
             online: AtomicBool::new(false),
-            apic_id: 0,
+            apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
             init_stack: None,
@@ -222,8 +216,7 @@ impl PerCpu {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
-            (*percpu) = PerCpu::new();
-            (*percpu).apic_id = apic_id;
+            (*percpu) = PerCpu::new(apic_id);
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
