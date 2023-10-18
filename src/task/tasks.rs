@@ -6,30 +6,24 @@
 
 extern crate alloc;
 
+use alloc::boxed::Box;
+use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::fmt;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use alloc::boxed::Box;
-
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{Address, VirtAddr};
 use crate::cpu::msr::{rdtsc, read_flags};
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_pages, get_order};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
-use crate::mm::{
-    virt_to_phys, PAGE_SIZE, PGTABLE_LVL3_IDX_PERCPU, SVSM_PERTASK_STACK_BASE,
-    SVSM_PERTASK_STACK_TOP,
-};
-use crate::utils::zero_mem_region;
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
+use crate::mm::vm::{Mapping, VMKernelStack, VMR};
+use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
 
 pub const INITIAL_TASK_ID: u32 = 1;
-
-const STACK_SIZE: usize = 65536;
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
@@ -37,13 +31,6 @@ pub enum TaskState {
     SCHEDULED,
     #[default]
     TERMINATED,
-}
-
-#[derive(Debug, Default)]
-pub struct TaskStack {
-    pub virt_base: VirtAddr,
-    pub virt_top: VirtAddr,
-    pub phys: PhysAddr,
 }
 
 pub const TASK_FLAG_SHARE_PT: u16 = 0x01;
@@ -183,11 +170,11 @@ pub struct TaskContext {
 pub struct Task {
     pub rsp: u64,
 
-    /// Information about the task stack
-    pub stack: TaskStack,
-
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
+
+    /// Task virtual memory range for use at CPL 0
+    vm_kernel_range: VMR,
 
     /// Current state of the task
     pub state: TaskState,
@@ -208,7 +195,6 @@ impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Task")
             .field("rsp", &self.rsp)
-            .field("stack", &self.stack)
             .field("state", &self.state)
             .field("affinity", &self.affinity)
             .field("id", &self.id)
@@ -225,12 +211,18 @@ impl Task {
             Self::allocate_page_table()?
         };
 
-        let (task_stack, rsp) = Self::allocate_stack(entry, &mut pgtable)?;
+        let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
+        vm_kernel_range.initialize()?;
+
+        let (stack, rsp_offset) = Self::allocate_stack(entry)?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
+
+        vm_kernel_range.populate(&mut pgtable);
 
         let task: Box<Task> = Box::new(Task {
-            rsp: u64::from(rsp),
-            stack: task_stack,
+            rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
             page_table: SpinLock::new(pgtable),
+            vm_kernel_range,
             state: TaskState::RUNNING,
             affinity: None,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -262,35 +254,16 @@ impl Task {
         self.affinity = affinity;
     }
 
-    fn allocate_stack(
-        entry: extern "C" fn(),
-        pgtable: &mut PageTableRef,
-    ) -> Result<(TaskStack, VirtAddr), SvsmError> {
-        let stack_size = SVSM_PERTASK_STACK_TOP - SVSM_PERTASK_STACK_BASE;
-        let num_pages = 1 << get_order(STACK_SIZE);
-        assert!(stack_size == num_pages * PAGE_SIZE);
-        let pages = allocate_pages(get_order(STACK_SIZE))?;
-        zero_mem_region(pages, pages + stack_size);
+    fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
+        let stack = VMKernelStack::new()?;
+        let offset = stack.top_of_stack(VirtAddr::from(0u64));
 
-        let task_stack = TaskStack {
-            virt_base: SVSM_PERTASK_STACK_BASE,
-            virt_top: SVSM_PERTASK_STACK_TOP,
-            phys: virt_to_phys(pages),
-        };
-
-        // We current have a virtual address in SVSM shared memory for the stack. Configure
-        // the per-task pagetable to map the stack into the task memory map.
-        pgtable.map_region_4k(
-            task_stack.virt_base,
-            task_stack.virt_top,
-            task_stack.phys,
-            PageTable::task_data_flags(),
-        )?;
+        let mapping = Arc::new(Mapping::new(stack));
+        let percpu_mapping = this_cpu_mut().new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
-        let stack_pos = pages + stack_size;
-        let stack_ptr: *mut u64 = stack_pos.as_mut_ptr();
+        let stack_ptr: *mut u64 = (percpu_mapping.virt_addr().bits() + offset.bits()) as *mut u64;
 
         // 'Push' the task frame onto the stack
         unsafe {
@@ -302,8 +275,10 @@ impl Task {
             stack_ptr.offset(-1).write(task_exit as *const () as u64);
         }
 
-        let initial_rsp = SVSM_PERTASK_STACK_TOP - (size_of::<TaskContext>() + size_of::<u64>());
-        Ok((task_stack, initial_rsp))
+        Ok((
+            mapping,
+            offset - (size_of::<TaskContext>() + size_of::<u64>()),
+        ))
     }
 
     fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
@@ -323,7 +298,7 @@ extern "C" fn task_exit() {
 extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
     unsafe {
         let mut pt = (*new_task).page_table.lock();
-        pt.copy_entry(&this_cpu().get_pgtable(), PGTABLE_LVL3_IDX_PERCPU);
+        this_cpu().populate_page_table(&mut pt);
         pt.cr3_value().bits() as u64
     }
 }

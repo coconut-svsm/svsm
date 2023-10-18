@@ -553,6 +553,15 @@ impl PerCpu {
     pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping, SvsmError> {
         VMRMapping::new(&mut self.vm_range, mapping)
     }
+
+    /// Add the PerCpu virtual range into the provided pagetable
+    ///
+    /// # Arguments
+    ///
+    /// * `pt` - The page table to populate the the PerCpu range into
+    pub fn populate_page_table(&self, pt: &mut PageTableRef) {
+        self.vm_range.populate(pt);
+    }
 }
 
 unsafe impl Sync for PerCpu {}
