@@ -13,8 +13,8 @@ use crate::utils::align_up;
 extern crate alloc;
 use alloc::vec::Vec;
 
-/// Contains base functionality for all [`VirtualMapping`] types which use
-/// self-allocated PageFile pages.
+/// Contains base functionality for all [`VirtualMapping`](super::api::VirtualMapping)
+/// types which use self-allocated PageFile pages.
 #[derive(Default, Debug)]
 pub struct RawAllocMapping {
     /// A vec containing references to PageFile allocations
