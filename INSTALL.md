@@ -205,6 +205,12 @@ The project also contains a number of unit-tests which can be run by
 $ make test
 ```
 
+Unit tests can be run inside the SVSM by
+
+```
+$ QEMU=/path/to/qemu OVMF=/path/to/firmware/ make test-in-svsm
+```
+
 Putting it all together
 -----------------------
 
