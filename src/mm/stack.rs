@@ -124,3 +124,27 @@ pub fn free_stack(stack: VirtAddr) {
 
     STACK_ALLOC.lock().dealloc(stack);
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::mm::stack::*;
+
+    #[test]
+    fn test_allocate_and_free_stack() {
+        /*
+         * For offline testing purposes, we can't
+         * really map physical memory.
+         */
+        let stack_res = STACK_ALLOC.lock().alloc();
+        let stack = stack_res.unwrap();
+        let base_pointer = stack_base_pointer(stack);
+
+        assert!(stack >= SVSM_SHARED_STACK_BASE);
+        assert!(stack < SVSM_SHARED_STACK_END);
+
+        let bits = stack.bits();
+        assert_eq!(SVSM_SHARED_STACK_BASE, VirtAddr::new(bits));
+        assert_eq!(SVSM_SHARED_STACK_BASE + STACK_SIZE, base_pointer);
+        STACK_ALLOC.lock().dealloc(stack);
+    }
+}
