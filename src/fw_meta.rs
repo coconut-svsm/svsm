@@ -10,7 +10,6 @@ use crate::address::{Address, PhysAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::SIZE_1G;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, PAGE_SIZE};
@@ -245,16 +244,18 @@ fn find_table<'a>(uuid: &Uuid, mem: &'a [u8]) -> Option<&'a [u8]> {
     None
 }
 
-pub fn parse_fw_meta_data() -> Result<SevFWMetaData, SvsmError> {
+/// Parse the firmware metadata from the given slice.
+pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let mut meta_data = SevFWMetaData::new();
-    // Map meta-data location, it starts at 32 bytes below 4GiB
-    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
-    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
-    let vstart = guard.virt_addr();
 
-    // Safety: RawMetaBuffer has a size of one page and it has no invalid
-    // representations.
-    let raw_meta = unsafe { &*vstart.as_ptr::<RawMetaBuffer>() };
+    if mem.len() != size_of::<RawMetaBuffer>() {
+        return Err(SvsmError::Firmware);
+    }
+
+    // Safety: `RawMetaBuffer` has no invalid representations and is
+    // `repr(C, packed)`, which means there are no alignment requirements.
+    // We have also verified that the size of the slice matches.
+    let raw_meta = unsafe { &*mem.as_ptr().cast::<RawMetaBuffer>() };
 
     // Check the UUID
     let raw_uuid = raw_meta.header.uuid;

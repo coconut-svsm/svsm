@@ -37,7 +37,7 @@ use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
+use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
@@ -310,6 +310,17 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
+fn map_and_parse_fw_meta() -> Result<SevFWMetaData, SvsmError> {
+    // Map meta-data location, it starts at 32 bytes below 4GiB
+    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
+    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
+    let vstart = guard.virt_addr().as_ptr::<u8>();
+    // Safety: we just mapped a page, so the size must hold. The type
+    // of the slice elements is `u8` so there are no alignment requirements.
+    let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
+    parse_fw_meta_data(metadata)
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -443,7 +454,7 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = parse_fw_meta_data()
+    let fw_meta = map_and_parse_fw_meta()
         .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
 
     print_fw_meta(&fw_meta);

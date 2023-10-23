@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 use crate::locking::LockGuard;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
@@ -1200,7 +1200,7 @@ impl SvsmAllocator {
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with `Self::new()`.
-    #[cfg(test)]
+    #[cfg(any(test, fuzzing))]
     fn reset(&self) {
         *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
         *self.slabs[1].lock() = Slab::new(Self::MIN_SLAB_SIZE * 2);
@@ -1274,7 +1274,7 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
         .expect("Failed to initialize SLAB_PAGE_SLAB");
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 /// A global lock on global memory. Should only be acquired via
 /// [`TestRootMem::setup()`].
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
@@ -1282,11 +1282,11 @@ static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 #[cfg(test)]
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 /// A dummy struct to acquire a lock over global memory
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl TestRootMem<'_> {
     /// Acquire a lock on global memory and initialize it
     #[must_use = "memory guard must be held for the whole test"]
@@ -1313,7 +1313,7 @@ impl TestRootMem<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, fuzzing))]
 impl Drop for TestRootMem<'_> {
     /// Destroy the global memory before dropping the lock over it
     fn drop(&mut self) {
