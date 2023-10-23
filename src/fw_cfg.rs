@@ -24,6 +24,8 @@ const FW_CFG_FILE_DIR: u16 = 0x19;
 const KERNEL_REGION_SIZE: u64 = 16 * 1024 * 1024;
 const KERNEL_REGION_SIZE_MASK: u64 = !(KERNEL_REGION_SIZE - 1);
 
+const MAX_FW_CFG_FILES: u32 = 0x1000;
+
 //use crate::println;
 
 #[non_exhaustive]
@@ -40,6 +42,8 @@ pub enum FwCfgError {
     FileSize(u32),
     // Could not find an appropriate kernel region for the SVSM.
     KernelRegion,
+    /// The firmware provided too many files to the guest
+    TooManyFiles,
 }
 
 impl From<FwCfgError> for SvsmError {
@@ -123,6 +127,10 @@ impl<'a> FwCfg<'a> {
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, SvsmError> {
         self.select(FW_CFG_FILE_DIR);
         let n: u32 = self.read_be();
+
+        if n > MAX_FW_CFG_FILES {
+            return Err(SvsmError::FwCfg(FwCfgError::TooManyFiles));
+        }
 
         for _ in 0..n {
             let size: u32 = self.read_be();

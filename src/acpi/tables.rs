@@ -258,6 +258,8 @@ impl ACPITableMeta {
     }
 }
 
+const MAX_ACPI_TABLES_SIZE: usize = 128 * 1024;
+
 /// ACPI Table Buffer
 /// A buffer containing ACPI tables. Responsible for loading the tables
 /// from a firmware configuration
@@ -285,6 +287,9 @@ impl ACPITableBuffer {
         let size = file.size() as usize;
 
         let mut buf = Vec::<u8>::new();
+        if size > MAX_ACPI_TABLES_SIZE {
+            return Err(SvsmError::Mem);
+        }
         buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
         let ptr = buf.as_mut_ptr();
 
