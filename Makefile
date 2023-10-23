@@ -51,6 +51,9 @@ utils/gen_meta: utils/gen_meta.c
 utils/print-meta: utils/print-meta.c
 	cc -O3 -Wall -o $@ $<
 
+utils/cbit: utils/cbit.c
+	cc -O3 -Wall -o $@ $<
+
 stage1/meta.bin: utils/gen_meta utils/print-meta
 	./utils/gen_meta $@
 
