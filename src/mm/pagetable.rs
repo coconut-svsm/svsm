@@ -773,7 +773,7 @@ impl RawPageTablePart {
         Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
     }
 
-    fn free_lvl1(page: &mut PTPage) {
+    fn free_lvl1(page: &PTPage) {
         for idx in 0..ENTRY_COUNT {
             let entry = page[idx];
 
@@ -783,7 +783,7 @@ impl RawPageTablePart {
         }
     }
 
-    fn free_lvl2(page: &mut PTPage) {
+    fn free_lvl2(page: &PTPage) {
         for idx in 0..ENTRY_COUNT {
             let entry = page[idx];
 
@@ -794,8 +794,8 @@ impl RawPageTablePart {
         }
     }
 
-    fn free(&mut self) {
-        RawPageTablePart::free_lvl2(&mut self.page);
+    fn free(&self) {
+        RawPageTablePart::free_lvl2(&self.page);
     }
 
     fn address(&self) -> PhysAddr {
