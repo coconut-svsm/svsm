@@ -1165,59 +1165,50 @@ static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new(
 
 #[derive(Debug)]
 struct SvsmAllocator {
-    slab_size_32: SpinLock<Slab>,
-    slab_size_64: SpinLock<Slab>,
-    slab_size_128: SpinLock<Slab>,
-    slab_size_256: SpinLock<Slab>,
-    slab_size_512: SpinLock<Slab>,
-    slab_size_1024: SpinLock<Slab>,
-    slab_size_2048: SpinLock<Slab>,
+    slabs: [SpinLock<Slab>; 7],
 }
 
 impl SvsmAllocator {
+    const MIN_SLAB_SIZE: u16 = 32;
+    const MIN_ALIGNMENT: u32 = Self::MIN_SLAB_SIZE.trailing_zeros();
+
     const fn new() -> Self {
-        SvsmAllocator {
-            slab_size_32: SpinLock::new(Slab::new(32)),
-            slab_size_64: SpinLock::new(Slab::new(64)),
-            slab_size_128: SpinLock::new(Slab::new(128)),
-            slab_size_256: SpinLock::new(Slab::new(256)),
-            slab_size_512: SpinLock::new(Slab::new(512)),
-            slab_size_1024: SpinLock::new(Slab::new(1024)),
-            slab_size_2048: SpinLock::new(Slab::new(2048)),
+        Self {
+            slabs: [
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 2)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 4)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 8)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 16)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 32)),
+                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 64)),
+            ],
         }
+    }
+
+    /// Get a reference to the appropriate slab for an allocation of the specified size,
+    /// or [`None`] if the size is too big.
+    fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
+        let slab_size = size.checked_next_power_of_two()?;
+        // Go from an allocation size to an index into `self.slabs`.
+        let idx = slab_size
+            .trailing_zeros()
+            .saturating_sub(Self::MIN_ALIGNMENT) as usize;
+        // The index might be too large, so use a safe getter.
+        self.slabs.get(idx)
     }
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with `Self::new()`.
     #[cfg(test)]
     fn reset(&self) {
-        *self.slab_size_32.lock() = Slab::new(32);
-        *self.slab_size_64.lock() = Slab::new(64);
-        *self.slab_size_128.lock() = Slab::new(128);
-        *self.slab_size_256.lock() = Slab::new(256);
-        *self.slab_size_512.lock() = Slab::new(512);
-        *self.slab_size_1024.lock() = Slab::new(1024);
-        *self.slab_size_2048.lock() = Slab::new(2048);
-    }
-
-    fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
-        if size <= 32 {
-            Some(&self.slab_size_32)
-        } else if size <= 64 {
-            Some(&self.slab_size_64)
-        } else if size <= 128 {
-            Some(&self.slab_size_128)
-        } else if size <= 256 {
-            Some(&self.slab_size_256)
-        } else if size <= 512 {
-            Some(&self.slab_size_512)
-        } else if size <= 1024 {
-            Some(&self.slab_size_1024)
-        } else if size <= 2048 {
-            Some(&self.slab_size_2048)
-        } else {
-            None
-        }
+        *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
+        *self.slabs[1].lock() = Slab::new(Self::MIN_SLAB_SIZE * 2);
+        *self.slabs[2].lock() = Slab::new(Self::MIN_SLAB_SIZE * 4);
+        *self.slabs[3].lock() = Slab::new(Self::MIN_SLAB_SIZE * 8);
+        *self.slabs[4].lock() = Slab::new(Self::MIN_SLAB_SIZE * 16);
+        *self.slabs[5].lock() = Slab::new(Self::MIN_SLAB_SIZE * 32);
+        *self.slabs[6].lock() = Slab::new(Self::MIN_SLAB_SIZE * 64);
     }
 }
 
