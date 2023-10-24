@@ -26,6 +26,10 @@ for c in ${commits[@]}; do
 
 	echo "Checking $c"
 
+	# If a commit has more than more parent it is a merge commit, so ignore it
+	parents=$(git cat-file -p "$c" | grep -c parent)
+	[ "$parents" -gt "1" ] && continue
+
 	commit_email=$(git show --no-patch --pretty="format:%ae" "$c" || exit 1)
 	commit_name=$(git show --no-patch --pretty="format:%an" "$c" || exit 1)
 	sign_names=$(git show --no-patch "$c" | sed -nr 's/^[[:space:]]*Signed-off-by: (.*) <(.*)>/\1/p' || exit 1)
