@@ -207,6 +207,10 @@ pub struct Task {
 
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
+
+    /// Optional hook that is called immediately after switching to this task
+    /// before the context is restored
+    pub on_switch_hook: Option<fn(&Self)>,
 }
 
 impl fmt::Debug for Task {
@@ -246,6 +250,7 @@ impl Task {
             allocation: None,
             id: TASK_ID_ALLOCATOR.next_id(),
             runtime: TaskRuntimeImpl::default(),
+            on_switch_hook: None,
         });
         Ok(task)
     }
@@ -271,6 +276,10 @@ impl Task {
 
     pub fn set_affinity(&mut self, affinity: Option<u32>) {
         self.affinity = affinity;
+    }
+
+    pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
+        self.on_switch_hook = hook;
     }
 
     fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
@@ -322,6 +331,14 @@ extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
     }
 }
 
+#[allow(unused)]
+#[no_mangle]
+extern "C" fn on_switch(new_task: &mut Task) {
+    if let Some(hook) = new_task.on_switch_hook {
+        hook(new_task);
+    }
+}
+
 global_asm!(
     r#"
         .text
@@ -358,6 +375,9 @@ global_asm!(
 
         // Switch to the new task stack
         movq    (%rbx), %rsp
+
+        mov         %rbx, %rdi
+        call        on_switch
 
         popq        %r15
         popq        %r14
