@@ -374,3 +374,28 @@ impl VMR {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct VMRMapping<'a> {
+    vmr: &'a mut VMR,
+    va: VirtAddr,
+}
+
+impl<'a> VMRMapping<'a> {
+    pub fn new(vmr: &'a mut VMR, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+        let va = vmr.insert(mapping)?;
+        Ok(Self { vmr, va })
+    }
+
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.va
+    }
+}
+
+impl<'a> Drop for VMRMapping<'a> {
+    fn drop(&mut self) {
+        self.vmr
+            .remove(self.va)
+            .expect("Error removing VRMapping virtual memory range");
+    }
+}
