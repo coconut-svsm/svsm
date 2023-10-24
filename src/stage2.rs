@@ -159,8 +159,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
     let kernel_region_phys_start = r.start();
     let kernel_region_phys_end = r.end();
-    init_valid_bitmap_alloc(kernel_region_phys_start, kernel_region_phys_end)
-        .expect("Failed to allocate valid-bitmap");
+    init_valid_bitmap_alloc(r).expect("Failed to allocate valid-bitmap");
 
     // Read the SVSM kernel's ELF file metadata.
     let kernel_elf_len = kernel_elf_end - kernel_elf_start;
