@@ -13,7 +13,7 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
@@ -309,7 +309,7 @@ impl PageTable {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
-    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -331,10 +331,10 @@ impl PageTable {
 
         let idx = PageTable::index::<2>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, pgsize) }
+        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -356,13 +356,13 @@ impl PageTable {
 
         let idx = PageTable::index::<1>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, pgsize) }
+        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
-        if pgsize == PAGE_SIZE_2M || flags.contains(PTEntryFlags::PRESENT) {
+        if size == PageSize::Huge || flags.contains(PTEntryFlags::PRESENT) {
             return Mapping::Level1(entry);
         }
 
@@ -389,9 +389,9 @@ impl PageTable {
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PAGE_SIZE),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE),
+            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Regular),
         }
     }
 
@@ -401,8 +401,8 @@ impl PageTable {
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE_2M),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE_2M),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
         }
     }
 
@@ -800,8 +800,8 @@ impl RawPageTablePart {
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PAGE_SIZE),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE),
+            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
             Mapping::Level3(_) => panic!("PT level 3 not possible in PageTablePart"),
         }
     }
@@ -812,8 +812,8 @@ impl RawPageTablePart {
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE_2M),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE_2M),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
         }
     }
 
