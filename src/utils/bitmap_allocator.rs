@@ -164,13 +164,7 @@ impl<T: BitmapAllocator + Debug> BitmapAllocator for BitmapAllocatorTree<T> {
     }
 
     fn used(&self) -> usize {
-        let mut count = 0;
-        for index in 0..16 {
-            if !self.child[index].empty() {
-                count += self.child[index].used();
-            }
-        }
-        count
+        self.child.iter().map(|c| c.used()).sum()
     }
 }
 
