@@ -80,13 +80,7 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 
     fn used(&self) -> usize {
-        let mut count = 0;
-        let mut bits = self.bits;
-        while bits != 0 {
-            count += 1;
-            bits &= bits - 1;
-        }
-        count
+        self.bits.count_ones() as usize
     }
 }
 
