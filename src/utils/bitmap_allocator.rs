@@ -61,7 +61,9 @@ impl BitmapAllocator for BitmapAllocator64 {
 
     fn next_free(&self, start: usize) -> Option<usize> {
         assert!(start < Self::CAPACITY);
-        (start..Self::CAPACITY).find(|offset| ((1 << offset) & self.bits) == 0)
+        let mask: u64 = (1 << start) - 1;
+        let idx = (self.bits | mask).trailing_ones() as usize;
+        (idx < Self::CAPACITY).then_some(idx)
     }
 
     fn get(&self, offset: usize) -> bool {
