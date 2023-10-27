@@ -155,7 +155,6 @@ impl VMR {
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
-        let pt_flags = self.pt_flags | mapping.pt_flags() | PTEntryFlags::PRESENT;
         let mut offset: usize = 0;
         let page_size = mapping.page_size();
         let shared = mapping.shared();
@@ -163,6 +162,7 @@ impl VMR {
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
             if let Some(paddr) = mapping.map(offset) {
+                let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
                 if page_size == PAGE_SIZE {
                     pgtbl_parts[idx].map_4k(vmm_start + offset, paddr, pt_flags, shared)?;
                 } else if page_size == PAGE_SIZE_2M {

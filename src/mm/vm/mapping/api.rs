@@ -48,14 +48,23 @@ pub trait VirtualMapping: core::fmt::Debug {
         // Provide default in case there is nothing to do
     }
 
-    /// Request the PTEntryFlags used for this virtual memory mapping. This is
-    /// a combination of
+    /// Request the PTEntryFlags used for this virtual memory mapping.
     ///
+    /// # Arguments
+    ///
+    /// * 'offset' -> The offset in bytes into the `VirtualMapping`. The flags
+    ///               returned from this function relate to the page at the
+    ///               given offset
+    ///
+    /// # Returns
+    ///
+    /// A combination of:
+
     /// * PTEntryFlags::WRITABLE
     /// * PTEntryFlags::NX,
     /// * PTEntryFlags::ACCESSED
     /// * PTEntryFlags::DIRTY
-    fn pt_flags(&self) -> PTEntryFlags;
+    fn pt_flags(&self, offset: usize) -> PTEntryFlags;
 
     /// Request the page size used for mappings
     ///

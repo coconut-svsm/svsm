@@ -116,7 +116,7 @@ impl VirtualMapping for VMKernelStack {
         }
     }
 
-    fn pt_flags(&self) -> PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         PTEntryFlags::WRITABLE | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
     }
 }

@@ -28,7 +28,7 @@ impl VirtualMapping for VMWriteFileMapping {
         self.0.map(offset)
     }
 
-    fn pt_flags(&self) -> crate::mm::pagetable::PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> crate::mm::pagetable::PTEntryFlags {
         PageTable::task_data_flags()
     }
 }
@@ -121,7 +121,7 @@ impl VirtualMapping for VMFileMapping {
         self.pages[page_index].as_ref().map(|p| p.phys_addr())
     }
 
-    fn pt_flags(&self) -> crate::mm::pagetable::PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> crate::mm::pagetable::PTEntryFlags {
         match self.permission {
             VMFileMappingPermission::Read => PageTable::task_data_ro_flags(),
             VMFileMappingPermission::Write => PageTable::task_data_flags(),
