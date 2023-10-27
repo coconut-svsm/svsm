@@ -668,7 +668,7 @@ impl PageTable {
                     vaddr = vaddr + PAGE_SIZE_2M;
                 }
                 _ => {
-                    log::debug!("Can't unmap - address not mapped {:#x}", vaddr);
+                    log::error!("Can't unmap - address not mapped {:#x}", vaddr);
                 }
             }
         }
