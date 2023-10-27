@@ -16,7 +16,7 @@ use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMReserved, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -536,6 +536,31 @@ impl PerCpu {
         assert!(page_count <= VirtualRange::CAPACITY);
         self.vrange_2m
             .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
+    }
+
+    /// Create a new virtual memory mapping in the PerCpu VMR
+    ///
+    /// # Arguments
+    ///
+    /// * `mapping` - The mapping to insert into the PerCpu VMR
+    ///
+    /// # Returns
+    ///
+    /// On success, a new ['VMRMapping'} that provides a virtual memory address for
+    /// the mapping which remains valid until the ['VRMapping'] is dropped.
+    ///
+    /// On error, an ['SvsmError'].
+    pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping, SvsmError> {
+        VMRMapping::new(&mut self.vm_range, mapping)
+    }
+
+    /// Add the PerCpu virtual range into the provided pagetable
+    ///
+    /// # Arguments
+    ///
+    /// * `pt` - The page table to populate the the PerCpu range into
+    pub fn populate_page_table(&self, pt: &mut PageTableRef) {
+        self.vm_range.populate(pt);
     }
 }
 

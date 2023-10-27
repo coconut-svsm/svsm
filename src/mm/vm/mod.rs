@@ -11,4 +11,4 @@ pub use mapping::{
     Mapping, RawAllocMapping, VMKernelStack, VMMAdapter, VMPhysMem, VMReserved, VMalloc,
     VirtualMapping, VMM,
 };
-pub use range::{VMR, VMR_GRANULE};
+pub use range::{VMRMapping, VMR, VMR_GRANULE};
