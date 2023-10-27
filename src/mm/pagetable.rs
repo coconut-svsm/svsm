@@ -115,6 +115,32 @@ bitflags! {
     }
 }
 
+impl PTEntryFlags {
+    pub fn exec() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn data() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::WRITABLE | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn data_ro() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_exec() -> Self {
+        Self::PRESENT | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_data() -> Self {
+        Self::PRESENT | Self::WRITABLE | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_data_ro() -> Self {
+        Self::PRESENT | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
 pub struct PTEntry(PhysAddr);
@@ -219,43 +245,6 @@ impl PageTable {
 
     pub fn copy_entry(&mut self, other: &PageTable, entry: usize) {
         self.root.entries[entry] = other.root.entries[entry];
-    }
-
-    pub fn exec_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::GLOBAL | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
-    }
-
-    pub fn data_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::GLOBAL
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn data_ro_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::GLOBAL
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_data_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_data_ro_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_exec_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
     }
 
     fn allocate_page_table() -> Result<*mut PTPage, SvsmError> {

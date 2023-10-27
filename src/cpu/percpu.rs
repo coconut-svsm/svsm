@@ -14,7 +14,7 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -304,7 +304,7 @@ impl PerCpu {
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
