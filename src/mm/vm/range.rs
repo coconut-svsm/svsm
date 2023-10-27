@@ -373,6 +373,68 @@ impl VMR {
             );
         }
     }
+
+    /// Notify the range that a page fault has occurred. This should be called from
+    /// the page fault handler. The mappings withing this virtual memory region are
+    /// examined and if they overlap with the page fault address then
+    /// [`VirtualMemoryRange::handle_page_fault()`] is called to handle the page
+    /// fault within that range.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr` - Virtual memory address that was the subject of the page fault
+    ///
+    /// * 'write' - 'true' if a write was attempted. 'false' if a read was attempted.
+    ///
+    /// # Returns
+    ///
+    /// '()' if the page fault was successfully handled.
+    ///
+    /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        // Get the mapping that contains the faulting address. This needs to
+        // be done as a separate step, returning a reference to the mapping to
+        // avoid issues with the mapping page fault handler needing mutable access
+        // to `self.tree` via `insert()`.
+        let pf_mapping = {
+            let tree = self.tree.lock_read();
+            let addr = vaddr.pfn();
+            let cursor = tree.find(&addr);
+            if let Some(node) = cursor.get() {
+                let (start, end) = node.range();
+                if vaddr >= start && vaddr < end {
+                    Some((node.get_mapping_clone(), start))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+
+        if let Some((pf_mapping, start)) = pf_mapping {
+            let resolution = pf_mapping
+                .get_mut()
+                .handle_page_fault(self, vaddr - start, write)?;
+            // The handler has resolved the page fault by allocating a new page.
+            // Update the page table accordingly.
+            let vaddr = vaddr.page_align();
+            let page_size = pf_mapping.get().page_size();
+            let shared = pf_mapping.get().shared();
+            let mut pgtbl_parts = self.pgtbl_parts.lock_write();
+
+            let (rstart, _) = self.virt_range();
+            let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
+            if page_size == PAGE_SIZE {
+                pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?;
+            } else if page_size == PAGE_SIZE_2M {
+                pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?;
+            }
+            Ok(())
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
 }
 
 #[derive(Debug)]
