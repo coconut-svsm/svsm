@@ -326,7 +326,6 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<2>(vaddr);
@@ -351,7 +350,6 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<1>(vaddr);
@@ -376,7 +374,6 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<0>(vaddr);
