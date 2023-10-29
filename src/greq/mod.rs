@@ -4,5 +4,9 @@
 //
 // Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
 
+//! `SNP_GUEST_REQUEST` mechanism to communicate with the PSP
+
 pub mod driver;
 pub mod msg;
+pub mod pld_report;
+pub mod services;
