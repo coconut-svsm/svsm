@@ -221,3 +221,31 @@ impl<T: Sized + Copy> GuestPtr<T> {
         unsafe { GuestPtr::from_ptr(self.ptr.offset(count)) }
     }
 }
+
+mod tests {
+
+    #[test]
+    fn test_read_u8_valid_address() {
+        use crate::mm::guestmem::*;
+        // Create a region to read from
+        let test_buffer: [u8; 6] = [0; 6];
+        let test_address = &test_buffer as *const u8 as usize;
+
+        let result = read_u8(VirtAddr::new(test_address)).unwrap();
+
+        assert_eq!(result, test_buffer[0]);
+    }
+
+    #[test]
+    fn test_write_u8_valid_address() {
+        use crate::mm::guestmem::*;
+        // Create a mutable region we can write into
+        let mut test_buffer: [u8; 6] = [0; 6];
+        let test_address = &mut test_buffer as *mut u8 as usize;
+        let data_to_write = 0x42;
+
+        write_u8(VirtAddr::new(test_address), data_to_write).unwrap();
+
+        assert_eq!(test_buffer[0], data_to_write);
+    }
+}
