@@ -403,4 +403,81 @@ mod tests {
         let list = ram_dir.list();
         assert_eq!(list, [f_name]);
     }
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    fn test_ramfs_single_page_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 512];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file
+            .mapping(0)
+            .expect("Failed to get mapping for ramfs page");
+        assert_eq!(
+            res.phys_addr(),
+            file.rawfile.lock_read().pages[0].phys_addr()
+        );
+        drop(file);
+    }
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    fn test_ramfs_multi_page_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        for i in 0..4 {
+            let res = file
+                .mapping(i * PAGE_SIZE)
+                .expect("Failed to get mapping for ramfs page");
+            assert_eq!(
+                res.phys_addr(),
+                file.rawfile.lock_read().pages[i].phys_addr()
+            );
+        }
+        drop(file);
+    }
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    fn test_ramfs_mapping_unaligned_offset() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file
+            .mapping(PAGE_SIZE + 0x123)
+            .expect("Failed to get mapping for ramfs page");
+        assert_eq!(
+            res.phys_addr(),
+            file.rawfile.lock_read().pages[1].phys_addr()
+        );
+        drop(file);
+    }
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    fn test_ramfs_mapping_out_of_range() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file.mapping(4 * PAGE_SIZE);
+        assert!(res.is_none());
+        drop(file);
+    }
 }
