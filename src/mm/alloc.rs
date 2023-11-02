@@ -328,8 +328,11 @@ impl MemoryRegion {
     fn read_page_info(&self, pfn: usize) -> PageInfo {
         self.check_pfn(pfn);
 
-        let virt = self.page_info_virt_addr(pfn).as_ptr::<u64>();
-        let info = unsafe { PageStorageType(*virt) };
+        let info = unsafe {
+            self.page_info_virt_addr(pfn)
+                .as_ptr::<PageStorageType>()
+                .read()
+        };
 
         PageInfo::from_mem(info)
     }
