@@ -334,14 +334,11 @@ impl MemoryRegion {
         PageInfo::from_mem(info)
     }
 
-    fn get_page_info(&self, vaddr: VirtAddr) -> Result<PageInfo, SvsmError> {
+    fn get_pfn(&self, vaddr: VirtAddr) -> Result<usize, SvsmError> {
         if vaddr.is_null() || !self.check_virt_addr(vaddr) {
             return Err(SvsmError::Mem);
         }
-
-        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
-
-        Ok(self.read_page_info(pfn))
+        Ok((vaddr - self.start_virt) / PAGE_SIZE)
     }
 
     fn get_next_page(&mut self, order: usize) -> Result<usize, SvsmError> {
@@ -451,12 +448,12 @@ impl MemoryRegion {
     }
 
     fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let page = self.get_page_info(vaddr)?;
+        let pfn = self.get_pfn(vaddr)?;
+        let page = self.read_page_info(pfn);
         let PageInfo::File(mut fi) = page else {
             return Err(SvsmError::Mem);
         };
 
-        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
         assert!(fi.ref_count > 0);
         fi.ref_count += 1;
         self.write_page_info(pfn, PageInfo::File(fi));
@@ -465,12 +462,12 @@ impl MemoryRegion {
     }
 
     fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let page = self.get_page_info(vaddr)?;
+        let pfn = self.get_pfn(vaddr)?;
+        let page = self.read_page_info(pfn);
         let PageInfo::File(mut fi) = page else {
             return Err(SvsmError::Mem);
         };
 
-        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
         fi.ref_count = fi
             .ref_count
             .checked_sub(1)
@@ -618,11 +615,11 @@ impl MemoryRegion {
     }
 
     fn free_page(&mut self, vaddr: VirtAddr) {
-        let Ok(res) = self.get_page_info(vaddr) else {
+        let Ok(pfn) = self.get_pfn(vaddr) else {
             return;
         };
 
-        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
+        let res = self.read_page_info(pfn);
 
         match res {
             PageInfo::Allocated(ai) => {
@@ -1233,10 +1230,11 @@ unsafe impl GlobalAlloc for SvsmAllocator {
         let virt_addr = VirtAddr::from(ptr);
         let size = layout.size();
 
-        let info = ROOT_MEM
-            .lock()
-            .get_page_info(virt_addr)
-            .expect("Freeing unknown memory");
+        let info = {
+            let mem = ROOT_MEM.lock();
+            let pfn = mem.get_pfn(virt_addr).expect("Freeing unknown memory");
+            mem.read_page_info(pfn)
+        };
 
         match info {
             PageInfo::Allocated(_ai) => {
@@ -1465,25 +1463,26 @@ fn test_page_file() {
 
     // Allocate page and check ref-count
     let vaddr = root_mem.allocate_file_page().unwrap();
-    let info = root_mem.get_page_info(vaddr).unwrap();
+    let pfn = root_mem.get_pfn(vaddr).unwrap();
+    let info = root_mem.read_page_info(pfn);
 
     assert!(matches!(info, PageInfo::File(ref fi) if fi.ref_count == 1));
 
     // Get another reference and check ref-count
     root_mem.get_file_page(vaddr).expect("Not a file page");
-    let info = root_mem.get_page_info(vaddr).unwrap();
+    let info = root_mem.read_page_info(pfn);
 
     assert!(matches!(info, PageInfo::File(ref fi) if fi.ref_count == 2));
 
     // Drop reference and check ref-count
     root_mem.put_file_page(vaddr).expect("Not a file page");
-    let info = root_mem.get_page_info(vaddr).unwrap();
+    let info = root_mem.read_page_info(pfn);
 
     assert!(matches!(info, PageInfo::File(ref fi) if fi.ref_count == 1));
 
     // Drop last reference and check if page is released
     root_mem.put_file_page(vaddr).expect("Not a file page");
-    let info = root_mem.get_page_info(vaddr).unwrap();
+    let info = root_mem.read_page_info(pfn);
 
     assert!(matches!(info, PageInfo::Free { .. }));
 }
