@@ -98,6 +98,7 @@ impl PageStorageType {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct FreeInfo {
     next_page: usize,
     order: usize,
@@ -117,6 +118,7 @@ impl FreeInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct AllocatedInfo {
     order: usize,
 }
@@ -132,6 +134,7 @@ impl AllocatedInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct SlabPageInfo;
 
 impl SlabPageInfo {
@@ -144,6 +147,7 @@ impl SlabPageInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct CompoundInfo {
     order: usize,
 }
@@ -159,6 +163,7 @@ impl CompoundInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct ReservedInfo {}
 
 impl ReservedInfo {
@@ -171,6 +176,7 @@ impl ReservedInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct FileInfo {
     /// Reference count
     ref_count: u64,
@@ -191,6 +197,7 @@ impl FileInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum PageInfo {
     Free(FreeInfo),
     Allocated(AllocatedInfo),
@@ -201,7 +208,7 @@ enum PageInfo {
 }
 
 impl PageInfo {
-    fn to_mem(&self) -> PageStorageType {
+    fn to_mem(self) -> PageStorageType {
         match self {
             Self::Free(fi) => fi.encode(),
             Self::Allocated(ai) => ai.encode(),
