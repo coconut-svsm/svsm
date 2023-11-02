@@ -352,13 +352,11 @@ impl MemoryRegion {
         }
 
         let pg = self.read_page_info(pfn);
-
-        let new_next = match pg {
-            PageInfo::Free(fi) => fi.next_page,
-            _ => panic!("Unexpected page type in MemoryRegion::get_next_page()"),
+        let PageInfo::Free(fi) = pg else {
+            panic!("Unexpected page type in MemoryRegion::get_next_page()");
         };
 
-        self.next_page[order] = new_next;
+        self.next_page[order] = fi.next_page;
 
         self.free_pages[order] -= 1;
 
@@ -454,38 +452,36 @@ impl MemoryRegion {
 
     fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let page = self.get_page_info(vaddr)?;
+        let PageInfo::File(mut fi) = page else {
+            return Err(SvsmError::Mem);
+        };
 
-        match page {
-            PageInfo::File(mut fi) => {
-                let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
-                assert!(fi.ref_count > 0);
-                fi.ref_count += 1;
-                self.write_page_info(pfn, PageInfo::File(fi));
-                Ok(())
-            }
-            _ => Err(SvsmError::Mem),
-        }
+        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
+        assert!(fi.ref_count > 0);
+        fi.ref_count += 1;
+        self.write_page_info(pfn, PageInfo::File(fi));
+
+        Ok(())
     }
 
     fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let page = self.get_page_info(vaddr)?;
+        let PageInfo::File(mut fi) = page else {
+            return Err(SvsmError::Mem);
+        };
 
-        match page {
-            PageInfo::File(mut fi) => {
-                let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
-                fi.ref_count = fi
-                    .ref_count
-                    .checked_sub(1)
-                    .expect("page refcount underflow");
-                if fi.ref_count > 0 {
-                    self.write_page_info(pfn, PageInfo::File(fi));
-                } else {
-                    self.free_page(vaddr)
-                }
-                Ok(())
-            }
-            _ => Err(SvsmError::Mem),
+        let pfn = (vaddr - self.start_virt) / PAGE_SIZE;
+        fi.ref_count = fi
+            .ref_count
+            .checked_sub(1)
+            .expect("page refcount underflow");
+        if fi.ref_count > 0 {
+            self.write_page_info(pfn, PageInfo::File(fi));
+        } else {
+            self.free_page(vaddr)
         }
+
+        Ok(())
     }
 
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
@@ -530,12 +526,11 @@ impl MemoryRegion {
 
     fn next_free_pfn(&self, pfn: usize, order: usize) -> usize {
         let page = self.read_page_info(pfn);
-        match page {
-            PageInfo::Free(fi) => fi.next_page,
-            _ => {
-                panic!("Unexpected page type in free-list for order {}", order);
-            }
-        }
+        let PageInfo::Free(fi) = page else {
+            panic!("Unexpected page type in free-list for order {}", order);
+        };
+
+        fi.next_page
     }
 
     fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
@@ -596,19 +591,19 @@ impl MemoryRegion {
         let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
 
-        if let PageInfo::Free(fi) = neighbor_page {
-            if fi.order != order {
-                return Err(SvsmError::Mem);
-            }
+        let PageInfo::Free(fi) = neighbor_page else {
+            return Err(SvsmError::Mem);
+        };
 
-            self.allocate_pfn(neighbor_pfn, order)?;
-
-            let new_pfn = self.merge_pages(pfn, neighbor_pfn, order)?;
-
-            Ok(new_pfn)
-        } else {
-            Err(SvsmError::Mem)
+        if fi.order != order {
+            return Err(SvsmError::Mem);
         }
+
+        self.allocate_pfn(neighbor_pfn, order)?;
+
+        let new_pfn = self.merge_pages(pfn, neighbor_pfn, order)?;
+
+        Ok(new_pfn)
     }
 
     fn free_page_order(&mut self, pfn: usize, order: usize) {
