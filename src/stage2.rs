@@ -16,7 +16,7 @@ use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::gdt::load_gdt;
-use svsm::cpu::idt::stage2::early_idt_init;
+use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
@@ -84,7 +84,7 @@ static CONSOLE_SERIAL: SerialPort = SerialPort {
 
 fn setup_env() {
     load_gdt();
-    early_idt_init();
+    early_idt_init_no_ghcb();
 
     install_console_logger("Stage2");
     init_kernel_mapping_info(
@@ -101,6 +101,9 @@ fn setup_env() {
     set_init_pgtable(PageTableRef::new(unsafe { &mut pgtable }));
     setup_stage2_allocator();
     init_percpu();
+
+    // Init IDT again with handlers requiring GHCB (eg. #VC handler)
+    early_idt_init();
 
     WRITER.lock().set(&CONSOLE_SERIAL);
     init_console();

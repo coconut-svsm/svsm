@@ -50,7 +50,7 @@ impl fmt::Display for VcError {
     }
 }
 
-pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
+pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) {
     let err = ctx.error_code;
     let rip = ctx.frame.rip;
 
@@ -70,6 +70,47 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
         }
 
         SVM_EXIT_CPUID => handle_cpuid(ctx),
+        _ => Err(SvsmError::Vc(VcError::Unsupported)),
+    }
+    .unwrap_or_else(|error| {
+        panic!(
+            "Unhandled #VC exception RIP {:#018x} error code: {:#018x}: error: {:?}",
+            rip, err, error
+        )
+    });
+
+    vc_finish_insn(ctx, &insn);
+}
+
+pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
+    let err = ctx.error_code;
+    let rip = ctx.frame.rip;
+
+    /*
+     * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
+     * This is currently only relevant for IOIO handling. This field is currently reset in
+     * the ioio_{in,ou} methods but it would be better to move the reset out of the different
+     * handlers.
+     */
+    let ghcb = this_cpu_mut().ghcb();
+
+    let insn = vc_decode_insn(ctx).unwrap_or_else(|e| {
+        panic!(
+            "Unhandled #VC exception RIP {:#018x} error code: {:#018x} error {:?}",
+            rip, err, e
+        )
+    });
+
+    match err {
+        // If the debugger is enabled then handle the DB exception
+        // by directly invoking the exception handler
+        X86_TRAP_DB => {
+            handle_db_exception(ctx);
+            Ok(())
+        }
+
+        SVM_EXIT_CPUID => handle_cpuid(ctx),
+        SVM_EXIT_IOIO => handle_ioio(ctx, ghcb, &insn),
         _ => Err(SvsmError::Vc(VcError::Unsupported)),
     }
     .unwrap_or_else(|error| {
