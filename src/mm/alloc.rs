@@ -418,12 +418,16 @@ impl MemoryRegion {
         self.split_page(pfn, order + 1)
     }
 
-    fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
+    fn allocate_pages_info(&mut self, order: usize, pg: PageInfo) -> Result<VirtAddr, SvsmError> {
         self.refill_page_list(order)?;
         let pfn = self.get_next_page(order)?;
-        let pg = PageInfo::Allocated(AllocatedInfo { order });
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
+    }
+
+    fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
+        let pg = PageInfo::Allocated(AllocatedInfo { order });
+        self.allocate_pages_info(order, pg)
     }
 
     fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
@@ -439,20 +443,13 @@ impl MemoryRegion {
     }
 
     fn allocate_slab_page(&mut self) -> Result<VirtAddr, SvsmError> {
-        self.refill_page_list(0)?;
-
-        let pfn = self.get_next_page(0)?;
         let pg = PageInfo::Slab(SlabPageInfo);
-        self.write_page_info(pfn, pg);
-        Ok(self.start_virt + (pfn * PAGE_SIZE))
+        self.allocate_pages_info(0, pg)
     }
 
     fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
-        self.refill_page_list(0)?;
-        let pfn = self.get_next_page(0)?;
         let pg = PageInfo::File(FileInfo::new(1));
-        self.write_page_info(pfn, pg);
-        Ok(self.start_virt + (pfn * PAGE_SIZE))
+        self.allocate_pages_info(0, pg)
     }
 
     fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
