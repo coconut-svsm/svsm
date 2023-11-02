@@ -29,27 +29,28 @@ pub fn early_idt_init() {
 
 #[no_mangle]
 pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
-    if ctx.vector == DF_VECTOR {
-        let cr2 = read_cr2();
-        let rip = ctx.frame.rip;
-        let rsp = ctx.frame.rsp;
-        panic!(
-            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
-            rip, rsp, cr2
-        );
-    } else if ctx.vector == VC_VECTOR {
-        stage2_handle_vc_exception(ctx);
-    } else if ctx.vector == BP_VECTOR {
-        handle_debug_exception(ctx, ctx.vector);
-    } else {
-        let err = ctx.error_code;
-        let vec = ctx.vector;
-        let rip = ctx.frame.rip;
+    match ctx.vector {
+        DF_VECTOR => {
+            let cr2 = read_cr2();
+            let rip = ctx.frame.rip;
+            let rsp = ctx.frame.rsp;
+            panic!(
+                "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
+                rip, rsp, cr2
+            );
+        }
+        VC_VECTOR => stage2_handle_vc_exception(ctx),
+        BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
+        _ => {
+            let err = ctx.error_code;
+            let vec = ctx.vector;
+            let rip = ctx.frame.rip;
 
-        panic!(
-            "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-            vec, rip, err
-        );
+            panic!(
+                "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
+                vec, rip, err
+            );
+        }
     }
 }
 

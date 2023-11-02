@@ -47,54 +47,57 @@ pub fn idt_init() {
 
 #[no_mangle]
 pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
-    if ctx.vector == DF_VECTOR {
-        let cr2 = read_cr2();
-        let rip = ctx.frame.rip;
-        let rsp = ctx.frame.rsp;
-        panic!(
-            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
-            rip, rsp, cr2
-        );
-    } else if ctx.vector == GP_VECTOR {
-        let rip = ctx.frame.rip;
-        let err = ctx.error_code;
-
-        if !handle_exception_table(ctx) {
+    match ctx.vector {
+        DF_VECTOR => {
+            let cr2 = read_cr2();
+            let rip = ctx.frame.rip;
+            let rsp = ctx.frame.rsp;
             panic!(
-                "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
-                rip, err
+                "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
+                rip, rsp, cr2
             );
         }
-    } else if ctx.vector == PF_VECTOR {
-        let cr2 = read_cr2();
-        let rip = ctx.frame.rip;
-        let err = ctx.error_code;
+        GP_VECTOR => {
+            let rip = ctx.frame.rip;
+            let err = ctx.error_code;
 
-        if this_cpu()
-            .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
-            .is_err()
-            && !handle_exception_table(ctx)
-        {
-            handle_debug_exception(ctx, ctx.vector);
-            panic!(
-                "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
-                rip, cr2, err
-            );
+            if !handle_exception_table(ctx) {
+                panic!(
+                    "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
+                    rip, err
+                );
+            }
         }
-    } else if ctx.vector == VC_VECTOR {
-        handle_vc_exception(ctx);
-    } else if ctx.vector == BP_VECTOR {
-        handle_debug_exception(ctx, ctx.vector);
-    } else {
-        let err = ctx.error_code;
-        let vec = ctx.vector;
-        let rip = ctx.frame.rip;
+        PF_VECTOR => {
+            let cr2 = read_cr2();
+            let rip = ctx.frame.rip;
+            let err = ctx.error_code;
 
-        if !handle_exception_table(ctx) {
-            panic!(
-                "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-                vec, rip, err
-            );
+            if this_cpu()
+                .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
+                .is_err()
+                && !handle_exception_table(ctx)
+            {
+                handle_debug_exception(ctx, ctx.vector);
+                panic!(
+                    "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+                    rip, cr2, err
+                );
+            }
+        }
+        VC_VECTOR => handle_vc_exception(ctx),
+        BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
+        _ => {
+            let err = ctx.error_code;
+            let vec = ctx.vector;
+            let rip = ctx.frame.rip;
+
+            if !handle_exception_table(ctx) {
+                panic!(
+                    "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
+                    vec, rip, err
+                );
+            }
         }
     }
 }
