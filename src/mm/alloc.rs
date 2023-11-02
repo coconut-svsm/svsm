@@ -374,8 +374,8 @@ impl MemoryRegion {
         });
         self.write_page_info(pfn, head);
 
+        let compound = PageInfo::Compound(CompoundInfo { order });
         for i in 1..nr_pages {
-            let compound = PageInfo::Compound(CompoundInfo { order });
             self.write_page_info(pfn + i, compound);
         }
     }
@@ -518,8 +518,8 @@ impl MemoryRegion {
         self.write_page_info(pfn, pg);
 
         // Write compound pages
+        let pg = PageInfo::Compound(CompoundInfo { order: order + 1 });
         for i in 1..nr_pages {
-            let pg = PageInfo::Compound(CompoundInfo { order: order + 1 });
             self.write_page_info(pfn + i, pg);
         }
 
