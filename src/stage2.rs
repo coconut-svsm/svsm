@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-#![no_std]
-#![no_main]
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
 
 pub mod boot_stage2;
 
@@ -142,7 +142,7 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
 // Launch info from stage1, usually at the bottom of the stack
 // The layout has to match the order in which the parts are pushed to the stack
 // in stage1/stage1.S
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Stage1LaunchInfo {
     kernel_elf_start: u32,
@@ -296,6 +296,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
     let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
     let valid_bitmap = valid_bitmap_addr();
+
+    #[cfg(test)]
+    crate::test_main();
 
     // Shut down the GHCB
     shutdown_percpu();

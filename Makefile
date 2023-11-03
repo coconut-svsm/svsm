@@ -15,6 +15,7 @@ CARGO_ARGS += -vv
 endif
 
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
+TEST_STAGE2_ELF = target/x86_64-unknown-none/${TARGET_PATH}/stage2-test
 KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
 FS_FILE ?= none
@@ -23,12 +24,15 @@ C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
-all: stage1/kernel.elf svsm.bin
+all: stage1/kernel.elf stage1/stage2.bin svsm.bin
 
 test:
 	cargo test --target=x86_64-unknown-linux-gnu
 
-test-in-svsm: utils/cbit stage1/test-kernel.elf svsm.bin
+test-in-svsm: utils/cbit stage1/stage2.bin stage1/test-kernel.elf svsm.bin
+	./scripts/test-in-svsm.sh
+
+test-in-stage2: utils/cbit stage1/test-stage2.bin stage1/kernel.elf svsm.bin
 	./scripts/test-in-svsm.sh
 
 doc:
@@ -50,6 +54,10 @@ stage1/stage2.bin:
 	cargo build ${CARGO_ARGS} --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
+stage1/test-stage2.bin:
+	LINK_STAGE2_TEST=1 cargo +nightly test --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ${TEST_STAGE2_ELF}"]'
+	objcopy -O binary ${TEST_STAGE2_ELF} stage1/stage2.bin
+
 stage1/kernel.elf:
 	cargo build ${CARGO_ARGS} --bin svsm
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
@@ -64,7 +72,7 @@ ifneq ($(FS_FILE), none)
 endif
 	touch stage1/svsm-fs.bin
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin
+stage1/stage1.o: stage1/stage1.S stage1/svsm-fs.bin
 	cc -c -o $@ stage1/stage1.S
 
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
@@ -79,4 +87,4 @@ clean:
 	cargo clean
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 
-.PHONY: stage1/stage2.bin stage1/kernel.elf stage1/test-kernel.elf svsm.bin clean stage1/svsm-fs.bin test test-in-svsm
+.PHONY: stage1/stage2.bin stage1/test-stage2.bin stage1/kernel.elf stage1/test-kernel.elf svsm.bin clean stage1/svsm-fs.bin test test-in-svsm
