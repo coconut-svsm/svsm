@@ -1122,7 +1122,7 @@ impl Slab {
             return Err(e);
         }
 
-        self.common.add_slab_page(&mut *slab_page);
+        self.common.add_slab_page(slab_page);
         Ok(())
     }
 
