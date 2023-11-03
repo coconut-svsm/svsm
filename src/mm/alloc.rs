@@ -963,7 +963,7 @@ impl SlabCommon {
                 return vaddr;
             }
 
-            let next_page = (*page).get_next_page();
+            let next_page = page.get_next_page();
             assert!(!next_page.is_null()); // Cannot happen with free slots on entry.
             page = unsafe { &mut *next_page.as_mut_ptr::<SlabPage>() };
         }
