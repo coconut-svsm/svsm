@@ -287,10 +287,13 @@ impl MemoryRegion {
         Some(self.start_phys + offset)
     }
 
-    fn page_info_virt_addr(&self, pfn: usize) -> VirtAddr {
-        let size = size_of::<PageStorageType>();
-        let virt = self.start_virt;
-        virt + (pfn * size)
+    /// # Safety
+    ///
+    /// The caller must provide a valid pfn, otherwise the returned pointer is
+    /// undefined, as the compiler is allowed to optimize assuming there will
+    /// be no arithmetic overflows.
+    unsafe fn page_info_ptr(&self, pfn: usize) -> *mut PageStorageType {
+        self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn)
     }
 
     fn check_pfn(&self, pfn: usize) {
@@ -307,23 +310,13 @@ impl MemoryRegion {
         self.check_pfn(pfn);
 
         let info: PageStorageType = pi.to_mem();
-        unsafe {
-            let ptr = self
-                .page_info_virt_addr(pfn)
-                .as_mut_ptr::<PageStorageType>();
-            (*ptr) = info;
-        }
+        unsafe { self.page_info_ptr(pfn).write(info) };
     }
 
     fn read_page_info(&self, pfn: usize) -> PageInfo {
         self.check_pfn(pfn);
 
-        let info = unsafe {
-            self.page_info_virt_addr(pfn)
-                .as_ptr::<PageStorageType>()
-                .read()
-        };
-
+        let info = unsafe { self.page_info_ptr(pfn).read() };
         PageInfo::from_mem(info)
     }
 
