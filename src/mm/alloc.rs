@@ -1206,8 +1206,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             }
         };
 
-        ret.map(|addr| addr.as_mut_ptr::<u8>())
-            .unwrap_or_else(|_| ptr::null_mut())
+        ret.map_or_else(|_| ptr::null_mut(), |addr| addr.as_mut_ptr::<u8>())
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
