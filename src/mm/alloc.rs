@@ -1078,7 +1078,7 @@ impl SlabPageSlab {
 
     fn allocate(&mut self) -> Result<*mut SlabPage, SvsmError> {
         self.grow_slab()?;
-        Ok(unsafe { &mut *self.common.allocate_slot().as_mut_ptr::<SlabPage>() })
+        Ok(self.common.allocate_slot().as_mut_ptr::<SlabPage>())
     }
 
     fn deallocate(&mut self, slab_page: *mut SlabPage) {
