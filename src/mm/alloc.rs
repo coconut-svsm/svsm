@@ -999,31 +999,30 @@ impl SlabCommon {
         let mut next_page_vaddr = last_page.get_next_page();
         loop {
             if next_page_vaddr.is_null() {
-                break;
+                unreachable!("couldn't find page to free");
             }
             let slab_page = unsafe { &mut *next_page_vaddr.as_mut_ptr::<SlabPage>() };
             next_page_vaddr = slab_page.get_next_page();
 
             let capacity = slab_page.get_capacity();
             let free = slab_page.get_free();
-            if free == capacity {
-                let capacity = slab_page.get_capacity() as u32;
-                self.pages -= 1;
-                self.free_pages -= 1;
-                self.capacity -= capacity;
-                self.free -= capacity;
-
-                last_page.set_next_page(slab_page.get_next_page());
-
-                slab_page.destroy();
-
-                return slab_page;
-            } else {
+            if free != capacity {
                 last_page = slab_page;
+                continue;
             }
-        }
 
-        unreachable!("couldn't find page to free")
+            let capacity = slab_page.get_capacity() as u32;
+            self.pages -= 1;
+            self.free_pages -= 1;
+            self.capacity -= capacity;
+            self.free -= capacity;
+
+            last_page.set_next_page(slab_page.get_next_page());
+
+            slab_page.destroy();
+
+            return slab_page;
+        }
     }
 }
 
