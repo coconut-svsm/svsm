@@ -537,27 +537,28 @@ impl MemoryRegion {
         loop {
             let current_pfn = self.next_free_pfn(old_pfn, order);
             if current_pfn == 0 {
-                break;
-            } else if current_pfn == pfn {
-                let next_pfn = self.next_free_pfn(current_pfn, order);
-                let pg = PageInfo::Free(FreeInfo {
-                    next_page: next_pfn,
-                    order,
-                });
-                self.write_page_info(old_pfn, pg);
-
-                let pg = PageInfo::Allocated(AllocatedInfo { order });
-                self.write_page_info(current_pfn, pg);
-
-                self.free_pages[order] -= 1;
-
-                return Ok(());
+                return Err(SvsmError::Mem);
             }
 
-            old_pfn = current_pfn;
-        }
+            if current_pfn != pfn {
+                old_pfn = current_pfn;
+                continue;
+            }
 
-        Err(SvsmError::Mem)
+            let next_pfn = self.next_free_pfn(current_pfn, order);
+            let pg = PageInfo::Free(FreeInfo {
+                next_page: next_pfn,
+                order,
+            });
+            self.write_page_info(old_pfn, pg);
+
+            let pg = PageInfo::Allocated(AllocatedInfo { order });
+            self.write_page_info(current_pfn, pg);
+
+            self.free_pages[order] -= 1;
+
+            return Ok(());
+        }
     }
 
     fn free_page_raw(&mut self, pfn: usize, order: usize) {
