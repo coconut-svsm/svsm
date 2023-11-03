@@ -283,14 +283,7 @@ impl MemoryRegion {
 
     #[allow(dead_code)]
     fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        let end_virt = self.start_virt + (self.page_count * PAGE_SIZE);
-
-        if vaddr < self.start_virt || vaddr >= end_virt {
-            return None;
-        }
-
-        let offset = vaddr - self.start_virt;
-
+        let offset = self.get_virt_offset(vaddr)?;
         Some(self.start_phys + offset)
     }
 
@@ -306,11 +299,8 @@ impl MemoryRegion {
         }
     }
 
-    fn check_virt_addr(&self, vaddr: VirtAddr) -> bool {
-        let start = self.start_virt;
-        let end = self.start_virt + (self.page_count * PAGE_SIZE);
-
-        vaddr >= start && vaddr < end
+    fn end_virt(&self) -> VirtAddr {
+        self.start_virt + (self.page_count * PAGE_SIZE)
     }
 
     fn write_page_info(&self, pfn: usize, pi: PageInfo) {
@@ -337,11 +327,14 @@ impl MemoryRegion {
         PageInfo::from_mem(info)
     }
 
+    fn get_virt_offset(&self, vaddr: VirtAddr) -> Option<usize> {
+        (self.start_virt <= vaddr && vaddr < self.end_virt()).then(|| vaddr - self.start_virt)
+    }
+
     fn get_pfn(&self, vaddr: VirtAddr) -> Result<usize, SvsmError> {
-        if vaddr.is_null() || !self.check_virt_addr(vaddr) {
-            return Err(SvsmError::Mem);
-        }
-        Ok((vaddr - self.start_virt) / PAGE_SIZE)
+        self.get_virt_offset(vaddr)
+            .map(|off| off / PAGE_SIZE)
+            .ok_or(SvsmError::Mem)
     }
 
     fn get_next_page(&mut self, order: usize) -> Result<usize, SvsmError> {
