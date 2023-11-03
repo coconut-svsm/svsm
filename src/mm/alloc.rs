@@ -130,7 +130,7 @@ impl AllocatedInfo {
 
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
-        AllocatedInfo { order }
+        Self { order }
     }
 }
 
@@ -172,7 +172,7 @@ impl ReservedInfo {
     }
 
     fn decode(_mem: PageStorageType) -> Self {
-        ReservedInfo {}
+        Self {}
     }
 }
 
@@ -184,7 +184,7 @@ struct FileInfo {
 
 impl FileInfo {
     const fn new(ref_count: u64) -> Self {
-        FileInfo { ref_count }
+        Self { ref_count }
     }
 
     fn encode(&self) -> PageStorageType {
@@ -667,7 +667,7 @@ pub struct PageRef {
 
 impl PageRef {
     pub const fn new(virt_addr: VirtAddr, phys_addr: PhysAddr) -> Self {
-        PageRef {
+        Self {
             virt_addr,
             phys_addr,
         }
@@ -794,7 +794,7 @@ struct SlabPage {
 
 impl SlabPage {
     const fn new() -> Self {
-        SlabPage {
+        Self {
             vaddr: VirtAddr::null(),
             capacity: 0,
             free: 0,
@@ -902,7 +902,7 @@ struct SlabCommon {
 
 impl SlabCommon {
     const fn new(item_size: u16) -> Self {
-        SlabCommon {
+        Self {
             item_size,
             capacity: 0,
             free: 0,
@@ -1028,7 +1028,7 @@ struct SlabPageSlab {
 
 impl SlabPageSlab {
     const fn new() -> Self {
-        SlabPageSlab {
+        Self {
             common: SlabCommon::new(size_of::<SlabPage>() as u16),
         }
     }
@@ -1089,7 +1089,7 @@ struct Slab {
 
 impl Slab {
     const fn new(item_size: u16) -> Self {
-        Slab {
+        Self {
             common: SlabCommon::new(item_size),
         }
     }
