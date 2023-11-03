@@ -770,11 +770,11 @@ pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
     Ok(PageRef::new(v, p))
 }
 
-pub fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
+fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
     ROOT_MEM.lock().get_file_page(vaddr)
 }
 
-pub fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
+fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
     ROOT_MEM.lock().put_file_page(vaddr)
 }
 
