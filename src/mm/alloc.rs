@@ -387,18 +387,13 @@ impl MemoryRegion {
     }
 
     fn refill_page_list(&mut self, order: usize) -> Result<(), SvsmError> {
-        if order >= MAX_ORDER {
-            return Err(SvsmError::Mem);
-        }
-
-        if self.next_page[order] != 0 {
+        let next_page = *self.next_page.get(order).ok_or(SvsmError::Mem)?;
+        if next_page != 0 {
             return Ok(());
         }
 
         self.refill_page_list(order + 1)?;
-
         let pfn = self.get_next_page(order + 1)?;
-
         self.split_page(pfn, order + 1)
     }
 
