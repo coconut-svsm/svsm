@@ -485,7 +485,7 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn create_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
@@ -510,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn create_and_unlink_file() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn create_sub_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn test_unlink() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
@@ -600,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn test_open_read_write_seek() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(any(test_in_svsm, test_in_stage2), ignore = "FIXME")]
     fn test_multiple_file_handles() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         initialize_fs();
