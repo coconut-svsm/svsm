@@ -490,7 +490,7 @@ impl MemoryRegion {
         }
 
         let nr_pages: usize = 1 << (order + 1);
-        let pfn = if pfn1 < pfn2 { pfn1 } else { pfn2 };
+        let pfn = pfn1.min(pfn2);
 
         // Write new compound head
         let pg = PageInfo::Allocated(AllocatedInfo { order: order + 1 });
