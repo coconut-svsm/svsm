@@ -164,7 +164,7 @@ impl CompoundInfo {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ReservedInfo {}
+struct ReservedInfo;
 
 impl ReservedInfo {
     fn encode(&self) -> PageStorageType {
@@ -172,7 +172,7 @@ impl ReservedInfo {
     }
 
     fn decode(_mem: PageStorageType) -> Self {
-        Self {}
+        Self
     }
 }
 
@@ -640,7 +640,7 @@ impl MemoryRegion {
 
         /* Mark page storage as reserved */
         for i in 0..meta_pages {
-            let pg = PageInfo::Reserved(ReservedInfo {});
+            let pg = PageInfo::Reserved(ReservedInfo);
             self.write_page_info(i, pg);
         }
 
