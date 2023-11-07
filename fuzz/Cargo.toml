@@ -44,3 +44,9 @@ name = "page_alloc"
 path = "fuzz_targets/page_alloc.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "alloc"
+path = "fuzz_targets/alloc.rs"
+test = false
+doc = false
