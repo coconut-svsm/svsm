@@ -42,7 +42,7 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
@@ -492,6 +492,8 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    disable_vmpck0();
+
     log::error!("Panic: CPU[{}] {}", this_cpu().get_apic_id(), info);
 
     print_stack(3);
