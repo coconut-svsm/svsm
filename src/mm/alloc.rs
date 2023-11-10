@@ -17,6 +17,22 @@ use core::mem::size_of;
 use core::ptr;
 use log;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AllocError {
+    InvalidPageType,
+    InvalidHeapAddress(VirtAddr),
+    OutOfMemory,
+    InvalidPageOrder(usize),
+    InvalidFilePage(VirtAddr),
+    InvalidPfn(usize),
+}
+
+impl From<AllocError> for SvsmError {
+    fn from(err: AllocError) -> Self {
+        Self::Alloc(err)
+    }
+}
+
 // Support allocations up to order-5 (128kb)
 pub const MAX_ORDER: usize = 6;
 
@@ -40,7 +56,7 @@ enum PageType {
 }
 
 impl TryFrom<u64> for PageType {
-    type Error = SvsmError;
+    type Error = AllocError;
     fn try_from(val: u64) -> Result<Self, Self::Error> {
         match val {
             v if v == Self::Free as u64 => Ok(Self::Free),
@@ -49,7 +65,7 @@ impl TryFrom<u64> for PageType {
             v if v == Self::Compound as u64 => Ok(Self::Compound),
             v if v == Self::File as u64 => Ok(Self::File),
             v if v == Self::Reserved as u64 => Ok(Self::Reserved),
-            _ => Err(SvsmError::Mem),
+            _ => Err(AllocError::InvalidPageType),
         }
     }
 }
@@ -93,7 +109,7 @@ impl PageStorageType {
         self.0 >> Self::TYPE_SHIFT
     }
 
-    fn page_type(&self) -> Result<PageType, SvsmError> {
+    fn page_type(&self) -> Result<PageType, AllocError> {
         PageType::try_from(self.0 & Self::TYPE_MASK)
     }
 }
@@ -324,17 +340,17 @@ impl MemoryRegion {
         (self.start_virt <= vaddr && vaddr < self.end_virt()).then(|| vaddr - self.start_virt)
     }
 
-    fn get_pfn(&self, vaddr: VirtAddr) -> Result<usize, SvsmError> {
+    fn get_pfn(&self, vaddr: VirtAddr) -> Result<usize, AllocError> {
         self.get_virt_offset(vaddr)
             .map(|off| off / PAGE_SIZE)
-            .ok_or(SvsmError::Mem)
+            .ok_or(AllocError::InvalidHeapAddress(vaddr))
     }
 
-    fn get_next_page(&mut self, order: usize) -> Result<usize, SvsmError> {
+    fn get_next_page(&mut self, order: usize) -> Result<usize, AllocError> {
         let pfn = self.next_page[order];
 
         if pfn == 0 {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::OutOfMemory);
         }
 
         let pg = self.read_page_info(pfn);
@@ -364,9 +380,9 @@ impl MemoryRegion {
         }
     }
 
-    fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
+    fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         if !(1..MAX_ORDER).contains(&order) {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPageOrder(order));
         }
 
         let new_order = order - 1;
@@ -386,8 +402,11 @@ impl MemoryRegion {
         Ok(())
     }
 
-    fn refill_page_list(&mut self, order: usize) -> Result<(), SvsmError> {
-        let next_page = *self.next_page.get(order).ok_or(SvsmError::Mem)?;
+    fn refill_page_list(&mut self, order: usize) -> Result<(), AllocError> {
+        let next_page = *self
+            .next_page
+            .get(order)
+            .ok_or(AllocError::InvalidPageOrder(order))?;
         if next_page != 0 {
             return Ok(());
         }
@@ -397,23 +416,23 @@ impl MemoryRegion {
         self.split_page(pfn, order + 1)
     }
 
-    fn allocate_pages_info(&mut self, order: usize, pg: PageInfo) -> Result<VirtAddr, SvsmError> {
+    fn allocate_pages_info(&mut self, order: usize, pg: PageInfo) -> Result<VirtAddr, AllocError> {
         self.refill_page_list(order)?;
         let pfn = self.get_next_page(order)?;
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
-    fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, SvsmError> {
+    fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Allocated(AllocatedInfo { order });
         self.allocate_pages_info(order, pg)
     }
 
-    fn allocate_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_page(&mut self) -> Result<VirtAddr, AllocError> {
         self.allocate_pages(0)
     }
 
-    fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, AllocError> {
         let vaddr = self.allocate_page()?;
 
         zero_mem_region(vaddr, vaddr + PAGE_SIZE);
@@ -421,21 +440,21 @@ impl MemoryRegion {
         Ok(vaddr)
     }
 
-    fn allocate_slab_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_slab_page(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Slab(SlabPageInfo);
         self.allocate_pages_info(0, pg)
     }
 
-    fn allocate_file_page(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate_file_page(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::File(FileInfo::new(1));
         self.allocate_pages_info(0, pg)
     }
 
-    fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), AllocError> {
         let pfn = self.get_pfn(vaddr)?;
         let page = self.read_page_info(pfn);
         let PageInfo::File(mut fi) = page else {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidFilePage(vaddr));
         };
 
         assert!(fi.ref_count > 0);
@@ -445,11 +464,11 @@ impl MemoryRegion {
         Ok(())
     }
 
-    fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), AllocError> {
         let pfn = self.get_pfn(vaddr)?;
         let page = self.read_page_info(pfn);
         let PageInfo::File(mut fi) = page else {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidFilePage(vaddr));
         };
 
         fi.ref_count = fi
@@ -465,23 +484,23 @@ impl MemoryRegion {
         Ok(())
     }
 
-    fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
+    fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         if order >= MAX_ORDER - 1 {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPageOrder(order));
         }
 
         assert_eq!(pfn & ((1usize << order) - 1), 0);
         let pfn = pfn ^ (1usize << order);
         if pfn >= self.page_count {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPfn(pfn));
         }
 
         Ok(pfn)
     }
 
-    fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, SvsmError> {
+    fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, AllocError> {
         if order >= MAX_ORDER - 1 {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPageOrder(order));
         }
 
         let nr_pages: usize = 1 << (order + 1);
@@ -514,13 +533,13 @@ impl MemoryRegion {
         fi.next_page
     }
 
-    fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), SvsmError> {
+    fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         let first_pfn = self.next_page[order];
 
         // Handle special cases first
         if first_pfn == 0 {
             // No pages for that order
-            return Err(SvsmError::Mem);
+            return Err(AllocError::OutOfMemory);
         } else if first_pfn == pfn {
             // Requested pfn is first in list
             self.get_next_page(order).unwrap();
@@ -532,7 +551,7 @@ impl MemoryRegion {
         loop {
             let current_pfn = self.next_free_pfn(old_pfn, order);
             if current_pfn == 0 {
-                return Err(SvsmError::Mem);
+                return Err(AllocError::OutOfMemory);
             }
 
             if current_pfn != pfn {
@@ -569,16 +588,16 @@ impl MemoryRegion {
         self.free_pages[order] += 1;
     }
 
-    fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, SvsmError> {
+    fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
 
         let PageInfo::Free(fi) = neighbor_page else {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPfn(neighbor_pfn));
         };
 
         if fi.order != order {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidPageOrder(fi.order));
         }
 
         self.allocate_pfn(neighbor_pfn, order)?;
@@ -738,19 +757,19 @@ pub fn print_memory_info(info: &MemInfo) {
 static ROOT_MEM: SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());
 
 pub fn allocate_page() -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_page()
+    Ok(ROOT_MEM.lock().allocate_page()?)
 }
 
 pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_pages(order)
+    Ok(ROOT_MEM.lock().allocate_pages(order)?)
 }
 
 pub fn allocate_slab_page() -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_slab_page()
+    Ok(ROOT_MEM.lock().allocate_slab_page()?)
 }
 
 pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
-    ROOT_MEM.lock().allocate_zeroed_page()
+    Ok(ROOT_MEM.lock().allocate_zeroed_page()?)
 }
 
 pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
@@ -767,11 +786,11 @@ pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
 }
 
 fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
-    ROOT_MEM.lock().get_file_page(vaddr)
+    Ok(ROOT_MEM.lock().get_file_page(vaddr)?)
 }
 
 fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
-    ROOT_MEM.lock().put_file_page(vaddr)
+    Ok(ROOT_MEM.lock().put_file_page(vaddr)?)
 }
 
 pub fn free_page(vaddr: VirtAddr) {
@@ -804,7 +823,7 @@ impl SlabPage {
         }
     }
 
-    fn init(&mut self, mut item_size: u16) -> Result<(), SvsmError> {
+    fn init(&mut self, mut item_size: u16) -> Result<(), AllocError> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -816,7 +835,7 @@ impl SlabPage {
             item_size = 32;
         }
 
-        let vaddr = allocate_slab_page()?;
+        let vaddr = ROOT_MEM.lock().allocate_slab_page()?;
         self.vaddr = vaddr;
         self.item_size = item_size;
         self.capacity = (PAGE_SIZE as u16) / item_size;
@@ -849,9 +868,9 @@ impl SlabPage {
         self.next_page = next_page;
     }
 
-    fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate(&mut self) -> Result<VirtAddr, AllocError> {
         if self.free == 0 {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::OutOfMemory);
         }
 
         for i in 0..self.capacity {
@@ -865,12 +884,12 @@ impl SlabPage {
             }
         }
 
-        Err(SvsmError::Mem)
+        Err(AllocError::OutOfMemory)
     }
 
-    fn free(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
+    fn free(&mut self, vaddr: VirtAddr) -> Result<(), AllocError> {
         if vaddr < self.vaddr || vaddr >= self.vaddr + PAGE_SIZE {
-            return Err(SvsmError::Mem);
+            return Err(AllocError::InvalidHeapAddress(vaddr));
         }
 
         assert!(self.item_size > 0);
@@ -913,7 +932,7 @@ impl SlabCommon {
         }
     }
 
-    fn init(&mut self) -> Result<(), SvsmError> {
+    fn init(&mut self) -> Result<(), AllocError> {
         self.page.init(self.item_size)?;
 
         self.capacity = self.page.get_capacity() as u32;
@@ -1033,11 +1052,11 @@ impl SlabPageSlab {
         }
     }
 
-    fn init(&mut self) -> Result<(), SvsmError> {
+    fn init(&mut self) -> Result<(), AllocError> {
         self.common.init()
     }
 
-    fn grow_slab(&mut self) -> Result<(), SvsmError> {
+    fn grow_slab(&mut self) -> Result<(), AllocError> {
         if self.common.capacity == 0 {
             self.init()?;
             return Ok(());
@@ -1071,7 +1090,7 @@ impl SlabPageSlab {
         }
     }
 
-    fn allocate(&mut self) -> Result<*mut SlabPage, SvsmError> {
+    fn allocate(&mut self) -> Result<*mut SlabPage, AllocError> {
         self.grow_slab()?;
         Ok(self.common.allocate_slot().as_mut_ptr::<SlabPage>())
     }
@@ -1094,11 +1113,11 @@ impl Slab {
         }
     }
 
-    fn init(&mut self) -> Result<(), SvsmError> {
+    fn init(&mut self) -> Result<(), AllocError> {
         self.common.init()
     }
 
-    fn grow_slab(&mut self) -> Result<(), SvsmError> {
+    fn grow_slab(&mut self) -> Result<(), AllocError> {
         if self.common.capacity == 0 {
             return self.init();
         }
@@ -1130,7 +1149,7 @@ impl Slab {
         SLAB_PAGE_SLAB.lock().deallocate(slab_page);
     }
 
-    fn allocate(&mut self) -> Result<VirtAddr, SvsmError> {
+    fn allocate(&mut self) -> Result<VirtAddr, AllocError> {
         self.grow_slab()?;
         Ok(self.common.allocate_slot())
     }
@@ -1196,7 +1215,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let ret = match self.get_slab(size) {
-            Some(slab) => slab.lock().allocate(),
+            Some(slab) => slab.lock().allocate().map_err(|e| e.into()),
             None => {
                 let order = get_order(size);
                 if order >= MAX_ORDER {
