@@ -125,7 +125,7 @@ impl TaskRuntime for TscRuntime {
 
 /// Tracks task runtime based on the number of times the task has been
 /// scheduled
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct CountRuntime {
     count: u64,
@@ -159,7 +159,7 @@ impl TaskRuntime for CountRuntime {
 type TaskRuntimeImpl = CountRuntime;
 
 #[repr(C)]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct TaskContext {
     pub regs: X86GeneralRegs,
     pub flags: u64,

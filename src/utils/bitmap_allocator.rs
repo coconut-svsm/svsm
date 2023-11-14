@@ -22,7 +22,7 @@ pub trait BitmapAllocator {
 
 pub type BitmapAllocator1024 = BitmapAllocatorTree<BitmapAllocator64>;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct BitmapAllocator64 {
     bits: u64,
 }

@@ -40,7 +40,7 @@ pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
 #[repr(C, packed)]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
     pub regs: X86GeneralRegs,
     pub vector: usize,

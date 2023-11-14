@@ -228,7 +228,7 @@ impl Page {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct MemInfo {
     total_pages: [usize; MAX_ORDER],
     free_pages: [usize; MAX_ORDER],

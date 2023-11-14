@@ -26,6 +26,7 @@ impl From<GhcbMsrError> for SvsmError {
     }
 }
 
+#[derive(Clone, Copy)]
 #[non_exhaustive]
 pub enum GHCBMsr {}
 

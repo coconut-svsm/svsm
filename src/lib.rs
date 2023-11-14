@@ -5,6 +5,7 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 #![no_std]
+#![deny(missing_copy_implementations)]
 #![cfg_attr(all(test, test_in_svsm), no_main)]
 #![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
 #![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]

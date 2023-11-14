@@ -53,7 +53,7 @@ pub enum GuestVMExit {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct VMSASegment {
     pub selector: u16,
     pub flags: u16,

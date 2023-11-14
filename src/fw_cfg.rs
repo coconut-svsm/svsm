@@ -52,7 +52,7 @@ impl From<FwCfgError> for SvsmError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FwCfgFile {
     size: u32,
     selector: u16,

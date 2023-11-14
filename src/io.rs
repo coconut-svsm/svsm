@@ -32,7 +32,7 @@ pub trait IOPort: Sync {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultIOPort {}
 
 impl IOPort for DefaultIOPort {}
