@@ -70,6 +70,7 @@ const PSC_FLAG_HUGE: u64 = 1 << PSC_FLAG_HUGE_SHIFT;
 const GHCB_BUFFER_SIZE: usize = 0x7f0;
 
 #[repr(C, packed)]
+#[derive(Debug)]
 pub struct GHCB {
     reserved_1: [u8; 0xcb],
     cpl: u8,
@@ -126,7 +127,7 @@ impl GHCBExitCode {
     pub const RUN_VMPL: u64 = 0x80000018;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum GHCBIOSize {
     Size8,
     Size16,

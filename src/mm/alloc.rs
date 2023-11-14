@@ -1282,8 +1282,9 @@ static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 #[cfg(test)]
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
-#[cfg(any(test, fuzzing))]
 /// A dummy struct to acquire a lock over global memory
+#[cfg(any(test, fuzzing))]
+#[derive(Debug)]
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
 #[cfg(any(test, fuzzing))]

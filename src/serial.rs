@@ -32,6 +32,7 @@ pub trait Terminal: Sync {
     }
 }
 
+#[derive(Debug)]
 pub struct SerialPort<'a> {
     pub driver: &'a dyn IOPort,
     pub port: u16,

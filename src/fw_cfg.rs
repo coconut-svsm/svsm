@@ -29,7 +29,7 @@ const MAX_FW_CFG_FILES: u32 = 0x1000;
 //use crate::println;
 
 #[non_exhaustive]
-
+#[derive(Debug)]
 pub struct FwCfg<'a> {
     driver: &'a dyn IOPort,
 }

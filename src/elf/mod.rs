@@ -1786,7 +1786,7 @@ impl Elf64Dynamic {
 }
 
 /// Information about the allocation of a virtual address range
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Elf64ImageLoadVaddrAllocInfo {
     /// The virtual address (vaddr) range to allocate
     pub range: Elf64AddrRange,
@@ -1796,6 +1796,7 @@ pub struct Elf64ImageLoadVaddrAllocInfo {
 }
 
 /// Represents an ELF64 image load segment
+#[derive(Debug)]
 pub struct Elf64ImageLoadSegment<'a> {
     /// The virtual address (vaddr) range covering by this segment
     pub vaddr_range: Elf64AddrRange,
@@ -1806,6 +1807,7 @@ pub struct Elf64ImageLoadSegment<'a> {
 }
 
 /// An iterator over ELF64 image load segments within an ELF file
+#[derive(Debug)]
 pub struct Elf64ImageLoadSegmentIterator<'a> {
     elf_file: &'a Elf64File<'a>,
     load_base: Elf64Xword,
@@ -1938,6 +1940,7 @@ impl Elf64Sym {
 
 /// Represents an ELF64 symbol table ([`Elf64Symtab`]) containing
 /// symbols used within the ELF file.
+#[derive(Debug)]
 struct Elf64Symtab<'a> {
     /// The underlying buffer containing the symbol table data
     syms_buf: &'a [u8],
@@ -2041,6 +2044,7 @@ impl Elf64Rela {
 }
 
 /// Represents a collection of relocation entries in an ELF64 file ([`Elf64Relas`])
+#[derive(Debug)]
 struct Elf64Relas<'a> {
     /// The underlying buffer containing the relocation entries
     relas_buf: &'a [u8],
@@ -2093,6 +2097,7 @@ impl<'a> Elf64Relas<'a> {
 }
 
 /// Represents an iterator over section headers in an ELF64 file
+#[derive(Debug)]
 pub struct Elf64ShdrIterator<'a> {
     /// The ELF64 file from which section headers are being iterated
     elf_file: &'a Elf64File<'a>,
@@ -2170,7 +2175,7 @@ pub trait Elf64RelocProcessor {
 }
 
 /// Relocation processor specifically for x86_64 ELF files.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Elf64X86RelocProcessor;
 
 impl Elf64X86RelocProcessor {
@@ -2265,6 +2270,7 @@ impl Elf64RelocProcessor for Elf64X86RelocProcessor {
 }
 
 /// An iterator that applies relocation operations to ELF64 relocations
+#[derive(Debug)]
 pub struct Elf64AppliedRelaIterator<'a, RP: Elf64RelocProcessor> {
     /// The ELF64 relocation processor used for applying relocations
     rela_proc: RP,

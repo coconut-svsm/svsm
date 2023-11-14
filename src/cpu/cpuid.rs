@@ -51,7 +51,7 @@ pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
         .expect("Could not initialize CPUID page");
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CpuidResult {
     pub eax: u32,
     pub ebx: u32,

@@ -456,6 +456,7 @@ pub struct ACPICPUInfo {
 /// use svsm::fw_cfg::FwCfg;
 /// use svsm::io::IOPort;
 ///
+/// #[derive(Debug)]
 /// struct MyIo;
 ///
 /// impl IOPort for MyIo {

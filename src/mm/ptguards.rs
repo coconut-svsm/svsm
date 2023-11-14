@@ -14,6 +14,7 @@ use crate::mm::virtualrange::{
 };
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
+#[derive(Debug)]
 struct RawPTMappingGuard {
     start: VirtAddr,
     end: VirtAddr,
@@ -25,6 +26,7 @@ impl RawPTMappingGuard {
     }
 }
 
+#[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
     mapping: Option<RawPTMappingGuard>,

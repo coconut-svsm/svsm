@@ -171,6 +171,7 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     }
 }
 
+#[derive(Debug)]
 pub struct GuestPtr<T>
 where
     T: Sized + Copy,
