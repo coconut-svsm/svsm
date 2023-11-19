@@ -13,6 +13,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::gdt::load_gdt;
@@ -114,7 +115,7 @@ fn setup_env() {
     sev_status_verify();
 }
 
-fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
+fn map_and_validate(config: &SvsmConfig, vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -125,15 +126,17 @@ fn map_and_validate(vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
         .map_region(vaddr, vaddr + len, paddr, flags)
         .expect("Error mapping kernel region");
 
-    this_cpu_mut()
-        .ghcb()
-        .page_state_change(
-            paddr,
-            paddr + len,
-            PageSize::Huge,
-            PageStateChangeOp::PscPrivate,
-        )
-        .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
+    if config.page_state_change_required() {
+        this_cpu_mut()
+            .ghcb()
+            .page_state_change(
+                paddr,
+                paddr + len,
+                PageSize::Huge,
+                PageStateChangeOp::PscPrivate,
+            )
+            .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
+    }
     pvalidate_range(vaddr, vaddr + len, PvalidateOp::Valid)
         .expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + len);
@@ -158,8 +161,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
-    let fw_cfg = FwCfg::new(&CONSOLE_IO);
-    let r = fw_cfg
+    let config = SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO));
+    let r = config
         .find_kernel_region()
         .expect("Failed to find memory region for SVSM kernel");
 
@@ -215,7 +218,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         let paddr_start = loaded_kernel_phys_end;
         loaded_kernel_phys_end = loaded_kernel_phys_end + segment_len;
 
-        map_and_validate(vaddr_start, paddr_start, segment_len);
+        map_and_validate(&config, vaddr_start, paddr_start, segment_len);
 
         let segment_buf =
             unsafe { slice::from_raw_parts_mut(vaddr_start.as_mut_ptr::<u8>(), segment_len) };
@@ -260,7 +263,12 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let heap_area_phys_start = loaded_kernel_phys_end;
     let heap_area_virt_start = loaded_kernel_virt_end;
     let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
-    map_and_validate(heap_area_virt_start, heap_area_phys_start, heap_area_size);
+    map_and_validate(
+        &config,
+        heap_area_virt_start,
+        heap_area_phys_start,
+        heap_area_size,
+    );
 
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
@@ -274,8 +282,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         kernel_elf_stage2_virt_end: u64::from(kernel_elf_end),
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
-        cpuid_page: 0x9f000u64,
-        secrets_page: 0x9e000u64,
+        cpuid_page: config.get_cpuid_page_address(),
+        secrets_page: config.get_secrets_page_address(),
     };
 
     let mem_info = memory_info();

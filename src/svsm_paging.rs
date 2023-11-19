@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::config::SvsmConfig;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::elf;
 use crate::error::SvsmError;
@@ -59,7 +60,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
     set_init_pgtable(pgtable);
 }
 
-pub fn invalidate_stage2() -> Result<(), SvsmError> {
+pub fn invalidate_stage2(config: &SvsmConfig) -> Result<(), SvsmError> {
     let pstart = PhysAddr::null();
     let pend = pstart + (640 * 1024);
     let mut paddr = pstart;
@@ -76,10 +77,12 @@ pub fn invalidate_stage2() -> Result<(), SvsmError> {
         paddr = paddr + PAGE_SIZE;
     }
 
-    this_cpu_mut()
-        .ghcb()
-        .page_state_change(paddr, pend, PageSize::Regular, PageStateChangeOp::PscShared)
-        .expect("Failed to invalidate Stage2 memory");
+    if config.page_state_change_required() {
+        this_cpu_mut()
+            .ghcb()
+            .page_state_change(paddr, pend, PageSize::Regular, PageStateChangeOp::PscShared)
+            .expect("Failed to invalidate Stage2 memory");
+    }
 
     Ok(())
 }
