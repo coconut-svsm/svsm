@@ -21,6 +21,7 @@ use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
+use svsm::igvm_params::IgvmParams;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
@@ -152,6 +153,7 @@ pub struct Stage1LaunchInfo {
     kernel_elf_end: u32,
     kernel_fs_start: u32,
     kernel_fs_end: u32,
+    igvm_params: u32,
 }
 
 #[no_mangle]
@@ -161,7 +163,13 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
-    let config = SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO));
+    let config = if launch_info.igvm_params != 0 {
+        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64));
+        SvsmConfig::IgvmConfig(igvm_params)
+    } else {
+        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+    };
+
     let r = config
         .find_kernel_region()
         .expect("Failed to find memory region for SVSM kernel");
