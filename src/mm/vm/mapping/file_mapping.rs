@@ -53,7 +53,7 @@ impl VirtualMapping for VMWriteFileMapping {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum VMFileMappingPermission {
     /// Read-only access to the file
     Read,

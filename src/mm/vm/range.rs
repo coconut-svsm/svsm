@@ -377,8 +377,8 @@ impl VMR {
     /// Notify the range that a page fault has occurred. This should be called from
     /// the page fault handler. The mappings withing this virtual memory region are
     /// examined and if they overlap with the page fault address then
-    /// [`VirtualMemoryRange::handle_page_fault()`] is called to handle the page
-    /// fault within that range.
+    /// [`VMR::handle_page_fault()`] is called to handle the page fault within that
+    /// range.
     ///
     /// # Arguments
     ///
