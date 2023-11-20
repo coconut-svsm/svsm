@@ -254,6 +254,10 @@ impl Task {
         self.affinity = affinity;
     }
 
+    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        self.vm_kernel_range.handle_page_fault(vaddr, write)
+    }
+
     fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
         let stack = VMKernelStack::new()?;
         let offset = stack.top_of_stack(VirtAddr::from(0u64));

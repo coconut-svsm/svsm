@@ -562,6 +562,10 @@ impl PerCpu {
     pub fn populate_page_table(&self, pt: &mut PageTableRef) {
         self.vm_range.populate(pt);
     }
+
+    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        self.vm_range.handle_page_fault(vaddr, write)
+    }
 }
 
 unsafe impl Sync for PerCpu {}

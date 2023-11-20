@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::control_regs::read_cr2;
+use super::percpu::this_cpu;
 use super::tss::IST_DF;
 use super::vc::handle_vc_exception;
 use super::{X86GeneralRegs, X86InterruptFrame};
@@ -38,6 +39,8 @@ pub const _CP_VECTOR: usize = 21;
 pub const _HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
+
+pub const PF_ERROR_WRITE: usize = 2;
 
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
@@ -198,7 +201,11 @@ fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
         let rip = ctx.frame.rip;
         let err = ctx.error_code;
 
-        if !handle_exception_table(ctx) {
+        if this_cpu()
+            .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
+            .is_err()
+            && !handle_exception_table(ctx)
+        {
             panic!(
                 "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
                 rip, cr2, err

@@ -9,6 +9,7 @@ use super::*;
 
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
+use crate::mm::PageRef;
 
 use core::cmp::min;
 
@@ -57,6 +58,10 @@ impl RawFileHandle {
     fn size(&self) -> usize {
         self.file.size()
     }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.file.mapping(offset)
+    }
 }
 
 #[derive(Debug)]
@@ -96,6 +101,10 @@ impl FileHandle {
 
     pub fn position(&self) -> usize {
         self.handle.lock().current
+    }
+
+    pub fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.handle.lock().mapping(offset)
     }
 }
 

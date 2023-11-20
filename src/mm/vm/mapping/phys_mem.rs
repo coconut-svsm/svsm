@@ -69,7 +69,7 @@ impl VirtualMapping for VMPhysMem {
         }
     }
 
-    fn pt_flags(&self) -> PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         PTEntryFlags::NX
             | PTEntryFlags::ACCESSED
             | if self.writable {
