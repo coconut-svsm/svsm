@@ -37,7 +37,10 @@ pub const SVSM_CS_FLAGS: u16 = 0x29b;
 pub const SVSM_DS_FLAGS: u16 = 0xc93;
 pub const SVSM_TR_FLAGS: u16 = 0x89;
 
-pub const GUEST_VMPL: usize = 1;
+/// VMPL level the guest OS will be executed at.
+/// Keep VMPL 1 for the SVSM and execute the OS at VMPL-2. This leaves VMPL-3
+/// free for the OS to use in the future.
+pub const GUEST_VMPL: usize = 2;
 
 #[allow(clippy::assertions_on_constants)]
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);

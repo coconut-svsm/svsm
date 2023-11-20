@@ -10,7 +10,7 @@ use crate::mm::pagetable::PTEntryFlags;
 use super::{Mapping, VirtualMapping};
 
 /// Map physically contiguous memory
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct VMPhysMem {
     /// Physical base address to map
     base: PhysAddr,
@@ -69,7 +69,7 @@ impl VirtualMapping for VMPhysMem {
         }
     }
 
-    fn pt_flags(&self) -> PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         PTEntryFlags::NX
             | PTEntryFlags::ACCESSED
             | if self.writable {

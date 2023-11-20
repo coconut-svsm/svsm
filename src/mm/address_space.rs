@@ -4,8 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-#[cfg(test)]
-use crate::address::Address;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -30,7 +28,7 @@ pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAd
         .expect("Already initialized kernel mapping info");
 }
 
-#[cfg(not(test))]
+#[cfg(target_os = "none")]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     if vaddr < KERNEL_MAPPING.virt_start || vaddr >= KERNEL_MAPPING.virt_end {
         panic!("Invalid physical address {:#018x}", vaddr);
@@ -41,7 +39,7 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     KERNEL_MAPPING.phys_start + offset
 }
 
-#[cfg(not(test))]
+#[cfg(target_os = "none")]
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     let size: usize = KERNEL_MAPPING.virt_end - KERNEL_MAPPING.virt_start;
     if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start + size {
@@ -53,13 +51,15 @@ pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
     KERNEL_MAPPING.virt_start + offset
 }
 
-#[cfg(test)]
+#[cfg(not(target_os = "none"))]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    use crate::address::Address;
     PhysAddr::from(vaddr.bits())
 }
 
-#[cfg(test)]
+#[cfg(not(target_os = "none"))]
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+    use crate::address::Address;
     VirtAddr::from(paddr.bits())
 }
 
@@ -148,23 +148,14 @@ pub const SVSM_PERCPU_TEMP_END_4K: VirtAddr = SVSM_PERCPU_TEMP_BASE_4K.const_add
 pub const SVSM_PERCPU_TEMP_BASE_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL1);
 pub const SVSM_PERCPU_TEMP_END_2M: VirtAddr = SVSM_PERCPU_TEMP_BASE.const_add(SIZE_LEVEL2);
 
-/// Per-task memory map
-/// Use the region from 0xfffffe0000000000 - 0xffffff0000000000 for tasks
+/// Task mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERTASK: usize = 508;
-/// Layout of the per-task memory space is:
-///
-/// +------------------+------------------+-------------------------------------+
-/// | Start            | End              | Size | Description                  |
-/// +------------------+------------------+------+------------------------------+
-/// | fffffeffffff0000 | ffffff0000000000 | 64K  | Task stack                   |
-/// +------------------+------------------+------+------------------------------+
-/// | fffffe0000000000 | fffffe0004000000 | 64M  | Dynamic memory allocation    |
-/// +------------------+------------------+------+------------------------------+
+
+/// Base address of task memory region
 pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
 
-/// Virtual addresses for dynamic memory allocation
-pub const SVSM_PERTASK_DYNAMIC_MEMORY: VirtAddr = SVSM_PERTASK_BASE;
+/// End address of task memory region
+pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
-/// Task stack
-pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE.const_add(0xffffff0000);
-pub const SVSM_PERTASK_STACK_TOP: VirtAddr = SVSM_PERTASK_STACK_BASE.const_add(0x10000);
+/// Kernel stack for a task
+pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;

@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use core::iter;
+
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::mm::alloc::{allocate_file_page_ref, PageRef};
@@ -13,14 +15,14 @@ use crate::utils::align_up;
 extern crate alloc;
 use alloc::vec::Vec;
 
-/// Contains base functionality for all [`VirtualMapping`] types which use
-/// self-allocated PageFile pages.
+/// Contains base functionality for all [`VirtualMapping`](super::api::VirtualMapping)
+/// types which use self-allocated PageFile pages.
 #[derive(Default, Debug)]
 pub struct RawAllocMapping {
     /// A vec containing references to PageFile allocations
-    pages: Vec<PageRef>,
+    pages: Vec<Option<PageRef>>,
 
-    /// Number of pages required in [`pages`]
+    /// Number of pages required in `pages`
     count: usize,
 }
 
@@ -36,22 +38,38 @@ impl RawAllocMapping {
     /// New instance of RawAllocMapping. Still needs to call `alloc_pages()` on it before it can be used.
     pub fn new(size: usize) -> Self {
         let count = align_up(size, PAGE_SIZE) >> PAGE_SHIFT;
-        RawAllocMapping {
-            pages: Vec::new(),
-            count,
-        }
+        let pages: Vec<Option<PageRef>> = iter::repeat(None).take(count).collect();
+        RawAllocMapping { pages, count }
     }
 
-    /// Allocates the backing pages of type PageFile
+    /// Allocates a single backing page of type PageFile if the page has not already
+    /// been allocated
+    ///
+    /// # Argument
+    ///
+    /// * 'offset' - The offset in bytes from the start of the mapping
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the page has been allocated, `Err(SvsmError::Mem)` otherwise
+    pub fn alloc_page(&mut self, offset: usize) -> Result<(), SvsmError> {
+        let index = offset >> PAGE_SHIFT;
+        if index < self.count {
+            let entry = self.pages.get_mut(index).ok_or(SvsmError::Mem)?;
+            entry.get_or_insert(allocate_file_page_ref()?);
+        }
+        Ok(())
+    }
+
+    /// Allocates a full set of backing pages of type PageFile
     ///
     /// # Returns
     ///
     /// `Ok(())` when all pages could be allocated, `Err(SvsmError::Mem)` otherwise
     pub fn alloc_pages(&mut self) -> Result<(), SvsmError> {
-        for _ in 0..self.count {
-            self.pages.push(allocate_file_page_ref()?);
+        for index in 0..self.count {
+            self.alloc_page(index * PAGE_SIZE)?;
         }
-
         Ok(())
     }
 
@@ -75,7 +93,9 @@ impl RawAllocMapping {
     /// Physical address to map for the given offset.
     pub fn map(&self, offset: usize) -> Option<PhysAddr> {
         let pfn = offset >> PAGE_SHIFT;
-        self.pages.get(pfn).map(|r| r.phys_addr())
+        self.pages
+            .get(pfn)
+            .and_then(|r| r.as_ref().map(|r| r.phys_addr()))
     }
 
     /// Unmap call-back - currently nothing to do in this function
@@ -85,5 +105,20 @@ impl RawAllocMapping {
     /// * `_offset` - Byte offset into the mapping
     pub fn unmap(&self, _offset: usize) {
         // Nothing to do for now
+    }
+
+    /// Check if a page has been allocated
+    ///
+    /// # Arguments
+    ///
+    /// * 'offset' - Byte offset into the mapping
+    ///
+    /// # Returns
+    ///
+    /// 'true' if the page containing the offset has been allocated
+    /// otherwise 'false'.
+    pub fn present(&self, offset: usize) -> bool {
+        let pfn = offset >> PAGE_SHIFT;
+        self.pages.get(pfn).and_then(|r| r.as_ref()).is_some()
     }
 }

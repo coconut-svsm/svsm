@@ -10,6 +10,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
 use log;
 
+#[derive(Clone, Copy)]
 pub struct Console {
     writer: Option<&'static dyn Terminal>,
 }

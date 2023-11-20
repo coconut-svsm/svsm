@@ -10,7 +10,7 @@ use crate::elf;
 use crate::error::SvsmError;
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm;
-use crate::mm::pagetable::{set_init_pgtable, PageTable, PageTableRef};
+use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
@@ -30,11 +30,11 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
         let aligned_vaddr_end = vaddr_end.page_align_up();
         let segment_len = aligned_vaddr_end - vaddr_start;
         let flags = if segment.flags.contains(elf::Elf64PhdrFlags::EXECUTE) {
-            PageTable::exec_flags()
+            PTEntryFlags::exec()
         } else if segment.flags.contains(elf::Elf64PhdrFlags::WRITE) {
-            PageTable::data_flags()
+            PTEntryFlags::data()
         } else {
-            PageTable::data_ro_flags()
+            PTEntryFlags::data_ro()
         };
 
         pgtable
@@ -50,7 +50,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
             VirtAddr::from(launch_info.heap_area_virt_start),
             VirtAddr::from(launch_info.heap_area_virt_end()),
             PhysAddr::from(launch_info.heap_area_phys_start),
-            PageTable::data_flags(),
+            PTEntryFlags::data(),
         )
         .expect("Failed to map heap");
 

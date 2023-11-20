@@ -5,8 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::error::SvsmError;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::pagetable::PTEntryFlags;
+use crate::mm::vm::VMR;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 
 use intrusive_collections::rbtree::Link;
@@ -17,6 +19,16 @@ use core::ops::Range;
 extern crate alloc;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+
+/// Information required to resolve a page fault within a virtual mapping
+pub struct VMPageFaultResolution {
+    /// The physical address of a page that must be mapped to the page fault
+    /// virtual address to resolve the page fault.
+    pub paddr: PhysAddr,
+
+    /// The flags to use to map the virtual memory page.
+    pub flags: PTEntryFlags,
+}
 
 pub trait VirtualMapping: core::fmt::Debug {
     /// Request the size of the virtual memory mapping
@@ -48,14 +60,23 @@ pub trait VirtualMapping: core::fmt::Debug {
         // Provide default in case there is nothing to do
     }
 
-    /// Request the PTEntryFlags used for this virtual memory mapping. This is
-    /// a combination of
+    /// Request the PTEntryFlags used for this virtual memory mapping.
     ///
+    /// # Arguments
+    ///
+    /// * 'offset' -> The offset in bytes into the `VirtualMapping`. The flags
+    ///               returned from this function relate to the page at the
+    ///               given offset
+    ///
+    /// # Returns
+    ///
+    /// A combination of:
+
     /// * PTEntryFlags::WRITABLE
     /// * PTEntryFlags::NX,
     /// * PTEntryFlags::ACCESSED
     /// * PTEntryFlags::DIRTY
-    fn pt_flags(&self) -> PTEntryFlags;
+    fn pt_flags(&self, offset: usize) -> PTEntryFlags;
 
     /// Request the page size used for mappings
     ///
@@ -77,6 +98,30 @@ pub trait VirtualMapping: core::fmt::Debug {
     fn shared(&self) -> bool {
         // Shared with the HV - defaults not No
         false
+    }
+
+    /// Handle a page fault that occurred on a virtual memory address within
+    /// this mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * 'vmr' - Virtual memory range that contains the mapping. This
+    ///           [`VirtualMapping`] can use this to insert/remove regions
+    ///           as necessary to handle the page fault.
+    ///
+    /// * `offset` - Offset into the virtual mapping that was the subject of
+    ///              the page fault.
+    ///
+    /// * 'write' - `true` if the fault was due to a write to the memory
+    ///              location, or 'false' if the fault was due to a read.
+    ///
+    fn handle_page_fault(
+        &mut self,
+        _vmr: &VMR,
+        _offset: usize,
+        _write: bool,
+    ) -> Result<VMPageFaultResolution, SvsmError> {
+        Err(SvsmError::Mem)
     }
 }
 
@@ -185,5 +230,9 @@ impl VMM {
 
     pub fn get_mapping_mut(&self) -> WriteLockGuard<Box<dyn VirtualMapping>> {
         self.mapping.get_mut()
+    }
+
+    pub fn get_mapping_clone(&self) -> Arc<Mapping> {
+        self.mapping.clone()
     }
 }

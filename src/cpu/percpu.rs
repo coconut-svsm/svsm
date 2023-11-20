@@ -14,9 +14,9 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMReserved, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -120,7 +120,7 @@ impl IstStacks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -304,7 +304,7 @@ impl PerCpu {
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
@@ -423,8 +423,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.rsp = self.get_top_of_stack().into();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -537,6 +537,35 @@ impl PerCpu {
         self.vrange_2m
             .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
     }
+
+    /// Create a new virtual memory mapping in the PerCpu VMR
+    ///
+    /// # Arguments
+    ///
+    /// * `mapping` - The mapping to insert into the PerCpu VMR
+    ///
+    /// # Returns
+    ///
+    /// On success, a new ['VMRMapping'} that provides a virtual memory address for
+    /// the mapping which remains valid until the ['VRMapping'] is dropped.
+    ///
+    /// On error, an ['SvsmError'].
+    pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping, SvsmError> {
+        VMRMapping::new(&mut self.vm_range, mapping)
+    }
+
+    /// Add the PerCpu virtual range into the provided pagetable
+    ///
+    /// # Arguments
+    ///
+    /// * `pt` - The page table to populate the the PerCpu range into
+    pub fn populate_page_table(&self, pt: &mut PageTableRef) {
+        self.vm_range.populate(pt);
+    }
+
+    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        self.vm_range.handle_page_fault(vaddr, write)
+    }
 }
 
 unsafe impl Sync for PerCpu {}
@@ -549,7 +578,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,

@@ -66,6 +66,7 @@ pub enum ImmutAfterInitError {
 /// }
 /// ```
 ///
+#[derive(Debug)]
 pub struct ImmutAfterInitCell<T> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
@@ -221,6 +222,7 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// }
 /// ```
 ///
+#[derive(Debug)]
 pub struct ImmutAfterInitRef<'a, T: 'a> {
     #[doc(hidden)]
     ptr: ImmutAfterInitCell<*const T>,

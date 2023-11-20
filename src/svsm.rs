@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-#![no_std]
-#![no_main]
+#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(test), no_main)]
 
 extern crate alloc;
 
@@ -37,7 +37,7 @@ use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
+use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
@@ -47,7 +47,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -221,26 +221,29 @@ fn validate_flash() -> Result<(), SvsmError> {
     let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+    let kernel_region = LAUNCH_INFO.kernel_region();
+    let flash_range = {
+        let one_gib = 1024 * 1024 * 1024usize;
+        let start = PhysAddr::from(3 * one_gib);
+        MemoryRegion::new(start, one_gib)
+    };
 
     // Sanity-check flash regions.
     for region in flash_regions.iter() {
         // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlaps(3 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024) {
+        if !region.overlap(&flash_range) {
             panic!("flash region in unexpected region");
         }
 
         // Make sure that no regions overlap with the kernel.
-        if region.overlaps(
-            LAUNCH_INFO.kernel_region_phys_start,
-            LAUNCH_INFO.kernel_region_phys_end,
-        ) {
+        if region.overlap(&kernel_region) {
             panic!("flash region overlaps with kernel");
         }
     }
     // Make sure that regions don't overlap.
     for (i, outer) in flash_regions.iter().enumerate() {
         for inner in flash_regions[..i].iter() {
-            if outer.overlaps(inner.start, inner.end) {
+            if outer.overlap(inner) {
                 panic!("flash regions overlap");
             }
         }
@@ -248,23 +251,18 @@ fn validate_flash() -> Result<(), SvsmError> {
     // Make sure that one regions ends at 4GiB.
     let one_region_ends_at_4gib = flash_regions
         .iter()
-        .any(|region| region.end == 4 * 1024 * 1024 * 1024);
+        .any(|region| region.end() == flash_range.end());
     assert!(one_region_ends_at_4gib);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
-        let pstart = PhysAddr::from(region.start);
-        let pend = PhysAddr::from(region.end);
         log::info!(
             "Flash region {} at {:#018x} size {:018x}",
             i,
-            pstart,
-            pend - pstart
+            region.start(),
+            region.len(),
         );
 
-        for paddr in (pstart.bits()..pend.bits())
-            .step_by(PAGE_SIZE)
-            .map(PhysAddr::from)
-        {
+        for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(
@@ -310,6 +308,17 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
+fn map_and_parse_fw_meta() -> Result<SevFWMetaData, SvsmError> {
+    // Map meta-data location, it starts at 32 bytes below 4GiB
+    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
+    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
+    let vstart = guard.virt_addr().as_ptr::<u8>();
+    // Safety: we just mapped a page, so the size must hold. The type
+    // of the slice elements is `u8` so there are no alignment requirements.
+    let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
+    parse_fw_meta_data(metadata)
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -317,11 +326,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     mapping_info_init(&launch_info);
 
-    init_valid_bitmap_ptr(
-        launch_info.kernel_region_phys_start.try_into().unwrap(),
-        launch_info.kernel_region_phys_end.try_into().unwrap(),
-        vb_ptr,
-    );
+    init_valid_bitmap_ptr(launch_info.kernel_region(), vb_ptr);
 
     load_gdt();
     early_idt_init();
@@ -443,12 +448,12 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = parse_fw_meta_data()
+    let fw_meta = map_and_parse_fw_meta()
         .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
 
     print_fw_meta(&fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta) {
+    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
         panic!("Failed to validate firmware memory: {:#?}", e);
     }
 
@@ -467,6 +472,9 @@ pub extern "C" fn svsm_main() {
     if let Err(e) = launch_fw() {
         panic!("Failed to launch FW: {:#?}", e);
     }
+
+    #[cfg(test)]
+    crate::test_main();
 
     request_loop();
 

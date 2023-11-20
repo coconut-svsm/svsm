@@ -9,12 +9,13 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::{phys_to_virt, virt_to_phys};
 use crate::mm::{
     STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
 };
 use crate::types::PAGE_SIZE;
+use crate::utils::MemoryRegion;
 
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS: usize = 1024;
@@ -22,16 +23,15 @@ const BMP_QWORDS: usize = MAX_STACKS / 64;
 
 #[derive(Debug)]
 struct StackRange {
-    start: VirtAddr,
-    end: VirtAddr,
+    region: MemoryRegion<VirtAddr>,
     alloc_bitmap: [u64; BMP_QWORDS],
 }
 
 impl StackRange {
     pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
+        let region = MemoryRegion::from_addresses(start, end);
         StackRange {
-            start,
-            end,
+            region,
             alloc_bitmap: [0; BMP_QWORDS],
         }
     }
@@ -49,16 +49,16 @@ impl StackRange {
 
             self.alloc_bitmap[i] |= mask;
 
-            return Ok(self.start + ((i * 64 + idx) * STACK_TOTAL_SIZE));
+            return Ok(self.region.start() + ((i * 64 + idx) * STACK_TOTAL_SIZE));
         }
 
         Err(SvsmError::Mem)
     }
 
     pub fn dealloc(&mut self, stack: VirtAddr) {
-        assert!(stack >= self.start && stack < self.end);
+        assert!(self.region.contains(stack));
 
-        let offset = stack - self.start;
+        let offset = stack - self.region.start();
         let idx = offset / (STACK_TOTAL_SIZE);
 
         assert!((offset % (STACK_TOTAL_SIZE)) <= STACK_SIZE);
@@ -80,7 +80,7 @@ static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
 ));
 
 pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), SvsmError> {
-    let flags = PageTable::data_flags();
+    let flags = PTEntryFlags::data();
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);
@@ -123,4 +123,28 @@ pub fn free_stack(stack: VirtAddr) {
     }
 
     STACK_ALLOC.lock().dealloc(stack);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mm::stack::*;
+
+    #[test]
+    fn test_allocate_and_free_stack() {
+        /*
+         * For offline testing purposes, we can't
+         * really map physical memory.
+         */
+        let stack_res = STACK_ALLOC.lock().alloc();
+        let stack = stack_res.unwrap();
+        let base_pointer = stack_base_pointer(stack);
+
+        assert!(stack >= SVSM_SHARED_STACK_BASE);
+        assert!(stack < SVSM_SHARED_STACK_END);
+
+        let bits = stack.bits();
+        assert_eq!(SVSM_SHARED_STACK_BASE, VirtAddr::new(bits));
+        assert_eq!(SVSM_SHARED_STACK_BASE + STACK_SIZE, base_pointer);
+        STACK_ALLOC.lock().dealloc(stack);
+    }
 }

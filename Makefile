@@ -2,27 +2,36 @@ FEATURES ?= "default"
 CARGO_ARGS = --features ${FEATURES}
 
 ifdef RELEASE
-TARGET_PATH="release"
+TARGET_PATH=release
 CARGO_ARGS += --release
 else
-TARGET_PATH="debug"
+TARGET_PATH=debug
 endif
 
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
+TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
 FS_FILE ?= none
+
+C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 
-all: svsm.bin
+all: stage1/kernel.elf svsm.bin
 
 test:
 	cargo test --target=x86_64-unknown-linux-gnu
+
+test-in-svsm: utils/cbit stage1/test-kernel.elf svsm.bin
+	./scripts/test-in-svsm.sh
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
 
 utils/print-meta: utils/print-meta.c
+	cc -O3 -Wall -o $@ $<
+
+utils/cbit: utils/cbit.c
 	cc -O3 -Wall -o $@ $<
 
 stage1/meta.bin: utils/gen_meta utils/print-meta
@@ -36,13 +45,17 @@ stage1/kernel.elf:
 	cargo build ${CARGO_ARGS} --bin svsm
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
 
+stage1/test-kernel.elf:
+	LINK_TEST=1 cargo +nightly test --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ${TEST_KERNEL_ELF}"]'
+	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} stage1/kernel.elf
+
 stage1/svsm-fs.bin:
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) stage1/svsm-fs.bin
 endif
 	touch stage1/svsm-fs.bin
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/kernel.elf stage1/svsm-fs.bin
+stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin
 	cc -c -o $@ stage1/stage1.S
 
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
@@ -57,4 +70,4 @@ clean:
 	cargo clean
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 
-.PHONY: stage1/stage2.bin stage1/kernel.elf svsm.bin clean stage1/svsm-fs.bin
+.PHONY: stage1/stage2.bin stage1/kernel.elf stage1/test-kernel.elf svsm.bin clean stage1/svsm-fs.bin test test-in-svsm

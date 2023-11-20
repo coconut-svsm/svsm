@@ -13,7 +13,7 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
@@ -85,8 +85,8 @@ fn encrypt_mask() -> usize {
 }
 
 /// Returns the exclusive end of the physical address space.
-pub fn max_phys_addr() -> u64 {
-    *MAX_PHYS_ADDR
+pub fn max_phys_addr() -> PhysAddr {
+    PhysAddr::from(*MAX_PHYS_ADDR)
 }
 
 fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
@@ -112,6 +112,32 @@ bitflags! {
         const HUGE      = 1 << 7;
         const GLOBAL        = 1 << 8;
         const NX        = 1 << 63;
+    }
+}
+
+impl PTEntryFlags {
+    pub fn exec() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn data() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::WRITABLE | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn data_ro() -> Self {
+        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_exec() -> Self {
+        Self::PRESENT | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_data() -> Self {
+        Self::PRESENT | Self::WRITABLE | Self::NX | Self::ACCESSED | Self::DIRTY
+    }
+
+    pub fn task_data_ro() -> Self {
+        Self::PRESENT | Self::NX | Self::ACCESSED | Self::DIRTY
     }
 }
 
@@ -179,6 +205,7 @@ impl IndexMut<usize> for PTPage {
     }
 }
 
+#[derive(Debug)]
 pub enum Mapping<'a> {
     Level3(&'a mut PTEntry),
     Level2(&'a mut PTEntry),
@@ -219,43 +246,6 @@ impl PageTable {
 
     pub fn copy_entry(&mut self, other: &PageTable, entry: usize) {
         self.root.entries[entry] = other.root.entries[entry];
-    }
-
-    pub fn exec_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::GLOBAL | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
-    }
-
-    pub fn data_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::GLOBAL
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn data_ro_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::GLOBAL
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_data_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::NX
-            | PTEntryFlags::ACCESSED
-            | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_data_ro_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
-    }
-
-    pub fn task_exec_flags() -> PTEntryFlags {
-        PTEntryFlags::PRESENT | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
     }
 
     fn allocate_page_table() -> Result<*mut PTPage, SvsmError> {
@@ -320,7 +310,7 @@ impl PageTable {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
-    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -337,15 +327,14 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<2>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, pgsize) }
+        unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -362,18 +351,17 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<1>(vaddr);
 
-        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, pgsize) }
+        unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, pgsize: usize) -> Mapping {
+    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
         let flags = entry.flags();
 
-        if pgsize == PAGE_SIZE_2M || flags.contains(PTEntryFlags::PRESENT) {
+        if size == PageSize::Huge || flags.contains(PTEntryFlags::PRESENT) {
             return Mapping::Level1(entry);
         }
 
@@ -387,7 +375,6 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.clear();
         entry.set(set_c_bit(paddr), flags);
 
         let idx = PageTable::index::<0>(vaddr);
@@ -400,9 +387,9 @@ impl PageTable {
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PAGE_SIZE),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE),
+            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Regular),
         }
     }
 
@@ -412,8 +399,8 @@ impl PageTable {
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE_2M),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE_2M),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
         }
     }
 
@@ -682,7 +669,7 @@ impl PageTable {
                     vaddr = vaddr + PAGE_SIZE_2M;
                 }
                 _ => {
-                    log::debug!("Can't unmap - address not mapped {:#x}", vaddr);
+                    log::error!("Can't unmap - address not mapped {:#x}", vaddr);
                 }
             }
         }
@@ -773,7 +760,7 @@ impl RawPageTablePart {
         Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
     }
 
-    fn free_lvl1(page: &mut PTPage) {
+    fn free_lvl1(page: &PTPage) {
         for idx in 0..ENTRY_COUNT {
             let entry = page[idx];
 
@@ -783,7 +770,7 @@ impl RawPageTablePart {
         }
     }
 
-    fn free_lvl2(page: &mut PTPage) {
+    fn free_lvl2(page: &PTPage) {
         for idx in 0..ENTRY_COUNT {
             let entry = page[idx];
 
@@ -794,8 +781,8 @@ impl RawPageTablePart {
         }
     }
 
-    fn free(&mut self) {
-        RawPageTablePart::free_lvl2(&mut self.page);
+    fn free(&self) {
+        RawPageTablePart::free_lvl2(&self.page);
     }
 
     fn address(&self) -> PhysAddr {
@@ -811,8 +798,8 @@ impl RawPageTablePart {
 
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
-            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PAGE_SIZE),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE),
+            Mapping::Level1(entry) => PageTable::alloc_pte_lvl1(entry, vaddr, PageSize::Regular),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Regular),
             Mapping::Level3(_) => panic!("PT level 3 not possible in PageTablePart"),
         }
     }
@@ -823,8 +810,8 @@ impl RawPageTablePart {
         match m {
             Mapping::Level0(entry) => Mapping::Level0(entry),
             Mapping::Level1(entry) => Mapping::Level1(entry),
-            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PAGE_SIZE_2M),
-            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PAGE_SIZE_2M),
+            Mapping::Level2(entry) => PageTable::alloc_pte_lvl2(entry, vaddr, PageSize::Huge),
+            Mapping::Level3(entry) => PageTable::alloc_pte_lvl3(entry, vaddr, PageSize::Huge),
         }
     }
 

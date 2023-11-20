@@ -6,6 +6,15 @@
 
 #![no_std]
 
+// FIXME: Re-enable these when MM code has implemented the needed traits
+//#![deny(missing_copy_implementations)]
+//#![deny(missing_debug_implementations)]
+
+#![cfg_attr(all(test, test_in_svsm), no_main)]
+#![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
+#![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]
+#![cfg_attr(all(test, test_in_svsm), reexport_test_harness_main = "test_main")]
+
 pub mod acpi;
 pub mod address;
 pub mod console;
@@ -33,3 +42,15 @@ pub mod utils;
 
 #[test]
 fn test_nop() {}
+
+// When running tests inside the SVSM:
+// Build the kernel entrypoint.
+#[cfg(all(test, test_in_svsm))]
+#[path = "svsm.rs"]
+pub mod svsm_bin;
+// The kernel expects to access this crate as svsm, so reexport.
+#[cfg(all(test, test_in_svsm))]
+extern crate self as svsm;
+// Include a module containing the test runner.
+#[cfg(all(test, test_in_svsm))]
+pub mod testing;
