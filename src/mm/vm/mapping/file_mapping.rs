@@ -17,7 +17,9 @@ use alloc::vec::Vec;
 use super::{Mapping, VMPhysMem};
 
 use super::{RawAllocMapping, VMPageFaultResolution, VirtualMapping};
-use crate::address::{Address, PhysAddr};
+#[cfg(test)]
+use crate::address::Address;
+use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::VMR;
@@ -152,7 +154,7 @@ fn copy_page(
     let page_size = usize::from(page_size);
     let temp_map = VMPhysMem::new(paddr_dst, page_size, true);
     let vaddr_new_page = vmr.insert(Arc::new(Mapping::new(temp_map)))?;
-    let slice = unsafe { from_raw_parts_mut(vaddr_new_page.bits() as *mut u8, page_size) };
+    let slice = unsafe { from_raw_parts_mut(vaddr_new_page.as_mut_ptr::<u8>(), page_size) };
     file.seek(offset);
     file.read(slice)?;
     vmr.remove(vaddr_new_page)?;
