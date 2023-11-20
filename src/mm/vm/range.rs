@@ -403,47 +403,39 @@ impl VMR {
         // be done as a separate step, returning a reference to the mapping to
         // avoid issues with the mapping page fault handler needing mutable access
         // to `self.tree` via `insert()`.
-        let pf_mapping = {
+        let (pf_mapping, start) = {
             let tree = self.tree.lock_read();
             let addr = vaddr.pfn();
             let cursor = tree.find(&addr);
-            if let Some(node) = cursor.get() {
-                let (start, end) = node.range();
-                if vaddr >= start && vaddr < end {
-                    Some((node.get_mapping_clone(), start))
-                } else {
-                    None
-                }
-            } else {
-                None
+            let node = cursor.get().ok_or(SvsmError::Mem)?;
+            let (start, end) = node.range();
+            if vaddr < start || vaddr >= end {
+                return Err(SvsmError::Mem);
             }
+            (node.get_mapping_clone(), start)
         };
 
-        if let Some((pf_mapping, start)) = pf_mapping {
-            let resolution = pf_mapping
-                .get_mut()
-                .handle_page_fault(self, vaddr - start, write)?;
-            // The handler has resolved the page fault by allocating a new page.
-            // Update the page table accordingly.
-            let vaddr = vaddr.page_align();
-            let page_size = pf_mapping.get().page_size();
-            let shared = pf_mapping.get().shared();
-            let mut pgtbl_parts = self.pgtbl_parts.lock_write();
+        let resolution = pf_mapping
+            .get_mut()
+            .handle_page_fault(self, vaddr - start, write)?;
+        // The handler has resolved the page fault by allocating a new page.
+        // Update the page table accordingly.
+        let vaddr = vaddr.page_align();
+        let page_size = pf_mapping.get().page_size();
+        let shared = pf_mapping.get().shared();
+        let mut pgtbl_parts = self.pgtbl_parts.lock_write();
 
-            let (rstart, _) = self.virt_range();
-            let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
-            match page_size {
-                PageSize::Regular => {
-                    pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?
-                }
-                PageSize::Huge => {
-                    pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?
-                }
+        let (rstart, _) = self.virt_range();
+        let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
+        match page_size {
+            PageSize::Regular => {
+                pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?
             }
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
+            PageSize::Huge => {
+                pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?
+            }
         }
+        Ok(())
     }
 }
 
