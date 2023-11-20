@@ -10,7 +10,7 @@ use crate::address::VirtAddr;
 pub const _IST_INVALID: usize = 0;
 pub const IST_DF: usize = 1;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]
 pub struct X86Tss {
     reserved1: u32,

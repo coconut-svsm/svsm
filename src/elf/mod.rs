@@ -35,7 +35,7 @@ use core::mem;
 ///
 /// assert_eq!(error_message, "invalid ELF address range");
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ElfError {
     FileTooShort,
 
@@ -204,7 +204,7 @@ pub type Elf64char = u8;
 ///
 /// In mathematical notation, the range is [vaddr_begin, vaddr_end)
 ///
-#[derive(PartialEq, Eq, Debug, Default)]
+#[derive(PartialEq, Eq, Debug, Default, Clone, Copy)]
 pub struct Elf64AddrRange {
     pub vaddr_begin: Elf64Addr,
     pub vaddr_end: Elf64Addr,
@@ -330,7 +330,7 @@ impl cmp::PartialOrd for Elf64AddrRange {
 
 /// This struct represents a parsed 64-bit ELF file. It contains information
 /// about the ELF file's header, load segments, dynamic section, and more.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Elf64FileRange {
     pub offset_begin: usize,
     pub offset_end: usize,
@@ -391,11 +391,11 @@ impl<'a> Elf64File<'a> {
 
         // Verify that the program header table is within the file bounds.
         let phdrs_off = usize::try_from(elf_hdr.e_phoff).map_err(|_| ElfError::FileTooShort)?;
-        let phdr_size = usize::try_from(elf_hdr.e_phentsize).unwrap();
+        let phdr_size = usize::from(elf_hdr.e_phentsize);
         if phdr_size < 56 {
             return Err(ElfError::InvalidPhdrSize);
         }
-        let phdrs_num = usize::try_from(elf_hdr.e_phnum).unwrap();
+        let phdrs_num = usize::from(elf_hdr.e_phnum);
         let phdrs_size = phdrs_num
             .checked_mul(phdr_size)
             .ok_or(ElfError::FileTooShort)?;
@@ -407,7 +407,7 @@ impl<'a> Elf64File<'a> {
         }
 
         // Verify that the section header table is within the file bounds.
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         if shdr_size < 64 {
             return Err(ElfError::InvalidShdrSize);
         }
@@ -515,8 +515,8 @@ impl<'a> Elf64File<'a> {
     /// The ELF Program Header (Phdr) at the specified index.
     fn read_phdr_from_file(elf_file_buf: &'a [u8], elf_hdr: &Elf64Hdr, i: Elf64Half) -> Elf64Phdr {
         let phdrs_off = usize::try_from(elf_hdr.e_phoff).unwrap();
-        let phdr_size = usize::try_from(elf_hdr.e_phentsize).unwrap();
-        let i = usize::try_from(i).unwrap();
+        let phdr_size = usize::from(elf_hdr.e_phentsize);
+        let i = usize::from(i);
         let phdr_off = phdrs_off + i * phdr_size;
         let phdr_buf = &elf_file_buf[phdr_off..(phdr_off + phdr_size)];
         Elf64Phdr::read(phdr_buf)
@@ -588,7 +588,7 @@ impl<'a> Elf64File<'a> {
     ) -> Result<(), ElfError> {
         // Verify that the section header table is within the file bounds.
         let shdrs_off = usize::try_from(elf_hdr.e_shoff).map_err(|_| ElfError::FileTooShort)?;
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         let shdrs_num = usize::try_from(elf_hdr.e_shnum).unwrap();
         let shdrs_size = shdrs_num
             .checked_mul(shdr_size)
@@ -618,7 +618,7 @@ impl<'a> Elf64File<'a> {
     /// The ELF Section Header (Shdr) at the specified index.
     fn read_shdr_from_file(elf_file_buf: &'a [u8], elf_hdr: &Elf64Hdr, i: Elf64Word) -> Elf64Shdr {
         let shdrs_off = usize::try_from(elf_hdr.e_shoff).unwrap();
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         let i = usize::try_from(i).unwrap();
         let shdr_off = shdrs_off + i * shdr_size;
         let shdr_buf = &elf_file_buf[shdr_off..(shdr_off + shdr_size)];
@@ -1005,7 +1005,7 @@ impl<'a> Elf64File<'a> {
 
 /// Header of the ELF64 file, including fields describing properties such
 /// as type, machine architecture, entry point, etc.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Elf64Hdr {
     #[allow(unused)]
     /// An array of 16 bytes representing the ELF identification, including the ELF magic number
@@ -1786,6 +1786,7 @@ impl Elf64Dynamic {
 }
 
 /// Information about the allocation of a virtual address range
+#[derive(Clone, Copy, Debug)]
 pub struct Elf64ImageLoadVaddrAllocInfo {
     /// The virtual address (vaddr) range to allocate
     pub range: Elf64AddrRange,
@@ -1795,6 +1796,7 @@ pub struct Elf64ImageLoadVaddrAllocInfo {
 }
 
 /// Represents an ELF64 image load segment
+#[derive(Debug)]
 pub struct Elf64ImageLoadSegment<'a> {
     /// The virtual address (vaddr) range covering by this segment
     pub vaddr_range: Elf64AddrRange,
@@ -1805,6 +1807,7 @@ pub struct Elf64ImageLoadSegment<'a> {
 }
 
 /// An iterator over ELF64 image load segments within an ELF file
+#[derive(Debug)]
 pub struct Elf64ImageLoadSegmentIterator<'a> {
     elf_file: &'a Elf64File<'a>,
     load_base: Elf64Xword,
@@ -1937,6 +1940,7 @@ impl Elf64Sym {
 
 /// Represents an ELF64 symbol table ([`Elf64Symtab`]) containing
 /// symbols used within the ELF file.
+#[derive(Debug)]
 struct Elf64Symtab<'a> {
     /// The underlying buffer containing the symbol table data
     syms_buf: &'a [u8],
@@ -1997,7 +2001,7 @@ impl<'a> Elf64Symtab<'a> {
 }
 
 /// Represents a relocation entry in an ELF64 file ([`Elf64Rela`])
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Elf64Rela {
     /// Offset within the section where the relocation should be applied
     r_offset: Elf64Addr,
@@ -2040,6 +2044,7 @@ impl Elf64Rela {
 }
 
 /// Represents a collection of relocation entries in an ELF64 file ([`Elf64Relas`])
+#[derive(Debug)]
 struct Elf64Relas<'a> {
     /// The underlying buffer containing the relocation entries
     relas_buf: &'a [u8],
@@ -2092,6 +2097,7 @@ impl<'a> Elf64Relas<'a> {
 }
 
 /// Represents an iterator over section headers in an ELF64 file
+#[derive(Debug)]
 pub struct Elf64ShdrIterator<'a> {
     /// The ELF64 file from which section headers are being iterated
     elf_file: &'a Elf64File<'a>,
@@ -2135,7 +2141,7 @@ impl<'a> Iterator for Elf64ShdrIterator<'a> {
 }
 
 /// Represents a relocation operation
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Elf64RelocOp {
     /// Destination address where the relocation operation should be applied
     pub dst: Elf64Addr,
@@ -2169,6 +2175,7 @@ pub trait Elf64RelocProcessor {
 }
 
 /// Relocation processor specifically for x86_64 ELF files.
+#[derive(Clone, Copy, Debug)]
 pub struct Elf64X86RelocProcessor;
 
 impl Elf64X86RelocProcessor {
@@ -2263,6 +2270,7 @@ impl Elf64RelocProcessor for Elf64X86RelocProcessor {
 }
 
 /// An iterator that applies relocation operations to ELF64 relocations
+#[derive(Debug)]
 pub struct Elf64AppliedRelaIterator<'a, RP: Elf64RelocProcessor> {
     /// The ELF64 relocation processor used for applying relocations
     rela_proc: RP,

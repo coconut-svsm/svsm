@@ -14,7 +14,7 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -120,7 +120,7 @@ impl IstStacks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -304,7 +304,7 @@ impl PerCpu {
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
@@ -423,8 +423,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.rsp = self.get_top_of_stack().into();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -574,7 +574,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,

@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::pagetable::PageTable;
+use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::flush_address_sync;
@@ -14,6 +14,7 @@ use crate::mm::virtualrange::{
 };
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
+#[derive(Debug)]
 struct RawPTMappingGuard {
     start: VirtAddr,
     end: VirtAddr,
@@ -25,6 +26,7 @@ impl RawPTMappingGuard {
     }
 }
 
+#[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
     mapping: Option<RawPTMappingGuard>,
@@ -43,7 +45,7 @@ impl PerCPUPageMappingGuard {
         assert!((paddr_start.bits() & align_mask) == 0);
         assert!((paddr_end.bits() & align_mask) == 0);
 
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
         let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {

@@ -9,7 +9,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::{phys_to_virt, virt_to_phys};
 use crate::mm::{
     STACK_PAGES, STACK_SIZE, STACK_TOTAL_SIZE, SVSM_SHARED_STACK_BASE, SVSM_SHARED_STACK_END,
@@ -80,7 +80,7 @@ static STACK_ALLOC: SpinLock<StackRange> = SpinLock::new(StackRange::new(
 ));
 
 pub fn allocate_stack_addr(stack: VirtAddr, pgtable: &mut PageTableRef) -> Result<(), SvsmError> {
-    let flags = PageTable::data_flags();
+    let flags = PTEntryFlags::data();
     for i in 0..STACK_PAGES {
         let page = allocate_zeroed_page()?;
         let paddr = virt_to_phys(page);

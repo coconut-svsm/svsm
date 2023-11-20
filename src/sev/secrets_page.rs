@@ -7,7 +7,7 @@
 use crate::address::VirtAddr;
 use crate::sev::vmsa::VMPL_MAX;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct SecretsPage {
     pub version: u32,
