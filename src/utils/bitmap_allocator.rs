@@ -22,7 +22,7 @@ pub trait BitmapAllocator {
 
 pub type BitmapAllocator1024 = BitmapAllocatorTree<BitmapAllocator64>;
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct BitmapAllocator64 {
     bits: u64,
 }
@@ -61,7 +61,9 @@ impl BitmapAllocator for BitmapAllocator64 {
 
     fn next_free(&self, start: usize) -> Option<usize> {
         assert!(start < Self::CAPACITY);
-        (start..Self::CAPACITY).find(|offset| ((1 << offset) & self.bits) == 0)
+        let mask: u64 = (1 << start) - 1;
+        let idx = (self.bits | mask).trailing_ones() as usize;
+        (idx < Self::CAPACITY).then_some(idx)
     }
 
     fn get(&self, offset: usize) -> bool {
@@ -78,13 +80,7 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 
     fn used(&self) -> usize {
-        let mut count = 0;
-        let mut bits = self.bits;
-        while bits != 0 {
-            count += 1;
-            bits &= bits - 1;
-        }
-        count
+        self.bits.count_ones() as usize
     }
 }
 
@@ -98,25 +94,7 @@ impl BitmapAllocatorTree<BitmapAllocator64> {
     pub const fn new() -> Self {
         Self {
             bits: u16::MAX,
-            // FIXME: Is there a better way of doing this in rust?
-            child: [
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-                BitmapAllocator64::new(),
-            ],
+            child: [BitmapAllocator64::new(); 16],
         }
     }
 }
@@ -186,13 +164,7 @@ impl<T: BitmapAllocator + Debug> BitmapAllocator for BitmapAllocatorTree<T> {
     }
 
     fn used(&self) -> usize {
-        let mut count = 0;
-        for index in 0..16 {
-            if !self.child[index].empty() {
-                count += self.child[index].used();
-            }
-        }
-        count
+        self.child.iter().map(|c| c.used()).sum()
     }
 }
 
