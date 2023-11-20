@@ -1164,7 +1164,7 @@ impl Slab {
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
 #[derive(Debug)]
-struct SvsmAllocator {
+pub struct SvsmAllocator {
     slabs: [SpinLock<Slab>; 7],
 }
 
@@ -1172,7 +1172,7 @@ impl SvsmAllocator {
     const MIN_SLAB_SIZE: u16 = 32;
     const MIN_ALIGNMENT: u32 = Self::MIN_SLAB_SIZE.trailing_zeros();
 
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             slabs: [
                 SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE)),
