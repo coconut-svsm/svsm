@@ -190,10 +190,9 @@ impl VirtualMapping for VMFileMapping {
             return None;
         }
         if let Some(write_copy) = &self.write_copy {
-            let write_addr = write_copy.map(offset);
-            if write_addr.is_some() {
-                return write_addr;
-            }
+            if let Some(write_addr) = write_copy.map(offset) {
+                return Some(write_addr);
+            };
         }
         self.pages[page_index].as_ref().map(|p| p.phys_addr())
     }
