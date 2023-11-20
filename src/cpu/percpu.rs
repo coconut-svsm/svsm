@@ -423,8 +423,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.rsp = self.get_top_of_stack().into();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
     pub fn unmap_guest_vmsa(&self) {

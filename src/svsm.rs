@@ -329,8 +329,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     mapping_info_init(&launch_info);
 
     init_valid_bitmap_ptr(
-        launch_info.kernel_region_phys_start.try_into().unwrap(),
-        launch_info.kernel_region_phys_end.try_into().unwrap(),
+        launch_info.kernel_region_phys_start.into(),
+        launch_info.kernel_region_phys_end.into(),
         vb_ptr,
     );
 

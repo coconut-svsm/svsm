@@ -391,11 +391,11 @@ impl<'a> Elf64File<'a> {
 
         // Verify that the program header table is within the file bounds.
         let phdrs_off = usize::try_from(elf_hdr.e_phoff).map_err(|_| ElfError::FileTooShort)?;
-        let phdr_size = usize::try_from(elf_hdr.e_phentsize).unwrap();
+        let phdr_size = usize::from(elf_hdr.e_phentsize);
         if phdr_size < 56 {
             return Err(ElfError::InvalidPhdrSize);
         }
-        let phdrs_num = usize::try_from(elf_hdr.e_phnum).unwrap();
+        let phdrs_num = usize::from(elf_hdr.e_phnum);
         let phdrs_size = phdrs_num
             .checked_mul(phdr_size)
             .ok_or(ElfError::FileTooShort)?;
@@ -407,7 +407,7 @@ impl<'a> Elf64File<'a> {
         }
 
         // Verify that the section header table is within the file bounds.
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         if shdr_size < 64 {
             return Err(ElfError::InvalidShdrSize);
         }
@@ -515,8 +515,8 @@ impl<'a> Elf64File<'a> {
     /// The ELF Program Header (Phdr) at the specified index.
     fn read_phdr_from_file(elf_file_buf: &'a [u8], elf_hdr: &Elf64Hdr, i: Elf64Half) -> Elf64Phdr {
         let phdrs_off = usize::try_from(elf_hdr.e_phoff).unwrap();
-        let phdr_size = usize::try_from(elf_hdr.e_phentsize).unwrap();
-        let i = usize::try_from(i).unwrap();
+        let phdr_size = usize::from(elf_hdr.e_phentsize);
+        let i = usize::from(i);
         let phdr_off = phdrs_off + i * phdr_size;
         let phdr_buf = &elf_file_buf[phdr_off..(phdr_off + phdr_size)];
         Elf64Phdr::read(phdr_buf)
@@ -588,7 +588,7 @@ impl<'a> Elf64File<'a> {
     ) -> Result<(), ElfError> {
         // Verify that the section header table is within the file bounds.
         let shdrs_off = usize::try_from(elf_hdr.e_shoff).map_err(|_| ElfError::FileTooShort)?;
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         let shdrs_num = usize::try_from(elf_hdr.e_shnum).unwrap();
         let shdrs_size = shdrs_num
             .checked_mul(shdr_size)
@@ -618,7 +618,7 @@ impl<'a> Elf64File<'a> {
     /// The ELF Section Header (Shdr) at the specified index.
     fn read_shdr_from_file(elf_file_buf: &'a [u8], elf_hdr: &Elf64Hdr, i: Elf64Word) -> Elf64Shdr {
         let shdrs_off = usize::try_from(elf_hdr.e_shoff).unwrap();
-        let shdr_size = usize::try_from(elf_hdr.e_shentsize).unwrap();
+        let shdr_size = usize::from(elf_hdr.e_shentsize);
         let i = usize::try_from(i).unwrap();
         let shdr_off = shdrs_off + i * shdr_size;
         let shdr_buf = &elf_file_buf[shdr_off..(shdr_off + shdr_size)];
