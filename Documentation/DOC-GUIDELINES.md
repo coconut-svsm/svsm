@@ -79,10 +79,10 @@ impl cmp::PartialOrd for Elf64AddrRange {
 /// This function is marked as `unsafe` because it uses unsafe assembly.
 /// It is the responsibility of the caller to ensure the following:
 ///
-/// 1. The pointer `data` must be valid and properly allocated memory.
-/// 2. The length `len` must accurately represent the number of elements in
+/// 1. `src` and `dst` must point to valid memory.
+/// 2. The length `len` must accurately represent the number of bytes in
 ///   `data`.
-/// 3. The caller must also ensure that the memory is correctly initialized
+/// 3. `src` must be correctly initialized.
 ///
 pub unsafe fn example_memcpy<T>(dest: *mut T, src: *const T, len: usize) {
     // Ensure the pointers are not null
@@ -106,9 +106,7 @@ pub unsafe fn example_memcpy<T>(dest: *mut T, src: *const T, len: usize) {
 ```rust
 /// # Panics
 ///
-/// This function does not panic under normal circumstances. However, if
-/// the length `len` is greater than the allocated memory's actual capacity,
-/// it will panic.
+/// The function will panic if the provided length exceeds the buffer's capacity.
 ///
 pub fn my_function(buffer: &mut Vec<u8>, len: usize) {
     if len > buffer.capacity() {
