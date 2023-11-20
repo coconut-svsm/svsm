@@ -22,7 +22,7 @@ use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::VMR;
 use crate::mm::PageRef;
-use crate::mm::{pagetable::PageTable, PAGE_SIZE};
+use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
 
@@ -49,7 +49,7 @@ impl VirtualMapping for VMWriteFileMapping {
     }
 
     fn pt_flags(&self, _offset: usize) -> crate::mm::pagetable::PTEntryFlags {
-        PageTable::task_data_flags()
+        PTEntryFlags::task_data()
     }
 }
 
@@ -196,19 +196,19 @@ impl VirtualMapping for VMFileMapping {
 
     fn pt_flags(&self, offset: usize) -> crate::mm::pagetable::PTEntryFlags {
         match self.permission {
-            VMFileMappingPermission::Read => PageTable::task_data_ro_flags(),
+            VMFileMappingPermission::Read => PTEntryFlags::task_data_ro(),
             VMFileMappingPermission::Write => {
                 if let Some(write_copy) = &self.write_copy {
                     if write_copy.get_alloc().present(offset) {
-                        PageTable::task_data_flags()
+                        PTEntryFlags::task_data()
                     } else {
-                        PageTable::task_data_ro_flags()
+                        PTEntryFlags::task_data_ro()
                     }
                 } else {
-                    PageTable::task_data_ro_flags()
+                    PTEntryFlags::task_data_ro()
                 }
             }
-            VMFileMappingPermission::Execute => PageTable::task_exec_flags(),
+            VMFileMappingPermission::Execute => PTEntryFlags::task_exec(),
         }
     }
 
@@ -235,7 +235,7 @@ impl VirtualMapping for VMFileMapping {
                     copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
                     return Ok(VMPageFaultResolution {
                         paddr: paddr_new_page,
-                        flags: PageTable::task_data_flags(),
+                        flags: PTEntryFlags::task_data(),
                     });
                 }
             }
