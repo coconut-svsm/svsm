@@ -3,7 +3,10 @@ Documentation Style
 
 In this project, code documentation is generated using Rustdoc, which
 automatically generates interactive web documentation. Here are some
-guidelines for documenting code effectively:
+guidelines for documenting code effectively.
+
+General Guidelines
+------------------
 
 - Follow [Rust's official indications.](https://doc.rust-lang.org/rustdoc/how-to-write-documentation.html)
 
@@ -30,11 +33,14 @@ fn main(a: M) -> B {
   add a link to the type with square brackets (e.g. [\`RWLock\`],
   [\`WriteLockGuard\`]).
 
-- When documenting a function, examples of usage relying on code blocks
-  can help understand how to use your code. However, keep in mind that
-  said code will be built and ran during tests, so it also needs to be
-  maintained -- keep it simple. Here is an example of function
-  documentation with Arguments, Returns and Examples:
+Doctests
+---------
+
+- The Rust toolchain supports running documentation examples as integration
+  tests. Examples of usage relying on code blocks can help understand how to
+  use your code. However, keep in mind that said code will be built and ran,
+  so it also needs to be maintained -- keep it simple. Here is an example of
+  function documentation with Arguments, Returns and Examples:
 
 ```rust
 
@@ -68,6 +74,9 @@ impl cmp::PartialOrd for Elf64AddrRange {
     fn partial_cmp(&self, other: &Elf64AddrRange) -> Option<cmp::Ordering> {
 	//(...)
 ```
+
+Safety and Panics
+------------------
 
 - Add section "Safety" if necessary to clarify what is unsafe, specially in
   public (`pub`) interfaces, when using `unsafe` blocks or in cases where
