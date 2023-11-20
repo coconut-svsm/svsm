@@ -251,7 +251,7 @@ mod tests {
         fs::{create, initialize_fs, open, uninitialize_fs, FileHandle},
         mm::{
             alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
-            pagetable::PageTable,
+            pagetable::PTEntryFlags,
             vm::{VirtualMapping, VMR},
         },
         types::PAGE_SIZE,
@@ -515,7 +515,7 @@ mod tests {
         let vmr = VMR::new(
             VirtAddr::from(0usize),
             VirtAddr::from(16usize * PAGE_SIZE),
-            PageTable::data_flags(),
+            PTEntryFlags::data(),
         );
         let res = vm
             .handle_page_fault(&vmr, PAGE_SIZE, true)
@@ -561,7 +561,7 @@ mod tests {
         let vmr = VMR::new(
             VirtAddr::from(0usize),
             VirtAddr::from(16usize * PAGE_SIZE),
-            PageTable::data_flags(),
+            PTEntryFlags::data(),
         );
         let res = vm
             .handle_page_fault(&vmr, PAGE_SIZE * 2 + 1, true)
