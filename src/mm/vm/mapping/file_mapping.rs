@@ -23,7 +23,7 @@ use crate::fs::FileHandle;
 use crate::mm::vm::VMR;
 use crate::mm::PageRef;
 use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
-use crate::types::PAGE_SHIFT;
+use crate::types::{PageSize, PAGE_SHIFT};
 use crate::utils::align_up;
 
 #[derive(Debug)]
@@ -147,8 +147,9 @@ fn copy_page(
     file: &FileHandle,
     offset: usize,
     paddr_dst: PhysAddr,
-    page_size: usize,
+    page_size: PageSize,
 ) -> Result<(), SvsmError> {
+    let page_size = usize::from(page_size);
     let temp_map = VMPhysMem::new(paddr_dst, page_size, true);
     let vaddr_new_page = vmr.insert(Arc::new(Mapping::new(temp_map)))?;
     let slice = unsafe { from_raw_parts_mut(vaddr_new_page.bits() as *mut u8, page_size) };
@@ -164,8 +165,9 @@ fn copy_page(
     file: &FileHandle,
     offset: usize,
     paddr_dst: PhysAddr,
-    page_size: usize,
+    page_size: PageSize,
 ) -> Result<(), SvsmError> {
+    let page_size = usize::from(page_size);
     // In the test environment the physical address is actually the virtual
     // address. We can take advantage of this to copy the file contents into the
     // mock physical address without worrying about VMRs and page tables.
@@ -219,13 +221,14 @@ impl VirtualMapping for VMFileMapping {
         write: bool,
     ) -> Result<VMPageFaultResolution, SvsmError> {
         let page_size = self.page_size();
+        let page_size_bytes = usize::from(page_size);
         if write {
             if let Some(write_copy) = self.write_copy.as_mut() {
                 // This is a writeable region with copy-on-write access. The
                 // page fault will have occurred because the page has not yet
                 // been allocated. Allocate a page and copy the readonly source
                 // page into the new writeable page.
-                let offset_aligned = offset & !(page_size - 1);
+                let offset_aligned = offset & !(page_size_bytes - 1);
                 if write_copy
                     .get_alloc_mut()
                     .alloc_page(offset_aligned)

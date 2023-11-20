@@ -9,7 +9,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart, PageTableRef};
-use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_down, align_up};
 
 use core::cmp::max;
@@ -168,13 +168,16 @@ impl VMR {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
             if let Some(paddr) = mapping.map(offset) {
                 let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
-                if page_size == PAGE_SIZE {
-                    pgtbl_parts[idx].map_4k(vmm_start + offset, paddr, pt_flags, shared)?;
-                } else if page_size == PAGE_SIZE_2M {
-                    pgtbl_parts[idx].map_2m(vmm_start + offset, paddr, pt_flags, shared)?;
+                match page_size {
+                    PageSize::Regular => {
+                        pgtbl_parts[idx].map_4k(vmm_start + offset, paddr, pt_flags, shared)?
+                    }
+                    PageSize::Huge => {
+                        pgtbl_parts[idx].map_2m(vmm_start + offset, paddr, pt_flags, shared)?
+                    }
                 }
             }
-            offset += page_size;
+            offset += usize::from(page_size);
         }
 
         Ok(())
@@ -195,17 +198,16 @@ impl VMR {
 
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
-            let result = if page_size == PAGE_SIZE {
-                pgtbl_parts[idx].unmap_4k(vmm_start + offset)
-            } else {
-                pgtbl_parts[idx].unmap_2m(vmm_start + offset)
+            let result = match page_size {
+                PageSize::Regular => pgtbl_parts[idx].unmap_4k(vmm_start + offset),
+                PageSize::Huge => pgtbl_parts[idx].unmap_2m(vmm_start + offset),
             };
 
             if result.is_some() {
                 mapping.unmap(offset);
             }
 
-            offset += page_size;
+            offset += usize::from(page_size);
         }
     }
 
@@ -430,10 +432,13 @@ impl VMR {
 
             let (rstart, _) = self.virt_range();
             let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
-            if page_size == PAGE_SIZE {
-                pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?;
-            } else if page_size == PAGE_SIZE_2M {
-                pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?;
+            match page_size {
+                PageSize::Regular => {
+                    pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?
+                }
+                PageSize::Huge => {
+                    pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?
+                }
             }
             Ok(())
         } else {
