@@ -223,28 +223,27 @@ impl VirtualMapping for VMFileMapping {
     ) -> Result<VMPageFaultResolution, SvsmError> {
         let page_size = self.page_size();
         let page_size_bytes = usize::from(page_size);
-        if write {
-            if let Some(write_copy) = self.write_copy.as_mut() {
-                // This is a writeable region with copy-on-write access. The
-                // page fault will have occurred because the page has not yet
-                // been allocated. Allocate a page and copy the readonly source
-                // page into the new writeable page.
-                let offset_aligned = offset & !(page_size_bytes - 1);
-                if write_copy
-                    .get_alloc_mut()
-                    .alloc_page(offset_aligned)
-                    .is_ok()
-                {
-                    let paddr_new_page = write_copy.map(offset_aligned).ok_or(SvsmError::Mem)?;
-                    copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
-                    return Ok(VMPageFaultResolution {
-                        paddr: paddr_new_page,
-                        flags: PTEntryFlags::task_data(),
-                    });
-                }
-            }
+
+        if !write {
+            return Err(SvsmError::Mem);
         }
-        Err(SvsmError::Mem)
+
+        let Some(write_copy) = self.write_copy.as_mut() else {
+            return Err(SvsmError::Mem);
+        };
+
+        // This is a writeable region with copy-on-write access. The
+        // page fault will have occurred because the page has not yet
+        // been allocated. Allocate a page and copy the readonly source
+        // page into the new writeable page.
+        let offset_aligned = offset & !(page_size_bytes - 1);
+        write_copy.get_alloc_mut().alloc_page(offset_aligned)?;
+        let paddr_new_page = write_copy.map(offset_aligned).ok_or(SvsmError::Mem)?;
+        copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
+        Ok(VMPageFaultResolution {
+            paddr: paddr_new_page,
+            flags: PTEntryFlags::task_data(),
+        })
     }
 }
 
