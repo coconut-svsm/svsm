@@ -120,7 +120,7 @@ impl IstStacks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -574,7 +574,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,

@@ -25,7 +25,7 @@ pub struct X86GeneralRegs {
 }
 
 #[repr(C, packed)]
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct X86SegmentRegs {
     pub cs: usize,
     pub ds: usize,

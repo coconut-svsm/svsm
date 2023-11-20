@@ -29,7 +29,7 @@ const MAX_FW_CFG_FILES: u32 = 0x1000;
 //use crate::println;
 
 #[non_exhaustive]
-
+#[derive(Debug)]
 pub struct FwCfg<'a> {
     driver: &'a dyn IOPort,
 }
@@ -52,7 +52,7 @@ impl From<FwCfgError> for SvsmError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct FwCfgFile {
     size: u32,
     selector: u16,

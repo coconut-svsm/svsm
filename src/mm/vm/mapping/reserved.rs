@@ -12,7 +12,7 @@ use super::{Mapping, VirtualMapping};
 /// Reserve a region of address space so that no other mapping will be
 /// established there. The map function for this type will always return
 /// `None`.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct VMReserved {
     /// Size in bytes to reserve. Must be aligned to PAGE_SIZE
     size: usize,

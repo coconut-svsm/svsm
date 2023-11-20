@@ -41,14 +41,14 @@ const OFF_VERSION: u16 = 0xffa;
 const OFF_USAGE: u16 = 0xffc;
 
 #[repr(C, packed)]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
     reserved: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PageStateChangeOp {
     PscPrivate,
     PscShared,
@@ -70,6 +70,7 @@ const PSC_FLAG_HUGE: u64 = 1 << PSC_FLAG_HUGE_SHIFT;
 const GHCB_BUFFER_SIZE: usize = 0x7f0;
 
 #[repr(C, packed)]
+#[derive(Debug)]
 pub struct GHCB {
     reserved_1: [u8; 0xcb],
     cpl: u8,
@@ -126,6 +127,7 @@ impl GHCBExitCode {
     pub const RUN_VMPL: u64 = 0x80000018;
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum GHCBIOSize {
     Size8,
     Size16,

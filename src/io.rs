@@ -5,8 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::arch::asm;
+use core::fmt::Debug;
 
-pub trait IOPort: Sync {
+pub trait IOPort: Sync + Debug {
     fn outb(&self, port: u16, value: u8) {
         unsafe { asm!("outb %al, %dx", in("al") value, in("dx") port, options(att_syntax)) }
     }
@@ -32,7 +33,7 @@ pub trait IOPort: Sync {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct DefaultIOPort {}
 
 impl IOPort for DefaultIOPort {}

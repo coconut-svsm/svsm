@@ -179,6 +179,7 @@ impl IndexMut<usize> for PTPage {
     }
 }
 
+#[derive(Debug)]
 pub enum Mapping<'a> {
     Level3(&'a mut PTEntry),
     Level2(&'a mut PTEntry),

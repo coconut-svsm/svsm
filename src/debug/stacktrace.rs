@@ -53,6 +53,7 @@ pub enum UnwoundStackFrame {
 type StacksBounds = [StackBounds; 2];
 
 #[cfg(feature = "enable-stacktrace")]
+#[derive(Debug)]
 pub struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,
