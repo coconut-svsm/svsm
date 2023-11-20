@@ -12,11 +12,11 @@ extern crate alloc;
 use alloc::vec::Vec;
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
-use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::address::{PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -47,6 +47,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
+use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
@@ -402,24 +403,21 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
-    // Enable runtime stack and jump to main function
-    unsafe {
-        asm!("movq  %rax, %rsp
-              jmp   svsm_main",
-              in("rax") bp.bits(),
-              options(att_syntax));
-    }
+    // Create the root task that runs the entry point then handles the request loop
+    create_task(
+        svsm_main,
+        TASK_FLAG_SHARE_PT,
+        Some(this_cpu().get_apic_id()),
+    )
+    .expect("Failed to create initial task");
+
+    panic!("SVSM entry point terminated unexpectedly");
 }
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
-    // The GDB stub can be started earlier, just after the console is initialised
-    // in svsm_start() above. It uses a lot of stack though so if you want to move
-    // it earlier then you need to set bsp_stack to 64K in the inline assembler
-    // above:
-    //
-    //     bsp_stack:
-    //        .fill 65536, 1, 0
+    // If required, the GDB stub can be started earlier, just after the console
+    // is initialised in svsm_start() above.
     gdbstub_start().expect("Could not start GDB stub");
     // Uncomment the line below if you want to wait for
     // a remote GDB connection

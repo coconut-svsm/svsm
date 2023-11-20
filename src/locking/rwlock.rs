@@ -261,6 +261,34 @@ impl<T: Debug> RWLock<T> {
             data: unsafe { &mut *self.data.get() },
         }
     }
+
+    /// Waits then locks the RWLock, returning a mutable pointer to the
+    /// protected item. The lock must be released with a call to
+    /// [`Self::unlock_write_direct()`] when access to the protected resource is
+    /// no longer exclusively required.
+    pub fn lock_write_direct(&self) -> *mut T {
+        let guard = self.lock_write();
+        core::mem::forget(guard);
+        self.data.get()
+    }
+
+    /// Unlocks the RWLock, relinquishing access to the raw pointer
+    /// that was gained by a previous call to [`Self::lock_write_direct()`].
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the raw pointer returned by a
+    /// previous call to [`Self::lock_write_direct()`] is not used after
+    /// calling this function. Although the pointer may still point
+    /// to a valid object there is no guarantee of this and use of
+    /// the pointer is undefined behaviour.
+    ///
+    /// In order to gain mutable or immutable access to the object
+    /// the caller must again restablish the RWLock.
+    pub unsafe fn unlock_write_direct(&self) {
+        // There are no readers - safe to just set lock to 0
+        self.rwlock.store(0, Ordering::Release);
+    }
 }
 
 mod tests {

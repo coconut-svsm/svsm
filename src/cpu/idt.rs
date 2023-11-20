@@ -11,7 +11,7 @@ use super::vc::handle_vc_exception;
 use super::{X86GeneralRegs, X86InterruptFrame};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::extable::handle_exception_table;
-use crate::debug::gdbstub::svsm_gdbstub::handle_bp_exception;
+use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -206,6 +206,7 @@ fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
             .is_err()
             && !handle_exception_table(ctx)
         {
+            handle_debug_exception(ctx, ctx.vector);
             panic!(
                 "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
                 rip, cr2, err
@@ -214,7 +215,7 @@ fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
     } else if ctx.vector == VC_VECTOR {
         handle_vc_exception(ctx);
     } else if ctx.vector == BP_VECTOR {
-        handle_bp_exception(ctx);
+        handle_debug_exception(ctx, ctx.vector);
     } else {
         let err = ctx.error_code;
         let vec = ctx.vector;
