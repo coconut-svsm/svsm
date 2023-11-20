@@ -73,6 +73,7 @@ pub mod aead {
     }
 
     /// Aes256Gcm type
+    #[derive(Copy, Clone, Debug)]
     pub struct Aes256Gcm;
 }
 
