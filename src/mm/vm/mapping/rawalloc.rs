@@ -22,7 +22,7 @@ pub struct RawAllocMapping {
     /// A vec containing references to PageFile allocations
     pages: Vec<Option<PageRef>>,
 
-    /// Number of pages required in [`pages`]
+    /// Number of pages required in `pages`
     count: usize,
 }
 
