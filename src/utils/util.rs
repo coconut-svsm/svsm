@@ -47,6 +47,14 @@ pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
     unsafe { start.as_mut_ptr::<u8>().write_bytes(0, size) }
 }
 
+/// Obtain bit for a given position
+#[macro_export]
+macro_rules! BIT {
+    ($x: expr) => {
+        (1 << ($x))
+    };
+}
+
 #[cfg(test)]
 mod tests {
 

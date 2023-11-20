@@ -32,6 +32,7 @@ use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
+use svsm::greq::driver::guest_request_driver_init;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -41,7 +42,7 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
@@ -465,6 +466,8 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to validate flash memory: {:#?}", e);
     }
 
+    guest_request_driver_init();
+
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
     virt_log_usage();
@@ -483,6 +486,8 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    disable_vmpck0();
+
     log::error!("Panic: CPU[{}] {}", this_cpu().get_apic_id(), info);
 
     print_stack(3);

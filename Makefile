@@ -8,6 +8,12 @@ else
 TARGET_PATH=debug
 endif
 
+ifeq ($(V), 1)
+CARGO_ARGS += -v
+else ifeq ($(V), 2)
+CARGO_ARGS += -vv
+endif
+
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
