@@ -85,8 +85,8 @@ fn encrypt_mask() -> usize {
 }
 
 /// Returns the exclusive end of the physical address space.
-pub fn max_phys_addr() -> u64 {
-    *MAX_PHYS_ADDR
+pub fn max_phys_addr() -> PhysAddr {
+    PhysAddr::from(*MAX_PHYS_ADDR)
 }
 
 fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {

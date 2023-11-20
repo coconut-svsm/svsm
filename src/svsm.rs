@@ -47,7 +47,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -221,26 +221,29 @@ fn validate_flash() -> Result<(), SvsmError> {
     let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+    let kernel_region = LAUNCH_INFO.kernel_region();
+    let flash_range = {
+        let one_gib = 1024 * 1024 * 1024usize;
+        let start = PhysAddr::from(3 * one_gib);
+        MemoryRegion::new(start, one_gib)
+    };
 
     // Sanity-check flash regions.
     for region in flash_regions.iter() {
         // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlaps(3 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024) {
+        if !region.overlap(&flash_range) {
             panic!("flash region in unexpected region");
         }
 
         // Make sure that no regions overlap with the kernel.
-        if region.overlaps(
-            LAUNCH_INFO.kernel_region_phys_start,
-            LAUNCH_INFO.kernel_region_phys_end,
-        ) {
+        if region.overlap(&kernel_region) {
             panic!("flash region overlaps with kernel");
         }
     }
     // Make sure that regions don't overlap.
     for (i, outer) in flash_regions.iter().enumerate() {
         for inner in flash_regions[..i].iter() {
-            if outer.overlaps(inner.start, inner.end) {
+            if outer.overlap(inner) {
                 panic!("flash regions overlap");
             }
         }
@@ -248,23 +251,18 @@ fn validate_flash() -> Result<(), SvsmError> {
     // Make sure that one regions ends at 4GiB.
     let one_region_ends_at_4gib = flash_regions
         .iter()
-        .any(|region| region.end == 4 * 1024 * 1024 * 1024);
+        .any(|region| region.end() == flash_range.end());
     assert!(one_region_ends_at_4gib);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
-        let pstart = PhysAddr::from(region.start);
-        let pend = PhysAddr::from(region.end);
         log::info!(
             "Flash region {} at {:#018x} size {:018x}",
             i,
-            pstart,
-            pend - pstart
+            region.start(),
+            region.len(),
         );
 
-        for paddr in (pstart.bits()..pend.bits())
-            .step_by(PAGE_SIZE)
-            .map(PhysAddr::from)
-        {
+        for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(
@@ -328,11 +326,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     mapping_info_init(&launch_info);
 
-    init_valid_bitmap_ptr(
-        launch_info.kernel_region_phys_start.into(),
-        launch_info.kernel_region_phys_end.into(),
-        vb_ptr,
-    );
+    init_valid_bitmap_ptr(launch_info.kernel_region(), vb_ptr);
 
     load_gdt();
     early_idt_init();
@@ -459,7 +453,7 @@ pub extern "C" fn svsm_main() {
 
     print_fw_meta(&fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta) {
+    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
         panic!("Failed to validate firmware memory: {:#?}", e);
     }
 

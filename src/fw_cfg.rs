@@ -6,8 +6,10 @@
 
 extern crate alloc;
 
+use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::max_phys_addr;
+use crate::utils::MemoryRegion;
 
 use super::io::IOPort;
 use super::string::FixedString;
@@ -64,20 +66,6 @@ impl FwCfgFile {
     }
     pub fn selector(&self) -> u16 {
         self.selector
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct MemoryRegion {
-    pub start: u64,
-    pub end: u64,
-}
-
-impl MemoryRegion {
-    /// Returns `true` if the region overlaps with another region with given
-    /// start and end.
-    pub fn overlaps(&self, start: u64, end: u64) -> bool {
-        self.start < end && start < self.end
     }
 }
 
@@ -150,7 +138,7 @@ impl<'a> FwCfg<'a> {
         Err(SvsmError::FwCfg(FwCfgError::FileNotFound))
     }
 
-    fn find_svsm_region(&self) -> Result<MemoryRegion, SvsmError> {
+    fn find_svsm_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         let file = self.file_selector("etc/sev/svsm")?;
 
         if file.size != 16 {
@@ -161,19 +149,19 @@ impl<'a> FwCfg<'a> {
         Ok(self.read_memory_region())
     }
 
-    fn read_memory_region(&self) -> MemoryRegion {
-        let start: u64 = self.read_le();
-        let size: u64 = self.read_le();
-        let end = start.saturating_add(size);
+    fn read_memory_region(&self) -> MemoryRegion<PhysAddr> {
+        let start = PhysAddr::from(self.read_le::<u64>());
+        let size = self.read_le::<u64>();
+        let end = start.saturating_add(size as usize);
 
         assert!(start <= max_phys_addr(), "{start:#018x} is out of range");
         assert!(end <= max_phys_addr(), "{end:#018x} is out of range");
 
-        MemoryRegion { start, end }
+        MemoryRegion::from_addresses(start, end)
     }
 
-    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion>, SvsmError> {
-        let mut regions: Vec<MemoryRegion> = Vec::new();
+    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
+        let mut regions = Vec::new();
         let file = self.file_selector("etc/e820")?;
         let entries = file.size / 20;
 
@@ -191,33 +179,35 @@ impl<'a> FwCfg<'a> {
         Ok(regions)
     }
 
-    fn find_kernel_region_e820(&self) -> Result<MemoryRegion, SvsmError> {
+    fn find_kernel_region_e820(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         let regions = self.get_memory_regions()?;
-        let mut kernel_region = regions
+        let kernel_region = regions
             .iter()
-            .max_by_key(|region| region.start)
-            .copied()
+            .max_by_key(|region| region.start())
             .ok_or(SvsmError::FwCfg(FwCfgError::KernelRegion))?;
 
-        let start =
-            (kernel_region.end.saturating_sub(KERNEL_REGION_SIZE)) & KERNEL_REGION_SIZE_MASK;
+        let start = PhysAddr::from(
+            kernel_region
+                .end()
+                .bits()
+                .saturating_sub(KERNEL_REGION_SIZE as usize)
+                & KERNEL_REGION_SIZE_MASK as usize,
+        );
 
-        if start < kernel_region.start {
+        if start < kernel_region.start() {
             return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
         }
 
-        kernel_region.start = start;
-
-        Ok(kernel_region)
+        Ok(MemoryRegion::new(start, kernel_region.len()))
     }
 
-    pub fn find_kernel_region(&self) -> Result<MemoryRegion, SvsmError> {
+    pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         let kernel_region = self
             .find_svsm_region()
             .or_else(|_| self.find_kernel_region_e820())?;
 
         // Make sure that the kernel region doesn't overlap with the loader.
-        if kernel_region.start < 640 * 1024 {
+        if kernel_region.start() < PhysAddr::from(640 * 1024u64) {
             return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
         }
 
@@ -227,7 +217,7 @@ impl<'a> FwCfg<'a> {
     // This needs to be &mut self to prevent iterator invalidation, where the caller
     // could do fw_cfg.select() while iterating. Having a mutable reference prevents
     // other references.
-    pub fn iter_flash_regions(&mut self) -> impl Iterator<Item = MemoryRegion> + '_ {
+    pub fn iter_flash_regions(&mut self) -> impl Iterator<Item = MemoryRegion<PhysAddr>> + '_ {
         let num = match self.file_selector("etc/flash") {
             Ok(file) => {
                 self.select(file.selector);

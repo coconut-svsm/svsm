@@ -9,28 +9,27 @@ extern crate alloc;
 use crate::address::{Address, PhysAddr};
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
-use crate::fw_cfg::{FwCfg, MemoryRegion};
+use crate::fw_cfg::FwCfg;
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::RWLock;
+use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use log;
 
 use super::pagetable::LAUNCH_VMSA_ADDR;
 
-static MEMORY_MAP: RWLock<Vec<MemoryRegion>> = RWLock::new(Vec::new());
+static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
 pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
     let mut regions = fwcfg.get_memory_regions()?;
+    let kernel_region = launch_info.kernel_region();
 
     // Remove SVSM memory from guest memory map
     let mut i = 0;
     while i < regions.len() {
         // Check if the region overlaps with SVSM memory.
         let region = regions[i];
-        if !region.overlaps(
-            launch_info.kernel_region_phys_start,
-            launch_info.kernel_region_phys_end,
-        ) {
+        if !region.overlap(&kernel_region) {
             // Check the next region.
             i += 1;
             continue;
@@ -40,29 +39,23 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
         regions.remove(i);
 
         // 2. Insert a region up until the start of SVSM memory (if non-empty).
-        let region_before_start = region.start;
-        let region_before_end = launch_info.kernel_region_phys_start;
+        let region_before_start = region.start();
+        let region_before_end = kernel_region.start();
         if region_before_start < region_before_end {
             regions.insert(
                 i,
-                MemoryRegion {
-                    start: region_before_start,
-                    end: region_before_end,
-                },
+                MemoryRegion::from_addresses(region_before_start, region_before_end),
             );
             i += 1;
         }
 
         // 3. Insert a region up after the end of SVSM memory (if non-empty).
-        let region_after_start = launch_info.kernel_region_phys_end;
-        let region_after_end = region.end;
+        let region_after_start = kernel_region.end();
+        let region_after_end = region.end();
         if region_after_start < region_after_end {
             regions.insert(
                 i,
-                MemoryRegion {
-                    start: region_after_start,
-                    end: region_after_end,
-                },
+                MemoryRegion::from_addresses(region_after_start, region_after_end),
             );
             i += 1;
         }
@@ -70,7 +63,7 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
 
     log::info!("Guest Memory Regions:");
     for r in regions.iter() {
-        log::info!("  {:018x}-{:018x}", r.start, r.end);
+        log::info!("  {:018x}-{:018x}", r.start(), r.end());
     }
 
     let mut map = MEMORY_MAP.lock_write();
@@ -81,7 +74,6 @@ pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<
 
 pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     let page_addr = paddr.page_align();
-    let addr = paddr.bits() as u64;
 
     if PERCPU_VMSAS.exists(page_addr) {
         return false;
@@ -93,7 +85,7 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     MEMORY_MAP
         .lock_read()
         .iter()
-        .any(|region| addr >= region.start && addr < region.end)
+        .any(|region| region.contains(paddr))
 }
 
 const ISA_RANGE_START: PhysAddr = PhysAddr::new(0xa0000);
