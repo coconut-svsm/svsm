@@ -14,12 +14,11 @@ guidelines for documenting code effectively:
   `//!` and `#[doc = ""]` for documenting fields or expressions.
 
 ```rust
-/// This function does A, takes parameter of type `m`
-/// It returns B, keep in mind C
-fn main(a: m) {
+/// This function does A, takes parameter of type [`M`].
+/// It returns [`B`], keep in mind C
+fn main(a: M) -> B {
      // Some code here
 }
-
 ```
 
 - Documenting trait implementations is optional since the generated
