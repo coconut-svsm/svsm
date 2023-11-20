@@ -10,28 +10,29 @@ use crate::locking::SpinLock;
 use crate::mm::alloc::{allocate_pages, get_order};
 use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::MemoryRegion;
 use core::ptr;
 
 static VALID_BITMAP: SpinLock<ValidBitmap> = SpinLock::new(ValidBitmap::new());
 
 #[inline(always)]
-fn bitmap_alloc_order(pbase: PhysAddr, pend: PhysAddr) -> usize {
-    let mem_size = (pend - pbase) / (PAGE_SIZE * 8);
+fn bitmap_alloc_order(region: MemoryRegion<PhysAddr>) -> usize {
+    let mem_size = region.len() / (PAGE_SIZE * 8);
     get_order(mem_size)
 }
 
-pub fn init_valid_bitmap_ptr(pbase: PhysAddr, pend: PhysAddr, bitmap: *mut u64) {
+pub fn init_valid_bitmap_ptr(region: MemoryRegion<PhysAddr>, bitmap: *mut u64) {
     let mut vb_ref = VALID_BITMAP.lock();
-    vb_ref.set_region(pbase, pend);
+    vb_ref.set_region(region);
     vb_ref.set_bitmap(bitmap);
 }
 
-pub fn init_valid_bitmap_alloc(pbase: PhysAddr, pend: PhysAddr) -> Result<(), SvsmError> {
-    let order: usize = bitmap_alloc_order(pbase, pend);
+pub fn init_valid_bitmap_alloc(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+    let order: usize = bitmap_alloc_order(region);
     let bitmap_addr = allocate_pages(order)?;
 
     let mut vb_ref = VALID_BITMAP.lock();
-    vb_ref.set_region(pbase, pend);
+    vb_ref.set_region(region);
     vb_ref.set_bitmap(bitmap_addr.as_mut_ptr::<u64>());
     vb_ref.clear_all();
 
@@ -95,23 +96,20 @@ pub fn valid_bitmap_valid_addr(paddr: PhysAddr) -> bool {
 
 #[derive(Debug)]
 struct ValidBitmap {
-    pbase: PhysAddr,
-    pend: PhysAddr,
+    region: MemoryRegion<PhysAddr>,
     bitmap: *mut u64,
 }
 
 impl ValidBitmap {
     pub const fn new() -> Self {
         ValidBitmap {
-            pbase: PhysAddr::null(),
-            pend: PhysAddr::null(),
+            region: MemoryRegion::from_addresses(PhysAddr::null(), PhysAddr::null()),
             bitmap: ptr::null_mut(),
         }
     }
 
-    pub fn set_region(&mut self, pbase: PhysAddr, pend: PhysAddr) {
-        self.pbase = pbase;
-        self.pend = pend;
+    pub fn set_region(&mut self, region: MemoryRegion<PhysAddr>) {
+        self.region = region;
     }
 
     pub fn set_bitmap(&mut self, bitmap: *mut u64) {
@@ -119,7 +117,7 @@ impl ValidBitmap {
     }
 
     pub fn check_addr(&self, paddr: PhysAddr) -> bool {
-        paddr >= self.pbase && paddr < self.pend
+        self.region.contains(paddr)
     }
 
     pub fn bitmap_addr(&self) -> PhysAddr {
@@ -129,7 +127,7 @@ impl ValidBitmap {
 
     #[inline(always)]
     fn index(&self, paddr: PhysAddr) -> (isize, usize) {
-        let page_offset = (paddr - self.pbase) / PAGE_SIZE;
+        let page_offset = (paddr - self.region.start()) / PAGE_SIZE;
         let index: isize = (page_offset / 64).try_into().unwrap();
         let bit: usize = page_offset % 64;
 
@@ -137,7 +135,7 @@ impl ValidBitmap {
     }
 
     pub fn clear_all(&mut self) {
-        let (mut i, bit) = self.index(self.pend);
+        let (mut i, bit) = self.index(self.region.end());
         if bit != 0 {
             i += 1;
         }
@@ -149,11 +147,11 @@ impl ValidBitmap {
     }
 
     pub fn alloc_order(&self) -> usize {
-        bitmap_alloc_order(self.pbase, self.pend)
+        bitmap_alloc_order(self.region)
     }
 
     pub fn migrate(&mut self, new_bitmap: *mut u64) {
-        let (count, _) = self.index(self.pend);
+        let (count, _) = self.index(self.region.end());
 
         unsafe {
             ptr::copy_nonoverlapping(self.bitmap, new_bitmap, count as usize);

@@ -23,14 +23,29 @@ use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
 
+use super::schedule::{current_task_terminated, schedule};
+
 pub const INITIAL_TASK_ID: u32 = 1;
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
     RUNNING,
-    SCHEDULED,
     #[default]
     TERMINATED,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum TaskError {
+    // Attempt to close a non-terminated task
+    NotTerminated,
+    // A closed task could not be removed from the task list
+    CloseFailed,
+}
+
+impl From<TaskError> for SvsmError {
+    fn from(e: TaskError) -> Self {
+        Self::Task(e)
+    }
 }
 
 pub const TASK_FLAG_SHARE_PT: u16 = 0x01;
@@ -73,17 +88,9 @@ pub trait TaskRuntime {
     /// update the runtime calculation at this point.
     fn schedule_out(&mut self);
 
-    /// Returns whether this is the first time a task has been
-    /// considered for scheduling.
-    fn first(&self) -> bool;
-
     /// Overrides the calculated runtime value with the given value.
     /// This can be used to set or adjust the runtime of a task.
     fn set(&mut self, runtime: u64);
-
-    /// Flag the runtime as terminated so the scheduler does not
-    /// find terminated tasks before running tasks.
-    fn terminated(&mut self);
 
     /// Returns a value that represents the amount of CPU the task
     /// has been allocated
@@ -106,16 +113,8 @@ impl TaskRuntime for TscRuntime {
         self.runtime += rdtsc() - self.runtime;
     }
 
-    fn first(&self) -> bool {
-        self.runtime == 0
-    }
-
     fn set(&mut self, runtime: u64) {
         self.runtime = runtime;
-    }
-
-    fn terminated(&mut self) {
-        self.runtime = u64::MAX;
     }
 
     fn value(&self) -> u64 {
@@ -138,16 +137,8 @@ impl TaskRuntime for CountRuntime {
 
     fn schedule_out(&mut self) {}
 
-    fn first(&self) -> bool {
-        self.count == 0
-    }
-
     fn set(&mut self, runtime: u64) {
         self.count = runtime;
-    }
-
-    fn terminated(&mut self) {
-        self.count = u64::MAX;
     }
 
     fn value(&self) -> u64 {
@@ -161,6 +152,7 @@ type TaskRuntimeImpl = CountRuntime;
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TaskContext {
+    pub rsp: u64,
     pub regs: X86GeneralRegs,
     pub flags: u64,
     pub ret_addr: u64,
@@ -184,11 +176,19 @@ pub struct Task {
     /// u32:  The APIC ID of the CPU that the task must run on
     pub affinity: Option<u32>,
 
+    // APIC ID of the CPU that task has been assigned to. If 'None' then
+    // the task is not currently assigned to a CPU
+    pub allocation: Option<u32>,
+
     /// ID of the task
     pub id: u32,
 
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
+
+    /// Optional hook that is called immediately after switching to this task
+    /// before the context is restored
+    pub on_switch_hook: Option<fn(&Self)>,
 }
 
 impl fmt::Debug for Task {
@@ -225,8 +225,10 @@ impl Task {
             vm_kernel_range,
             state: TaskState::RUNNING,
             affinity: None,
+            allocation: None,
             id: TASK_ID_ALLOCATOR.next_id(),
             runtime: TaskRuntimeImpl::default(),
+            on_switch_hook: None,
         });
         Ok(task)
     }
@@ -256,6 +258,10 @@ impl Task {
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
+    }
+
+    pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
+        self.on_switch_hook = hook;
     }
 
     fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
@@ -294,7 +300,10 @@ impl Task {
 }
 
 extern "C" fn task_exit() {
-    panic!("Current task has exited");
+    unsafe {
+        current_task_terminated();
+    }
+    schedule();
 }
 
 #[allow(unused)]
@@ -304,6 +313,14 @@ extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
         let mut pt = (*new_task).page_table.lock();
         this_cpu().populate_page_table(&mut pt);
         pt.cr3_value().bits() as u64
+    }
+}
+
+#[allow(unused)]
+#[no_mangle]
+extern "C" fn on_switch(new_task: &mut Task) {
+    if let Some(hook) = new_task.on_switch_hook {
+        hook(new_task);
     }
 }
 
@@ -329,6 +346,7 @@ global_asm!(
         pushq   %r13
         pushq   %r14
         pushq   %r15
+        pushq   %rsp
         
         // Save the current stack pointer
         testq   %rsi, %rsi
@@ -344,6 +362,13 @@ global_asm!(
         // Switch to the new task stack
         movq    (%rbx), %rsp
 
+        // We've already restored rsp
+        addq        $8, %rsp
+
+        mov         %rbx, %rdi
+        call        on_switch
+
+        // Restore the task context
         popq        %r15
         popq        %r14
         popq        %r13

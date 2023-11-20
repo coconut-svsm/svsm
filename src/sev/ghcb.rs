@@ -123,6 +123,8 @@ enum GHCBExitCode {}
 impl GHCBExitCode {
     pub const IOIO: u64 = 0x7b;
     pub const SNP_PSC: u64 = 0x8000_0010;
+    pub const GUEST_REQUEST: u64 = 0x8000_0011;
+    pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
     pub const AP_CREATE: u64 = 0x80000013;
     pub const RUN_VMPL: u64 = 0x80000018;
 }
@@ -475,6 +477,61 @@ impl GHCB {
         let exit_info_2: u64 = vmsa_gpa.into();
         self.set_rax(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
+    }
+
+    pub fn guest_request(
+        &mut self,
+        req_page: VirtAddr,
+        resp_page: VirtAddr,
+    ) -> Result<(), SvsmError> {
+        self.clear();
+
+        let info1: u64 = u64::from(virt_to_phys(req_page));
+        let info2: u64 = u64::from(virt_to_phys(resp_page));
+
+        self.vmgexit(GHCBExitCode::GUEST_REQUEST, info1, info2)?;
+
+        if !self.is_valid(OFF_SW_EXIT_INFO_2) {
+            return Err(GhcbError::VmgexitInvalid.into());
+        }
+
+        if self.sw_exit_info_2 != 0 {
+            return Err(GhcbError::VmgexitError(self.sw_exit_info_1, self.sw_exit_info_2).into());
+        }
+
+        Ok(())
+    }
+
+    pub fn guest_ext_request(
+        &mut self,
+        req_page: VirtAddr,
+        resp_page: VirtAddr,
+        data_pages: VirtAddr,
+        data_size: u64,
+    ) -> Result<(), SvsmError> {
+        self.clear();
+
+        let info1: u64 = u64::from(virt_to_phys(req_page));
+        let info2: u64 = u64::from(virt_to_phys(resp_page));
+        let rax: u64 = u64::from(virt_to_phys(data_pages));
+
+        self.set_rax(rax);
+        self.set_rbx(data_size);
+
+        self.vmgexit(GHCBExitCode::GUEST_EXT_REQUEST, info1, info2)?;
+
+        if !self.is_valid(OFF_SW_EXIT_INFO_2) {
+            return Err(GhcbError::VmgexitInvalid.into());
+        }
+
+        // On error, RBX and exit_info_2 are returned for proper error handling.
+        // For an extended request, if the buffer provided is too small, the hypervisor
+        // will return in RBX the number of contiguous pages required
+        if self.sw_exit_info_2 != 0 {
+            return Err(GhcbError::VmgexitError(self.rbx, self.sw_exit_info_2).into());
+        }
+
         Ok(())
     }
 

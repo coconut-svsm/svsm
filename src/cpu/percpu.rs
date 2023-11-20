@@ -25,6 +25,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
+use crate::task::RunQueue;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -191,19 +192,16 @@ pub struct PerCpu {
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
-}
 
-impl Default for PerCpu {
-    fn default() -> Self {
-        Self::new()
-    }
+    /// Task list that has been assigned for scheduling on this CPU
+    runqueue: RWLock<RunQueue>,
 }
 
 impl PerCpu {
-    pub fn new() -> Self {
+    fn new(apic_id: u32) -> Self {
         PerCpu {
             online: AtomicBool::new(false),
-            apic_id: 0,
+            apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
             init_stack: None,
@@ -215,6 +213,7 @@ impl PerCpu {
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
+            runqueue: RWLock::new(RunQueue::new(apic_id)),
         }
     }
 
@@ -222,8 +221,7 @@ impl PerCpu {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
-            (*percpu) = PerCpu::new();
-            (*percpu).apic_id = apic_id;
+            (*percpu) = PerCpu::new(apic_id);
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
@@ -565,6 +563,17 @@ impl PerCpu {
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_range.handle_page_fault(vaddr, write)
+    }
+
+    /// Allocate any candidate unallocated tasks from the global task list to our
+    /// CPU runqueue.
+    pub fn allocate_tasks(&mut self) {
+        self.runqueue.lock_write().allocate();
+    }
+
+    /// Access the PerCpu runqueue protected with a lock
+    pub fn runqueue(&self) -> &RWLock<RunQueue> {
+        &self.runqueue
     }
 }
 
