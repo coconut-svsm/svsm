@@ -21,7 +21,7 @@ use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 /// Information required to resolve a page fault within a virtual mapping
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct VMPageFaultResolution {
     /// The physical address of a page that must be mapped to the page fault
     /// virtual address to resolve the page fault.
