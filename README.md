@@ -59,6 +59,7 @@ Contributing
 Contributing to the project is as easy as sending a pull-request via
 GitHub. For detailed instructions on patch formatting and contribution
 guidelines please have a look at [CONTRIBUTING.md](CONTRIBUTING.md).
+For documentation guidelines consult [DOC-GUIDELINES.md](Documentation/DOC-GUIDELINES.md).
 
 TODO List
 ---------
