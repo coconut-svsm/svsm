@@ -58,7 +58,7 @@ struct SnpGuestRequestDriver {
     /// Extended data buffer that will be provided to the hypervisor
     /// to store the SEV-SNP certificates
     ext_data: Box<SnpGuestRequestExtData>,
-    /// Extended data size (`certs` size) provided by the user in [`get_extended_report()`].
+    /// Extended data size (`certs` size) provided by the user in [`super::services::get_extended_report`].
     /// It will be provided to the hypervisor.
     user_extdata_size: usize,
     /// Each `SNP_GUEST_REQUEST` message contains a sequence number per VMPCK.
@@ -236,7 +236,7 @@ impl SnpGuestRequestDriver {
     /// # Arguments
     ///
     /// * `req_class`: whether this is a regular or extended `SNP_GUEST_REQUEST` command
-    /// * `msg_type`: type of the command stored in `buffer`, e.g. [`SNP_MSG_REPORT_REQ`]
+    /// * `msg_type`: type of the command stored in `buffer`, e.g. SNP_MSG_REPORT_REQ
     /// * `buffer`: buffer with the `SNP_GUEST_REQUEST` command to be sent.
     ///             The same buffer will also be used to store the response.
     /// * `command_len`: Size (in bytes) of the command stored in `buffer`
