@@ -8,7 +8,6 @@ use super::idt::common::X86ExceptionContext;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::insn::{insn_fetch, Instruction};
 use crate::cpu::percpu::this_cpu_mut;
-use crate::cpu::registers::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_db_exception;
 use crate::error::SvsmError;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
@@ -22,7 +21,14 @@ pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
 
 #[derive(Clone, Copy, Debug)]
-pub enum VcError {
+pub struct VcError {
+    pub rip: usize,
+    pub code: usize,
+    pub error_type: VcErrorType,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum VcErrorType {
     Unsupported,
     DecodeFailed,
     UnknownCpuidLeaf,
@@ -35,18 +41,24 @@ impl From<VcError> for SvsmError {
 }
 
 impl fmt::Display for VcError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Unsupported => {
-                write!(f, "unsupported #VC exception")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Unhandled #VC exception ")?;
+        match self.error_type {
+            VcErrorType::Unsupported => {
+                write!(f, "unsupported #VC exception")?;
             }
-            Self::DecodeFailed => {
-                write!(f, "invalid instruction")
+            VcErrorType::DecodeFailed => {
+                write!(f, "invalid instruction")?;
             }
-            Self::UnknownCpuidLeaf => {
-                write!(f, "unknown CPUID leaf")
+            VcErrorType::UnknownCpuidLeaf => {
+                write!(f, "unknown CPUID leaf")?;
             }
         }
+        write!(
+            f,
+            " RIP: {:#018x}: error code: {:#018x}",
+            self.rip, self.code
+        )
     }
 }
 
@@ -54,30 +66,20 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) {
     let err = ctx.error_code;
     let rip = ctx.frame.rip;
 
-    let insn = vc_decode_insn(ctx).unwrap_or_else(|e| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x} error {:?}",
-            rip, err, e
-        )
-    });
+    let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
 
     match err {
         // If the debugger is enabled then handle the DB exception
         // by directly invoking the exception handler
-        X86_TRAP_DB => {
-            handle_db_exception(ctx);
-            Ok(())
+        X86_TRAP_DB => handle_db_exception(ctx),
+        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
+        _ => {
+            panic!(
+                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
+                rip, err,
+            )
         }
-
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        _ => Err(SvsmError::Vc(VcError::Unsupported)),
     }
-    .unwrap_or_else(|error| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x}: error: {:?}",
-            rip, err, error
-        )
-    });
 
     vc_finish_insn(ctx, &insn);
 }
@@ -94,31 +96,26 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
      */
     let ghcb = this_cpu_mut().ghcb();
 
-    let insn = vc_decode_insn(ctx).unwrap_or_else(|e| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x} error {:?}",
-            rip, err, e
-        )
-    });
+    let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
 
     match err {
         // If the debugger is enabled then handle the DB exception
         // by directly invoking the exception handler
         X86_TRAP_DB => {
             handle_db_exception(ctx);
-            Ok(())
         }
 
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, ghcb, &insn),
-        _ => Err(SvsmError::Vc(VcError::Unsupported)),
+        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
+        SVM_EXIT_IOIO => {
+            handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
+        }
+        _ => {
+            panic!(
+                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
+                rip, err
+            );
+        }
     }
-    .unwrap_or_else(|error| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x}: error: {:?}",
-            rip, err, error
-        )
-    });
 
     vc_finish_insn(ctx, &insn);
 }
@@ -135,38 +132,28 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
      */
     let ghcb = this_cpu_mut().ghcb();
 
-    let insn = vc_decode_insn(ctx).unwrap_or_else(|e| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x} error {:?}",
-            rip, error_code, e
-        )
-    });
+    let insn = vc_decode_insn(ctx).expect("Could not decode instruction");
 
     match error_code {
         // If the debugger is enabled then handle the DB exception
         // by directly invoking the exception handler
-        X86_TRAP_DB => {
-            handle_db_exception(ctx);
-            Ok(())
+        X86_TRAP_DB => handle_db_exception(ctx),
+        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
+        SVM_EXIT_IOIO => {
+            handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
         }
-
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, ghcb, &insn),
-        _ => Err(SvsmError::Vc(VcError::Unsupported)),
+        _ => {
+            panic!(
+                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
+                rip, error_code
+            )
+        }
     }
-    .unwrap_or_else(|err| {
-        panic!(
-            "Unhandled #VC exception RIP {:#018x} error code: {:#018x}: #VC error: {:?}",
-            rip, error_code, err
-        )
-    });
 
     vc_finish_insn(ctx, &insn);
 }
 
 fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    let regs = &mut ctx.regs;
-
     /*
      * Section 2.3.1 GHCB MSR Protocol in SEV-ES Guest-Hypervisor Communication Block
      * Standardization Rev. 2.02.
@@ -177,26 +164,29 @@ fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
      * very soon in stage 2.
      */
 
-    snp_cpuid(regs)
+    snp_cpuid(ctx)
 }
 
-fn snp_cpuid(regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
-    let mut leaf = CpuidLeaf::new(regs.rax as u32, regs.rcx as u32);
+fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
+    let mut leaf = CpuidLeaf::new(ctx.regs.rax as u32, ctx.regs.rcx as u32);
 
-    let ret = match cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, 0, 0) {
-        None => Err(SvsmError::Vc(VcError::UnknownCpuidLeaf)),
-        Some(v) => Ok(v),
-    }?;
+    let Some(ret) = cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, 0, 0) else {
+        return Err(SvsmError::Vc(VcError {
+            rip: ctx.frame.rip,
+            code: ctx.error_code,
+            error_type: VcErrorType::UnknownCpuidLeaf,
+        }));
+    };
 
     leaf.eax = ret.eax;
     leaf.ebx = ret.ebx;
     leaf.ecx = ret.ecx;
     leaf.edx = ret.edx;
 
-    regs.rax = leaf.eax as usize;
-    regs.rbx = leaf.ebx as usize;
-    regs.rcx = leaf.ecx as usize;
-    regs.rdx = leaf.edx as usize;
+    ctx.regs.rax = leaf.eax as usize;
+    ctx.regs.rbx = leaf.ebx as usize;
+    ctx.regs.rcx = leaf.ecx as usize;
+    ctx.regs.rdx = leaf.edx as usize;
 
     Ok(())
 }
@@ -214,7 +204,11 @@ fn handle_ioio(
     let out_value: u64 = ctx.regs.rax as u64;
 
     match insn.opcode.bytes[0] {
-        0x6C..=0x6F | 0xE4..=0xE7 => Err(SvsmError::Vc(VcError::Unsupported)),
+        0x6C..=0x6F | 0xE4..=0xE7 => Err(SvsmError::Vc(VcError {
+            rip: ctx.frame.rip,
+            code: ctx.error_code,
+            error_type: VcErrorType::Unsupported,
+        })),
         0xEC => {
             let ret = ghcb.ioio_in(port, GHCBIOSize::Size8)?;
             ctx.regs.rax = (ret & 0xff) as usize;
@@ -242,7 +236,11 @@ fn handle_ioio(
 
             ghcb.ioio_out(port, size, out_value)
         }
-        _ => Err(SvsmError::Vc(VcError::DecodeFailed)),
+        _ => Err(SvsmError::Vc(VcError {
+            rip: ctx.frame.rip,
+            code: ctx.error_code,
+            error_type: VcErrorType::DecodeFailed,
+        })),
     }
 }
 

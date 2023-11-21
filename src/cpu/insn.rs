@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use crate::cpu::vc::VcError;
+use crate::cpu::vc::VcErrorType;
 use crate::error::SvsmError;
 
 pub const MAX_INSN_SIZE: usize = 15;
@@ -60,7 +61,11 @@ impl Instruction {
                     return Ok(());
                 }
 
-                Err(SvsmError::Vc(VcError::DecodeFailed))
+                Err(SvsmError::Vc(VcError {
+                    rip: 0,
+                    code: 0,
+                    error_type: VcErrorType::DecodeFailed,
+                }))
             }
             // inb and oub register opcodes
             0xEC | 0xEE => {
@@ -97,9 +102,17 @@ impl Instruction {
                     return Ok(());
                 }
 
-                Err(SvsmError::Vc(VcError::DecodeFailed))
+                Err(SvsmError::Vc(VcError {
+                    rip: 0,
+                    code: 0,
+                    error_type: VcErrorType::DecodeFailed,
+                }))
             }
-            _ => Err(SvsmError::Vc(VcError::DecodeFailed)),
+            _ => Err(SvsmError::Vc(VcError {
+                rip: 0,
+                code: 0,
+                error_type: VcErrorType::DecodeFailed,
+            })),
         }
     }
 }
