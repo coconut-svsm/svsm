@@ -17,9 +17,11 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+/// Represents a raw file handle.
 #[derive(Debug)]
 struct RawFileHandle {
     file: Arc<dyn File>,
+    /// current file offset for the read/write operation
     current: usize,
 }
 
@@ -64,6 +66,7 @@ impl RawFileHandle {
     }
 }
 
+/// Represents a handle used for file operations in a thread-safe manner.
 #[derive(Debug)]
 pub struct FileHandle {
     // Use a SpinLock here because the read operation also needs to be mutable
@@ -73,28 +76,73 @@ pub struct FileHandle {
 }
 
 impl FileHandle {
+    /// Create a new file handle instance.
     pub fn new(file: &Arc<dyn File>) -> Self {
         FileHandle {
             handle: SpinLock::new(RawFileHandle::new(file)),
         }
     }
 
+    /// Used to read contents from the file handle.
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer to read the file contents to
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes read if successful, or an [`SvsmError`] if there was a problem
+    /// during the read operation.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         self.handle.lock().read(buf)
     }
 
+    /// Used to write contents to the file handle
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer which holds the contents to be written to the file.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes written if successful, or an [`SvsmError`] if there was a problem
+    /// during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
         self.handle.lock().write(buf)
     }
 
+    /// Used to truncate the file to the specified size.
+    ///
+    ///  # Arguments
+    ///
+    ///  - `offset`: specifies the size in bytes to which the file
+    ///  is to be truncated.
+    ///
+    ///  # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the size of the
+    /// file after truncation if successful, or an [`SvsmError`] if there was
+    /// a problem during the truncate operation.
     pub fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
         self.handle.lock().truncate(offset)
     }
 
+    /// Used to change the current file offset.
+    ///
+    /// # Arguments
+    ///
+    /// - `pos`: intended new file offset value.
     pub fn seek(&self, pos: usize) {
         self.handle.lock().seek(pos);
     }
 
+    /// Used to get the size of the file.
+    ///
+    /// # Returns
+    ///
+    /// Size of the file in bytes.
     pub fn size(&self) -> usize {
         self.handle.lock().size()
     }
@@ -108,6 +156,7 @@ impl FileHandle {
     }
 }
 
+/// Represents SVSM filesystem
 #[derive(Debug)]
 struct SvsmFs {
     root: Option<Arc<RamDirectory>>,
@@ -118,6 +167,12 @@ impl SvsmFs {
         SvsmFs { root: None }
     }
 
+    /// Used to set the root directory of the SVSM filesystem.
+    ///
+    /// # Arguments
+    ///
+    /// - `root`: represents directory which is to be set
+    /// as the root of the filesystem.
     fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());
@@ -128,10 +183,20 @@ impl SvsmFs {
         self.root = None;
     }
 
+    /// Used to check if the filesystem is initialized.
+    ///
+    /// # Returns
+    ///
+    /// [`bool`]: If the filesystem is initialized.
     fn initialized(&self) -> bool {
         self.root.is_some()
     }
 
+    /// Used to get the root directory of the filesystem.
+    ///
+    /// # Returns
+    ///
+    /// [`Arc<dyn Directory>`]: root directory of the filesystem.
     fn root_dir(&self) -> Arc<dyn Directory> {
         assert!(self.initialized());
         self.root.as_ref().unwrap().clone()
@@ -140,6 +205,7 @@ impl SvsmFs {
 
 static FS_ROOT: RWLock<SvsmFs> = RWLock::new(SvsmFs::new());
 
+/// Used to initialize the filesystem with an empty root directory.
 pub fn initialize_fs() {
     let root_dir = Arc::new(RamDirectory::new());
 
@@ -151,10 +217,32 @@ pub fn uninitialize_fs() {
     FS_ROOT.lock_write().uninitialize();
 }
 
+/// Used to get an iterator over all the directory and file names contained in a path.
+/// Directory name or file name in the path can be an empty value.
+///
+///  # Argument
+///
+///  `path`: path to be split.
+///
+///  # Returns
+///
+///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
+///  directory and file names in the path.
 fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
     path.split('/').filter(|x| !x.is_empty())
 }
 
+/// Used to get an iterator over all the directory and file names contained in a path.
+/// This function performs error checking.
+///
+/// # Argument
+///
+/// `path`: path to be split.
+///
+/// # Returns
+///
+///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
+///  directory and file names in the path.
 fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIterator, SvsmError> {
     let mut path_items = split_path_allow_empty(path).peekable();
     path_items
@@ -163,6 +251,18 @@ fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIter
     Ok(path_items)
 }
 
+/// Used to perform a walk over the items in a path while checking
+/// each item is a directory.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
 fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
@@ -183,6 +283,19 @@ where
     Ok(current_dir)
 }
 
+/// Used to perform a walk over the items in a path while checking
+/// each existing item is a directory, while creating a directory
+/// for each non-existing item.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
 fn walk_path_create<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
@@ -207,6 +320,16 @@ where
     Ok(current_dir)
 }
 
+/// Used to open a file to get the file handle for further file operations.
+///
+/// # Argument
+///
+/// `path`: path of the file to be opened.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -220,6 +343,16 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     }
 }
 
+/// Used to create a file with the given path.
+///
+/// # Argument
+///
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -229,7 +362,16 @@ pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     Ok(FileHandle::new(&file))
 }
 
-/// Creates a file with all sub-directories
+/// Used to create a file and the missing subdirectories in the given path.
+///
+/// # Argument
+///
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -244,6 +386,16 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     Ok(FileHandle::new(&file))
 }
 
+/// Used to create a directory with the given path.
+///
+/// # Argument
+///
+/// `path`: path of the directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let dir_name = FileName::from(path_items.next_back().unwrap());
@@ -254,6 +406,16 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     Ok(())
 }
 
+/// Used to delete a file or a directory.
+///
+/// # Argument
+///
+/// `path`: path of the file or directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
 pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let entry_name = FileName::from(path_items.next_back().unwrap());
@@ -262,20 +424,57 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
     dir.unlink(entry_name)
 }
 
+/// Used to list the contents of a directory.
+///
+/// # Argument
+///
+/// `path`: path of the directory to be listed.
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the [`Vec`]
+/// of directory entries if successful,  [`SvsmError`] otherwise.
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
     let items = split_path_allow_empty(path);
     let dir = walk_path(items)?;
     Ok(dir.list())
 }
 
+/// Used to read from a file handle.
+///
+/// # Arguments
+///
+/// - `fh`: Filehandle to be read.
+/// - `buf`: buffer to read the file contents into.
+///
+/// # Returns
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the number
+/// of bytes read if successful,  [`SvsmError`] otherwise.
 pub fn read(fh: &FileHandle, buf: &mut [u8]) -> Result<usize, SvsmError> {
     fh.read(buf)
 }
 
+/// Used to write into file handle.
+///
+/// # Arguments
+///
+/// - `fh`: Filehandle to be written.
+/// - `buf`: buffer containing the data to be written.
+///
+/// # Returns
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the number
+/// of bytes written if successful,  [`SvsmError`] otherwise.
 pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
 }
 
+/// Used to set the file offset
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `pos`: new file offset value to be set.
 pub fn seek(fh: &FileHandle, pos: usize) {
     fh.seek(pos)
 }
