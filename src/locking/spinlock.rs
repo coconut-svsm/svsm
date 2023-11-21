@@ -5,7 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -28,13 +27,13 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// ```
 #[derive(Debug)]
 #[must_use = "if unused the SpinLock will immediately unlock"]
-pub struct LockGuard<'a, T: Debug> {
+pub struct LockGuard<'a, T> {
     holder: &'a AtomicU64,
     data: &'a mut T,
 }
 
 /// Implements the behavior of the [`LockGuard`] when it is dropped
-impl<'a, T: Debug> Drop for LockGuard<'a, T> {
+impl<'a, T> Drop for LockGuard<'a, T> {
     /// Automatically releases the lock when the guard is dropped
     fn drop(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
@@ -43,7 +42,7 @@ impl<'a, T: Debug> Drop for LockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`LockGuard`] to
 /// access the protected data.
-impl<'a, T: Debug> Deref for LockGuard<'a, T> {
+impl<'a, T> Deref for LockGuard<'a, T> {
     type Target = T;
     /// Provides read-only access to the protected data
     fn deref(&self) -> &T {
@@ -53,7 +52,7 @@ impl<'a, T: Debug> Deref for LockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`LockGuard`] to
 /// access the protected data in a mutable way.
-impl<'a, T: Debug> DerefMut for LockGuard<'a, T> {
+impl<'a, T> DerefMut for LockGuard<'a, T> {
     /// Provides mutable access to the protected data
     fn deref_mut(&mut self) -> &mut T {
         self.data
@@ -82,7 +81,7 @@ impl<'a, T: Debug> DerefMut for LockGuard<'a, T> {
 /// };
 /// ```
 #[derive(Debug)]
-pub struct SpinLock<T: Debug> {
+pub struct SpinLock<T> {
     /// This atomic counter is incremented each time a thread attempts to
     /// acquire the lock. It helps to determine the order in which threads
     /// acquire the lock.
@@ -96,10 +95,10 @@ pub struct SpinLock<T: Debug> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Debug + Send> Send for SpinLock<T> {}
-unsafe impl<T: Debug + Send> Sync for SpinLock<T> {}
+unsafe impl<T: Send> Send for SpinLock<T> {}
+unsafe impl<T: Send> Sync for SpinLock<T> {}
 
-impl<T: Debug> SpinLock<T> {
+impl<T> SpinLock<T> {
     /// Creates a new SpinLock instance with the specified initial data.
     ///
     /// # Examples

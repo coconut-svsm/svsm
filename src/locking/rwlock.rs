@@ -5,14 +5,13 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// A guard that provides read access to the data protected by [`RWLock`]
 #[derive(Debug)]
 #[must_use = "if unused the RWLock will immediately unlock"]
-pub struct ReadLockGuard<'a, T: Debug> {
+pub struct ReadLockGuard<'a, T> {
     /// Reference to the associated `AtomicU64` in the [`RWLock`]
     rwlock: &'a AtomicU64,
     /// Reference to the protected data
@@ -20,7 +19,7 @@ pub struct ReadLockGuard<'a, T: Debug> {
 }
 
 /// Implements the behavior of the [`ReadLockGuard`] when it is dropped
-impl<'a, T: Debug> Drop for ReadLockGuard<'a, T> {
+impl<'a, T> Drop for ReadLockGuard<'a, T> {
     /// Release the read lock
     fn drop(&mut self) {
         self.rwlock.fetch_sub(1, Ordering::Release);
@@ -29,7 +28,7 @@ impl<'a, T: Debug> Drop for ReadLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`ReadLockGuard`] to
 /// access the protected data.
-impl<'a, T: Debug> Deref for ReadLockGuard<'a, T> {
+impl<'a, T> Deref for ReadLockGuard<'a, T> {
     type Target = T;
     /// Allow reading the protected data through deref
     fn deref(&self) -> &T {
@@ -40,7 +39,7 @@ impl<'a, T: Debug> Deref for ReadLockGuard<'a, T> {
 /// A guard that provides exclusive write access to the data protected by [`RWLock`]
 #[derive(Debug)]
 #[must_use = "if unused the RWLock will immediately unlock"]
-pub struct WriteLockGuard<'a, T: Debug> {
+pub struct WriteLockGuard<'a, T> {
     /// Reference to the associated `AtomicU64` in the [`RWLock`]
     rwlock: &'a AtomicU64,
     /// Reference to the protected data (mutable)
@@ -48,7 +47,7 @@ pub struct WriteLockGuard<'a, T: Debug> {
 }
 
 /// Implements the behavior of the [`WriteLockGuard`] when it is dropped
-impl<'a, T: Debug> Drop for WriteLockGuard<'a, T> {
+impl<'a, T> Drop for WriteLockGuard<'a, T> {
     fn drop(&mut self) {
         // There are no readers - safe to just set lock to 0
         self.rwlock.store(0, Ordering::Release);
@@ -57,7 +56,7 @@ impl<'a, T: Debug> Drop for WriteLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`WriteLockGuard`] to
 /// access the protected data.
-impl<'a, T: Debug> Deref for WriteLockGuard<'a, T> {
+impl<'a, T> Deref for WriteLockGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
@@ -66,7 +65,7 @@ impl<'a, T: Debug> Deref for WriteLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`WriteLockGuard`] to
 /// access the protected data in a mutable way.
-impl<'a, T: Debug> DerefMut for WriteLockGuard<'a, T> {
+impl<'a, T> DerefMut for WriteLockGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
@@ -75,7 +74,7 @@ impl<'a, T: Debug> DerefMut for WriteLockGuard<'a, T> {
 /// A simple Read-Write Lock (RWLock) that allows multiple readers or
 /// one exclusive writer.
 #[derive(Debug)]
-pub struct RWLock<T: Debug> {
+pub struct RWLock<T> {
     /// An atomic 64-bit integer used for synchronization
     rwlock: AtomicU64,
     /// An UnsafeCell for interior mutability
@@ -84,7 +83,8 @@ pub struct RWLock<T: Debug> {
 
 /// Implements the trait `Sync` for the [`RWLock`], allowing safe
 /// concurrent access across threads.
-unsafe impl<T: Debug> Sync for RWLock<T> {}
+unsafe impl<T: Send> Send for RWLock<T> {}
+unsafe impl<T: Send + Sync> Sync for RWLock<T> {}
 
 /// Splits a 64-bit value into two parts: readers (low 32 bits) and
 /// writers (high 32 bits).
@@ -127,7 +127,7 @@ fn compose_val(readers: u64, writers: u64) -> u64 {
 /// to access the protected data. [`RWLock`] provides exclusive access for
 /// writers and shared access for readers, for efficient synchronization.
 ///
-impl<T: Debug> RWLock<T> {
+impl<T> RWLock<T> {
     /// Creates a new [`RWLock`] instance with the provided initial data.
     ///
     /// # Parameters

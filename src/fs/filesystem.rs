@@ -8,7 +8,7 @@ use super::ramfs::RamDirectory;
 use super::*;
 
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
+use crate::locking::{RWLock, SpinLock};
 use crate::mm::PageRef;
 
 use core::cmp::min;
@@ -138,20 +138,17 @@ impl SvsmFs {
     }
 }
 
-static mut FS_ROOT: SvsmFs = SvsmFs::new();
+static FS_ROOT: RWLock<SvsmFs> = RWLock::new(SvsmFs::new());
 
 pub fn initialize_fs() {
     let root_dir = Arc::new(RamDirectory::new());
-    unsafe {
-        FS_ROOT.initialize(&root_dir);
-    }
+
+    FS_ROOT.lock_write().initialize(&root_dir);
 }
 
 #[cfg(any(test, fuzzing))]
 pub fn uninitialize_fs() {
-    unsafe {
-        FS_ROOT.uninitialize();
-    }
+    FS_ROOT.lock_write().uninitialize();
 }
 
 fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
@@ -170,7 +167,9 @@ fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
 {
-    let mut current_dir = unsafe { FS_ROOT.root_dir() };
+    let fs_root = FS_ROOT.lock_read();
+    let mut current_dir = fs_root.root_dir();
+    drop(fs_root);
 
     for item in path_items {
         let dir_name = FileName::from(item);
@@ -188,7 +187,9 @@ fn walk_path_create<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmErro
 where
     I: Iterator<Item = &'a str>,
 {
-    let mut current_dir = unsafe { FS_ROOT.root_dir() };
+    let fs_root = FS_ROOT.lock_read();
+    let mut current_dir = fs_root.root_dir();
+    drop(fs_root);
 
     for item in path_items {
         let dir_name = FileName::from(item);
