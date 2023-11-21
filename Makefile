@@ -31,6 +31,9 @@ test:
 test-in-svsm: utils/cbit stage1/test-kernel.elf svsm.bin
 	./scripts/test-in-svsm.sh
 
+doc:
+	cargo doc --open --all-features --document-private-items
+
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
 

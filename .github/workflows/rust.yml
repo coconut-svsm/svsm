@@ -68,3 +68,8 @@ jobs:
           args: --all-features --target=x86_64-unknown-linux-gnu --manifest-path fuzz/Cargo.toml -- -D warnings
         env:
           RUSTFLAGS: --cfg fuzzing
+
+      - name: Check documentation
+        run: make doc
+        env:
+          RUSTDOCFLAGS: -D warnings  
