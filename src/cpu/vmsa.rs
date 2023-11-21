@@ -11,7 +11,7 @@ use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
 use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
 use super::gdt::gdt_base_limit;
-use super::idt::idt_base_limit;
+use super::idt::common::idt_base_limit;
 use super::msr::read_msr;
 
 fn svsm_code_segment() -> VMSASegment {

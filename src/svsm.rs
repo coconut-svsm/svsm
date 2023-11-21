@@ -22,7 +22,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
-use svsm::cpu::idt::{early_idt_init, idt_init};
+use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;

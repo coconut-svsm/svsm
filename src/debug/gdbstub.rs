@@ -15,7 +15,7 @@ pub mod svsm_gdbstub {
 
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
-    use crate::cpu::idt::{X86ExceptionContext, BP_VECTOR};
+    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR};
     use crate::cpu::percpu::{this_cpu, this_cpu_mut};
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
