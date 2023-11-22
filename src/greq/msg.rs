@@ -78,14 +78,6 @@ const MSG_PAYLOAD_SIZE: usize = PAGE_SIZE - MSG_HDR_SIZE;
 /// SEV-SNP certificates
 pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
-/// `SNP_GUEST_REQUEST` message format
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
-pub struct SnpGuestRequestMsg {
-    hdr: SnpGuestRequestMsgHdr,
-    pld: [u8; MSG_PAYLOAD_SIZE],
-}
-
 /// `SNP_GUEST_REQUEST` message header format
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug)]
@@ -213,6 +205,14 @@ impl Default for SnpGuestRequestMsgHdr {
             rsvd3: [0; 35],
         }
     }
+}
+
+/// `SNP_GUEST_REQUEST` message format
+#[repr(C, packed)]
+#[derive(Clone, Copy, Debug)]
+pub struct SnpGuestRequestMsg {
+    hdr: SnpGuestRequestMsgHdr,
+    pld: [u8; MSG_PAYLOAD_SIZE],
 }
 
 impl SnpGuestRequestMsg {
