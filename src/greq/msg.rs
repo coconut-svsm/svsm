@@ -558,13 +558,8 @@ impl SnpGuestRequestExtData {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        greq::msg::{
-            SnpGuestRequestMsg, SnpGuestRequestMsgHdr, SnpGuestRequestMsgType, MSG_HDR_SIZE,
-            MSG_PAYLOAD_SIZE,
-        },
-        sev::secrets_page::VMPCK_SIZE,
-    };
+    use super::*;
+    use crate::sev::secrets_page::VMPCK_SIZE;
 
     #[test]
     fn u16_from_guest_msg_hdr_size() {
