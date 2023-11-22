@@ -69,9 +69,6 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) {
     let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
 
     match err {
-        // If the debugger is enabled then handle the DB exception
-        // by directly invoking the exception handler
-        X86_TRAP_DB => handle_db_exception(ctx),
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         _ => {
             panic!(
@@ -99,12 +96,6 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
     let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
 
     match err {
-        // If the debugger is enabled then handle the DB exception
-        // by directly invoking the exception handler
-        X86_TRAP_DB => {
-            handle_db_exception(ctx);
-        }
-
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
             handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")

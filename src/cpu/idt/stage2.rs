@@ -4,12 +4,11 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::common::{load_idt, Idt, IdtEntry, BP_VECTOR, DF_VECTOR, GLOBAL_IDT, VC_VECTOR};
+use super::common::{load_idt, Idt, IdtEntry, DF_VECTOR, GLOBAL_IDT, VC_VECTOR};
 use crate::address::VirtAddr;
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
 use crate::cpu::X86ExceptionContext;
-use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use core::arch::global_asm;
 
 fn init_idt(idt: &mut Idt, handler_array: *const u8) {
@@ -50,7 +49,6 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
             );
         }
         VC_VECTOR => stage2_handle_vc_exception(ctx),
-        BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
         _ => {
             let err = ctx.error_code;
             let vec = ctx.vector;
@@ -77,7 +75,6 @@ pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionConte
             );
         }
         VC_VECTOR => stage2_handle_vc_exception_no_ghcb(ctx),
-        BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
         _ => {
             let err = ctx.error_code;
             let vec = ctx.vector;
