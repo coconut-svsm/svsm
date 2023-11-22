@@ -551,6 +551,29 @@ mod tests {
     use super::*;
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
     use crate::sev::secrets_page::VMPCK_SIZE;
+    use memoffset::offset_of;
+
+    #[test]
+    fn test_snp_guest_request_hdr_offsets() {
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, authtag), 0);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_seqno), 0x20);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd1), 0x28);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, algo), 0x30);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, hdr_version), 0x31);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, hdr_sz), 0x32);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_type), 0x34);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_version), 0x35);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_sz), 0x36);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd2), 0x38);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_vmpck), 0x3c);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd3), 0x3d);
+    }
+
+    #[test]
+    fn test_snp_guest_request_msg_offsets() {
+        assert_eq!(offset_of!(SnpGuestRequestMsg, hdr), 0);
+        assert_eq!(offset_of!(SnpGuestRequestMsg, pld), 0x60);
+    }
 
     #[test]
     fn test_requestmsg_boxed_new() {
