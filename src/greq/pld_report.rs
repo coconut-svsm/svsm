@@ -39,10 +39,10 @@ impl SnpReportRequest {
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let buffer = buffer
-            .get(..size_of::<SnpReportRequest>())
+            .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
-        let request = unsafe { &*buffer.as_ptr().cast::<SnpReportRequest>() };
+        let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
 
         if !request.is_reserved_clear() {
             return Err(SvsmReqError::invalid_parameter());
@@ -86,10 +86,10 @@ pub enum SnpReportResponseStatus {
 impl SnpReportResponse {
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let buffer = buffer
-            .get(..size_of::<SnpReportResponse>())
+            .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
-        let response = unsafe { &*buffer.as_ptr().cast::<SnpReportResponse>() };
+        let response = unsafe { &*buffer.as_ptr().cast::<Self>() };
         Ok(response)
     }
 

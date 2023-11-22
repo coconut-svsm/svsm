@@ -55,13 +55,9 @@ impl TryFrom<u8> for SnpGuestRequestMsgType {
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
-            x if x == SnpGuestRequestMsgType::Invalid as u8 => Ok(SnpGuestRequestMsgType::Invalid),
-            x if x == SnpGuestRequestMsgType::ReportRequest as u8 => {
-                Ok(SnpGuestRequestMsgType::ReportRequest)
-            }
-            x if x == SnpGuestRequestMsgType::ReportResponse as u8 => {
-                Ok(SnpGuestRequestMsgType::ReportResponse)
-            }
+            x if x == Self::Invalid as u8 => Ok(Self::Invalid),
+            x if x == Self::ReportRequest as u8 => Ok(Self::ReportRequest),
+            x if x == Self::ReportResponse as u8 => Ok(Self::ReportResponse),
             _ => Err(SvsmReqError::invalid_parameter()),
         }
     }
@@ -179,7 +175,7 @@ impl SnpGuestRequestMsgHdr {
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
     fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { from_raw_parts_mut(self as *mut _ as *mut u8, MSG_HDR_SIZE) }
+        unsafe { from_raw_parts_mut(self as *mut _ as *mut u8, size_of::<Self>()) }
     }
 }
 
@@ -509,19 +505,15 @@ impl SnpGuestRequestExtData {
     ///   before the object is dropped. Shared pages should not be freed
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
-
         let start = VirtAddr::from(self as *mut Self);
-        let end = start + EXT_DATA_SIZE;
+        let end = start + size_of::<Self>();
         set_shared_region_4k(start, end)
     }
 
     /// Set the C-bit (memory encryption bit) for the Self pages
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
-
         let start = VirtAddr::from(self as *mut Self);
-        let end = start + EXT_DATA_SIZE;
+        let end = start + size_of::<Self>();
         set_encrypted_region_4k(start, end)
     }
 
