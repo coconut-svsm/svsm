@@ -135,7 +135,7 @@ global_asm!(
         
         /* Stage 2 handler array setup */
         .text
-    push_regs:
+    push_regs_stage2:
         pushq   %rax
         pushq   %rbx
         pushq   %rcx
@@ -167,7 +167,7 @@ global_asm!(
         pushq   $0
         .endif
         pushq   $i  /* Vector Number */
-        jmp push_regs
+        jmp push_regs_stage2
         i = i + 1
         .endr
     "#,
