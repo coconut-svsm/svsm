@@ -28,8 +28,6 @@ use crate::{
     types::{PageSize, PAGE_SIZE},
 };
 
-// Message Header Format (AMD SEV-SNP spec. table 98)
-
 /// Version of the message header
 const HDR_VERSION: u8 = 1;
 /// Version of the message payload
@@ -78,7 +76,7 @@ const MSG_PAYLOAD_SIZE: usize = PAGE_SIZE - MSG_HDR_SIZE;
 /// SEV-SNP certificates
 pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
-/// `SNP_GUEST_REQUEST` message header format
+/// `SNP_GUEST_REQUEST` message header format (AMD SEV-SNP spec. table 98)
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug)]
 pub struct SnpGuestRequestMsgHdr {
