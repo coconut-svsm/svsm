@@ -514,7 +514,7 @@ impl SnpGuestRequestExtData {
         const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
 
         let start = VirtAddr::from(self as *mut Self);
-        let end = VirtAddr::from(start.bits() + EXT_DATA_SIZE);
+        let end = start + EXT_DATA_SIZE;
         set_shared_region_4k(start, end)
     }
 
@@ -523,7 +523,7 @@ impl SnpGuestRequestExtData {
         const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
 
         let start = VirtAddr::from(self as *mut Self);
-        let end = VirtAddr::from(start.bits() + EXT_DATA_SIZE);
+        let end = start + EXT_DATA_SIZE;
         set_encrypted_region_4k(start, end)
     }
 
