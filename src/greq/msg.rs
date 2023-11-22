@@ -14,7 +14,8 @@ use alloc::{
 };
 use core::{
     mem::size_of,
-    slice::{from_raw_parts, from_raw_parts_mut},
+    ptr::addr_of,
+    slice::{from_raw_parts, from_raw_parts_mut, from_ref},
 };
 
 use crate::{
@@ -168,12 +169,22 @@ impl SnpGuestRequestMsgHdr {
 
     /// Get a slice of the header fields used as additional authenticated data (AAD)
     fn get_aad_slice(&self) -> &[u8] {
-        let self_gva = self as *const _ as *const u8;
-        let algo_gva = &self.algo as *const u8;
+        let self_gva = addr_of!(*self);
+        let algo_gva = addr_of!(self.algo);
+        let algo_offset = algo_gva as isize - self_gva as isize;
 
-        let algo_offset = unsafe { algo_gva.offset_from(self_gva) } as usize;
+        let slice: &[Self] = from_ref(self);
+        let ptr: *const Self = slice.as_ptr();
+        // SAFETY: we are doing:
+        // &[Self] -> *const Self -> *const u8 -> &[u8]
+        // This is safe as it simply reinterprets the underlying type as bytes
+        // by using the &self borrow. This is safe because Self has no invalid
+        // representations, as it is composed of simple integer types.
+        // &[u8] has no alignment requirements, and this new slice has the
+        // same size as Self, so we are within bounds.
+        let b = unsafe { from_raw_parts(ptr.cast::<u8>(), size_of::<Self>()) };
 
-        unsafe { from_raw_parts(algo_gva, MSG_HDR_SIZE - algo_offset) }
+        &b[algo_offset as usize..]
     }
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
