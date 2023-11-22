@@ -208,7 +208,7 @@ impl Default for SnpGuestRequestMsgHdr {
 }
 
 /// `SNP_GUEST_REQUEST` message format
-#[repr(C, packed)]
+#[repr(C, align(4096))]
 #[derive(Clone, Copy, Debug)]
 pub struct SnpGuestRequestMsg {
     hdr: SnpGuestRequestMsgHdr,
@@ -477,7 +477,7 @@ fn set_shared_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqErr
 
 /// Data page(s) the hypervisor will use to store certificate data in
 /// an extended `SNP_GUEST_REQUEST`
-#[repr(C, packed)]
+#[repr(C, align(4096))]
 #[derive(Debug)]
 pub struct SnpGuestRequestExtData {
     /// According to the GHCB spec, the data page(s) must be contiguous pages if
@@ -559,7 +559,23 @@ impl SnpGuestRequestExtData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
     use crate::sev::secrets_page::VMPCK_SIZE;
+
+    #[test]
+    fn test_requestmsg_boxed_new() {
+        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let mut data = SnpGuestRequestMsg::boxed_new().unwrap();
+        assert!(data.hdr.as_slice_mut().iter().all(|c| *c == 0));
+        assert!(data.pld.iter().all(|c| *c == 0));
+    }
+
+    #[test]
+    fn test_reqextdata_boxed_new() {
+        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let data = SnpGuestRequestExtData::boxed_new().unwrap();
+        assert!(data.data.iter().all(|c| *c == 0));
+    }
 
     #[test]
     fn u16_from_guest_msg_hdr_size() {
