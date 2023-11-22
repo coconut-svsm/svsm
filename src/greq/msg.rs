@@ -102,15 +102,11 @@ pub struct SnpGuestRequestMsgHdr {
     rsvd3: [u8; 35],
 }
 
+const _: () = assert!(size_of::<SnpGuestRequestMsgHdr>() <= u16::MAX as usize);
+
 impl SnpGuestRequestMsgHdr {
     /// Allocate a new [`SnpGuestRequestMsgHdr`] and initialize it
-    ///
-    /// # Panic
-    ///
-    /// * [`SnpGuestRequestMsgHdr`] size does not fit in a u16.
     pub fn new(msg_sz: u16, msg_type: SnpGuestRequestMsgType, msg_seqno: u64) -> Self {
-        assert!(u16::try_from(MSG_HDR_SIZE).is_ok());
-
         Self {
             msg_seqno,
             algo: SnpGuestRequestAead::Aes256Gcm as u8,
@@ -139,10 +135,8 @@ impl SnpGuestRequestMsgHdr {
         msg_type: SnpGuestRequestMsgType,
         msg_seqno: u64,
     ) -> Result<(), SvsmReqError> {
-        let header_size =
-            u16::try_from(MSG_HDR_SIZE).map_err(|_| SvsmReqError::invalid_format())?;
         if self.hdr_version != HDR_VERSION
-            || self.hdr_sz != header_size
+            || self.hdr_sz != MSG_HDR_SIZE as u16
             || self.algo != SnpGuestRequestAead::Aes256Gcm as u8
             || self.msg_type != msg_type as u8
             || self.msg_vmpck != 0
@@ -209,19 +203,18 @@ pub struct SnpGuestRequestMsg {
     pld: [u8; MSG_PAYLOAD_SIZE],
 }
 
+// The GHCB spec says it has to fit in one page and be page aligned
+const _: () = assert!(size_of::<SnpGuestRequestMsg>() <= PAGE_SIZE);
+
 impl SnpGuestRequestMsg {
     /// Allocate the object in the heap without going through stack as
     /// this is a large object
     ///
-    /// # Panic
+    /// # Panics
     ///
-    /// * Memory allocated is not page aligned or Self does not
-    ///   fit into a page
+    /// Panics if the new allocation is not page aligned.
     pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
         let layout = Layout::new::<Self>();
-
-        // The GHCB spec says it has to fit in one page and be page aligned
-        assert!(layout.size() <= PAGE_SIZE);
 
         unsafe {
             let addr = alloc_zeroed(layout);
@@ -588,11 +581,6 @@ mod tests {
         let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let data = SnpGuestRequestExtData::boxed_new().unwrap();
         assert!(data.data.iter().all(|c| *c == 0));
-    }
-
-    #[test]
-    fn u16_from_guest_msg_hdr_size() {
-        assert!(u16::try_from(MSG_HDR_SIZE).is_ok());
     }
 
     #[test]

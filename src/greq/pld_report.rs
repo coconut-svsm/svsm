@@ -102,19 +102,12 @@ impl SnpReportResponse {
     }
 
     /// Validate the [SnpReportResponse] fields
-    ///
-    /// # Panic
-    ///
-    /// * The size of the struct [`AttestationReport`] must fit in a u32
     pub fn validate(&self) -> Result<(), SvsmReqError> {
         if self.status != SnpReportResponseStatus::Success as u32 {
             return Err(SvsmReqError::invalid_request());
         }
 
-        const REPORT_SIZE: usize = size_of::<AttestationReport>();
-        assert!(u32::try_from(REPORT_SIZE).is_ok());
-
-        if self.report_size != REPORT_SIZE as u32 {
+        if self.report_size != size_of::<AttestationReport>() as u32 {
             return Err(SvsmReqError::invalid_format());
         }
 
@@ -198,6 +191,8 @@ pub struct AttestationReport {
     /// Signature of bytes 0h to 29Fh inclusive of this report
     signature: Signature,
 }
+
+const _: () = assert!(size_of::<AttestationReport>() <= u32::MAX as usize);
 
 #[cfg(test)]
 mod tests {
