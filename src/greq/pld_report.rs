@@ -42,6 +42,10 @@ impl SnpReportRequest {
             .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
+        // SAFETY: SnpReportRequest has no invalid representations, as it is
+        // comprised entirely of integer types. It is repr(packed), so its
+        // required alignment is simply 1. We have checked the size, so this
+        // is entirely safe.
         let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
 
         if !request.is_reserved_clear() {
@@ -89,6 +93,10 @@ impl SnpReportResponse {
             .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
+        // SAFETY: SnpReportResponse has no invalid representations, as it is
+        // comprised entirely of integer types. It is repr(packed), so its
+        // required alignment is simply 1. We have checked the size, so this
+        // is entirely safe.
         let response = unsafe { &*buffer.as_ptr().cast::<Self>() };
         Ok(response)
     }
