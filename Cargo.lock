@@ -269,6 +269,7 @@ dependencies = [
  "gdbstub_arch",
  "intrusive-collections",
  "log",
+ "memoffset",
  "packit",
  "test",
 ]

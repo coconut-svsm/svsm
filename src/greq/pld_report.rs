@@ -39,10 +39,14 @@ impl SnpReportRequest {
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let buffer = buffer
-            .get(..size_of::<SnpReportRequest>())
+            .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
-        let request = unsafe { &*buffer.as_ptr().cast::<SnpReportRequest>() };
+        // SAFETY: SnpReportRequest has no invalid representations, as it is
+        // comprised entirely of integer types. It is repr(packed), so its
+        // required alignment is simply 1. We have checked the size, so this
+        // is entirely safe.
+        let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
 
         if !request.is_reserved_clear() {
             return Err(SvsmReqError::invalid_parameter());
@@ -86,27 +90,24 @@ pub enum SnpReportResponseStatus {
 impl SnpReportResponse {
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let buffer = buffer
-            .get(..size_of::<SnpReportResponse>())
+            .get(..size_of::<Self>())
             .ok_or_else(SvsmReqError::invalid_parameter)?;
 
-        let response = unsafe { &*buffer.as_ptr().cast::<SnpReportResponse>() };
+        // SAFETY: SnpReportResponse has no invalid representations, as it is
+        // comprised entirely of integer types. It is repr(packed), so its
+        // required alignment is simply 1. We have checked the size, so this
+        // is entirely safe.
+        let response = unsafe { &*buffer.as_ptr().cast::<Self>() };
         Ok(response)
     }
 
     /// Validate the [SnpReportResponse] fields
-    ///
-    /// # Panic
-    ///
-    /// * The size of the struct [`AttestationReport`] must fit in a u32
     pub fn validate(&self) -> Result<(), SvsmReqError> {
         if self.status != SnpReportResponseStatus::Success as u32 {
             return Err(SvsmReqError::invalid_request());
         }
 
-        const REPORT_SIZE: usize = size_of::<AttestationReport>();
-        assert!(u32::try_from(REPORT_SIZE).is_ok());
-
-        if self.report_size != REPORT_SIZE as u32 {
+        if self.report_size != size_of::<AttestationReport>() as u32 {
             return Err(SvsmReqError::invalid_format());
         }
 
@@ -189,4 +190,62 @@ pub struct AttestationReport {
     reserved2: [u8; 192],
     /// Signature of bytes 0h to 29Fh inclusive of this report
     signature: Signature,
+}
+
+const _: () = assert!(size_of::<AttestationReport>() <= u32::MAX as usize);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use memoffset::offset_of;
+
+    #[test]
+    fn test_snp_report_request_offsets() {
+        assert_eq!(offset_of!(SnpReportRequest, user_data), 0x0);
+        assert_eq!(offset_of!(SnpReportRequest, vmpl), 0x40);
+        assert_eq!(offset_of!(SnpReportRequest, flags), 0x44);
+        assert_eq!(offset_of!(SnpReportRequest, rsvd), 0x48);
+    }
+
+    #[test]
+    fn test_snp_report_response_offsets() {
+        assert_eq!(offset_of!(SnpReportResponse, status), 0x0);
+        assert_eq!(offset_of!(SnpReportResponse, report_size), 0x4);
+        assert_eq!(offset_of!(SnpReportResponse, _reserved), 0x8);
+        assert_eq!(offset_of!(SnpReportResponse, report), 0x20);
+    }
+
+    #[test]
+    fn test_ecdsa_p384_sha384_signature_offsets() {
+        assert_eq!(offset_of!(Signature, r), 0x0);
+        assert_eq!(offset_of!(Signature, s), 0x48);
+        assert_eq!(offset_of!(Signature, reserved), 0x90);
+    }
+
+    #[test]
+    fn test_attestation_report_offsets() {
+        assert_eq!(offset_of!(AttestationReport, version), 0x0);
+        assert_eq!(offset_of!(AttestationReport, guest_svn), 0x4);
+        assert_eq!(offset_of!(AttestationReport, policy), 0x8);
+        assert_eq!(offset_of!(AttestationReport, family_id), 0x10);
+        assert_eq!(offset_of!(AttestationReport, image_id), 0x20);
+        assert_eq!(offset_of!(AttestationReport, vmpl), 0x30);
+        assert_eq!(offset_of!(AttestationReport, signature_algo), 0x34);
+        assert_eq!(offset_of!(AttestationReport, platform_version), 0x38);
+        assert_eq!(offset_of!(AttestationReport, platform_info), 0x40);
+        assert_eq!(offset_of!(AttestationReport, flags), 0x48);
+        assert_eq!(offset_of!(AttestationReport, reserved0), 0x4c);
+        assert_eq!(offset_of!(AttestationReport, report_data), 0x50);
+        assert_eq!(offset_of!(AttestationReport, measurement), 0x90);
+        assert_eq!(offset_of!(AttestationReport, host_data), 0xc0);
+        assert_eq!(offset_of!(AttestationReport, id_key_digest), 0xe0);
+        assert_eq!(offset_of!(AttestationReport, author_key_digest), 0x110);
+        assert_eq!(offset_of!(AttestationReport, report_id), 0x140);
+        assert_eq!(offset_of!(AttestationReport, report_id_ma), 0x160);
+        assert_eq!(offset_of!(AttestationReport, reported_tcb), 0x180);
+        assert_eq!(offset_of!(AttestationReport, reserved1), 0x188);
+        assert_eq!(offset_of!(AttestationReport, chip_id), 0x1a0);
+        assert_eq!(offset_of!(AttestationReport, reserved2), 0x1e0);
+        assert_eq!(offset_of!(AttestationReport, signature), 0x2a0);
+    }
 }

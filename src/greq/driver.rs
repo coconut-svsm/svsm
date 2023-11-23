@@ -11,6 +11,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use core::ptr::addr_of_mut;
 use core::{cell::OnceCell, mem::size_of};
 
 use crate::{
@@ -158,9 +159,9 @@ impl SnpGuestRequestDriver {
     fn send(&mut self, req_class: SnpGuestRequestClass) -> Result<(), SvsmReqError> {
         self.response.clear();
 
-        let req_page = VirtAddr::from(&mut *self.request as *mut SnpGuestRequestMsg);
-        let resp_page = VirtAddr::from(&mut *self.response as *mut SnpGuestRequestMsg);
-        let data_pages = VirtAddr::from(&mut *self.ext_data as *mut SnpGuestRequestExtData);
+        let req_page = VirtAddr::from(addr_of_mut!(*self.request));
+        let resp_page = VirtAddr::from(addr_of_mut!(*self.response));
+        let data_pages = VirtAddr::from(addr_of_mut!(*self.ext_data));
 
         if req_class == SnpGuestRequestClass::Extended {
             let num_user_pages = (self.user_extdata_size >> PAGE_SHIFT) as u64;

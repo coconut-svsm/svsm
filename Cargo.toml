@@ -33,3 +33,6 @@ test = { version = "0.1.0", path = "test" }
 default = ["enable-stacktrace"]
 enable-stacktrace = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
+
+[dev-dependencies]
+memoffset = "0.9.0"

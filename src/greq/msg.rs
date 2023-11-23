@@ -14,7 +14,8 @@ use alloc::{
 };
 use core::{
     mem::size_of,
-    slice::{from_raw_parts, from_raw_parts_mut},
+    ptr::{addr_of, addr_of_mut},
+    slice::{from_raw_parts, from_raw_parts_mut, from_ref},
 };
 
 use crate::{
@@ -26,8 +27,6 @@ use crate::{
     sev::{ghcb::PageStateChangeOp, secrets_page::VMPCK_SIZE},
     types::{PageSize, PAGE_SIZE},
 };
-
-// Message Header Format (AMD SEV-SNP spec. table 98)
 
 /// Version of the message header
 const HDR_VERSION: u8 = 1;
@@ -56,13 +55,9 @@ impl TryFrom<u8> for SnpGuestRequestMsgType {
 
     fn try_from(v: u8) -> Result<Self, Self::Error> {
         match v {
-            x if x == SnpGuestRequestMsgType::Invalid as u8 => Ok(SnpGuestRequestMsgType::Invalid),
-            x if x == SnpGuestRequestMsgType::ReportRequest as u8 => {
-                Ok(SnpGuestRequestMsgType::ReportRequest)
-            }
-            x if x == SnpGuestRequestMsgType::ReportResponse as u8 => {
-                Ok(SnpGuestRequestMsgType::ReportResponse)
-            }
+            x if x == Self::Invalid as u8 => Ok(Self::Invalid),
+            x if x == Self::ReportRequest as u8 => Ok(Self::ReportRequest),
+            x if x == Self::ReportResponse as u8 => Ok(Self::ReportResponse),
             _ => Err(SvsmReqError::invalid_parameter()),
         }
     }
@@ -77,15 +72,7 @@ const MSG_PAYLOAD_SIZE: usize = PAGE_SIZE - MSG_HDR_SIZE;
 /// SEV-SNP certificates
 pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
-/// `SNP_GUEST_REQUEST` message format
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
-pub struct SnpGuestRequestMsg {
-    hdr: SnpGuestRequestMsgHdr,
-    pld: [u8; MSG_PAYLOAD_SIZE],
-}
-
-/// `SNP_GUEST_REQUEST` message header format
+/// `SNP_GUEST_REQUEST` message header format (AMD SEV-SNP spec. table 98)
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug)]
 pub struct SnpGuestRequestMsgHdr {
@@ -115,15 +102,11 @@ pub struct SnpGuestRequestMsgHdr {
     rsvd3: [u8; 35],
 }
 
+const _: () = assert!(size_of::<SnpGuestRequestMsgHdr>() <= u16::MAX as usize);
+
 impl SnpGuestRequestMsgHdr {
     /// Allocate a new [`SnpGuestRequestMsgHdr`] and initialize it
-    ///
-    /// # Panic
-    ///
-    /// * [`SnpGuestRequestMsgHdr`] size does not fit in a u16.
     pub fn new(msg_sz: u16, msg_type: SnpGuestRequestMsgType, msg_seqno: u64) -> Self {
-        assert!(u16::try_from(MSG_HDR_SIZE).is_ok());
-
         Self {
             msg_seqno,
             algo: SnpGuestRequestAead::Aes256Gcm as u8,
@@ -152,10 +135,8 @@ impl SnpGuestRequestMsgHdr {
         msg_type: SnpGuestRequestMsgType,
         msg_seqno: u64,
     ) -> Result<(), SvsmReqError> {
-        let header_size =
-            u16::try_from(MSG_HDR_SIZE).map_err(|_| SvsmReqError::invalid_format())?;
         if self.hdr_version != HDR_VERSION
-            || self.hdr_sz != header_size
+            || self.hdr_sz != MSG_HDR_SIZE as u16
             || self.algo != SnpGuestRequestAead::Aes256Gcm as u8
             || self.msg_type != msg_type as u8
             || self.msg_vmpck != 0
@@ -168,17 +149,27 @@ impl SnpGuestRequestMsgHdr {
 
     /// Get a slice of the header fields used as additional authenticated data (AAD)
     fn get_aad_slice(&self) -> &[u8] {
-        let self_gva = self as *const _ as *const u8;
-        let algo_gva = &self.algo as *const u8;
+        let self_gva = addr_of!(*self);
+        let algo_gva = addr_of!(self.algo);
+        let algo_offset = algo_gva as isize - self_gva as isize;
 
-        let algo_offset = unsafe { algo_gva.offset_from(self_gva) } as usize;
+        let slice: &[Self] = from_ref(self);
+        let ptr: *const Self = slice.as_ptr();
+        // SAFETY: we are doing:
+        // &[Self] -> *const Self -> *const u8 -> &[u8]
+        // This is safe as it simply reinterprets the underlying type as bytes
+        // by using the &self borrow. This is safe because Self has no invalid
+        // representations, as it is composed of simple integer types.
+        // &[u8] has no alignment requirements, and this new slice has the
+        // same size as Self, so we are within bounds.
+        let b = unsafe { from_raw_parts(ptr.cast::<u8>(), size_of::<Self>()) };
 
-        unsafe { from_raw_parts(algo_gva, MSG_HDR_SIZE - algo_offset) }
+        &b[algo_offset as usize..]
     }
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
     fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { from_raw_parts_mut(self as *mut _ as *mut u8, MSG_HDR_SIZE) }
+        unsafe { from_raw_parts_mut(addr_of_mut!(*self).cast(), size_of::<Self>()) }
     }
 }
 
@@ -204,19 +195,26 @@ impl Default for SnpGuestRequestMsgHdr {
     }
 }
 
+/// `SNP_GUEST_REQUEST` message format
+#[repr(C, align(4096))]
+#[derive(Clone, Copy, Debug)]
+pub struct SnpGuestRequestMsg {
+    hdr: SnpGuestRequestMsgHdr,
+    pld: [u8; MSG_PAYLOAD_SIZE],
+}
+
+// The GHCB spec says it has to fit in one page and be page aligned
+const _: () = assert!(size_of::<SnpGuestRequestMsg>() <= PAGE_SIZE);
+
 impl SnpGuestRequestMsg {
     /// Allocate the object in the heap without going through stack as
     /// this is a large object
     ///
-    /// # Panic
+    /// # Panics
     ///
-    /// * Memory allocated is not page aligned or Self does not
-    ///   fit into a page
+    /// Panics if the new allocation is not page aligned.
     pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
         let layout = Layout::new::<Self>();
-
-        // The GHCB spec says it has to fit in one page and be page aligned
-        assert!(layout.size() <= PAGE_SIZE);
 
         unsafe {
             let addr = alloc_zeroed(layout);
@@ -239,7 +237,7 @@ impl SnpGuestRequestMsg {
     ///   before the object is dropped. Shared pages should not be freed
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(self as *mut Self);
+        let vaddr = VirtAddr::from(addr_of!(*self));
         this_cpu_mut()
             .get_pgtable()
             .set_shared_4k(vaddr)
@@ -259,7 +257,7 @@ impl SnpGuestRequestMsg {
 
     /// Set the C-bit (memory encryption bit) for the Self page
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(self as *mut Self);
+        let vaddr = VirtAddr::from(addr_of!(*self));
         this_cpu_mut()
             .get_pgtable()
             .set_encrypted_4k(vaddr)
@@ -466,7 +464,7 @@ fn set_shared_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqErr
 
 /// Data page(s) the hypervisor will use to store certificate data in
 /// an extended `SNP_GUEST_REQUEST`
-#[repr(C, packed)]
+#[repr(C, align(4096))]
 #[derive(Debug)]
 pub struct SnpGuestRequestExtData {
     /// According to the GHCB spec, the data page(s) must be contiguous pages if
@@ -500,19 +498,15 @@ impl SnpGuestRequestExtData {
     ///   before the object is dropped. Shared pages should not be freed
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
-
-        let start = VirtAddr::from(self as *mut Self);
-        let end = VirtAddr::from(start.bits() + EXT_DATA_SIZE);
+        let start = VirtAddr::from(addr_of!(*self));
+        let end = start + size_of::<Self>();
         set_shared_region_4k(start, end)
     }
 
     /// Set the C-bit (memory encryption bit) for the Self pages
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        const EXT_DATA_SIZE: usize = size_of::<SnpGuestRequestExtData>();
-
-        let start = VirtAddr::from(self as *mut Self);
-        let end = VirtAddr::from(start.bits() + EXT_DATA_SIZE);
+        let start = VirtAddr::from(addr_of!(*self));
+        let end = start + size_of::<Self>();
         set_encrypted_region_4k(start, end)
     }
 
@@ -547,17 +541,46 @@ impl SnpGuestRequestExtData {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        greq::msg::{
-            SnpGuestRequestMsg, SnpGuestRequestMsgHdr, SnpGuestRequestMsgType, MSG_HDR_SIZE,
-            MSG_PAYLOAD_SIZE,
-        },
-        sev::secrets_page::VMPCK_SIZE,
-    };
+    use super::*;
+    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
+    use crate::sev::secrets_page::VMPCK_SIZE;
+    use memoffset::offset_of;
 
     #[test]
-    fn u16_from_guest_msg_hdr_size() {
-        assert!(u16::try_from(MSG_HDR_SIZE).is_ok());
+    fn test_snp_guest_request_hdr_offsets() {
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, authtag), 0);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_seqno), 0x20);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd1), 0x28);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, algo), 0x30);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, hdr_version), 0x31);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, hdr_sz), 0x32);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_type), 0x34);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_version), 0x35);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_sz), 0x36);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd2), 0x38);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_vmpck), 0x3c);
+        assert_eq!(offset_of!(SnpGuestRequestMsgHdr, rsvd3), 0x3d);
+    }
+
+    #[test]
+    fn test_snp_guest_request_msg_offsets() {
+        assert_eq!(offset_of!(SnpGuestRequestMsg, hdr), 0);
+        assert_eq!(offset_of!(SnpGuestRequestMsg, pld), 0x60);
+    }
+
+    #[test]
+    fn test_requestmsg_boxed_new() {
+        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let mut data = SnpGuestRequestMsg::boxed_new().unwrap();
+        assert!(data.hdr.as_slice_mut().iter().all(|c| *c == 0));
+        assert!(data.pld.iter().all(|c| *c == 0));
+    }
+
+    #[test]
+    fn test_reqextdata_boxed_new() {
+        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+        let data = SnpGuestRequestExtData::boxed_new().unwrap();
+        assert!(data.data.iter().all(|c| *c == 0));
     }
 
     #[test]
@@ -581,27 +604,25 @@ mod tests {
         let vmpck0 = [5u8; VMPCK_SIZE];
         let vmpck0_seqno: u64 = 1;
 
-        let result = msg.encrypt_set(
+        msg.encrypt_set(
             SnpGuestRequestMsgType::ReportRequest,
             vmpck0_seqno,
             &vmpck0,
             PLAINTEXT,
-        );
-
-        assert!(result.is_ok());
+        )
+        .unwrap();
 
         let mut outbuf = [0u8; PLAINTEXT.len()];
 
-        let result = msg.decrypt_get(
-            SnpGuestRequestMsgType::ReportRequest,
-            vmpck0_seqno,
-            &vmpck0,
-            &mut outbuf,
-        );
+        let outbuf_len = msg
+            .decrypt_get(
+                SnpGuestRequestMsgType::ReportRequest,
+                vmpck0_seqno,
+                &vmpck0,
+                &mut outbuf,
+            )
+            .unwrap();
 
-        assert!(result.is_ok());
-
-        let outbuf_len = result.unwrap();
         assert_eq!(outbuf_len, PLAINTEXT.len());
 
         assert_eq!(outbuf, PLAINTEXT);
