@@ -716,7 +716,5 @@ pub mod svsm_gdbstub {
 
     pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
 
-    pub fn handle_db_exception(_ctx: &mut X86ExceptionContext) {}
-
     pub fn debug_break() {}
 }
