@@ -604,27 +604,25 @@ mod tests {
         let vmpck0 = [5u8; VMPCK_SIZE];
         let vmpck0_seqno: u64 = 1;
 
-        let result = msg.encrypt_set(
+        msg.encrypt_set(
             SnpGuestRequestMsgType::ReportRequest,
             vmpck0_seqno,
             &vmpck0,
             PLAINTEXT,
-        );
-
-        assert!(result.is_ok());
+        )
+        .unwrap();
 
         let mut outbuf = [0u8; PLAINTEXT.len()];
 
-        let result = msg.decrypt_get(
-            SnpGuestRequestMsgType::ReportRequest,
-            vmpck0_seqno,
-            &vmpck0,
-            &mut outbuf,
-        );
+        let outbuf_len = msg
+            .decrypt_get(
+                SnpGuestRequestMsgType::ReportRequest,
+                vmpck0_seqno,
+                &vmpck0,
+                &mut outbuf,
+            )
+            .unwrap();
 
-        assert!(result.is_ok());
-
-        let outbuf_len = result.unwrap();
         assert_eq!(outbuf_len, PLAINTEXT.len());
 
         assert_eq!(outbuf, PLAINTEXT);
