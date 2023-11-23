@@ -1180,7 +1180,7 @@ impl SvsmAllocator {
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with `Self::new()`.
-    #[cfg(any(test, fuzzing))]
+    #[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
     fn reset(&self) {
         *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
         *self.slabs[1].lock() = Slab::new(Self::MIN_SLAB_SIZE * 2);
@@ -1262,14 +1262,22 @@ static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 #[cfg(test)]
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
-/// A dummy struct to acquire a lock over global memory
+/// A dummy struct to acquire a lock over global memory for tests.
 #[cfg(any(test, fuzzing))]
 #[derive(Debug)]
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
 #[cfg(any(test, fuzzing))]
 impl TestRootMem<'_> {
+    #[cfg(test_in_svsm)]
+    #[must_use = "memory guard must be held for the whole test"]
+    pub fn setup(_size: usize) -> Self {
+        // We do not need to set up root memory if running inside the SVSM.
+        Self(TEST_ROOT_MEM_LOCK.lock())
+    }
+
     /// Acquire a lock on global memory and initialize it
+    #[cfg(not(test_in_svsm))]
     #[must_use = "memory guard must be held for the whole test"]
     pub fn setup(size: usize) -> Self {
         extern crate alloc;
@@ -1294,9 +1302,10 @@ impl TestRootMem<'_> {
     }
 }
 
-#[cfg(any(test, fuzzing))]
+#[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
 impl Drop for TestRootMem<'_> {
-    /// Destroy the global memory before dropping the lock over it
+    /// If running tests in userspace, destroy root memory before
+    /// dropping the lock over it.
     fn drop(&mut self) {
         extern crate alloc;
         use alloc::alloc::dealloc;
