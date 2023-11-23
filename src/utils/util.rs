@@ -87,8 +87,8 @@ mod tests {
     #[test]
     fn test_zero_mem_region() {
         let mut data: [u8; 10] = [1; 10];
-        let start = VirtAddr::new(&mut data[0] as *mut u8 as usize);
-        let end = start + 10;
+        let start = VirtAddr::from(data.as_mut_ptr());
+        let end = start + core::mem::size_of_val(&data);
 
         zero_mem_region(start, end);
 
