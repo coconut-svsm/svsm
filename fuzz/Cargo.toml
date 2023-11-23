@@ -50,3 +50,9 @@ name = "alloc"
 path = "fuzz_targets/alloc.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "insn"
+path = "fuzz_targets/insn.rs"
+test = false
+doc = false
