@@ -14,7 +14,7 @@ use alloc::{
 };
 use core::{
     mem::size_of,
-    ptr::addr_of,
+    ptr::{addr_of, addr_of_mut},
     slice::{from_raw_parts, from_raw_parts_mut, from_ref},
 };
 
@@ -175,7 +175,7 @@ impl SnpGuestRequestMsgHdr {
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
     fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { from_raw_parts_mut(self as *mut _ as *mut u8, size_of::<Self>()) }
+        unsafe { from_raw_parts_mut(addr_of_mut!(*self).cast(), size_of::<Self>()) }
     }
 }
 
@@ -244,7 +244,7 @@ impl SnpGuestRequestMsg {
     ///   before the object is dropped. Shared pages should not be freed
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(self as *mut Self);
+        let vaddr = VirtAddr::from(addr_of!(*self));
         this_cpu_mut()
             .get_pgtable()
             .set_shared_4k(vaddr)
@@ -264,7 +264,7 @@ impl SnpGuestRequestMsg {
 
     /// Set the C-bit (memory encryption bit) for the Self page
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(self as *mut Self);
+        let vaddr = VirtAddr::from(addr_of!(*self));
         this_cpu_mut()
             .get_pgtable()
             .set_encrypted_4k(vaddr)
@@ -505,14 +505,14 @@ impl SnpGuestRequestExtData {
     ///   before the object is dropped. Shared pages should not be freed
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        let start = VirtAddr::from(self as *mut Self);
+        let start = VirtAddr::from(addr_of!(*self));
         let end = start + size_of::<Self>();
         set_shared_region_4k(start, end)
     }
 
     /// Set the C-bit (memory encryption bit) for the Self pages
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        let start = VirtAddr::from(self as *mut Self);
+        let start = VirtAddr::from(addr_of!(*self));
         let end = start + size_of::<Self>();
         set_encrypted_region_4k(start, end)
     }
