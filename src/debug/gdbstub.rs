@@ -15,7 +15,7 @@ pub mod svsm_gdbstub {
 
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
-    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR};
+    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, VC_VECTOR};
     use crate::cpu::percpu::{this_cpu, this_cpu_mut};
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
@@ -72,13 +72,10 @@ pub mod svsm_gdbstub {
     pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let tp = match exception {
             BP_VECTOR => ExceptionType::SwBreakpoint,
+            VC_VECTOR => ExceptionType::Debug,
             _ => ExceptionType::PageFault,
         };
         handle_exception(ctx, tp);
-    }
-
-    pub fn handle_db_exception(ctx: &mut X86ExceptionContext) {
-        handle_exception(ctx, ExceptionType::Debug);
     }
 
     fn handle_exception(ctx: &mut X86ExceptionContext, exception_type: ExceptionType) {

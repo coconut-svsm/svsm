@@ -8,7 +8,7 @@ use super::idt::common::X86ExceptionContext;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::insn::{insn_fetch, Instruction};
 use crate::cpu::percpu::this_cpu_mut;
-use crate::debug::gdbstub::svsm_gdbstub::handle_db_exception;
+use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
 use core::fmt;
@@ -128,7 +128,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
     match error_code {
         // If the debugger is enabled then handle the DB exception
         // by directly invoking the exception handler
-        X86_TRAP_DB => handle_db_exception(ctx),
+        X86_TRAP_DB => handle_debug_exception(ctx, ctx.vector),
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
             handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
