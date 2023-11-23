@@ -200,6 +200,7 @@ mod tests {
     use memoffset::offset_of;
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_snp_report_request_offsets() {
         assert_eq!(offset_of!(SnpReportRequest, user_data), 0x0);
         assert_eq!(offset_of!(SnpReportRequest, vmpl), 0x40);
@@ -208,6 +209,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_snp_report_response_offsets() {
         assert_eq!(offset_of!(SnpReportResponse, status), 0x0);
         assert_eq!(offset_of!(SnpReportResponse, report_size), 0x4);
@@ -216,6 +218,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_ecdsa_p384_sha384_signature_offsets() {
         assert_eq!(offset_of!(Signature, r), 0x0);
         assert_eq!(offset_of!(Signature, s), 0x48);
@@ -223,6 +226,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_attestation_report_offsets() {
         assert_eq!(offset_of!(AttestationReport, version), 0x0);
         assert_eq!(offset_of!(AttestationReport, guest_svn), 0x4);
