@@ -387,7 +387,6 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_file_read_write() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -462,9 +461,6 @@ mod tests {
             let expected: u8 = if i < 512 { 0xff } else { 0 };
             assert!(*elem == expected);
         }
-
-        // file needs to be dropped before memory allocator is destroyed
-        drop(file);
     }
 
     #[test]
@@ -497,7 +493,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_single_page_mapping() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -513,11 +508,9 @@ mod tests {
             res.phys_addr(),
             file.rawfile.lock_read().pages[0].phys_addr()
         );
-        drop(file);
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_multi_page_mapping() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -535,11 +528,9 @@ mod tests {
                 file.rawfile.lock_read().pages[i].phys_addr()
             );
         }
-        drop(file);
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_mapping_unaligned_offset() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -555,11 +546,9 @@ mod tests {
             res.phys_addr(),
             file.rawfile.lock_read().pages[1].phys_addr()
         );
-        drop(file);
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_mapping_out_of_range() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -570,6 +559,5 @@ mod tests {
 
         let res = file.mapping(4 * PAGE_SIZE);
         assert!(res.is_none());
-        drop(file);
     }
 }
