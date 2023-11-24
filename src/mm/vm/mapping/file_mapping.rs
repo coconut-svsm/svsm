@@ -257,7 +257,7 @@ mod tests {
         types::PAGE_SIZE,
     };
 
-    use super::VMFileMapping;
+    use super::*;
 
     fn create_512b_test_file() -> FileHandle {
         let fh = create("test1").unwrap();
@@ -290,10 +290,10 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_512b_test_file();
-        let vm = VMFileMapping::new(fh, 0, 512, super::VMFileMappingPermission::Read)
+        let vm = VMFileMapping::new(fh, 0, 512, VMFileMappingPermission::Read)
             .expect("Failed to create new VMFileMapping");
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
-        assert_eq!(vm.permission, super::VMFileMappingPermission::Read);
+        assert_eq!(vm.permission, VMFileMappingPermission::Read);
         assert_eq!(vm.pages.len(), 1);
     }
 
@@ -312,7 +312,7 @@ mod tests {
             fh,
             offset,
             fh2.size() - offset,
-            super::VMFileMappingPermission::Read,
+            VMFileMappingPermission::Read,
         );
         assert!(vm.is_err());
     }
@@ -325,7 +325,7 @@ mod tests {
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, super::VMFileMappingPermission::Read);
+        let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, VMFileMappingPermission::Read);
         assert!(vm.is_err());
     }
 
@@ -337,16 +337,11 @@ mod tests {
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
-        let vm = VMFileMapping::new(
-            fh,
-            PAGE_SIZE,
-            fh2.size(),
-            super::VMFileMappingPermission::Read,
-        );
+        let vm = VMFileMapping::new(fh, PAGE_SIZE, fh2.size(), VMFileMappingPermission::Read);
         assert!(vm.is_err());
     }
 
-    fn test_map_first_page(permission: super::VMFileMappingPermission) {
+    fn test_map_first_page(permission: VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -367,7 +362,7 @@ mod tests {
         );
     }
 
-    fn test_map_multiple_pages(permission: super::VMFileMappingPermission) {
+    fn test_map_multiple_pages(permission: VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -390,7 +385,7 @@ mod tests {
         }
     }
 
-    fn test_map_unaligned_file_size(permission: super::VMFileMappingPermission) {
+    fn test_map_unaligned_file_size(permission: VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -416,7 +411,7 @@ mod tests {
         }
     }
 
-    fn test_map_non_zero_offset(permission: super::VMFileMappingPermission) {
+    fn test_map_non_zero_offset(permission: VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
@@ -443,49 +438,49 @@ mod tests {
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_first_page_readonly() {
-        test_map_first_page(super::VMFileMappingPermission::Read)
+        test_map_first_page(VMFileMappingPermission::Read)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_multiple_pages_readonly() {
-        test_map_multiple_pages(super::VMFileMappingPermission::Read)
+        test_map_multiple_pages(VMFileMappingPermission::Read)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_unaligned_file_size_readonly() {
-        test_map_unaligned_file_size(super::VMFileMappingPermission::Read)
+        test_map_unaligned_file_size(VMFileMappingPermission::Read)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_non_zero_offset_readonly() {
-        test_map_non_zero_offset(super::VMFileMappingPermission::Read)
+        test_map_non_zero_offset(VMFileMappingPermission::Read)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_first_page_readwrite() {
-        test_map_first_page(super::VMFileMappingPermission::Write)
+        test_map_first_page(VMFileMappingPermission::Write)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_multiple_pages_readwrite() {
-        test_map_multiple_pages(super::VMFileMappingPermission::Write)
+        test_map_multiple_pages(VMFileMappingPermission::Write)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_unaligned_file_size_readwrite() {
-        test_map_unaligned_file_size(super::VMFileMappingPermission::Write)
+        test_map_unaligned_file_size(VMFileMappingPermission::Write)
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_map_non_zero_offset_readwrite() {
-        test_map_non_zero_offset(super::VMFileMappingPermission::Write)
+        test_map_non_zero_offset(VMFileMappingPermission::Write)
     }
 
     #[test]
@@ -496,7 +491,7 @@ mod tests {
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
-        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), super::VMFileMappingPermission::Write)
+        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), VMFileMappingPermission::Write)
             .expect("Failed to create new VMFileMapping");
 
         let vmr = VMR::new(
@@ -540,7 +535,7 @@ mod tests {
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
-        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), super::VMFileMappingPermission::Write)
+        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), VMFileMappingPermission::Write)
             .expect("Failed to create new VMFileMapping");
 
         let vmr = VMR::new(
