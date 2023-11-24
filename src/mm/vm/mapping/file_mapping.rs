@@ -248,7 +248,7 @@ impl VirtualMapping for VMFileMapping {
 mod tests {
     use crate::{
         address::{Address, VirtAddr},
-        fs::{create, initialize_fs, open, uninitialize_fs, FileHandle},
+        fs::{create, open, FileHandle, TestFileSystemGuard},
         mm::{
             alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
             pagetable::PTEntryFlags,
@@ -287,7 +287,7 @@ mod tests {
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_create_mapping() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_512b_test_file();
         let vm = VMFileMapping::new(fh, 0, 512, super::VMFileMappingPermission::Read)
@@ -295,15 +295,13 @@ mod tests {
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
         assert_eq!(vm.permission, super::VMFileMappingPermission::Read);
         assert_eq!(vm.pages.len(), 1);
-
-        uninitialize_fs();
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_create_unaligned_offset() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Not page aligned
         let offset = PAGE_SIZE + 0x60;
@@ -317,29 +315,25 @@ mod tests {
             super::VMFileMappingPermission::Read,
         );
         assert!(vm.is_err());
-
-        uninitialize_fs();
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_create_size_too_large() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
         let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, super::VMFileMappingPermission::Read);
         assert!(vm.is_err());
-
-        uninitialize_fs();
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_create_offset_overflow() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
@@ -350,13 +344,11 @@ mod tests {
             super::VMFileMappingPermission::Read,
         );
         assert!(vm.is_err());
-
-        uninitialize_fs();
     }
 
     fn test_map_first_page(permission: super::VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_512b_test_file();
         let vm =
@@ -373,13 +365,11 @@ mod tests {
                 .phys_addr(),
             res
         );
-
-        uninitialize_fs();
     }
 
     fn test_map_multiple_pages(permission: super::VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
@@ -398,12 +388,11 @@ mod tests {
                 res
             );
         }
-        uninitialize_fs();
     }
 
     fn test_map_unaligned_file_size(permission: super::VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_5000b_test_file();
         let fh2 = open("test1").unwrap();
@@ -425,12 +414,11 @@ mod tests {
                 res
             );
         }
-        uninitialize_fs();
     }
 
     fn test_map_non_zero_offset(permission: super::VMFileMappingPermission) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
@@ -450,7 +438,6 @@ mod tests {
                 .phys_addr(),
             res
         );
-        uninitialize_fs();
     }
 
     #[test]
@@ -505,7 +492,7 @@ mod tests {
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_handle_page_fault() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
@@ -543,15 +530,13 @@ mod tests {
             vm.map(PAGE_SIZE).expect("Failed to map file page"),
             res.paddr
         );
-
-        uninitialize_fs();
     }
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_handle_page_fault_unaligned_addr() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         let fh = create_16k_test_file();
         let fh2 = open("test1").unwrap();
@@ -584,7 +569,5 @@ mod tests {
             vm.map(PAGE_SIZE * 2).expect("Failed to map file page"),
             res.paddr
         );
-
-        uninitialize_fs();
     }
 }
