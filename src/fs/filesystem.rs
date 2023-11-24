@@ -514,7 +514,6 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
@@ -534,10 +533,13 @@ mod tests {
 
         // Try again - should succeed now
         create("test1/file1").unwrap();
+
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_and_unlink_file() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
@@ -554,7 +556,7 @@ mod tests {
         // Try creating again as directory - should fail
         mkdir("test1").unwrap_err();
 
-        // Try creating again as directory - should fail
+        // Try creating a different dir
         mkdir("test2").unwrap();
 
         // Unlink file
@@ -563,10 +565,12 @@ mod tests {
         // Check if it is removed from the listing
         let root_list = list_dir("").unwrap();
         assert_eq!(root_list, [FileName::from("test2")]);
+
+        // Cleanup
+        unlink("test2").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_sub_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
@@ -590,10 +594,14 @@ mod tests {
         // Check if it appears in the listing
         let list = list_dir("test1/test2/").unwrap();
         assert_eq!(list, [FileName::from("file1")]);
+
+        // Cleanup
+        unlink("test1/test2/file1").unwrap();
+        unlink("test1/test2").unwrap();
+        unlink("test1/").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_unlink() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
@@ -618,10 +626,13 @@ mod tests {
         // Check if it is removed from the listing
         let list = list_dir("test1").unwrap();
         assert_eq!(list, [FileName::from("file2")]);
+
+        // Cleanup
+        unlink("test1/file2").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_open_read_write_seek() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
@@ -667,15 +678,18 @@ mod tests {
             };
             assert!(*elem == expected);
         }
+
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_multiple_file_handles() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
-        // Try again - should succeed now
+        // Create file
         let fh1 = create("file").unwrap();
         assert_eq!(fh1.size(), 0);
 
@@ -684,6 +698,7 @@ mod tests {
         assert_eq!(result, 6144);
         assert_eq!(fh1.size(), 6144);
 
+        // Another handle to the same file
         let fh2 = open("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
@@ -699,5 +714,8 @@ mod tests {
 
         let result = fh2.read(&mut buf2).unwrap();
         assert_eq!(result, 0);
+
+        // Cleanup
+        unlink("file").unwrap();
     }
 }
