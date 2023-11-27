@@ -178,7 +178,7 @@ impl SvsmFs {
         self.root = Some(root.clone());
     }
 
-    #[cfg(any(test, fuzzing))]
+    #[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
     fn uninitialize(&mut self) {
         self.root = None;
     }
@@ -213,8 +213,37 @@ pub fn initialize_fs() {
 }
 
 #[cfg(any(test, fuzzing))]
-pub fn uninitialize_fs() {
-    FS_ROOT.lock_write().uninitialize();
+#[cfg_attr(test_in_svsm, derive(Clone, Copy))]
+#[derive(Debug)]
+pub struct TestFileSystemGuard;
+
+#[cfg(any(test, fuzzing))]
+impl TestFileSystemGuard {
+    /// Create a test filesystem.
+    ///
+    /// When running as a regular test in userspace:
+    ///
+    ///   * Creating the struct via `setup()` will initialize an empty
+    ///     filesystem.
+    ///   * Dropping the struct will cause the filesystem to
+    ///     uninitialize.
+    ///
+    /// When running inside the SVSM, creating or dropping the struct
+    /// is a no-op, as the filesystem is managed by the SVSM kernel.
+    #[must_use = "filesystem guard must be held for the whole test"]
+    pub fn setup() -> Self {
+        #[cfg(not(test_in_svsm))]
+        initialize_fs();
+        Self
+    }
+}
+
+#[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+impl Drop for TestFileSystemGuard {
+    fn drop(&mut self) {
+        // Uninitialize the filesystem only if running in userspace.
+        FS_ROOT.lock_write().uninitialize();
+    }
 }
 
 /// Used to get an iterator over all the directory and file names contained in a path.
@@ -485,10 +514,9 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create file - should fail as directory does not exist yet
         create("test1/file1").unwrap_err();
@@ -506,14 +534,15 @@ mod tests {
         // Try again - should succeed now
         create("test1/file1").unwrap();
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_and_unlink_file() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         create("test1").unwrap();
 
@@ -527,7 +556,7 @@ mod tests {
         // Try creating again as directory - should fail
         mkdir("test1").unwrap_err();
 
-        // Try creating again as directory - should fail
+        // Try creating a different dir
         mkdir("test2").unwrap();
 
         // Unlink file
@@ -537,14 +566,14 @@ mod tests {
         let root_list = list_dir("").unwrap();
         assert_eq!(root_list, [FileName::from("test2")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test2").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_sub_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create file - should fail as directory does not exist yet
         create("test1/test2/file1").unwrap_err();
@@ -566,14 +595,16 @@ mod tests {
         let list = list_dir("test1/test2/").unwrap();
         assert_eq!(list, [FileName::from("file1")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/test2/file1").unwrap();
+        unlink("test1/test2").unwrap();
+        unlink("test1/").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_unlink() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create directory
         mkdir("test1").unwrap();
@@ -596,14 +627,15 @@ mod tests {
         let list = list_dir("test1").unwrap();
         assert_eq!(list, [FileName::from("file2")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file2").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_open_read_write_seek() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create directory
         mkdir("test1").unwrap();
@@ -647,17 +679,17 @@ mod tests {
             assert!(*elem == expected);
         }
 
-        drop(fh);
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_multiple_file_handles() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
-        // Try again - should succeed now
+        // Create file
         let fh1 = create("file").unwrap();
         assert_eq!(fh1.size(), 0);
 
@@ -666,6 +698,7 @@ mod tests {
         assert_eq!(result, 6144);
         assert_eq!(fh1.size(), 6144);
 
+        // Another handle to the same file
         let fh2 = open("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
@@ -682,8 +715,7 @@ mod tests {
         let result = fh2.read(&mut buf2).unwrap();
         assert_eq!(result, 0);
 
-        drop(fh2);
-        drop(fh1);
-        uninitialize_fs();
+        // Cleanup
+        unlink("file").unwrap();
     }
 }
