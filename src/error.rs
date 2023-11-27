@@ -1,6 +1,13 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2023 SUSE LLC
+//
+// Author: Carlos López <carlos.lopez@suse.com>
+
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
+use crate::mm::alloc::AllocError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
@@ -19,8 +26,10 @@ pub enum SvsmError {
     GhcbMsr(GhcbMsrError),
     // Errors related to SEV-SNP operations, like PVALIDATE or RMPUPDATE
     SevSnp(SevSnpError),
-    // Errors related to memory management
+    // Generic errors related to memory management
     Mem,
+    // Errors related to the memory allocator
+    Alloc(AllocError),
     // There is no VMSA
     MissingVMSA,
     // There is no CAA
