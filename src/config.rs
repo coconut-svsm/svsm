@@ -48,7 +48,7 @@ impl<'a> SvsmConfig<'a> {
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
         match self {
             SvsmConfig::FirmwareConfig(fw_cfg) => fw_cfg.get_memory_regions(),
-            &SvsmConfig::IgvmConfig(_) => todo!(),
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_memory_regions(),
         }
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
