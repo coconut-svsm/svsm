@@ -62,23 +62,25 @@ pub mod svsm_gdbstub {
         Ok(())
     }
 
-    #[derive(PartialEq, Eq)]
+    #[derive(PartialEq, Eq, Debug)]
     enum ExceptionType {
         Debug,
         SwBreakpoint,
         PageFault,
     }
 
-    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
-        let tp = match exception {
-            BP_VECTOR => ExceptionType::SwBreakpoint,
-            VC_VECTOR => ExceptionType::Debug,
-            _ => ExceptionType::PageFault,
-        };
-        handle_exception(ctx, tp);
+    impl From<usize> for ExceptionType {
+        fn from(value: usize) -> Self {
+            match value {
+                BP_VECTOR => ExceptionType::SwBreakpoint,
+                VC_VECTOR => ExceptionType::Debug,
+                _ => ExceptionType::PageFault,
+            }
+        }
     }
 
-    fn handle_exception(ctx: &mut X86ExceptionContext, exception_type: ExceptionType) {
+    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
+        let exception_type = ExceptionType::from(exception);
         let id = this_cpu().runqueue().lock_read().current_task_id();
         let mut task_ctx = TaskContext {
             regs: X86GeneralRegs {
@@ -704,6 +706,32 @@ pub mod svsm_gdbstub {
             Ok(true)
         }
     }
+
+    #[cfg(test)]
+    pub mod tests {
+        extern crate alloc;
+
+        use super::ExceptionType;
+        use crate::cpu::idt::common::{BP_VECTOR, VC_VECTOR};
+        use alloc::vec;
+        use alloc::vec::Vec;
+
+        #[test]
+        fn exception_type_from() {
+            let exceptions: Vec<ExceptionType> = [VC_VECTOR, BP_VECTOR, 0]
+                .iter()
+                .map(|e| ExceptionType::from(*e))
+                .collect();
+            assert_eq!(
+                exceptions,
+                vec![
+                    ExceptionType::Debug,
+                    ExceptionType::SwBreakpoint,
+                    ExceptionType::PageFault
+                ]
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "enable-gdb"))]
@@ -715,8 +743,6 @@ pub mod svsm_gdbstub {
     }
 
     pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
-
-    pub fn handle_db_exception(_ctx: &mut X86ExceptionContext) {}
 
     pub fn debug_break() {}
 }
