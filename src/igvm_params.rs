@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::error::SvsmError::Firmware;
@@ -109,5 +110,17 @@ impl IgvmParams<'_> {
         }
 
         Ok(regions)
+    }
+
+    pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+        let mut cpus: Vec<ACPICPUInfo> = Vec::new();
+        for i in 0..self.igvm_param_page.cpu_count {
+            let cpu = ACPICPUInfo {
+                apic_id: i,
+                enabled: true,
+            };
+            cpus.push(cpu);
+        }
+        Ok(cpus)
     }
 }

@@ -54,7 +54,7 @@ impl<'a> SvsmConfig<'a> {
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
         match self {
             SvsmConfig::FirmwareConfig(fw_cfg) => load_acpi_cpu_info(fw_cfg),
-            &SvsmConfig::IgvmConfig(_) => todo!(),
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.load_cpu_info(),
         }
     }
     pub fn should_launch_fw(&self) -> bool {
