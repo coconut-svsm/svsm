@@ -51,6 +51,10 @@ impl VirtualMapping for VMReserved {
         self.size
     }
 
+    fn has_data(&self) -> bool {
+        false
+    }
+
     fn map(&self, _offset: usize) -> Option<PhysAddr> {
         None
     }
