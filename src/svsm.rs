@@ -447,31 +447,43 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = map_and_parse_fw_meta()
-        .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
+    let fw_metadata = if config.should_launch_fw() {
+        Some(
+            map_and_parse_fw_meta()
+                .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e)),
+        )
+    } else {
+        None
+    };
 
-    print_fw_meta(&fw_meta);
+    if let Some(ref fw_meta) = fw_metadata {
+        print_fw_meta(fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
-        panic!("Failed to validate firmware memory: {:#?}", e);
-    }
+        if let Err(e) = validate_fw_memory(fw_meta, &LAUNCH_INFO) {
+            panic!("Failed to validate firmware memory: {:#?}", e);
+        }
 
-    if let Err(e) = copy_tables_to_fw(&fw_meta) {
-        panic!("Failed to copy firmware tables: {:#?}", e);
-    }
+        if let Err(e) = copy_tables_to_fw(fw_meta) {
+            panic!("Failed to copy firmware tables: {:#?}", e);
+        }
 
-    if let Err(e) = validate_flash() {
-        panic!("Failed to validate flash memory: {:#?}", e);
+        if let Err(e) = validate_flash() {
+            panic!("Failed to validate flash memory: {:#?}", e);
+        }
     }
 
     guest_request_driver_init();
 
-    prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
+    if let Some(ref fw_meta) = fw_metadata {
+        prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA");
+    }
 
     virt_log_usage();
 
-    if let Err(e) = launch_fw() {
-        panic!("Failed to launch FW: {:#?}", e);
+    if fw_metadata.is_some() {
+        if let Err(e) = launch_fw() {
+            panic!("Failed to launch FW: {:#?}", e);
+        }
     }
 
     #[cfg(test)]

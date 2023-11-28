@@ -47,4 +47,9 @@ impl<'a> SvsmConfig<'a> {
             SvsmConfig::FirmwareConfig(fw_cfg) => load_acpi_cpu_info(fw_cfg),
         }
     }
+    pub fn should_launch_fw(&self) -> bool {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => true,
+        }
+    }
 }
