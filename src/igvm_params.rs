@@ -123,4 +123,8 @@ impl IgvmParams<'_> {
         }
         Ok(cpus)
     }
+
+    pub fn should_launch_fw(&self) -> bool {
+        self.igvm_param_block.launch_fw != 0
+    }
 }

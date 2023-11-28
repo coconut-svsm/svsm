@@ -60,7 +60,7 @@ impl<'a> SvsmConfig<'a> {
     pub fn should_launch_fw(&self) -> bool {
         match self {
             SvsmConfig::FirmwareConfig(_) => true,
-            SvsmConfig::IgvmConfig(_) => false,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.should_launch_fw(),
         }
     }
 }
