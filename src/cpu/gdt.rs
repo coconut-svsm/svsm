@@ -11,6 +11,7 @@ use core::arch::asm;
 use core::mem;
 
 #[repr(C, packed(2))]
+#[derive(Clone, Copy, Debug)]
 pub struct GdtDesc {
     size: u16,
     addr: VirtAddr,

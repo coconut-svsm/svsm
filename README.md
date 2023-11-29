@@ -50,8 +50,13 @@ mailing list.
 Reporting Bugs
 --------------
 
-Any issues, bugs or feature requests for the SVSM project can be reported via
-[https://github.com/coconut-svsm/svsm/issues](https://github.com/coconut-svsm/svsm/issues).
+Any issues, bugs (except embargoed security issues) or feature requests
+for the SVSM project can be reported via [https://github.com/coconut-svsm/svsm/issues](https://github.com/coconut-svsm/svsm/issues).
+
+For security critical bugs please send an email describing the problem
+and the planned CRD (if known) to
+[security@coconut-svsm.dev](mailto:security@coconut-svsm.dev).
+
 
 Contributing
 ------------
@@ -59,6 +64,7 @@ Contributing
 Contributing to the project is as easy as sending a pull-request via
 GitHub. For detailed instructions on patch formatting and contribution
 guidelines please have a look at [CONTRIBUTING.md](CONTRIBUTING.md).
+For documentation guidelines consult [GUIDELINES.md](Documentation/GUIDELINES.md).
 
 TODO List
 ---------
@@ -75,6 +81,17 @@ any way:
 * Carry FW as payload of SVSM to make the SVSM binary a drop-in
   replacement for the FW when launching QEMU
 * Live migration
+
+Documentation
+-------------
+
+Coconut-SVSM components are documented using rustdoc, a tool that produces
+a user-friendly, browsable website explaining the code's contents. To
+generate and open the documentation, simply execute the following command:
+
+```
+$ make doc
+```
 
 Acknowledgments
 ---------------

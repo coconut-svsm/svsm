@@ -7,7 +7,13 @@
 use crate::address::VirtAddr;
 use crate::sev::vmsa::VMPL_MAX;
 
-#[derive(Copy, Clone)]
+pub const VMPCK_SIZE: usize = 32;
+
+extern "C" {
+    pub static mut SECRETS_PAGE: SecretsPage;
+}
+
+#[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct SecretsPage {
     pub version: u32,
@@ -15,7 +21,7 @@ pub struct SecretsPage {
     pub fms: u32,
     reserved_00c: u32,
     pub gosvw: [u8; 16],
-    pub vmpck: [[u8; 32]; VMPL_MAX],
+    pub vmpck: [[u8; VMPCK_SIZE]; VMPL_MAX],
     reserved_0a0: [u8; 96],
     pub vmsa_tweak_bmp: [u64; 8],
     pub svsm_base: u64,
@@ -34,4 +40,17 @@ pub fn copy_secrets_page(target: &mut SecretsPage, source: VirtAddr) {
     unsafe {
         *target = *table;
     }
+}
+
+pub fn is_vmpck0_clear() -> bool {
+    unsafe { SECRETS_PAGE.vmpck[0].iter().all(|e| *e == 0) }
+}
+
+pub fn disable_vmpck0() {
+    unsafe { SECRETS_PAGE.vmpck[0].iter_mut().for_each(|e| *e = 0) };
+    log::warn!("VMPCK0 disabled!");
+}
+
+pub fn get_vmpck0() -> [u8; VMPCK_SIZE] {
+    unsafe { SECRETS_PAGE.vmpck[0] }
 }

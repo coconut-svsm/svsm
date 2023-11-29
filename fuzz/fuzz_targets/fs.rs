@@ -11,7 +11,7 @@ use core::hint::black_box;
 use libfuzzer_sys::fuzz_target;
 use std::sync::OnceLock;
 use svsm::fs::FileHandle;
-use svsm::fs::{create, create_all, initialize_fs, list_dir, mkdir, open, uninitialize_fs, unlink};
+use svsm::fs::{create, create_all, list_dir, mkdir, open, unlink, TestFileSystemGuard};
 use svsm::mm::alloc::TestRootMem;
 
 const ROOT_MEM_SIZE: usize = 0x10000;
@@ -71,8 +71,7 @@ fuzz_target!(|actions: Vec<FsAction>| {
 
     let mut files = Vec::<Handle>::new();
     let mut aux_buf = vec![POISON_BYTE; MAX_READ_SIZE.max(MAX_WRITE_SIZE)];
-
-    initialize_fs();
+    let _test_fs = TestFileSystemGuard::setup();
 
     for action in actions.iter() {
         match action {
@@ -214,6 +213,4 @@ fuzz_target!(|actions: Vec<FsAction>| {
             }
         }
     }
-
-    uninitialize_fs();
 });

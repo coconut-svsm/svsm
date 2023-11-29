@@ -51,6 +51,31 @@ pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
         .expect("Could not initialize CPUID page");
 }
 
+#[derive(Clone, Copy, Debug)]
+#[repr(C, packed)]
+pub struct CpuidLeaf {
+    pub cpuid_fn: u32,
+    pub cpuid_subfn: u32,
+    pub eax: u32,
+    pub ebx: u32,
+    pub ecx: u32,
+    pub edx: u32,
+}
+
+impl CpuidLeaf {
+    pub fn new(cpuid_fn: u32, cpuid_subfn: u32) -> Self {
+        CpuidLeaf {
+            cpuid_fn,
+            cpuid_subfn,
+            eax: 0,
+            ebx: 0,
+            ecx: 0,
+            edx: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct CpuidResult {
     pub eax: u32,
     pub ebx: u32,

@@ -5,6 +5,8 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 #![no_std]
+#![deny(missing_copy_implementations)]
+#![deny(missing_debug_implementations)]
 #![cfg_attr(all(test, test_in_svsm), no_main)]
 #![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
 #![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]
@@ -14,12 +16,14 @@ pub mod acpi;
 pub mod address;
 pub mod console;
 pub mod cpu;
+pub mod crypto;
 pub mod debug;
 pub mod elf;
 pub mod error;
 pub mod fs;
 pub mod fw_cfg;
 pub mod fw_meta;
+pub mod greq;
 pub mod io;
 pub mod kernel_launch;
 pub mod locking;

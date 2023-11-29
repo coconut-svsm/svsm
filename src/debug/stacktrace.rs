@@ -6,8 +6,8 @@
 
 use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
-use crate::cpu::idt::is_exception_handler_return_site;
-use crate::cpu::idt::X86ExceptionContext;
+use crate::cpu::idt::common::is_exception_handler_return_site;
+use crate::cpu::idt::common::X86ExceptionContext;
 use crate::cpu::percpu::this_cpu;
 #[cfg(feature = "enable-stacktrace")]
 use crate::mm::address_space::STACK_SIZE;
@@ -26,7 +26,7 @@ struct StackBounds {
 #[cfg(feature = "enable-stacktrace")]
 impl StackBounds {
     fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
-        match begin.checked_offset(len) {
+        match begin.checked_add(len) {
             Some(end) => begin >= self.bottom && end <= self.top,
             None => false,
         }
@@ -53,6 +53,7 @@ pub enum UnwoundStackFrame {
 type StacksBounds = [StackBounds; 2];
 
 #[cfg(feature = "enable-stacktrace")]
+#[derive(Debug)]
 pub struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,

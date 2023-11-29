@@ -9,7 +9,7 @@ extern "C" {
     pub static exception_table_end: u8;
 }
 
-use super::idt::X86ExceptionContext;
+use super::idt::common::X86ExceptionContext;
 use crate::address::{Address, VirtAddr};
 use core::mem;
 

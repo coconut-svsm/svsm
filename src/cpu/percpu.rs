@@ -14,7 +14,7 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -25,6 +25,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
+use crate::task::RunQueue;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -120,7 +121,7 @@ impl IstStacks {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,
@@ -191,19 +192,16 @@ pub struct PerCpu {
     pub vrange_4k: VirtualRange,
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: VirtualRange,
-}
 
-impl Default for PerCpu {
-    fn default() -> Self {
-        Self::new()
-    }
+    /// Task list that has been assigned for scheduling on this CPU
+    runqueue: RWLock<RunQueue>,
 }
 
 impl PerCpu {
-    pub fn new() -> Self {
+    fn new(apic_id: u32) -> Self {
         PerCpu {
             online: AtomicBool::new(false),
-            apic_id: 0,
+            apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
             init_stack: None,
@@ -215,6 +213,7 @@ impl PerCpu {
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
+            runqueue: RWLock::new(RunQueue::new(apic_id)),
         }
     }
 
@@ -222,8 +221,7 @@ impl PerCpu {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
-            (*percpu) = PerCpu::new();
-            (*percpu).apic_id = apic_id;
+            (*percpu) = PerCpu::new(apic_id);
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, vaddr));
             Ok(percpu)
         }
@@ -304,7 +302,7 @@ impl PerCpu {
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
 
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
@@ -423,8 +421,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().try_into().unwrap();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().try_into().unwrap();
+        vmsa_ref.rsp = self.get_top_of_stack().into();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -562,6 +560,21 @@ impl PerCpu {
     pub fn populate_page_table(&self, pt: &mut PageTableRef) {
         self.vm_range.populate(pt);
     }
+
+    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        self.vm_range.handle_page_fault(vaddr, write)
+    }
+
+    /// Allocate any candidate unallocated tasks from the global task list to our
+    /// CPU runqueue.
+    pub fn allocate_tasks(&mut self) {
+        self.runqueue.lock_write().allocate();
+    }
+
+    /// Access the PerCpu runqueue protected with a lock
+    pub fn runqueue(&self) -> &RWLock<RunQueue> {
+        &self.runqueue
+    }
 }
 
 unsafe impl Sync for PerCpu {}
@@ -574,7 +587,7 @@ pub fn this_cpu_mut() -> &'static mut PerCpu {
     unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
     pub apic_id: u32,

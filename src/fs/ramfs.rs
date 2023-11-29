@@ -9,7 +9,7 @@ use super::*;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::{allocate_file_page_ref, PageRef};
-use crate::types::PAGE_SIZE;
+use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{page_align_up, page_offset, zero_mem_region};
 
 extern crate alloc;
@@ -18,14 +18,19 @@ use alloc::vec::Vec;
 
 use core::cmp::{max, min};
 
+/// Represents an SVSM Ramfile
 #[derive(Debug, Default)]
 struct RawRamFile {
+    /// Maximum size of the file without allocating new pages
     capacity: usize,
+    /// Current size of the file
     size: usize,
+    /// Vector of pages allocated for the file
     pages: Vec<PageRef>,
 }
 
 impl RawRamFile {
+    /// Used to get new instance of [`RawRamFile`].
     pub fn new() -> Self {
         RawRamFile {
             capacity: 0,
@@ -34,6 +39,13 @@ impl RawRamFile {
         }
     }
 
+    /// Used to increase the capacity of the file by allocating a
+    /// new page.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<(), SvsmError>`]: A [`Result`] containing empty
+    /// value if successful, SvsvError otherwise.
     fn increase_capacity(&mut self) -> Result<(), SvsmError> {
         let page_ref = allocate_file_page_ref()?;
         self.pages.push(page_ref);
@@ -41,6 +53,16 @@ impl RawRamFile {
         Ok(())
     }
 
+    /// Used to set the capacity of the file.
+    ///
+    /// # Argument
+    ///
+    /// `capacity`: intended new capacity of the file.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<(), SvsmError>`]: A [Result] containing empty
+    /// value if successful, SvsmError otherwise.
     fn set_capacity(&mut self, capacity: usize) -> Result<(), SvsmError> {
         let cap = page_align_up(capacity);
 
@@ -51,6 +73,17 @@ impl RawRamFile {
         Ok(())
     }
 
+    /// Used to read a page corresponding to the file from
+    /// a particular offset.
+    ///
+    /// # Arguements
+    ///
+    /// - `buf`: buffer to read the file contents into.
+    /// - `offset`: offset to read the file from.
+    ///
+    /// # Assert
+    ///
+    /// Assert that read operation doesn't extend beyond a page.
     fn read_from_page(&self, buf: &mut [u8], offset: usize) {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
@@ -63,6 +96,16 @@ impl RawRamFile {
         buf.copy_from_slice(&page_buf[page_index..page_end]);
     }
 
+    /// Used to write contents to a page corresponding to
+    /// the file at a particular offset.
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer that contains the data to write to the file.
+    /// - `offset`: file offset to write the data.
+    /// # Assert
+    ///
+    /// Assert that write operation doesn't extend beyond a page.
     fn write_to_page(&mut self, buf: &[u8], offset: usize) {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
@@ -75,6 +118,17 @@ impl RawRamFile {
         page_buf[page_index..page_end].copy_from_slice(buf);
     }
 
+    /// Used to read the file from a particular offset.
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer to read the contents of the file into.
+    /// - `offset`: file offset to read from.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<(), SvsmError>`]: A [Result] containing empty
+    /// value if successful, SvsmError otherwise.
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
         let mut current = min(offset, self.size);
         let mut len = buf.len();
@@ -101,6 +155,17 @@ impl RawRamFile {
         Ok(bytes)
     }
 
+    /// Used to write to the file at a particular offset.
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer that contains the data to write into the file.
+    /// - `offset`: file offset to read from.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<(), SvsmError>`]: A [Result] containing empty
+    /// value if successful, SvsmError otherwise.
     fn write(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
         let mut current = offset;
         let mut bytes: usize = 0;
@@ -128,6 +193,17 @@ impl RawRamFile {
         Ok(bytes)
     }
 
+    /// Used to truncate the file to a given size.
+    ///
+    /// # Argument
+    ///
+    /// - `size` : intended file size after truncation
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: a [`Result`] containing the
+    /// number of bytes file truncated to if successful, SvsmError
+    /// otherwise.
     fn truncate(&mut self, size: usize) -> Result<usize, SvsmError> {
         if size > self.size {
             return Err(SvsmError::FileSystem(FsError::inval()));
@@ -161,17 +237,30 @@ impl RawRamFile {
         Ok(size)
     }
 
+    /// Used to get the size of the file in bytes.
+    ///
+    /// # Returns
+    /// the size of the file in bytes.
     fn size(&self) -> usize {
         self.size
     }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        if offset > self.size() {
+            return None;
+        }
+        self.pages.get(offset >> PAGE_SHIFT).cloned()
+    }
 }
 
+/// Represents a SVSM file with synchronized access
 #[derive(Debug)]
 pub struct RamFile {
     rawfile: RWLock<RawRamFile>,
 }
 
 impl RamFile {
+    /// Used to get a new instance of [`RamFile`].
     #[allow(dead_code)]
     pub fn new() -> Self {
         RamFile {
@@ -196,20 +285,34 @@ impl File for RamFile {
     fn size(&self) -> usize {
         self.rawfile.lock_read().size()
     }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.rawfile.lock_read().mapping(offset)
+    }
 }
 
+/// Represents a SVSM directory with synchronized access
 #[derive(Debug)]
 pub struct RamDirectory {
     entries: RWLock<Vec<DirectoryEntry>>,
 }
 
 impl RamDirectory {
+    /// Used to get a new instance of [`RamDirectory`]
     pub fn new() -> Self {
         RamDirectory {
             entries: RWLock::new(Vec::new()),
         }
     }
 
+    /// Used to check if an entry is present in the directory.
+    ///
+    ///  # Argument
+    ///
+    ///  `name`: name of the entry to be looked up.
+    ///
+    ///  # Returns
+    ///  [`true`] if the entry is present, [`false`] otherwise.
     fn has_entry(&self, name: &FileName) -> bool {
         self.entries
             .lock_read()
@@ -284,7 +387,6 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_ramfs_file_read_write() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
 
@@ -359,9 +461,6 @@ mod tests {
             let expected: u8 = if i < 512 { 0xff } else { 0 };
             assert!(*elem == expected);
         }
-
-        // file needs to be dropped before memory allocator is destroyed
-        drop(file);
     }
 
     #[test]
@@ -391,5 +490,74 @@ mod tests {
 
         let list = ram_dir.list();
         assert_eq!(list, [f_name]);
+    }
+
+    #[test]
+    fn test_ramfs_single_page_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 512];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file
+            .mapping(0)
+            .expect("Failed to get mapping for ramfs page");
+        assert_eq!(
+            res.phys_addr(),
+            file.rawfile.lock_read().pages[0].phys_addr()
+        );
+    }
+
+    #[test]
+    fn test_ramfs_multi_page_mapping() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        for i in 0..4 {
+            let res = file
+                .mapping(i * PAGE_SIZE)
+                .expect("Failed to get mapping for ramfs page");
+            assert_eq!(
+                res.phys_addr(),
+                file.rawfile.lock_read().pages[i].phys_addr()
+            );
+        }
+    }
+
+    #[test]
+    fn test_ramfs_mapping_unaligned_offset() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file
+            .mapping(PAGE_SIZE + 0x123)
+            .expect("Failed to get mapping for ramfs page");
+        assert_eq!(
+            res.phys_addr(),
+            file.rawfile.lock_read().pages[1].phys_addr()
+        );
+    }
+
+    #[test]
+    fn test_ramfs_mapping_out_of_range() {
+        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let file = RamFile::new();
+        let buf = [0xffu8; 4 * PAGE_SIZE];
+
+        file.write(&buf, 0).expect("Failed to write file data");
+
+        let res = file.mapping(4 * PAGE_SIZE);
+        assert!(res.is_none());
     }
 }

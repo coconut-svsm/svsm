@@ -24,6 +24,7 @@ gdbstub_arch = { version = "0.2.4", optional = true }
 intrusive-collections = "0.9.6"
 log = { version = "0.4.17", features = ["max_level_info", "release_max_level_info"] }
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.0" }
+aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
 
 [target."x86_64-unknown-none".dev-dependencies]
 test = { version = "0.1.0", path = "test" }
@@ -32,3 +33,6 @@ test = { version = "0.1.0", path = "test" }
 default = ["enable-stacktrace"]
 enable-stacktrace = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
+
+[dev-dependencies]
+memoffset = "0.9.0"

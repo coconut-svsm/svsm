@@ -11,6 +11,7 @@ pub mod extable;
 pub mod features;
 pub mod gdt;
 pub mod idt;
+pub mod insn;
 pub mod msr;
 pub mod percpu;
 pub mod registers;
@@ -20,6 +21,6 @@ pub mod tss;
 pub mod vc;
 pub mod vmsa;
 
-pub use idt::X86ExceptionContext;
+pub use idt::common::X86ExceptionContext;
 pub use registers::{X86GeneralRegs, X86InterruptFrame, X86SegmentRegs};
 pub use tlb::*;

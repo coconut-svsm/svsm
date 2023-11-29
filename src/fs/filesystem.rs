@@ -8,7 +8,8 @@ use super::ramfs::RamDirectory;
 use super::*;
 
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
+use crate::locking::{RWLock, SpinLock};
+use crate::mm::PageRef;
 
 use core::cmp::min;
 
@@ -16,9 +17,11 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+/// Represents a raw file handle.
 #[derive(Debug)]
 struct RawFileHandle {
     file: Arc<dyn File>,
+    /// current file offset for the read/write operation
     current: usize,
 }
 
@@ -57,8 +60,13 @@ impl RawFileHandle {
     fn size(&self) -> usize {
         self.file.size()
     }
+
+    fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.file.mapping(offset)
+    }
 }
 
+/// Represents a handle used for file operations in a thread-safe manner.
 #[derive(Debug)]
 pub struct FileHandle {
     // Use a SpinLock here because the read operation also needs to be mutable
@@ -68,28 +76,73 @@ pub struct FileHandle {
 }
 
 impl FileHandle {
+    /// Create a new file handle instance.
     pub fn new(file: &Arc<dyn File>) -> Self {
         FileHandle {
             handle: SpinLock::new(RawFileHandle::new(file)),
         }
     }
 
+    /// Used to read contents from the file handle.
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer to read the file contents to
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes read if successful, or an [`SvsmError`] if there was a problem
+    /// during the read operation.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         self.handle.lock().read(buf)
     }
 
+    /// Used to write contents to the file handle
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: buffer which holds the contents to be written to the file.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes written if successful, or an [`SvsmError`] if there was a problem
+    /// during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
         self.handle.lock().write(buf)
     }
 
+    /// Used to truncate the file to the specified size.
+    ///
+    ///  # Arguments
+    ///
+    ///  - `offset`: specifies the size in bytes to which the file
+    ///  is to be truncated.
+    ///
+    ///  # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the size of the
+    /// file after truncation if successful, or an [`SvsmError`] if there was
+    /// a problem during the truncate operation.
     pub fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
         self.handle.lock().truncate(offset)
     }
 
+    /// Used to change the current file offset.
+    ///
+    /// # Arguments
+    ///
+    /// - `pos`: intended new file offset value.
     pub fn seek(&self, pos: usize) {
         self.handle.lock().seek(pos);
     }
 
+    /// Used to get the size of the file.
+    ///
+    /// # Returns
+    ///
+    /// Size of the file in bytes.
     pub fn size(&self) -> usize {
         self.handle.lock().size()
     }
@@ -97,8 +150,13 @@ impl FileHandle {
     pub fn position(&self) -> usize {
         self.handle.lock().current
     }
+
+    pub fn mapping(&self, offset: usize) -> Option<PageRef> {
+        self.handle.lock().mapping(offset)
+    }
 }
 
+/// Represents SVSM filesystem
 #[derive(Debug)]
 struct SvsmFs {
     root: Option<Arc<RamDirectory>>,
@@ -109,46 +167,111 @@ impl SvsmFs {
         SvsmFs { root: None }
     }
 
+    /// Used to set the root directory of the SVSM filesystem.
+    ///
+    /// # Arguments
+    ///
+    /// - `root`: represents directory which is to be set
+    /// as the root of the filesystem.
     fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());
     }
 
-    #[cfg(any(test, fuzzing))]
+    #[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
     fn uninitialize(&mut self) {
         self.root = None;
     }
 
+    /// Used to check if the filesystem is initialized.
+    ///
+    /// # Returns
+    ///
+    /// [`bool`]: If the filesystem is initialized.
     fn initialized(&self) -> bool {
         self.root.is_some()
     }
 
+    /// Used to get the root directory of the filesystem.
+    ///
+    /// # Returns
+    ///
+    /// [`Arc<dyn Directory>`]: root directory of the filesystem.
     fn root_dir(&self) -> Arc<dyn Directory> {
         assert!(self.initialized());
         self.root.as_ref().unwrap().clone()
     }
 }
 
-static mut FS_ROOT: SvsmFs = SvsmFs::new();
+static FS_ROOT: RWLock<SvsmFs> = RWLock::new(SvsmFs::new());
 
+/// Used to initialize the filesystem with an empty root directory.
 pub fn initialize_fs() {
     let root_dir = Arc::new(RamDirectory::new());
-    unsafe {
-        FS_ROOT.initialize(&root_dir);
-    }
+
+    FS_ROOT.lock_write().initialize(&root_dir);
 }
 
 #[cfg(any(test, fuzzing))]
-pub fn uninitialize_fs() {
-    unsafe {
-        FS_ROOT.uninitialize();
+#[cfg_attr(test_in_svsm, derive(Clone, Copy))]
+#[derive(Debug)]
+pub struct TestFileSystemGuard;
+
+#[cfg(any(test, fuzzing))]
+impl TestFileSystemGuard {
+    /// Create a test filesystem.
+    ///
+    /// When running as a regular test in userspace:
+    ///
+    ///   * Creating the struct via `setup()` will initialize an empty
+    ///     filesystem.
+    ///   * Dropping the struct will cause the filesystem to
+    ///     uninitialize.
+    ///
+    /// When running inside the SVSM, creating or dropping the struct
+    /// is a no-op, as the filesystem is managed by the SVSM kernel.
+    #[must_use = "filesystem guard must be held for the whole test"]
+    pub fn setup() -> Self {
+        #[cfg(not(test_in_svsm))]
+        initialize_fs();
+        Self
     }
 }
 
+#[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+impl Drop for TestFileSystemGuard {
+    fn drop(&mut self) {
+        // Uninitialize the filesystem only if running in userspace.
+        FS_ROOT.lock_write().uninitialize();
+    }
+}
+
+/// Used to get an iterator over all the directory and file names contained in a path.
+/// Directory name or file name in the path can be an empty value.
+///
+///  # Argument
+///
+///  `path`: path to be split.
+///
+///  # Returns
+///
+///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
+///  directory and file names in the path.
 fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
     path.split('/').filter(|x| !x.is_empty())
 }
 
+/// Used to get an iterator over all the directory and file names contained in a path.
+/// This function performs error checking.
+///
+/// # Argument
+///
+/// `path`: path to be split.
+///
+/// # Returns
+///
+///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
+///  directory and file names in the path.
 fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIterator, SvsmError> {
     let mut path_items = split_path_allow_empty(path).peekable();
     path_items
@@ -157,11 +280,25 @@ fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIter
     Ok(path_items)
 }
 
+/// Used to perform a walk over the items in a path while checking
+/// each item is a directory.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
 fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
 {
-    let mut current_dir = unsafe { FS_ROOT.root_dir() };
+    let fs_root = FS_ROOT.lock_read();
+    let mut current_dir = fs_root.root_dir();
+    drop(fs_root);
 
     for item in path_items {
         let dir_name = FileName::from(item);
@@ -175,11 +312,26 @@ where
     Ok(current_dir)
 }
 
+/// Used to perform a walk over the items in a path while checking
+/// each existing item is a directory, while creating a directory
+/// for each non-existing item.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
 fn walk_path_create<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
 {
-    let mut current_dir = unsafe { FS_ROOT.root_dir() };
+    let fs_root = FS_ROOT.lock_read();
+    let mut current_dir = fs_root.root_dir();
+    drop(fs_root);
 
     for item in path_items {
         let dir_name = FileName::from(item);
@@ -197,6 +349,16 @@ where
     Ok(current_dir)
 }
 
+/// Used to open a file to get the file handle for further file operations.
+///
+/// # Argument
+///
+/// `path`: path of the file to be opened.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -210,6 +372,16 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     }
 }
 
+/// Used to create a file with the given path.
+///
+/// # Argument
+///
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -219,7 +391,16 @@ pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     Ok(FileHandle::new(&file))
 }
 
-/// Creates a file with all sub-directories
+/// Used to create a file and the missing subdirectories in the given path.
+///
+/// # Argument
+///
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
@@ -234,6 +415,16 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     Ok(FileHandle::new(&file))
 }
 
+/// Used to create a directory with the given path.
+///
+/// # Argument
+///
+/// `path`: path of the directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let dir_name = FileName::from(path_items.next_back().unwrap());
@@ -244,6 +435,16 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     Ok(())
 }
 
+/// Used to delete a file or a directory.
+///
+/// # Argument
+///
+/// `path`: path of the file or directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
 pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let entry_name = FileName::from(path_items.next_back().unwrap());
@@ -252,20 +453,57 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
     dir.unlink(entry_name)
 }
 
+/// Used to list the contents of a directory.
+///
+/// # Argument
+///
+/// `path`: path of the directory to be listed.
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the [`Vec`]
+/// of directory entries if successful,  [`SvsmError`] otherwise.
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
     let items = split_path_allow_empty(path);
     let dir = walk_path(items)?;
     Ok(dir.list())
 }
 
+/// Used to read from a file handle.
+///
+/// # Arguments
+///
+/// - `fh`: Filehandle to be read.
+/// - `buf`: buffer to read the file contents into.
+///
+/// # Returns
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the number
+/// of bytes read if successful,  [`SvsmError`] otherwise.
 pub fn read(fh: &FileHandle, buf: &mut [u8]) -> Result<usize, SvsmError> {
     fh.read(buf)
 }
 
+/// Used to write into file handle.
+///
+/// # Arguments
+///
+/// - `fh`: Filehandle to be written.
+/// - `buf`: buffer containing the data to be written.
+///
+/// # Returns
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the number
+/// of bytes written if successful,  [`SvsmError`] otherwise.
 pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
 }
 
+/// Used to set the file offset
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `pos`: new file offset value to be set.
 pub fn seek(fh: &FileHandle, pos: usize) {
     fh.seek(pos)
 }
@@ -276,10 +514,9 @@ mod tests {
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create file - should fail as directory does not exist yet
         create("test1/file1").unwrap_err();
@@ -297,14 +534,15 @@ mod tests {
         // Try again - should succeed now
         create("test1/file1").unwrap();
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_and_unlink_file() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         create("test1").unwrap();
 
@@ -318,7 +556,7 @@ mod tests {
         // Try creating again as directory - should fail
         mkdir("test1").unwrap_err();
 
-        // Try creating again as directory - should fail
+        // Try creating a different dir
         mkdir("test2").unwrap();
 
         // Unlink file
@@ -328,14 +566,14 @@ mod tests {
         let root_list = list_dir("").unwrap();
         assert_eq!(root_list, [FileName::from("test2")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test2").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn create_sub_dir() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create file - should fail as directory does not exist yet
         create("test1/test2/file1").unwrap_err();
@@ -357,14 +595,16 @@ mod tests {
         let list = list_dir("test1/test2/").unwrap();
         assert_eq!(list, [FileName::from("file1")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/test2/file1").unwrap();
+        unlink("test1/test2").unwrap();
+        unlink("test1/").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_unlink() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create directory
         mkdir("test1").unwrap();
@@ -387,14 +627,15 @@ mod tests {
         let list = list_dir("test1").unwrap();
         assert_eq!(list, [FileName::from("file2")]);
 
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file2").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_open_read_write_seek() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
         // Create directory
         mkdir("test1").unwrap();
@@ -438,17 +679,17 @@ mod tests {
             assert!(*elem == expected);
         }
 
-        drop(fh);
-        uninitialize_fs();
+        // Cleanup
+        unlink("test1/file1").unwrap();
+        unlink("test1").unwrap();
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
     fn test_multiple_file_handles() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        initialize_fs();
+        let _test_fs = TestFileSystemGuard::setup();
 
-        // Try again - should succeed now
+        // Create file
         let fh1 = create("file").unwrap();
         assert_eq!(fh1.size(), 0);
 
@@ -457,6 +698,7 @@ mod tests {
         assert_eq!(result, 6144);
         assert_eq!(fh1.size(), 6144);
 
+        // Another handle to the same file
         let fh2 = open("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
@@ -473,8 +715,7 @@ mod tests {
         let result = fh2.read(&mut buf2).unwrap();
         assert_eq!(result, 0);
 
-        drop(fh2);
-        drop(fh1);
-        uninitialize_fs();
+        // Cleanup
+        unlink("file").unwrap();
     }
 }

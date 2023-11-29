@@ -11,24 +11,34 @@
 //
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
+    extern crate alloc;
+
     use crate::address::{Address, VirtAddr};
-    use crate::cpu::percpu::this_cpu;
-    use crate::cpu::X86ExceptionContext;
+    use crate::cpu::control_regs::read_cr3;
+    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, VC_VECTOR};
+    use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+    use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
+    use crate::locking::{LockGuard, SpinLock};
     use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
     use crate::serial::{SerialPort, Terminal};
     use crate::svsm_console::SVSMIOPort;
+    use crate::task::{is_current_task, TaskContext, TaskState, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
+    use core::fmt;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use gdbstub::common::{Signal, Tid};
     use gdbstub::conn::Connection;
     use gdbstub::stub::state_machine::GdbStubStateMachine;
-    use gdbstub::stub::{GdbStubBuilder, SingleThreadStopReason};
-    use gdbstub::target::ext::base::singlethread::{
-        SingleThreadBase, SingleThreadResume, SingleThreadResumeOps, SingleThreadSingleStep,
-        SingleThreadSingleStepOps,
+    use gdbstub::stub::{GdbStubBuilder, MultiThreadStopReason};
+    use gdbstub::target::ext::base::multithread::{
+        MultiThreadBase, MultiThreadResume, MultiThreadResumeOps, MultiThreadSingleStep,
+        MultiThreadSingleStepOps,
     };
     use gdbstub::target::ext::base::BaseOps;
     use gdbstub::target::ext::breakpoints::{Breakpoints, SwBreakpoint};
+    use gdbstub::target::ext::thread_extra_info::ThreadExtraInfo;
     use gdbstub::target::{Target, TargetError};
     use gdbstub_arch::x86::reg::X86_64CoreRegs;
     use gdbstub_arch::x86::X86_64_SSE;
@@ -45,21 +55,116 @@ pub mod svsm_gdbstub {
                 .expect("Failed to initialise GDB stub")
                 .run_state_machine(&mut target)
                 .expect("Failed to start GDB state machine");
-            GDB_STATE = Some(SvsmGdbStub { gdb, target });
+            *GDB_STATE.lock() = Some(SvsmGdbStub { gdb, target });
+            GDB_STACK_TOP = GDB_STACK.as_mut_ptr().offset(GDB_STACK.len() as isize - 1) as u64;
         }
+        GDB_INITIALISED.store(true, Ordering::Relaxed);
         Ok(())
     }
 
-    pub fn handle_bp_exception(ctx: &mut X86ExceptionContext) {
-        handle_stop(ctx, true);
+    #[derive(PartialEq, Eq, Debug)]
+    enum ExceptionType {
+        Debug,
+        SwBreakpoint,
+        PageFault,
     }
 
-    pub fn handle_db_exception(ctx: &mut X86ExceptionContext) {
-        handle_stop(ctx, false);
+    impl From<usize> for ExceptionType {
+        fn from(value: usize) -> Self {
+            match value {
+                BP_VECTOR => ExceptionType::SwBreakpoint,
+                VC_VECTOR => ExceptionType::Debug,
+                _ => ExceptionType::PageFault,
+            }
+        }
+    }
+
+    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
+        let exception_type = ExceptionType::from(exception);
+        let id = this_cpu().runqueue().lock_read().current_task_id();
+        let mut task_ctx = TaskContext {
+            regs: X86GeneralRegs {
+                r15: ctx.regs.r15,
+                r14: ctx.regs.r14,
+                r13: ctx.regs.r13,
+                r12: ctx.regs.r12,
+                r11: ctx.regs.r11,
+                r10: ctx.regs.r10,
+                r9: ctx.regs.r9,
+                r8: ctx.regs.r8,
+                rbp: ctx.regs.rbp,
+                rdi: ctx.regs.rdi,
+                rsi: ctx.regs.rsi,
+                rdx: ctx.regs.rdx,
+                rcx: ctx.regs.rcx,
+                rbx: ctx.regs.rbx,
+                rax: ctx.regs.rax,
+            },
+            rsp: ctx.frame.rsp as u64,
+            flags: ctx.frame.flags as u64,
+            ret_addr: ctx.frame.rip as u64,
+        };
+
+        if let Some(task_node) = this_cpu_mut().runqueue().lock_read().get_task(id) {
+            task_node.task.lock_write().rsp = &task_ctx as *const TaskContext as u64;
+        }
+
+        // Locking the GDB state for the duration of the stop will cause any other
+        // APs that hit a breakpoint to busy-wait until the current CPU releases
+        // the GDB state. They will then resume and report the stop state
+        // to GDB.
+        // One thing to watch out for - if a breakpoint is inadvertently placed in
+        // the GDB handling code itself then this will cause a re-entrant state
+        // within the same CPU causing a deadlock.
+        loop {
+            let mut gdb_state = GDB_STATE.lock();
+            if let Some(stub) = gdb_state.as_ref() {
+                if stub.target.is_single_step != 0 && stub.target.is_single_step != id {
+                    continue;
+                }
+            }
+
+            unsafe {
+                asm!(
+                    r#"
+                        movq    %rsp, (%rax)
+                        movq    %rax, %rsp
+                        call    handle_stop
+                        popq    %rax
+                        movq    %rax, %rsp
+                    "#,
+                    in("rsi") exception_type as u64,
+                    in("rdi") &mut task_ctx,
+                    in("rdx") &mut gdb_state,
+                    in("rax") GDB_STACK_TOP,
+                    options(att_syntax));
+            }
+
+            ctx.frame.rip = task_ctx.ret_addr as usize;
+            ctx.frame.flags = task_ctx.flags as usize;
+            ctx.frame.rsp = task_ctx.rsp as usize;
+            ctx.regs.rax = task_ctx.regs.rax;
+            ctx.regs.rbx = task_ctx.regs.rbx;
+            ctx.regs.rcx = task_ctx.regs.rcx;
+            ctx.regs.rdx = task_ctx.regs.rdx;
+            ctx.regs.rsi = task_ctx.regs.rsi;
+            ctx.regs.rdi = task_ctx.regs.rdi;
+            ctx.regs.rbp = task_ctx.regs.rbp;
+            ctx.regs.r8 = task_ctx.regs.r8;
+            ctx.regs.r9 = task_ctx.regs.r9;
+            ctx.regs.r10 = task_ctx.regs.r10;
+            ctx.regs.r11 = task_ctx.regs.r11;
+            ctx.regs.r12 = task_ctx.regs.r12;
+            ctx.regs.r13 = task_ctx.regs.r13;
+            ctx.regs.r14 = task_ctx.regs.r14;
+            ctx.regs.r15 = task_ctx.regs.r15;
+
+            break;
+        }
     }
 
     pub fn debug_break() {
-        if unsafe { GDB_STATE.is_some() } {
+        if GDB_INITIALISED.load(Ordering::Acquire) {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
@@ -69,37 +174,105 @@ pub mod svsm_gdbstub {
         }
     }
 
-    static mut GDB_STATE: Option<SvsmGdbStub> = None;
+    static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
+    static GDB_STATE: SpinLock<Option<SvsmGdbStub>> = SpinLock::new(None);
     static GDB_IO: SVSMIOPort = SVSMIOPort::new();
     static mut GDB_SERIAL: SerialPort = SerialPort {
         driver: &GDB_IO,
         port: 0x2f8,
     };
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
+    // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
+    static mut GDB_STACK: [u64; 8192] = [0; 8192];
+    static mut GDB_STACK_TOP: u64 = 0;
+
+    struct GdbTaskContext {
+        cr3: usize,
+    }
+
+    impl GdbTaskContext {
+        fn switch_to_task(id: u32) -> Self {
+            let cr3 = if is_current_task(id) {
+                0
+            } else {
+                let tl = TASKLIST.lock();
+                let cr3 = read_cr3();
+                let task_node = tl.get_task(id);
+                if let Some(task_node) = task_node {
+                    task_node.task.lock_write().page_table.lock().load();
+                    cr3.bits()
+                } else {
+                    0
+                }
+            };
+            Self { cr3 }
+        }
+    }
+
+    impl Drop for GdbTaskContext {
+        fn drop(&mut self) {
+            if self.cr3 != 0 {
+                unsafe {
+                    asm!("mov %rax, %cr3",
+                         in("rax") self.cr3,
+                         options(att_syntax));
+                }
+            }
+        }
+    }
 
     struct SvsmGdbStub<'a> {
         gdb: GdbStubStateMachine<'a, GdbStubTarget, GdbStubConnection>,
         target: GdbStubTarget,
     }
 
-    fn handle_stop(ctx: &mut X86ExceptionContext, bp_exception: bool) {
-        let SvsmGdbStub { gdb, mut target } = unsafe {
-            GDB_STATE.take().unwrap_or_else(|| {
-                panic!("GDB stub not initialised!");
-            })
-        };
+    impl<'a> fmt::Debug for SvsmGdbStub<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "SvsmGdbStub")
+        }
+    }
+
+    #[no_mangle]
+    fn handle_stop(
+        ctx: &mut TaskContext,
+        exception_type: ExceptionType,
+        gdb_state: &mut LockGuard<'_, Option<SvsmGdbStub<'_>>>,
+    ) {
+        let SvsmGdbStub { gdb, mut target } = gdb_state.take().unwrap_or_else(|| {
+            panic!("Invalid GDB state");
+        });
 
         target.set_regs(ctx);
 
+        let hardcoded_bp = (exception_type == ExceptionType::SwBreakpoint)
+            && !target.is_breakpoint(ctx.ret_addr as usize - 1);
+
         // If the current address is on a breakpoint then we need to
         // move the IP back by one byte
-        if bp_exception && target.is_breakpoint(ctx.frame.rip - 1) {
-            ctx.frame.rip -= 1;
+        if (exception_type == ExceptionType::SwBreakpoint)
+            && target.is_breakpoint(ctx.ret_addr as usize - 1)
+        {
+            ctx.ret_addr -= 1;
         }
 
+        let tid = Tid::new(this_cpu().runqueue().lock_read().current_task_id() as usize)
+            .expect("Current task has invalid ID");
         let mut new_gdb = match gdb {
             GdbStubStateMachine::Running(gdb_inner) => {
-                match gdb_inner.report_stop(&mut target, SingleThreadStopReason::SwBreak(())) {
+                let reason = if hardcoded_bp {
+                    MultiThreadStopReason::SignalWithThread {
+                        tid,
+                        signal: Signal::SIGINT,
+                    }
+                } else if exception_type == ExceptionType::PageFault {
+                    MultiThreadStopReason::SignalWithThread {
+                        tid,
+                        signal: Signal::SIGSEGV,
+                    }
+                } else {
+                    MultiThreadStopReason::SwBreak(tid)
+                };
+                match gdb_inner.report_stop(&mut target, reason) {
                     Ok(gdb) => gdb,
                     Err(_) => panic!("Failed to handle software breakpoint"),
                 }
@@ -128,22 +301,19 @@ pub mod svsm_gdbstub {
                     break;
                 }
                 _ => {
-                    log::info!("Invalid GDB state when handling breakpoint interrupt");
-                    return;
+                    panic!("Invalid GDB state when handling breakpoint interrupt");
                 }
             };
         }
-        if target.is_single_step {
-            ctx.frame.flags |= 0x100;
+        if target.is_single_step == tid.get() as u32 {
+            ctx.flags |= 0x100;
         } else {
-            ctx.frame.flags &= !0x100;
+            ctx.flags &= !0x100;
         }
-        unsafe {
-            GDB_STATE = Some(SvsmGdbStub {
-                gdb: new_gdb,
-                target,
-            })
-        };
+        **gdb_state = Some(SvsmGdbStub {
+            gdb: new_gdb,
+            target,
+        });
     }
 
     struct GdbStubConnection;
@@ -182,7 +352,7 @@ pub mod svsm_gdbstub {
     struct GdbStubTarget {
         ctx: usize,
         breakpoints: [GdbStubBreakpoint; MAX_BREAKPOINTS],
-        is_single_step: bool,
+        is_single_step: u32,
     }
 
     impl GdbStubTarget {
@@ -193,11 +363,11 @@ pub mod svsm_gdbstub {
                     addr: VirtAddr::null(),
                     inst: 0,
                 }; MAX_BREAKPOINTS],
-                is_single_step: false,
+                is_single_step: 0,
             }
         }
 
-        pub fn set_regs(&mut self, ctx: &X86ExceptionContext) {
+        pub fn set_regs(&mut self, ctx: &TaskContext) {
             self.ctx = (ctx as *const _) as usize;
         }
 
@@ -227,7 +397,7 @@ pub mod svsm_gdbstub {
         type Error = usize;
 
         fn base_ops(&mut self) -> gdbstub::target::ext::base::BaseOps<'_, Self::Arch, Self::Error> {
-            BaseOps::SingleThread(self)
+            BaseOps::MultiThread(self)
         }
 
         #[inline(always)]
@@ -238,10 +408,10 @@ pub mod svsm_gdbstub {
         }
     }
 
-    impl From<&X86ExceptionContext> for X86_64CoreRegs {
-        fn from(value: &X86ExceptionContext) -> Self {
+    impl From<&TaskContext> for X86_64CoreRegs {
+        fn from(value: &TaskContext) -> Self {
             let mut regs = X86_64CoreRegs::default();
-            regs.rip = value.frame.rip as u64;
+            regs.rip = value.ret_addr;
             regs.regs = [
                 value.regs.rax as u64,
                 value.regs.rbx as u64,
@@ -250,7 +420,7 @@ pub mod svsm_gdbstub {
                 value.regs.rsi as u64,
                 value.regs.rdi as u64,
                 value.regs.rbp as u64,
-                value.frame.rsp as u64,
+                value.rsp,
                 value.regs.r8 as u64,
                 value.regs.r9 as u64,
                 value.regs.r10 as u64,
@@ -260,34 +430,49 @@ pub mod svsm_gdbstub {
                 value.regs.r14 as u64,
                 value.regs.r15 as u64,
             ];
-            regs.eflags = value.frame.flags as u32;
-            regs.segments.cs = value.frame.cs as u32;
-            regs.segments.ss = value.frame.ss as u32;
+            regs.eflags = value.flags as u32;
             regs
         }
     }
 
-    impl SingleThreadBase for GdbStubTarget {
+    impl MultiThreadBase for GdbStubTarget {
         fn read_registers(
             &mut self,
             regs: &mut <Self::Arch as gdbstub::arch::Arch>::Registers,
+            tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
-            unsafe {
-                let context = (self.ctx as *mut X86ExceptionContext).as_ref().unwrap();
-                *regs = X86_64CoreRegs::from(context);
+            if is_current_task(tid.get() as u32) {
+                unsafe {
+                    let context = (self.ctx as *const TaskContext).as_ref().unwrap();
+                    *regs = X86_64CoreRegs::from(context);
+                }
+            } else {
+                let task = TASKLIST.lock().get_task(tid.get() as u32);
+                if let Some(task_node) = task {
+                    // The registers are stored in the top of the task stack as part of the
+                    // saved context. We need to switch to the task pagetable to access them.
+                    let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+                    let task = task_node.task.lock_read();
+                    unsafe {
+                        *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
+                    };
+                    regs.regs[7] = task.rsp;
+                } else {
+                    *regs = <Self::Arch as gdbstub::arch::Arch>::Registers::default();
+                }
             }
-
             Ok(())
         }
 
         fn write_registers(
             &mut self,
             regs: &<Self::Arch as gdbstub::arch::Arch>::Registers,
+            _tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
             unsafe {
-                let context = (self.ctx as *mut X86ExceptionContext).as_mut().unwrap();
+                let context = (self.ctx as *mut TaskContext).as_mut().unwrap();
 
-                context.frame.rip = regs.rip as usize;
+                context.ret_addr = regs.rip;
                 context.regs.rax = regs.regs[0] as usize;
                 context.regs.rbx = regs.regs[1] as usize;
                 context.regs.rcx = regs.regs[2] as usize;
@@ -295,7 +480,7 @@ pub mod svsm_gdbstub {
                 context.regs.rsi = regs.regs[4] as usize;
                 context.regs.rdi = regs.regs[5] as usize;
                 context.regs.rbp = regs.regs[6] as usize;
-                context.frame.rsp = regs.regs[7] as usize;
+                context.rsp = regs.regs[7];
                 context.regs.r8 = regs.regs[8] as usize;
                 context.regs.r9 = regs.regs[9] as usize;
                 context.regs.r10 = regs.regs[10] as usize;
@@ -304,9 +489,7 @@ pub mod svsm_gdbstub {
                 context.regs.r13 = regs.regs[13] as usize;
                 context.regs.r14 = regs.regs[14] as usize;
                 context.regs.r15 = regs.regs[15] as usize;
-                context.frame.flags = regs.eflags as usize;
-                context.frame.cs = regs.segments.cs as usize;
-                context.frame.ss = regs.segments.ss as usize;
+                context.flags = regs.eflags as u64;
             }
             Ok(())
         }
@@ -315,7 +498,11 @@ pub mod svsm_gdbstub {
             &mut self,
             start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
             data: &mut [u8],
+            tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
+            // Switch to the task pagetable if necessary. The switch back will
+            // happen automatically when the variable falls out of scope
+            let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
                 let Ok(val) = read_u8(start_addr + off) else {
@@ -330,6 +517,7 @@ pub mod svsm_gdbstub {
             &mut self,
             start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
             data: &[u8],
+            _tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
             let start_addr = VirtAddr::from(start_addr);
             for (off, src) in data.iter().enumerate() {
@@ -341,26 +529,117 @@ pub mod svsm_gdbstub {
         }
 
         #[inline(always)]
-        fn support_resume(&mut self) -> Option<SingleThreadResumeOps<Self>> {
+        fn support_resume(&mut self) -> Option<MultiThreadResumeOps<Self>> {
+            Some(self)
+        }
+
+        fn list_active_threads(
+            &mut self,
+            thread_is_active: &mut dyn FnMut(gdbstub::common::Tid),
+        ) -> Result<(), Self::Error> {
+            let mut tl = TASKLIST.lock();
+
+            let mut any_scheduled = false;
+
+            if tl.list().is_empty() {
+                // Task list has not been initialised yet. Report a single thread
+                // for the current CPU
+                thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
+            } else {
+                let mut cursor = tl.list().front_mut();
+                while cursor.get().is_some() {
+                    if cursor.get().unwrap().task.lock_read().allocation.is_some() {
+                        any_scheduled = true;
+                        break;
+                    }
+                    cursor.move_next();
+                }
+                if any_scheduled {
+                    let mut cursor = tl.list().front_mut();
+                    while cursor.get().is_some() {
+                        thread_is_active(
+                            Tid::new(cursor.get().unwrap().task.lock_read().id as usize).unwrap(),
+                        );
+                        cursor.move_next();
+                    }
+                } else {
+                    thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
+                }
+            }
+            Ok(())
+        }
+
+        fn support_thread_extra_info(
+            &mut self,
+        ) -> Option<gdbstub::target::ext::thread_extra_info::ThreadExtraInfoOps<'_, Self>> {
             Some(self)
         }
     }
 
-    impl SingleThreadResume for GdbStubTarget {
-        fn resume(&mut self, _signal: Option<gdbstub::common::Signal>) -> Result<(), Self::Error> {
-            self.is_single_step = false;
+    impl ThreadExtraInfo for GdbStubTarget {
+        fn thread_extra_info(&self, tid: Tid, buf: &mut [u8]) -> Result<usize, Self::Error> {
+            // Get the current task from the stopped CPU so we can mark it as stopped
+            let tl = TASKLIST.lock();
+            let str = match tl.get_task(tid.get() as u32) {
+                Some(t) => {
+                    let t = t.task.lock_read();
+                    match t.state {
+                        TaskState::RUNNING => {
+                            if let Some(allocation) = t.allocation {
+                                if this_cpu().get_apic_id() == allocation {
+                                    "Stopped".as_bytes()
+                                } else {
+                                    "Running".as_bytes()
+                                }
+                            } else {
+                                "Stopped".as_bytes()
+                            }
+                        }
+                        TaskState::TERMINATED => "Terminated".as_bytes(),
+                    }
+                }
+                None => "Stopped".as_bytes(),
+            };
+            let mut count = 0;
+            for (dst, src) in buf.iter_mut().zip(str) {
+                *dst = *src;
+                count += 1;
+            }
+            Ok(count)
+        }
+    }
+
+    impl MultiThreadResume for GdbStubTarget {
+        fn resume(&mut self) -> Result<(), Self::Error> {
             Ok(())
         }
 
         #[inline(always)]
-        fn support_single_step(&mut self) -> Option<SingleThreadSingleStepOps<'_, Self>> {
+        fn support_single_step(&mut self) -> Option<MultiThreadSingleStepOps<'_, Self>> {
             Some(self)
+        }
+
+        fn clear_resume_actions(&mut self) -> Result<(), Self::Error> {
+            self.is_single_step = 0;
+            Ok(())
+        }
+
+        fn set_resume_action_continue(
+            &mut self,
+            _tid: Tid,
+            _signal: Option<Signal>,
+        ) -> Result<(), Self::Error> {
+            Ok(())
         }
     }
 
-    impl SingleThreadSingleStep for GdbStubTarget {
-        fn step(&mut self, _signal: Option<gdbstub::common::Signal>) -> Result<(), Self::Error> {
-            self.is_single_step = true;
+    impl MultiThreadSingleStep for GdbStubTarget {
+        fn set_resume_action_step(
+            &mut self,
+            tid: Tid,
+            _signal: Option<Signal>,
+        ) -> Result<(), Self::Error> {
+            self.is_single_step = tid.get() as u32;
             Ok(())
         }
     }
@@ -427,6 +706,32 @@ pub mod svsm_gdbstub {
             Ok(true)
         }
     }
+
+    #[cfg(test)]
+    pub mod tests {
+        extern crate alloc;
+
+        use super::ExceptionType;
+        use crate::cpu::idt::common::{BP_VECTOR, VC_VECTOR};
+        use alloc::vec;
+        use alloc::vec::Vec;
+
+        #[test]
+        fn exception_type_from() {
+            let exceptions: Vec<ExceptionType> = [VC_VECTOR, BP_VECTOR, 0]
+                .iter()
+                .map(|e| ExceptionType::from(*e))
+                .collect();
+            assert_eq!(
+                exceptions,
+                vec![
+                    ExceptionType::Debug,
+                    ExceptionType::SwBreakpoint,
+                    ExceptionType::PageFault
+                ]
+            );
+        }
+    }
 }
 
 #[cfg(not(feature = "enable-gdb"))]
@@ -437,9 +742,7 @@ pub mod svsm_gdbstub {
         Ok(())
     }
 
-    pub fn handle_bp_exception(_regs: &mut X86ExceptionContext) {}
-
-    pub fn handle_db_exception(_regs: &mut X86ExceptionContext) {}
+    pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
 
     pub fn debug_break() {}
 }

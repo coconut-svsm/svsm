@@ -12,17 +12,17 @@ extern crate alloc;
 use alloc::vec::Vec;
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
-use core::arch::{asm, global_asm};
+use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
 use svsm::acpi::tables::load_acpi_cpu_info;
-use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::address::{PhysAddr, VirtAddr};
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
-use svsm::cpu::idt::{early_idt_init, idt_init};
+use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
 use svsm::cpu::smp::start_secondary_cpus;
@@ -32,6 +32,7 @@ use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
+use svsm::greq::driver::guest_request_driver_init;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -41,13 +42,14 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
-use svsm::sev::secrets_page::{copy_secrets_page, SecretsPage};
+use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
+use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -221,26 +223,29 @@ fn validate_flash() -> Result<(), SvsmError> {
     let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+    let kernel_region = LAUNCH_INFO.kernel_region();
+    let flash_range = {
+        let one_gib = 1024 * 1024 * 1024usize;
+        let start = PhysAddr::from(3 * one_gib);
+        MemoryRegion::new(start, one_gib)
+    };
 
     // Sanity-check flash regions.
     for region in flash_regions.iter() {
         // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlaps(3 * 1024 * 1024 * 1024, 4 * 1024 * 1024 * 1024) {
+        if !region.overlap(&flash_range) {
             panic!("flash region in unexpected region");
         }
 
         // Make sure that no regions overlap with the kernel.
-        if region.overlaps(
-            LAUNCH_INFO.kernel_region_phys_start,
-            LAUNCH_INFO.kernel_region_phys_end,
-        ) {
+        if region.overlap(&kernel_region) {
             panic!("flash region overlaps with kernel");
         }
     }
     // Make sure that regions don't overlap.
     for (i, outer) in flash_regions.iter().enumerate() {
         for inner in flash_regions[..i].iter() {
-            if outer.overlaps(inner.start, inner.end) {
+            if outer.overlap(inner) {
                 panic!("flash regions overlap");
             }
         }
@@ -248,23 +253,18 @@ fn validate_flash() -> Result<(), SvsmError> {
     // Make sure that one regions ends at 4GiB.
     let one_region_ends_at_4gib = flash_regions
         .iter()
-        .any(|region| region.end == 4 * 1024 * 1024 * 1024);
+        .any(|region| region.end() == flash_range.end());
     assert!(one_region_ends_at_4gib);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
-        let pstart = PhysAddr::from(region.start);
-        let pend = PhysAddr::from(region.end);
         log::info!(
             "Flash region {} at {:#018x} size {:018x}",
             i,
-            pstart,
-            pend - pstart
+            region.start(),
+            region.len(),
         );
 
-        for paddr in (pstart.bits()..pend.bits())
-            .step_by(PAGE_SIZE)
-            .map(PhysAddr::from)
-        {
+        for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
             if let Err(e) = rmp_adjust(
@@ -328,11 +328,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     mapping_info_init(&launch_info);
 
-    init_valid_bitmap_ptr(
-        launch_info.kernel_region_phys_start.try_into().unwrap(),
-        launch_info.kernel_region_phys_end.try_into().unwrap(),
-        vb_ptr,
-    );
+    init_valid_bitmap_ptr(launch_info.kernel_region(), vb_ptr);
 
     load_gdt();
     early_idt_init();
@@ -407,24 +403,21 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
-    // Enable runtime stack and jump to main function
-    unsafe {
-        asm!("movq  %rax, %rsp
-              jmp   svsm_main",
-              in("rax") bp.bits(),
-              options(att_syntax));
-    }
+    // Create the root task that runs the entry point then handles the request loop
+    create_task(
+        svsm_main,
+        TASK_FLAG_SHARE_PT,
+        Some(this_cpu().get_apic_id()),
+    )
+    .expect("Failed to create initial task");
+
+    panic!("SVSM entry point terminated unexpectedly");
 }
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
-    // The GDB stub can be started earlier, just after the console is initialised
-    // in svsm_start() above. It uses a lot of stack though so if you want to move
-    // it earlier then you need to set bsp_stack to 64K in the inline assembler
-    // above:
-    //
-    //     bsp_stack:
-    //        .fill 65536, 1, 0
+    // If required, the GDB stub can be started earlier, just after the console
+    // is initialised in svsm_start() above.
     gdbstub_start().expect("Could not start GDB stub");
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
@@ -459,7 +452,7 @@ pub extern "C" fn svsm_main() {
 
     print_fw_meta(&fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta) {
+    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
         panic!("Failed to validate firmware memory: {:#?}", e);
     }
 
@@ -470,6 +463,8 @@ pub extern "C" fn svsm_main() {
     if let Err(e) = validate_flash() {
         panic!("Failed to validate flash memory: {:#?}", e);
     }
+
+    guest_request_driver_init();
 
     prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
 
@@ -489,6 +484,8 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    disable_vmpck0();
+
     log::error!("Panic: CPU[{}] {}", this_cpu().get_apic_id(), info);
 
     print_stack(3);

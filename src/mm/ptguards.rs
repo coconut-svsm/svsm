@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::pagetable::PageTable;
+use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::tlb::flush_address_sync;
@@ -14,20 +14,12 @@ use crate::mm::virtualrange::{
 };
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
-struct RawPTMappingGuard {
-    start: VirtAddr,
-    end: VirtAddr,
-}
+use crate::utils::MemoryRegion;
 
-impl RawPTMappingGuard {
-    pub const fn new(start: VirtAddr, end: VirtAddr) -> Self {
-        RawPTMappingGuard { start, end }
-    }
-}
-
+#[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: Option<RawPTMappingGuard>,
+    mapping: MemoryRegion<VirtAddr>,
     huge: bool,
 }
 
@@ -43,7 +35,7 @@ impl PerCPUPageMappingGuard {
         assert!((paddr_start.bits() & align_mask) == 0);
         assert!((paddr_end.bits() & align_mask) == 0);
 
-        let flags = PageTable::data_flags();
+        let flags = PTEntryFlags::data();
         let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let vaddr = if huge {
@@ -70,10 +62,10 @@ impl PerCPUPageMappingGuard {
             vaddr
         };
 
-        let raw_mapping = RawPTMappingGuard::new(vaddr, vaddr + size);
+        let raw_mapping = MemoryRegion::new(vaddr, size);
 
         Ok(PerCPUPageMappingGuard {
-            mapping: Some(raw_mapping),
+            mapping: raw_mapping,
             huge,
         })
     }
@@ -83,22 +75,23 @@ impl PerCPUPageMappingGuard {
     }
 
     pub fn virt_addr(&self) -> VirtAddr {
-        self.mapping.as_ref().unwrap().start
+        self.mapping.start()
     }
 }
 
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
-        if let Some(m) = &self.mapping {
-            let size = m.end - m.start;
-            if self.huge {
-                this_cpu_mut().get_pgtable().unmap_region_2m(m.start, m.end);
-                virt_free_range_2m(m.start, size);
-            } else {
-                this_cpu_mut().get_pgtable().unmap_region_4k(m.start, m.end);
-                virt_free_range_4k(m.start, size);
-            }
-            flush_address_sync(m.start);
+        let start = self.mapping.start();
+        let end = self.mapping.end();
+        let size = self.mapping.len();
+
+        if self.huge {
+            this_cpu_mut().get_pgtable().unmap_region_2m(start, end);
+            virt_free_range_2m(start, size);
+        } else {
+            this_cpu_mut().get_pgtable().unmap_region_4k(start, end);
+            virt_free_range_4k(start, size);
         }
+        flush_address_sync(start);
     }
 }

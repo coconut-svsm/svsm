@@ -5,47 +5,110 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
 
+/// A lock guard obtained from a [`SpinLock`]. This lock guard
+/// provides exclusive access to the data protected by a [`SpinLock`],
+/// ensuring that the lock is released when it goes out of scope.
+///
+/// # Examples
+///
+/// ```
+/// use svsm::locking::SpinLock;
+///
+/// let data = 42;
+/// let spin_lock = SpinLock::new(data);
+///
+/// {
+///     let mut guard = spin_lock.lock();
+///     *guard += 1; // Modify the protected data.
+/// }; // Lock is automatically released when `guard` goes out of scope.
+/// ```
 #[derive(Debug)]
 #[must_use = "if unused the SpinLock will immediately unlock"]
-pub struct LockGuard<'a, T: Debug> {
+pub struct LockGuard<'a, T> {
     holder: &'a AtomicU64,
     data: &'a mut T,
 }
 
-impl<'a, T: Debug> Drop for LockGuard<'a, T> {
+/// Implements the behavior of the [`LockGuard`] when it is dropped
+impl<'a, T> Drop for LockGuard<'a, T> {
+    /// Automatically releases the lock when the guard is dropped
     fn drop(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
     }
 }
 
-impl<'a, T: Debug> Deref for LockGuard<'a, T> {
+/// Implements the behavior of dereferencing the [`LockGuard`] to
+/// access the protected data.
+impl<'a, T> Deref for LockGuard<'a, T> {
     type Target = T;
+    /// Provides read-only access to the protected data
     fn deref(&self) -> &T {
         self.data
     }
 }
 
-impl<'a, T: Debug> DerefMut for LockGuard<'a, T> {
+/// Implements the behavior of dereferencing the [`LockGuard`] to
+/// access the protected data in a mutable way.
+impl<'a, T> DerefMut for LockGuard<'a, T> {
+    /// Provides mutable access to the protected data
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
+/// A simple spinlock implementation for protecting concurrent data access.
+///
+/// # Examples
+///
+/// ```
+/// use svsm::locking::SpinLock;
+///
+/// let data = 42;
+/// let spin_lock = SpinLock::new(data);
+///
+/// // Acquire the lock and modify the protected data.
+/// {
+///     let mut guard = spin_lock.lock();
+///     *guard += 1;
+/// }; // Lock is automatically released when `guard` goes out of scope.
+///
+/// // Try to acquire the lock without blocking
+/// if let Some(mut guard) = spin_lock.try_lock() {
+///     *guard += 2;
+/// };
+/// ```
 #[derive(Debug)]
-pub struct SpinLock<T: Debug> {
+pub struct SpinLock<T> {
+    /// This atomic counter is incremented each time a thread attempts to
+    /// acquire the lock. It helps to determine the order in which threads
+    /// acquire the lock.
     current: AtomicU64,
+    /// This counter represents the thread that currently holds the lock
+    /// and has access to the protected data.
     holder: AtomicU64,
+    /// This `UnsafeCell` is used to provide interior mutability of the
+    /// protected data. That is, it allows the data to be accessed/modified
+    /// while enforcing the locking mechanism.
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Debug + Send> Send for SpinLock<T> {}
-unsafe impl<T: Debug + Send> Sync for SpinLock<T> {}
+unsafe impl<T: Send> Send for SpinLock<T> {}
+unsafe impl<T: Send> Sync for SpinLock<T> {}
 
-impl<T: Debug> SpinLock<T> {
+impl<T> SpinLock<T> {
+    /// Creates a new SpinLock instance with the specified initial data.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use svsm::locking::SpinLock;
+    ///
+    /// let data = 42;
+    /// let spin_lock = SpinLock::new(data);
+    /// ```
     pub const fn new(data: T) -> Self {
         SpinLock {
             current: AtomicU64::new(0),
@@ -54,6 +117,21 @@ impl<T: Debug> SpinLock<T> {
         }
     }
 
+    /// Acquires the lock, providing access to the protected data.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use svsm::locking::SpinLock;
+    ///
+    /// let spin_lock = SpinLock::new(42);
+    ///
+    /// // Acquire the lock and modify the protected data.
+    /// {
+    ///     let mut guard = spin_lock.lock();
+    ///     *guard += 1;
+    /// }; // Lock is automatically released when `guard` goes out of scope.
+    /// ```
     pub fn lock(&self) -> LockGuard<T> {
         let ticket = self.current.fetch_add(1, Ordering::Relaxed);
         loop {
@@ -69,6 +147,10 @@ impl<T: Debug> SpinLock<T> {
         }
     }
 
+    /// This method tries to acquire the lock without blocking. If the
+    /// lock is not available, it returns `None`. If the lock is
+    /// successfully acquired, it returns a [`LockGuard`] that automatically
+    /// releases the lock when it goes out of scope.
     pub fn try_lock(&self) -> Option<LockGuard<T>> {
         let current = self.current.load(Ordering::Relaxed);
         let holder = self.holder.load(Ordering::Acquire);
@@ -89,5 +171,25 @@ impl<T: Debug> SpinLock<T> {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_spin_lock() {
+        let spin_lock = SpinLock::new(0);
+
+        let mut guard = spin_lock.lock();
+        *guard += 1;
+
+        // Ensure the locked data is updated.
+        assert_eq!(*guard, 1);
+
+        // Try to lock again; it should fail and return None.
+        let try_lock_result = spin_lock.try_lock();
+        assert!(try_lock_result.is_none());
     }
 }
