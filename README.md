@@ -50,8 +50,13 @@ mailing list.
 Reporting Bugs
 --------------
 
-Any issues, bugs or feature requests for the SVSM project can be reported via
-[https://github.com/coconut-svsm/svsm/issues](https://github.com/coconut-svsm/svsm/issues).
+Any issues, bugs (except embargoed security issues) or feature requests
+for the SVSM project can be reported via [https://github.com/coconut-svsm/svsm/issues](https://github.com/coconut-svsm/svsm/issues).
+
+For security critical bugs please send an email describing the problem
+and the planned CRD (if known) to
+[security@coconut-svsm.dev](mailto:security@coconut-svsm.dev).
+
 
 Contributing
 ------------
