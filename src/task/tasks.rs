@@ -20,10 +20,18 @@ use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
-use crate::mm::vm::{Mapping, VMKernelStack, VMR};
-use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use crate::mm::vm::{Mapping, VMKernelStack, VMUserStack, VMR};
+use crate::mm::{
+    PAGE_SIZE, SVSM_PERTASK_BASE, SVSM_PERTASK_BASE_CPL3, SVSM_PERTASK_END, SVSM_PERTASK_END_CPL3,
+    SVSM_PERTASK_STACK_BASE, SVSM_PERTASK_STACK_BASE_CPL3,
+};
+use crate::types::PAGE_SHIFT;
 
 use super::schedule::{current_task_terminated, schedule};
+
+extern "C" {
+    static task_entry: u64;
+}
 
 pub const INITIAL_TASK_ID: u32 = 1;
 
@@ -36,16 +44,26 @@ pub enum TaskState {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TaskError {
-    // Attempt to close a non-terminated task
+    /// Attempt to close a non-terminated task
     NotTerminated,
-    // A closed task could not be removed from the task list
+    /// A closed task could not be removed from the task list
     CloseFailed,
+    /// The task system has not been initialised
+    NotInitialised,
+    /// Memory allocation error,
+    Alloc,
 }
 
 impl From<TaskError> for SvsmError {
     fn from(e: TaskError) -> Self {
         Self::Task(e)
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct UserParams {
+    entry_point: extern "C" fn(u64),
+    param: u64,
 }
 
 pub const TASK_FLAG_SHARE_PT: u16 = 0x01;
@@ -159,14 +177,30 @@ pub struct TaskContext {
 }
 
 #[repr(C)]
+#[derive(Default, Debug, Clone, Copy)]
+pub struct UserTask {
+    pub user_rsp: u64,
+    pub kernel_rsp: u64,
+}
+
+#[repr(C)]
 pub struct Task {
+    /// Current kernel stack pointer. This must always be the first entry
+    /// in this struct
     pub rsp: u64,
+
+    // For tasks that support user mode this contains the current user mode
+    // state. For tasks that are kernel mode only, contains None.
+    pub user: Option<UserTask>,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
 
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
+
+    /// Task virtual memory range for use at CPL 3
+    vm_user_range: VMR,
 
     /// Current state of the task
     pub state: TaskState,
@@ -204,7 +238,11 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<Box<Task>, SvsmError> {
+    pub fn create(
+        entry: extern "C" fn(u64),
+        param: u64,
+        flags: u16,
+    ) -> Result<Box<Task>, SvsmError> {
         let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
             this_cpu().get_pgtable().clone_shared()?
         } else {
@@ -214,15 +252,25 @@ impl Task {
         let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
         vm_kernel_range.initialize()?;
 
-        let (stack, rsp_offset) = Self::allocate_stack(entry)?;
+        let (stack, rsp_offset) = Self::allocate_stack(entry, param)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
 
+        let mut vm_user_range = VMR::new(
+            SVSM_PERTASK_BASE_CPL3,
+            SVSM_PERTASK_END_CPL3,
+            PTEntryFlags::USER,
+        );
+        vm_user_range.initialize()?;
+        vm_user_range.populate(&mut pgtable);
+
         let task: Box<Task> = Box::new(Task {
             rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
+            user: None,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
+            vm_user_range,
             state: TaskState::RUNNING,
             affinity: None,
             allocation: None,
@@ -230,6 +278,22 @@ impl Task {
             runtime: TaskRuntimeImpl::default(),
             on_switch_hook: None,
         });
+        Ok(task)
+    }
+
+    pub fn user_create(
+        entry: extern "C" fn(u64),
+        param: u64,
+        flags: u16,
+    ) -> Result<Box<Task>, SvsmError> {
+        // Launch via the user-mode entry point
+        let entry_param = Box::new(UserParams {
+            entry_point: entry,
+            param,
+        });
+
+        let mut task = Self::create(launch_user_entry, Box::into_raw(entry_param) as u64, flags)?;
+        task.init_user_mode()?;
         Ok(task)
     }
 
@@ -260,11 +324,36 @@ impl Task {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
     }
 
+    pub fn vmr_user(&mut self) -> &mut VMR {
+        &mut self.vm_user_range
+    }
+
+    pub fn virtual_alloc(
+        &mut self,
+        size_bytes: usize,
+        _alignment: usize,
+    ) -> Result<VirtAddr, SvsmError> {
+        // Each bit in our bitmap represents a 4K page
+        if (size_bytes & (PAGE_SIZE - 1)) != 0 {
+            return Err(SvsmError::Mem);
+        }
+        let _page_count = size_bytes >> PAGE_SHIFT;
+        // TODO: Implement virtual_alloc
+        Err(SvsmError::Mem)
+    }
+
+    pub fn virtual_free(&mut self, _vaddr: VirtAddr, _size_bytes: usize) {
+        // TODO: Implement virtual_free
+    }
+
     pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
         self.on_switch_hook = hook;
     }
 
-    fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
+    fn allocate_stack(
+        entry: extern "C" fn(u64),
+        param: u64,
+    ) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
         let stack = VMKernelStack::new()?;
         let offset = stack.top_of_stack(VirtAddr::from(0u64));
 
@@ -278,7 +367,11 @@ impl Task {
         // 'Push' the task frame onto the stack
         unsafe {
             // flags
-            stack_ptr.offset(-3).write(read_flags());
+            stack_ptr.offset(-5).write(read_flags());
+            // Task entry point
+            stack_ptr.offset(-4).write(&task_entry as *const u64 as u64);
+            // Parameter to entry point
+            stack_ptr.offset(-3).write(param);
             // ret_addr
             stack_ptr.offset(-2).write(entry as *const () as u64);
             // Task termination handler for when entry point returns
@@ -287,8 +380,22 @@ impl Task {
 
         Ok((
             mapping,
-            offset - (size_of::<TaskContext>() + size_of::<u64>()),
+            offset - (size_of::<TaskContext>() + 3 * size_of::<u64>()),
         ))
+    }
+
+    fn init_user_mode(&mut self) -> Result<(), SvsmError> {
+        let stack = VMUserStack::new()?;
+        let offset = stack.top_of_stack(VirtAddr::from(0u64));
+        let mapping = Arc::new(Mapping::new(stack));
+        self.vm_user_range
+            .insert_at(SVSM_PERTASK_STACK_BASE_CPL3, mapping)?;
+
+        self.user = Some(UserTask {
+            user_rsp: offset.bits() as u64,
+            kernel_rsp: 0,
+        });
+        Ok(())
     }
 
     fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
@@ -296,6 +403,60 @@ impl Task {
         // When the pagetable is schedule to a CPU, the per CPU entry will also
         // be added to the pagetable.
         get_init_pgtable_locked().clone_shared()
+    }
+}
+
+extern "C" fn launch_user_entry(entry: u64) {
+    unsafe {
+        let params = *Box::from_raw(entry as *mut UserParams);
+        let task_node = this_cpu()
+            .runqueue()
+            .lock_read()
+            .current_task()
+            .expect("Task entry point called when not the current task.");
+        let (user_rsp, kernel_rsp) = {
+            let task = task_node.task.lock_write();
+            let user = task
+                .user
+                .as_ref()
+                .expect("User entry point called from kernel task");
+            let kernel_rsp = &user.kernel_rsp as *const u64;
+            (user.user_rsp, kernel_rsp)
+        };
+
+        asm!(
+            r#"
+                // user mode might change non-volatile registers
+                push    %rbx
+                push    %rbp
+                push    %r12
+                push    %r13
+                push    %r14
+                push    %r15
+
+                // Save the address after the sysretq so when the task
+                // exits it can jump there.
+                leaq    1f(%rip), %r8
+                pushq   %r8
+
+                movq    %rsp, (%rsi)
+                movq    %rax, %rsp
+                movq    $0x202, %r11
+                sysretq
+
+            1:
+                pop     %r15
+                pop     %r14
+                pop     %r13
+                pop     %r12
+                pop     %rbp
+                pop     %rbx
+            "#,
+            in("rcx") params.entry_point,
+            in("rdi") params.param,
+            in("rax") user_rsp,
+            in("rsi") kernel_rsp,
+            options(att_syntax));
     }
 }
 
@@ -327,6 +488,12 @@ extern "C" fn on_switch(new_task: &mut Task) {
 global_asm!(
     r#"
         .text
+
+    .globl task_entry
+    task_entry:
+        pop     %rdi        // Parameter to entry point
+        // Next item on the stack is the entry point address
+        ret         
 
     switch_context:
         // Save the current context. The layout must match the TaskContext structure.

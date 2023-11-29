@@ -21,11 +21,14 @@ const GDT_SIZE: u16 = 8;
 
 static mut GDT: [u64; GDT_SIZE as usize] = [
     0,
-    0x00af9a000000ffff, // 64-bit code segment
-    0x00cf92000000ffff, // 64-bit data segment
-    0,                  // Reserved for User code
-    0,                  // Reserver for User data
-    0,                  // Reverved
+    0x00af9a000000ffff, // 64-bit CPL=0 code segment
+    0x00cf92000000ffff, // 64-bit CPL=0 data segment
+    // The layout of the CPL-3 entries is dictated by the requirements of
+    // the STAR MSR (C000_0081h). See 6.1.1 in the AMD64 Architecture
+    // Programmer's Manual Volume 2.
+    0,                  // 32-bit CPL=3 code (unused)
+    0x00cff2000000ffff, // 64-bit CPL=3 data segment
+    0x00affa000000ffff, // 64-bit CPL=3 code segment
     0,                  // TSS
     0,                  // TSS continued
 ];

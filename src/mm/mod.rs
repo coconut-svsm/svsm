@@ -11,6 +11,7 @@ pub mod memory;
 pub mod pagetable;
 pub mod ptguards;
 pub mod stack;
+pub mod taskmem;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;

@@ -153,3 +153,15 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
+
+/// Task CPL-3 mappings level 3 index
+pub const PGTABLE_LVL3_IDX_PERTASK_CPL3: usize = 0;
+
+/// Base address of task memory region
+pub const SVSM_PERTASK_BASE_CPL3: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK_CPL3);
+
+/// End address of task memory region
+pub const SVSM_PERTASK_END_CPL3: VirtAddr = SVSM_PERTASK_BASE_CPL3.const_add(SIZE_LEVEL3);
+
+/// User stack for a task
+pub const SVSM_PERTASK_STACK_BASE_CPL3: VirtAddr = SVSM_PERTASK_BASE_CPL3;

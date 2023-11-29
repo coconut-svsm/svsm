@@ -8,6 +8,9 @@ use core::array;
 use core::fmt;
 use core::mem::MaybeUninit;
 
+extern crate alloc;
+use alloc::string::String;
+
 #[derive(Copy, Clone, Debug)]
 pub struct FixedString<const T: usize> {
     len: usize,
@@ -35,6 +38,23 @@ impl<const T: usize> FixedString<T> {
 
     pub fn length(&self) -> usize {
         self.len
+    }
+
+    pub fn as_str(&self) -> String {
+        let mut terminator = false;
+        let s: String = self
+            .data
+            .iter()
+            .filter(|c| {
+                if terminator || **c == '\0' {
+                    terminator = true;
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        s
     }
 }
 
@@ -123,6 +143,23 @@ mod tests {
         let st = FixedString::from([b'a', b'b', b'c', b'\0', b'd', b'e']);
         assert_eq!(st, "abc");
         assert_eq!(st.len, 3);
+    }
+
+    #[test]
+    fn from_ascii_str() {
+        let ascii = " !\"£$%^*() some ASCII text";
+        let fs = FixedString::<40>::from(ascii);
+        assert_eq!(fs, ascii);
+        assert_eq!(fs.as_str(), ascii);
+    }
+
+    #[test]
+    fn from_ascii_str_embedded_term() {
+        let ascii = " !\"£\0$%^*() some ASCII text";
+        let ascii_expected = " !\"£";
+        let fs = FixedString::<40>::from(ascii);
+        assert_eq!(fs, ascii);
+        assert_eq!(fs.as_str(), ascii_expected);
     }
 
     #[test]

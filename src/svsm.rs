@@ -39,6 +39,7 @@ use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
+use svsm::module::ModuleLoader;
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::serial::SERIAL_PORT;
@@ -47,7 +48,7 @@ use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_stage2};
-use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
+use svsm::task::{create_task, init_syscall, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 
@@ -406,6 +407,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     // Create the root task that runs the entry point then handles the request loop
     create_task(
         svsm_main,
+        0,
         TASK_FLAG_SHARE_PT,
         Some(this_cpu().get_apic_id()),
     )
@@ -415,7 +417,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_main() {
+pub extern "C" fn svsm_main(_param: u64) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
     gdbstub_start().expect("Could not start GDB stub");
@@ -433,6 +435,10 @@ pub extern "C" fn svsm_main() {
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
+
+    init_syscall();
+
+    ModuleLoader::enumerate().expect("Failed to initialise loadable modules");
 
     let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

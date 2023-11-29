@@ -28,6 +28,7 @@ pub mod io;
 pub mod kernel_launch;
 pub mod locking;
 pub mod mm;
+pub mod module;
 pub mod protocols;
 pub mod requests;
 pub mod serial;

@@ -439,7 +439,10 @@ impl<'a> Elf64File<'a> {
                 if vaddr_range.vaddr_begin == vaddr_range.vaddr_end {
                     continue;
                 }
-                if load_segments.try_insert(vaddr_range, i).is_err() {
+                if load_segments
+                    .try_insert(vaddr_range, phdr.file_range(), i)
+                    .is_err()
+                {
                     return Err(ElfError::LoadSegmentConflict);
                 }
                 max_load_segment_align = max_load_segment_align.max(phdr.p_align);
@@ -875,6 +878,12 @@ impl<'a> Elf64File<'a> {
     fn load_base(&self, image_load_addr: Elf64Addr) -> Elf64Xword {
         let image_load_addr = self.image_load_addr(image_load_addr);
         image_load_addr.wrapping_sub(self.load_segments.total_vaddr_range().vaddr_begin)
+    }
+
+    // The default base is the virtual memory base address that was specified at
+    // link time and does not require any relocation fixups.
+    pub fn default_base(&self) -> Elf64Xword {
+        self.load_segments.total_vaddr_range().vaddr_begin
     }
 
     pub fn image_load_vaddr_alloc_info(&self) -> Elf64ImageLoadVaddrAllocInfo {
@@ -1447,7 +1456,7 @@ impl Elf64Shdr {
 /// address range and a program header index.
 #[derive(Debug, Default, PartialEq)]
 struct Elf64LoadSegments {
-    segments: Vec<(Elf64AddrRange, Elf64Half)>,
+    segments: Vec<(Elf64AddrRange, Elf64FileRange, Elf64Half)>,
 }
 
 impl Elf64LoadSegments {
@@ -1489,26 +1498,32 @@ impl Elf64LoadSegments {
     ///
     /// # Parameters
     /// - `segment`: An [`Elf64AddrRange`] representing the address range of the segment to insert.
+    /// - `file_range`: An [`Elf64FileRange`] representing the range of the segment being inserted.
     /// - `phdr_index`: An [`Elf64Half`] representing the program header index associated with
     ///   the segment.
     ///
     /// # Returns
     /// Returns [`Ok`] if the insertion is successful and there is no overlap with existing
-    fn try_insert(&mut self, segment: Elf64AddrRange, phdr_index: Elf64Half) -> Result<(), ()> {
+    fn try_insert(
+        &mut self,
+        segment: Elf64AddrRange,
+        file_range: Elf64FileRange,
+        phdr_index: Elf64Half,
+    ) -> Result<(), ()> {
         let i = self.find_first_not_before(&segment);
         match i {
             Some(i) => {
                 match segment.partial_cmp(&self.segments[i].0) {
                     Some(cmp::Ordering::Less) => {
                         // Ok, no overlap.
-                        self.segments.insert(i, (segment, phdr_index));
+                        self.segments.insert(i, (segment, file_range, phdr_index));
                         Ok(())
                     }
                     _ => Err(()),
                 }
             }
             None => {
-                self.segments.push((segment, phdr_index));
+                self.segments.push((segment, file_range, phdr_index));
                 Ok(())
             }
         }
@@ -1533,7 +1548,7 @@ impl Elf64LoadSegments {
         let segment = &self.segments[i];
         if segment.0.vaddr_begin <= range.vaddr_begin && range.vaddr_end <= segment.0.vaddr_end {
             let offset_in_segment = range.vaddr_begin - segment.0.vaddr_begin;
-            Some((segment.1, offset_in_segment))
+            Some((segment.2, offset_in_segment))
         } else {
             None
         }
@@ -1803,6 +1818,8 @@ pub struct Elf64ImageLoadVaddrAllocInfo {
 pub struct Elf64ImageLoadSegment<'a> {
     /// The virtual address (vaddr) range covering by this segment
     pub vaddr_range: Elf64AddrRange,
+    // The range of the segment
+    pub file_range: Elf64FileRange,
     /// The contents of the segment in the ELF file
     pub file_contents: &'a [u8],
     /// Flags associated with this segment
@@ -1835,7 +1852,7 @@ impl<'a> Iterator for Elf64ImageLoadSegmentIterator<'a> {
         self.next += 1;
 
         // Retrieve the program header (phdr) associated with the current segment
-        let phdr_index = self.elf_file.load_segments.segments[cur].1;
+        let phdr_index = self.elf_file.load_segments.segments[cur].2;
         let phdr = self.elf_file.read_phdr(phdr_index);
 
         // Calculate the virtual address (vaddr) range based on the phdr information and load base
@@ -1851,6 +1868,7 @@ impl<'a> Iterator for Elf64ImageLoadSegmentIterator<'a> {
 
         Some(Elf64ImageLoadSegment {
             vaddr_range,
+            file_range,
             file_contents,
             flags: phdr.p_flags,
         })
