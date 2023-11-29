@@ -106,6 +106,7 @@ mod tests {
     use crate::address::PhysAddr;
 
     #[test]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn test_valid_phys_address() {
         let start = PhysAddr::new(0x1000);
         let end = PhysAddr::new(0x2000);
