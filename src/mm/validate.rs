@@ -148,7 +148,12 @@ impl ValidBitmap {
     /// The number of u64's in the bitmap
     fn bitmap_len(&self) -> usize {
         let num_pages = self.region.len() / PAGE_SIZE;
-        num_pages.div_ceil(u64::BITS as usize)
+        let additional_u64 = if self.region.len() % PAGE_SIZE != 0 {
+            1
+        } else {
+            0
+        };
+        num_pages + additional_u64
     }
 
     fn migrate(&mut self, new_bitmap: *mut u64) {
