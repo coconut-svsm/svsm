@@ -99,3 +99,23 @@ pub fn writable_phys_addr(paddr: PhysAddr) -> bool {
 
     valid_phys_address(paddr)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::address::PhysAddr;
+
+    #[test]
+    fn test_valid_phys_address() {
+        let start = PhysAddr::new(0x1000);
+        let end = PhysAddr::new(0x2000);
+        let region = MemoryRegion::from_addresses(start, end);
+
+        MEMORY_MAP.lock_write().push(region);
+
+        // Inside the region
+        assert!(valid_phys_address(PhysAddr::new(0x1500)));
+        // Outside the region
+        assert!(!valid_phys_address(PhysAddr::new(0x3000)));
+    }
+}
