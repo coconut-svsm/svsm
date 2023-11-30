@@ -7,9 +7,9 @@
 extern crate alloc;
 
 use crate::address::{Address, PhysAddr};
+use crate::config::SvsmConfig;
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
-use crate::fw_cfg::FwCfg;
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::locking::RWLock;
 use crate::utils::MemoryRegion;
@@ -20,8 +20,11 @@ use super::pagetable::LAUNCH_VMSA_ADDR;
 
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
-pub fn init_memory_map(fwcfg: &FwCfg, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
-    let mut regions = fwcfg.get_memory_regions()?;
+pub fn init_memory_map(
+    config: &SvsmConfig,
+    launch_info: &KernelLaunchInfo,
+) -> Result<(), SvsmError> {
+    let mut regions = config.get_memory_regions()?;
     let kernel_region = launch_info.kernel_region();
 
     // Remove SVSM memory from guest memory map

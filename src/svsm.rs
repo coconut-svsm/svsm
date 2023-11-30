@@ -15,8 +15,8 @@ use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFW
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
-use svsm::acpi::tables::load_acpi_cpu_info;
 use svsm::address::{PhysAddr, VirtAddr};
+use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
@@ -423,18 +423,18 @@ pub extern "C" fn svsm_main() {
     // a remote GDB connection
     //debug_break();
 
-    invalidate_stage2().expect("Failed to invalidate Stage2 memory");
+    let config = SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO));
 
-    let fw_cfg = FwCfg::new(&CONSOLE_IO);
+    invalidate_stage2(&config).expect("Failed to invalidate Stage2 memory");
 
-    init_memory_map(&fw_cfg, &LAUNCH_INFO).expect("Failed to init guest memory map");
+    init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
     initialize_fs();
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    let cpus = load_acpi_cpu_info(&fw_cfg).expect("Failed to load ACPI tables");
+    let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
 
     for cpu in cpus.iter() {
@@ -447,31 +447,43 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_meta = map_and_parse_fw_meta()
-        .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
+    let fw_metadata = if config.should_launch_fw() {
+        Some(
+            map_and_parse_fw_meta()
+                .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e)),
+        )
+    } else {
+        None
+    };
 
-    print_fw_meta(&fw_meta);
+    if let Some(ref fw_meta) = fw_metadata {
+        print_fw_meta(fw_meta);
 
-    if let Err(e) = validate_fw_memory(&fw_meta, &LAUNCH_INFO) {
-        panic!("Failed to validate firmware memory: {:#?}", e);
-    }
+        if let Err(e) = validate_fw_memory(fw_meta, &LAUNCH_INFO) {
+            panic!("Failed to validate firmware memory: {:#?}", e);
+        }
 
-    if let Err(e) = copy_tables_to_fw(&fw_meta) {
-        panic!("Failed to copy firmware tables: {:#?}", e);
-    }
+        if let Err(e) = copy_tables_to_fw(fw_meta) {
+            panic!("Failed to copy firmware tables: {:#?}", e);
+        }
 
-    if let Err(e) = validate_flash() {
-        panic!("Failed to validate flash memory: {:#?}", e);
+        if let Err(e) = validate_flash() {
+            panic!("Failed to validate flash memory: {:#?}", e);
+        }
     }
 
     guest_request_driver_init();
 
-    prepare_fw_launch(&fw_meta).expect("Failed to setup guest VMSA");
+    if let Some(ref fw_meta) = fw_metadata {
+        prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA");
+    }
 
     virt_log_usage();
 
-    if let Err(e) = launch_fw() {
-        panic!("Failed to launch FW: {:#?}", e);
+    if fw_metadata.is_some() {
+        if let Err(e) = launch_fw() {
+            panic!("Failed to launch FW: {:#?}", e);
+        }
     }
 
     #[cfg(test)]
