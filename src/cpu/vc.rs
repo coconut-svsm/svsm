@@ -128,7 +128,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
     match error_code {
         // If the debugger is enabled then handle the DB exception
         // by directly invoking the exception handler
-        X86_TRAP_DB => handle_debug_exception(ctx, ctx.vector),
+        X86_TRAP => handle_debug_exception(ctx, ctx.vector),
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
             handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
