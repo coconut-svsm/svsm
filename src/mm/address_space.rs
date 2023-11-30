@@ -153,3 +153,81 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::locking::SpinLock;
+
+    static KERNEL_MAPPING_TEST: ImmutAfterInitCell<KernelMapping> = ImmutAfterInitCell::uninit();
+    static INITIALIZED: SpinLock<bool> = SpinLock::new(false);
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn init_km_testing() {
+        let mut initialized = INITIALIZED.lock();
+        if *initialized {
+            return;
+        }
+        KERNEL_MAPPING_TEST
+            .init(&KernelMapping {
+                virt_start: VirtAddr::new(0x1000),
+                virt_end: VirtAddr::new(0x2000),
+                phys_start: PhysAddr::new(0x3000),
+            })
+            .unwrap();
+        *initialized = true;
+    }
+
+    #[test]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn test_init_kernel_mapping_info() {
+        init_km_testing();
+
+        let km = &KERNEL_MAPPING_TEST;
+
+        assert_eq!(km.virt_start, VirtAddr::new(0x1000));
+        assert_eq!(km.virt_end, VirtAddr::new(0x2000));
+        assert_eq!(km.phys_start, PhysAddr::new(0x3000));
+    }
+
+    #[test]
+    #[cfg(target_os = "none")]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn test_virt_to_phys() {
+        let vaddr = VirtAddr::new(0x1500);
+        let paddr = virt_to_phys(vaddr);
+
+        assert_eq!(paddr, PhysAddr::new(0x4500));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "none"))]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn test_virt_to_phys() {
+        let vaddr = VirtAddr::new(0x1500);
+        let paddr = virt_to_phys(vaddr);
+
+        assert_eq!(paddr, PhysAddr::new(0x1500));
+    }
+
+    #[test]
+    #[cfg(target_os = "none")]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn test_phys_to_virt() {
+        let paddr = PhysAddr::new(0x4500);
+        let vaddr = phys_to_virt(paddr);
+
+        assert_eq!(vaddr, VirtAddr::new(0x1500));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "none"))]
+    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    fn test_phys_to_virt() {
+        let paddr = PhysAddr::new(0x4500);
+        let vaddr = phys_to_virt(paddr);
+
+        assert_eq!(vaddr, VirtAddr::new(0x4500));
+    }
+}
