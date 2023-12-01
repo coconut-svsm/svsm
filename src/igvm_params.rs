@@ -6,6 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
+use crate::mm::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 
 use igvm_params::{IgvmParamBlock, IgvmParamPage};
@@ -26,6 +27,13 @@ impl IgvmParams<'_> {
             igvm_param_block: param_block,
             igvm_param_page: param_page,
         }
+    }
+
+    pub fn size(&self) -> usize {
+        // Calculate the total size of the parameter area.  The
+        // parameter area always begins at the kernel base
+        // address.
+        self.igvm_param_block.param_area_size.try_into().unwrap()
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
