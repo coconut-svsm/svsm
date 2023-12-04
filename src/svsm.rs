@@ -42,7 +42,6 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
-use svsm::serial::SERIAL_PORT;
 use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -291,10 +290,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: SerialPort = SerialPort {
-    driver: &CONSOLE_IO,
-    port: SERIAL_PORT,
-};
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort> = ImmutAfterInitCell::uninit();
 
 pub fn boot_stack_info() {
     unsafe {
@@ -333,6 +329,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     load_gdt();
     early_idt_init();
+
+    // Capture the debug serial port befure the launch info disappears from
+    // the address space.
+    let debug_serial_port = li.debug_serial_port;
 
     LAUNCH_INFO
         .init(li)
@@ -389,7 +389,14 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     }
     idt_init();
 
-    WRITER.lock().set(&CONSOLE_SERIAL);
+    CONSOLE_SERIAL
+        .init(&SerialPort {
+            driver: &CONSOLE_IO,
+            port: debug_serial_port,
+        })
+        .expect("console serial output already configured");
+
+    WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
     install_console_logger("SVSM");
 

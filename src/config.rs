@@ -11,6 +11,7 @@ use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::igvm_params::IgvmParams;
+use crate::serial::SERIAL_PORT;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 
@@ -61,6 +62,13 @@ impl<'a> SvsmConfig<'a> {
         match self {
             SvsmConfig::FirmwareConfig(_) => true,
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.should_launch_fw(),
+        }
+    }
+
+    pub fn debug_serial_port(&self) -> u16 {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => SERIAL_PORT,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.debug_serial_port(),
         }
     }
 }

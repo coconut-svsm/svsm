@@ -134,4 +134,8 @@ impl IgvmParams<'_> {
     pub fn should_launch_fw(&self) -> bool {
         self.igvm_param_block.launch_fw != 0
     }
+
+    pub fn debug_serial_port(&self) -> u16 {
+        self.igvm_param_block.debug_serial_port
+    }
 }

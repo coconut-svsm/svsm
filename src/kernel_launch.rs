@@ -25,6 +25,7 @@ pub struct KernelLaunchInfo {
     pub secrets_page: u64,
     pub igvm_params_phys_addr: u64,
     pub igvm_params_virt_addr: u64,
+    pub debug_serial_port: u16,
 }
 
 impl KernelLaunchInfo {
