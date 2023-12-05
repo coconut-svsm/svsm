@@ -9,6 +9,7 @@ use crate::config::SvsmConfig;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::elf;
 use crate::error::SvsmError;
+use crate::igvm_params::IgvmParams;
 use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm;
 use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableRef};
@@ -43,6 +44,21 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
             .expect("Failed to map kernel ELF segment");
 
         phys = phys + segment_len;
+    }
+
+    // Map the IGVM parameters if present.
+    if launch_info.igvm_params_virt_addr != 0 {
+        let igvm_params_virt_addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
+        let igvm_params = IgvmParams::new(igvm_params_virt_addr);
+
+        pgtable
+            .map_region(
+                igvm_params_virt_addr,
+                igvm_params_virt_addr + igvm_params.size(),
+                PhysAddr::from(launch_info.igvm_params_phys_addr),
+                PTEntryFlags::data(),
+            )
+            .expect("Failed to map IGVM parameters");
     }
 
     // Map subsequent heap area.
