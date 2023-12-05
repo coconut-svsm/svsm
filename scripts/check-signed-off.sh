@@ -1,4 +1,9 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# Copyright (c) 2023 SUSE LLC
+#
+# Author: Carlos López <carlos.lopez@suse.com>
 
 matches_any() {
 	needle=$1
