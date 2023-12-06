@@ -1,5 +1,9 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
 #
+# Copyright (c) 2023 SUSE LLC
+#
+# Author: Joerg Roedel <jroedel@suse.de>
 
 check_file_header() {
 	header_warning="Header format incorrect in $1, follow the header structure in other files"
