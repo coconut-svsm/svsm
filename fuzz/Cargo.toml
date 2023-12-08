@@ -56,3 +56,9 @@ name = "insn"
 path = "fuzz_targets/insn.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "bitmap_allocator"
+path = "fuzz_targets/bitmap_allocator.rs"
+test = false
+doc = false
