@@ -22,8 +22,22 @@ FS_FILE ?= none
 C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
+IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
+IGVMBLD = bin/igvmbld
 
-all: stage1/kernel.elf svsm.bin
+all: stage1/kernel.elf svsm.bin igvm
+
+igvm: $(IGVM_FILES)
+
+$(IGVMBLD): igvmbld/igvmbld.c igvmbld/igvm_defs.h igvmbld/sev-snp.h
+	mkdir -v -p bin
+	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c
+
+bin/coconut-qemu.igvm: $(IGVMBLD) stage1/kernel.elf stage1/stage2.bin
+	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --qemu
+
+bin/coconut-hyperv.igvm: $(IGVMBLD) stage1/kernel.elf stage1/stage2.bin
+	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --hyperv --com-port 3
 
 test:
 	cargo test --target=x86_64-unknown-linux-gnu
@@ -78,5 +92,6 @@ svsm.bin: stage1/stage1
 clean:
 	cargo clean
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
+	rm -rf bin
 
 .PHONY: stage1/stage2.bin stage1/kernel.elf stage1/test-kernel.elf svsm.bin clean stage1/svsm-fs.bin test test-in-svsm
