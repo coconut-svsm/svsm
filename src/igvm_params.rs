@@ -61,6 +61,13 @@ impl IgvmParams<'_> {
         Ok(MemoryRegion::<PhysAddr>::new(kernel_base, kernel_size))
     }
 
+    pub fn reserved_kernel_area_size(&self) -> usize {
+        self.igvm_param_block
+            .kernel_reserved_size
+            .try_into()
+            .unwrap()
+    }
+
     pub fn page_state_change_required(&self) -> bool {
         self.igvm_param_page.default_shared_pages != 0
     }

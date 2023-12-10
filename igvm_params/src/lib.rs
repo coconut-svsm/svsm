@@ -56,7 +56,11 @@ pub struct IgvmParamBlock {
     /// to launch guest firmware once kernel initialization is complete.
     pub launch_fw: u8,
 
-    _reserved: [u8; 7],
+    _reserved: [u8; 3],
+
+    /// The amount of space that must be reserved at the base of the kernel
+    /// memory region (e.g. for VMSA contents).
+    pub kernel_reserved_size: u32,
 
     /// The number of bytes in the kernel memory region.
     pub kernel_size: u32,

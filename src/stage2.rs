@@ -197,6 +197,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // IGVM parameters.  Otherwise, it will be the base of the kernel
     // region.
     let mut loaded_kernel_phys_end = kernel_region_phys_start;
+    if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
+        loaded_kernel_phys_end = loaded_kernel_phys_end + igvm_params.reserved_kernel_area_size();
+    }
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,

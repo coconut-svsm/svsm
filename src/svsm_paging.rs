@@ -18,14 +18,35 @@ use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
 use crate::types::{PageSize, PAGE_SIZE};
 
+struct IgvmParamInfo<'a> {
+    virt_addr: VirtAddr,
+    igvm_params: Option<IgvmParams<'a>>,
+}
+
 pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
     let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
+    let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
+        let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
+        IgvmParamInfo {
+            virt_addr: addr,
+            igvm_params: Some(IgvmParams::new(addr)),
+        }
+    } else {
+        IgvmParamInfo {
+            virt_addr: VirtAddr::null(),
+            igvm_params: None,
+        }
+    };
 
     // Install mappings for the kernel's ELF segments each.
     // The memory backing the kernel ELF segments gets allocated back to back
     // from the physical memory region by the Stage2 loader.
     let mut phys = PhysAddr::from(launch_info.kernel_region_phys_start);
+    if let Some(ref igvm_params) = igvm_param_info.igvm_params {
+        phys = phys + igvm_params.reserved_kernel_area_size();
+    }
+
     for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
         let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
         let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
@@ -47,14 +68,11 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
     }
 
     // Map the IGVM parameters if present.
-    if launch_info.igvm_params_virt_addr != 0 {
-        let igvm_params_virt_addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
-        let igvm_params = IgvmParams::new(igvm_params_virt_addr);
-
+    if let Some(ref igvm_params) = igvm_param_info.igvm_params {
         pgtable
             .map_region(
-                igvm_params_virt_addr,
-                igvm_params_virt_addr + igvm_params.size(),
+                igvm_param_info.virt_addr,
+                igvm_param_info.virt_addr + igvm_params.size(),
                 PhysAddr::from(launch_info.igvm_params_phys_addr),
                 PTEntryFlags::data(),
             )
