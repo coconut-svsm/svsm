@@ -51,6 +51,10 @@ startup_32:
 	movl	$STAGE2_START, %esp
 
 	/* Write startup information to stage2 stack */
+	xorl 	%eax, %eax
+	pushl	%eax
+	pushl	%eax
+
 	leal	kernel_fs_bin_end(%ebp), %edi
 	pushl	%edi
 

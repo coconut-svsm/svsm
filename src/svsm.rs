@@ -33,6 +33,7 @@ use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::greq::driver::guest_request_driver_init;
+use svsm::igvm_params::IgvmParams;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -423,7 +424,13 @@ pub extern "C" fn svsm_main() {
     // a remote GDB connection
     //debug_break();
 
-    let config = SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO));
+    let launch_info = &*LAUNCH_INFO;
+    let config = if launch_info.igvm_params_virt_addr != 0 {
+        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr));
+        SvsmConfig::IgvmConfig(igvm_params)
+    } else {
+        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+    };
 
     invalidate_stage2(&config).expect("Failed to invalidate Stage2 memory");
 

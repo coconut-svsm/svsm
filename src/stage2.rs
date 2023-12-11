@@ -21,6 +21,7 @@ use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
+use svsm::igvm_params::IgvmParams;
 use svsm::kernel_launch::KernelLaunchInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
@@ -152,6 +153,7 @@ pub struct Stage1LaunchInfo {
     kernel_elf_end: u32,
     kernel_fs_start: u32,
     kernel_fs_end: u32,
+    igvm_params: u32,
 }
 
 #[no_mangle]
@@ -161,7 +163,13 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
-    let config = SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO));
+    let config = if launch_info.igvm_params != 0 {
+        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64));
+        SvsmConfig::IgvmConfig(igvm_params)
+    } else {
+        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+    };
+
     let r = config
         .find_kernel_region()
         .expect("Failed to find memory region for SVSM kernel");
@@ -184,6 +192,15 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_vaddr_alloc_info = kernel_elf.image_load_vaddr_alloc_info();
     let kernel_vaddr_alloc_base = kernel_vaddr_alloc_info.range.vaddr_begin;
 
+    // Determine the starting physical address at which the kernel should be
+    // relocated.  If IGVM parameters are present, then this will follow the
+    // IGVM parameters.  Otherwise, it will be the base of the kernel
+    // region.
+    let mut loaded_kernel_phys_end = kernel_region_phys_start;
+    if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
+        loaded_kernel_phys_end = loaded_kernel_phys_end + igvm_params.reserved_kernel_area_size();
+    }
+
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
     // track their total extent along the way. Physical memory is successively
@@ -192,7 +209,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // physical memory occupied by the loaded ELF image.
     let mut loaded_kernel_virt_start: Option<VirtAddr> = None;
     let mut loaded_kernel_virt_end = VirtAddr::null();
-    let mut loaded_kernel_phys_end = kernel_region_phys_start;
     for segment in kernel_elf.image_load_segment_iter(kernel_vaddr_alloc_base) {
         // All ELF segments should be aligned to the page size. If not, there's
         // the risk of pvalidating a page twice, bail out if so. Note that the
@@ -259,6 +275,37 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         }
     }
 
+    // If IGVM parameters are present, then map them into the address space
+    // after the kernel.
+    let mut igvm_params_virt_address = VirtAddr::null();
+    let mut igvm_params_phys_address = PhysAddr::null();
+    if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
+        igvm_params_virt_address = loaded_kernel_virt_end;
+        igvm_params_phys_address = loaded_kernel_phys_end;
+        let igvm_params_size = igvm_params.size();
+
+        map_and_validate(
+            &config,
+            igvm_params_virt_address,
+            igvm_params_phys_address,
+            igvm_params_size,
+        );
+
+        let igvm_params_src_addr = VirtAddr::from(launch_info.igvm_params as u64);
+        let igvm_src =
+            unsafe { slice::from_raw_parts(igvm_params_src_addr.as_ptr::<u8>(), igvm_params_size) };
+        let igvm_dest = unsafe {
+            slice::from_raw_parts_mut(
+                igvm_params_virt_address.as_mut_ptr::<u8>(),
+                igvm_params_size,
+            )
+        };
+        igvm_dest.copy_from_slice(igvm_src);
+
+        loaded_kernel_virt_end = loaded_kernel_virt_end + igvm_params_size;
+        loaded_kernel_phys_end = loaded_kernel_phys_end + igvm_params_size;
+    }
+
     // Map the rest of the memory region to right after the kernel image.
     let heap_area_phys_start = loaded_kernel_phys_end;
     let heap_area_virt_start = loaded_kernel_virt_end;
@@ -284,6 +331,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         cpuid_page: config.get_cpuid_page_address(),
         secrets_page: config.get_secrets_page_address(),
+        igvm_params_phys_addr: u64::from(igvm_params_phys_address),
+        igvm_params_virt_addr: u64::from(igvm_params_virt_address),
     };
 
     let mem_info = memory_info();
