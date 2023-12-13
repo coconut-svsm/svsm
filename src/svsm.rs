@@ -220,7 +220,7 @@ fn launch_fw() -> Result<(), SvsmError> {
 }
 
 fn validate_flash() -> Result<(), SvsmError> {
-    let mut fw_cfg = FwCfg::new(&CONSOLE_IO);
+    let fw_cfg = FwCfg::new(&CONSOLE_IO);
 
     let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
     let kernel_region = LAUNCH_INFO.kernel_region();
