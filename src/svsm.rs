@@ -330,7 +330,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     load_gdt();
     early_idt_init();
 
-    // Capture the debug serial port befure the launch info disappears from
+    // Capture the debug serial port before the launch info disappears from
     // the address space.
     let debug_serial_port = li.debug_serial_port;
 

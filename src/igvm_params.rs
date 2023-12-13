@@ -15,7 +15,7 @@ use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 
 use core::mem::size_of;
-use igvm_defs::{MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
+use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 use igvm_params::{IgvmParamBlock, IgvmParamPage};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -69,7 +69,8 @@ impl IgvmParams<'_> {
     }
 
     pub fn page_state_change_required(&self) -> bool {
-        self.igvm_param_page.default_shared_pages != 0
+        let environment_info = IgvmEnvironmentInfo::from(self.igvm_param_page.environment_info);
+        environment_info.memory_is_shared()
     }
 
     pub fn get_cpuid_page_address(&self) -> u64 {
