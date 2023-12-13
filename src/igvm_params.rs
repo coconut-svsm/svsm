@@ -132,7 +132,7 @@ impl IgvmParams<'_> {
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        self.igvm_param_block.launch_fw != 0
+        self.igvm_param_block.fw_size != 0
     }
 
     pub fn debug_serial_port(&self) -> u16 {

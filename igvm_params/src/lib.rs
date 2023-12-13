@@ -55,11 +55,16 @@ pub struct IgvmParamBlock {
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 
-    /// A flag indicating whether the kernel should proceed with the flow
-    /// to launch guest firmware once kernel initialization is complete.
-    pub launch_fw: u8,
+    _reserved: u16,
+    /// The guest physical address of the start of the guest firmware. The
+    /// permissions on the pages in the firmware range are adjusted to the guest
+    /// VMPL. If this field is zero then no firmware is launched after
+    /// initialization is complete.
+    pub fw_start: u32,
 
-    _reserved: u8,
+    /// The number of pages of guest firmware. If the firmware size is zero then
+    /// no firmware is launched after initialization is complete.
+    pub fw_size: u32,
 
     /// The amount of space that must be reserved at the base of the kernel
     /// memory region (e.g. for VMSA contents).
