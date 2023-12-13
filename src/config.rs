@@ -71,4 +71,13 @@ impl<'a> SvsmConfig<'a> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.debug_serial_port(),
         }
     }
+
+    pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
+        match self {
+            SvsmConfig::FirmwareConfig(fw_cfg) => {
+                Ok(fw_cfg.iter_flash_regions().collect::<Vec<_>>())
+            }
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_fw_regions(),
+        }
+    }
 }

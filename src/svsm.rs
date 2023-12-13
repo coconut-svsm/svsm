@@ -9,7 +9,6 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use core::arch::global_asm;
@@ -219,10 +218,8 @@ fn launch_fw() -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn validate_flash() -> Result<(), SvsmError> {
-    let fw_cfg = FwCfg::new(&CONSOLE_IO);
-
-    let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+fn validate_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
+    let flash_regions = config.get_fw_regions()?;
     let kernel_region = LAUNCH_INFO.kernel_region();
     let flash_range = {
         let one_gib = 1024 * 1024 * 1024usize;
@@ -480,8 +477,7 @@ pub extern "C" fn svsm_main() {
         if let Err(e) = copy_tables_to_fw(fw_meta) {
             panic!("Failed to copy firmware tables: {:#?}", e);
         }
-
-        if let Err(e) = validate_flash() {
+        if let Err(e) = validate_fw(&config) {
             panic!("Failed to validate flash memory: {:#?}", e);
         }
     }
