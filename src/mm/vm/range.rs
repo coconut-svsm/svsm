@@ -159,6 +159,11 @@ impl VMR {
         let page_size = mapping.page_size();
         let shared = mapping.shared();
 
+        // Exit early if the mapping has no data.
+        if !mapping.has_data() {
+            return Ok(());
+        }
+
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
             if let Some(paddr) = mapping.map(offset) {

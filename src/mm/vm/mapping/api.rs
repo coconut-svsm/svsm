@@ -39,6 +39,17 @@ pub trait VirtualMapping: core::fmt::Debug {
     /// Mapping size. Will always be a multiple of `VirtualMapping::page_size()`
     fn mapping_size(&self) -> usize;
 
+    /// Indicates whether the mapping has any associated data.
+    ///
+    /// # Returns
+    ///
+    /// `true' if there is associated physical data, or `false' if there is
+    /// none.
+    fn has_data(&self) -> bool {
+        // Defaults to true
+        true
+    }
+
     /// Request physical address to map for a given offset
     ///
     /// # Arguments
