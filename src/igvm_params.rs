@@ -140,6 +140,14 @@ impl IgvmParams<'_> {
         self.igvm_param_block.debug_serial_port
     }
 
+    pub fn get_fw_metadata(&self) -> Option<PhysAddr> {
+        if !self.should_launch_fw() || self.igvm_param_block.fw_metadata == 0 {
+            None
+        } else {
+            Some(PhysAddr::from(self.igvm_param_block.fw_metadata as u64))
+        }
+    }
+
     pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
         if !self.should_launch_fw() {
             Err(Firmware)

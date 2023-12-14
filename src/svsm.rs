@@ -38,7 +38,7 @@ use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard, SIZE_1G};
+use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
@@ -304,10 +304,9 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-fn map_and_parse_fw_meta() -> Result<SevFWMetaData, SvsmError> {
-    // Map meta-data location, it starts at 32 bytes below 4GiB
-    let pstart = PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE);
-    let guard = PerCPUPageMappingGuard::create_4k(pstart)?;
+fn map_and_parse_fw_meta(fw_metadata_phys: PhysAddr) -> Result<SevFWMetaData, SvsmError> {
+    // Map the metadata location which is defined by the firmware config
+    let guard = PerCPUPageMappingGuard::create_4k(fw_metadata_phys)?;
     let vstart = guard.virt_addr().as_ptr::<u8>();
     // Safety: we just mapped a page, so the size must hold. The type
     // of the slice elements is `u8` so there are no alignment requirements.
@@ -458,14 +457,10 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_metadata = if config.should_launch_fw() {
-        Some(
-            map_and_parse_fw_meta()
-                .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e)),
-        )
-    } else {
-        None
-    };
+    let fw_metadata = config.get_fw_metadata().map(|fw_metadata_phys| {
+        map_and_parse_fw_meta(fw_metadata_phys)
+            .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e))
+    });
 
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
@@ -477,6 +472,9 @@ pub extern "C" fn svsm_main() {
         if let Err(e) = copy_tables_to_fw(fw_meta) {
             panic!("Failed to copy firmware tables: {:#?}", e);
         }
+    }
+
+    if config.should_launch_fw() {
         if let Err(e) = validate_fw(&config) {
             panic!("Failed to validate flash memory: {:#?}", e);
         }
@@ -490,7 +488,7 @@ pub extern "C" fn svsm_main() {
 
     virt_log_usage();
 
-    if fw_metadata.is_some() {
+    if config.should_launch_fw() {
         if let Err(e) = launch_fw() {
             panic!("Failed to launch FW: {:#?}", e);
         }
