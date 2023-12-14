@@ -52,11 +52,14 @@ pub struct IgvmParamBlock {
     /// The guest physical address of the secrets page.
     pub secrets_page: u32,
 
+    /// The port number of the serial port to use for debugging.
+    pub debug_serial_port: u16,
+
     /// A flag indicating whether the kernel should proceed with the flow
     /// to launch guest firmware once kernel initialization is complete.
     pub launch_fw: u8,
 
-    _reserved: [u8; 3],
+    _reserved: u8,
 
     /// The amount of space that must be reserved at the base of the kernel
     /// memory region (e.g. for VMSA contents).

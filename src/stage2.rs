@@ -32,13 +32,14 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
-use svsm::serial::{SerialPort, SERIAL_PORT};
+use svsm::serial::SerialPort;
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE};
 use svsm::utils::halt;
+use svsm::utils::immut_after_init::ImmutAfterInitCell;
 
 extern "C" {
     pub static heap_start: u8;
@@ -79,12 +80,9 @@ fn shutdown_percpu() {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: SerialPort = SerialPort {
-    driver: &CONSOLE_IO,
-    port: SERIAL_PORT,
-};
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort> = ImmutAfterInitCell::uninit();
 
-fn setup_env() {
+fn setup_env(config: &SvsmConfig) {
     load_gdt();
     early_idt_init_no_ghcb();
 
@@ -107,7 +105,14 @@ fn setup_env() {
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
     early_idt_init();
 
-    WRITER.lock().set(&CONSOLE_SERIAL);
+    CONSOLE_SERIAL
+        .init(&SerialPort {
+            driver: &CONSOLE_IO,
+            port: config.debug_serial_port(),
+        })
+        .expect("console serial output already configured");
+
+    WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
 
     // Console is fully working now and any unsupported configuration can be
@@ -158,8 +163,6 @@ pub struct Stage1LaunchInfo {
 
 #[no_mangle]
 pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
-    setup_env();
-
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
@@ -169,6 +172,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     } else {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
     };
+
+    setup_env(&config);
 
     let r = config
         .find_kernel_region()
@@ -333,6 +338,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         secrets_page: config.get_secrets_page_address(),
         igvm_params_phys_addr: u64::from(igvm_params_phys_address),
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
+        debug_serial_port: config.debug_serial_port(),
     };
 
     let mem_info = memory_info();
