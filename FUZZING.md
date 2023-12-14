@@ -5,9 +5,8 @@ The COCONUT SVSM includes several fuzzing harnesses to find bugs in
 security-critical interfaces. These do not currently provide coverage
 of all interesting interfaces, so contributions are welcome.
 
-At the moment, fuzzing is done through
-[cargo-fuzz](/rust-fuzz/cargo-fuzz). You may find a complete tutorial
-for this tool on the
+At the moment, fuzzing is done through cargo-fuzz. You may find a complete
+tutorial for this tool on the
 [rust-fuzz website](https://rust-fuzz.github.io/book/cargo-fuzz.html).
 
 Requirements
