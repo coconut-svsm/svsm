@@ -19,13 +19,10 @@ pub struct IgvmParamPage {
     /// The number of vCPUs that are configured for the guest VM.
     pub cpu_count: u32,
 
-    /// A flag indicating whether the default state of guest memory is shared
-    /// (not assigned to the guest) or private (assigned to the guest).
-    /// Shared pages must undergo a page state change to private before they
-    /// can be accepted for guest use.  A zero value here means that the
-    /// default state is private, and a non-zero value means that the default
-    /// state is shared.
-    pub default_shared_pages: u32,
+    /// The environment informatiom supplied to describe the execution
+    /// environment.  This is defined as a u32 and is converted to an
+    /// IgvmEnvironmentInfo when it is used.
+    pub environment_info: u32,
 }
 
 /// The IGVM parameter block is a measured page constructed by the IGVM file
