@@ -5,11 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 //! This crate provides definitions of IGVM parameters to be parsed by
-//! COCONUT-SVSM to determine its configuration.  It is provided as a separate
-//! crate since the same definitions must be known to the utility that
-//! constructs the IGVM file.
-
-#![no_std]
+//! COCONUT-SVSM to determine its configuration.
 
 /// The IGVM parameter page is an unmeasured page containing individual
 /// parameters that are provided by the host loader.
