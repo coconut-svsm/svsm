@@ -355,7 +355,10 @@ impl MemoryRegion {
 
         let pg = self.read_page_info(pfn);
         let PageInfo::Free(fi) = pg else {
-            panic!("Unexpected page type in MemoryRegion::get_next_page()");
+            panic!(
+                "Unexpected page type in MemoryRegion::get_next_page() {:?}",
+                pg
+            );
         };
 
         self.next_page[order] = fi.next_page;
@@ -682,21 +685,27 @@ impl MemoryRegion {
         if first_aligned_page < last_aligned_page {
             self.nr_pages[MAX_ORDER - 1] += (last_aligned_page - first_aligned_page) / alignment;
             for i in (first_aligned_page..last_aligned_page).step_by(alignment) {
-                self.free_page_raw(i, MAX_ORDER - 1);
                 self.mark_compound_page(i, MAX_ORDER - 1);
+                self.free_page_raw(i, MAX_ORDER - 1);
             }
-        }
 
-        if first_aligned_page < self.page_count {
-            self.nr_pages[0] += first_aligned_page - meta_pages;
-            for i in meta_pages..first_aligned_page {
-                self.free_page_order(i, 0);
+            if first_aligned_page < self.page_count {
+                self.nr_pages[0] += first_aligned_page - meta_pages;
+                for i in meta_pages..first_aligned_page {
+                    self.free_page_order(i, 0);
+                }
             }
-        }
 
-        if last_aligned_page > meta_pages {
-            self.nr_pages[0] += self.page_count - last_aligned_page;
-            for i in last_aligned_page..self.page_count {
+            if last_aligned_page > meta_pages {
+                self.nr_pages[0] += self.page_count - last_aligned_page;
+                for i in last_aligned_page..self.page_count {
+                    self.free_page_order(i, 0);
+                }
+            }
+        } else {
+            // Special case: Memory region size smaller than a MAX_ORDER allocation
+            self.nr_pages[0] = self.page_count - meta_pages;
+            for i in meta_pages..self.page_count {
                 self.free_page_order(i, 0);
             }
         }
