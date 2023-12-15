@@ -12,6 +12,7 @@ use crate::error::SvsmError;
 use crate::error::SvsmError::Firmware;
 use crate::mm::PAGE_SIZE;
 use crate::utils::MemoryRegion;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use core::mem::size_of;
@@ -132,10 +133,29 @@ impl IgvmParams<'_> {
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        self.igvm_param_block.launch_fw != 0
+        self.igvm_param_block.fw_size != 0
     }
 
     pub fn debug_serial_port(&self) -> u16 {
         self.igvm_param_block.debug_serial_port
+    }
+
+    pub fn get_fw_metadata(&self) -> Option<PhysAddr> {
+        if !self.should_launch_fw() || self.igvm_param_block.fw_metadata == 0 {
+            None
+        } else {
+            Some(PhysAddr::from(self.igvm_param_block.fw_metadata as u64))
+        }
+    }
+
+    pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
+        if !self.should_launch_fw() {
+            Err(Firmware)
+        } else {
+            Ok(vec![MemoryRegion::new(
+                PhysAddr::new(self.igvm_param_block.fw_start as usize),
+                self.igvm_param_block.fw_size as usize * PAGE_SIZE,
+            )])
+        }
     }
 }

@@ -217,7 +217,7 @@ impl<'a> FwCfg<'a> {
     // This needs to be &mut self to prevent iterator invalidation, where the caller
     // could do fw_cfg.select() while iterating. Having a mutable reference prevents
     // other references.
-    pub fn iter_flash_regions(&mut self) -> impl Iterator<Item = MemoryRegion<PhysAddr>> + '_ {
+    pub fn iter_flash_regions(&self) -> impl Iterator<Item = MemoryRegion<PhysAddr>> + '_ {
         let num = match self.file_selector("etc/flash") {
             Ok(file) => {
                 self.select(file.selector);
