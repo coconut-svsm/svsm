@@ -11,7 +11,7 @@ use crate::locking::LockGuard;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
-use crate::utils::{align_up, zero_mem_region};
+use crate::utils::{align_down, align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
 use core::ptr;
@@ -365,19 +365,21 @@ impl MemoryRegion {
         Ok(pfn)
     }
 
-    fn init_compound_page(&mut self, pfn: usize, order: usize, next_pfn: usize) {
+    fn mark_compound_page(&mut self, pfn: usize, order: usize) {
         let nr_pages: usize = 1 << order;
+        let compound = PageInfo::Compound(CompoundInfo { order });
+        for i in 1..nr_pages {
+            self.write_page_info(pfn + i, compound);
+        }
+    }
 
+    fn init_compound_page(&mut self, pfn: usize, order: usize, next_pfn: usize) {
         let head = PageInfo::Free(FreeInfo {
             next_page: next_pfn,
             order,
         });
         self.write_page_info(pfn, head);
-
-        let compound = PageInfo::Compound(CompoundInfo { order });
-        for i in 1..nr_pages {
-            self.write_page_info(pfn + i, compound);
-        }
+        self.mark_compound_page(pfn, order);
     }
 
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
@@ -663,17 +665,40 @@ impl MemoryRegion {
             self.write_page_info(i, pg);
         }
 
-        self.nr_pages[0] = self.page_count - meta_pages;
-
         /* Mark all pages as allocated */
         for i in meta_pages..self.page_count {
             let pg = PageInfo::Allocated(AllocatedInfo { order: 0 });
             self.write_page_info(i, pg);
         }
 
-        /* Now free all pages */
-        for i in meta_pages..self.page_count {
-            self.free_page_order(i, 0);
+        /* Now free all pages.  Any runs of pages aligned to the maximum order
+         * will be freed directly into the maximum order bucket, and all other
+         * pages will be freed individually so the correct orders can be
+         * generated */
+        let alignment = 1 << (MAX_ORDER - 1);
+        let first_aligned_page = align_up(meta_pages, alignment);
+        let last_aligned_page = align_down(self.page_count, alignment);
+
+        if first_aligned_page < last_aligned_page {
+            self.nr_pages[MAX_ORDER - 1] += (last_aligned_page - first_aligned_page) / alignment;
+            for i in (first_aligned_page..last_aligned_page).step_by(alignment) {
+                self.free_page_raw(i, MAX_ORDER - 1);
+                self.mark_compound_page(i, MAX_ORDER - 1);
+            }
+        }
+
+        if first_aligned_page < self.page_count {
+            self.nr_pages[0] += first_aligned_page - meta_pages;
+            for i in meta_pages..first_aligned_page {
+                self.free_page_order(i, 0);
+            }
+        }
+
+        if last_aligned_page > meta_pages {
+            self.nr_pages[0] += self.page_count - last_aligned_page;
+            for i in last_aligned_page..self.page_count {
+                self.free_page_order(i, 0);
+            }
         }
     }
 }
