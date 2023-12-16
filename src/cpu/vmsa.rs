@@ -4,9 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::Address;
-use crate::sev::vmsa::{VMSASegment, VMSA};
+use crate::address::{Address, VirtAddr};
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
+use cpuarch::vmsa::{VMSASegment, VMSA};
 
 use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
@@ -104,6 +104,14 @@ fn real_mode_sys_seg(flags: u16) -> VMSASegment {
         limit: 0xffff,
         flags,
     }
+}
+
+pub fn vmsa_ref_from_vaddr(vaddr: VirtAddr) -> &'static VMSA {
+    unsafe { vaddr.as_ptr::<VMSA>().as_ref().unwrap() }
+}
+
+pub fn vmsa_mut_ref_from_vaddr(vaddr: VirtAddr) -> &'static mut VMSA {
+    unsafe { vaddr.as_mut_ptr::<VMSA>().as_mut().unwrap() }
 }
 
 pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {

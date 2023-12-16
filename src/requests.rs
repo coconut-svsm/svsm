@@ -11,9 +11,9 @@ use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::protocols::RequestParams;
-use crate::sev::vmsa::GuestVMExit;
 use crate::types::GUEST_VMPL;
 use crate::utils::halt;
+use cpuarch::vmsa::GuestVMExit;
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {

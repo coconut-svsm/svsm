@@ -11,6 +11,7 @@ use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
+use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
@@ -24,7 +25,7 @@ use crate::mm::{
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::{allocate_new_vmsa, VMSASegment, VMSA};
+use crate::sev::vmsa::allocate_new_vmsa;
 use crate::task::RunQueue;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
@@ -32,6 +33,7 @@ use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
+use cpuarch::vmsa::{VMSASegment, VMSA};
 
 #[derive(Debug)]
 struct PerCpuInfo {
@@ -483,7 +485,7 @@ impl PerCpu {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
-        let vmsa = VMSA::from_virt_addr(vaddr);
+        let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
         init_guest_vmsa(vmsa, self.reset_ip);
 
         self.update_guest_vmsa(paddr);
