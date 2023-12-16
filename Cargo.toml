@@ -27,6 +27,7 @@ packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
 bootlib = { path = "bootlib" }
 igvm_defs = { version = "0.1.3", features = ["unstable"] }
+cpuarch = { path = "cpuarch" }
 
 [target."x86_64-unknown-none".dev-dependencies]
 test = { version = "0.1.0", path = "test" }
