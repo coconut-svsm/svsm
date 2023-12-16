@@ -27,7 +27,7 @@ pub mod fw_meta;
 pub mod greq;
 pub mod igvm_params;
 pub mod io;
-pub mod kernel_launch;
+pub mod kernel_region;
 pub mod locking;
 pub mod mm;
 pub mod protocols;
