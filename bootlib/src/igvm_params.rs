@@ -48,7 +48,11 @@ pub struct IgvmParamBlock {
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 
-    _reserved: u16,
+    /// Indicates that the initial location of firmware is at the base of
+    /// memory and will not be loaded into the ROM range.
+    pub fw_in_low_memory: u8,
+
+    _reserved: u8,
 
     /// The guest physical address of the start of the guest firmware. The
     /// permissions on the pages in the firmware range are adjusted to the guest

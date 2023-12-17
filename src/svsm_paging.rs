@@ -133,9 +133,12 @@ pub fn invalidate_early_boot_memory(
 ) -> Result<(), SvsmError> {
     // Early boot memory must be invalidated after changing to the SVSM page
     // page table to avoid invalidating page tables currently in use.  Always
-    // invalidate stage 2 memory, and invalidate the boot data if required.
-    let stage2_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
-    invalidate_boot_memory_region(config, stage2_region)?;
+    // invalidate stage 2 memory, unless firmware is loaded into low memory.
+    // Also invalidate the boot data if required.
+    if !config.fw_in_low_memory() {
+        let stage2_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
+        invalidate_boot_memory_region(config, stage2_region)?;
+    }
 
     if config.invalidate_boot_data() {
         let kernel_elf_size =

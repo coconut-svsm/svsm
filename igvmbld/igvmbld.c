@@ -28,7 +28,8 @@ typedef struct {
     uint32_t cpuid_page;
     uint32_t secrets_page;
     uint16_t debug_serial_port;
-    uint16_t _reserved1;
+    uint8_t fw_in_low_memory;
+    uint8_t _reserved1;
     uint32_t fw_start;
     uint32_t fw_size;
     uint32_t fw_metadata;

@@ -50,7 +50,7 @@ use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
+use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -223,39 +223,8 @@ fn launch_fw() -> Result<(), SvsmError> {
 }
 
 fn validate_fw(config: &SvsmConfig, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
-    let flash_regions = config.get_fw_regions()?;
     let kernel_region = new_kernel_region(launch_info);
-    let flash_range = {
-        let one_gib = 1024 * 1024 * 1024usize;
-        let start = PhysAddr::from(3 * one_gib);
-        MemoryRegion::new(start, one_gib)
-    };
-
-    // Sanity-check flash regions.
-    for region in flash_regions.iter() {
-        // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlap(&flash_range) {
-            panic!("flash region in unexpected region");
-        }
-
-        // Make sure that no regions overlap with the kernel.
-        if region.overlap(&kernel_region) {
-            panic!("flash region overlaps with kernel");
-        }
-    }
-    // Make sure that regions don't overlap.
-    for (i, outer) in flash_regions.iter().enumerate() {
-        for inner in flash_regions[..i].iter() {
-            if outer.overlap(inner) {
-                panic!("flash regions overlap");
-            }
-        }
-    }
-    // Make sure that one regions ends at 4GiB.
-    let one_region_ends_at_4gib = flash_regions
-        .iter()
-        .any(|region| region.end() == flash_range.end());
-    assert!(one_region_ends_at_4gib);
+    let flash_regions = config.get_fw_regions(&kernel_region);
 
     for (i, region) in flash_regions.into_iter().enumerate() {
         log::info!(

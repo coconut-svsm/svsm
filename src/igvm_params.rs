@@ -10,9 +10,11 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::error::SvsmError::Firmware;
-use crate::mm::PAGE_SIZE;
+use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE};
+use crate::sev::{pvalidate, PvalidateOp};
+use crate::sev::{rmp_adjust, RMPFlags};
+use crate::types::PageSize;
 use crate::utils::MemoryRegion;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use bootlib::igvm_params::{IgvmParamBlock, IgvmParamPage};
@@ -149,14 +151,55 @@ impl IgvmParams<'_> {
         }
     }
 
-    pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
-        if !self.should_launch_fw() {
-            Err(Firmware)
-        } else {
-            Ok(vec![MemoryRegion::new(
-                PhysAddr::new(self.igvm_param_block.fw_start as usize),
-                self.igvm_param_block.fw_size as usize,
-            )])
+    pub fn get_fw_regions(&self) -> Vec<MemoryRegion<PhysAddr>> {
+        assert!(self.should_launch_fw());
+
+        let mut regions = Vec::<MemoryRegion<PhysAddr>>::new();
+        let fw_start = PhysAddr::new(self.igvm_param_block.fw_start as usize);
+
+        // If firmware is located at the base of memory, then validate all
+        // pages from the top of the stage 2 area up through the base of the
+        // firmware.  The guest expects these pages to be validated, but they
+        // were not present as IGVM file data, so they must be validated here.
+        // All low memory will also be added to the firmware memory region so
+        // it can be marked as accessible to the guest VMPL.
+
+        if self.igvm_param_block.fw_in_low_memory != 0 {
+            // First validate and adjust all memory above the top of stage 2.
+            let stage2_end_addr: usize = 0xA0000;
+            let stage2_end = PhysAddr::new(stage2_end_addr);
+            let region_size = usize::from(fw_start) - stage2_end_addr;
+            let region = MemoryRegion::<PhysAddr>::new(stage2_end, region_size);
+            for paddr in region.iter_pages(PageSize::Regular) {
+                let guard = PerCPUPageMappingGuard::create_4k(paddr)
+                    .expect("Failed to map low memory for validation");
+                let vaddr = guard.virt_addr();
+
+                pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)
+                    .expect("Failed to validate low memory");
+
+                rmp_adjust(
+                    vaddr,
+                    RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                    PageSize::Regular,
+                )
+                .expect("Failed to grant guest access to low memory");
+            }
+
+            // Now add the stage 2 region to the firmware region list so
+            // permissions can be granted to the guest VMPL for that range.
+            regions.push(MemoryRegion::new(PhysAddr::new(0), stage2_end_addr));
         }
+
+        regions.push(MemoryRegion::new(
+            PhysAddr::new(self.igvm_param_block.fw_start as usize),
+            self.igvm_param_block.fw_size as usize,
+        ));
+
+        regions
+    }
+
+    pub fn fw_in_low_memory(&self) -> bool {
+        self.igvm_param_block.fw_in_low_memory != 0
     }
 }
