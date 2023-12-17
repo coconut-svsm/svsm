@@ -32,9 +32,8 @@ pub fn update_mappings() -> Result<(), SvsmError> {
         None => ret = Err(SvsmError::MissingVMSA),
     }
 
-    match locked.caa_phys() {
-        Some(paddr) => this_cpu_mut().map_guest_caa(paddr)?,
-        None => ret = Err(SvsmError::MissingCAA),
+    if let Some(paddr) = locked.caa_phys() {
+        this_cpu_mut().map_guest_caa(paddr)?
     }
 
     locked.set_updated();
