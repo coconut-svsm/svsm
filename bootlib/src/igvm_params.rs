@@ -48,7 +48,11 @@ pub struct IgvmParamBlockFwInfo {
     /// no firmware is launched after initialization is complete.
     pub size: u32,
 
-    _reserved: u32,
+    /// Indicates that the initial location of firmware is at the base of
+    /// memory and will not be loaded into the ROM range.
+    pub in_low_memory: u8,
+
+    _reserved: [u8; 3],
 
     /// The guest physical address at which the firmware expects to find the
     /// secrets page.

@@ -13,7 +13,6 @@ use crate::error::SvsmError::Firmware;
 use crate::fw_meta::SevFWMetaData;
 use crate::mm::PAGE_SIZE;
 use crate::utils::MemoryRegion;
-use alloc::vec;
 use alloc::vec::Vec;
 
 use bootlib::igvm_params::{IgvmParamBlock, IgvmParamPage};
@@ -21,6 +20,8 @@ use core::mem::size_of;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+
+const STAGE2_END_ADDR: usize = 0xA0000;
 
 #[derive(Clone, Debug)]
 #[repr(C, align(64))]
@@ -199,14 +200,26 @@ impl IgvmParams<'_> {
         }
     }
 
-    pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
-        if !self.should_launch_fw() {
-            Err(Firmware)
-        } else {
-            Ok(vec![MemoryRegion::new(
-                PhysAddr::new(self.igvm_param_block.firmware.start as usize),
-                self.igvm_param_block.firmware.size as usize,
-            )])
+    pub fn get_fw_regions(&self) -> Vec<MemoryRegion<PhysAddr>> {
+        assert!(self.should_launch_fw());
+
+        let mut regions = Vec::new();
+
+        if self.igvm_param_block.firmware.in_low_memory != 0 {
+            // Add the stage 2 region to the firmware region list so
+            // permissions can be granted to the guest VMPL for that range.
+            regions.push(MemoryRegion::new(PhysAddr::new(0), STAGE2_END_ADDR));
         }
+
+        regions.push(MemoryRegion::new(
+            PhysAddr::new(self.igvm_param_block.firmware.start as usize),
+            self.igvm_param_block.firmware.size as usize,
+        ));
+
+        regions
+    }
+
+    pub fn fw_in_low_memory(&self) -> bool {
+        self.igvm_param_block.firmware.in_low_memory != 0
     }
 }

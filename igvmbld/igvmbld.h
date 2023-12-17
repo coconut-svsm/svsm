@@ -24,7 +24,8 @@ typedef struct {
 typedef struct {
     uint32_t start;
     uint32_t size;
-    uint32_t _reserved;
+    uint8_t in_low_memory;
+    uint8_t _reserved[3];
     uint32_t secrets_page;
     uint32_t caa_page;
     uint32_t cpuid_page;

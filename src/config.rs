@@ -19,6 +19,44 @@ use crate::serial::SERIAL_PORT;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 
+fn check_ovmf_regions(
+    flash_regions: &[MemoryRegion<PhysAddr>],
+    kernel_region: &MemoryRegion<PhysAddr>,
+) {
+    let flash_range = {
+        let one_gib = 1024 * 1024 * 1024usize;
+        let start = PhysAddr::from(3 * one_gib);
+        MemoryRegion::new(start, one_gib)
+    };
+
+    // Sanity-check flash regions.
+    for region in flash_regions.iter() {
+        // Make sure that the regions are between 3GiB and 4GiB.
+        if !region.overlap(&flash_range) {
+            panic!("flash region in unexpected region");
+        }
+
+        // Make sure that no regions overlap with the kernel.
+        if region.overlap(kernel_region) {
+            panic!("flash region overlaps with kernel");
+        }
+    }
+
+    // Make sure that regions don't overlap.
+    for (i, outer) in flash_regions.iter().enumerate() {
+        for inner in flash_regions[..i].iter() {
+            if outer.overlap(inner) {
+                panic!("flash regions overlap");
+            }
+        }
+        // Make sure that one regions ends at 4GiB.
+        let one_region_ends_at_4gib = flash_regions
+            .iter()
+            .any(|region| region.end() == flash_range.end());
+        assert!(one_region_ends_at_4gib);
+    }
+}
+
 #[derive(Debug)]
 pub enum SvsmConfig<'a> {
     FirmwareConfig(FwCfg<'a>),
@@ -93,12 +131,30 @@ impl<'a> SvsmConfig<'a> {
         }
     }
 
-    pub fn get_fw_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
+    pub fn get_fw_regions(
+        &self,
+        kernel_region: &MemoryRegion<PhysAddr>,
+    ) -> Vec<MemoryRegion<PhysAddr>> {
         match self {
             SvsmConfig::FirmwareConfig(fw_cfg) => {
-                Ok(fw_cfg.iter_flash_regions().collect::<Vec<_>>())
+                let flash_regions = fw_cfg.iter_flash_regions().collect::<Vec<_>>();
+                check_ovmf_regions(&flash_regions, kernel_region);
+                flash_regions
             }
-            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_fw_regions(),
+            SvsmConfig::IgvmConfig(igvm_params) => {
+                let flash_regions = igvm_params.get_fw_regions();
+                if !igvm_params.fw_in_low_memory() {
+                    check_ovmf_regions(&flash_regions, kernel_region);
+                }
+                flash_regions
+            }
+        }
+    }
+
+    pub fn fw_in_low_memory(&self) -> bool {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => false,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.fw_in_low_memory(),
         }
     }
 
