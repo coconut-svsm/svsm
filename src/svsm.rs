@@ -204,9 +204,11 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn launch_fw() -> Result<(), SvsmError> {
+fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
     let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
     let vmsa = this_cpu_mut().guest_vmsa();
+
+    config.initialize_guest_vmsa(vmsa);
 
     log::info!("VMSA PA: {:#x}", vmsa_pa);
 
@@ -445,7 +447,7 @@ pub extern "C" fn svsm_main() {
     virt_log_usage();
 
     if config.should_launch_fw() {
-        if let Err(e) = launch_fw() {
+        if let Err(e) = launch_fw(&config) {
             panic!("Failed to launch FW: {:#?}", e);
         }
     }

@@ -38,10 +38,11 @@ typedef struct {
     uint32_t param_area_size;
     uint32_t param_page_offset;
     uint32_t memory_map_offset;
+    uint32_t guest_context_offset;
     uint32_t cpuid_page;
     uint32_t secrets_page;
     uint16_t debug_serial_port;
-    uint16_t _reserved;
+    uint16_t _reserved[3];
     IgvmParamBlockFwInfo firmware;
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;

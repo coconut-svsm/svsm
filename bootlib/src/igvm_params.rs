@@ -95,6 +95,10 @@ pub struct IgvmParamBlock {
     /// of the memory map (which is in IGVM format).
     pub memory_map_offset: u32,
 
+    /// The offset, in bytes, of the guest context, or zero if no guest
+    /// context is present.
+    pub guest_context_offset: u32,
+
     /// The guest physical address of the CPUID page.
     pub cpuid_page: u32,
 
@@ -104,7 +108,7 @@ pub struct IgvmParamBlock {
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 
-    _reserved: u16,
+    _reserved: [u16; 3],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
@@ -119,4 +123,37 @@ pub struct IgvmParamBlock {
 
     /// The guest physical address of the base of the kernel memory region.
     pub kernel_base: u64,
+}
+
+/// The IGVM context page is a measured page that is used to specify the start
+/// context for the guest VMPL.  If present, it overrides the processor state
+/// initialized at reset.
+#[derive(Copy, Debug, Clone)]
+#[repr(C, packed)]
+pub struct IgvmGuestContext {
+    pub cr0: u64,
+    pub cr3: u64,
+    pub cr4: u64,
+    pub efer: u64,
+    pub gdt_base: u64,
+    pub gdt_limit: u32,
+    pub code_selector: u16,
+    pub data_selector: u16,
+    pub rip: u64,
+    pub rax: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub rbx: u64,
+    pub rsp: u64,
+    pub rbp: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub r8: u64,
+    pub r9: u64,
+    pub r10: u64,
+    pub r11: u64,
+    pub r12: u64,
+    pub r13: u64,
+    pub r14: u64,
+    pub r15: u64,
 }
