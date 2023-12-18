@@ -37,6 +37,7 @@ typedef struct {
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;
     uint64_t kernel_base;
+    uint64_t vtom;
 } IgvmParamBlock;
 
 typedef struct {
@@ -361,7 +362,7 @@ void generate_initial_vmsa(SEV_VMSA *vmsa)
     vmsa->sev_features = SevFeature_Snp;
 }
 
-void setup_igvm_platform_header(void)
+IGVM_VHS_SUPPORTED_PLATFORM *setup_igvm_platform_header(void)
 {
     IGVM_VHS *header;
     IGVM_VHS_SUPPORTED_PLATFORM *platform;
@@ -382,9 +383,7 @@ void setup_igvm_platform_header(void)
     platform->PlatformType = IgvmPlatformType_SevSnp;
     platform->PlatformVersion = 1;
 
-    // Set the GPA boundary at bit 46, below the lowest possible C-bit
-    // position.
-    platform->SharedGpaBoundary = 0x0000400000000000;
+    return platform;
 }
 
 void generate_required_memory_header(IgvmParamBlock *igvm_parameter_block)
@@ -829,6 +828,7 @@ int main(int argc, const char *argv[])
     IgvmParamBlock *igvm_parameter_block;
     DATA_OBJ *initial_stack;
     DATA_OBJ *kernel_data;
+    IGVM_VHS_SUPPORTED_PLATFORM *platform;
     DATA_OBJ *secrets_page;
     DATA_OBJ *stage2_data;
     Stage2Stack *stage2_stack;
@@ -847,7 +847,7 @@ int main(int argc, const char *argv[])
     var_hdr_offset = sizeof(IGVM_FIXED_HEADER);
 
     // Set up the platform compatibility header.
-    setup_igvm_platform_header();
+    platform = setup_igvm_platform_header();
 
     // Construct a set of ranges for the memory map:
     // 00000-0EFFF: zero-filled (must be pre-validated)
@@ -970,6 +970,11 @@ int main(int argc, const char *argv[])
         // as reserved.
         vmsa_address = igvm_parameter_block->kernel_base;
         igvm_parameter_block->kernel_reserved_size = 0x1000;
+
+        // Set the shared GPA boundary at bit 46, below the lowest possible
+        // C-bit position.
+        igvm_parameter_block->vtom = 0x0000400000000000;
+        platform->SharedGpaBoundary = igvm_parameter_block->vtom;
     }
     else
     {

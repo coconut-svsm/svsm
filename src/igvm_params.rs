@@ -264,6 +264,12 @@ impl IgvmParams<'_> {
             vmsa.es = vmsa.ds;
             vmsa.fs = vmsa.ds;
             vmsa.gs = vmsa.ds;
+
+            // Configure vTOM if reqqested.
+            if self.igvm_param_block.vtom != 0 {
+                vmsa.vtom = self.igvm_param_block.vtom;
+                vmsa.sev_features |= 2; // VTOM feature
+            }
         }
     }
 }
