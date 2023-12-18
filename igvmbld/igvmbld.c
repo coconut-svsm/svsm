@@ -25,6 +25,7 @@ typedef struct {
     uint32_t param_area_size;
     uint32_t param_page_offset;
     uint32_t memory_map_offset;
+    uint32_t guest_context_offset;
     uint32_t cpuid_page;
     uint32_t secrets_page;
     uint16_t debug_serial_port;
@@ -33,7 +34,6 @@ typedef struct {
     uint32_t fw_start;
     uint32_t fw_size;
     uint32_t fw_metadata;
-    uint32_t _reserved2;
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;
     uint64_t kernel_base;

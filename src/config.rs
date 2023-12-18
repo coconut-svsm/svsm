@@ -15,6 +15,7 @@ use crate::mm::{PAGE_SIZE, SIZE_1G};
 use crate::serial::SERIAL_PORT;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
+use cpuarch::vmsa::VMSA;
 
 fn check_ovmf_regions(
     flash_regions: &[MemoryRegion<PhysAddr>],
@@ -152,6 +153,13 @@ impl<'a> SvsmConfig<'a> {
         match self {
             SvsmConfig::FirmwareConfig(_) => false,
             SvsmConfig::IgvmConfig(_) => true,
+        }
+    }
+
+    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => (),
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.initialize_guest_vmsa(vmsa),
         }
     }
 }
