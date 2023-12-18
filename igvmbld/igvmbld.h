@@ -47,6 +47,7 @@ typedef struct {
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;
     uint64_t kernel_base;
+    uint64_t vtom;
 } IgvmParamBlock;
 
 int parse_ovmf_metadata(const char *ovmf_filename, IgvmParamBlock *params);

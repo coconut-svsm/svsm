@@ -123,6 +123,9 @@ pub struct IgvmParamBlock {
 
     /// The guest physical address of the base of the kernel memory region.
     pub kernel_base: u64,
+
+    /// The value of vTOM used by the guest, or zero if not used.
+    pub vtom: u64,
 }
 
 /// The IGVM context page is a measured page that is used to specify the start
