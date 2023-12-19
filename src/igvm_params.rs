@@ -155,7 +155,7 @@ impl IgvmParams<'_> {
         } else {
             Ok(vec![MemoryRegion::new(
                 PhysAddr::new(self.igvm_param_block.fw_start as usize),
-                self.igvm_param_block.fw_size as usize * PAGE_SIZE,
+                self.igvm_param_block.fw_size as usize,
             )])
         }
     }
