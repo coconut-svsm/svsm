@@ -17,13 +17,15 @@ use alloc::vec::Vec;
 use super::{Mapping, VMPhysMem};
 
 use super::{RawAllocMapping, VMPageFaultResolution, VirtualMapping};
-use crate::address::{Address, PhysAddr};
+#[cfg(test)]
+use crate::address::Address;
+use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::VMR;
 use crate::mm::PageRef;
 use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
-use crate::types::PAGE_SHIFT;
+use crate::types::{PageSize, PAGE_SHIFT};
 use crate::utils::align_up;
 
 #[derive(Debug)]
@@ -147,11 +149,12 @@ fn copy_page(
     file: &FileHandle,
     offset: usize,
     paddr_dst: PhysAddr,
-    page_size: usize,
+    page_size: PageSize,
 ) -> Result<(), SvsmError> {
+    let page_size = usize::from(page_size);
     let temp_map = VMPhysMem::new(paddr_dst, page_size, true);
     let vaddr_new_page = vmr.insert(Arc::new(Mapping::new(temp_map)))?;
-    let slice = unsafe { from_raw_parts_mut(vaddr_new_page.bits() as *mut u8, page_size) };
+    let slice = unsafe { from_raw_parts_mut(vaddr_new_page.as_mut_ptr::<u8>(), page_size) };
     file.seek(offset);
     file.read(slice)?;
     vmr.remove(vaddr_new_page)?;
@@ -164,8 +167,9 @@ fn copy_page(
     file: &FileHandle,
     offset: usize,
     paddr_dst: PhysAddr,
-    page_size: usize,
+    page_size: PageSize,
 ) -> Result<(), SvsmError> {
+    let page_size = usize::from(page_size);
     // In the test environment the physical address is actually the virtual
     // address. We can take advantage of this to copy the file contents into the
     // mock physical address without worrying about VMRs and page tables.
@@ -186,10 +190,9 @@ impl VirtualMapping for VMFileMapping {
             return None;
         }
         if let Some(write_copy) = &self.write_copy {
-            let write_addr = write_copy.map(offset);
-            if write_addr.is_some() {
-                return write_addr;
-            }
+            if let Some(write_addr) = write_copy.map(offset) {
+                return Some(write_addr);
+            };
         }
         self.pages[page_index].as_ref().map(|p| p.phys_addr())
     }
@@ -219,28 +222,28 @@ impl VirtualMapping for VMFileMapping {
         write: bool,
     ) -> Result<VMPageFaultResolution, SvsmError> {
         let page_size = self.page_size();
-        if write {
-            if let Some(write_copy) = self.write_copy.as_mut() {
-                // This is a writeable region with copy-on-write access. The
-                // page fault will have occurred because the page has not yet
-                // been allocated. Allocate a page and copy the readonly source
-                // page into the new writeable page.
-                let offset_aligned = offset & !(page_size - 1);
-                if write_copy
-                    .get_alloc_mut()
-                    .alloc_page(offset_aligned)
-                    .is_ok()
-                {
-                    let paddr_new_page = write_copy.map(offset_aligned).ok_or(SvsmError::Mem)?;
-                    copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
-                    return Ok(VMPageFaultResolution {
-                        paddr: paddr_new_page,
-                        flags: PTEntryFlags::task_data(),
-                    });
-                }
-            }
+        let page_size_bytes = usize::from(page_size);
+
+        if !write {
+            return Err(SvsmError::Mem);
         }
-        Err(SvsmError::Mem)
+
+        let Some(write_copy) = self.write_copy.as_mut() else {
+            return Err(SvsmError::Mem);
+        };
+
+        // This is a writeable region with copy-on-write access. The
+        // page fault will have occurred because the page has not yet
+        // been allocated. Allocate a page and copy the readonly source
+        // page into the new writeable page.
+        let offset_aligned = offset & !(page_size_bytes - 1);
+        write_copy.get_alloc_mut().alloc_page(offset_aligned)?;
+        let paddr_new_page = write_copy.map(offset_aligned).ok_or(SvsmError::Mem)?;
+        copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
+        Ok(VMPageFaultResolution {
+            paddr: paddr_new_page,
+            flags: PTEntryFlags::task_data(),
+        })
     }
 }
 

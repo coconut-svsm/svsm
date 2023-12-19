@@ -9,7 +9,7 @@ use crate::error::SvsmError;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
-use crate::types::{PAGE_SHIFT, PAGE_SIZE};
+use crate::types::{PageSize, PAGE_SHIFT};
 
 use intrusive_collections::rbtree::Link;
 use intrusive_collections::{intrusive_adapter, KeyAdapter};
@@ -95,9 +95,9 @@ pub trait VirtualMapping: core::fmt::Debug {
     /// # Returns
     ///
     /// Either PAGE_SIZE or PAGE_SIZE_2M
-    fn page_size(&self) -> usize {
+    fn page_size(&self) -> PageSize {
         // Default to system page-size
-        PAGE_SIZE
+        PageSize::Regular
     }
 
     /// Request whether the mapping is shared or private. Defaults to private
