@@ -98,6 +98,30 @@ IGVM_VHS **last_var_hdr;
 uint32_t var_hdr_offset;
 uint32_t total_file_size;
 
+static uint32_t _crc;
+
+static uint32_t crc32b_init() {
+    _crc = 0xffffffff;
+}
+
+static void crc32b_update(uint8_t *message, uint32_t len) {
+   int32_t i, j;
+   uint32_t byte, mask;
+
+   for (i = 0; i < len; ++i) {
+      byte = message[i];
+      _crc = _crc ^ byte;
+      for (j = 7; j >= 0; --j) {
+         mask = -(_crc & 1);
+         _crc = (_crc >> 1) ^ (0xedb88320 & mask);
+      }
+   }
+}
+
+static uint32_t crc32b_finish() {
+   return ~_crc;
+}
+
 void construct_parameter_page(uint32_t address, ParameterPageIndex index)
 {
     PARAM_PAGE *param_page;
@@ -553,8 +577,11 @@ int generate_igvm_file(const char *filename)
     uint32_t pad_size;
     uint32_t page_count;
     IGVM_VAR_HEADER var_header;
+    uint32_t crc32;
 
     pad = 0;
+
+    crc32b_init();
 
     file = fopen(filename, "w");
     if (file == NULL)
@@ -570,6 +597,9 @@ int generate_igvm_file(const char *filename)
     fixed_header.VariableHeaderOffset = sizeof(IGVM_FIXED_HEADER);
     fixed_header.VariableHeaderSize = var_hdr_offset - fixed_header.VariableHeaderOffset;
     fixed_header.TotalFileSize = total_file_size;
+
+    crc32b_update((uint8_t *)&fixed_header, sizeof(IGVM_FIXED_HEADER));
+
     if (fwrite(&fixed_header, sizeof(IGVM_FIXED_HEADER), 1, file) != 1)
     {
 WriteError:
@@ -594,6 +624,8 @@ WriteError:
         {
             goto WriteError;
         }
+        crc32b_update((uint8_t *)&var_header, sizeof(IGVM_VAR_HEADER));
+        crc32b_update((uint8_t *)header->data, header->header_size);
 
         pad_size = var_header_file_size(header) - header->header_size;
         if (pad_size != 0)
@@ -603,6 +635,7 @@ WriteError:
             {
                 goto WriteError;
             }
+            crc32b_update((uint8_t *)&pad, pad_size);
         }
 
         header = header->next;
@@ -632,6 +665,15 @@ WriteError:
         }
 
         data_obj = data_obj->next;
+    }
+    
+    // Seek back and fill in the checksum.
+    if (fseek(file, FIELD_OFFSET(IGVM_FIXED_HEADER, Checksum), SEEK_SET) != 0) {
+        goto WriteError;
+    }
+    crc32 = crc32b_finish();
+    if (fwrite(&crc32, 1, sizeof(crc32), file) != sizeof(crc32)) {
+        goto WriteError;
     }
 
     fclose(file);
