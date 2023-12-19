@@ -18,6 +18,10 @@ pub trait BitmapAllocator {
     fn empty(&self) -> bool;
     fn capacity(&self) -> usize;
     fn used(&self) -> usize;
+    #[cfg(fuzzing)]
+    fn max_align(&self) -> usize {
+        (<Self as BitmapAllocator>::CAPACITY.ilog2() - 1) as usize
+    }
 }
 
 pub type BitmapAllocator1024 = BitmapAllocatorTree<BitmapAllocator64>;
@@ -30,6 +34,11 @@ pub struct BitmapAllocator64 {
 impl BitmapAllocator64 {
     pub const fn new() -> Self {
         Self { bits: u64::MAX }
+    }
+
+    #[cfg(fuzzing)]
+    pub fn get_bits(&self) -> u64 {
+        self.bits
     }
 }
 
@@ -45,6 +54,7 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 
     fn set(&mut self, start: usize, entries: usize, value: bool) {
+        assert!(entries > 0);
         assert!((start + entries) <= BitmapAllocator64::CAPACITY);
         // Create a mask for changing the bitmap
         let start_mask = !((1 << start) - 1);
@@ -84,7 +94,7 @@ impl BitmapAllocator for BitmapAllocator64 {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct BitmapAllocatorTree<T: BitmapAllocator + Debug> {
     bits: u16,
     child: [T; 16],
@@ -96,6 +106,11 @@ impl BitmapAllocatorTree<BitmapAllocator64> {
             bits: u16::MAX,
             child: [BitmapAllocator64::new(); 16],
         }
+    }
+
+    #[cfg(fuzzing)]
+    pub fn get_child(&self, index: usize) -> BitmapAllocator64 {
+        self.child[index]
     }
 }
 
@@ -171,6 +186,9 @@ impl<T: BitmapAllocator + Debug> BitmapAllocator for BitmapAllocatorTree<T> {
 fn alloc_aligned(ba: &mut impl BitmapAllocator, entries: usize, align: usize) -> Option<usize> {
     // Iterate through the bitmap checking on each alignment boundary
     // for a free range of the requested size
+    if align >= (ba.capacity().ilog2() as usize) {
+        return None;
+    }
     let align_mask = (1 << align) - 1;
     let mut offset = 0;
     while (offset + entries) <= ba.capacity() {
