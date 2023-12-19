@@ -7,7 +7,7 @@
 pub mod core;
 pub mod errors;
 
-use crate::sev::vmsa::{GuestVMExit, VMSA};
+use cpuarch::vmsa::{GuestVMExit, VMSA};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {

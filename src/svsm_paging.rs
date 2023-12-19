@@ -10,13 +10,13 @@ use crate::cpu::percpu::this_cpu_mut;
 use crate::elf;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
-use crate::kernel_launch::KernelLaunchInfo;
 use crate::mm;
 use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
 use crate::types::{PageSize, PAGE_SIZE};
+use bootlib::kernel_launch::KernelLaunchInfo;
 
 struct IgvmParamInfo<'a> {
     virt_addr: VirtAddr,

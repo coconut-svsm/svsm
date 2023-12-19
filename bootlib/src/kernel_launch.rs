@@ -4,9 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::PhysAddr;
-use crate::utils::MemoryRegion;
-
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct KernelLaunchInfo {
@@ -35,11 +32,5 @@ impl KernelLaunchInfo {
 
     pub fn heap_area_virt_end(&self) -> u64 {
         self.heap_area_virt_start + self.heap_area_size()
-    }
-
-    pub fn kernel_region(&self) -> MemoryRegion<PhysAddr> {
-        let start = PhysAddr::from(self.kernel_region_phys_start);
-        let end = PhysAddr::from(self.kernel_region_phys_end);
-        MemoryRegion::from_addresses(start, end)
     }
 }

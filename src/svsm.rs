@@ -11,14 +11,16 @@ extern crate alloc;
 
 use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
 
+use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
+use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table, SnpCpuidTable};
+use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt::load_gdt;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
@@ -33,7 +35,7 @@ use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::greq::driver::guest_request_driver_init;
 use svsm::igvm_params::IgvmParams;
-use svsm::kernel_launch::KernelLaunchInfo;
+use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
@@ -218,9 +220,9 @@ fn launch_fw() -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn validate_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
+fn validate_fw(config: &SvsmConfig, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
     let flash_regions = config.get_fw_regions()?;
-    let kernel_region = LAUNCH_INFO.kernel_region();
+    let kernel_region = new_kernel_region(launch_info);
     let flash_range = {
         let one_gib = 1024 * 1024 * 1024usize;
         let start = PhysAddr::from(3 * one_gib);
@@ -321,7 +323,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     mapping_info_init(&launch_info);
 
-    init_valid_bitmap_ptr(launch_info.kernel_region(), vb_ptr);
+    init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr);
 
     load_gdt();
     early_idt_init();
@@ -475,7 +477,7 @@ pub extern "C" fn svsm_main() {
     }
 
     if config.should_launch_fw() {
-        if let Err(e) = validate_fw(&config) {
+        if let Err(e) = validate_fw(&config, &LAUNCH_INFO) {
             panic!("Failed to validate flash memory: {:#?}", e);
         }
     }

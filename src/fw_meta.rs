@@ -9,13 +9,14 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
-use crate::kernel_launch::KernelLaunchInfo;
+use crate::kernel_region::new_kernel_region;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
+use bootlib::kernel_launch::KernelLaunchInfo;
 
 use core::fmt;
 use core::mem::{align_of, size_of, size_of_val};
@@ -441,7 +442,7 @@ pub fn validate_fw_memory(
     // Sort regions by base address
     regions.sort_unstable_by_key(|a| a.start());
 
-    let kernel_region = launch_info.kernel_region();
+    let kernel_region = new_kernel_region(launch_info);
     for region in regions.iter() {
         if region.overlap(&kernel_region) {
             panic!("FwMeta region ovelaps with kernel");

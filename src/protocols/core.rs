@@ -7,6 +7,7 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
@@ -17,9 +18,9 @@ use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
     rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,
 };
-use crate::sev::vmsa::VMSA;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
+use cpuarch::vmsa::VMSA;
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
@@ -100,7 +101,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
 
-    let new_vmsa = VMSA::from_virt_addr(vaddr);
+    let new_vmsa = vmsa_ref_from_vaddr(vaddr);
     let svme_mask: u64 = 1u64 << 12;
 
     // VMSA validity checks according to SVSM spec
@@ -129,7 +130,7 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
     // disable() will loop until that is not the case
-    let del_vmsa = VMSA::from_virt_addr(vaddr);
+    let del_vmsa = vmsa_mut_ref_from_vaddr(vaddr);
     del_vmsa.disable();
 
     // Do not return early here, as we need to do a TLB flush

@@ -15,9 +15,9 @@ use crate::utils::MemoryRegion;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use bootlib::igvm_params::{IgvmParamBlock, IgvmParamPage};
 use core::mem::size_of;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
-use igvm_params::{IgvmParamBlock, IgvmParamPage};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
 
