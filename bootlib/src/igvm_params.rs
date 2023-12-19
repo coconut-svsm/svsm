@@ -56,7 +56,7 @@ pub struct IgvmParamBlock {
     /// initialization is complete.
     pub fw_start: u32,
 
-    /// The number of pages of guest firmware. If the firmware size is zero then
+    /// The size of the guest firmware in bytes. If the firmware size is zero then
     /// no firmware is launched after initialization is complete.
     pub fw_size: u32,
 
