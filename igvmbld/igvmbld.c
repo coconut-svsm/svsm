@@ -327,14 +327,20 @@ void generate_initial_vmsa(SEV_VMSA *vmsa)
     // Establish CS as a 32-bit code selector.
     vmsa->segments[SevSegment_Cs].attributes = 0xC9B;
     vmsa->segments[SevSegment_Cs].limit = 0xFFFFFFFF;
+    vmsa->segments[SevSegment_Cs].selector = 0x08;
 
     // Establish all data segments as generic data selectors.
     vmsa->segments[SevSegment_Ds].attributes = 0xA93;
     vmsa->segments[SevSegment_Ds].limit = 0xFFFFFFFF;
+    vmsa->segments[SevSegment_Ds].selector = 0x10;
     vmsa->segments[SevSegment_Ss] = vmsa->segments[SevSegment_Ds];
+    vmsa->segments[SevSegment_Ss].selector = 0x10;
     vmsa->segments[SevSegment_Es] = vmsa->segments[SevSegment_Ds];
+    vmsa->segments[SevSegment_Es].selector = 0x10;
     vmsa->segments[SevSegment_Fs] = vmsa->segments[SevSegment_Ds];
+    vmsa->segments[SevSegment_Fs].selector = 0x10;
     vmsa->segments[SevSegment_Gs] = vmsa->segments[SevSegment_Ds];
+    vmsa->segments[SevSegment_Gs].selector = 0x10;
 
     // EFER.SVME.
     vmsa->efer = 0x1000;
