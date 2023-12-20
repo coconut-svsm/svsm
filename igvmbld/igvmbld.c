@@ -885,9 +885,11 @@ int main(int argc, const char *argv[])
     cpuid_page->page_type = IgvmPageType_Cpuid;
     fill_cpuid_page((SNP_CPUID_PAGE *)cpuid_page->data);
 
-    // Construct a data object for the kernel image.  The kernel is always
-    // loaded at 640K.
-    kernel_data = construct_file_data_object(kernel_filename, 0xA0000);
+    // Load the kernel data at a base address of 1 MB.
+    address = 1 << 20;
+
+    // Construct a data object for the kernel.
+    kernel_data = construct_file_data_object(kernel_filename, address);
     if (kernel_data == NULL)
     {
         return 1;
