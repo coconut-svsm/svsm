@@ -47,7 +47,7 @@ use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::svsm_paging::{init_page_table, invalidate_stage2};
+use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
@@ -439,14 +439,15 @@ pub extern "C" fn svsm_main() {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
     };
 
-    invalidate_stage2(&config).expect("Failed to invalidate Stage2 memory");
-
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
     initialize_fs();
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
+
+    invalidate_early_boot_memory(&config, launch_info)
+        .expect("Failed to invalidate early boot memory");
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

@@ -15,7 +15,8 @@ use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableR
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
 use bootlib::kernel_launch::KernelLaunchInfo;
 
 struct IgvmParamInfo<'a> {
@@ -94,28 +95,63 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
     set_init_pgtable(pgtable);
 }
 
-pub fn invalidate_stage2(config: &SvsmConfig) -> Result<(), SvsmError> {
-    let pstart = PhysAddr::null();
-    let pend = pstart + (640 * 1024);
-    let mut paddr = pstart;
+fn invalidate_boot_memory_region(
+    config: &SvsmConfig,
+    region: MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    log::info!(
+        "Invalidating boot region {:018x}-{:018x}",
+        region.start(),
+        region.end()
+    );
 
-    // Stage2 memory must be invalidated when already on the SVSM page-table,
-    // because before that the stage2 page-table is still active, which is in
-    // stage2 memory, causing invalidation of page-table pages.
-    while paddr < pend {
+    for paddr in region.iter_pages(PageSize::Regular) {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
         pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
-
-        paddr = paddr + PAGE_SIZE;
     }
 
-    if config.page_state_change_required() {
+    if config.page_state_change_required() && !region.is_empty() {
         this_cpu_mut()
             .ghcb()
-            .page_state_change(paddr, pend, PageSize::Regular, PageStateChangeOp::PscShared)
+            .page_state_change(
+                region.start(),
+                region.end(),
+                PageSize::Regular,
+                PageStateChangeOp::PscShared,
+            )
             .expect("Failed to invalidate Stage2 memory");
+    }
+
+    Ok(())
+}
+
+pub fn invalidate_early_boot_memory(
+    config: &SvsmConfig,
+    launch_info: &KernelLaunchInfo,
+) -> Result<(), SvsmError> {
+    // Early boot memory must be invalidated after changing to the SVSM page
+    // page table to avoid invalidating page tables currently in use.  Always
+    // invalidate stage 2 memory, and invalidate the boot data if required.
+    let stage2_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
+    invalidate_boot_memory_region(config, stage2_region)?;
+
+    if config.invalidate_boot_data() {
+        let kernel_elf_size =
+            launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
+        let kernel_elf_region = MemoryRegion::new(
+            PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
+            kernel_elf_size.try_into().unwrap(),
+        );
+        invalidate_boot_memory_region(config, kernel_elf_region)?;
+
+        let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
+        let kernel_fs_region = MemoryRegion::new(
+            PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
+            kernel_fs_size.try_into().unwrap(),
+        );
+        invalidate_boot_memory_region(config, kernel_fs_region)?;
     }
 
     Ok(())

@@ -91,4 +91,11 @@ impl<'a> SvsmConfig<'a> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_fw_regions(),
         }
     }
+
+    pub fn invalidate_boot_data(&self) -> bool {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => false,
+            SvsmConfig::IgvmConfig(_) => true,
+        }
+    }
 }
