@@ -212,13 +212,12 @@ fn launch_fw() -> Result<(), SvsmError> {
 
     log::info!("VMSA PA: {:#x}", vmsa_pa);
 
-    vmsa.enable();
     let sev_features = vmsa.sev_features;
 
     log::info!("Launching Firmware");
     this_cpu_mut()
         .ghcb()
-        .ap_create(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+        .register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
 
     Ok(())
 }

@@ -480,6 +480,21 @@ impl GHCB {
         Ok(())
     }
 
+    pub fn register_guest_vmsa(
+        &mut self,
+        vmsa_gpa: PhysAddr,
+        apic_id: u64,
+        vmpl: u64,
+        sev_features: u64,
+    ) -> Result<(), SvsmError> {
+        self.clear();
+        let exit_info_1: u64 = (vmpl & 0xf) << 16 | apic_id << 32;
+        let exit_info_2: u64 = vmsa_gpa.into();
+        self.set_rax(sev_features);
+        self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
+    }
+
     pub fn guest_request(
         &mut self,
         req_page: VirtAddr,

@@ -71,13 +71,35 @@ fn request_loop_once(
 
 pub fn request_loop() {
     loop {
-        if update_mappings().is_err() {
-            log::debug!("No VMSA or CAA! Halting");
-            halt();
-            continue;
-        }
+        // Determine whether the guest is runnable.  If not, halt and wait for
+        // the guest to execute.  When halting, assume that the hypervisor
+        // will schedule the guest VMPL on its own.
+        let vmsa = if update_mappings().is_ok() {
+            let vmsa = this_cpu_mut().guest_vmsa();
 
-        let vmsa = this_cpu_mut().guest_vmsa();
+            // Make VMSA runnable again by setting EFER.SVME
+            vmsa.enable();
+
+            flush_tlb_global_sync();
+
+            this_cpu_mut()
+                .ghcb()
+                .run_vmpl(GUEST_VMPL as u64)
+                .expect("Failed to run guest VMPL");
+
+            vmsa
+        } else {
+            loop {
+                log::debug!("No VMSA or CAA! Halting");
+                halt();
+
+                if update_mappings().is_ok() {
+                    break;
+                }
+            }
+
+            this_cpu_mut().guest_vmsa()
+        };
 
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();
@@ -113,18 +135,5 @@ pub fn request_loop() {
 
         // Write back results
         params.write_back(vmsa);
-
-        // Make VMSA runable again by setting EFER.SVME
-        vmsa.enable();
-
-        flush_tlb_global_sync();
-
-        // Check if mappings still valid
-        if update_mappings().is_ok() {
-            this_cpu_mut()
-                .ghcb()
-                .run_vmpl(GUEST_VMPL as u64)
-                .expect("Failed to run guest VMPL");
-        }
     }
 }
