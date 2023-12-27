@@ -32,6 +32,8 @@ typedef struct {
     uint32_t fw_start;
     uint32_t fw_size;
     uint32_t fw_metadata;
+    uint32_t fw_secrets_page;
+    uint32_t fw_caa_page;
     uint32_t _reserved2;
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;

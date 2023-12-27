@@ -143,7 +143,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         // Copy Table
         let fw_sp = target.as_mut();
 
-        // Zero VMCK key for VMPLs with more privileges than the guest
+        // Zero VMPCK key for VMPLs with more privileges than the guest
         for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
             vmpck.fill(0);
         }
@@ -170,12 +170,9 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
 }
 
 pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let cpuid_page = match fw_meta.cpuid_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify CPUID_PAGE location"),
-    };
-
-    copy_cpuid_table_to_fw(cpuid_page)?;
+    if let Some(addr) = fw_meta.cpuid_page {
+        copy_cpuid_table_to_fw(addr)?;
+    }
 
     let secrets_page = match fw_meta.secrets_page {
         Some(addr) => addr,
@@ -189,15 +186,18 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 
     copy_secrets_page_to_fw(secrets_page, caa_page)?;
 
-    zero_caa_page(caa_page)
+    zero_caa_page(caa_page)?;
+
+    Ok(())
 }
 
 fn prepare_fw_launch(fw_metadata: Option<&SevFWMetaData>) -> Result<(), SvsmError> {
     let cpu = this_cpu_mut();
 
     if let Some(fw_meta) = fw_metadata {
-        let caa = fw_meta.caa_page.unwrap();
-        cpu.update_guest_caa(caa);
+        if let Some(caa) = fw_meta.caa_page {
+            cpu.update_guest_caa(caa);
+        }
     }
 
     cpu.alloc_guest_vmsa()?;
@@ -316,6 +316,25 @@ fn map_and_parse_fw_meta(fw_metadata_phys: PhysAddr) -> Result<SevFWMetaData, Sv
     // of the slice elements is `u8` so there are no alignment requirements.
     let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
     parse_fw_meta_data(metadata)
+}
+
+fn obtain_fw_metadata(config: &SvsmConfig) -> Option<SevFWMetaData> {
+    // First attempt to obtain the physical address of the firmware metadata
+    // descriptor.
+    match config.get_fw_metadata_address() {
+        Some(fw_metadata_phys) => {
+            // There is a firmware metadata descriptor, so parse it to obtain
+            // the firmware metadata.
+            let fw_meta = map_and_parse_fw_meta(fw_metadata_phys)
+                .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
+            Some(fw_meta)
+        }
+        None => {
+            // There is no firmware metadata descriptor, so see if the
+            // configuration supplies the metadata directly.
+            config.get_fw_metadata()
+        }
+    }
 }
 
 #[no_mangle]
@@ -462,24 +481,18 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_metadata = config.get_fw_metadata().map(|fw_metadata_phys| {
-        map_and_parse_fw_meta(fw_metadata_phys)
-            .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e))
-    });
-
+    let fw_metadata = obtain_fw_metadata(&config);
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
 
-        if let Err(e) = validate_fw_memory(fw_meta, &LAUNCH_INFO) {
+        if let Err(e) = validate_fw_memory(&config, fw_meta, &LAUNCH_INFO) {
             panic!("Failed to validate firmware memory: {:#?}", e);
         }
 
         if let Err(e) = copy_tables_to_fw(fw_meta) {
             panic!("Failed to copy firmware tables: {:#?}", e);
         }
-    }
 
-    if config.should_launch_fw() {
         if let Err(e) = validate_fw(&config, &LAUNCH_INFO) {
             panic!("Failed to validate flash memory: {:#?}", e);
         }
