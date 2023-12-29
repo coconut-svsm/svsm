@@ -191,13 +191,11 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn prepare_fw_launch(fw_metadata: Option<&SevFWMetaData>) -> Result<(), SvsmError> {
+fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     let cpu = this_cpu_mut();
 
-    if let Some(fw_meta) = fw_metadata {
-        if let Some(caa) = fw_meta.caa_page {
-            cpu.update_guest_caa(caa);
-        }
+    if let Some(caa) = fw_meta.caa_page {
+        cpu.update_guest_caa(caa);
     }
 
     cpu.alloc_guest_vmsa()?;
@@ -500,7 +498,9 @@ pub extern "C" fn svsm_main() {
 
     guest_request_driver_init();
 
-    prepare_fw_launch(fw_metadata.as_ref()).expect("Failed to setup guest VMSA/CAA");
+    if let Some(ref fw_meta) = fw_metadata {
+        prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
+    }
 
     virt_log_usage();
 
