@@ -22,25 +22,6 @@
 #define FIELD_OFFSET(type, field) ((int)((uint8_t *)&((type *)NULL)->field - (uint8_t *)NULL))
 
 typedef struct {
-    uint32_t param_area_size;
-    uint32_t param_page_offset;
-    uint32_t memory_map_offset;
-    uint32_t cpuid_page;
-    uint32_t secrets_page;
-    uint16_t debug_serial_port;
-    uint16_t _reserved1;
-    uint32_t fw_start;
-    uint32_t fw_size;
-    uint32_t fw_metadata;
-    uint32_t fw_secrets_page;
-    uint32_t fw_caa_page;
-    uint32_t _reserved2;
-    uint32_t kernel_reserved_size;
-    uint32_t kernel_size;
-    uint64_t kernel_base;
-} IgvmParamBlock;
-
-typedef struct {
     uint32_t cpu_count;
     uint32_t environment_info;
 } IgvmParamPage;
@@ -897,7 +878,7 @@ int main(int argc, const char *argv[])
         return 1;
     }
     address = (kernel_data->address + kernel_data->size + PAGE_SIZE - 1) &
-              ~(PAGE_SIZE - 1);
+              ~(PAGE_SIZE - 1);    
 
     // If a filesystem image is present, then load it after the kernel.  It is
     // rounded up to the next page boundary to avoid overlapping with any of

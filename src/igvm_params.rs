@@ -135,7 +135,7 @@ impl IgvmParams<'_> {
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        self.igvm_param_block.fw_size != 0
+        self.igvm_param_block.firmware.size != 0
     }
 
     pub fn debug_serial_port(&self) -> u16 {
@@ -143,10 +143,12 @@ impl IgvmParams<'_> {
     }
 
     pub fn get_fw_metadata_address(&self) -> Option<PhysAddr> {
-        if !self.should_launch_fw() || self.igvm_param_block.fw_metadata == 0 {
+        if !self.should_launch_fw() || self.igvm_param_block.firmware.metadata == 0 {
             None
         } else {
-            Some(PhysAddr::from(self.igvm_param_block.fw_metadata as u64))
+            Some(PhysAddr::from(
+                self.igvm_param_block.firmware.metadata as u64,
+            ))
         }
     }
 
@@ -156,15 +158,19 @@ impl IgvmParams<'_> {
         } else {
             let mut fw_meta = SevFWMetaData::new();
 
-            if self.igvm_param_block.fw_caa_page != 0 {
+            if self.igvm_param_block.firmware.caa_page != 0 {
                 fw_meta.caa_page = Some(PhysAddr::new(
-                    self.igvm_param_block.fw_caa_page.try_into().unwrap(),
+                    self.igvm_param_block.firmware.caa_page.try_into().unwrap(),
                 ));
             }
 
-            if self.igvm_param_block.fw_secrets_page != 0 {
+            if self.igvm_param_block.firmware.secrets_page != 0 {
                 fw_meta.secrets_page = Some(PhysAddr::new(
-                    self.igvm_param_block.fw_secrets_page.try_into().unwrap(),
+                    self.igvm_param_block
+                        .firmware
+                        .secrets_page
+                        .try_into()
+                        .unwrap(),
                 ));
             }
 
@@ -177,8 +183,8 @@ impl IgvmParams<'_> {
             Err(Firmware)
         } else {
             Ok(vec![MemoryRegion::new(
-                PhysAddr::new(self.igvm_param_block.fw_start as usize),
-                self.igvm_param_block.fw_size as usize,
+                PhysAddr::new(self.igvm_param_block.firmware.start as usize),
+                self.igvm_param_block.firmware.size as usize,
             )])
         }
     }
