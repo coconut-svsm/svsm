@@ -883,7 +883,6 @@ static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
     printf("Firmware configuration\n======================\n");
     printf("  start: %X\n", igvm_parameter_block->firmware.start);
     printf("  size: %X\n", igvm_parameter_block->firmware.size);
-    printf("  metadata: %X\n", igvm_parameter_block->firmware.metadata);
     printf("  secrets_page: %X\n", igvm_parameter_block->firmware.secrets_page);
     printf("  caa_page: %X\n", igvm_parameter_block->firmware.caa_page);
     printf("  cpuid_page: %X\n", igvm_parameter_block->firmware.cpuid_page);

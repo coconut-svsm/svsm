@@ -48,12 +48,7 @@ pub struct IgvmParamBlockFwInfo {
     /// no firmware is launched after initialization is complete.
     pub size: u32,
 
-    /// The guest physical address of the page that contains metadata that
-    /// corresponds to the firmware. The SVSM expects the page to contain
-    /// metadata in the format defined by OVMF. If this field is zero but
-    /// a firmware range has been provided then the firmware is launched
-    /// without parsing any metadata.
-    pub metadata: u32,
+    _reserved: u32,
 
     /// The guest physical address at which the firmware expects to find the
     /// secrets page.

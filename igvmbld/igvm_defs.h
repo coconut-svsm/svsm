@@ -106,7 +106,7 @@ typedef struct {
 typedef struct {
     uint32_t start;
     uint32_t size;
-    uint32_t metadata;
+    uint32_t _reserved;
     uint32_t secrets_page;
     uint32_t caa_page;
     uint32_t cpuid_page;
@@ -122,7 +122,7 @@ typedef struct {
     uint32_t cpuid_page;
     uint32_t secrets_page;
     uint16_t debug_serial_port;
-    uint16_t _reserved1;
+    uint16_t _reserved;
     IgvmParamBlockFwInfo firmware;
     uint32_t kernel_reserved_size;
     uint32_t kernel_size;
