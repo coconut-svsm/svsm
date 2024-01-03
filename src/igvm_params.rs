@@ -142,16 +142,6 @@ impl IgvmParams<'_> {
         self.igvm_param_block.debug_serial_port
     }
 
-    pub fn get_fw_metadata_address(&self) -> Option<PhysAddr> {
-        if !self.should_launch_fw() || self.igvm_param_block.firmware.metadata == 0 {
-            None
-        } else {
-            Some(PhysAddr::from(
-                self.igvm_param_block.firmware.metadata as u64,
-            ))
-        }
-    }
-
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
         if !self.should_launch_fw() {
             None
@@ -169,6 +159,37 @@ impl IgvmParams<'_> {
                     self.igvm_param_block
                         .firmware
                         .secrets_page
+                        .try_into()
+                        .unwrap(),
+                ));
+            }
+
+            if self.igvm_param_block.firmware.cpuid_page != 0 {
+                fw_meta.cpuid_page = Some(PhysAddr::new(
+                    self.igvm_param_block
+                        .firmware
+                        .cpuid_page
+                        .try_into()
+                        .unwrap(),
+                ));
+            }
+
+            for preval in 0..self.igvm_param_block.firmware.prevalidated_count as usize {
+                let base = PhysAddr::new(
+                    self.igvm_param_block.firmware.prevalidated[preval]
+                        .base
+                        .try_into()
+                        .unwrap(),
+                );
+                let size = self.igvm_param_block.firmware.prevalidated[preval].size as usize;
+                fw_meta.add_valid_mem(base, size);
+            }
+
+            if self.igvm_param_block.firmware.reset_addr != 0 {
+                fw_meta.reset_ip = Some(PhysAddr::new(
+                    self.igvm_param_block
+                        .firmware
+                        .reset_addr
                         .try_into()
                         .unwrap(),
                 ));

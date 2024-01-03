@@ -9,7 +9,7 @@
 
 extern crate alloc;
 
-use svsm::fw_meta::{parse_fw_meta_data, print_fw_meta, validate_fw_memory, SevFWMetaData};
+use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
@@ -308,35 +308,6 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-fn map_and_parse_fw_meta(fw_metadata_phys: PhysAddr) -> Result<SevFWMetaData, SvsmError> {
-    // Map the metadata location which is defined by the firmware config
-    let guard = PerCPUPageMappingGuard::create_4k(fw_metadata_phys)?;
-    let vstart = guard.virt_addr().as_ptr::<u8>();
-    // Safety: we just mapped a page, so the size must hold. The type
-    // of the slice elements is `u8` so there are no alignment requirements.
-    let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
-    parse_fw_meta_data(metadata)
-}
-
-fn obtain_fw_metadata(config: &SvsmConfig) -> Option<SevFWMetaData> {
-    // First attempt to obtain the physical address of the firmware metadata
-    // descriptor.
-    match config.get_fw_metadata_address() {
-        Some(fw_metadata_phys) => {
-            // There is a firmware metadata descriptor, so parse it to obtain
-            // the firmware metadata.
-            let fw_meta = map_and_parse_fw_meta(fw_metadata_phys)
-                .unwrap_or_else(|e| panic!("Failed to parse FW SEV meta-data: {:#?}", e));
-            Some(fw_meta)
-        }
-        None => {
-            // There is no firmware metadata descriptor, so see if the
-            // configuration supplies the metadata directly.
-            config.get_fw_metadata()
-        }
-    }
-}
-
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -481,7 +452,7 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&cpus);
 
-    let fw_metadata = obtain_fw_metadata(&config);
+    let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
 
