@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include "sev-snp.h"
 #include "igvm_defs.h"
+#include "ovmfmeta.h"
 
 #define PAGE_SIZE 0x1000
 
@@ -67,9 +68,13 @@ const char *stage2_filename;
 const char *kernel_filename;
 const char *filesystem_filename;
 const char *output_filename;
+const char *fw_filename;
+uint32_t fw_size;
+uint32_t fw_base;
 int is_qemu;
 int is_hyperv;
 int com_port = 1;
+int is_verbose;
 
 const uint16_t com_io_ports[] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8 };
 
@@ -669,6 +674,50 @@ WriteError:
     return 0;
 }
 
+static int check_firmware_options() 
+{
+    if (is_qemu)
+    {
+        FILE *fp;
+
+        if (!fw_filename)
+        {
+            // Firmware image is optional.
+            return 0;
+        }
+
+        // Get the firmware file size so we can determine the top and bottom address
+        // range.
+        fp = fopen(fw_filename, "rb");
+        if (!fp)
+        {
+            fprintf(stderr, "Firmware file cannot be opened: \"%s\"\n", fw_filename);
+            return 1;
+            
+        }
+        if (fseek(fp, 0, SEEK_END) != 0)
+        {
+            fprintf(stderr, "Failed to read firmware file: \"%s\"\n", fw_filename);
+            fclose(fp);
+            return 1;
+        }
+        fw_size = ftell(fp);
+        fclose(fp);
+
+        // OVMF firmware must be aligned with the top at 4GB.
+        fw_base = 0xffffffff - fw_size + 1;
+    }
+    else
+    {
+        if (fw_filename)
+        {
+            fprintf(stderr, "The --firmware parameter is not currently supported for Hyper-V\n");
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int parse_options(int argc, const char *argv[])
 {
     while (argc != 0)
@@ -766,6 +815,27 @@ int parse_options(int argc, const char *argv[])
         {
             is_hyperv = 1;
         }
+        else if ((0 == strcmp(argv[0], "--verbose")) || 
+                 (0 == strcmp(argv[0], "-v")))
+        {
+            is_verbose = 1;
+        }
+        else if (0 == strcmp(argv[0], "--firmware"))
+        {
+            if (fw_filename != NULL)
+            {
+                fprintf(stderr, "--firmware specified more than once\n");
+                return 1;
+            }
+            if (argc == 1)
+            {
+                fprintf(stderr, "missing argument for --firmware\n");
+                return 1;
+            }
+            fw_filename = argv[1];
+            argc -= 1;
+            argv += 1;
+        }
         else
         {
             fprintf(stderr, "unknown option %s\n", argv[0]);
@@ -796,9 +866,34 @@ int parse_options(int argc, const char *argv[])
     {
         fprintf(stderr, "exactly one of --qemu and --hyperv must be specified\n");
         return 1;
-    }        
+    }
+
+    if (check_firmware_options() != 0) 
+    {
+        return 1;
+    }
 
     return 0;
+}
+
+static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
+{
+    uint32_t i;
+
+    printf("Firmware configuration\n======================\n");
+    printf("  start: %X\n", igvm_parameter_block->firmware.start);
+    printf("  size: %X\n", igvm_parameter_block->firmware.size);
+    printf("  metadata: %X\n", igvm_parameter_block->firmware.metadata);
+    printf("  secrets_page: %X\n", igvm_parameter_block->firmware.secrets_page);
+    printf("  caa_page: %X\n", igvm_parameter_block->firmware.caa_page);
+    printf("  cpuid_page: %X\n", igvm_parameter_block->firmware.cpuid_page);
+    printf("  reset_addr: %X\n", igvm_parameter_block->firmware.reset_addr);
+    printf("  prevalidated_count: %X\n", igvm_parameter_block->firmware.prevalidated_count);
+    for (i = 0; i < igvm_parameter_block->firmware.prevalidated_count; ++i)
+    {
+        printf("    prevalidated[%d].base: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].base);
+        printf("    prevalidated[%d].len: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].len);
+    }
 }
 
 int main(int argc, const char *argv[])
@@ -963,6 +1058,28 @@ int main(int argc, const char *argv[])
         // won't actually be consumed by QEMU anyway.
         vmsa_address = address;
         address += PAGE_SIZE;
+    }
+
+    // If a firmware file has been specified then add it and set the relevant 
+    // parameter block entries.
+    if (fw_filename)
+    {
+        igvm_parameter_block->firmware.size = fw_size;
+        igvm_parameter_block->firmware.start = fw_base;
+        if (!construct_file_data_object(fw_filename, fw_base))
+        {
+            return 1;
+        }
+
+        // If the firmware file is an OVMF binary then we can extract the OVMF
+        // metadata from it. If the firmware is not OVMF then this function has
+        // no effect.
+        parse_ovmf_metadata(fw_filename, igvm_parameter_block);
+        
+        if (is_verbose)
+        {
+            print_fw_metadata(igvm_parameter_block);
+        }
     }
 
     // Generate a header to describe the memory that will be used as the

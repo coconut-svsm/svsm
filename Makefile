@@ -19,6 +19,13 @@ KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
 FS_FILE ?= none
 
+FW_FILE ?= none
+ifneq ($(FW_FILE), none)
+BUILD_FW = --firmware ${FW_FILE}
+else
+BUILD_FW = 
+endif
+
 C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
@@ -29,12 +36,12 @@ all: stage1/kernel.elf svsm.bin igvm
 
 igvm: $(IGVM_FILES)
 
-$(IGVMBLD): igvmbld/igvmbld.c igvmbld/igvm_defs.h igvmbld/sev-snp.h
+$(IGVMBLD): igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/ovmfmeta.h igvmbld/igvm_defs.h igvmbld/sev-snp.h
 	mkdir -v -p bin
-	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c
+	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c igvmbld/ovmfmeta.c
 
 bin/coconut-qemu.igvm: $(IGVMBLD) stage1/kernel.elf stage1/stage2.bin
-	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --qemu
+	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --qemu ${BUILD_FW}
 
 bin/coconut-hyperv.igvm: $(IGVMBLD) stage1/kernel.elf stage1/stage2.bin
 	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --hyperv --com-port 3
