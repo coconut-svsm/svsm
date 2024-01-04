@@ -155,19 +155,15 @@ pub fn sev_snp_enabled() -> bool {
 
 pub fn sev_status_verify() {
     let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
-    let not_supported = SEVStatusFlags::VTOM
-        | SEVStatusFlags::REFLECT_VC
+    let supported = SEVStatusFlags::DBGSWP
         | SEVStatusFlags::REST_INJ
-        | SEVStatusFlags::ALT_INJ
-        | SEVStatusFlags::DBGSWP
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION
-        | SEVStatusFlags::SECURE_TSC
         | SEVStatusFlags::VMSA_REG_PROT;
 
     let status = sev_flags();
     let required_check = status & required;
-    let supported_check = status & not_supported;
+    let not_supported_check = status & !(supported | required);
 
     if required_check != required {
         log::error!(
@@ -177,8 +173,8 @@ pub fn sev_status_verify() {
         panic!("Required SEV features not available");
     }
 
-    if !supported_check.is_empty() {
-        log::error!("Unsupported features enabled: {}", supported_check);
+    if !not_supported_check.is_empty() {
+        log::error!("Unsupported features enabled: {}", not_supported_check);
         panic!("Unsupported SEV features enabled");
     }
 }

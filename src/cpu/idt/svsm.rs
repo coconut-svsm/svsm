@@ -11,7 +11,8 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
 use super::common::{
-    load_idt, Idt, IdtEntry, BP_VECTOR, DF_VECTOR, GLOBAL_IDT, GP_VECTOR, PF_VECTOR, VC_VECTOR,
+    load_idt, Idt, IdtEntry, BP_VECTOR, DF_VECTOR, GLOBAL_IDT, GP_VECTOR, HV_VECTOR, PF_VECTOR,
+    VC_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
@@ -87,6 +88,12 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
         }
         VC_VECTOR => handle_vc_exception(ctx),
         BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
+        HV_VECTOR =>
+            // #HV processing is not required in the SVSM.  If a maskable
+        // interrupt occurs, it will be processed prior to the next exit.
+        // There are no NMI sources, and #MC cannot be handled anyway
+        // and can safely be ignored.
+            {}
         _ => {
             let err = ctx.error_code;
             let vec = ctx.vector;

@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::common::{load_idt, Idt, IdtEntry, DF_VECTOR, GLOBAL_IDT, VC_VECTOR};
+use super::common::{load_idt, Idt, IdtEntry, DF_VECTOR, GLOBAL_IDT, HV_VECTOR, VC_VECTOR};
 use crate::address::VirtAddr;
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
@@ -49,6 +49,10 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
             );
         }
         VC_VECTOR => stage2_handle_vc_exception(ctx),
+        HV_VECTOR =>
+            // #HV does not require processing during stage 2 and can be
+        // completely ignored.
+            {}
         _ => {
             let err = ctx.error_code;
             let vec = ctx.vector;

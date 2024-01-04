@@ -77,3 +77,4 @@ enum {
 };
 
 #define SevFeature_Snp          0x0001
+#define SevFeature_RestrictInj	0x0008

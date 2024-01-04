@@ -359,7 +359,7 @@ void generate_initial_vmsa(SEV_VMSA *vmsa)
     vmsa->rip = 0x10000;
     vmsa->rsp = vmsa->rip - sizeof(Stage2Stack);
 
-    vmsa->sev_features = SevFeature_Snp;
+    vmsa->sev_features = SevFeature_Snp | SevFeature_RestrictInj;
 }
 
 void setup_igvm_platform_header(void)

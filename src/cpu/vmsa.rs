@@ -138,4 +138,7 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {
 
     v.vmpl = GUEST_VMPL as u8;
     v.sev_features = read_msr(0xc0010131) >> 2;
+
+    // Ensure that guest VMSAs do not enable restricted injection.
+    v.sev_features &= !0b1000;
 }

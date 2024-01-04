@@ -30,7 +30,7 @@ pub const _AC_VECTOR: usize = 17;
 pub const _MCE_VECTOR: usize = 18;
 pub const _XF_VECTOR: usize = 19;
 pub const _CP_VECTOR: usize = 21;
-pub const _HV_VECTOR: usize = 28;
+pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
 pub const _SX_VECTOR: usize = 30;
 
