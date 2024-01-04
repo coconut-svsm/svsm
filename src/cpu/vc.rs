@@ -183,7 +183,7 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Instruction) {
-    ctx.frame.rip += insn.length;
+    ctx.frame.rip += insn.len()
 }
 
 fn handle_ioio(
@@ -194,7 +194,7 @@ fn handle_ioio(
     let port: u16 = (ctx.regs.rdx & 0xffff) as u16;
     let out_value: u64 = ctx.regs.rax as u64;
 
-    match insn.opcode.bytes[0] {
+    match insn.opcode[0] {
         0x6C..=0x6F | 0xE4..=0xE7 => Err(SvsmError::Vc(VcError {
             rip: ctx.frame.rip,
             code: ctx.error_code,
