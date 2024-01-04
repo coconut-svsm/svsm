@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::alloc::{Allocator, TryAllocError};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
@@ -12,7 +13,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_down, align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
-use core::ptr;
+use core::ptr::{self, NonNull};
 
 #[cfg(any(test, fuzzing))]
 use crate::locking::LockGuard;
@@ -1549,6 +1550,30 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             _ => {
                 panic!("Freeing memory on unsupported page type");
             }
+        }
+    }
+}
+
+unsafe impl Allocator for SvsmAllocator {
+    fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, TryAllocError> {
+        match layout.size() {
+            0 => Ok(NonNull::slice_from_raw_parts(NonNull::dangling(), 0)),
+            size => {
+                // SAFETY: size is nonzero
+                let raw_ptr = unsafe { self.alloc(layout) };
+                // FIXME: find a way to return a more correct error here. At
+                // some point we must reconcile AllocError and TryAllocError.
+                let ptr = NonNull::new(raw_ptr).ok_or(TryAllocError::OutOfMemory)?;
+                Ok(NonNull::slice_from_raw_parts(ptr, size))
+            }
+        }
+    }
+
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        // SAFETY: `layout` is non-zero in size,
+        // other conditions must be upheld by the caller
+        if layout.size() != 0 {
+            self.dealloc(ptr.as_ptr(), layout)
         }
     }
 }
