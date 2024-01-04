@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use crate::address::PhysAddr;
+use crate::config::SvsmConfig;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::error::SvsmError;
 use crate::kernel_region::new_kernel_region;
@@ -258,6 +259,12 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
 
     // Search and parse SEV metadata
     parse_sev_meta(&mut meta_data, raw_meta, raw_data)?;
+
+    // Verify that the required elements are present.
+    if meta_data.cpuid_page.is_none() {
+        panic!("FW does not specify CPUID_PAGE location");
+    }
+
     Ok(meta_data)
 }
 
@@ -362,21 +369,26 @@ fn parse_sev_meta(
     Ok(())
 }
 
-fn validate_fw_mem_region(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+fn validate_fw_mem_region(
+    config: &SvsmConfig,
+    region: MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
     let pstart = region.start();
     let pend = region.end();
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
-    this_cpu_mut()
-        .ghcb()
-        .page_state_change(
-            pstart,
-            pend,
-            PageSize::Regular,
-            PageStateChangeOp::PscPrivate,
-        )
-        .expect("GHCB PSC call failed to validate firmware memory");
+    if config.page_state_change_required() {
+        this_cpu_mut()
+            .ghcb()
+            .page_state_change(
+                pstart,
+                pend,
+                PageSize::Regular,
+                PageStateChangeOp::PscPrivate,
+            )
+            .expect("GHCB PSC call failed to validate firmware memory");
+    }
 
     for paddr in region.iter_pages(PageSize::Regular) {
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
@@ -397,7 +409,10 @@ fn validate_fw_mem_region(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmErro
     Ok(())
 }
 
-fn validate_fw_memory_vec(regions: Vec<MemoryRegion<PhysAddr>>) -> Result<(), SvsmError> {
+fn validate_fw_memory_vec(
+    config: &SvsmConfig,
+    regions: Vec<MemoryRegion<PhysAddr>>,
+) -> Result<(), SvsmError> {
     if regions.is_empty() {
         return Ok(());
     }
@@ -413,11 +428,12 @@ fn validate_fw_memory_vec(regions: Vec<MemoryRegion<PhysAddr>>) -> Result<(), Sv
         }
     }
 
-    validate_fw_mem_region(region)?;
-    validate_fw_memory_vec(next_vec)
+    validate_fw_mem_region(config, region)?;
+    validate_fw_memory_vec(config, next_vec)
 }
 
 pub fn validate_fw_memory(
+    config: &SvsmConfig,
     fw_meta: &SevFWMetaData,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
@@ -449,7 +465,7 @@ pub fn validate_fw_memory(
         }
     }
 
-    validate_fw_memory_vec(regions)
+    validate_fw_memory_vec(config, regions)
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {

@@ -10,6 +10,7 @@ use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
+use crate::fw_meta::SevFWMetaData;
 use crate::igvm_params::IgvmParams;
 use crate::mm::{PAGE_SIZE, SIZE_1G};
 use crate::serial::SERIAL_PORT;
@@ -73,12 +74,19 @@ impl<'a> SvsmConfig<'a> {
         }
     }
 
-    pub fn get_fw_metadata(&self) -> Option<PhysAddr> {
+    pub fn get_fw_metadata_address(&self) -> Option<PhysAddr> {
         match self {
             SvsmConfig::FirmwareConfig(_) => {
                 // The metadata location always starts at 32 bytes below 4GB
                 Some(PhysAddr::from((4 * SIZE_1G) - PAGE_SIZE))
             }
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_fw_metadata_address(),
+        }
+    }
+
+    pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => None,
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_fw_metadata(),
         }
     }

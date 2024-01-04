@@ -42,7 +42,7 @@ pub struct IgvmParamBlock {
     /// The guest physical address of the CPUID page.
     pub cpuid_page: u32,
 
-    /// The guest physical address of the secrets page.
+    /// The guest physical address of the SVSM secrets page.
     pub secrets_page: u32,
 
     /// The port number of the serial port to use for debugging.
@@ -66,6 +66,14 @@ pub struct IgvmParamBlock {
     /// a firmware range has been provided then the firmware is launched
     /// without parsing any metadata.
     pub fw_metadata: u32,
+
+    /// The guest physical address at which the firmware expects to find the
+    /// secrets page.
+    pub fw_secrets_page: u32,
+
+    /// The guest physical address at which the firmware expects to find the
+    /// calling area page.
+    pub fw_caa_page: u32,
 
     _reserved2: u32,
 

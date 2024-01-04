@@ -10,6 +10,7 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::error::SvsmError::Firmware;
+use crate::fw_meta::SevFWMetaData;
 use crate::mm::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 use alloc::vec;
@@ -141,11 +142,33 @@ impl IgvmParams<'_> {
         self.igvm_param_block.debug_serial_port
     }
 
-    pub fn get_fw_metadata(&self) -> Option<PhysAddr> {
+    pub fn get_fw_metadata_address(&self) -> Option<PhysAddr> {
         if !self.should_launch_fw() || self.igvm_param_block.fw_metadata == 0 {
             None
         } else {
             Some(PhysAddr::from(self.igvm_param_block.fw_metadata as u64))
+        }
+    }
+
+    pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
+        if !self.should_launch_fw() {
+            None
+        } else {
+            let mut fw_meta = SevFWMetaData::new();
+
+            if self.igvm_param_block.fw_caa_page != 0 {
+                fw_meta.caa_page = Some(PhysAddr::new(
+                    self.igvm_param_block.fw_caa_page.try_into().unwrap(),
+                ));
+            }
+
+            if self.igvm_param_block.fw_secrets_page != 0 {
+                fw_meta.secrets_page = Some(PhysAddr::new(
+                    self.igvm_param_block.fw_secrets_page.try_into().unwrap(),
+                ));
+            }
+
+            Some(fw_meta)
         }
     }
 
