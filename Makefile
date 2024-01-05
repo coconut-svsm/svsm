@@ -36,7 +36,7 @@ all: stage1/kernel.elf svsm.bin igvm
 
 igvm: $(IGVM_FILES)
 
-$(IGVMBLD): igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/ovmfmeta.h igvmbld/igvm_defs.h igvmbld/sev-snp.h
+$(IGVMBLD): igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/igvmbld.h igvmbld/igvm_defs.h igvmbld/sev-snp.h
 	mkdir -v -p bin
 	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c igvmbld/ovmfmeta.c
 

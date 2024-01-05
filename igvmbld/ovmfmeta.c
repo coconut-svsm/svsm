@@ -5,16 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
-#include "ovmfmeta.h"
-#include "igvm_defs.h"
-#include <stdio.h>
+#include "igvmbld.h"
 #include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <byteswap.h>
-#include <stdint.h>
-#include <string.h>
 
 #define UUID_FMT "%02hhx%02hhx%02hhx%02hhx-" \
     "%02hhx%02hhx-%02hhx%02hhx-" \
@@ -133,7 +127,7 @@ static void parse_sev_meta_data(void *data, uint8_t *buffer, size_t size, IgvmPa
                     exit(1);
                 }
                 params->firmware.prevalidated[entry].base = meta->descs[i].base;
-                params->firmware.prevalidated[entry].len = meta->descs[i].len;
+                params->firmware.prevalidated[entry].size = meta->descs[i].len;
                 ++params->firmware.prevalidated_count;
                 break;
             }

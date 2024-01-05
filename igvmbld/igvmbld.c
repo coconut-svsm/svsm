@@ -9,18 +9,7 @@
 // maintained until the Rust version is ready.
 //
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <unistd.h>
-#include "sev-snp.h"
-#include "igvm_defs.h"
-#include "ovmfmeta.h"
-
-#define PAGE_SIZE 0x1000
-
-#define FIELD_OFFSET(type, field) ((int)((uint8_t *)&((type *)NULL)->field - (uint8_t *)NULL))
+#include "igvmbld.h"
 
 typedef struct {
     uint32_t cpu_count;
@@ -905,7 +894,7 @@ static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
     for (i = 0; i < igvm_parameter_block->firmware.prevalidated_count; ++i)
     {
         printf("    prevalidated[%d].base: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].base);
-        printf("    prevalidated[%d].len: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].len);
+        printf("    prevalidated[%d].size: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].size);
     }
 }
 
