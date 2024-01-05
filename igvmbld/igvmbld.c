@@ -88,19 +88,20 @@ uint32_t total_file_size;
 
 static uint32_t _crc;
 
-static uint32_t crc32b_init() {
+static void crc32b_init() {
     _crc = 0xffffffff;
 }
 
 static void crc32b_update(uint8_t *message, uint32_t len) {
-   int32_t i, j;
+   uint32_t i;
+   int32_t j;
    uint32_t byte, mask;
 
    for (i = 0; i < len; ++i) {
       byte = message[i];
       _crc = _crc ^ byte;
       for (j = 7; j >= 0; --j) {
-         mask = -(_crc & 1);
+         mask = 0 - (_crc & 1);
          _crc = (_crc >> 1) ^ (0xedb88320 & mask);
       }
    }
