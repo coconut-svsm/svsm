@@ -17,7 +17,11 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, WRITER};
+
+#[cfg(feature = "enable-console-log")]
+use svsm::console::init_console;
+
+use svsm::console::WRITER;
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
@@ -118,7 +122,10 @@ fn setup_env(config: &SvsmConfig<'_>) {
         .expect("console serial output already configured");
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
-    init_console();
+    #[cfg(feature = "enable-console-log")]
+    {
+        init_console();
+    }
     install_buffer_logger("Stage2");
 
     // Console is fully working now and any unsupported configuration can be

@@ -36,8 +36,10 @@ test.workspace = true
 
 [features]
 default = []
+default-debug = ["enable-console-log"]
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 fuzzing-hooks = []
+enable-console-log = []
 
 [dev-dependencies]
 memoffset.workspace = true

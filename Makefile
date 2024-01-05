@@ -1,11 +1,12 @@
+ifdef RELEASE
+TARGET_PATH="release"
 FEATURES ?= "default"
 SVSM_ARGS = --features ${FEATURES}
-
-ifdef RELEASE
-TARGET_PATH=release
 CARGO_ARGS += --release
 else
-TARGET_PATH=debug
+TARGET_PATH="debug"
+FEATURES ?= "default-debug"
+SVSM_ARGS = --features ${FEATURES}
 endif
 
 ifdef OFFLINE

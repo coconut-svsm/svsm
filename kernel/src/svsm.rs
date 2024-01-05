@@ -18,7 +18,11 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, WRITER};
+
+#[cfg(feature = "enable-console-log")]
+use svsm::console::init_console;
+
+use svsm::console::WRITER;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::efer::efer_init;
@@ -360,7 +364,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, mi: &MigrateInfo) {
         .expect("console serial output already configured");
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
-    init_console();
+    #[cfg(feature = "enable-console-log")]
+    {
+        init_console();
+    }
     install_buffer_logger("SVSM");
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
