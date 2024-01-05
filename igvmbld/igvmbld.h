@@ -50,4 +50,45 @@ typedef struct {
     uint64_t vtom;
 } IgvmParamBlock;
 
+typedef enum {
+    parameter_page_general = 0,
+    parameter_page_memory_map,
+    num_parameter_pages,
+} ParameterPageIndex;
+
+typedef struct _igvm_vhs {
+    struct _igvm_vhs *next;
+    IGVM_VHT header_type;
+    uint32_t header_size;
+    void *data;
+} IGVM_VHS;
+
+typedef struct _data_obj {
+    struct _data_obj *next;
+    void *data;
+    uint64_t address;
+    uint32_t size;
+    uint16_t page_type;
+    uint16_t data_type;
+    uint32_t page_data_flags;
+    IGVM_VHS_PAGE_DATA *page_data_headers;
+} DATA_OBJ;
+
+typedef struct {
+    IgvmParamBlockFwInfo fw_info;
+    uint64_t vtom;
+    DATA_OBJ *guest_context;
+} FirmwareIgvmInfo;
+
+IGVM_VHS *allocate_var_headers(
+    IGVM_VHT header_type,
+    uint32_t struct_size,
+    uint32_t header_size,
+    int count);
+
+DATA_OBJ *construct_empty_data_object(uint64_t address, uint32_t size);
+DATA_OBJ *construct_mem_data_object(uint64_t address, uint32_t size);
+
+int read_hyperv_igvm_file(const char *file_name, FirmwareIgvmInfo *fw_info);
+
 int parse_ovmf_metadata(const char *ovmf_filename, IgvmParamBlock *params);
