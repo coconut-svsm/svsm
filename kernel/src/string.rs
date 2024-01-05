@@ -36,6 +36,14 @@ impl<const T: usize> FixedString<T> {
     pub fn length(&self) -> usize {
         self.len
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = char> + '_ {
+        self.data.iter().take(self.len).copied()
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
+    }
 }
 
 impl<const N: usize> From<[u8; N]> for FixedString<N> {

@@ -46,3 +46,4 @@ pub const GUEST_VMPL: usize = 2;
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);
 
 pub const MAX_CPUS: usize = 512;
+pub const LINE_BUFFER_SIZE: usize = 256;

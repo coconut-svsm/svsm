@@ -27,6 +27,7 @@ pub mod igvm_params;
 pub mod io;
 pub mod kernel_region;
 pub mod locking;
+pub mod log_buffer;
 pub mod mm;
 pub mod protocols;
 pub mod requests;
