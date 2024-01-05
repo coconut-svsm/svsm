@@ -135,19 +135,11 @@ impl IgvmParams<'_> {
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        self.igvm_param_block.fw_size != 0
+        self.igvm_param_block.firmware.size != 0
     }
 
     pub fn debug_serial_port(&self) -> u16 {
         self.igvm_param_block.debug_serial_port
-    }
-
-    pub fn get_fw_metadata_address(&self) -> Option<PhysAddr> {
-        if !self.should_launch_fw() || self.igvm_param_block.fw_metadata == 0 {
-            None
-        } else {
-            Some(PhysAddr::from(self.igvm_param_block.fw_metadata as u64))
-        }
     }
 
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
@@ -156,15 +148,50 @@ impl IgvmParams<'_> {
         } else {
             let mut fw_meta = SevFWMetaData::new();
 
-            if self.igvm_param_block.fw_caa_page != 0 {
+            if self.igvm_param_block.firmware.caa_page != 0 {
                 fw_meta.caa_page = Some(PhysAddr::new(
-                    self.igvm_param_block.fw_caa_page.try_into().unwrap(),
+                    self.igvm_param_block.firmware.caa_page.try_into().unwrap(),
                 ));
             }
 
-            if self.igvm_param_block.fw_secrets_page != 0 {
+            if self.igvm_param_block.firmware.secrets_page != 0 {
                 fw_meta.secrets_page = Some(PhysAddr::new(
-                    self.igvm_param_block.fw_secrets_page.try_into().unwrap(),
+                    self.igvm_param_block
+                        .firmware
+                        .secrets_page
+                        .try_into()
+                        .unwrap(),
+                ));
+            }
+
+            if self.igvm_param_block.firmware.cpuid_page != 0 {
+                fw_meta.cpuid_page = Some(PhysAddr::new(
+                    self.igvm_param_block
+                        .firmware
+                        .cpuid_page
+                        .try_into()
+                        .unwrap(),
+                ));
+            }
+
+            for preval in 0..self.igvm_param_block.firmware.prevalidated_count as usize {
+                let base = PhysAddr::new(
+                    self.igvm_param_block.firmware.prevalidated[preval]
+                        .base
+                        .try_into()
+                        .unwrap(),
+                );
+                let size = self.igvm_param_block.firmware.prevalidated[preval].size as usize;
+                fw_meta.add_valid_mem(base, size);
+            }
+
+            if self.igvm_param_block.firmware.reset_addr != 0 {
+                fw_meta.reset_ip = Some(PhysAddr::new(
+                    self.igvm_param_block
+                        .firmware
+                        .reset_addr
+                        .try_into()
+                        .unwrap(),
                 ));
             }
 
@@ -177,8 +204,8 @@ impl IgvmParams<'_> {
             Err(Firmware)
         } else {
             Ok(vec![MemoryRegion::new(
-                PhysAddr::new(self.igvm_param_block.fw_start as usize),
-                self.igvm_param_block.fw_size as usize,
+                PhysAddr::new(self.igvm_param_block.firmware.start as usize),
+                self.igvm_param_block.firmware.size as usize,
             )])
         }
     }
