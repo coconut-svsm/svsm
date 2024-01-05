@@ -47,6 +47,10 @@ impl LogBuffer {
     }
 }
 
+pub fn migrate_log_buffer(log_buf: &SpinLock<LogBuffer>) {
+    unsafe { LB.lock().migrate(log_buf) };
+}
+
 static mut LB: SpinLock<LogBuffer> = SpinLock::new(LogBuffer::new());
 pub fn log_buffer() -> LockGuard<'static, LogBuffer> {
     // SAFETY: Mutation of the mutable LB global variable is via the
@@ -56,4 +60,8 @@ pub fn log_buffer() -> LockGuard<'static, LogBuffer> {
     // by the returned `[LockGuard]` is safe for the same reason, meaning
     // this function does not need to be marked unsafe.
     unsafe { LB.lock() }
+}
+
+pub fn get_lb() -> &'static SpinLock<LogBuffer> {
+    unsafe { &LB }
 }

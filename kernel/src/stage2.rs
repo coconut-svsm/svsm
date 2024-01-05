@@ -17,15 +17,18 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, install_console_logger, WRITER};
+use svsm::console::{init_console, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
+use svsm::cpu::line_buffer::install_buffer_logger;
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
+use svsm::log_buffer::get_lb;
+use svsm::migrate::MigrateInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::pagetable::{
@@ -89,7 +92,6 @@ fn setup_env(config: &SvsmConfig<'_>) {
     gdt().load();
     early_idt_init_no_ghcb();
 
-    install_console_logger("Stage2");
     init_kernel_mapping_info(
         VirtAddr::null(),
         VirtAddr::from(640 * 1024usize),
@@ -117,6 +119,7 @@ fn setup_env(config: &SvsmConfig<'_>) {
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
+    install_buffer_logger("Stage2");
 
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
@@ -357,6 +360,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 
     let kernel_entry = kernel_elf.get_entry(kernel_vaddr_alloc_base);
     let valid_bitmap = valid_bitmap_addr();
+    let migrate_info = MigrateInfo::new(VirtAddr::from(valid_bitmap.bits()), get_lb());
 
     // Shut down the GHCB
     shutdown_percpu();
@@ -365,7 +369,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         asm!("jmp *%rax",
              in("rax") kernel_entry,
              in("r8") &launch_info,
-             in("r9") valid_bitmap.bits(),
+             in("r9") &migrate_info,
              options(att_syntax))
     };
 
