@@ -44,8 +44,8 @@ use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
-use svsm::sev::sev_status_init;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
+use svsm::sev::{init_hypervisor_ghcb_features, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
@@ -418,6 +418,8 @@ pub extern "C" fn svsm_main() {
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
+
+    init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
 
     let launch_info = &*LAUNCH_INFO;
     let config = if launch_info.igvm_params_virt_addr != 0 {

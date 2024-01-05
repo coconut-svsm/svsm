@@ -12,6 +12,7 @@ pub mod vmsa;
 
 pub mod utils;
 
+pub use msr_protocol::init_hypervisor_ghcb_features;
 pub use status::sev_status_init;
 pub use status::sev_status_verify;
 pub use status::{sev_es_enabled, sev_snp_enabled};
