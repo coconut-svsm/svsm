@@ -13,6 +13,7 @@ pub mod gdt;
 pub mod ghcb;
 pub mod idt;
 pub mod insn;
+pub mod line_buffer;
 pub mod msr;
 pub mod percpu;
 pub mod registers;

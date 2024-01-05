@@ -9,6 +9,7 @@ extern crate alloc;
 use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::line_buffer::LineBuffer;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
@@ -265,6 +266,7 @@ pub struct PerCpu {
     // The borrow count tuple holds (total, mutable) borrow counts.
     #[cfg(debug_assertions)]
     borrow_count: (usize, usize),
+    ln_buf: LineBuffer,
 }
 
 impl PerCpu {
@@ -291,6 +293,7 @@ impl PerCpu {
             // borrow is active at the time of construction.
             #[cfg(debug_assertions)]
             borrow_count: (0, 0),
+            ln_buf: LineBuffer::new(),
         }
     }
 
@@ -640,6 +643,10 @@ impl PerCpu {
     pub fn runqueue(&self) -> &RWLock<RunQueue> {
         &self.runqueue
     }
+
+    pub fn get_line_buffer(&mut self) -> &mut LineBuffer {
+        &mut self.ln_buf
+    }
 }
 
 /// # Safety
@@ -705,6 +712,14 @@ pub fn this_cpu_mut() -> CpuRefMut {
             (*cpu).borrow_count.1 += 1;
         }
         CpuRefMut { cpu: &mut *cpu }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub fn is_cpu_borrowed() -> bool {
+    unsafe {
+        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
+        (*cpu).borrow_count.0 != 0 || (*cpu).borrow_count.1 != 0
     }
 }
 
