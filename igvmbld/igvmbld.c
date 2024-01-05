@@ -131,13 +131,26 @@ DATA_OBJ *insert_data_object(DATA_OBJ *data_object)
 
 DATA_OBJ *allocate_data_object(uint64_t address, uint32_t size, uint32_t data_size)
 {
+    uint32_t allocation_size;
     DATA_OBJ *data_object;
 
     data_object = malloc(sizeof(DATA_OBJ));
     data_object->address = address;
     data_object->size = size;
     if (data_size != 0)
-        data_object->data = malloc(data_size);
+    {
+        // Make sure the allocation is rounded up to a page boundary because
+        // the data will be written in multiples of pages.
+        allocation_size = (data_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        data_object->data = malloc(allocation_size);
+
+        // Zero-initialize any allocation padding to sure that it is zero in
+        // the final file.
+        if (allocation_size != data_size)
+        {
+            memset((uint8_t *)data_object->data, data_size, allocation_size - data_size);
+        }
+    }
     else
         data_object->data = NULL;
     data_object->data_type = IGVM_VHT_PAGE_DATA;
