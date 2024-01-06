@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
+use crate::sev::status::{sev_flags, SEVStatusFlags};
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
 use cpuarch::vmsa::{VMSASegment, VMSA};
 
@@ -12,7 +13,6 @@ use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
 use super::gdt;
 use super::idt::common::idt;
-use super::msr::read_msr;
 
 fn svsm_code_segment() -> VMSASegment {
     VMSASegment {
@@ -77,7 +77,7 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
     vmsa.x87_fcw = 0x0040;
     vmsa.vmpl = 0;
 
-    vmsa.sev_features = read_msr(0xc0010131) >> 2;
+    vmsa.sev_features = sev_flags().as_sev_features();
 }
 
 fn real_mode_code_segment(rip: u64) -> VMSASegment {
@@ -137,8 +137,10 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {
     v.x87_fcw = 0x0040;
 
     v.vmpl = GUEST_VMPL as u8;
-    v.sev_features = read_msr(0xc0010131) >> 2;
+
+    let mut sev_status = sev_flags();
 
     // Ensure that guest VMSAs do not enable restricted injection.
-    v.sev_features &= !0b1000;
+    sev_status.remove(SEVStatusFlags::REST_INJ);
+    v.sev_features = sev_status.as_sev_features();
 }
