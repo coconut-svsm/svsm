@@ -50,7 +50,8 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
-        cpu.register_ghcb()
+        cpu.register_ghcb()?;
+        Ok(())
     }
 
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {

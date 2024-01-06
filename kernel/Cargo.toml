@@ -24,6 +24,7 @@ elf.workspace = true
 syscall.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
+bitfield-struct.workspace = true
 bitflags.workspace = true
 gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }

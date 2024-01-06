@@ -127,6 +127,7 @@ impl GHCBExitCode {
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
     pub const AP_CREATE: u64 = 0x80000013;
+    pub const HV_DOORBELL: u64 = 0x8000_0014;
     pub const RUN_VMPL: u64 = 0x80000018;
 }
 
@@ -516,6 +517,12 @@ impl GHCB {
         let exit_info_2: u64 = vmsa_gpa.into();
         self.set_rax_valid(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
+    }
+
+    pub fn register_hv_doorbell(&mut self, paddr: PhysAddr) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::HV_DOORBELL, 1, u64::from(paddr))?;
         Ok(())
     }
 
