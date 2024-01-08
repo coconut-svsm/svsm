@@ -206,11 +206,9 @@ fn handle_ioio(
             Ok(())
         }
         0xED => {
-            let (size, mask) = if insn.prefixes.nb_bytes > 0 {
-                // inw instruction has a 0x66 operand-size prefix for word-sized operands
-                (GHCBIOSize::Size16, u16::MAX as u64)
-            } else {
-                (GHCBIOSize::Size32, u32::MAX as u64)
+            let (size, mask) = match insn.prefixes {
+                Some(prefix) if prefix.nb_bytes > 0 => (GHCBIOSize::Size16, u16::MAX as u64),
+                _ => (GHCBIOSize::Size32, u32::MAX as u64),
             };
 
             let ret = ghcb.ioio_in(port, size)?;
@@ -220,9 +218,12 @@ fn handle_ioio(
         0xEE => ghcb.ioio_out(port, GHCBIOSize::Size8, out_value),
         0xEF => {
             let mut size: GHCBIOSize = GHCBIOSize::Size32;
-            if insn.prefixes.nb_bytes > 0 {
-                // outw instruction has a 0x66 operand-size prefix for word-sized operands.
-                size = GHCBIOSize::Size16;
+            if let Some(prefix) = insn.prefixes {
+                // this is always true at the moment
+                if prefix.nb_bytes > 0 {
+                    // outw instruction has a 0x66 operand-size prefix for word-sized operands.
+                    size = GHCBIOSize::Size16;
+                }
             }
 
             ghcb.ioio_out(port, size, out_value)

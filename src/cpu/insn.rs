@@ -53,7 +53,7 @@ where
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Instruction {
-    pub prefixes: InsnBuffer<MAX_INSN_FIELD_SIZE>,
+    pub prefixes: Option<InsnBuffer<MAX_INSN_FIELD_SIZE>>,
     pub insn_bytes: InsnBuffer<MAX_INSN_SIZE>,
     pub opcode: InsnBuffer<MAX_INSN_FIELD_SIZE>,
     pub opnd_bytes: usize,
@@ -62,7 +62,7 @@ pub struct Instruction {
 impl Instruction {
     pub fn new(insn_bytes: [u8; MAX_INSN_SIZE]) -> Self {
         Self {
-            prefixes: InsnBuffer::new(insn_bytes[..MAX_INSN_FIELD_SIZE].try_into().unwrap(), 0),
+            prefixes: None,
             opcode: InsnBuffer::default(), // we'll copy content later
             insn_bytes: InsnBuffer::new(insn_bytes, 0),
             opnd_bytes: 4,
@@ -87,13 +87,19 @@ impl Instruction {
             0x66 => {
                 if self.insn_bytes[1] == 0xED || self.insn_bytes[1] == 0xEF {
                     // for prefix length
-                    self.prefixes.nb_bytes = 1;
+                    self.prefixes = Some(InsnBuffer::new(
+                        self.insn_bytes.buf[..MAX_INSN_FIELD_SIZE]
+                            .try_into()
+                            .unwrap(),
+                        1,
+                    ));
 
                     // for {in, out}w opcode length
                     self.opcode.nb_bytes = 1;
                     self.opcode[0] = self.insn_bytes[1];
 
-                    self.insn_bytes.nb_bytes = self.prefixes.nb_bytes + self.opcode.nb_bytes;
+                    self.insn_bytes.nb_bytes =
+                        self.prefixes.unwrap().nb_bytes + self.opcode.nb_bytes;
                     self.opnd_bytes = 2;
                     return Ok(());
                 }
@@ -106,8 +112,6 @@ impl Instruction {
             }
             // inb and oub register opcodes
             0xEC | 0xEE => {
-                self.prefixes.nb_bytes = 0;
-
                 self.opcode.nb_bytes = 1;
                 self.opcode[0] = self.insn_bytes[0];
 
@@ -117,8 +121,6 @@ impl Instruction {
             }
             // inl and outl register opcodes
             0xED | 0xEF => {
-                self.prefixes.nb_bytes = 0;
-
                 self.opcode.nb_bytes = 1;
                 self.opcode[0] = self.insn_bytes[0];
 
@@ -130,8 +132,6 @@ impl Instruction {
             0x0F => {
                 // CPUID opcode
                 if self.insn_bytes[1] == 0xA2 {
-                    self.prefixes.nb_bytes = 0;
-
                     self.opcode.nb_bytes = 2;
                     let opcode_len = self.opcode.nb_bytes;
                     self.opcode.buf[..opcode_len]
@@ -179,10 +179,10 @@ mod tests {
         insn.decode().unwrap();
 
         let target = Instruction {
-            prefixes: InsnBuffer {
+            prefixes: Some(InsnBuffer {
                 buf: [0x66, 0xED, 0x41],
                 nb_bytes: 1,
-            },
+            }),
             insn_bytes: InsnBuffer {
                 buf: raw_insn,
                 nb_bytes: 2,
@@ -208,10 +208,7 @@ mod tests {
         insn.decode().unwrap();
 
         let target = Instruction {
-            prefixes: InsnBuffer {
-                buf: [0xEE, 0x41, 0x41],
-                nb_bytes: 0,
-            },
+            prefixes: None,
             insn_bytes: InsnBuffer {
                 buf: raw_insn,
                 nb_bytes: 1,
@@ -237,10 +234,7 @@ mod tests {
         insn.decode().unwrap();
 
         let target = Instruction {
-            prefixes: InsnBuffer {
-                buf: [0xEF, 0x41, 0x41],
-                nb_bytes: 0,
-            },
+            prefixes: None,
             insn_bytes: InsnBuffer {
                 buf: raw_insn,
                 nb_bytes: 1,
@@ -266,10 +260,7 @@ mod tests {
         insn.decode().unwrap();
 
         let target = Instruction {
-            prefixes: InsnBuffer {
-                buf: [0x0F, 0xA2, 0x41],
-                nb_bytes: 0,
-            },
+            prefixes: None,
             insn_bytes: InsnBuffer {
                 buf: raw_insn,
                 nb_bytes: 2,
