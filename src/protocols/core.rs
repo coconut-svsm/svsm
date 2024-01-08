@@ -343,7 +343,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let pending = GuestPtr::<u64>::new(vaddr);
     pending.write(0)?;
 
-    this_cpu_mut().update_guest_caa(gpa);
+    this_cpu_mut().shared.update_guest_caa(gpa);
 
     Ok(())
 }

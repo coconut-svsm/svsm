@@ -195,7 +195,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     let cpu = this_cpu_mut();
 
     if let Some(caa) = fw_meta.caa_page {
-        cpu.update_guest_caa(caa);
+        cpu.shared.update_guest_caa(caa);
     }
 
     cpu.alloc_guest_vmsa()?;
