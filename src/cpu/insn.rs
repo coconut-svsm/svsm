@@ -14,12 +14,19 @@ use core::ops::{Index, IndexMut};
 pub const MAX_INSN_SIZE: usize = 15;
 pub const MAX_INSN_FIELD_SIZE: usize = 3;
 
+/// A common structure shared by different fields of an
+/// [`Instruction`] struct.
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 pub struct InsnBuffer<const N: usize>
 where
     [u8; N]: Default,
 {
+    /// Internal buffer of constant size `N`.
     pub buf: [u8; N],
+    /// Number of useful bytes to be taken from `buf`.
+    /// if `nb_bytes = 0`, the corresponding structure has
+    /// no useful information. Otherwise, only `self.buf[..self.nb_bytes]`
+    /// is useful.
     pub nb_bytes: usize,
 }
 
@@ -51,11 +58,18 @@ where
     }
 }
 
+/// A view of an x86 instruction.
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub struct Instruction {
+    /// Optional x86 instruction prefixes.
     pub prefixes: Option<InsnBuffer<MAX_INSN_FIELD_SIZE>>,
+    /// Raw bytes copied from rip location.
+    /// After decoding, `self.insn_bytes.nb_bytes` is adjusted
+    /// to the total len of the instruction, prefix included.
     pub insn_bytes: InsnBuffer<MAX_INSN_SIZE>,
+    /// Mandatory opcode.
     pub opcode: InsnBuffer<MAX_INSN_FIELD_SIZE>,
+    /// Operand size in bytes.
     pub opnd_bytes: usize,
 }
 
@@ -69,14 +83,30 @@ impl Instruction {
         }
     }
 
+    /// Returns the length of the instruction.
+    ///
+    /// # Returns:
+    ///
+    /// [`usize`]: The total size of an  instruction,
+    /// prefix included.
     pub fn len(&self) -> usize {
         self.insn_bytes.nb_bytes
     }
 
+    /// Returns true if the related [`Instruction`] can be considered empty.
     pub fn is_empty(&self) -> bool {
         self.insn_bytes.nb_bytes == 0
     }
 
+    /// Decode the instruction.
+    /// At the moment, the decoding is very naive since we only need to decode CPUID,
+    /// IN and OUT (without strings and immediate usage) instructions. A complete decoding
+    /// of the full x86 instruction set is still TODO.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<(), SvsmError>`]: A [`Result`] containing the empty
+    /// value on success, or an [`SvsmError`] on failure.
     pub fn decode(&mut self) -> Result<(), SvsmError> {
         /*
          * At this point, we only need to handle IOIO (without string and immediate versions)
@@ -156,6 +186,16 @@ impl Instruction {
     }
 }
 
+/// Copy the instruction bytes where rip points to.
+///
+/// # Arguments
+///
+/// rip: instruction pointer as [`*const u8`].
+///
+/// # Returns
+///
+/// [`[u8; MAX_INSN_SIZE]`]: the 15-byte buffer where rip points to.
+///
 /// # Safety
 ///
 ///  The caller should validate that `rip` is set to a valid address
