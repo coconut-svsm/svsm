@@ -128,6 +128,11 @@ pub fn request_loop() {
                 let cpu = this_cpu();
                 let mut vmsa_ref = cpu.guest_vmsa_ref();
                 let vmsa = vmsa_ref.vmsa();
+
+                // Update APIC interrupt emulation state if required.
+                cpu.update_apic_emulation(vmsa);
+
+                // Make VMSA runnable again by setting EFER.SVME
                 vmsa.enable();
             }
 

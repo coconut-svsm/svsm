@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use bitfield_struct::bitfield;
+
 // AE Exitcodes
 // Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
 #[repr(u64)]
@@ -41,6 +43,64 @@ pub enum GuestVMExit {
     #[default]
     INVALID = 0xffffffffffffffff,
     BUSY = 0xfffffffffffffffe,
+}
+
+#[bitfield(u64)]
+pub struct VIntrCtrl {
+    pub v_tpr: u8,
+    pub v_irq: bool,
+    pub vgif: bool,
+    pub int_shadow: bool,
+    pub v_nmi: bool,
+    pub v_nmi_mask: bool,
+    #[bits(3)]
+    _rsvd_15_13: u8,
+    #[bits(4)]
+    pub v_intr_prio: u8,
+    pub v_ign_tpr: bool,
+    #[bits(5)]
+    _rsvd_25_21: u8,
+    v_nmi_enable: bool,
+    #[bits(5)]
+    _rsvd_31_27: u8,
+    pub v_intr_vector: u8,
+    #[bits(23)]
+    _rsvd_62_40: u32,
+    busy: bool,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum VmsaEventType {
+    Interrupt = 0,
+    NMI = 2,
+    Exception = 3,
+    SoftwareInterrupt = 4,
+}
+
+impl VmsaEventType {
+    const fn into_bits(self) -> u64 {
+        self as _
+    }
+    const fn from_bits(value: u64) -> Self {
+        match value {
+            2 => Self::NMI,
+            3 => Self::Exception,
+            4 => Self::SoftwareInterrupt,
+            _ => Self::Interrupt,
+        }
+    }
+}
+
+#[bitfield(u64)]
+pub struct VmsaEventInject {
+    pub vector: u8,
+    #[bits(3)]
+    pub event_type: VmsaEventType,
+    pub error_code_valid: bool,
+    #[bits(19)]
+    _rsvd_30_12: u32,
+    pub valid: bool,
+    pub error_code: u32,
 }
 
 #[repr(C, packed)]
@@ -139,15 +199,15 @@ pub struct VMSA {
     pub reserved_380: [u8; 16],
     pub guest_exitinfo1: u64,
     pub guest_exitinfo2: u64,
-    pub guest_exitintinfo: u64,
+    pub guest_exitintinfo: VmsaEventInject,
     pub guest_nrip: u64,
     pub sev_features: u64,
-    pub vintr_ctrl: u64,
+    pub vintr_ctrl: VIntrCtrl,
     pub guest_exit_code: GuestVMExit,
     pub vtom: u64,
     pub tlb_id: u64,
     pub pcpu_id: u64,
-    pub event_inj: u64,
+    pub event_inj: VmsaEventInject,
     pub xcr0: u64,
     pub reserved_3f0: [u8; 16],
     pub x87_dp: u64,
