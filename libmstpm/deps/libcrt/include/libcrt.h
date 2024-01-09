@@ -20,7 +20,6 @@
 
 #define _Noreturn __attribute__((__noreturn__))
 
-#define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
 #define weak_alias(old, new) \
         extern __typeof(old) new __attribute__((__weak__, __alias__(#old)))
@@ -73,8 +72,10 @@
 // errno.h
 
 extern int errno;
+#define EINTR         4
 #define ENOMEM        12
 #define EINVAL        22
+#define ENOSYS        38
 #define EAFNOSUPPORT  47
 #define EOVERFLOW     75
 
@@ -146,6 +147,10 @@ uid_t geteuid(void);
 gid_t getgid(void);
 gid_t getegid(void);
 int issetugid(void);
+
+int getentropy(void *buffer, size_t length);
+long syscall(long number, ...);
+int usleep(unsigned usec);
 
 // stdio.h
 
@@ -361,6 +366,9 @@ size_t fread(void *, size_t, size_t, FILE *);
 size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
 int fprintf(FILE *, const char *, ...);
 int fputc(int c, FILE *f);
+
+int ferror(FILE *stream);
+int clearerr(FILE *stream);
 
 int vasprintf(char **s, const char *fmt, va_list ap);
 int asprintf(char **s, const char *fmt, ...);

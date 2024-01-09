@@ -91,7 +91,7 @@ $(OPENSSL_MAKEFILE):
 			no-sse2 \
 			no-ui-console \
 			no-asm \
-			--with-rand-seed=none \
+			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
 			-I$(LIBCRT_DIR)/include \
 			-Wl,rpath=$(LIBCRT_DIR) -lcrt)
@@ -104,7 +104,7 @@ $(LIBPLATFORM): $(MSTPM_MAKEFILE) $(LIBCRYPTO)
 	$(MAKE) -C $(MSTPM_DIR) $(LIBPLATFORM_A)
 
 MSTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse
-MSTPM_CFLAGS += -DSIMULATION=NO -DFILE_BACKED_NV=NO -DSELF_TEST=NO
+MSTPM_CFLAGS += -DSIMULATION=NO -DFILE_BACKED_NV=NO
 MSTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 MSTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 
