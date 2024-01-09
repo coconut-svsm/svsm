@@ -9,18 +9,7 @@
 // maintained until the Rust version is ready.
 //
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <unistd.h>
-#include "sev-snp.h"
-#include "igvm_defs.h"
-#include "ovmfmeta.h"
-
-#define PAGE_SIZE 0x1000
-
-#define FIELD_OFFSET(type, field) ((int)((uint8_t *)&((type *)NULL)->field - (uint8_t *)NULL))
+#include "igvmbld.h"
 
 typedef struct {
     uint32_t cpu_count;
@@ -36,33 +25,11 @@ typedef struct {
     uint32_t reserved;
 } Stage2Stack;
 
-typedef enum {
-    parameter_page_general = 0,
-    parameter_page_memory_map,
-} ParameterPageIndex;
-
-typedef struct _data_obj {
-    struct _data_obj *next;
-    void *data;
-    uint64_t address;
-    uint32_t size;
-    uint16_t page_type;
-    uint16_t data_type;
-    IGVM_VHS_PAGE_DATA *page_data_headers;
-} DATA_OBJ;
-
 typedef struct _param_page {
     struct _param_page *next;
     uint32_t address;
     ParameterPageIndex index;
 } PARAM_PAGE;
-
-typedef struct _igvm_vhs {
-    struct _igvm_vhs *next;
-    IGVM_VHT header_type;
-    uint32_t header_size;
-    void *data;
-} IGVM_VHS;
 
 const char *stage2_filename;
 const char *kernel_filename;
@@ -88,19 +55,20 @@ uint32_t total_file_size;
 
 static uint32_t _crc;
 
-static uint32_t crc32b_init() {
+static void crc32b_init() {
     _crc = 0xffffffff;
 }
 
 static void crc32b_update(uint8_t *message, uint32_t len) {
-   int32_t i, j;
+   uint32_t i;
+   int32_t j;
    uint32_t byte, mask;
 
    for (i = 0; i < len; ++i) {
       byte = message[i];
       _crc = _crc ^ byte;
       for (j = 7; j >= 0; --j) {
-         mask = -(_crc & 1);
+         mask = 0 - (_crc & 1);
          _crc = (_crc >> 1) ^ (0xedb88320 & mask);
       }
    }
@@ -130,17 +98,31 @@ DATA_OBJ *insert_data_object(DATA_OBJ *data_object)
 
 DATA_OBJ *allocate_data_object(uint64_t address, uint32_t size, uint32_t data_size)
 {
+    uint32_t allocation_size;
     DATA_OBJ *data_object;
 
     data_object = malloc(sizeof(DATA_OBJ));
     data_object->address = address;
     data_object->size = size;
     if (data_size != 0)
-        data_object->data = malloc(data_size);
+    {
+        // Make sure the allocation is rounded up to a page boundary because
+        // the data will be written in multiples of pages.
+        allocation_size = (data_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        data_object->data = malloc(allocation_size);
+
+        // Zero-initialize any allocation padding to sure that it is zero in
+        // the final file.
+        if (allocation_size != data_size)
+        {
+            memset((uint8_t *)data_object->data, data_size, allocation_size - data_size);
+        }
+    }
     else
         data_object->data = NULL;
     data_object->data_type = IGVM_VHT_PAGE_DATA;
     data_object->page_type = IgvmPageType_Normal;
+    data_object->page_data_flags = 0;
     return data_object;
 }
 
@@ -348,7 +330,7 @@ void generate_initial_vmsa(SEV_VMSA *vmsa)
     vmsa->sev_features = SevFeature_Snp | SevFeature_RestrictInj;
 }
 
-void setup_igvm_platform_header(void)
+IGVM_VHS_SUPPORTED_PLATFORM *setup_igvm_platform_header(void)
 {
     IGVM_VHS *header;
     IGVM_VHS_SUPPORTED_PLATFORM *platform;
@@ -369,9 +351,7 @@ void setup_igvm_platform_header(void)
     platform->PlatformType = IgvmPlatformType_SevSnp;
     platform->PlatformVersion = 1;
 
-    // Set the GPA boundary at bit 46, below the lowest possible C-bit
-    // position.
-    platform->SharedGpaBoundary = 0x0000400000000000;
+    return platform;
 }
 
 void generate_required_memory_header(IgvmParamBlock *igvm_parameter_block)
@@ -507,6 +487,7 @@ void generate_data_headers(void)
         {
             page_data[i].GPA = address;
             page_data[i].CompatibilityMask = 1;
+            page_data[i].Flags = data_obj->page_data_flags;
             address += PAGE_SIZE;            
         }
 
@@ -707,14 +688,7 @@ static int check_firmware_options()
         // OVMF firmware must be aligned with the top at 4GB.
         fw_base = 0xffffffff - fw_size + 1;
     }
-    else
-    {
-        if (fw_filename)
-        {
-            fprintf(stderr, "The --firmware parameter is not currently supported for Hyper-V\n");
-            return 1;
-        }
-    }
+
     return 0;
 }
 
@@ -891,7 +865,7 @@ static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
     for (i = 0; i < igvm_parameter_block->firmware.prevalidated_count; ++i)
     {
         printf("    prevalidated[%d].base: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].base);
-        printf("    prevalidated[%d].len: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].len);
+        printf("    prevalidated[%d].size: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].size);
     }
 }
 
@@ -901,12 +875,15 @@ int main(int argc, const char *argv[])
     DATA_OBJ *cpuid_page;
     int err;
     DATA_OBJ *filesystem_data;
+    FirmwareIgvmInfo fw_info;
     DATA_OBJ *igvm_parameter_object;
     IgvmParamBlock *igvm_parameter_block;
     DATA_OBJ *initial_stack;
     DATA_OBJ *kernel_data;
+    IGVM_VHS_SUPPORTED_PLATFORM *platform;
     DATA_OBJ *secrets_page;
     DATA_OBJ *stage2_data;
+    uint32_t stage2_top;
     Stage2Stack *stage2_stack;
     uint64_t vmsa_address;
     DATA_OBJ *vmsa_data;
@@ -923,7 +900,7 @@ int main(int argc, const char *argv[])
     var_hdr_offset = sizeof(IGVM_FIXED_HEADER);
 
     // Set up the platform compatibility header.
-    setup_igvm_platform_header();
+    platform = setup_igvm_platform_header();
 
     // Construct a set of ranges for the memory map:
     // 00000-0EFFF: zero-filled (must be pre-validated)
@@ -946,24 +923,50 @@ int main(int argc, const char *argv[])
         return 1;
     }
 
-    address = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
-              ~(PAGE_SIZE - 1);
-    if (address > 0x9F000)
+    stage2_top = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
+                 ~(PAGE_SIZE - 1);
+    if (stage2_top > 0x9F000)
     {
         fprintf(stderr, "stage 2 image is too large\n");
         return 1;
     }
-    else if (address < 0x9F000)
+    else if (stage2_top < 0x9F000)
     {
-        construct_empty_data_object(address, 0x9F000 - address);
+        construct_empty_data_object(stage2_top, 0x9F000 - stage2_top);
     }
 
     cpuid_page = construct_mem_data_object(0x9F000, 0x1000);
     cpuid_page->page_type = IgvmPageType_Cpuid;
     fill_cpuid_page((SNP_CPUID_PAGE *)cpuid_page->data);
 
-    // Load the kernel data at a base address of 1 MB.
+    // Plan to load the kernel image at a base address of 1 MB unless it must
+    // be relocated due to firmware.
     address = 1 << 20;
+
+    memset(&fw_info, 0, sizeof(FirmwareIgvmInfo));
+
+    // If a hyper-v firmware file was specified, then load it.
+    if (is_hyperv)
+    {
+        if (fw_filename != NULL)
+        {
+            if (is_hyperv)
+            {
+                err = read_hyperv_igvm_file(fw_filename, &fw_info);
+                if (err != 0)
+                {
+                    return err;
+                }
+
+                address = fw_info.fw_info.start + fw_info.fw_info.size;
+            }
+            else
+            {
+                fprintf(stderr, "--firmware only supported for hyperv targets\n");
+                return 1;
+            }
+        }
+    }
 
     // Construct a data object for the kernel.
     kernel_data = construct_file_data_object(kernel_filename, address);
@@ -1030,6 +1033,14 @@ int main(int argc, const char *argv[])
     construct_parameter_page(address, parameter_page_memory_map);
     address += PAGE_SIZE;
 
+    // If the firmware has supplied a guest context page, then assign it an address now.
+    if (fw_info.guest_context != NULL)
+    {
+        fw_info.guest_context->address = address;
+        igvm_parameter_block->guest_context_offset = address - (uint32_t)igvm_parameter_object->address;
+        address += fw_info.guest_context->size;
+    }
+
     // Populate the rest of the parameter block.
     igvm_parameter_block->param_area_size = address - (uint32_t)igvm_parameter_object->address;
     igvm_parameter_block->cpuid_page = (uint32_t)cpuid_page->address;
@@ -1046,6 +1057,27 @@ int main(int argc, const char *argv[])
         // as reserved.
         vmsa_address = igvm_parameter_block->kernel_base;
         igvm_parameter_block->kernel_reserved_size = 0x1000;
+
+        // Add additional information if firmware is being launched.
+        if (fw_info.fw_info.size != 0)
+        {
+            // Mark the range between the top of stage 2 and the base of
+            // memory as a range that needs to be validated.
+            fw_info.fw_info.prevalidated_count = 1;
+            fw_info.fw_info.prevalidated[0].base = stage2_top;
+            fw_info.fw_info.prevalidated[0].size = fw_info.fw_info.start - stage2_top;
+
+            igvm_parameter_block->firmware = fw_info.fw_info;
+            igvm_parameter_block->vtom = fw_info.vtom;
+        }
+        else
+        {
+            // Set the shared GPA boundary at bit 46, below the lowest possible
+            // C-bit position.
+            igvm_parameter_block->vtom = 0x0000400000000000;
+        }
+
+        platform->SharedGpaBoundary = igvm_parameter_block->vtom;
     }
     else
     {
@@ -1061,7 +1093,7 @@ int main(int argc, const char *argv[])
 
     // If a firmware file has been specified then add it and set the relevant 
     // parameter block entries.
-    if (fw_filename)
+    if (fw_filename && is_qemu)
     {
         igvm_parameter_block->firmware.size = fw_size;
         igvm_parameter_block->firmware.start = fw_base;

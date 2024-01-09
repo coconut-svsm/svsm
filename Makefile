@@ -36,9 +36,9 @@ all: stage1/kernel.elf svsm.bin igvm
 
 igvm: $(IGVM_FILES)
 
-$(IGVMBLD): igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/ovmfmeta.h igvmbld/igvm_defs.h igvmbld/sev-snp.h
+$(IGVMBLD): igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/igvmcopy.c igvmbld/igvmbld.h igvmbld/igvm_defs.h igvmbld/sev-snp.h
 	mkdir -v -p bin
-	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c igvmbld/ovmfmeta.c
+	$(CC) -o $@ -O -Iigvmbld igvmbld/igvmbld.c igvmbld/ovmfmeta.c igvmbld/igvmcopy.c
 
 bin/coconut-qemu.igvm: $(IGVMBLD) stage1/kernel.elf stage1/stage2.bin
 	$(IGVMBLD) --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --qemu ${BUILD_FW}

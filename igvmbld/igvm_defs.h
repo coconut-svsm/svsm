@@ -5,17 +5,19 @@
 // Author: Jon Lange (jlange@microsoft.com)
 #pragma once
 
-#include <stdint.h>
-
 typedef enum {
     IGVM_VHT_SUPPORTED_PLATFORM = 0x1,
+    IGVM_VHT_SNP_POLICY = 0x101,
     IGVM_VHT_PARAMETER_AREA = 0x301,
     IGVM_VHT_PAGE_DATA = 0x302,
     IGVM_VHT_PARAMETER_INSERT = 0x303,
     IGVM_VHT_VP_CONTEXT = 0x304,
     IGVM_VHT_REQUIRED_MEMORY = 0x305,
     IGVM_VHT_VP_COUNT_PARMETER = 0x307,
+    IGVM_VHT_SRAT = 0x308,
+    IGVM_VHT_MADT = 0x309,
     IGVM_VHT_MEMORY_MAP = 0x30C,
+    IGVM_VHT_COMMAND_LINE = 0x30E,
     IGVM_VHT_ENVIRONMENT_INFO_PARAMETER = 0x313,
 } IGVM_VHT;
 
@@ -97,35 +99,3 @@ typedef struct {
     uint16_t Reserved;
     uint32_t padding;
 } IGVM_VHS_VP_CONTEXT;
-
-typedef struct {
-    uint32_t base;
-    uint32_t len;
-} IgvmParamBlockFwMem;
-
-typedef struct {
-    uint32_t start;
-    uint32_t size;
-    uint32_t _reserved;
-    uint32_t secrets_page;
-    uint32_t caa_page;
-    uint32_t cpuid_page;
-    uint32_t reset_addr;
-    uint32_t prevalidated_count;
-    IgvmParamBlockFwMem prevalidated[8];
-} IgvmParamBlockFwInfo;
-
-typedef struct {
-    uint32_t param_area_size;
-    uint32_t param_page_offset;
-    uint32_t memory_map_offset;
-    uint32_t cpuid_page;
-    uint32_t secrets_page;
-    uint16_t debug_serial_port;
-    uint16_t _reserved;
-    IgvmParamBlockFwInfo firmware;
-    uint32_t kernel_reserved_size;
-    uint32_t kernel_size;
-    uint64_t kernel_base;
-} IgvmParamBlock;
-
