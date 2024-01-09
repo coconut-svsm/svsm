@@ -61,6 +61,16 @@ void setbuf(FILE *stream, char *buf)
     NOT_IMPLEMENTED;
 }
 
+int ferror(FILE *stream) {
+	NOT_IMPLEMENTED;
+	return -1;
+}
+
+int clearerr(FILE *stream) {
+	NOT_IMPLEMENTED;
+	return -1;
+}
+
 // stdlib.h
 
 long strtol(const char *nptr, char **endptr, int base)
@@ -117,6 +127,19 @@ gid_t getegid(void)
 {
     NOT_IMPLEMENTED;
     return 0;
+}
+
+long syscall(long number, ...)
+{
+    NOT_IMPLEMENTED;
+    errno = ENOSYS;
+    return -1;
+}
+
+int usleep(unsigned usec)
+{
+    NOT_IMPLEMENTED;
+    return -1;
 }
 
 // dirent.h
