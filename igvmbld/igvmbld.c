@@ -883,7 +883,6 @@ int main(int argc, const char *argv[])
     IGVM_VHS_SUPPORTED_PLATFORM *platform;
     DATA_OBJ *secrets_page;
     DATA_OBJ *stage2_data;
-    uint32_t stage2_top;
     Stage2Stack *stage2_stack;
     uint64_t vmsa_address;
     DATA_OBJ *vmsa_data;
@@ -923,16 +922,16 @@ int main(int argc, const char *argv[])
         return 1;
     }
 
-    stage2_top = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
-                 ~(PAGE_SIZE - 1);
-    if (stage2_top > 0x9F000)
+    address = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
+              ~(PAGE_SIZE - 1);
+    if (address > 0x9F000)
     {
         fprintf(stderr, "stage 2 image is too large\n");
         return 1;
     }
-    else if (stage2_top < 0x9F000)
+    else if (address < 0x9F000)
     {
-        construct_empty_data_object(stage2_top, 0x9F000 - stage2_top);
+        construct_empty_data_object(address, 0x9F000 - address, "Stage 2 free space");
     }
 
     cpuid_page = construct_mem_data_object(0x9F000, 0x1000);
@@ -1061,11 +1060,11 @@ int main(int argc, const char *argv[])
         // Add additional information if firmware is being launched.
         if (fw_info.fw_info.size != 0)
         {
-            // Mark the range between the top of stage 2 and the base of
-            // memory as a range that needs to be validated.
+            // Mark the range between the top of the stage 2 area and the base
+            // of memory as a range that needs to be validated.
             fw_info.fw_info.prevalidated_count = 1;
-            fw_info.fw_info.prevalidated[0].base = stage2_top;
-            fw_info.fw_info.prevalidated[0].size = fw_info.fw_info.start - stage2_top;
+            fw_info.fw_info.prevalidated[0].base = 0xA0000;
+            fw_info.fw_info.prevalidated[0].size = fw_info.fw_info.start - 0xA0000;
 
             igvm_parameter_block->firmware = fw_info.fw_info;
             igvm_parameter_block->vtom = fw_info.vtom;
