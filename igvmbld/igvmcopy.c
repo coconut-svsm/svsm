@@ -345,7 +345,7 @@ IncompatibleFile:
                     // the SVSM.
                     if (page_data.FileOffset == 0)
                     {
-                        data_obj = construct_empty_data_object(page_data.GPA, PAGE_SIZE);
+                        data_obj = construct_empty_data_object(page_data.GPA, PAGE_SIZE, file_name);
                         data_obj->page_type = page_data.DataType;
                     }
                     else
@@ -354,7 +354,7 @@ IncompatibleFile:
                         {
                             goto ReadError;
                         }
-                        data_obj = construct_mem_data_object(page_data.GPA, PAGE_SIZE);
+                        data_obj = construct_mem_data_object(page_data.GPA, PAGE_SIZE, file_name);
                         data_obj->page_type = page_data.DataType;
 
                         if (0 != fseek(file, page_data.FileOffset, SEEK_SET))
@@ -426,7 +426,7 @@ IncompatibleFile:
                 // in the VP context object here is not relevant, because the
                 // SVSM IGVM headers expect the guest context to be part of
                 // the IGVM parameter area.
-                data_obj = construct_mem_data_object(0, PAGE_SIZE);
+                data_obj = construct_mem_data_object(0, PAGE_SIZE, file_name);
                 guest_context = data_obj->data;
                 memset(guest_context, 0, PAGE_SIZE);
                 fill_guest_context(guest_context, vmsa);

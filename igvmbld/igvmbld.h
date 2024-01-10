@@ -86,8 +86,8 @@ IGVM_VHS *allocate_var_headers(
     uint32_t header_size,
     int count);
 
-DATA_OBJ *construct_empty_data_object(uint64_t address, uint32_t size);
-DATA_OBJ *construct_mem_data_object(uint64_t address, uint32_t size);
+DATA_OBJ *construct_empty_data_object(uint64_t address, uint32_t size, const char *description);
+DATA_OBJ *construct_mem_data_object(uint64_t address, uint32_t size, const char *description);
 
 int read_hyperv_igvm_file(const char *file_name, FirmwareIgvmInfo *fw_info);
 
