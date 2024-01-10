@@ -115,7 +115,7 @@ DATA_OBJ *allocate_data_object(uint64_t address, uint32_t size, uint32_t data_si
         // the final file.
         if (allocation_size != data_size)
         {
-            memset((uint8_t *)data_object->data, data_size, allocation_size - data_size);
+            memset((uint8_t *)data_object->data + data_size, 0, allocation_size - data_size);
         }
     }
     else
@@ -950,21 +950,13 @@ int main(int argc, const char *argv[])
     {
         if (fw_filename != NULL)
         {
-            if (is_hyperv)
+            err = read_hyperv_igvm_file(fw_filename, &fw_info);
+            if (err != 0)
             {
-                err = read_hyperv_igvm_file(fw_filename, &fw_info);
-                if (err != 0)
-                {
-                    return err;
-                }
+                return err;
+            }
 
-                address = fw_info.fw_info.start + fw_info.fw_info.size;
-            }
-            else
-            {
-                fprintf(stderr, "--firmware only supported for hyperv targets\n");
-                return 1;
-            }
+            address = fw_info.fw_info.start + fw_info.fw_info.size;
         }
     }
 
