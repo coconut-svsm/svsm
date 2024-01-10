@@ -107,16 +107,16 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     let cf: u64;
 
     unsafe {
-        asm!(".byte 0xf2, 0x0f, 0x01, 0xff",
-             "xorq %rcx, %rcx",
+        asm!("xorq %r8, %r8",
+            ".byte 0xf2, 0x0f, 0x01, 0xff",
              "jnc 1f",
-             "incq %rcx",
+             "incq %r8",
              "1:",
              in("rax")  rax,
              in("rcx")  rcx,
              in("rdx")  rdx,
              lateout("rax") ret,
-             lateout("rcx") cf,
+             lateout("r8") cf,
              options(att_syntax));
     }
 
