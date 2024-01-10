@@ -20,6 +20,8 @@ pub struct KernelLaunchInfo {
     pub kernel_fs_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
+    pub stage2_igvm_params_phys_addr: u64,
+    pub stage2_igvm_params_size: u64,
     pub igvm_params_phys_addr: u64,
     pub igvm_params_virt_addr: u64,
     pub debug_serial_port: u16,

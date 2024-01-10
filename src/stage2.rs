@@ -285,10 +285,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     // after the kernel.
     let mut igvm_params_virt_address = VirtAddr::null();
     let mut igvm_params_phys_address = PhysAddr::null();
+    let mut igvm_params_size = 0;
     if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
         igvm_params_virt_address = loaded_kernel_virt_end;
         igvm_params_phys_address = loaded_kernel_phys_end;
-        let igvm_params_size = igvm_params.size();
+        igvm_params_size = igvm_params.size();
 
         map_and_validate(
             &config,
@@ -337,6 +338,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         cpuid_page: config.get_cpuid_page_address(),
         secrets_page: config.get_secrets_page_address(),
+        stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
+        stage2_igvm_params_size: igvm_params_size as u64,
         igvm_params_phys_addr: u64::from(igvm_params_phys_address),
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
         debug_serial_port: config.debug_serial_port(),
