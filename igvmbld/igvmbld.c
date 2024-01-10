@@ -936,12 +936,17 @@ int main(int argc, const char *argv[])
     platform = setup_igvm_platform_header();
 
     // Construct a set of ranges for the memory map:
-    // 00000-0EFFF: zero-filled (must be pre-validated)
-    // 0F000-0FFFF: initial stage 2 stack page
-    // 10000-nnnnn: stage 2 image
-    // nnnnn-9EFFF: zero-filled (must be pre-validated)
-    // 9F000-9FFFF: CPUID page
-    // A0000-nnnnn: kernel and filesystem
+    // 0x000000-0x00EFFF: zero-filled (must be pre-validated)
+    // 0x00F000-0x00FFFF: initial stage 2 stack page
+    // 0x010000-0x0nnnnn: stage 2 image
+    // 0x0nnnnn-0x09DFFF: zero-filled (must be pre-validated)
+    // 0x09E000-0x09EFFF: Secrets page
+    // 0x09F000-0x09FFFF: CPUID page
+    // 0x100000-0x1nnnnn: kernel
+    // 0x1nnnnn-0x1nnnnn: filesystem
+    // 0x1nnnnn-0x1nnnnn: IGVM parameter block
+    // 0x1nnnnn-0x1nnnnn: general and memory map parameter pages
+    // 0xFFnn0000-0xFFFFFFFF: OVMF firmware (QEMU only, if specified)
     construct_empty_data_object(0x00000, 0xF000, "Low memory");
 
     // Construct a page containing an initial stack.  This is the page
@@ -958,17 +963,22 @@ int main(int argc, const char *argv[])
 
     stage2_top = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
                  ~(PAGE_SIZE - 1);
-    if (stage2_top > 0x9F000)
+    if (stage2_top > 0x9E000)
     {
         fprintf(stderr, "stage 2 image is too large\n");
         return 1;
     }
-    else if (stage2_top < 0x9F000)
+    else if (stage2_top < 0x9E000)
     {
-        construct_empty_data_object(stage2_top, 0x9F000 - stage2_top, "Stage 2 free space");
+        construct_empty_data_object(stage2_top, 0x9E000 - stage2_top, "Stage 2 free space");
     }
 
-    cpuid_page = construct_mem_data_object(0x9F000, 0x1000, "CPUID page");
+    // Allocate a page to hold the secrets page.  This is not considered part
+    // of the IGVM data.
+    secrets_page = construct_empty_data_object(0x9E000, PAGE_SIZE, "Secrets page");
+    secrets_page->page_type = IgvmPageType_Secrets;
+
+    cpuid_page = construct_mem_data_object(0x9F000, PAGE_SIZE, "CPUID page");
     cpuid_page->page_type = IgvmPageType_Cpuid;
     fill_cpuid_page((SNP_CPUID_PAGE *)cpuid_page->data);
 
@@ -1043,12 +1053,6 @@ int main(int argc, const char *argv[])
         stage2_stack->filesystem_end = address;
     }
 
-    // Allocate a page to hold the secrets page.  This is not considered part
-    // of the IGVM data.
-    secrets_page = construct_empty_data_object(address, PAGE_SIZE, "Secrets page");
-    secrets_page->page_type = IgvmPageType_Secrets;
-    address += PAGE_SIZE;
-
     // Construct a data object for the IGVM parameter block.
     stage2_stack->igvm_param_block = address;
     igvm_parameter_object = construct_mem_data_object(address, sizeof(IgvmParamBlock), "IGVM Parameter Block");
@@ -1086,11 +1090,6 @@ int main(int argc, const char *argv[])
         igvm_parameter_block->kernel_base = 0x04000000;
         igvm_parameter_block->kernel_size = 0x01000000;
 
-        // Place the VMSA at the base of the kernel region and mark that page
-        // as reserved.
-        vmsa_address = igvm_parameter_block->kernel_base;
-        igvm_parameter_block->kernel_reserved_size = 0x1000;
-
         // Add additional information if firmware is being launched.
         if (fw_info.fw_info.size != 0)
         {
@@ -1117,12 +1116,12 @@ int main(int argc, const char *argv[])
         // Place the kernel area at 512 GB with a size of 16 MB.
         igvm_parameter_block->kernel_base = 0x0000008000000000;
         igvm_parameter_block->kernel_size = 0x01000000;
-
-        // Place the VMSA at the next available address, since the address
-        // won't actually be consumed by QEMU anyway.
-        vmsa_address = address;
-        address += PAGE_SIZE;
     }
+
+    // Place the VMSA at the base of the kernel region and mark that page
+    // as reserved.
+    vmsa_address = igvm_parameter_block->kernel_base;
+    igvm_parameter_block->kernel_reserved_size = 0x1000;
 
     // If a firmware file has been specified then add it and set the relevant 
     // parameter block entries.
