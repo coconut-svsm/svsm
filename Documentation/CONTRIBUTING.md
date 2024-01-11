@@ -50,4 +50,11 @@ before allowing them to be committed. It can be installed by running
 from the projects root directory.
 
 For detailed instructions on documentation guidelines please have a look at
-[GUIDELINES.md](Documentation/GUIDELINES.md).
+[RUSTDOC-GUIDELINES.md](RUSTDOC-GUIDELINES.md).
+
+Fuzzing
+-------
+
+The SVSM project includes a number of fuzzing targets to test parts of the
+code-base. For details on how to run the fuzzers and extend the fuzzing
+functionality, please have a look at [FUZZING.md](FUZZING.md).

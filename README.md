@@ -9,8 +9,8 @@ Secure Nested Paging (AMD SEV-SNP), especially the VM Privilege Level
 (VMPL) feature.
 
 The COCONUT-SVSM is dual-licensed under the MIT or Apache-2.0 licenses.
-The licenses are included in the [LICENSE.MIT](LICENSE.MIT) or
-[LICENSE-APACHE-2.0.txt](LICENSE-APACHE-2.0.txt) files.
+The licenses are included in the [LICENSE-MIT](LICENSE-MIT) or
+[LICENSE-APACHE](LICENSE-APACHE) files.
 
 The project builds on support code written for the [linux-svsm](https://github.com/AMDESE/linux-svsm),
 a software written and published by AMD. This includes the necessary
@@ -35,7 +35,7 @@ advanced features like TPM emulation and live migration.
 Installation
 ------------
 
-Detailed installation instructions are in the [INSTALL.md](INSTALL.md)
+Detailed installation instructions are in the [INSTALL.md](Documentation/INSTALL.md)
 file. It walks through the process of building all the necessary parts
 to get a virtual machine powered by the COCONUT-SVSM up and running.
 
@@ -63,8 +63,8 @@ Contributing
 
 Contributing to the project is as easy as sending a pull-request via
 GitHub. For detailed instructions on patch formatting and contribution
-guidelines please have a look at [CONTRIBUTING.md](CONTRIBUTING.md).
-For documentation guidelines consult [GUIDELINES.md](Documentation/GUIDELINES.md).
+guidelines please have a look at [CONTRIBUTING.md](Documentation/CONTRIBUTING.md).
+For documentation guidelines consult [RUSTDOC-GUIDELINES.md](Documentation/RUSTDOC-GUIDELINES.md).
 
 TODO List
 ---------
