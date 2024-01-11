@@ -78,9 +78,14 @@ static uint32_t crc32b_finish() {
    return ~_crc;
 }
 
-void construct_parameter_page(uint32_t address, ParameterPageIndex index)
+void construct_parameter_page(uint32_t address, ParameterPageIndex index, const char *description)
 {
     PARAM_PAGE *param_page;
+
+    if (is_verbose)
+    {
+        printf("%08X-%08X: \"%s\" parameter page\n", address, address + 0x1000, description);
+    }
 
     param_page = malloc(sizeof(PARAM_PAGE));
     param_page->address = address;
@@ -126,13 +131,21 @@ DATA_OBJ *allocate_data_object(uint64_t address, uint32_t size, uint32_t data_si
     return data_object;
 }
 
-DATA_OBJ *construct_empty_data_object(uint64_t address, uint32_t size)
+DATA_OBJ *construct_empty_data_object(uint64_t address, uint32_t size, const char *description)
 {
+    if (is_verbose)
+    {
+        printf("%08lX-%08lX: \"%s\" empty data\n", address, address + size, description);
+    }
     return insert_data_object(allocate_data_object(address, size, 0));
 }
 
-DATA_OBJ *construct_mem_data_object(uint64_t address, uint32_t size)
+DATA_OBJ *construct_mem_data_object(uint64_t address, uint32_t size, const char *description)
 {
+    if (is_verbose)
+    {
+        printf("%08lX-%08lX: \"%s\" mem data\n", address, address + size, description);
+    }
     return insert_data_object(allocate_data_object(address, size, size));
 }
 
@@ -162,7 +175,7 @@ ReadError:
 
     file_size = ftell(file);
 
-    data_obj = construct_mem_data_object(address, file_size);
+    data_obj = construct_mem_data_object(address, file_size, file_name);
 
     if (fseek(file, 0, SEEK_SET) != 0)
     {
@@ -854,19 +867,39 @@ static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
 {
     uint32_t i;
 
-    printf("Firmware configuration\n======================\n");
-    printf("  start: %X\n", igvm_parameter_block->firmware.start);
-    printf("  size: %X\n", igvm_parameter_block->firmware.size);
-    printf("  secrets_page: %X\n", igvm_parameter_block->firmware.secrets_page);
-    printf("  caa_page: %X\n", igvm_parameter_block->firmware.caa_page);
-    printf("  cpuid_page: %X\n", igvm_parameter_block->firmware.cpuid_page);
-    printf("  reset_addr: %X\n", igvm_parameter_block->firmware.reset_addr);
-    printf("  prevalidated_count: %X\n", igvm_parameter_block->firmware.prevalidated_count);
+    printf("  firmware:\n");
+    printf("    start: 0x%X\n", igvm_parameter_block->firmware.start);
+    printf("    size: 0x%X\n", igvm_parameter_block->firmware.size);
+    printf("    secrets_page: 0x%X\n", igvm_parameter_block->firmware.secrets_page);
+    printf("    caa_page: 0x%X\n", igvm_parameter_block->firmware.caa_page);
+    printf("    cpuid_page: 0x%X\n", igvm_parameter_block->firmware.cpuid_page);
+    printf("    reset_addr: 0x%X\n", igvm_parameter_block->firmware.reset_addr);
+    printf("    prevalidated_count: 0x%X\n", igvm_parameter_block->firmware.prevalidated_count);
     for (i = 0; i < igvm_parameter_block->firmware.prevalidated_count; ++i)
     {
-        printf("    prevalidated[%d].base: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].base);
-        printf("    prevalidated[%d].size: %X\n", i, igvm_parameter_block->firmware.prevalidated[i].size);
+        printf("      prevalidated[%d].base: 0x%X\n", i, igvm_parameter_block->firmware.prevalidated[i].base);
+        printf("      prevalidated[%d].size: 0x%X\n", i, igvm_parameter_block->firmware.prevalidated[i].size);
     }
+}
+
+static void print_param_block(IgvmParamBlock *igvm_parameter_block)
+{
+    printf("\nigvm_parameter_block:\n");
+    printf("  param_area_size: 0x%X\n", igvm_parameter_block->param_area_size);
+    printf("  param_page_offset: 0x%X\n", igvm_parameter_block->param_page_offset);
+    printf("  memory_map_offset: 0x%X\n", igvm_parameter_block->memory_map_offset);
+    printf("  guest_context_offset: 0x%X\n", igvm_parameter_block->guest_context_offset);
+    printf("  cpuid_page: 0x%X\n", igvm_parameter_block->cpuid_page);
+    printf("  secrets_page: 0x%X\n", igvm_parameter_block->secrets_page);
+    printf("  debug_serial_port: 0x%X\n", igvm_parameter_block->debug_serial_port);
+    printf("  _reserved[3]: %02X%02X%02X\n", igvm_parameter_block->_reserved[0], 
+                                             igvm_parameter_block->_reserved[1], 
+                                             igvm_parameter_block->_reserved[2]);
+    print_fw_metadata(igvm_parameter_block);
+    printf("  kernel_reserved_size: 0x%X\n", igvm_parameter_block->kernel_reserved_size);
+    printf("  kernel_size: 0x%X\n", igvm_parameter_block->kernel_size);
+    printf("  kernel_base: 0x%lX\n", igvm_parameter_block->kernel_base);
+    printf("  vtom: 0x%lX\n", igvm_parameter_block->vtom);
 }
 
 int main(int argc, const char *argv[])
@@ -902,17 +935,22 @@ int main(int argc, const char *argv[])
     platform = setup_igvm_platform_header();
 
     // Construct a set of ranges for the memory map:
-    // 00000-0EFFF: zero-filled (must be pre-validated)
-    // 0F000-0FFFF: initial stage 2 stack page
-    // 10000-nnnnn: stage 2 image
-    // nnnnn-9EFFF: zero-filled (must be pre-validated)
-    // 9F000-9FFFF: CPUID page
-    // A0000-nnnnn: kernel and filesystem
-    construct_empty_data_object(0x00000, 0xF000);
+    // 0x000000-0x00EFFF: zero-filled (must be pre-validated)
+    // 0x00F000-0x00FFFF: initial stage 2 stack page
+    // 0x010000-0x0nnnnn: stage 2 image
+    // 0x0nnnnn-0x09DFFF: zero-filled (must be pre-validated)
+    // 0x09E000-0x09EFFF: Secrets page
+    // 0x09F000-0x09FFFF: CPUID page
+    // 0x100000-0x1nnnnn: kernel
+    // 0x1nnnnn-0x1nnnnn: filesystem
+    // 0x1nnnnn-0x1nnnnn: IGVM parameter block
+    // 0x1nnnnn-0x1nnnnn: general and memory map parameter pages
+    // 0xFFnn0000-0xFFFFFFFF: OVMF firmware (QEMU only, if specified)
+    construct_empty_data_object(0x00000, 0xF000, "Low memory");
 
     // Construct a page containing an initial stack.  This is the page
     // immediately below 64K, where stage 2 is loaded.
-    initial_stack = construct_mem_data_object(0xF000, PAGE_SIZE);
+    initial_stack = construct_mem_data_object(0xF000, PAGE_SIZE, "Initial stack");
 
     // Construct a data object for the stage 2 image.  Stage 2 is always
     // loaded at 64K.
@@ -934,7 +972,12 @@ int main(int argc, const char *argv[])
         construct_empty_data_object(address, 0x9F000 - address, "Stage 2 free space");
     }
 
-    cpuid_page = construct_mem_data_object(0x9F000, 0x1000);
+    // Allocate a page to hold the secrets page.  This is not considered part
+    // of the IGVM data.
+    secrets_page = construct_empty_data_object(0x9E000, PAGE_SIZE, "Secrets page");
+    secrets_page->page_type = IgvmPageType_Secrets;
+
+    cpuid_page = construct_mem_data_object(0x9F000, PAGE_SIZE, "CPUID page");
     cpuid_page->page_type = IgvmPageType_Cpuid;
     fill_cpuid_page((SNP_CPUID_PAGE *)cpuid_page->data);
 
@@ -1001,27 +1044,21 @@ int main(int argc, const char *argv[])
         stage2_stack->filesystem_end = address;
     }
 
-    // Allocate a page to hold the secrets page.  This is not considered part
-    // of the IGVM data.
-    secrets_page = construct_empty_data_object(address, PAGE_SIZE);
-    secrets_page->page_type = IgvmPageType_Secrets;
-    address += PAGE_SIZE;
-
     // Construct a data object for the IGVM parameter block.
     stage2_stack->igvm_param_block = address;
-    igvm_parameter_object = construct_mem_data_object(address, sizeof(IgvmParamBlock));
+    igvm_parameter_object = construct_mem_data_object(address, sizeof(IgvmParamBlock), "IGVM Parameter Block");
     igvm_parameter_block = (IgvmParamBlock *)igvm_parameter_object->data;
     memset(igvm_parameter_block, 0, sizeof(IgvmParamBlock));
     address += PAGE_SIZE;
 
     // Reserve a parameter page to hold IGVM parameters.
     igvm_parameter_block->param_page_offset = address - (uint32_t)igvm_parameter_object->address;
-    construct_parameter_page(address, parameter_page_general);
+    construct_parameter_page(address, parameter_page_general, "General parameters");
     address += PAGE_SIZE;
 
     // Reserve a parameter page to hold the memory map.
     igvm_parameter_block->memory_map_offset = address - (uint32_t)igvm_parameter_object->address;
-    construct_parameter_page(address, parameter_page_memory_map);
+    construct_parameter_page(address, parameter_page_memory_map, "Memory map");
     address += PAGE_SIZE;
 
     // If the firmware has supplied a guest context page, then assign it an address now.
@@ -1043,11 +1080,6 @@ int main(int argc, const char *argv[])
         // Place the kernel area at 64 MB with a size of 16 MB.
         igvm_parameter_block->kernel_base = 0x04000000;
         igvm_parameter_block->kernel_size = 0x01000000;
-
-        // Place the VMSA at the base of the kernel region and mark that page
-        // as reserved.
-        vmsa_address = igvm_parameter_block->kernel_base;
-        igvm_parameter_block->kernel_reserved_size = 0x1000;
 
         // Add additional information if firmware is being launched.
         if (fw_info.fw_info.size != 0)
@@ -1075,12 +1107,12 @@ int main(int argc, const char *argv[])
         // Place the kernel area at 512 GB with a size of 16 MB.
         igvm_parameter_block->kernel_base = 0x0000008000000000;
         igvm_parameter_block->kernel_size = 0x01000000;
-
-        // Place the VMSA at the next available address, since the address
-        // won't actually be consumed by QEMU anyway.
-        vmsa_address = address;
-        address += PAGE_SIZE;
     }
+
+    // Place the VMSA at the base of the kernel region and mark that page
+    // as reserved.
+    vmsa_address = igvm_parameter_block->kernel_base;
+    igvm_parameter_block->kernel_reserved_size = 0x1000;
 
     // If a firmware file has been specified then add it and set the relevant 
     // parameter block entries.
@@ -1097,11 +1129,6 @@ int main(int argc, const char *argv[])
         // metadata from it. If the firmware is not OVMF then this function has
         // no effect.
         parse_ovmf_metadata(fw_filename, igvm_parameter_block);
-        
-        if (is_verbose)
-        {
-            print_fw_metadata(igvm_parameter_block);
-        }
     }
 
     // Generate a header to describe the memory that will be used as the
@@ -1110,7 +1137,7 @@ int main(int argc, const char *argv[])
     generate_required_memory_header(igvm_parameter_block);
 
     // Generate the initial VMSA.
-    vmsa_data = construct_mem_data_object(vmsa_address, PAGE_SIZE);
+    vmsa_data = construct_mem_data_object(vmsa_address, PAGE_SIZE, "VMSA");
     vmsa_data->data_type = IGVM_VHT_VP_CONTEXT;
     generate_initial_vmsa(vmsa_data->data);
 
@@ -1123,6 +1150,11 @@ int main(int argc, const char *argv[])
     // The headers are now fully constructed.  Assign file offsets to all file
     // data.
     assign_file_data();
+
+    if (is_verbose)
+    {
+        print_param_block(igvm_parameter_block);
+    }
 
     // Finally, generate the output file.
     err = generate_igvm_file(output_filename);

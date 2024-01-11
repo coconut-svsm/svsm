@@ -150,11 +150,21 @@ pub fn invalidate_early_boot_memory(
         invalidate_boot_memory_region(config, kernel_elf_region)?;
 
         let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
-        let kernel_fs_region = MemoryRegion::new(
-            PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
-            kernel_fs_size.try_into().unwrap(),
-        );
-        invalidate_boot_memory_region(config, kernel_fs_region)?;
+        if kernel_fs_size > 0 {
+            let kernel_fs_region = MemoryRegion::new(
+                PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
+                kernel_fs_size.try_into().unwrap(),
+            );
+            invalidate_boot_memory_region(config, kernel_fs_region)?;
+        }
+
+        if launch_info.stage2_igvm_params_size > 0 {
+            let igvm_params_region = MemoryRegion::new(
+                PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
+                launch_info.stage2_igvm_params_size as usize,
+            );
+            invalidate_boot_memory_region(config, igvm_params_region)?;
+        }
     }
 
     Ok(())
