@@ -8,7 +8,7 @@ fn main() {
     // Stage 2
     println!("cargo:rustc-link-arg-bin=stage2=-nostdlib");
     println!("cargo:rustc-link-arg-bin=stage2=--build-id=none");
-    println!("cargo:rustc-link-arg-bin=stage2=-Tstage2.lds");
+    println!("cargo:rustc-link-arg-bin=stage2=-Tsrc/stage2.lds");
     println!("cargo:rustc-link-arg-bin=stage2=-no-pie");
 
     // SVSM 2
