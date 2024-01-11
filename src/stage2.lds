@@ -12,7 +12,15 @@ SECTIONS
 {
 	. = 64k;
 	.stext = .;
-	.text : { *(.startup.*) *(.text) *(.text.*) }
+	.text : {
+		*(.startup.*)
+		*(.text)
+		*(.text.*)
+		. = ALIGN(16);
+		exception_table_start = .;
+		KEEP(*(__exception_table))
+		exception_table_end = .;
+	}
 	. = ALIGN(16);
 	.data : { *(.data) }
 	. = ALIGN(16);
