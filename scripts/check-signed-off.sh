@@ -42,7 +42,7 @@ fi
 start=$1
 end=$2
 
-commits=$(git log "${start}".."${end}" --pretty=format:"%H")
+commits=$(git log "${start}".."${end}" --format="%H")
 for c in ${commits[@]}; do
 
 	echo "Checking $c"
@@ -57,8 +57,8 @@ for c in ${commits[@]}; do
 		exit 1
 	fi
 
-	commit_email=$(git show --no-patch --pretty="format:%ae" "$c" || exit 1)
-	commit_name=$(git show --no-patch --pretty="format:%an" "$c" || exit 1)
+	commit_email=$(git show --no-patch --format="%ae" "$c" || exit 1)
+	commit_name=$(git show --no-patch --format="%an" "$c" || exit 1)
 	sign_names=$(git show --no-patch "$c" | sed -nr 's/^[[:space:]]*Signed-off-by: (.*) <(.*)>/\1/p' || exit 1)
 	sign_emails=$(git show --no-patch "$c" | sed -nr 's/^[[:space:]]*Signed-off-by: (.*) <(.*)>/\2/p' || exit 1)
 
