@@ -35,7 +35,7 @@ advanced features like TPM emulation and live migration.
 Installation
 ------------
 
-Detailed installation instructions are in the [INSTALL.md](INSTALL.md)
+Detailed installation instructions are in the [INSTALL.md](Documentation/INSTALL.md)
 file. It walks through the process of building all the necessary parts
 to get a virtual machine powered by the COCONUT-SVSM up and running.
 
