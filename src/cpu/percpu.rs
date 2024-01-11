@@ -31,6 +31,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_F
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
+use core::mem::size_of;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 use cpuarch::vmsa::{VMSASegment, VMSA};
@@ -75,14 +76,14 @@ impl PerCpuAreas {
     }
 
     // Fails if no such area exists or its address is NULL
-    pub fn get(&self, apic_id: u32) -> Option<&'static PerCpu> {
+    pub fn get(&self, apic_id: u32) -> Option<&'static PerCpuShared> {
         // For this to not produce UB the only invariant we must
         // uphold is that there are no mutations or mutable aliases
         // going on when casting via as_ref(). This only happens via
         // Self::push(), which is intentionally unsafe and private.
         let ptr = unsafe { self.areas.get().as_ref().unwrap() };
         ptr.iter().find(|info| info.apic_id == apic_id).map(|info| {
-            let ptr = info.addr.as_ptr::<PerCpu>();
+            let ptr = info.addr.as_ptr::<PerCpuShared>();
             unsafe { ptr.as_ref().unwrap() }
         })
     }
@@ -175,7 +176,48 @@ impl GuestVmsaRef {
 }
 
 #[derive(Debug)]
+pub struct PerCpuShared {
+    guest_vmsa: SpinLock<GuestVmsaRef>,
+}
+
+impl PerCpuShared {
+    fn new() -> Self {
+        PerCpuShared {
+            guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
+        }
+    }
+
+    pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
+        let mut locked = self.guest_vmsa.lock();
+        locked.update_vmsa_caa(Some(vmsa), Some(caa));
+    }
+
+    pub fn update_guest_vmsa(&self, vmsa: PhysAddr) {
+        let mut locked = self.guest_vmsa.lock();
+        locked.update_vmsa(Some(vmsa));
+    }
+
+    pub fn update_guest_caa(&self, caa: PhysAddr) {
+        let mut locked = self.guest_vmsa.lock();
+        locked.update_caa(Some(caa));
+    }
+
+    pub fn clear_guest_vmsa_if_match(&self, paddr: PhysAddr) {
+        let mut locked = self.guest_vmsa.lock();
+        if locked.vmsa.is_none() {
+            return;
+        }
+
+        let vmsa_phys = locked.vmsa_phys();
+        if vmsa_phys.unwrap() == paddr {
+            locked.update_vmsa(None);
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PerCpu {
+    pub shared: &'static PerCpuShared,
     online: AtomicBool,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
@@ -184,7 +226,6 @@ pub struct PerCpu {
     ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
-    guest_vmsa: SpinLock<GuestVmsaRef>,
     reset_ip: u64,
 
     /// PerCpu Virtual Memory Range
@@ -200,8 +241,9 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
-    fn new(apic_id: u32) -> Self {
+    fn new(apic_id: u32, shared: &'static PerCpuShared) -> Self {
         PerCpu {
+            shared,
             online: AtomicBool::new(false),
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
@@ -210,7 +252,6 @@ impl PerCpu {
             ist: IstStacks::new(),
             tss: X86Tss::new(),
             svsm_vmsa: None,
-            guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             reset_ip: 0xffff_fff0u64,
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
@@ -222,9 +263,22 @@ impl PerCpu {
     pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
+            // Within each CPU state page, the first portion is the private
+            // mutable state and remainder is the shared state.
+            let private_size = size_of::<PerCpu>();
+            let shared_size = size_of::<PerCpuShared>();
+            if private_size + shared_size > PAGE_SIZE {
+                panic!("Per-CPU data is larger than one page!");
+            }
+
+            let shared_vaddr = vaddr + private_size;
+            let percpu_shared = shared_vaddr.as_mut_ptr::<PerCpuShared>();
+            (*percpu_shared) = PerCpuShared::new();
+
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
-            (*percpu) = PerCpu::new(apic_id);
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, vaddr));
+            (*percpu) = PerCpu::new(apic_id, &*percpu_shared);
+
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, shared_vaddr));
             Ok(percpu)
         }
     }
@@ -442,39 +496,12 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn clear_guest_vmsa_if_match(&self, paddr: PhysAddr) {
-        let mut locked = self.guest_vmsa.lock();
-        if locked.vmsa.is_none() {
-            return;
-        }
-
-        let vmsa_phys = locked.vmsa_phys();
-        if vmsa_phys.unwrap() == paddr {
-            locked.update_vmsa(None);
-        }
-    }
-
-    pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
-        let mut locked = self.guest_vmsa.lock();
-        locked.update_vmsa_caa(Some(vmsa), Some(caa));
-    }
-
-    pub fn update_guest_vmsa(&self, vmsa: PhysAddr) {
-        let mut locked = self.guest_vmsa.lock();
-        locked.update_vmsa(Some(vmsa));
-    }
-
-    pub fn update_guest_caa(&self, caa: PhysAddr) {
-        let mut locked = self.guest_vmsa.lock();
-        locked.update_caa(Some(caa));
-    }
-
     pub fn guest_vmsa_ref(&self) -> LockGuard<GuestVmsaRef> {
-        self.guest_vmsa.lock()
+        self.shared.guest_vmsa.lock()
     }
 
     pub fn guest_vmsa(&mut self) -> &mut VMSA {
-        let locked = self.guest_vmsa.lock();
+        let locked = self.shared.guest_vmsa.lock();
 
         assert!(locked.vmsa_phys().is_some());
 
@@ -488,7 +515,7 @@ impl PerCpu {
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
         init_guest_vmsa(vmsa, self.reset_ip);
 
-        self.update_guest_vmsa(paddr);
+        self.shared.update_guest_vmsa(paddr);
 
         Ok(())
     }
@@ -508,7 +535,7 @@ impl PerCpu {
     }
 
     pub fn caa_addr(&self) -> Option<VirtAddr> {
-        let locked = self.guest_vmsa.lock();
+        let locked = self.shared.guest_vmsa.lock();
         let caa_phys = locked.caa_phys()?;
         let offset = caa_phys.page_offset();
 
@@ -578,8 +605,6 @@ impl PerCpu {
         &self.runqueue
     }
 }
-
-unsafe impl Sync for PerCpu {}
 
 pub fn this_cpu() -> &'static PerCpu {
     unsafe { SVSM_PERCPU_BASE.as_ptr::<PerCpu>().as_ref().unwrap() }
