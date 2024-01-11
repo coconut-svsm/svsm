@@ -4,6 +4,9 @@
 # Copyright (c) 2023 SUSE LLC
 #
 # Author: Carlos López <carlos.lopez@suse.com>
+#
+# Simple script to check that a commit has a Signed-off-by trailer and a
+# nonempty commit body.
 
 matches_any() {
 	needle=$1
@@ -16,6 +19,19 @@ matches_any() {
 	done < <(printf '%s\n' "$haystack")
 
 	return 1
+}
+
+# Check that the body for the given commit is not empty
+nonempty_body() {
+	body=$(git show --no-patch --format="%b" "$1" | sed '/^ *$/d')
+	trailers=$(git show --no-patch --format="%(trailers:only)" "$1")
+
+	body_len=$(echo "$body" | wc -l)
+	trailer_len=$(echo "$trailers" | wc -l)
+
+	# If the body is the same length as the trailers it means the body is empty
+	[ "$body_len" = "$trailer_len" ] && return 1
+	return 0
 }
 
 if [ $# -lt 1 ]; then
@@ -34,6 +50,12 @@ for c in ${commits[@]}; do
 	# If a commit has more than more parent it is a merge commit, so ignore it
 	parents=$(git cat-file -p "$c" | grep -c parent)
 	[ "$parents" -gt "1" ] && continue
+
+	nonempty_body "$c"
+	if [ "$?" != "0" ]; then
+		echo "Message body is empty for commit $c"
+		exit 1
+	fi
 
 	commit_email=$(git show --no-patch --pretty="format:%ae" "$c" || exit 1)
 	commit_name=$(git show --no-patch --pretty="format:%an" "$c" || exit 1)
