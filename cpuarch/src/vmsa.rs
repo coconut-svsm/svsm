@@ -279,13 +279,3 @@ impl Default for VMSA {
         }
     }
 }
-
-impl VMSA {
-    pub fn enable(&mut self) {
-        self.efer |= 1u64 << 12;
-    }
-
-    pub fn disable(&mut self) {
-        self.efer &= !(1u64 << 12);
-    }
-}

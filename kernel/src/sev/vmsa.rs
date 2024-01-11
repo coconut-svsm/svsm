@@ -11,6 +11,8 @@ use crate::mm::alloc::{allocate_pages, free_page};
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
 
+use cpuarch::vmsa::VMSA;
+
 pub const VMPL_MAX: usize = 4;
 
 pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
@@ -40,4 +42,19 @@ pub fn free_vmsa(vaddr: VirtAddr) {
     rmp_adjust(vaddr, RMPFlags::RWX | RMPFlags::VMPL0, PageSize::Regular)
         .expect("Failed to free VMSA page");
     free_page(vaddr);
+}
+
+pub trait VMSAControl {
+    fn enable(&mut self);
+    fn disable(&mut self);
+}
+
+impl VMSAControl for VMSA {
+    fn enable(&mut self) {
+        self.efer |= 1u64 << 12;
+    }
+
+    fn disable(&mut self) {
+        self.efer &= !(1u64 << 12);
+    }
 }

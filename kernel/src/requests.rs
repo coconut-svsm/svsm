@@ -15,6 +15,7 @@ use crate::sev::ghcb::switch_to_vmpl;
 #[cfg(all(feature = "mstpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{RequestParams, SVSM_CORE_PROTOCOL};
+use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
 use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
