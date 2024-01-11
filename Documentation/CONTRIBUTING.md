@@ -50,7 +50,7 @@ before allowing them to be committed. It can be installed by running
 from the projects root directory.
 
 For detailed instructions on documentation guidelines please have a look at
-[GUIDELINES.md](GUIDELINES.md).
+[RUSTDOC-GUIDELINES.md](RUSTDOC-GUIDELINES.md).
 
 Fuzzing
 -------
