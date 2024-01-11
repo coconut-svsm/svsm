@@ -962,14 +962,14 @@ int main(int argc, const char *argv[])
 
     address = (stage2_data->address + stage2_data->size + PAGE_SIZE - 1) &
               ~(PAGE_SIZE - 1);
-    if (address > 0x9F000)
+    if (address > 0x9E000)
     {
         fprintf(stderr, "stage 2 image is too large\n");
         return 1;
     }
-    else if (address < 0x9F000)
+    else if (address < 0x9E000)
     {
-        construct_empty_data_object(address, 0x9F000 - address, "Stage 2 free space");
+        construct_empty_data_object(address, 0x9E000 - address, "Stage 2 free space");
     }
 
     // Allocate a page to hold the secrets page.  This is not considered part
