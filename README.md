@@ -9,8 +9,8 @@ Secure Nested Paging (AMD SEV-SNP), especially the VM Privilege Level
 (VMPL) feature.
 
 The COCONUT-SVSM is dual-licensed under the MIT or Apache-2.0 licenses.
-The licenses are included in the [LICENSE.MIT](LICENSE.MIT) or
-[LICENSE-APACHE-2.0.txt](LICENSE-APACHE-2.0.txt) files.
+The licenses are included in the [LICENSE-MIT](LICENSE-MIT) or
+[LICENSE-APACHE](LICENSE-APACHE) files.
 
 The project builds on support code written for the [linux-svsm](https://github.com/AMDESE/linux-svsm),
 a software written and published by AMD. This includes the necessary
