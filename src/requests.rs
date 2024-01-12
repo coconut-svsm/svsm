@@ -41,6 +41,12 @@ pub fn update_mappings() -> Result<(), SvsmError> {
     ret
 }
 
+struct RequestInfo {
+    protocol: u32,
+    request: u32,
+    params: RequestParams,
+}
+
 fn request_loop_once(
     params: &mut RequestParams,
     protocol: u32,
@@ -74,7 +80,7 @@ pub fn request_loop() {
         // Determine whether the guest is runnable.  If not, halt and wait for
         // the guest to execute.  When halting, assume that the hypervisor
         // will schedule the guest VMPL on its own.
-        let mut vmsa_ref = if update_mappings().is_ok() {
+        if update_mappings().is_ok() {
             let mut vmsa_ref = this_cpu().guest_vmsa_ref();
             let vmsa = vmsa_ref.vmsa();
 
@@ -87,8 +93,6 @@ pub fn request_loop() {
                 .ghcb()
                 .run_vmpl(GUEST_VMPL as u64)
                 .expect("Failed to run guest VMPL");
-
-            vmsa_ref
         } else {
             loop {
                 log::debug!("No VMSA or CAA! Halting");
@@ -98,30 +102,40 @@ pub fn request_loop() {
                     break;
                 }
             }
+        }
 
-            this_cpu().guest_vmsa_ref()
+        // Obtain a reference to the VMSA just long enough to extract the
+        // request parameters.
+        let mut rax: u64;
+        let mut request_info = {
+            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let vmsa = vmsa_ref.vmsa();
+
+            // Clear EFER.SVME in guest VMSA
+            vmsa.disable();
+
+            rax = vmsa.rax;
+            RequestInfo {
+                protocol: (rax >> 32) as u32,
+                request: (rax & 0xffff_ffff) as u32,
+                params: RequestParams::from_vmsa(vmsa),
+            }
         };
 
-        let vmsa = vmsa_ref.vmsa();
-
-        // Clear EFER.SVME in guest VMSA
-        vmsa.disable();
-
-        let rax = vmsa.rax;
-        let protocol = (rax >> 32) as u32;
-        let request = (rax & 0xffff_ffff) as u32;
-        let mut params = RequestParams::from_vmsa(vmsa);
-
-        vmsa.rax = match request_loop_once(&mut params, protocol, request) {
+        rax = match request_loop_once(
+            &mut request_info.params,
+            request_info.protocol,
+            request_info.request,
+        ) {
             Ok(success) => match success {
                 true => SvsmResultCode::SUCCESS.into(),
-                false => vmsa.rax,
+                false => rax,
             },
             Err(SvsmReqError::RequestError(code)) => {
                 log::debug!(
                     "Soft error handling protocol {} request {}: {:?}",
-                    protocol,
-                    request,
+                    request_info.protocol,
+                    request_info.request,
                     code
                 );
                 code.into()
@@ -129,7 +143,7 @@ pub fn request_loop() {
             Err(SvsmReqError::FatalError(err)) => {
                 log::error!(
                     "Fatal error handling core protocol request {}: {:?}",
-                    request,
+                    request_info.request,
                     err
                 );
                 break;
@@ -137,6 +151,11 @@ pub fn request_loop() {
         };
 
         // Write back results
-        params.write_back(vmsa);
+        {
+            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let vmsa = vmsa_ref.vmsa();
+            vmsa.rax = rax;
+            request_info.params.write_back(vmsa);
+        }
     }
 }
