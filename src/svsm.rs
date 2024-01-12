@@ -184,8 +184,9 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 }
 
 fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
-    let vmsa_pa = this_cpu_mut().guest_vmsa_ref().vmsa_phys().unwrap();
-    let vmsa = this_cpu_mut().guest_vmsa();
+    let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+    let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
+    let vmsa = vmsa_ref.vmsa();
 
     config.initialize_guest_vmsa(vmsa);
 

@@ -17,7 +17,7 @@ use cpuarch::vmsa::GuestVMExit;
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {
-    let mut locked = this_cpu_mut().guest_vmsa_ref();
+    let mut locked = this_cpu().guest_vmsa_ref();
     let mut ret = Ok(());
 
     if !locked.needs_update() {
@@ -74,8 +74,9 @@ pub fn request_loop() {
         // Determine whether the guest is runnable.  If not, halt and wait for
         // the guest to execute.  When halting, assume that the hypervisor
         // will schedule the guest VMPL on its own.
-        let vmsa = if update_mappings().is_ok() {
-            let vmsa = this_cpu_mut().guest_vmsa();
+        let mut vmsa_ref = if update_mappings().is_ok() {
+            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let vmsa = vmsa_ref.vmsa();
 
             // Make VMSA runnable again by setting EFER.SVME
             vmsa.enable();
@@ -87,7 +88,7 @@ pub fn request_loop() {
                 .run_vmpl(GUEST_VMPL as u64)
                 .expect("Failed to run guest VMPL");
 
-            vmsa
+            vmsa_ref
         } else {
             loop {
                 log::debug!("No VMSA or CAA! Halting");
@@ -98,8 +99,10 @@ pub fn request_loop() {
                 }
             }
 
-            this_cpu_mut().guest_vmsa()
+            this_cpu().guest_vmsa_ref()
         };
+
+        let vmsa = vmsa_ref.vmsa();
 
         // Clear EFER.SVME in guest VMSA
         vmsa.disable();
