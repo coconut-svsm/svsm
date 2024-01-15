@@ -4,6 +4,7 @@
 //
 // Author: Carlos López <carlos.lopez@suse.com>
 
+use crate::alloc::TryAllocError;
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
@@ -18,7 +19,7 @@ use crate::task::TaskError;
 // containing a leaf error type, usually the one corresponding to
 // that module. We always provide a way to convert a leaf error into
 // a SvsmError via the From trait at the module level.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum SvsmError {
     // Errors related to GHCB
     Ghcb(GhcbError),
@@ -46,6 +47,8 @@ pub enum SvsmError {
     FileSystem(FsError),
     // Task management errors,
     Task(TaskError),
+    // Smart pointer errors
+    TryAlloc(TryAllocError),
     // Errors from #VC handler
     Vc(VcError),
 }

@@ -38,7 +38,7 @@ impl From<SvsmResultCode> for u64 {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum SvsmReqError {
     RequestError(SvsmResultCode),
     FatalError(SvsmError),

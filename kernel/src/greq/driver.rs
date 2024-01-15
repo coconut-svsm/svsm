@@ -211,7 +211,7 @@ impl SnpGuestRequestDriver {
             .staging
             .decrypt_get(msg_type, msg_seqno, &vmpck0, buffer);
 
-        if let Err(e) = result {
+        if let Err(ref e) = result {
             match e {
                 // The buffer provided is too small to store the unwrapped response.
                 // There is no need to clear the VMPCK0, just report it as invalid parameter.
