@@ -214,7 +214,8 @@ impl Task {
             Self::allocate_page_table()?
         };
 
-        let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
+        let mut vm_kernel_range =
+            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
         let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(entry)?;
