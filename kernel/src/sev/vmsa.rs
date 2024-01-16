@@ -69,6 +69,11 @@ impl GuestCpuState for VMSA {
         vintr_ctrl.v_tpr() << 4
     }
 
+    fn set_tpr(&mut self, tpr: u8) {
+        let mut vintr_ctrl = self.vintr_ctrl;
+        vintr_ctrl.set_v_tpr(tpr >> 4)
+    }
+
     fn queue_interrupt(&mut self, irq: u8) {
         // Schedule the interrupt vector for delivery as a virtual interrupt.
         let mut vintr_ctrl = self.vintr_ctrl;

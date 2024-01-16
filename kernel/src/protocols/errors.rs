@@ -62,7 +62,7 @@ impl SvsmReqError {
     impl_req_err!(invalid_parameter, INVALID_PARAMETER);
     impl_req_err!(invalid_request, INVALID_REQUEST);
     impl_req_err!(busy, BUSY);
-    fn protocol(code: u64) -> Self {
+    pub fn protocol(code: u64) -> Self {
         Self::RequestError(SvsmResultCode::PROTOCOL_BASE(code))
     }
 }

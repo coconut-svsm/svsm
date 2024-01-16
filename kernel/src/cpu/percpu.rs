@@ -9,6 +9,7 @@ extern crate alloc;
 use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::apic::ApicError;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
@@ -216,6 +217,10 @@ impl PerCpuShared {
         }
     }
 
+    pub const fn apic_id(&self) -> u32 {
+        self.apic_id
+    }
+
     pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
         let mut locked = self.guest_vmsa.lock();
         locked.update_vmsa_caa(Some(vmsa), Some(caa));
@@ -360,7 +365,7 @@ impl PerCpu {
     }
 
     pub fn get_apic_id(&self) -> u32 {
-        self.shared().apic_id
+        self.shared().apic_id()
     }
 
     fn allocate_page_table(&self) -> Result<(), SvsmError> {
@@ -625,10 +630,42 @@ impl PerCpu {
         Ok(())
     }
 
+    pub fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
+        if self.apic_emulation.get() {
+            // APIC emulation cannot be disabled if the platform has locked
+            // the use of APIC emulation.
+            SVSM_PLATFORM.as_dyn_ref().disable_apic_emulation()?;
+            self.apic_emulation.set(false);
+        }
+        Ok(())
+    }
+
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA) {
         if self.apic_emulation.get() {
             self.apic.borrow_mut().present_interrupts(vmsa);
         }
+    }
+
+    pub fn use_apic_emulation(&self) -> bool {
+        self.apic_emulation.get()
+    }
+
+    pub fn read_apic_register(&self, register: u64) -> Result<u64, ApicError> {
+        let mut vmsa_ref = self.guest_vmsa_ref();
+        let vmsa = vmsa_ref.vmsa();
+        self.apic
+            .borrow_mut()
+            .read_register(self.shared(), vmsa, register)
+    }
+
+    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), ApicError> {
+        let mut vmsa_ref = self.guest_vmsa_ref();
+        let vmsa = vmsa_ref.vmsa();
+        self.apic.borrow_mut().write_register(vmsa, register, value)
+    }
+
+    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) {
+        self.apic.borrow_mut().configure_vector(vector, allowed)
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {

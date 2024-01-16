@@ -4,12 +4,98 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
+use crate::cpu::percpu::PerCpuShared;
 use crate::platform::guest_cpu::GuestCpuState;
 
-#[derive(Clone, Copy, Debug, Default)]
+use bitfield_struct::bitfield;
+
+const APIC_REGISTER_APIC_ID: u64 = 0x802;
+const APIC_REGISTER_TPR: u64 = 0x808;
+const APIC_REGISTER_PPR: u64 = 0x80A;
+const APIC_REGISTER_EOI: u64 = 0x80B;
+const APIC_REGISTER_ISR_0: u64 = 0x810;
+const APIC_REGISTER_ISR_7: u64 = 0x817;
+const APIC_REGISTER_IRR_0: u64 = 0x820;
+const APIC_REGISTER_IRR_7: u64 = 0x827;
+const APIC_REGISTER_ICR: u64 = 0x830;
+const APIC_REGISTER_SELF_IPI: u64 = 0x83F;
+
+#[derive(Debug, PartialEq)]
+enum IcrDestFmt {
+    Dest = 0,
+    OnlySelf = 1,
+    AllWithSelf = 2,
+    AllButSelf = 3,
+}
+
+impl IcrDestFmt {
+    const fn into_bits(self) -> u64 {
+        self as _
+    }
+    const fn from_bits(value: u64) -> Self {
+        match value {
+            3 => Self::AllButSelf,
+            2 => Self::AllWithSelf,
+            1 => Self::OnlySelf,
+            _ => Self::Dest,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum IcrMessageType {
+    Fixed = 0,
+    Unknown = 3,
+    Nmi = 4,
+    Init = 5,
+    Sipi = 6,
+    ExtInt = 7,
+}
+
+impl IcrMessageType {
+    const fn into_bits(self) -> u64 {
+        self as _
+    }
+    const fn from_bits(value: u64) -> Self {
+        match value {
+            7 => Self::ExtInt,
+            6 => Self::Sipi,
+            5 => Self::Init,
+            4 => Self::Nmi,
+            0 => Self::Fixed,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+#[bitfield(u64)]
+struct ApicIcr {
+    pub vector: u8,
+    #[bits(3)]
+    pub message_type: IcrMessageType,
+    pub destination_mode: bool,
+    pub delivery_status: bool,
+    rsvd_13: bool,
+    pub assert: bool,
+    pub trigger_mode: bool,
+    #[bits(2)]
+    pub remote_read_status: usize,
+    #[bits(2)]
+    pub destination_shorthand: IcrDestFmt,
+    #[bits(12)]
+    rsvd_31_20: u64,
+    pub destination: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum ApicError {
+    ApicError,
+}
+
+#[derive(Default, Clone, Copy, Debug)]
 pub struct LocalApic {
     irr: [u32; 8],
-    _allowed_irr: [u32; 8],
+    allowed_irr: [u32; 8],
     isr_stack_index: usize,
     isr_stack: [u8; 16],
     update_required: bool,
@@ -21,7 +107,7 @@ impl LocalApic {
     pub fn new() -> Self {
         LocalApic {
             irr: [0; 8],
-            _allowed_irr: [0; 8],
+            allowed_irr: [0; 8],
             isr_stack_index: 0,
             isr_stack: [0; 16],
             update_required: false,
@@ -165,6 +251,119 @@ impl LocalApic {
         if self.isr_stack_index != 0 {
             self.isr_stack_index -= 1;
             self.update_required = true;
+        }
+    }
+
+    fn get_isr(&self, index: usize) -> u32 {
+        let mut value = 0;
+        for isr in self.isr_stack.into_iter().take(self.isr_stack_index) {
+            if (usize::from(isr >> 5)) == index {
+                value |= 1 << (isr & 0x1F)
+            }
+        }
+        value
+    }
+
+    fn post_interrupt(&mut self, irq: u8) {
+        // Set the appropriate bit in the IRR.  Once set, signal that interrupt
+        // processing is required before returning to the guest.
+        self.insert_irr(irq);
+        self.update_required = true;
+    }
+
+    pub fn read_register<T: GuestCpuState>(
+        &mut self,
+        cpu_shared: &PerCpuShared,
+        cpu_state: &mut T,
+        register: u64,
+    ) -> Result<u64, ApicError> {
+        // Rewind any undelivered interrupt so it is reflected in any register
+        // read.
+        self.check_delivered_interrupts(cpu_state);
+
+        match register {
+            APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
+            APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
+                let offset = register - APIC_REGISTER_IRR_0;
+                let index: usize = offset.try_into().unwrap();
+                Ok(self.irr[index] as u64)
+            }
+            APIC_REGISTER_ISR_0..=APIC_REGISTER_ISR_7 => {
+                let offset = register - APIC_REGISTER_ISR_0;
+                Ok(self.get_isr(offset.try_into().unwrap()) as u64)
+            }
+            APIC_REGISTER_TPR => Ok(cpu_state.get_tpr() as u64),
+            APIC_REGISTER_PPR => Ok(self.get_ppr(cpu_state) as u64),
+            _ => Err(ApicError::ApicError),
+        }
+    }
+
+    fn handle_icr_write(&mut self, value: u64) -> Result<(), ApicError> {
+        let icr = ApicIcr::from(value);
+
+        // Only fixed interrupts can be handled.
+        if icr.message_type() != IcrMessageType::Fixed {
+            return Err(ApicError::ApicError);
+        }
+
+        // Only asserted edge-triggered interrupts can be handled.
+        if icr.trigger_mode() || !icr.assert() {
+            return Err(ApicError::ApicError);
+        }
+
+        // FIXME - support destinations other than self.
+        if icr.destination_shorthand() != IcrDestFmt::OnlySelf {
+            return Err(ApicError::ApicError);
+        }
+
+        self.post_interrupt(icr.vector());
+
+        Ok(())
+    }
+
+    pub fn write_register<T: GuestCpuState>(
+        &mut self,
+        cpu_state: &mut T,
+        register: u64,
+        value: u64,
+    ) -> Result<(), ApicError> {
+        // Rewind any undelivered interrupt so it is correctly processed by
+        // any register write.
+        self.check_delivered_interrupts(cpu_state);
+
+        match register {
+            APIC_REGISTER_TPR => {
+                // TPR must be an 8-bit value.
+                if value > 0xFF {
+                    Err(ApicError::ApicError)
+                } else {
+                    cpu_state.set_tpr((value & 0xFF) as u8);
+                    Ok(())
+                }
+            }
+            APIC_REGISTER_EOI => {
+                self.perform_eoi();
+                Ok(())
+            }
+            APIC_REGISTER_ICR => self.handle_icr_write(value),
+            APIC_REGISTER_SELF_IPI => {
+                if value > 0xFF {
+                    Err(ApicError::ApicError)
+                } else {
+                    self.post_interrupt((value & 0xFF) as u8);
+                    Ok(())
+                }
+            }
+            _ => Err(ApicError::ApicError),
+        }
+    }
+    pub fn configure_vector(&mut self, vector: u8, allowed: bool) {
+        let index = (vector >> 5) as usize;
+        let mask = 1 << (vector & 31);
+        if allowed {
+            self.allowed_irr[index] |= mask;
+        } else {
+            self.allowed_irr[index] &= !mask;
         }
     }
 }

@@ -6,6 +6,7 @@
 
 pub trait GuestCpuState {
     fn get_tpr(&self) -> u8;
+    fn set_tpr(&mut self, tpr: u8);
     fn queue_interrupt(&mut self, irq: u8);
     fn try_deliver_interrupt_immediately(&mut self, irq: u8) -> bool;
     fn in_intr_shadow(&self) -> bool;

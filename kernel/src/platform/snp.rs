@@ -20,7 +20,14 @@ use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+
+const APIC_EMULATION_DISABLED: u8 = 0;
+const APIC_EMULATION_ENABLED: u8 = 1;
+const APIC_EMULATION_LOCKED: u8 = 2;
+static APIC_EMULATION_STATE: AtomicU8 = AtomicU8::new(APIC_EMULATION_ENABLED);
 
 #[derive(Clone, Copy, Debug)]
 pub struct SnpPlatform {
@@ -139,6 +146,54 @@ impl SvsmPlatform for SnpPlatform {
 
     fn use_alternate_injection(&self) -> bool {
         self.use_alternate_injection
+    }
+
+    fn lock_unlock_apic_emulation(&self, lock: bool) -> Result<(), SvsmError> {
+        // The lock state can only be changed if APIC emulation has not already
+        // been disabled on any CPU.
+        let new_state = if lock {
+            APIC_EMULATION_LOCKED
+        } else {
+            APIC_EMULATION_ENABLED
+        };
+        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
+        loop {
+            if current == APIC_EMULATION_DISABLED {
+                return Err(SvsmError::Apic);
+            }
+            match APIC_EMULATION_STATE.compare_exchange_weak(
+                current,
+                new_state,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(val) => current = val,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
+        // APIC emulation can only be disabled if it is not locked.
+        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
+        loop {
+            if current == APIC_EMULATION_LOCKED {
+                return Err(SvsmError::Apic);
+            }
+            match APIC_EMULATION_STATE.compare_exchange_weak(
+                current,
+                APIC_EMULATION_DISABLED,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(val) => current = val,
+            }
+        }
+
+        Ok(())
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {

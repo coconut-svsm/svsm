@@ -6,13 +6,14 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::{this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::cpu::percpu::{this_cpu, this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
+use crate::protocols::apic::{APIC_PROTOCOL, APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::requests::SvsmCaa;
@@ -212,6 +213,19 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             CORE_PROTOCOL_VERSION_MIN,
             CORE_PROTOCOL_VERSION_MAX,
         ),
+        APIC_PROTOCOL => {
+            // The APIC protocol is only supported if the calling CPU supports
+            // alternate injection.
+            if this_cpu().use_apic_emulation() {
+                protocol_supported(
+                    version,
+                    APIC_PROTOCOL_VERSION_MIN,
+                    APIC_PROTOCOL_VERSION_MAX,
+                )
+            } else {
+                0
+            }
+        }
         _ => 0,
     };
 

@@ -89,6 +89,14 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
+    fn lock_unlock_apic_emulation(&self, _lock: bool) -> Result<(), SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
+    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         write_msr(APIC_MSR_ICR, icr);
         Ok(())
