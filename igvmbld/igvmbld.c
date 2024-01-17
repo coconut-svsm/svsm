@@ -873,7 +873,6 @@ static void print_fw_metadata(IgvmParamBlock *igvm_parameter_block)
     printf("    secrets_page: 0x%X\n", igvm_parameter_block->firmware.secrets_page);
     printf("    caa_page: 0x%X\n", igvm_parameter_block->firmware.caa_page);
     printf("    cpuid_page: 0x%X\n", igvm_parameter_block->firmware.cpuid_page);
-    printf("    reset_addr: 0x%X\n", igvm_parameter_block->firmware.reset_addr);
     printf("    prevalidated_count: 0x%X\n", igvm_parameter_block->firmware.prevalidated_count);
     for (i = 0; i < igvm_parameter_block->firmware.prevalidated_count; ++i)
     {

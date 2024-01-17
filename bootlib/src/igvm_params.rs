@@ -52,7 +52,7 @@ pub struct IgvmParamBlockFwInfo {
     /// memory and will not be loaded into the ROM range.
     pub in_low_memory: u8,
 
-    _reserved: [u8; 3],
+    _reserved: [u8; 7],
 
     /// The guest physical address at which the firmware expects to find the
     /// secrets page.
@@ -65,10 +65,6 @@ pub struct IgvmParamBlockFwInfo {
     /// The guest physical address at which the firmware expects to find the
     /// CPUID page.
     pub cpuid_page: u32,
-
-    /// The guest physical address at which the firmware expects the reset
-    /// vector to be defined.
-    pub reset_addr: u32,
 
     /// The number of prevalidated memory regions defined by the firmware.
     pub prevalidated_count: u32,

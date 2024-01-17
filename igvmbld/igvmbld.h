@@ -25,11 +25,10 @@ typedef struct {
     uint32_t start;
     uint32_t size;
     uint8_t in_low_memory;
-    uint8_t _reserved[3];
+    uint8_t _reserved[7];
     uint32_t secrets_page;
     uint32_t caa_page;
     uint32_t cpuid_page;
-    uint32_t reset_addr;
     uint32_t prevalidated_count;
     IgvmParamBlockFwMem prevalidated[8];
 } IgvmParamBlockFwInfo;

@@ -25,7 +25,6 @@ use core::str::FromStr;
 
 #[derive(Clone, Debug)]
 pub struct SevFWMetaData {
-    pub reset_ip: Option<PhysAddr>,
     pub cpuid_page: Option<PhysAddr>,
     pub secrets_page: Option<PhysAddr>,
     pub caa_page: Option<PhysAddr>,
@@ -35,7 +34,6 @@ pub struct SevFWMetaData {
 impl SevFWMetaData {
     pub const fn new() -> Self {
         SevFWMetaData {
-            reset_ip: None,
             cpuid_page: None,
             secrets_page: None,
             caa_page: None,
@@ -135,7 +133,6 @@ impl fmt::Display for Uuid {
 
 const OVMF_TABLE_FOOTER_GUID: &str = "96b582de-1fb2-45f7-baea-a366c55a082d";
 const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
-const SEV_INFO_BLOCK_GUID: &str = "00f771de-1a7e-4fcb-890e-68c77e2fb44e";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
 #[derive(Clone, Copy, Debug)]
@@ -247,14 +244,6 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID)?;
     if find_table(&svsm_info_uuid, raw_data).is_some() {
         return Err(SvsmError::Firmware);
-    }
-
-    // Search SEV_INFO_BLOCK_GUID
-    let sev_info_uuid = Uuid::from_str(SEV_INFO_BLOCK_GUID)?;
-    if let Some(tbl) = find_table(&sev_info_uuid, raw_data) {
-        let bytes: [u8; 4] = tbl.try_into().map_err(|_| SvsmError::Firmware)?;
-        let reset_ip = u32::from_le_bytes(bytes) as usize;
-        meta_data.reset_ip = Some(PhysAddr::from(reset_ip));
     }
 
     // Search and parse SEV metadata
@@ -470,11 +459,6 @@ pub fn validate_fw_memory(
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     log::info!("FW Meta Data");
-
-    match fw_meta.reset_ip {
-        Some(ip) => log::info!("  Reset RIP    : {:#010x}", ip),
-        None => log::info!("  Reset RIP    : None"),
-    };
 
     match fw_meta.cpuid_page {
         Some(addr) => log::info!("  CPUID Page   : {:#010x}", addr),

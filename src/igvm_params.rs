@@ -195,16 +195,6 @@ impl IgvmParams<'_> {
                 fw_meta.add_valid_mem(base, size);
             }
 
-            if self.igvm_param_block.firmware.reset_addr != 0 {
-                fw_meta.reset_ip = Some(PhysAddr::new(
-                    self.igvm_param_block
-                        .firmware
-                        .reset_addr
-                        .try_into()
-                        .unwrap(),
-                ));
-            }
-
             Some(fw_meta)
         }
     }

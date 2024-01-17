@@ -71,7 +71,6 @@ int uuid_cmp(const struct UUID *u1, const struct UUID *u2)
 
 #define OVMF_TABLE_FOOTER_GUID     "96b582de-1fb2-45f7-baea-a366c55a082d"
 #define OVMF_SEV_META_DATA_GUID    "dc886566-984a-4798-a75e-5585a7bf67cc"
-#define SEV_INFO_BLOCK_GUID        "00f771de-1a7e-4fcb-890e-68c77e2fb44e"
 
 #define SEV_META_DESC_TYPE_MEM     1
 #define SEV_META_DESC_TYPE_SECRETS 2
@@ -99,11 +98,6 @@ struct __attribute__((__packed__)) sev_meta_data {
     uint32_t num_desc;
     struct meta_data_desc descs[];
 };
-
-static void parse_sev_info_block(void *data, IgvmParamBlock *params)
-{
-    params->firmware.reset_addr = *(uint32_t *)data;
-}
 
 static void parse_sev_meta_data(void *data, uint8_t *buffer, size_t size, IgvmParamBlock *params)
 {
@@ -149,7 +143,7 @@ static void parse_sev_meta_data(void *data, uint8_t *buffer, size_t size, IgvmPa
 
 static uint8_t *parse_inner_table(uint8_t *ptr, uint8_t *buffer, size_t size, IgvmParamBlock *params)
 {
-    struct UUID *entry_uuid, meta_uuid, info_uuid;
+    struct UUID *entry_uuid, meta_uuid;
     int len;
     void *data;
 
@@ -160,13 +154,8 @@ static uint8_t *parse_inner_table(uint8_t *ptr, uint8_t *buffer, size_t size, Ig
     uuid_parse(OVMF_SEV_META_DATA_GUID, &meta_uuid);
     meta_uuid = uuid_bswap(meta_uuid);
 
-    uuid_parse(SEV_INFO_BLOCK_GUID, &info_uuid);
-    info_uuid = uuid_bswap(info_uuid);
-
     if (!uuid_cmp(entry_uuid, &meta_uuid)) {
         parse_sev_meta_data(data, buffer, size, params);
-    } else if (!uuid_cmp(entry_uuid, &info_uuid)) {
-        parse_sev_info_block(data, params);
     }
     return ptr - len;
 }
