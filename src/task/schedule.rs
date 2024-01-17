@@ -8,13 +8,14 @@ extern crate alloc;
 
 use core::ptr::null_mut;
 
-use super::Task;
 use super::{tasks::TaskRuntime, TaskState, INITIAL_TASK_ID};
+use super::{Task, TASK_FLAG_SHARE_PT};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
+use core::cell::OnceCell;
 use intrusive_collections::{
     intrusive_adapter, Bound, KeyAdapter, LinkedList, LinkedListAtomicLink, RBTree,
     RBTreeAtomicLink,
@@ -57,6 +58,7 @@ struct TaskSwitch {
 pub struct RunQueue {
     tree: Option<RBTree<TaskTreeAdapter>>,
     current_task: Option<TaskPointer>,
+    idle_task: OnceCell<TaskPointer>,
     terminated_task: Option<TaskPointer>,
     id: u32,
     task_switch: TaskSwitch,
@@ -70,6 +72,7 @@ impl RunQueue {
         Self {
             tree: None,
             current_task: None,
+            idle_task: OnceCell::new(),
             terminated_task: None,
             id,
             task_switch: TaskSwitch {
@@ -101,6 +104,31 @@ impl RunQueue {
         self.current_task
             .as_ref()
             .map_or(INITIAL_TASK_ID, |t| t.task.lock_read().id)
+    }
+
+    /// Allocates the idle task for this RunQueue. This function sets a
+    /// OnceCell at the end and can thus be only called once.
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, SvsmError on failure
+    pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
+        let mut task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
+        task.set_on_switch_hook(Some(task_switch_hook));
+        let node = Arc::new(TaskNode {
+            tree_link: RBTreeAtomicLink::default(),
+            list_link: LinkedListAtomicLink::default(),
+            task: RWLock::new(task),
+        });
+
+        // Add idle task to global task list
+        TASKLIST.lock().list().push_front(node.clone());
+
+        self.idle_task
+            .set(node)
+            .expect("Idle task already allocated");
+
+        Ok(())
     }
 
     /// Determine the next task to run on the vCPU that owns this instance.
