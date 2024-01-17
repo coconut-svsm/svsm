@@ -1029,6 +1029,7 @@ int main(int argc, const char *argv[])
     }
 
     // Construct the initial stack contents.
+    memset(initial_stack->data, 0, PAGE_SIZE);
     stage2_stack = (Stage2Stack *)((uint8_t *)initial_stack->data + PAGE_SIZE) - 1;
     stage2_stack->kernel_start = (uint32_t)kernel_data->address;
     stage2_stack->kernel_end = (uint32_t)kernel_data->address + kernel_data->size;
