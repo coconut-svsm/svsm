@@ -342,6 +342,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
 
+    // Idle task must be allocated after PerCPU data is mapped
+    bsp_percpu
+        .setup_idle_task(svsm_main)
+        .expect("Failed to allocate idle task for BSP");
+
     idt_init();
 
     CONSOLE_SERIAL

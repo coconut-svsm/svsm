@@ -61,6 +61,10 @@ fn start_ap() {
         .setup_on_cpu()
         .expect("setup_on_cpu() failed");
 
+    this_cpu()
+        .setup_idle_task(ap_request_loop)
+        .expect("Failed to allocated idle task for AP");
+
     // Send a life-sign
     log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());
 

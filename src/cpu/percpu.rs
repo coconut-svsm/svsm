@@ -439,6 +439,10 @@ impl PerCpu {
         self.register_ghcb()
     }
 
+    pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
+        self.runqueue.lock_read().allocate_idle_task(entry)
+    }
+
     pub fn load_pgtable(&mut self) {
         self.get_pgtable().load();
     }
