@@ -539,31 +539,22 @@ pub mod svsm_gdbstub {
         ) -> Result<(), Self::Error> {
             let mut tl = TASKLIST.lock();
 
-            let mut any_scheduled = false;
-
-            if tl.list().is_empty() {
-                // Task list has not been initialised yet. Report a single thread
-                // for the current CPU
+            // Get the current task. If this is the first request after the remote
+            // GDB has connected then we need to report the current task first.
+            // There is no harm in doing this every time the thread list is requested.
+            let current_task = this_cpu().runqueue().lock_read().current_task_id();
+            if current_task == INITIAL_TASK_ID {
                 thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
             } else {
+                thread_is_active(Tid::new(current_task as usize).unwrap());
+
                 let mut cursor = tl.list().front_mut();
                 while cursor.get().is_some() {
-                    if cursor.get().unwrap().task.lock_read().allocation.is_some() {
-                        any_scheduled = true;
-                        break;
+                    let this_task = cursor.get().unwrap().task.lock_read().id;
+                    if this_task != current_task {
+                        thread_is_active(Tid::new(this_task as usize).unwrap());
                     }
                     cursor.move_next();
-                }
-                if any_scheduled {
-                    let mut cursor = tl.list().front_mut();
-                    while cursor.get().is_some() {
-                        thread_is_active(
-                            Tid::new(cursor.get().unwrap().task.lock_read().id as usize).unwrap(),
-                        );
-                        cursor.move_next();
-                    }
-                } else {
-                    thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
                 }
             }
             Ok(())
