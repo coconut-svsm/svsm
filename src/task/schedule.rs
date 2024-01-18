@@ -159,7 +159,7 @@ impl RunQueue {
     pub fn current_task_id(&self) -> u32 {
         self.current_task
             .as_ref()
-            .map_or(INITIAL_TASK_ID, |t| t.task.lock_read().id)
+            .map_or(INITIAL_TASK_ID, |t| t.task.lock_read().get_task_id())
     }
 
     /// Allocates the idle task for this RunQueue. This function sets a
@@ -212,7 +212,7 @@ impl TaskList {
         let task_list = &self.list.as_ref()?;
         let mut cursor = task_list.front();
         while let Some(task_node) = cursor.get() {
-            if task_node.task.lock_read().id == id {
+            if task_node.task.lock_read().get_task_id() == id {
                 return cursor.clone_pointer();
             }
             cursor.move_next();
@@ -254,7 +254,7 @@ pub fn create_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, Sv
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
     match &this_cpu().runqueue().lock_read().current_task {
-        Some(current_task) => current_task.task.lock_read().id == id,
+        Some(current_task) => current_task.task.lock_read().get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
 }

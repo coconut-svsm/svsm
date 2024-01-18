@@ -177,7 +177,7 @@ pub struct Task {
     pub state: TaskState,
 
     /// ID of the task
-    pub id: u32,
+    id: u32,
 
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
@@ -232,6 +232,10 @@ impl Task {
 
     pub fn stack_bounds(&self) -> StackBounds {
         self.stack_bounds
+    }
+
+    pub fn get_task_id(&self) -> u32 {
+        self.id
     }
 
     pub fn set_idle_task(&mut self) {

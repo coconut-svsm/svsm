@@ -548,7 +548,7 @@ pub mod svsm_gdbstub {
 
                 let mut cursor = tl.list().front_mut();
                 while cursor.get().is_some() {
-                    let this_task = cursor.get().unwrap().task.lock_read().id;
+                    let this_task = cursor.get().unwrap().task.lock_read().get_task_id();
                     if this_task != current_task {
                         thread_is_active(Tid::new(this_task as usize).unwrap());
                     }
