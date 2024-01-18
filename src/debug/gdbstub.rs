@@ -570,8 +570,10 @@ pub mod svsm_gdbstub {
                 Some(task) => {
                     if task.is_running() {
                         "Running".as_bytes()
-                    } else {
+                    } else if task.is_terminated() {
                         "Terminated".as_bytes()
+                    } else {
+                        "Blocked".as_bytes()
                     }
                 }
                 None => "Stopped".as_bytes(),

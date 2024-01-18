@@ -30,6 +30,7 @@ pub const INITIAL_TASK_ID: u32 = 1;
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
     RUNNING,
+    BLOCKED,
     #[default]
     TERMINATED,
 }
@@ -284,6 +285,10 @@ impl Task {
 
     pub fn set_task_terminated(&self) {
         self.sched_state.lock_write().state = TaskState::TERMINATED;
+    }
+
+    pub fn set_task_blocked(&self) {
+        self.sched_state.lock_write().state = TaskState::BLOCKED;
     }
 
     pub fn is_running(&self) -> bool {
