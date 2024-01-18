@@ -174,7 +174,7 @@ pub struct Task {
     idle_task: bool,
 
     /// Current state of the task
-    pub state: TaskState,
+    state: TaskState,
 
     /// ID of the task
     id: u32,
@@ -236,6 +236,22 @@ impl Task {
 
     pub fn get_task_id(&self) -> u32 {
         self.id
+    }
+
+    pub fn set_task_running(&mut self) {
+        self.state = TaskState::RUNNING;
+    }
+
+    pub fn set_task_terminated(&mut self) {
+        self.state = TaskState::TERMINATED;
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.state == TaskState::RUNNING
+    }
+
+    pub fn is_terminated(&self) -> bool {
+        self.state == TaskState::TERMINATED
     }
 
     pub fn set_idle_task(&mut self) {

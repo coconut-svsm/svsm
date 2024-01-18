@@ -24,7 +24,7 @@ pub mod svsm_gdbstub {
     use crate::mm::PerCPUPageMappingGuard;
     use crate::serial::{SerialPort, Terminal};
     use crate::svsm_console::SVSMIOPort;
-    use crate::task::{is_current_task, TaskContext, TaskState, INITIAL_TASK_ID, TASKLIST};
+    use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
     use core::fmt;
     use core::sync::atomic::{AtomicBool, Ordering};
@@ -572,9 +572,10 @@ pub mod svsm_gdbstub {
             let str = match tl.get_task(tid.get() as u32) {
                 Some(t) => {
                     let t = t.task.lock_read();
-                    match t.state {
-                        TaskState::RUNNING => "Running".as_bytes(),
-                        TaskState::TERMINATED => "Terminated".as_bytes(),
+                    if t.is_running() {
+                        "Running".as_bytes()
+                    } else {
+                        "Terminated".as_bytes()
                     }
                 }
                 None => "Stopped".as_bytes(),

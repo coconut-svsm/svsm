@@ -8,8 +8,8 @@ extern crate alloc;
 
 use core::ptr::null_mut;
 
+use super::INITIAL_TASK_ID;
 use super::{Task, TASK_FLAG_SHARE_PT};
-use super::{TaskState, INITIAL_TASK_ID};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
@@ -106,9 +106,9 @@ impl RunQueue {
     /// after the task-switch.
     fn handle_task(&mut self, taskptr: TaskPointer) {
         let task = taskptr.task.lock_read();
-        if (task.state == TaskState::RUNNING) && !task.is_idle_task() {
+        if task.is_running() && !task.is_idle_task() {
             self.run_list.push_back(taskptr.clone());
-        } else if task.state == TaskState::TERMINATED {
+        } else if task.is_terminated() {
             self.terminated_task = Some(taskptr.clone());
         }
     }
@@ -225,7 +225,7 @@ impl TaskList {
         // current task then the task context will still need to be in scope until
         // the next schedule() has completed. Schedule will keep a reference to this
         // task until some time after the context switch.
-        task_node.task.lock_write().state = TaskState::TERMINATED;
+        task_node.task.lock_write().set_task_terminated();
         let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task_node.as_ref()) };
         cursor.remove();
     }
