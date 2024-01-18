@@ -15,7 +15,7 @@ use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::arch::asm;
+use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
 
@@ -331,3 +331,70 @@ pub fn schedule() {
         .terminated_task
         .take();
 }
+
+global_asm!(
+    r#"
+        .text
+
+    switch_context:
+        // Save the current context. The layout must match the TaskContext structure.
+        pushfq
+        pushq   %rax
+        pushq   %rbx
+        pushq   %rcx
+        pushq   %rdx
+        pushq   %rsi
+        pushq   %rdi
+        pushq   %rbp
+        pushq   %r8
+        pushq   %r9
+        pushq   %r10
+        pushq   %r11
+        pushq   %r12
+        pushq   %r13
+        pushq   %r14
+        pushq   %r15
+        pushq   %rsp
+
+        // Save the current stack pointer
+        testq   %rsi, %rsi
+        jz      1f
+        movq    %rsp, (%rsi)
+
+    1:
+        // Switch to the new task state
+        mov     %rdi, %rbx
+        call    apply_new_context
+        mov     %rax, %cr3
+
+        // Switch to the new task stack
+        movq    (%rbx), %rsp
+
+        // We've already restored rsp
+        addq        $8, %rsp
+
+        mov         %rbx, %rdi
+        call        on_switch
+
+        // Restore the task context
+        popq        %r15
+        popq        %r14
+        popq        %r13
+        popq        %r12
+        popq        %r11
+        popq        %r10
+        popq        %r9
+        popq        %r8
+        popq        %rbp
+        popq        %rdi
+        popq        %rsi
+        popq        %rdx
+        popq        %rcx
+        popq        %rbx
+        popq        %rax
+        popfq
+
+        ret
+    "#,
+    options(att_syntax)
+);

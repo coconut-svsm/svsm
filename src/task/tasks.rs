@@ -8,7 +8,6 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::arch::{asm, global_asm};
 use core::fmt;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -240,27 +239,6 @@ impl Task {
         self.stack_bounds
     }
 
-    pub fn set_current(&mut self, previous_task: *mut Task) {
-        // This function is called by one task but returns in the context of
-        // another task. The context of the current task is saved and execution
-        // can resume at the point of the task switch, effectively completing
-        // the function call for the original task.
-        let new_task_addr = (self as *mut Task) as u64;
-
-        this_cpu_mut().current_stack = self.stack_bounds;
-
-        // Switch to the new task
-        unsafe {
-            asm!(
-                r#"
-                    call switch_context
-                "#,
-                in("rsi") previous_task as u64,
-                in("rdi") new_task_addr,
-                options(att_syntax));
-        }
-    }
-
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
     }
@@ -328,71 +306,3 @@ extern "C" fn on_switch(new_task: &mut Task) {
         hook(new_task);
     }
 }
-
-global_asm!(
-    r#"
-        .text
-
-    .globl switch_context
-    switch_context:
-        // Save the current context. The layout must match the TaskContext structure.
-        pushfq
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-        pushq   %rsp
-        
-        // Save the current stack pointer
-        testq   %rsi, %rsi
-        jz      1f
-        movq    %rsp, (%rsi)
-
-    1:
-        // Switch to the new task state
-        mov     %rdi, %rbx
-        call    apply_new_context
-        mov     %rax, %cr3
-
-        // Switch to the new task stack
-        movq    (%rbx), %rsp
-
-        // We've already restored rsp
-        addq        $8, %rsp
-
-        mov         %rbx, %rdi
-        call        on_switch
-
-        // Restore the task context
-        popq        %r15
-        popq        %r14
-        popq        %r13
-        popq        %r12
-        popq        %r11
-        popq        %r10
-        popq        %r9
-        popq        %r8
-        popq        %rbp
-        popq        %rdi
-        popq        %rsi
-        popq        %rdx
-        popq        %rcx
-        popq        %rbx
-        popq        %rax
-        popfq
-
-        ret
-    "#,
-    options(att_syntax)
-);
