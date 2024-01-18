@@ -17,7 +17,7 @@ use crate::cpu::msr::{rdtsc, read_flags};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
+use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::stack::StackBounds;
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
@@ -159,6 +159,18 @@ pub struct TaskContext {
 }
 
 #[repr(C)]
+struct TaskSchedState {
+    /// Whether this is an idle task
+    idle_task: bool,
+
+    /// Current state of the task
+    state: TaskState,
+
+    /// Amount of CPU resource the task has consumed
+    pub runtime: TaskRuntimeImpl,
+}
+
+#[repr(C)]
 pub struct Task {
     pub rsp: u64,
 
@@ -170,26 +182,20 @@ pub struct Task {
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
-    /// Whether this is an idle task
-    idle_task: bool,
-
-    /// Current state of the task
-    state: TaskState,
+    /// State relevant for scheduler
+    sched_state: RWLock<TaskSchedState>,
 
     /// ID of the task
     id: u32,
-
-    /// Amount of CPU resource the task has consumed
-    pub runtime: TaskRuntimeImpl,
 }
 
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Task")
             .field("rsp", &self.rsp)
-            .field("state", &self.state)
+            .field("state", &self.sched_state.lock_read().state)
             .field("id", &self.id)
-            .field("runtime", &self.runtime)
+            .field("runtime", &self.sched_state.lock_read().runtime)
             .finish()
     }
 }
@@ -222,10 +228,12 @@ impl Task {
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
-            idle_task: false,
-            state: TaskState::RUNNING,
+            sched_state: RWLock::new(TaskSchedState {
+                idle_task: false,
+                state: TaskState::RUNNING,
+                runtime: TaskRuntimeImpl::default(),
+            }),
             id: TASK_ID_ALLOCATOR.next_id(),
-            runtime: TaskRuntimeImpl::default(),
         });
         Ok(task)
     }
@@ -238,28 +246,28 @@ impl Task {
         self.id
     }
 
-    pub fn set_task_running(&mut self) {
-        self.state = TaskState::RUNNING;
+    pub fn set_task_running(&self) {
+        self.sched_state.lock_write().state = TaskState::RUNNING;
     }
 
     pub fn set_task_terminated(&mut self) {
-        self.state = TaskState::TERMINATED;
+        self.sched_state.lock_write().state = TaskState::TERMINATED;
     }
 
     pub fn is_running(&self) -> bool {
-        self.state == TaskState::RUNNING
+        self.sched_state.lock_read().state == TaskState::RUNNING
     }
 
     pub fn is_terminated(&self) -> bool {
-        self.state == TaskState::TERMINATED
+        self.sched_state.lock_read().state == TaskState::TERMINATED
     }
 
-    pub fn set_idle_task(&mut self) {
-        self.idle_task = true;
+    pub fn set_idle_task(&self) {
+        self.sched_state.lock_write().idle_task = true;
     }
 
     pub fn is_idle_task(&self) -> bool {
-        self.idle_task
+        self.sched_state.lock_read().idle_task
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {

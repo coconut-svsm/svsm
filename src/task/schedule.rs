@@ -169,7 +169,7 @@ impl RunQueue {
     ///
     /// Ok(()) on success, SvsmError on failure
     pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let mut task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
+        let task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
         task.set_idle_task();
         let node = Arc::new(TaskNode {
             list_link: LinkedListAtomicLink::default(),
