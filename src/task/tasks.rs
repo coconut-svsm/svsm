@@ -354,12 +354,3 @@ extern "C" fn task_exit() {
     }
     schedule();
 }
-
-#[allow(unused)]
-#[no_mangle]
-extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
-    unsafe {
-        let mut pt = (*new_task).page_table.lock();
-        pt.cr3_value().bits() as u64
-    }
-}

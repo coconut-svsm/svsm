@@ -10,6 +10,7 @@ use core::ptr::null_mut;
 
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter, TASK_FLAG_SHARE_PT};
+use crate::address::Address;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
@@ -237,6 +238,8 @@ unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
 
 #[inline(always)]
 unsafe fn switch_to(prev: *const Task, next: *const Task) {
+    let cr3: u64 = unsafe { (*next).page_table.lock().cr3_value().bits() as u64 };
+
     // Switch to new task
     asm!(
         r#"
@@ -244,6 +247,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         "#,
         in("rsi") prev as u64,
         in("rdi") next as u64,
+        in("rdx") cr3,
         options(att_syntax));
 }
 
@@ -326,17 +330,13 @@ global_asm!(
 
     1:
         // Switch to the new task state
-        mov     %rdi, %rbx
-        call    apply_new_context
-        mov     %rax, %cr3
+        mov     %rdx, %cr3
 
         // Switch to the new task stack
-        movq    (%rbx), %rsp
+        movq    (%rdi), %rsp
 
         // We've already restored rsp
         addq        $8, %rsp
-
-        mov         %rbx, %rdi
 
         // Restore the task context
         popq        %r15
