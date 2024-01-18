@@ -16,7 +16,7 @@ pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, VC_VECTOR};
-    use crate::cpu::percpu::{current_task, this_cpu};
+    use crate::cpu::percpu::this_cpu;
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
@@ -104,8 +104,6 @@ pub mod svsm_gdbstub {
             flags: ctx.frame.flags as u64,
             ret_addr: ctx.frame.rip as u64,
         };
-
-        current_task().task.lock_write().rsp = &task_ctx as *const TaskContext as u64;
 
         // Locking the GDB state for the duration of the stop will cause any other
         // APs that hit a breakpoint to busy-wait until the current CPU releases
@@ -195,9 +193,9 @@ pub mod svsm_gdbstub {
             } else {
                 let tl = TASKLIST.lock();
                 let cr3 = read_cr3();
-                let task_node = tl.get_task(id);
-                if let Some(task_node) = task_node {
-                    task_node.task.lock_write().page_table.lock().load();
+                let task = tl.get_task(id);
+                if let Some(task) = task {
+                    task.page_table.lock().load();
                     cr3.bits()
                 } else {
                     0
@@ -446,11 +444,10 @@ pub mod svsm_gdbstub {
                 }
             } else {
                 let task = TASKLIST.lock().get_task(tid.get() as u32);
-                if let Some(task_node) = task {
+                if let Some(task) = task {
                     // The registers are stored in the top of the task stack as part of the
                     // saved context. We need to switch to the task pagetable to access them.
                     let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
-                    let task = task_node.task.lock_read();
                     unsafe {
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
@@ -548,7 +545,7 @@ pub mod svsm_gdbstub {
 
                 let mut cursor = tl.list().front_mut();
                 while cursor.get().is_some() {
-                    let this_task = cursor.get().unwrap().task.lock_read().get_task_id();
+                    let this_task = cursor.get().unwrap().get_task_id();
                     if this_task != current_task {
                         thread_is_active(Tid::new(this_task as usize).unwrap());
                     }
@@ -570,9 +567,8 @@ pub mod svsm_gdbstub {
             // Get the current task from the stopped CPU so we can mark it as stopped
             let tl = TASKLIST.lock();
             let str = match tl.get_task(tid.get() as u32) {
-                Some(t) => {
-                    let t = t.task.lock_read();
-                    if t.is_running() {
+                Some(task) => {
+                    if task.is_running() {
                         "Running".as_bytes()
                     } else {
                         "Terminated".as_bytes()

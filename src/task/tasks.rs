@@ -6,7 +6,6 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
@@ -22,6 +21,7 @@ use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::stack::StackBounds;
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{current_task_terminated, schedule};
 
@@ -166,6 +166,9 @@ struct TaskSchedState {
     /// Current state of the task
     state: TaskState,
 
+    /// CPU this task is currently assigned to
+    cpu: u32,
+
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
 }
@@ -187,6 +190,31 @@ pub struct Task {
 
     /// ID of the task
     id: u32,
+
+    /// Link to global task list
+    list_link: LinkedListAtomicLink,
+
+    /// Link to scheduler run queue
+    runlist_link: LinkedListAtomicLink,
+}
+
+// SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
+// of  `Task` are Send + Sync except for the intrusive_collection links, which
+// are only Send. The only access to these is via the intrusive_adapter!
+// generated code which does not use them concurrently across threads.
+unsafe impl Sync for Task {}
+
+pub type TaskPointer = Arc<Task>;
+
+intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: Task { runlist_link: LinkedListAtomicLink });
+intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link: LinkedListAtomicLink });
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self as *const Self;
+        let b = other as *const Self;
+        a == b
+    }
 }
 
 impl fmt::Debug for Task {
@@ -201,12 +229,14 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<Box<Task>, SvsmError> {
+    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
             this_cpu().get_pgtable().clone_shared()?
         } else {
             Self::allocate_page_table()?
         };
+
+        this_cpu().populate_page_table(&mut pgtable);
 
         let mut vm_kernel_range =
             VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
@@ -219,7 +249,7 @@ impl Task {
 
         let bounds = raw_bounds.map_at(SVSM_PERTASK_STACK_BASE);
 
-        let task: Box<Task> = Box::new(Task {
+        Ok(Arc::new(Task {
             rsp: bounds
                 .top
                 .checked_sub(rsp_offset)
@@ -231,11 +261,13 @@ impl Task {
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
+                cpu: this_cpu().get_apic_id(),
                 runtime: TaskRuntimeImpl::default(),
             }),
             id: TASK_ID_ALLOCATOR.next_id(),
-        });
-        Ok(task)
+            list_link: LinkedListAtomicLink::default(),
+            runlist_link: LinkedListAtomicLink::default(),
+        }))
     }
 
     pub fn stack_bounds(&self) -> StackBounds {
@@ -250,7 +282,7 @@ impl Task {
         self.sched_state.lock_write().state = TaskState::RUNNING;
     }
 
-    pub fn set_task_terminated(&mut self) {
+    pub fn set_task_terminated(&self) {
         self.sched_state.lock_write().state = TaskState::TERMINATED;
     }
 
@@ -268,6 +300,13 @@ impl Task {
 
     pub fn is_idle_task(&self) -> bool {
         self.sched_state.lock_read().idle_task
+    }
+
+    pub fn update_cpu(&self, new_cpu: u32) -> u32 {
+        let mut state = self.sched_state.lock_write();
+        let old_cpu = state.cpu;
+        state.cpu = new_cpu;
+        old_cpu
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
@@ -321,7 +360,6 @@ extern "C" fn task_exit() {
 extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
     unsafe {
         let mut pt = (*new_task).page_table.lock();
-        this_cpu().populate_page_table(&mut pt);
         pt.cr3_value().bits() as u64
     }
 }

@@ -9,15 +9,14 @@ extern crate alloc;
 use core::ptr::null_mut;
 
 use super::INITIAL_TASK_ID;
-use super::{Task, TASK_FLAG_SHARE_PT};
+use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter, TASK_FLAG_SHARE_PT};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
-use crate::locking::{RWLock, SpinLock};
-use alloc::boxed::Box;
+use crate::locking::SpinLock;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
-use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
+use intrusive_collections::LinkedList;
 
 /// Round-Robin scheduler implementation for COCONUT-SVSM
 ///
@@ -39,34 +38,9 @@ use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink}
 /// specific CPU. Tasks in the `BLOCKED` state have no CPU assigned and will run
 /// on the CPU where their event is triggered that makes them `RUNNING` again.
 
-pub type TaskPointer = Arc<TaskNode>;
-
-#[derive(Debug)]
-pub struct TaskNode {
-    list_link: LinkedListAtomicLink,
-    runlist_link: LinkedListAtomicLink,
-    pub task: RWLock<Box<Task>>,
-}
-
-// SAFETY: Send + Sync is required for Arc<TaskNode> to implement Send. The `task`
-// member is Send + Sync but the intrusive_collection links are only Send. The only
-// access to these is via the intrusive_adapter! generated code which does not use
-// them concurrently across threads.
-unsafe impl Sync for TaskNode {}
-
-impl PartialEq for TaskNode {
-    fn eq(&self, other: &Self) -> bool {
-        let a = self as *const Self;
-        let b = other as *const Self;
-        a == b
-    }
-}
-
-intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: TaskNode { runlist_link: LinkedListAtomicLink });
-intrusive_adapter!(pub TaskListAdapter = TaskPointer: TaskNode { list_link: LinkedListAtomicLink });
-
 /// A RunQueue implementation that uses an RBTree to efficiently sort the priority
 /// of tasks within the queue.
+
 #[derive(Debug, Default)]
 pub struct RunQueue {
     run_list: LinkedList<TaskRunListAdapter>,
@@ -104,12 +78,11 @@ impl RunQueue {
     /// state will be put at the end of the run_list. Terminated tasks will be
     /// stored in the terminated_task field of the RunQueue and be destroyed
     /// after the task-switch.
-    fn handle_task(&mut self, taskptr: TaskPointer) {
-        let task = taskptr.task.lock_read();
+    fn handle_task(&mut self, task: TaskPointer) {
         if task.is_running() && !task.is_idle_task() {
-            self.run_list.push_back(taskptr.clone());
+            self.run_list.push_back(task);
         } else if task.is_terminated() {
-            self.terminated_task = Some(taskptr.clone());
+            self.terminated_task = Some(task);
         }
     }
 
@@ -122,7 +95,7 @@ impl RunQueue {
     /// [TaskPointer] to the first task to run
     pub fn schedule_init(&mut self) -> TaskPointer {
         let task = self.get_next_task();
-        this_cpu_mut().current_stack = task.task.lock_read().stack_bounds();
+        this_cpu_mut().current_stack = task.stack_bounds();
         self.current_task = Some(task.clone());
         task
     }
@@ -149,7 +122,7 @@ impl RunQueue {
 
         // Check if task switch is needed
         if current != next {
-            this_cpu_mut().current_stack = next.task.lock_read().stack_bounds();
+            this_cpu_mut().current_stack = next.stack_bounds();
             Some((current, next))
         } else {
             None
@@ -159,7 +132,7 @@ impl RunQueue {
     pub fn current_task_id(&self) -> u32 {
         self.current_task
             .as_ref()
-            .map_or(INITIAL_TASK_ID, |t| t.task.lock_read().get_task_id())
+            .map_or(INITIAL_TASK_ID, |t| t.get_task_id())
     }
 
     /// Allocates the idle task for this RunQueue. This function sets a
@@ -171,17 +144,12 @@ impl RunQueue {
     pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
         task.set_idle_task();
-        let node = Arc::new(TaskNode {
-            list_link: LinkedListAtomicLink::default(),
-            runlist_link: LinkedListAtomicLink::default(),
-            task: RWLock::new(task),
-        });
 
         // Add idle task to global task list
-        TASKLIST.lock().list().push_front(node.clone());
+        TASKLIST.lock().list().push_front(task.clone());
 
         self.idle_task
-            .set(node)
+            .set(task)
             .expect("Idle task already allocated");
         Ok(())
     }
@@ -211,8 +179,8 @@ impl TaskList {
     pub fn get_task(&self, id: u32) -> Option<TaskPointer> {
         let task_list = &self.list.as_ref()?;
         let mut cursor = task_list.front();
-        while let Some(task_node) = cursor.get() {
-            if task_node.task.lock_read().get_task_id() == id {
+        while let Some(task) = cursor.get() {
+            if task.get_task_id() == id {
                 return cursor.clone_pointer();
             }
             cursor.move_next();
@@ -220,13 +188,13 @@ impl TaskList {
         None
     }
 
-    fn terminate(&mut self, task_node: TaskPointer) {
+    fn terminate(&mut self, task: TaskPointer) {
         // Set the task state as terminated. If the task being terminated is the
         // current task then the task context will still need to be in scope until
         // the next schedule() has completed. Schedule will keep a reference to this
         // task until some time after the context switch.
-        task_node.task.lock_write().set_task_terminated();
-        let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task_node.as_ref()) };
+        task.set_task_terminated();
+        let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task.as_ref()) };
         cursor.remove();
     }
 }
@@ -235,26 +203,16 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
 pub fn create_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
     let task = Task::create(entry, flags)?;
-    let node = Arc::new(TaskNode {
-        list_link: LinkedListAtomicLink::default(),
-        runlist_link: LinkedListAtomicLink::default(),
-        task: RWLock::new(task),
-    });
-    {
-        // Ensure the tasklist lock is released before schedule() is called
-        // otherwise the lock will be held when switching to a new context
-        let mut tl = TASKLIST.lock();
-        tl.list().push_front(node.clone());
-    }
+    TASKLIST.lock().list().push_back(task.clone());
     schedule();
 
-    Ok(node)
+    Ok(task)
 }
 
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
     match &this_cpu().runqueue().lock_read().current_task {
-        Some(current_task) => current_task.task.lock_read().get_task_id() == id,
+        Some(current_task) => current_task.get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
 }
@@ -268,20 +226,17 @@ pub unsafe fn current_task_terminated() {
     TASKLIST.lock().terminate(task_node.clone());
 }
 
-// SAFETY: This function returns a mutable raw pointer to a task. It is safe
+// SAFETY: This function returns a raw pointer to a task. It is safe
 // because this function is only used in the task switch code, which also only
-// takes a single mutable reference to the next and previous tasks. Also, this
-// function needs a write-lock on the TaskPointer, making sure there are no
-// other mutable references.
-unsafe fn task_pointer(taskptr: TaskPointer) -> *mut Task {
-    let mut guard = taskptr.task.lock_write();
-    let task = guard.as_mut();
-
-    task as *mut Task
+// takes a single reference to the next and previous tasks. Also, this
+// function works on an Arc, which ensures that only a single mutable reference
+// can exist.
+unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
+    Arc::as_ptr(&taskptr)
 }
 
 #[inline(always)]
-unsafe fn switch_to(prev: *mut Task, next: *mut Task) {
+unsafe fn switch_to(prev: *const Task, next: *const Task) {
     // Switch to new task
     asm!(
         r#"
@@ -313,6 +268,14 @@ pub fn schedule() {
         unsafe {
             // Get current and next task
             let (current, next) = work.unwrap();
+
+            // Update per-cpu mappings if needed
+            let apic_id = this_cpu().get_apic_id();
+            if next.update_cpu(apic_id) != apic_id {
+                // Task has changed CPU, update per-cpu mappings
+                let mut pt = next.page_table.lock();
+                this_cpu().populate_page_table(&mut pt);
+            }
 
             // Get task-pointers, consuming the Arcs and release their reference
             let a = task_pointer(current);
