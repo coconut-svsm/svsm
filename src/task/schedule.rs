@@ -202,9 +202,13 @@ impl TaskList {
 
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
-pub fn create_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
+pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
     let task = Task::create(entry, flags)?;
     TASKLIST.lock().list().push_back(task.clone());
+
+    // Put task on the runqueue of this CPU
+    this_cpu().runqueue().lock_write().handle_task(task.clone());
+
     schedule();
 
     Ok(task)
