@@ -171,6 +171,9 @@ pub struct Task {
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
+    /// Whether this is an idle task
+    pub idle_task: bool,
+
     /// Current state of the task
     pub state: TaskState,
 
@@ -234,6 +237,7 @@ impl Task {
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
+            idle_task: false,
             state: TaskState::RUNNING,
             affinity: None,
             allocation: None,

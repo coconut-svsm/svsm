@@ -115,6 +115,7 @@ impl RunQueue {
     pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let mut task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
         task.set_on_switch_hook(Some(task_switch_hook));
+        task.idle_task = true;
         let node = Arc::new(TaskNode {
             tree_link: RBTreeAtomicLink::default(),
             list_link: LinkedListAtomicLink::default(),
