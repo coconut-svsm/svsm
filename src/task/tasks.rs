@@ -181,10 +181,6 @@ pub struct Task {
 
     /// Amount of CPU resource the task has consumed
     pub runtime: TaskRuntimeImpl,
-
-    /// Optional hook that is called immediately after switching to this task
-    /// before the context is restored
-    pub on_switch_hook: Option<fn(&Self)>,
 }
 
 impl fmt::Debug for Task {
@@ -230,7 +226,6 @@ impl Task {
             state: TaskState::RUNNING,
             id: TASK_ID_ALLOCATOR.next_id(),
             runtime: TaskRuntimeImpl::default(),
-            on_switch_hook: None,
         });
         Ok(task)
     }
@@ -241,10 +236,6 @@ impl Task {
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
-    }
-
-    pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
-        self.on_switch_hook = hook;
     }
 
     fn allocate_stack(
@@ -296,13 +287,5 @@ extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
         let mut pt = (*new_task).page_table.lock();
         this_cpu().populate_page_table(&mut pt);
         pt.cr3_value().bits() as u64
-    }
-}
-
-#[allow(unused)]
-#[no_mangle]
-extern "C" fn on_switch(new_task: &mut Task) {
-    if let Some(hook) = new_task.on_switch_hook {
-        hook(new_task);
     }
 }

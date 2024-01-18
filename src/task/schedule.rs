@@ -374,7 +374,6 @@ global_asm!(
         addq        $8, %rsp
 
         mov         %rbx, %rdi
-        call        on_switch
 
         // Restore the task context
         popq        %r15
