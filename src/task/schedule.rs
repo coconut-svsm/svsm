@@ -106,7 +106,7 @@ impl RunQueue {
     /// after the task-switch.
     fn handle_task(&mut self, taskptr: TaskPointer) {
         let task = taskptr.task.lock_read();
-        if (task.state == TaskState::RUNNING) && !task.idle_task {
+        if (task.state == TaskState::RUNNING) && !task.is_idle_task() {
             self.run_list.push_back(taskptr.clone());
         } else if task.state == TaskState::TERMINATED {
             self.terminated_task = Some(taskptr.clone());
@@ -170,7 +170,7 @@ impl RunQueue {
     /// Ok(()) on success, SvsmError on failure
     pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let mut task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
-        task.idle_task = true;
+        task.set_idle_task();
         let node = Arc::new(TaskNode {
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),

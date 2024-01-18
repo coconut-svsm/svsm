@@ -171,7 +171,7 @@ pub struct Task {
     vm_kernel_range: VMR,
 
     /// Whether this is an idle task
-    pub idle_task: bool,
+    idle_task: bool,
 
     /// Current state of the task
     pub state: TaskState,
@@ -232,6 +232,14 @@ impl Task {
 
     pub fn stack_bounds(&self) -> StackBounds {
         self.stack_bounds
+    }
+
+    pub fn set_idle_task(&mut self) {
+        self.idle_task = true;
+    }
+
+    pub fn is_idle_task(&self) -> bool {
+        self.idle_task
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
