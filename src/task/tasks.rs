@@ -177,15 +177,6 @@ pub struct Task {
     /// Current state of the task
     pub state: TaskState,
 
-    /// Task affinity
-    /// None: The task can be scheduled to any CPU
-    /// u32:  The APIC ID of the CPU that the task must run on
-    pub affinity: Option<u32>,
-
-    // APIC ID of the CPU that task has been assigned to. If 'None' then
-    // the task is not currently assigned to a CPU
-    pub allocation: Option<u32>,
-
     /// ID of the task
     pub id: u32,
 
@@ -202,7 +193,6 @@ impl fmt::Debug for Task {
         f.debug_struct("Task")
             .field("rsp", &self.rsp)
             .field("state", &self.state)
-            .field("affinity", &self.affinity)
             .field("id", &self.id)
             .field("runtime", &self.runtime)
             .finish()
@@ -239,8 +229,6 @@ impl Task {
             vm_kernel_range,
             idle_task: false,
             state: TaskState::RUNNING,
-            affinity: None,
-            allocation: None,
             id: TASK_ID_ALLOCATOR.next_id(),
             runtime: TaskRuntimeImpl::default(),
             on_switch_hook: None,
@@ -271,10 +259,6 @@ impl Task {
                 in("rdi") new_task_addr,
                 options(att_syntax));
         }
-    }
-
-    pub fn set_affinity(&mut self, affinity: Option<u32>) {
-        self.affinity = affinity;
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {

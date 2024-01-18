@@ -16,7 +16,7 @@ pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, VC_VECTOR};
-    use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+    use crate::cpu::percpu::{current_task, this_cpu};
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
@@ -105,9 +105,7 @@ pub mod svsm_gdbstub {
             ret_addr: ctx.frame.rip as u64,
         };
 
-        if let Some(task_node) = this_cpu_mut().runqueue().lock_read().get_task(id) {
-            task_node.task.lock_write().rsp = &task_ctx as *const TaskContext as u64;
-        }
+        current_task().task.lock_write().rsp = &task_ctx as *const TaskContext as u64;
 
         // Locking the GDB state for the duration of the stop will cause any other
         // APs that hit a breakpoint to busy-wait until the current CPU releases
@@ -575,17 +573,7 @@ pub mod svsm_gdbstub {
                 Some(t) => {
                     let t = t.task.lock_read();
                     match t.state {
-                        TaskState::RUNNING => {
-                            if let Some(allocation) = t.allocation {
-                                if this_cpu().get_apic_id() == allocation {
-                                    "Stopped".as_bytes()
-                                } else {
-                                    "Running".as_bytes()
-                                }
-                            } else {
-                                "Stopped".as_bytes()
-                            }
-                        }
+                        TaskState::RUNNING => "Running".as_bytes(),
                         TaskState::TERMINATED => "Terminated".as_bytes(),
                     }
                 }

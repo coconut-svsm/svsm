@@ -266,7 +266,7 @@ impl PerCpu {
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
-            runqueue: RWLock::new(RunQueue::new(apic_id)),
+            runqueue: RWLock::new(RunQueue::new()),
             current_stack: StackBounds::default(),
         }
     }
@@ -603,12 +603,6 @@ impl PerCpu {
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_range.handle_page_fault(vaddr, write)
-    }
-
-    /// Allocate any candidate unallocated tasks from the global task list to our
-    /// CPU runqueue.
-    pub fn allocate_tasks(&mut self) {
-        self.runqueue.lock_write().allocate();
     }
 
     /// Access the PerCpu runqueue protected with a lock
