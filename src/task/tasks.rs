@@ -349,6 +349,7 @@ global_asm!(
     r#"
         .text
 
+    .globl switch_context
     switch_context:
         // Save the current context. The layout must match the TaskContext structure.
         pushfq

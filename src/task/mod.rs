@@ -8,6 +8,7 @@ mod schedule;
 mod tasks;
 
 pub use schedule::{
-    create_task, is_current_task, schedule, RunQueue, TaskNode, TaskPointer, TASKLIST,
+    create_task, is_current_task, schedule, schedule_init, schedule_rr, RunQueue, TaskNode,
+    TaskPointer, TASKLIST,
 };
 pub use tasks::{Task, TaskContext, TaskError, TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT};

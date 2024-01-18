@@ -49,7 +49,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
-use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
+use svsm::task::schedule_init;
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
@@ -371,13 +371,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
-    // Create the root task that runs the entry point then handles the request loop
-    create_task(
-        svsm_main,
-        TASK_FLAG_SHARE_PT,
-        Some(this_cpu().get_apic_id()),
-    )
-    .expect("Failed to create initial task");
+    schedule_init();
 
     panic!("SVSM entry point terminated unexpectedly");
 }

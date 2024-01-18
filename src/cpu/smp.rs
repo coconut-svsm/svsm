@@ -10,7 +10,7 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::request_loop;
-use crate::task::{create_task, TASK_FLAG_SHARE_PT};
+use crate::task::schedule_init;
 
 fn start_cpu(apic_id: u32) {
     unsafe {
@@ -71,13 +71,7 @@ fn start_ap() {
     // Set CPU online so that BSP can proceed
     this_cpu_mut().set_online();
 
-    // Create the task making sure the task only runs on this new AP
-    create_task(
-        ap_request_loop,
-        TASK_FLAG_SHARE_PT,
-        Some(this_cpu().get_apic_id()),
-    )
-    .expect("Failed to create AP initial task");
+    schedule_init();
 }
 
 #[no_mangle]
