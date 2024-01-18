@@ -27,6 +27,7 @@ pub type TaskPointer = Arc<TaskNode>;
 pub struct TaskNode {
     tree_link: RBTreeAtomicLink,
     list_link: LinkedListAtomicLink,
+    runlist_link: LinkedListAtomicLink,
     pub task: RWLock<Box<Task>>,
 }
 
@@ -36,7 +37,16 @@ pub struct TaskNode {
 // them concurrently across threads.
 unsafe impl Sync for TaskNode {}
 
+impl PartialEq for TaskNode {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self as *const Self;
+        let b = other as *const Self;
+        a == b
+    }
+}
+
 intrusive_adapter!(pub TaskTreeAdapter = TaskPointer: TaskNode { tree_link: RBTreeAtomicLink });
+intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: TaskNode { runlist_link: LinkedListAtomicLink });
 intrusive_adapter!(pub TaskListAdapter = TaskPointer: TaskNode { list_link: LinkedListAtomicLink });
 
 impl<'a> KeyAdapter<'a> for TaskTreeAdapter {
@@ -57,6 +67,7 @@ struct TaskSwitch {
 #[derive(Debug)]
 pub struct RunQueue {
     tree: Option<RBTree<TaskTreeAdapter>>,
+    run_list: LinkedList<TaskRunListAdapter>,
     current_task: Option<TaskPointer>,
     idle_task: OnceCell<TaskPointer>,
     terminated_task: Option<TaskPointer>,
@@ -68,9 +79,10 @@ impl RunQueue {
     /// Create a new runqueue for an id. The id would normally be set
     /// to the APIC ID of the CPU that owns the runqueue and is used to
     /// determine the affinity of tasks.
-    pub const fn new(id: u32) -> Self {
+    pub fn new(id: u32) -> Self {
         Self {
             tree: None,
+            run_list: LinkedList::new(TaskRunListAdapter::new()),
             current_task: None,
             idle_task: OnceCell::new(),
             terminated_task: None,
@@ -79,6 +91,60 @@ impl RunQueue {
                 previous_task: None,
                 next_task: None,
             },
+        }
+    }
+
+    /// Find the next task to run, which is either the task at the front of the
+    /// run_list or the idle task, if the run_list is empty.
+    ///
+    /// # Returns
+    ///
+    /// Pointer to next task to run
+    fn get_next_task(&mut self) -> TaskPointer {
+        self.run_list
+            .pop_front()
+            .unwrap_or(self.idle_task.get().unwrap().clone())
+    }
+
+    /// Update state before a task is scheduled out. Non-idle tasks in RUNNING
+    /// state will be put at the end of the run_list. Terminated tasks will be
+    /// stored in the terminated_task field of the RunQueue and be destroyed
+    /// after the task-switch.
+    fn handle_task(&mut self, taskptr: TaskPointer) {
+        let task = taskptr.task.lock_read();
+        if (task.state == TaskState::RUNNING) && !task.idle_task {
+            self.run_list.push_back(taskptr.clone());
+        } else if task.state == TaskState::TERMINATED {
+            self.terminated_task = Some(taskptr.clone());
+        }
+    }
+
+    /// Prepares a task switch. The function checks if a task switch needs to
+    /// be done and return pointers to the current and next task. It will also
+    /// call handle_task() on the current task in case a task-switch is
+    /// requested.
+    ///
+    /// # Returns
+    ///
+    /// None when no task-switch is needed
+    /// Some() with current and next task in case a task-switch is required
+    pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
+        // Remove current and put it back into the RunQueue in case it is still
+        // runnable. This is important to make sure the last runnable task
+        // keeps running, even if it calls schedule()
+        let current = self.current_task.take().unwrap();
+        self.handle_task(current.clone());
+
+        // Get next task and update current_task state
+        let next = self.get_next_task();
+        self.current_task = Some(next.clone());
+
+        // Check if task switch is needed
+        if current != next {
+            this_cpu_mut().current_stack = next.task.lock_read().stack_bounds();
+            Some((current, next))
+        } else {
+            None
         }
     }
 
@@ -119,6 +185,7 @@ impl RunQueue {
         let node = Arc::new(TaskNode {
             tree_link: RBTreeAtomicLink::default(),
             list_link: LinkedListAtomicLink::default(),
+            runlist_link: LinkedListAtomicLink::default(),
             task: RWLock::new(task),
         });
 
@@ -128,7 +195,6 @@ impl RunQueue {
         self.idle_task
             .set(node)
             .expect("Idle task already allocated");
-
         Ok(())
     }
 
@@ -361,6 +427,7 @@ pub fn create_task(
     let node = Arc::new(TaskNode {
         tree_link: RBTreeAtomicLink::default(),
         list_link: LinkedListAtomicLink::default(),
+        runlist_link: LinkedListAtomicLink::default(),
         task: RWLock::new(task),
     });
     {
