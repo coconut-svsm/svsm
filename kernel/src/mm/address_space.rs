@@ -129,6 +129,12 @@ pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_STACKS_INIT_TASK.const_add(STACK
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
 
+/// Debug IST stack base address
+pub const SVSM_STACK_IST_DB_BASE: VirtAddr = SVSM_STACKS_IST_BASE.const_add(STACK_TOTAL_SIZE);
+
+/// VMM Communication Exception IST stack base address
+pub const SVSM_STACK_IST_VC_BASE: VirtAddr = SVSM_STACKS_IST_BASE.const_add(2 * STACK_TOTAL_SIZE);
+
 /// Base Address for temporary mappings - used by page-table guards
 pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
 

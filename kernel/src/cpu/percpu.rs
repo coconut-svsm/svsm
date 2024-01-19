@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use super::gdt_mut;
-use super::tss::{X86Tss, IST_DF};
+use super::tss::{X86Tss, IST_DB, IST_DF, IST_VC};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
@@ -21,7 +21,8 @@ use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, V
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DB_BASE,
+    SVSM_STACK_IST_DF_BASE, SVSM_STACK_IST_VC_BASE,
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
@@ -118,12 +119,16 @@ impl VmsaRef {
 #[derive(Debug)]
 struct IstStacks {
     double_fault_stack: Option<VirtAddr>,
+    debug_stack: Option<VirtAddr>,
+    vmm_comm_stack: Option<VirtAddr>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
             double_fault_stack: None,
+            debug_stack: None,
+            vmm_comm_stack: None,
         }
     }
 }
@@ -361,6 +366,8 @@ impl PerCpu {
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
         self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        self.ist.debug_stack = Some(self.allocate_stack(SVSM_STACK_IST_DB_BASE)?);
+        self.ist.vmm_comm_stack = Some(self.allocate_stack(SVSM_STACK_IST_VC_BASE)?);
         Ok(())
     }
 
@@ -392,6 +399,8 @@ impl PerCpu {
 
     fn setup_tss(&mut self) {
         self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
+        self.tss.ist_stacks[IST_DB] = self.ist.debug_stack.unwrap();
+        self.tss.ist_stacks[IST_VC] = self.ist.vmm_comm_stack.unwrap();
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {

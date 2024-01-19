@@ -7,7 +7,7 @@
 use super::super::control_regs::read_cr2;
 use super::super::extable::handle_exception_table;
 use super::super::percpu::this_cpu;
-use super::super::tss::IST_DF;
+use super::super::tss::{IST_DB, IST_DF, IST_VC};
 use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
 use super::common::{
@@ -49,6 +49,14 @@ fn init_ist_vectors() {
     idt_mut().set_entry(
         DF_VECTOR,
         IdtEntry::ist_entry(asm_entry_df, IST_DF.try_into().unwrap()),
+    );
+    idt_mut().set_entry(
+        DB_VECTOR,
+        IdtEntry::ist_entry(asm_entry_db, IST_DB.try_into().unwrap()),
+    );
+    idt_mut().set_entry(
+        VC_VECTOR,
+        IdtEntry::ist_entry(asm_entry_vc, IST_VC.try_into().unwrap()),
     );
 }
 
