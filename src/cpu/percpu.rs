@@ -27,7 +27,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::RunQueue;
+use crate::task::{RunQueue, TaskPointer};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -714,4 +714,8 @@ impl PerCpuVmsas {
 
         Ok(guard.swap_remove(index))
     }
+}
+
+pub fn current_task() -> TaskPointer {
+    this_cpu().runqueue.lock_read().current_task()
 }

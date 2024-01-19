@@ -396,6 +396,10 @@ impl RunQueue {
         cursor.remove();
         task_node.task.lock_write().allocation = None;
     }
+
+    pub fn current_task(&self) -> TaskPointer {
+        self.current_task.as_ref().unwrap().clone()
+    }
 }
 
 /// Global task list
