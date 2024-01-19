@@ -27,7 +27,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::{RunQueue, TaskPointer};
+use crate::task::{RunQueue, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -248,9 +248,20 @@ pub struct PerCpu {
     /// Stack boundaries of the currently running task. This is stored in
     /// [PerCpu] because it needs lockless read access.
     pub current_stack: StackBounds,
+
+    /// WaitQueue for request processing
+    request_waitqueue: WaitQueue,
 }
 
 impl PerCpu {
+    pub fn wait_for_requests(&mut self) {
+        self.request_waitqueue.wait_for_event();
+    }
+
+    pub fn process_requests(&mut self) {
+        self.request_waitqueue.wakeup();
+    }
+
     fn new(apic_id: u32, shared: &'static PerCpuShared) -> Self {
         PerCpu {
             shared,
@@ -268,6 +279,7 @@ impl PerCpu {
             vrange_2m: VirtualRange::new(),
             runqueue: RWLock::new(RunQueue::new()),
             current_stack: StackBounds::default(),
+            request_waitqueue: WaitQueue::new(),
         }
     }
 
