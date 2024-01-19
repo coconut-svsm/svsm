@@ -310,6 +310,12 @@ pub fn schedule() {
         .take();
 }
 
+pub fn schedule_task(task: TaskPointer) {
+    task.set_task_running();
+    this_cpu().runqueue().lock_write().handle_task(task);
+    schedule();
+}
+
 global_asm!(
     r#"
         .text

@@ -6,11 +6,15 @@
 
 mod schedule;
 mod tasks;
+mod waiting;
 
 pub use schedule::{
-    create_kernel_task, is_current_task, schedule, schedule_init, RunQueue, TASKLIST,
+    create_kernel_task, is_current_task, schedule, schedule_init, schedule_task, RunQueue, TASKLIST,
 };
+
 pub use tasks::{
     Task, TaskContext, TaskError, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState,
     INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
 };
+
+pub use waiting::WaitQueue;
