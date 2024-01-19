@@ -56,22 +56,20 @@ fn request_loop_once(
         return Ok(false);
     }
 
-    let caa_addr = this_cpu().caa_addr().ok_or_else(|| {
-        log::error!("No CAA mapped - bailing out");
-        SvsmReqError::FatalError(SvsmError::MissingCAA)
-    })?;
-
-    let guest_pending = GuestPtr::<u64>::new(caa_addr);
-    let pending = guest_pending.read()?;
-    guest_pending.write(0)?;
-
-    if pending != 1 {
-        return Ok(false);
-    }
-
     match protocol {
         0 => core_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
+    }
+}
+
+fn check_requests() -> Result<bool, SvsmReqError> {
+    if let Some(caa_addr) = this_cpu().caa_addr() {
+        let guest_pending = GuestPtr::<u64>::new(caa_addr);
+        let p = guest_pending.read()?;
+        guest_pending.write(0)?;
+        Ok(p == 1)
+    } else {
+        Ok(false)
     }
 }
 
@@ -103,6 +101,55 @@ pub fn request_loop() {
                 }
             }
         }
+
+        // Obtain a reference to the VMSA just long enough to extract the
+        // request parameters.
+        let (protocol, request) = {
+            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let vmsa = vmsa_ref.vmsa();
+
+            // Clear EFER.SVME in guest VMSA
+            vmsa.disable();
+
+            let rax = vmsa.rax;
+
+            ((rax >> 32) as u32, (rax & 0xffff_ffff) as u32)
+        };
+
+        match check_requests() {
+            Ok(pending) => {
+                if pending {
+                    this_cpu_mut().process_requests();
+                }
+            }
+            Err(SvsmReqError::RequestError(code)) => {
+                log::debug!(
+                    "Soft error handling protocol {} request {}: {:?}",
+                    protocol,
+                    request,
+                    code
+                );
+            }
+            Err(SvsmReqError::FatalError(err)) => {
+                log::error!(
+                    "Fatal error handling core protocol request {}: {:?}",
+                    request,
+                    err
+                );
+                break;
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn request_processing_main() {
+    let apic_id = this_cpu().get_apic_id();
+
+    log::info!("Launching request-processing task on CPU {}", apic_id);
+
+    loop {
+        this_cpu_mut().wait_for_requests();
 
         // Obtain a reference to the VMSA just long enough to extract the
         // request parameters.
@@ -158,4 +205,6 @@ pub fn request_loop() {
             request_info.params.write_back(vmsa);
         }
     }
+
+    panic!("Request processing task died unexpectedly");
 }

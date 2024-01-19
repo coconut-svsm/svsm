@@ -9,8 +9,8 @@ extern crate alloc;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
-use crate::requests::request_loop;
-use crate::task::schedule_init;
+use crate::requests::{request_loop, request_processing_main};
+use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
 
 fn start_cpu(apic_id: u32) {
     unsafe {
@@ -76,6 +76,8 @@ fn start_ap() {
 
 #[no_mangle]
 pub extern "C" fn ap_request_loop() {
+    create_kernel_task(request_processing_main, TASK_FLAG_SHARE_PT)
+        .expect("Failed to launch request processing task");
     request_loop();
     panic!("Returned from request_loop!");
 }

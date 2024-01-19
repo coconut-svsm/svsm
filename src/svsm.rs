@@ -43,13 +43,13 @@ use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
-use svsm::requests::{request_loop, update_mappings};
+use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
-use svsm::task::schedule_init;
+use svsm::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
@@ -448,6 +448,9 @@ pub extern "C" fn svsm_main() {
             panic!("Failed to launch FW: {:#?}", e);
         }
     }
+
+    create_kernel_task(request_processing_main, TASK_FLAG_SHARE_PT)
+        .expect("Failed to launch request processing task");
 
     #[cfg(test)]
     crate::test_main();
