@@ -18,23 +18,24 @@ use cpuarch::vmsa::GuestVMExit;
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {
-    let mut locked = this_cpu().guest_vmsa_ref();
+    let cpu = this_cpu_mut();
+    let mut locked = cpu.guest_vmsa_ref();
     let mut ret = Ok(());
 
     if !locked.needs_update() {
         return Ok(());
     }
 
-    this_cpu_mut().unmap_guest_vmsa();
-    this_cpu_mut().unmap_caa();
+    cpu.unmap_guest_vmsa();
+    cpu.unmap_caa();
 
     match locked.vmsa_phys() {
-        Some(paddr) => this_cpu_mut().map_guest_vmsa(paddr)?,
+        Some(paddr) => cpu.map_guest_vmsa(paddr)?,
         None => ret = Err(SvsmError::MissingVMSA),
     }
 
     if let Some(paddr) = locked.caa_phys() {
-        this_cpu_mut().map_guest_caa(paddr)?
+        cpu.map_guest_caa(paddr)?
     }
 
     locked.set_updated();
