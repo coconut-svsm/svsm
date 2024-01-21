@@ -181,6 +181,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     }
 
     cpu.alloc_guest_vmsa()?;
+    drop(cpu);
     update_mappings()?;
 
     Ok(())
