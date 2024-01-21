@@ -212,6 +212,7 @@ pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPoin
 
     // Put task on the runqueue of this CPU
     cpu.runqueue().lock_write().handle_task(task.clone());
+    drop(cpu);
 
     schedule();
 
