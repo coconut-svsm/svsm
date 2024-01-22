@@ -91,7 +91,7 @@ stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
 
 stage1/stage1: ${STAGE1_OBJS}
-	$(CC) -o $@ $(STAGE1_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds
+	$(CC) -o $@ $(STAGE1_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
 
 svsm.bin: stage1/stage1
 	objcopy -O binary $< $@
