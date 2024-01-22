@@ -4,7 +4,6 @@
 *.swp
 *~
 bin/
-Cargo.lock
 target/
 gen_meta
 stage1/stage1
