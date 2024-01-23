@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use super::gdt::load_tss;
+use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::tss::TSS_LIMIT;
@@ -429,7 +429,7 @@ impl PerCpu {
     }
 
     pub fn load_tss(&mut self) {
-        load_tss(&self.tss);
+        gdt_mut().load_tss(&self.tss);
     }
 
     pub fn load(&mut self) {

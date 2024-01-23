@@ -21,6 +21,7 @@ pub mod tss;
 pub mod vc;
 pub mod vmsa;
 
+pub use gdt::{gdt, gdt_mut};
 pub use idt::common::X86ExceptionContext;
 pub use registers::{X86GeneralRegs, X86InterruptFrame, X86SegmentRegs};
 pub use tlb::*;

@@ -10,7 +10,7 @@ use cpuarch::vmsa::{VMSASegment, VMSA};
 
 use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
-use super::gdt::gdt_base_limit;
+use super::gdt;
 use super::idt::common::idt_base_limit;
 use super::msr::read_msr;
 
@@ -33,7 +33,7 @@ fn svsm_data_segment() -> VMSASegment {
 }
 
 fn svsm_gdt_segment() -> VMSASegment {
-    let (base, limit) = gdt_base_limit();
+    let (base, limit) = gdt().base_limit();
     VMSASegment {
         selector: 0,
         flags: 0,

@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::gdt::GDTEntry;
 use crate::address::VirtAddr;
 
 // IST offsets
@@ -35,7 +36,7 @@ impl X86Tss {
         }
     }
 
-    pub fn to_gdt_entry(&self) -> (u64, u64) {
+    pub fn to_gdt_entry(&self) -> (GDTEntry, GDTEntry) {
         let addr = (self as *const X86Tss) as u64;
 
         let mut desc0: u64 = 0;
@@ -56,6 +57,6 @@ impl X86Tss {
         // Type
         desc0 |= 0x9u64 << 40;
 
-        (desc0, desc1)
+        (GDTEntry::from_raw(desc0), GDTEntry::from_raw(desc1))
     }
 }
