@@ -34,4 +34,28 @@ impl X86Tss {
             io_bmp_base: (TSS_LIMIT + 1) as u16,
         }
     }
+
+    pub fn to_gdt_entry(&self) -> (u64, u64) {
+        let addr = (self as *const X86Tss) as u64;
+
+        let mut desc0: u64 = 0;
+        let mut desc1: u64 = 0;
+
+        // Limit
+        desc0 |= TSS_LIMIT & 0xffffu64;
+        desc0 |= ((TSS_LIMIT >> 16) & 0xfu64) << 48;
+
+        // Address
+        desc0 |= (addr & 0x00ff_ffffu64) << 16;
+        desc0 |= (addr & 0xff00_0000u64) << 32;
+        desc1 |= addr >> 32;
+
+        // Present
+        desc0 |= 1u64 << 47;
+
+        // Type
+        desc0 |= 0x9u64 << 40;
+
+        (desc0, desc1)
+    }
 }

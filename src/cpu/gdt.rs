@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::tss::{X86Tss, TSS_LIMIT};
+use super::tss::X86Tss;
 use crate::address::VirtAddr;
 use crate::types::{SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
@@ -31,25 +31,7 @@ static mut GDT: [u64; GDT_SIZE as usize] = [
 ];
 
 pub fn load_tss(tss: &X86Tss) {
-    let addr = (tss as *const X86Tss) as u64;
-
-    let mut desc0: u64 = 0;
-    let mut desc1: u64 = 0;
-
-    // Limit
-    desc0 |= TSS_LIMIT & 0xffffu64;
-    desc0 |= ((TSS_LIMIT >> 16) & 0xfu64) << 48;
-
-    // Address
-    desc0 |= (addr & 0x00ff_ffffu64) << 16;
-    desc0 |= (addr & 0xff00_0000u64) << 32;
-    desc1 |= addr >> 32;
-
-    // Present
-    desc0 |= 1u64 << 47;
-
-    // Type
-    desc0 |= 0x9u64 << 40;
+    let (desc0, desc1) = tss.to_gdt_entry();
 
     unsafe {
         let idx = (SVSM_TSS / 8) as usize;
