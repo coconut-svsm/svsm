@@ -33,18 +33,20 @@ impl StackBounds {
     }
 }
 
+#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct StackFrame {
-    pub rbp: VirtAddr,
-    pub rsp: VirtAddr,
-    pub rip: VirtAddr,
-    pub is_last: bool,
-    pub is_exception_frame: bool,
-    pub stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
+struct StackFrame {
+    rbp: VirtAddr,
+    rsp: VirtAddr,
+    rip: VirtAddr,
+    is_last: bool,
+    is_exception_frame: bool,
+    _stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
 }
 
+#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug)]
-pub enum UnwoundStackFrame {
+enum UnwoundStackFrame {
     Valid(StackFrame),
     Invalid,
 }
@@ -118,7 +120,7 @@ impl StackUnwinder {
             }
         }
 
-        let stack_depth = stack.top - rsp;
+        let _stack_depth = stack.top - rsp;
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
@@ -126,7 +128,7 @@ impl StackUnwinder {
             rsp,
             is_last,
             is_exception_frame,
-            stack_depth,
+            _stack_depth,
         })
     }
 
