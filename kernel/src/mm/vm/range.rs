@@ -96,7 +96,7 @@ impl VMR {
         let mut vec = self.pgtbl_parts.lock_write();
 
         for idx in 0..count {
-            vec.push(PageTablePart::new(start + (idx * VMR_GRANULE)));
+            vec.push(PageTablePart::new(start + (idx * VMR_GRANULE))?);
         }
 
         Ok(())

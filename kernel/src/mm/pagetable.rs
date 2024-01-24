@@ -12,6 +12,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::GlobalBox;
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -19,9 +20,6 @@ use crate::utils::MemoryRegion;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::{cmp, ptr};
-
-extern crate alloc;
-use alloc::boxed::Box;
 
 const ENTRY_COUNT: usize = 512;
 static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
@@ -899,7 +897,7 @@ impl Drop for RawPageTablePart {
 #[derive(Debug)]
 pub struct PageTablePart {
     /// The root of the page-table sub-tree
-    raw: Box<RawPageTablePart>,
+    raw: GlobalBox<RawPageTablePart>,
     /// The top-level index this PageTablePart is populated at
     idx: usize,
 }
@@ -914,11 +912,11 @@ impl PageTablePart {
     /// # Returns
     ///
     /// A new instance of PageTablePart
-    pub fn new(start: VirtAddr) -> Self {
-        PageTablePart {
-            raw: Box::<RawPageTablePart>::default(),
+    pub fn new(start: VirtAddr) -> Result<Self, SvsmError> {
+        Ok(PageTablePart {
+            raw: GlobalBox::<RawPageTablePart>::try_default()?,
             idx: PageTable::index::<3>(start),
-        }
+        })
     }
 
     /// Request PageTable index to populate this instance to
