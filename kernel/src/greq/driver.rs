@@ -8,18 +8,17 @@
 //! request or response command types defined in the SEV-SNP spec, regardless if it's
 //! a regular or an extended command.
 
-extern crate alloc;
-
-use alloc::boxed::Box;
 use core::ptr::addr_of_mut;
 use core::{cell::OnceCell, mem::size_of};
 
 use crate::{
     address::VirtAddr,
+    alloc::boxed::TryBox,
     cpu::ghcb::current_ghcb,
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
+    mm::GlobalBox,
     protocols::errors::{SvsmReqError, SvsmResultCode},
     sev::{ghcb::GhcbError, secrets_page, secrets_page_mut, VMPCK_SIZE},
     types::PAGE_SHIFT,
@@ -48,14 +47,14 @@ enum SnpGuestRequestClass {
 #[derive(Debug)]
 struct SnpGuestRequestDriver {
     /// Shared page used for the `SNP_GUEST_REQUEST` request
-    request: Box<SnpGuestRequestMsg>,
+    request: GlobalBox<SnpGuestRequestMsg>,
     /// Shared page used for the `SNP_GUEST_REQUEST` response
-    response: Box<SnpGuestRequestMsg>,
+    response: GlobalBox<SnpGuestRequestMsg>,
     /// Encrypted page where we perform crypto operations
-    staging: Box<SnpGuestRequestMsg>,
+    staging: GlobalBox<SnpGuestRequestMsg>,
     /// Extended data buffer that will be provided to the hypervisor
     /// to store the SEV-SNP certificates
-    ext_data: Box<SnpGuestRequestExtData>,
+    ext_data: GlobalBox<SnpGuestRequestExtData>,
     /// Extended data size (`certs` size) provided by the user in [`super::services::get_extended_report`].
     /// It will be provided to the hypervisor.
     user_extdata_size: usize,
@@ -84,21 +83,21 @@ impl Drop for SnpGuestRequestDriver {
                 SnpGuestRequestMsg::boxed_new().expect("GREQ: failed to allocate request");
             let old_req = core::mem::replace(&mut self.request, new_req);
             log::error!("GREQ: request: failed to set page to encrypted. Memory leak!");
-            Box::leak(old_req);
+            TryBox::leak(old_req.into());
         }
         if self.response.set_encrypted().is_err() {
             let new_resp =
                 SnpGuestRequestMsg::boxed_new().expect("GREQ: failed to allocate response");
             let old_resp = core::mem::replace(&mut self.response, new_resp);
             log::error!("GREQ: response: failed to set page to encrypted. Memory leak!");
-            Box::leak(old_resp);
+            TryBox::leak(old_resp.into());
         }
         if self.ext_data.set_encrypted().is_err() {
             let new_data =
                 SnpGuestRequestExtData::boxed_new().expect("GREQ: failed to allocate ext_data");
             let old_data = core::mem::replace(&mut self.ext_data, new_data);
             log::error!("GREQ: ext_data: failed to set pages to encrypted. Memory leak!");
-            Box::leak(old_data);
+            TryBox::leak(old_data.into());
         }
     }
 }

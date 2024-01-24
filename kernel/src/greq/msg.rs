@@ -6,12 +6,6 @@
 
 //! Message that carries an encrypted `SNP_GUEST_REQUEST` command in the payload
 
-extern crate alloc;
-
-use alloc::{
-    alloc::{alloc_zeroed, Layout},
-    boxed::Box,
-};
 use core::{
     mem::size_of,
     ptr::{addr_of, addr_of_mut},
@@ -23,7 +17,7 @@ use crate::{
     cpu::ghcb::current_ghcb,
     cpu::percpu::this_cpu_mut,
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
-    mm::virt_to_phys,
+    mm::{virt_to_phys, GlobalBox},
     protocols::errors::SvsmReqError,
     sev::{ghcb::PageStateChangeOp, secrets_page::VMPCK_SIZE},
     types::{PageSize, PAGE_SIZE},
@@ -214,20 +208,12 @@ impl SnpGuestRequestMsg {
     /// # Panics
     ///
     /// Panics if the new allocation is not page aligned.
-    pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
-        let layout = Layout::new::<Self>();
-
-        unsafe {
-            let addr = alloc_zeroed(layout);
-            if addr.is_null() {
-                return Err(SvsmReqError::invalid_request());
-            }
-
-            assert!(VirtAddr::from(addr).is_page_aligned());
-
-            let ptr = addr.cast::<Self>();
-            Ok(Box::from_raw(ptr))
-        }
+    pub fn boxed_new() -> Result<GlobalBox<Self>, SvsmReqError> {
+        let raw = GlobalBox::<Self>::try_new_zeroed()?;
+        // SAFETY: all zeros is a valid representation for SnpGuestRequestMsg
+        let msg = unsafe { GlobalBox::assume_init(raw) };
+        assert!(VirtAddr::from(msg.as_ref() as *const Self).is_page_aligned());
+        Ok(msg)
     }
 
     /// Clear the C-bit (memory encryption bit) for the Self page
@@ -473,18 +459,12 @@ pub struct SnpGuestRequestExtData {
 impl SnpGuestRequestExtData {
     /// Allocate the object in the heap without going through stack as
     /// this is a large object
-    pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
-        let layout = Layout::new::<Self>();
-        unsafe {
-            let addr = alloc_zeroed(layout);
-            if addr.is_null() {
-                return Err(SvsmReqError::invalid_request());
-            }
-            assert!(VirtAddr::from(addr).is_page_aligned());
-
-            let ptr = addr.cast::<Self>();
-            Ok(Box::from_raw(ptr))
-        }
+    pub fn boxed_new() -> Result<GlobalBox<Self>, SvsmReqError> {
+        let raw = GlobalBox::<Self>::try_new_zeroed()?;
+        // SAFETY: all zeros is a valid representation for SnpGuestRequestExtData
+        let data = unsafe { GlobalBox::assume_init(raw) };
+        assert!(VirtAddr::from(data.as_ref() as *const Self).is_page_aligned());
+        Ok(data)
     }
 
     /// Clear the C-bit (memory encryption bit) for the Self pages
