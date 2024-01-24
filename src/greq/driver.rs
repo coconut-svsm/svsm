@@ -21,10 +21,7 @@ use crate::{
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
     protocols::errors::{SvsmReqError, SvsmResultCode},
-    sev::{
-        ghcb::GhcbError,
-        secrets_page::{disable_vmpck0, get_vmpck0, is_vmpck0_clear, VMPCK_SIZE},
-    },
+    sev::{ghcb::GhcbError, secrets_page, secrets_page_mut, VMPCK_SIZE},
     types::PAGE_SHIFT,
     BIT,
 };
@@ -189,7 +186,7 @@ impl SnpGuestRequestDriver {
         command_len: usize,
     ) -> Result<(), SvsmReqError> {
         // VMPL0 `SNP_GUEST_REQUEST` commands are encrypted with the VMPCK0 key
-        let vmpck0: [u8; VMPCK_SIZE] = get_vmpck0();
+        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().get_vmpck(0);
 
         let inbuf = buffer
             .get(..command_len)
@@ -210,7 +207,7 @@ impl SnpGuestRequestDriver {
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
     ) -> Result<usize, SvsmReqError> {
-        let vmpck0: [u8; VMPCK_SIZE] = get_vmpck0();
+        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().get_vmpck(0);
 
         // For security reasons, decrypt the message in protected memory (staging)
         *self.staging = *self.response;
@@ -223,7 +220,7 @@ impl SnpGuestRequestDriver {
                 // The buffer provided is too small to store the unwrapped response.
                 // There is no need to clear the VMPCK0, just report it as invalid parameter.
                 SvsmReqError::RequestError(SvsmResultCode::INVALID_PARAMETER) => (),
-                _ => disable_vmpck0(),
+                _ => secrets_page_mut().clear_vmpck(0),
             }
         }
 
@@ -255,7 +252,7 @@ impl SnpGuestRequestDriver {
         buffer: &mut [u8],
         command_len: usize,
     ) -> Result<usize, SvsmReqError> {
-        if is_vmpck0_clear() {
+        if secrets_page().is_vmpck_clear(0) {
             return Err(SvsmReqError::invalid_request());
         }
 
@@ -264,7 +261,7 @@ impl SnpGuestRequestDriver {
         // The sequence number is restored only when the guest is rebooted.
         let Some(msg_seqno) = self.seqno_last_used().checked_add(1) else {
             log::error!("SNP_GUEST_REQUEST: sequence number overflow");
-            disable_vmpck0();
+            secrets_page_mut().clear_vmpck(0);
             return Err(SvsmReqError::invalid_request());
         };
 
@@ -287,14 +284,14 @@ impl SnpGuestRequestDriver {
                                 log::error!(
                                     "SNP_GUEST_REQ_INVALID_LEN. Aborting, request resend failed"
                                 );
-                                disable_vmpck0();
+                                secrets_page_mut().clear_vmpck(0);
                                 return Err(e1);
                             }
                             return Err(e);
                         } else {
                             // We sent a regular SNP_GUEST_REQUEST, but the hypervisor returned
                             // an error code that is exclusive for extended SNP_GUEST_REQUEST
-                            disable_vmpck0();
+                            secrets_page_mut().clear_vmpck(0);
                             return Err(SvsmReqError::invalid_request());
                         }
                     }
@@ -302,7 +299,7 @@ impl SnpGuestRequestDriver {
                     SNP_GUEST_REQ_ERR_BUSY => {
                         if let Err(e2) = self.send(req_class) {
                             log::error!("SNP_GUEST_REQ_ERR_BUSY. Aborting, request resend failed");
-                            disable_vmpck0();
+                            secrets_page_mut().clear_vmpck(0);
                             return Err(e2);
                         }
                         // ... request resend worked, continue normally.
@@ -311,7 +308,7 @@ impl SnpGuestRequestDriver {
                     // the AMD SEV-SNP spec or in the linux kernel include/uapi/linux/psp-sev.h
                     _ => {
                         log::error!("SNP_GUEST_REQUEST failed, unknown error code={}\n", info2);
-                        disable_vmpck0();
+                        secrets_page_mut().clear_vmpck(0);
                         return Err(e);
                     }
                 }

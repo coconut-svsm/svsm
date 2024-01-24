@@ -5,52 +5,110 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::VirtAddr;
+use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::sev::vmsa::VMPL_MAX;
+use crate::types::GUEST_VMPL;
+
+extern crate alloc;
+use alloc::boxed::Box;
 
 pub const VMPCK_SIZE: usize = 32;
-
-extern "C" {
-    pub static mut SECRETS_PAGE: SecretsPage;
-}
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C, packed)]
 pub struct SecretsPage {
-    pub version: u32,
-    pub gctxt: u32,
-    pub fms: u32,
+    version: u32,
+    gctxt: u32,
+    fms: u32,
     reserved_00c: u32,
-    pub gosvw: [u8; 16],
-    pub vmpck: [[u8; VMPCK_SIZE]; VMPL_MAX],
+    gosvw: [u8; 16],
+    vmpck: [[u8; VMPCK_SIZE]; VMPL_MAX],
     reserved_0a0: [u8; 96],
-    pub vmsa_tweak_bmp: [u64; 8],
-    pub svsm_base: u64,
-    pub svsm_size: u64,
-    pub svsm_caa: u64,
-    pub svsm_max_version: u32,
-    pub svsm_guest_vmpl: u8,
+    vmsa_tweak_bmp: [u64; 8],
+    svsm_base: u64,
+    svsm_size: u64,
+    svsm_caa: u64,
+    svsm_max_version: u32,
+    svsm_guest_vmpl: u8,
     reserved_15d: [u8; 3],
-    pub tsc_factor: u32,
+    tsc_factor: u32,
     reserved_164: [u8; 3740],
 }
 
-pub fn copy_secrets_page(target: &mut SecretsPage, source: VirtAddr) {
-    let table = source.as_ptr::<SecretsPage>();
+impl SecretsPage {
+    pub const fn new() -> Self {
+        SecretsPage {
+            version: 0,
+            gctxt: 0,
+            fms: 0,
+            reserved_00c: 0,
+            gosvw: [0; 16],
+            vmpck: [[0; VMPCK_SIZE]; VMPL_MAX],
+            reserved_0a0: [0; 96],
+            vmsa_tweak_bmp: [0; 8],
+            svsm_base: 0,
+            svsm_size: 0,
+            svsm_caa: 0,
+            svsm_max_version: 0,
+            svsm_guest_vmpl: 0,
+            reserved_15d: [0; 3],
+            tsc_factor: 0,
+            reserved_164: [0; 3740],
+        }
+    }
 
-    unsafe {
-        *target = *table;
+    pub fn copy_from(&mut self, source: VirtAddr) {
+        let from = source.as_ptr::<SecretsPage>();
+
+        unsafe {
+            *self = *from;
+        }
+    }
+
+    pub fn copy_to(&self, target: VirtAddr) {
+        let to = target.as_mut_ptr::<SecretsPage>();
+
+        unsafe {
+            *to = *self;
+        }
+    }
+
+    pub fn copy_for_vmpl(&self, vmpl: usize) -> Box<SecretsPage> {
+        let mut sp = Box::new(*self);
+        for idx in 0..vmpl {
+            sp.clear_vmpck(idx);
+        }
+
+        sp
+    }
+
+    pub fn set_svsm_data(&mut self, base: u64, size: u64, caa_addr: u64) {
+        self.svsm_base = base;
+        self.svsm_size = size;
+        self.svsm_caa = caa_addr;
+        self.svsm_max_version = 1;
+        self.svsm_guest_vmpl = GUEST_VMPL as u8;
+    }
+
+    pub fn get_vmpck(&self, idx: usize) -> [u8; VMPCK_SIZE] {
+        self.vmpck[idx]
+    }
+
+    pub fn is_vmpck_clear(&self, idx: usize) -> bool {
+        self.vmpck[idx].iter().all(|e| *e == 0)
+    }
+
+    pub fn clear_vmpck(&mut self, idx: usize) {
+        self.vmpck[idx].iter_mut().for_each(|e| *e = 0);
     }
 }
 
-pub fn is_vmpck0_clear() -> bool {
-    unsafe { SECRETS_PAGE.vmpck[0].iter().all(|e| *e == 0) }
+static SECRETS_PAGE: RWLock<SecretsPage> = RWLock::new(SecretsPage::new());
+
+pub fn secrets_page() -> ReadLockGuard<'static, SecretsPage> {
+    SECRETS_PAGE.lock_read()
 }
 
-pub fn disable_vmpck0() {
-    unsafe { SECRETS_PAGE.vmpck[0].iter_mut().for_each(|e| *e = 0) };
-    log::warn!("VMPCK0 disabled!");
-}
-
-pub fn get_vmpck0() -> [u8; VMPCK_SIZE] {
-    unsafe { SECRETS_PAGE.vmpck[0] }
+pub fn secrets_page_mut() -> WriteLockGuard<'static, SecretsPage> {
+    SECRETS_PAGE.lock_write()
 }

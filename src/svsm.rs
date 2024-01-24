@@ -43,9 +43,8 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::requests::{request_loop, update_mappings};
 use svsm::serial::SerialPort;
-use svsm::sev::secrets_page::{copy_secrets_page, disable_vmpck0, SecretsPage};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::sev::{init_hypervisor_ghcb_features, sev_status_init};
+use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{create_task, TASK_FLAG_SHARE_PT};
@@ -57,7 +56,6 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 use core::ptr;
 
 extern "C" {
-    pub static mut SECRETS_PAGE: SecretsPage;
     pub static bsp_stack_end: u8;
 }
 
@@ -92,11 +90,6 @@ global_asm!(
     bsp_stack:
         .fill 4*4096, 1, 0
     bsp_stack_end:
-
-        .align 4096
-        .globl SECRETS_PAGE
-    SECRETS_PAGE:
-        .fill 4096, 1, 0
         "#,
     options(att_syntax)
 );
@@ -127,35 +120,21 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let start = guard.virt_addr();
 
-    let mut target = ptr::NonNull::new(start.as_mut_ptr::<SecretsPage>()).unwrap();
-
     // Zero target
-    unsafe {
-        let mut page_ptr = target.cast::<u8>();
-        ptr::write_bytes(page_ptr.as_mut(), 0, PAGE_SIZE);
-    }
+    zero_mem_region(start, start + PAGE_SIZE);
 
-    // Copy and initialize data
-    unsafe {
-        let dst = target.as_ptr();
-        *dst = SECRETS_PAGE;
+    // Copy secrets page
+    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
 
-        // Copy Table
-        let fw_sp = target.as_mut();
+    let &li = &*LAUNCH_INFO;
 
-        // Zero VMPCK key for VMPLs with more privileges than the guest
-        for vmpck in fw_sp.vmpck.iter_mut().take(GUEST_VMPL) {
-            vmpck.fill(0);
-        }
+    fw_secrets_page.set_svsm_data(
+        li.kernel_region_phys_start,
+        li.kernel_region_phys_end - li.kernel_region_phys_start,
+        u64::from(caa_addr),
+    );
 
-        let &li = &*LAUNCH_INFO;
-
-        fw_sp.svsm_base = li.kernel_region_phys_start;
-        fw_sp.svsm_size = li.kernel_region_phys_end - li.kernel_region_phys_start;
-        fw_sp.svsm_caa = u64::from(caa_addr);
-        fw_sp.svsm_max_version = 1;
-        fw_sp.svsm_guest_vmpl = GUEST_VMPL as u8;
-    }
+    fw_secrets_page.copy_to(start);
 
     Ok(())
 }
@@ -176,7 +155,7 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 
     let secrets_page = match fw_meta.secrets_page {
         Some(addr) => addr,
-        None => panic!("FW does not specify SECRETS_PAGE location"),
+        None => panic!("FW does not specify secrets-page location"),
     };
 
     let caa_page = match fw_meta.caa_page {
@@ -306,11 +285,9 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     register_cpuid_table(&CPUID_PAGE);
     dump_cpuid_table();
 
-    unsafe {
-        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
-        copy_secrets_page(&mut SECRETS_PAGE, secrets_page_virt);
-        zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
-    }
+    let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
+    secrets_page_mut().copy_from(secrets_page_virt);
+    zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();
     cr4_init();
@@ -464,7 +441,10 @@ pub extern "C" fn svsm_main() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    disable_vmpck0();
+    secrets_page_mut().clear_vmpck(0);
+    secrets_page_mut().clear_vmpck(1);
+    secrets_page_mut().clear_vmpck(2);
+    secrets_page_mut().clear_vmpck(3);
 
     log::error!("Panic: CPU[{}] {}", this_cpu().get_apic_id(), info);
 
