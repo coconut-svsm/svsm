@@ -4,35 +4,25 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::common::{load_idt, Idt, IdtEntry, DF_VECTOR, GLOBAL_IDT, HV_VECTOR, VC_VECTOR};
-use crate::address::VirtAddr;
+use super::common::{idt_mut, DF_VECTOR, HV_VECTOR, VC_VECTOR};
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
 use crate::cpu::X86ExceptionContext;
 use core::arch::global_asm;
 
-fn init_idt(idt: &mut Idt, handler_array: *const u8) {
-    // Set IDT handlers
-    let handlers = VirtAddr::from(handler_array);
-    for (i, entry) in idt.iter_mut().enumerate() {
-        *entry = IdtEntry::entry(handlers + (32 * i));
-    }
-}
-
 pub fn early_idt_init_no_ghcb() {
     unsafe {
-        init_idt(
-            &mut GLOBAL_IDT,
-            &stage2_idt_handler_array_no_ghcb as *const u8,
-        );
-        load_idt(&GLOBAL_IDT);
+        idt_mut()
+            .init(&stage2_idt_handler_array_no_ghcb as *const u8, 32)
+            .load();
     }
 }
 
 pub fn early_idt_init() {
     unsafe {
-        init_idt(&mut GLOBAL_IDT, &stage2_idt_handler_array as *const u8);
-        load_idt(&GLOBAL_IDT);
+        idt_mut()
+            .init(&stage2_idt_handler_array as *const u8, 32)
+            .load();
     }
 }
 

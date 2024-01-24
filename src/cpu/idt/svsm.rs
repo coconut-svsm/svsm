@@ -11,39 +11,34 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
 use super::common::{
-    load_idt, Idt, IdtEntry, BP_VECTOR, DF_VECTOR, GLOBAL_IDT, GP_VECTOR, HV_VECTOR, PF_VECTOR,
-    VC_VECTOR,
+    idt_mut, IdtEntry, BP_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, PF_VECTOR, VC_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use core::arch::global_asm;
 
-fn init_idt(idt: &mut Idt) {
-    // Set IDT handlers
-    let handlers = unsafe { VirtAddr::from(&svsm_idt_handler_array as *const u8) };
-    for (i, entry) in idt.iter_mut().enumerate() {
-        *entry = IdtEntry::entry(handlers + (32 * i));
+fn init_ist_vectors() {
+    unsafe {
+        let handler = VirtAddr::from(&svsm_idt_handler_array as *const u8) + (32 * DF_VECTOR);
+        idt_mut().set_entry(
+            DF_VECTOR,
+            IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap()),
+        );
     }
-}
-
-unsafe fn init_ist_vectors(idt: &mut Idt) {
-    let handler = VirtAddr::from(&svsm_idt_handler_array as *const u8) + (32 * DF_VECTOR);
-    idt[DF_VECTOR] = IdtEntry::ist_entry(handler, IST_DF.try_into().unwrap());
 }
 
 pub fn early_idt_init() {
     unsafe {
-        init_idt(&mut GLOBAL_IDT);
-        load_idt(&GLOBAL_IDT);
+        idt_mut()
+            .init(&svsm_idt_handler_array as *const u8, 32)
+            .load();
     }
 }
 
 pub fn idt_init() {
     // Set IST vectors
-    unsafe {
-        init_ist_vectors(&mut GLOBAL_IDT);
-    }
+    init_ist_vectors();
 }
 
 #[no_mangle]
