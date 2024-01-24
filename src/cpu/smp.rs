@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
+use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::{request_loop, request_processing_main};
@@ -33,8 +34,7 @@ fn start_cpu(apic_id: u32) {
         let vmsa_pa = vmsa.paddr;
 
         vmsa.vmsa().enable();
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
             .expect("Failed to launch secondary CPU");
         loop {

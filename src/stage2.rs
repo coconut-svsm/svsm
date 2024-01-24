@@ -19,6 +19,7 @@ use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
+use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::elf;
@@ -134,8 +135,7 @@ fn map_and_validate(config: &SvsmConfig, vregion: MemoryRegion<VirtAddr>, paddr:
         .expect("Error mapping kernel region");
 
     if config.page_state_change_required() {
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 paddr,
                 paddr + vregion.len(),

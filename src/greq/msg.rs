@@ -20,6 +20,7 @@ use core::{
 
 use crate::{
     address::{Address, VirtAddr},
+    cpu::ghcb::current_ghcb,
     cpu::percpu::this_cpu_mut,
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
     mm::virt_to_phys,
@@ -244,8 +245,7 @@ impl SnpGuestRequestMsg {
             .map_err(|_| SvsmReqError::invalid_request())?;
 
         let paddr = virt_to_phys(vaddr);
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 paddr,
                 paddr + PAGE_SIZE,
@@ -264,8 +264,7 @@ impl SnpGuestRequestMsg {
             .map_err(|_| SvsmReqError::invalid_request())?;
 
         let paddr = virt_to_phys(vaddr);
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 paddr,
                 paddr + PAGE_SIZE,
@@ -424,8 +423,7 @@ fn set_encrypted_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReq
             .map_err(|_| SvsmReqError::invalid_request())?;
 
         let paddr = virt_to_phys(addr);
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 paddr,
                 paddr + PAGE_SIZE,
@@ -449,8 +447,7 @@ fn set_shared_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqErr
             .map_err(|_| SvsmReqError::invalid_request())?;
 
         let paddr = virt_to_phys(addr);
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 paddr,
                 paddr + PAGE_SIZE,

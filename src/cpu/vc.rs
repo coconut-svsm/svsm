@@ -6,8 +6,8 @@
 
 use super::idt::common::X86ExceptionContext;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
+use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::insn::{insn_fetch, Instruction};
-use crate::cpu::percpu::this_cpu_mut;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
@@ -91,14 +91,14 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
      * the ioio_{in,ou} methods but it would be better to move the reset out of the different
      * handlers.
      */
-    let ghcb = this_cpu_mut().ghcb();
+    let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
 
     match err {
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
-            handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
+            handle_ioio(ctx, &mut ghcb, &insn).expect("Could not handle IOIO #VC exception")
         }
         _ => {
             panic!(
@@ -121,7 +121,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
      * the ioio_{in,ou} methods but it would be better to move the reset out of the different
      * handlers.
      */
-    let ghcb = this_cpu_mut().ghcb();
+    let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx).expect("Could not decode instruction");
 
@@ -131,7 +131,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
         X86_TRAP => handle_debug_exception(ctx, ctx.vector),
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
-            handle_ioio(ctx, ghcb, &insn).expect("Could not handle IOIO #VC exception")
+            handle_ioio(ctx, &mut ghcb, &insn).expect("Could not handle IOIO #VC exception")
         }
         _ => {
             panic!(

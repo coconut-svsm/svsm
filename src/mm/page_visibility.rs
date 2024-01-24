@@ -6,6 +6,7 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::this_cpu_mut;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -26,8 +27,7 @@ pub fn make_page_shared(vaddr: VirtAddr) {
     }
 
     // Ask the hypervisor to make the page shared.
-    let cpu = this_cpu_mut();
-    cpu.ghcb()
+    current_ghcb()
         .page_state_change(
             paddr,
             paddr + PAGE_SIZE,
@@ -37,7 +37,8 @@ pub fn make_page_shared(vaddr: VirtAddr) {
         .expect("Hypervisor failed to make page shared");
 
     // Update the page tables to map the page as shared.
-    cpu.get_pgtable()
+    this_cpu_mut()
+        .get_pgtable()
         .set_shared_4k(vaddr)
         .expect("Failed to remap shared page in page tables");
     flush_tlb_global_sync();
@@ -45,15 +46,15 @@ pub fn make_page_shared(vaddr: VirtAddr) {
 
 pub fn make_page_private(vaddr: VirtAddr) {
     // Update the page tables to map the page as private.
-    let cpu = this_cpu_mut();
-    cpu.get_pgtable()
+    this_cpu_mut()
+        .get_pgtable()
         .set_encrypted_4k(vaddr)
         .expect("Failed to remap private page in page tables");
     flush_tlb_global_sync();
 
     // Ask the hypervisor to make the page private.
     let paddr = virt_to_phys(vaddr);
-    cpu.ghcb()
+    current_ghcb()
         .page_state_change(
             paddr,
             paddr + PAGE_SIZE,

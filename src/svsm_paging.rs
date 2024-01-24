@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
-use crate::cpu::percpu::this_cpu_mut;
+use crate::cpu::ghcb::current_ghcb;
 use crate::elf;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
@@ -117,8 +117,7 @@ fn invalidate_boot_memory_region(
     }
 
     if config.page_state_change_required() && !region.is_empty() {
-        this_cpu_mut()
-            .ghcb()
+        current_ghcb()
             .page_state_change(
                 region.start(),
                 region.end(),
