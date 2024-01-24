@@ -54,7 +54,7 @@ type StacksBounds = [StackBounds; 2];
 
 #[cfg(feature = "enable-stacktrace")]
 #[derive(Debug)]
-pub struct StackUnwinder {
+struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,
 }
@@ -225,24 +225,4 @@ pub fn print_stack(skip: usize) {
 #[cfg(not(feature = "enable-stacktrace"))]
 pub fn print_stack() {
     log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
-}
-
-// Stub implementation if stacktraces are disabled.
-#[cfg(not(feature = "enable-stacktrace"))]
-pub struct StackUnwinder;
-
-#[cfg(not(feature = "enable-stacktrace"))]
-impl StackUnwinder {
-    pub fn unwind_this_cpu() -> Self {
-        Self
-    }
-}
-
-#[cfg(not(feature = "enable-stacktrace"))]
-impl Iterator for StackUnwinder {
-    type Item = UnwoundStackFrame;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        None
-    }
 }
