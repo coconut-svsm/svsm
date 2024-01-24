@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -87,8 +88,7 @@ pub fn request_loop() {
 
             flush_tlb_global_sync();
 
-            this_cpu_mut()
-                .ghcb()
+            current_ghcb()
                 .run_vmpl(GUEST_VMPL as u64)
                 .expect("Failed to run guest VMPL");
         } else {

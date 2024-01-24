@@ -25,6 +25,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::efer::efer_init;
 use svsm::cpu::gdt;
+use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
@@ -197,9 +198,7 @@ fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
     let sev_features = vmsa.sev_features;
 
     log::info!("Launching Firmware");
-    this_cpu_mut()
-        .ghcb()
-        .register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+    current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
 
     Ok(())
 }

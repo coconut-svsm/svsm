@@ -1,7 +1,7 @@
 use log::info;
 use test::ShouldPanic;
 
-use crate::{cpu::percpu::this_cpu_mut, sev::ghcb::GHCBIOSize};
+use crate::{cpu::ghcb::current_ghcb, sev::ghcb::GHCBIOSize};
 
 pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
     info!("running {} tests", test_cases.len());
@@ -34,8 +34,7 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 
 fn exit() -> ! {
     const QEMU_EXIT_PORT: u16 = 0xf4;
-    this_cpu_mut()
-        .ghcb()
+    current_ghcb()
         .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)
         .unwrap();
     unreachable!();
