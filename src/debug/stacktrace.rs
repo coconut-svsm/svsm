@@ -225,6 +225,6 @@ pub fn print_stack(skip: usize) {
 }
 
 #[cfg(not(feature = "enable-stacktrace"))]
-pub fn print_stack() {
+pub fn print_stack(_: usize) {
     log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
 }
