@@ -4,17 +4,15 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
-use crate::cpu::idt::common::is_exception_handler_return_site;
-use crate::cpu::idt::common::X86ExceptionContext;
-use crate::cpu::percpu::this_cpu;
+use crate::{
+    address::{Address, VirtAddr},
+    cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
+    cpu::percpu::this_cpu,
+    mm::address_space::STACK_SIZE,
+};
 #[cfg(feature = "enable-stacktrace")]
-use crate::mm::address_space::STACK_SIZE;
-#[cfg(feature = "enable-stacktrace")]
-use core::arch::asm;
-#[cfg(feature = "enable-stacktrace")]
-use core::mem;
+use core::{arch::asm, mem};
 
 #[cfg(feature = "enable-stacktrace")]
 #[derive(Debug, Default)]
