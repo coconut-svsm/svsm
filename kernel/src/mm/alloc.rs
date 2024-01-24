@@ -1580,7 +1580,7 @@ unsafe impl Allocator for SvsmAllocator {
 
 #[cfg_attr(any(target_os = "none"), global_allocator)]
 #[cfg_attr(not(target_os = "none"), allow(dead_code))]
-static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
+pub(super) static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start
 /// address, virtual start address, and page count.
