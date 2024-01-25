@@ -257,7 +257,7 @@ impl Drop for TestFileSystemGuard {
 ///
 ///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
 ///  directory and file names in the path.
-fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEndedIterator {
+fn split_path_allow_empty(path: &str) -> impl DoubleEndedIterator<Item = &str> {
     path.split('/').filter(|x| !x.is_empty())
 }
 
@@ -272,7 +272,7 @@ fn split_path_allow_empty(path: &str) -> impl Iterator<Item = &str> + DoubleEnde
 ///
 ///  [`impl Iterator <Item = &str> + DoubleEndedIterator`]: iterator over all the
 ///  directory and file names in the path.
-fn split_path(path: &str) -> Result<impl Iterator<Item = &str> + DoubleEndedIterator, SvsmError> {
+fn split_path(path: &str) -> Result<impl DoubleEndedIterator<Item = &str>, SvsmError> {
     let mut path_items = split_path_allow_empty(path).peekable();
     path_items
         .peek()
