@@ -6,6 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
+use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -104,27 +105,63 @@ struct IdtDesc {
     address: VirtAddr,
 }
 
-pub type Idt = [IdtEntry; IDT_ENTRIES];
+#[derive(Copy, Clone, Debug)]
+pub struct IDT {
+    entries: [IdtEntry; IDT_ENTRIES],
+}
 
-pub static mut GLOBAL_IDT: Idt = [IdtEntry::no_handler(); IDT_ENTRIES];
+impl IDT {
+    pub const fn new() -> Self {
+        IDT {
+            entries: [IdtEntry::no_handler(); IDT_ENTRIES],
+        }
+    }
 
-pub fn idt_base_limit() -> (u64, u32) {
-    unsafe {
-        let base = (&GLOBAL_IDT as *const Idt) as u64;
+    pub fn init(&mut self, handler_array: *const u8, size: usize) -> &mut Self {
+        // Set IDT handlers
+        let handlers = VirtAddr::from(handler_array);
+
+        for idx in 0..size {
+            self.set_entry(idx, IdtEntry::entry(handlers + (32 * idx)));
+        }
+
+        self
+    }
+
+    pub fn set_entry(&mut self, idx: usize, entry: IdtEntry) -> &mut Self {
+        self.entries[idx] = entry;
+
+        self
+    }
+
+    pub fn load(&self) -> &Self {
+        let desc: IdtDesc = IdtDesc {
+            size: (IDT_ENTRIES * 16) as u16,
+            address: VirtAddr::from(self.entries.as_ptr()),
+        };
+
+        unsafe {
+            asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
+        }
+
+        self
+    }
+
+    pub fn base_limit(&self) -> (u64, u32) {
+        let base = (self as *const IDT) as u64;
         let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
         (base, limit)
     }
 }
 
-pub fn load_idt(idt: &Idt) {
-    let desc: IdtDesc = IdtDesc {
-        size: (IDT_ENTRIES * 16) as u16,
-        address: VirtAddr::from(idt.as_ptr()),
-    };
+static IDT: RWLock<IDT> = RWLock::new(IDT::new());
 
-    unsafe {
-        asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
-    }
+pub fn idt() -> ReadLockGuard<'static, IDT> {
+    IDT.lock_read()
+}
+
+pub fn idt_mut() -> WriteLockGuard<'static, IDT> {
+    IDT.lock_write()
 }
 
 pub fn triple_fault() {

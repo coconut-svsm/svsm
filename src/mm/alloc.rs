@@ -1318,6 +1318,7 @@ pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 /// A dummy struct to acquire a lock over global memory for tests.
 #[cfg(any(test, fuzzing))]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
 #[cfg(any(test, fuzzing))]

@@ -7,3 +7,5 @@
 pub mod common;
 pub mod stage2;
 pub mod svsm;
+
+pub use common::{idt, idt_mut};
