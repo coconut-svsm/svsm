@@ -163,50 +163,50 @@ impl IgvmParams<'_> {
 
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
         if !self.should_launch_fw() {
-            None
-        } else {
-            let mut fw_meta = SevFWMetaData::new();
-
-            if self.igvm_param_block.firmware.caa_page != 0 {
-                fw_meta.caa_page = Some(PhysAddr::new(
-                    self.igvm_param_block.firmware.caa_page.try_into().unwrap(),
-                ));
-            }
-
-            if self.igvm_param_block.firmware.secrets_page != 0 {
-                fw_meta.secrets_page = Some(PhysAddr::new(
-                    self.igvm_param_block
-                        .firmware
-                        .secrets_page
-                        .try_into()
-                        .unwrap(),
-                ));
-            }
-
-            if self.igvm_param_block.firmware.cpuid_page != 0 {
-                fw_meta.cpuid_page = Some(PhysAddr::new(
-                    self.igvm_param_block
-                        .firmware
-                        .cpuid_page
-                        .try_into()
-                        .unwrap(),
-                ));
-            }
-
-            let preval_count = self.igvm_param_block.firmware.prevalidated_count as usize;
-            for preval in self
-                .igvm_param_block
-                .firmware
-                .prevalidated
-                .iter()
-                .take(preval_count)
-            {
-                let base = PhysAddr::from(preval.base as usize);
-                fw_meta.add_valid_mem(base, preval.size as usize);
-            }
-
-            Some(fw_meta)
+            return None;
         }
+
+        let mut fw_meta = SevFWMetaData::new();
+
+        if self.igvm_param_block.firmware.caa_page != 0 {
+            fw_meta.caa_page = Some(PhysAddr::new(
+                self.igvm_param_block.firmware.caa_page.try_into().unwrap(),
+            ));
+        }
+
+        if self.igvm_param_block.firmware.secrets_page != 0 {
+            fw_meta.secrets_page = Some(PhysAddr::new(
+                self.igvm_param_block
+                    .firmware
+                    .secrets_page
+                    .try_into()
+                    .unwrap(),
+            ));
+        }
+
+        if self.igvm_param_block.firmware.cpuid_page != 0 {
+            fw_meta.cpuid_page = Some(PhysAddr::new(
+                self.igvm_param_block
+                    .firmware
+                    .cpuid_page
+                    .try_into()
+                    .unwrap(),
+            ));
+        }
+
+        let preval_count = self.igvm_param_block.firmware.prevalidated_count as usize;
+        for preval in self
+            .igvm_param_block
+            .firmware
+            .prevalidated
+            .iter()
+            .take(preval_count)
+        {
+            let base = PhysAddr::from(preval.base as usize);
+            fw_meta.add_valid_mem(base, preval.size as usize);
+        }
+
+        Some(fw_meta)
     }
 
     pub fn get_fw_regions(&self) -> Vec<MemoryRegion<PhysAddr>> {
