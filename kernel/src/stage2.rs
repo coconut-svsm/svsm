@@ -168,7 +168,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
     let config = if launch_info.igvm_params != 0 {
-        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64));
+        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
+            .expect("Invalid IGVM parameters");
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))

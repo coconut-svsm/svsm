@@ -7,10 +7,9 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
-use crate::error::SvsmError::Firmware;
 use crate::fw_meta::SevFWMetaData;
 use crate::mm::PAGE_SIZE;
 use crate::utils::MemoryRegion;
@@ -18,7 +17,7 @@ use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
-use core::mem::size_of;
+use core::mem::{align_of, size_of};
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -40,24 +39,31 @@ pub struct IgvmParams<'a> {
 }
 
 impl IgvmParams<'_> {
-    pub fn new(addr: VirtAddr) -> Self {
-        let param_block = unsafe { &*addr.as_ptr::<IgvmParamBlock>() };
-        let param_page_address = addr + param_block.param_page_offset.try_into().unwrap();
-        let param_page = unsafe { &*param_page_address.as_ptr::<IgvmParamPage>() };
-        let memory_map_address = addr + param_block.memory_map_offset.try_into().unwrap();
-        let memory_map = unsafe { &*memory_map_address.as_ptr::<IgvmMemoryMap>() };
+    pub fn new(addr: VirtAddr) -> Result<Self, SvsmError> {
+        let param_block = Self::try_aligned_ref::<IgvmParamBlock>(addr)?;
+        let param_page_address = addr + param_block.param_page_offset as usize;
+        let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
+        let memory_map_address = addr + param_block.memory_map_offset as usize;
+        let memory_map = Self::try_aligned_ref::<IgvmMemoryMap>(memory_map_address)?;
         let guest_context_address = if param_block.guest_context_offset != 0 {
             addr + param_block.guest_context_offset.try_into().unwrap()
         } else {
             VirtAddr::null()
         };
 
-        Self {
+        Ok(Self {
             igvm_param_block: param_block,
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
             igvm_guest_context_address: guest_context_address,
+        })
+    }
+
+    fn try_aligned_ref<'a, T>(addr: VirtAddr) -> Result<&'a T, SvsmError> {
+        if !addr.is_aligned(align_of::<T>()) {
+            return Err(SvsmError::Firmware);
         }
+        Ok(unsafe { &*addr.as_ptr::<T>() })
     }
 
     pub fn size(&self) -> usize {
@@ -103,11 +109,11 @@ impl IgvmParams<'_> {
                 break;
             }
             if entry.starting_gpa_page_number < next_page_number {
-                return Err(Firmware);
+                return Err(SvsmError::Firmware);
             }
             let next_supplied_page_number = entry.starting_gpa_page_number + entry.number_of_pages;
             if next_supplied_page_number < next_page_number {
-                return Err(Firmware);
+                return Err(SvsmError::Firmware);
             }
             next_page_number = next_supplied_page_number;
             number_of_entries += 1;
