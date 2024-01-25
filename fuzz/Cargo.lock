@@ -70,6 +70,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 
 [[package]]
+name = "bootlib"
+version = "0.1.0"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -100,6 +104,10 @@ dependencies = [
  "crypto-common",
  "inout",
 ]
+
+[[package]]
+name = "cpuarch"
+version = "0.1.0"
 
 [[package]]
 name = "cpufeatures"
@@ -171,10 +179,6 @@ dependencies = [
  "static_assertions",
  "zerocopy 0.7.31",
 ]
-
-[[package]]
-name = "igvm_params"
-version = "0.1.0"
 
 [[package]]
 name = "inout"
@@ -323,8 +327,9 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "bitflags",
+ "bootlib",
+ "cpuarch",
  "igvm_defs",
- "igvm_params",
  "intrusive-collections",
  "log",
  "packit",
