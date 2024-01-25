@@ -4,17 +4,15 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-use crate::address::{Address, VirtAddr};
 #[cfg(feature = "enable-stacktrace")]
-use crate::cpu::idt::common::is_exception_handler_return_site;
-use crate::cpu::idt::common::X86ExceptionContext;
-use crate::cpu::percpu::this_cpu;
+use crate::{
+    address::{Address, VirtAddr},
+    cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
+    cpu::percpu::this_cpu,
+    mm::address_space::STACK_SIZE,
+};
 #[cfg(feature = "enable-stacktrace")]
-use crate::mm::address_space::STACK_SIZE;
-#[cfg(feature = "enable-stacktrace")]
-use core::arch::asm;
-#[cfg(feature = "enable-stacktrace")]
-use core::mem;
+use core::{arch::asm, mem};
 
 #[cfg(feature = "enable-stacktrace")]
 #[derive(Debug, Default)]
@@ -33,18 +31,20 @@ impl StackBounds {
     }
 }
 
+#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug, Default)]
-pub struct StackFrame {
-    pub rbp: VirtAddr,
-    pub rsp: VirtAddr,
-    pub rip: VirtAddr,
-    pub is_last: bool,
-    pub is_exception_frame: bool,
-    pub stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
+struct StackFrame {
+    rbp: VirtAddr,
+    rsp: VirtAddr,
+    rip: VirtAddr,
+    is_last: bool,
+    is_exception_frame: bool,
+    _stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
 }
 
+#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug)]
-pub enum UnwoundStackFrame {
+enum UnwoundStackFrame {
     Valid(StackFrame),
     Invalid,
 }
@@ -54,7 +54,7 @@ type StacksBounds = [StackBounds; 2];
 
 #[cfg(feature = "enable-stacktrace")]
 #[derive(Debug)]
-pub struct StackUnwinder {
+struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,
 }
@@ -118,7 +118,7 @@ impl StackUnwinder {
             }
         }
 
-        let stack_depth = stack.top - rsp;
+        let _stack_depth = stack.top - rsp;
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
@@ -126,7 +126,7 @@ impl StackUnwinder {
             rsp,
             is_last,
             is_exception_frame,
-            stack_depth,
+            _stack_depth,
         })
     }
 
@@ -223,26 +223,6 @@ pub fn print_stack(skip: usize) {
 }
 
 #[cfg(not(feature = "enable-stacktrace"))]
-pub fn print_stack() {
+pub fn print_stack(_: usize) {
     log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
-}
-
-// Stub implementation if stacktraces are disabled.
-#[cfg(not(feature = "enable-stacktrace"))]
-pub struct StackUnwinder;
-
-#[cfg(not(feature = "enable-stacktrace"))]
-impl StackUnwinder {
-    pub fn unwind_this_cpu() -> Self {
-        Self
-    }
-}
-
-#[cfg(not(feature = "enable-stacktrace"))]
-impl Iterator for StackUnwinder {
-    type Item = UnwoundStackFrame;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        None
-    }
 }
