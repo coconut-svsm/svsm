@@ -98,8 +98,7 @@ impl IgvmParams<'_> {
         // non-overlapping and strictly increasing.
         let mut number_of_entries = 0;
         let mut next_page_number = 0;
-        for i in 0..IGVM_MEMORY_ENTRIES_PER_PAGE {
-            let entry = &self.igvm_memory_map.memory_map[i];
+        for entry in self.igvm_memory_map.memory_map.iter() {
             if entry.number_of_pages == 0 {
                 break;
             }
@@ -117,8 +116,12 @@ impl IgvmParams<'_> {
         // Now loop over the supplied entires and add a region for each
         // known type.
         let mut regions: Vec<MemoryRegion<PhysAddr>> = Vec::new();
-        for i in 0..number_of_entries {
-            let entry = &self.igvm_memory_map.memory_map[i];
+        for entry in self
+            .igvm_memory_map
+            .memory_map
+            .iter()
+            .take(number_of_entries)
+        {
             if entry.entry_type == MemoryMapEntryType::MEMORY {
                 let starting_page: usize = entry.starting_gpa_page_number.try_into().unwrap();
                 let number_of_pages: usize = entry.number_of_pages.try_into().unwrap();
@@ -184,15 +187,16 @@ impl IgvmParams<'_> {
                 ));
             }
 
-            for preval in 0..self.igvm_param_block.firmware.prevalidated_count as usize {
-                let base = PhysAddr::new(
-                    self.igvm_param_block.firmware.prevalidated[preval]
-                        .base
-                        .try_into()
-                        .unwrap(),
-                );
-                let size = self.igvm_param_block.firmware.prevalidated[preval].size as usize;
-                fw_meta.add_valid_mem(base, size);
+            let preval_count = self.igvm_param_block.firmware.prevalidated_count as usize;
+            for preval in self
+                .igvm_param_block
+                .firmware
+                .prevalidated
+                .iter()
+                .take(preval_count)
+            {
+                let base = PhysAddr::from(preval.base as usize);
+                fw_meta.add_valid_mem(base, preval.size as usize);
             }
 
             Some(fw_meta)
