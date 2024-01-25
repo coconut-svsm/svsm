@@ -5,8 +5,6 @@
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
 use std::error::Error;
-use std::fs::File;
-use std::io::Read;
 use std::mem::size_of;
 
 use uuid::{uuid, Uuid};
@@ -186,7 +184,10 @@ fn parse_inner_table(
     Ok(table.data_offset)
 }
 
-fn parse_table(data: &Vec<u8>, firmware: &mut IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
+pub fn parse_ovmf(
+    data: &Vec<u8>,
+    firmware: &mut IgvmParamBlockFwInfo,
+) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
     let mut current_offset = data.len() - FOOTER_OFFSET;
     let ovmf_table = read_table(current_offset, data)?;
@@ -200,17 +201,4 @@ fn parse_table(data: &Vec<u8>, firmware: &mut IgvmParamBlockFwInfo) -> Result<()
     }
 
     Ok(())
-}
-
-pub fn parse_ovmf_metadata(
-    filename: &str,
-    firmware: &mut IgvmParamBlockFwInfo,
-) -> Result<(), Box<dyn Error>> {
-    let mut in_file = File::open(filename)?;
-    let len = in_file.metadata()?.len() as usize;
-    let mut data = vec![0u8; len];
-    if in_file.read(&mut data)? != len {
-        return Err("Failed to read OVMF file".into());
-    }
-    parse_table(&data, firmware)
 }
