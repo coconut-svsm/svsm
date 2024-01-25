@@ -174,6 +174,15 @@ struct TaskSchedState {
     pub runtime: TaskRuntimeImpl,
 }
 
+impl TaskSchedState {
+    pub fn panic_on_idle(&mut self, msg: &str) -> &mut Self {
+        if self.idle_task {
+            panic!("{}", msg);
+        }
+        self
+    }
+}
+
 #[repr(C)]
 pub struct Task {
     pub rsp: u64,
@@ -284,11 +293,17 @@ impl Task {
     }
 
     pub fn set_task_terminated(&self) {
-        self.sched_state.lock_write().state = TaskState::TERMINATED;
+        self.sched_state
+            .lock_write()
+            .panic_on_idle("Trying to terminate idle task")
+            .state = TaskState::TERMINATED;
     }
 
     pub fn set_task_blocked(&self) {
-        self.sched_state.lock_write().state = TaskState::BLOCKED;
+        self.sched_state
+            .lock_write()
+            .panic_on_idle("Trying to block idle task")
+            .state = TaskState::BLOCKED;
     }
 
     pub fn is_running(&self) -> bool {
