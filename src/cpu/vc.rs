@@ -183,7 +183,7 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Instruction) {
-    ctx.frame.rip += insn.length;
+    ctx.frame.rip += insn.len()
 }
 
 fn handle_ioio(
@@ -194,7 +194,7 @@ fn handle_ioio(
     let port: u16 = (ctx.regs.rdx & 0xffff) as u16;
     let out_value: u64 = ctx.regs.rax as u64;
 
-    match insn.opcode.bytes[0] {
+    match insn.opcode[0] {
         0x6C..=0x6F | 0xE4..=0xE7 => Err(SvsmError::Vc(VcError {
             rip: ctx.frame.rip,
             code: ctx.error_code,
@@ -206,11 +206,9 @@ fn handle_ioio(
             Ok(())
         }
         0xED => {
-            let (size, mask) = if insn.prefixes.nb_bytes > 0 {
-                // inw instruction has a 0x66 operand-size prefix for word-sized operands
-                (GHCBIOSize::Size16, u16::MAX as u64)
-            } else {
-                (GHCBIOSize::Size32, u32::MAX as u64)
+            let (size, mask) = match insn.prefixes {
+                Some(prefix) if prefix.nb_bytes > 0 => (GHCBIOSize::Size16, u16::MAX as u64),
+                _ => (GHCBIOSize::Size32, u32::MAX as u64),
             };
 
             let ret = ghcb.ioio_in(port, size)?;
@@ -220,9 +218,12 @@ fn handle_ioio(
         0xEE => ghcb.ioio_out(port, GHCBIOSize::Size8, out_value),
         0xEF => {
             let mut size: GHCBIOSize = GHCBIOSize::Size32;
-            if insn.prefixes.nb_bytes > 0 {
-                // outw instruction has a 0x66 operand-size prefix for word-sized operands.
-                size = GHCBIOSize::Size16;
+            if let Some(prefix) = insn.prefixes {
+                // this is always true at the moment
+                if prefix.nb_bytes > 0 {
+                    // outw instruction has a 0x66 operand-size prefix for word-sized operands.
+                    size = GHCBIOSize::Size16;
+                }
             }
 
             ghcb.ioio_out(port, size, out_value)
