@@ -182,6 +182,13 @@ impl GuestVmsaRef {
         assert!(self.vmsa.is_some());
         unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() }
     }
+
+    pub fn caa_addr(&self) -> Option<VirtAddr> {
+        let caa_phys = self.caa_phys()?;
+        let offset = caa_phys.page_offset();
+
+        Some(SVSM_PERCPU_CAA_BASE + offset)
+    }
 }
 
 #[derive(Debug)]
@@ -562,14 +569,6 @@ impl PerCpu {
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
-    }
-
-    pub fn caa_addr(&self) -> Option<VirtAddr> {
-        let locked = self.shared.guest_vmsa.lock();
-        let caa_phys = locked.caa_phys()?;
-        let offset = caa_phys.page_offset();
-
-        Some(SVSM_PERCPU_CAA_BASE + offset)
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
