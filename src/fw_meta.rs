@@ -251,7 +251,8 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
 
     // Verify that the required elements are present.
     if meta_data.cpuid_page.is_none() {
-        panic!("FW does not specify CPUID_PAGE location");
+        log::error!("FW does not specify CPUID_PAGE location");
+        return Err(SvsmError::Firmware);
     }
 
     Ok(meta_data)
