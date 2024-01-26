@@ -107,28 +107,27 @@ impl GDT {
         }
     }
 
-    fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
+    unsafe fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
         let idx = (SVSM_TSS / 8) as usize;
 
-        self.entries[idx] = desc0;
-        self.entries[idx + 1] = desc1;
+        let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
+
+        tss_entries.add(0).write_volatile(desc0);
+        tss_entries.add(1).write_volatile(desc1);
     }
 
-    fn clear_tss_entry(&mut self) {
-        let idx = (SVSM_TSS / 8) as usize;
-
-        self.entries[idx] = GDTEntry::null();
-        self.entries[idx + 1] = GDTEntry::null();
+    unsafe fn clear_tss_entry(&mut self) {
+        self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
     }
 
     pub fn load_tss(&mut self, tss: &X86Tss) {
         let (desc0, desc1) = tss.to_gdt_entry();
 
-        self.set_tss_entry(desc0, desc1);
         unsafe {
+            self.set_tss_entry(desc0, desc1);
             asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));
+            self.clear_tss_entry()
         }
-        self.clear_tss_entry()
     }
 }
 
