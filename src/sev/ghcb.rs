@@ -137,8 +137,7 @@ pub enum GHCBIOSize {
 }
 
 impl GHCB {
-    pub fn init(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const GHCB);
+    pub fn init(vaddr: VirtAddr) -> Result<(), SvsmError> {
         let paddr = virt_to_phys(vaddr);
 
         if sev_snp_enabled() {
