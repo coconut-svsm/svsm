@@ -65,7 +65,9 @@ fn request_loop_once(
 }
 
 fn check_requests() -> Result<bool, SvsmReqError> {
-    if let Some(caa_addr) = this_cpu().caa_addr() {
+    let cpu = this_cpu();
+    let vmsa_ref = cpu.guest_vmsa_ref();
+    if let Some(caa_addr) = vmsa_ref.caa_addr() {
         let guest_pending = GuestPtr::<u64>::new(caa_addr);
         let p = guest_pending.read()?;
         guest_pending.write(0)?;
