@@ -10,7 +10,7 @@ use crate::mm::virt_to_phys;
 use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 #[bitfield(u8)]
 pub struct HVDoorbellFlags {
@@ -21,13 +21,40 @@ pub struct HVDoorbellFlags {
     pub no_further_signal: bool,
 }
 
+#[bitfield(u32)]
+pub struct HVExtIntStatus {
+    pub pending_vector: u8,
+    pub nmi_pending: bool,
+    pub mc_pending: bool,
+    pub level_sensitive: bool,
+    #[bits(3)]
+    rsvd_13_11: u32,
+    pub multiple_vectors: bool,
+    #[bits(12)]
+    rsvd_26_15: u32,
+    ipi_requested: bool,
+    #[bits(3)]
+    rsvd_30_28: u32,
+    pub vector_31: bool,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct HVExtIntInfo {
+    pub status: AtomicU32,
+    pub irr: [AtomicU32; 7],
+    pub isr: [AtomicU32; 8],
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct HVDoorbell {
     pub vector: AtomicU8,
     pub flags: AtomicU8,
     pub no_eoi_required: AtomicU8,
-    reserved: u8,
+    pub per_vmpl_events: AtomicU8,
+    reserved_63_4: [u8; 60],
+    pub per_vmpl: [HVExtIntInfo; 3],
 }
 
 impl HVDoorbell {
@@ -75,6 +102,9 @@ impl HVDoorbell {
             }
             common_isr_handler(vector as usize);
         }
+
+        // Ignore per-VMPL events; these will be consumed when APIC emulation
+        // is performed.
     }
 
     pub fn no_eoi_required(&self) -> bool {

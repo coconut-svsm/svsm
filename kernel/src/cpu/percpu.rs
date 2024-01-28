@@ -437,6 +437,19 @@ impl PerCpu {
         Ok(())
     }
 
+    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
+        unsafe {
+            let hv_doorbell = self.hv_doorbell.get();
+            if hv_doorbell.is_null() {
+                None
+            } else {
+                // The HV doorbell page can only ever be borrowed shared, never
+                // mutable, and can safely have a static lifetime.
+                Some(&*hv_doorbell)
+            }
+        }
+    }
+
     fn setup_tss(&self) {
         let double_fault_stack = self.get_top_of_df_stack();
         let mut tss = self.tss.get();

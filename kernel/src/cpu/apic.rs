@@ -5,12 +5,15 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::VirtAddr;
-use crate::cpu::percpu::PerCpuShared;
+use crate::cpu::percpu::{this_cpu, PerCpuShared};
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
+use crate::sev::hv_doorbell::HVExtIntStatus;
+use crate::types::GUEST_VMPL;
 
 use bitfield_struct::bitfield;
+use core::sync::atomic::Ordering;
 
 const APIC_REGISTER_APIC_ID: u64 = 0x802;
 const APIC_REGISTER_TPR: u64 = 0x808;
@@ -250,6 +253,10 @@ impl LocalApic {
         cpu_state: &mut T,
         caa_addr: Option<VirtAddr>,
     ) {
+        // Make sure any interrupts being presented by the host have been
+        // consumed.
+        self.consume_host_interrupts();
+
         if self.update_required {
             // Make sure that all previously delivered interrupts have been
             // processed before attempting to process any more.
@@ -440,6 +447,7 @@ impl LocalApic {
             _ => Err(ApicError::ApicError),
         }
     }
+
     pub fn configure_vector(&mut self, vector: u8, allowed: bool) {
         let index = (vector >> 5) as usize;
         let mask = 1 << (vector & 31);
@@ -447,6 +455,104 @@ impl LocalApic {
             self.allowed_irr[index] |= mask;
         } else {
             self.allowed_irr[index] &= !mask;
+        }
+    }
+
+    fn signal_one_host_interrupt(&mut self, vector: u8) {
+        let index = (vector >> 5) as usize;
+        let mask = 1 << (vector & 31);
+        if (self.allowed_irr[index] & mask) != 0 {
+            self.post_interrupt(vector);
+        }
+    }
+
+    fn signal_several_interrupts(&mut self, group: usize, mut bits: u32) {
+        let vector = (group as u8) << 5;
+        while bits != 0 {
+            let index = 31 - bits.leading_zeros();
+            bits &= !(1 << index);
+            self.post_interrupt(vector + index as u8);
+        }
+    }
+
+    pub fn consume_host_interrupts(&mut self) {
+        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+        let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
+        // Ignore events other than for the guest VMPL.
+        if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) != 0 {
+            let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
+
+            // First consume any level-sensitive vector that is present.
+            let mut flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
+            if flags.level_sensitive() {
+                // Consume the correct vector atomically.
+                loop {
+                    let mut new_flags = flags;
+                    new_flags.set_pending_vector(0);
+                    new_flags.set_level_sensitive(false);
+                    if let Err(fail_flags) = descriptor.status.compare_exchange(
+                        flags.into(),
+                        new_flags.into(),
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    ) {
+                        flags = fail_flags.into();
+                    } else {
+                        //flags = new_flags;
+                        break;
+                    }
+                }
+                // FIXME - signal the flags.vector as a level-sensitive
+                // interrupt.
+                panic!("No support yet for host-presented level-sensitive interrupts");
+            }
+
+            // If a single vector is present, then signal it, otherwise
+            // process the entire IRR.
+            if flags.multiple_vectors() {
+                // Clear the multiple vectors flag first so that additional
+                // interrupts are presented via the 8-bit vector.  This must
+                // be done before the IRR is scanned so that if additional
+                // vectors are presented later, the multiple vectors flag
+                // will be set again.
+                let multiple_vectors_mask: u32 =
+                    HVExtIntStatus::new().with_multiple_vectors(true).into();
+                descriptor
+                    .status
+                    .fetch_and(!multiple_vectors_mask, Ordering::Relaxed);
+
+                // Handle the special case of vector 31.
+                if flags.vector_31() {
+                    descriptor
+                        .status
+                        .fetch_and(!(1u32 << 31), Ordering::Relaxed);
+                    self.signal_one_host_interrupt(31);
+                }
+
+                for i in 1..8 {
+                    let bits = descriptor.irr[i - 1].swap(0, Ordering::Relaxed);
+                    self.signal_several_interrupts(i, bits & self.allowed_irr[i]);
+                }
+            } else if flags.pending_vector() != 0 {
+                // Atomically consume this interrupt.  If it cannot be consumed
+                // atomically, then it must be because some other interrupt
+                // has been presented, and that can be consumed in another
+                // pass.
+                let mut new_flags = flags;
+                new_flags.set_pending_vector(0);
+                if descriptor
+                    .status
+                    .compare_exchange(
+                        flags.into(),
+                        new_flags.into(),
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    self.signal_one_host_interrupt(flags.pending_vector());
+                }
+            }
         }
     }
 }
