@@ -61,8 +61,9 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
             PTEntryFlags::data_ro()
         };
 
+        let vregion = MemoryRegion::new(vaddr_start, segment_len);
         pgtable
-            .map_region(vaddr_start, aligned_vaddr_end, phys, flags)
+            .map_region(vregion, phys, flags)
             .expect("Failed to map kernel ELF segment");
 
         phys = phys + segment_len;
@@ -70,10 +71,10 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
 
     // Map the IGVM parameters if present.
     if let Some(ref igvm_params) = igvm_param_info.igvm_params {
+        let vregion = MemoryRegion::new(igvm_param_info.virt_addr, igvm_params.size());
         pgtable
             .map_region(
-                igvm_param_info.virt_addr,
-                igvm_param_info.virt_addr + igvm_params.size(),
+                vregion,
                 PhysAddr::from(launch_info.igvm_params_phys_addr),
                 PTEntryFlags::data(),
             )
@@ -81,10 +82,13 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
     }
 
     // Map subsequent heap area.
+    let heap_vregion = MemoryRegion::new(
+        VirtAddr::from(launch_info.heap_area_virt_start),
+        launch_info.heap_area_size() as usize,
+    );
     pgtable
         .map_region(
-            VirtAddr::from(launch_info.heap_area_virt_start),
-            VirtAddr::from(launch_info.heap_area_virt_end()),
+            heap_vregion,
             PhysAddr::from(launch_info.heap_area_phys_start),
             PTEntryFlags::data(),
         )

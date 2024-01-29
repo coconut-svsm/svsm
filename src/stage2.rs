@@ -122,7 +122,7 @@ fn setup_env(config: &SvsmConfig) {
     sev_status_verify();
 }
 
-fn map_and_validate(config: &SvsmConfig, vaddr: VirtAddr, paddr: PhysAddr, len: usize) {
+fn map_and_validate(config: &SvsmConfig, vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -130,7 +130,7 @@ fn map_and_validate(config: &SvsmConfig, vaddr: VirtAddr, paddr: PhysAddr, len: 
 
     let mut pgtbl = get_init_pgtable_locked();
     pgtbl
-        .map_region(vaddr, vaddr + len, paddr, flags)
+        .map_region(vregion, paddr, flags)
         .expect("Error mapping kernel region");
 
     if config.page_state_change_required() {
@@ -138,15 +138,14 @@ fn map_and_validate(config: &SvsmConfig, vaddr: VirtAddr, paddr: PhysAddr, len: 
             .ghcb()
             .page_state_change(
                 paddr,
-                paddr + len,
+                paddr + vregion.len(),
                 PageSize::Huge,
                 PageStateChangeOp::PscPrivate,
             )
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }
-    pvalidate_range(MemoryRegion::new(vaddr, len), PvalidateOp::Valid)
-        .expect("PVALIDATE kernel region failed");
-    valid_bitmap_set_valid_range(paddr, paddr + len);
+    pvalidate_range(vregion, PvalidateOp::Valid).expect("PVALIDATE kernel region failed");
+    valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
 }
 
 // Launch info from stage1, usually at the bottom of the stack
@@ -240,7 +239,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         let paddr_start = loaded_kernel_phys_end;
         loaded_kernel_phys_end = loaded_kernel_phys_end + segment_len;
 
-        map_and_validate(&config, vaddr_start, paddr_start, segment_len);
+        let vregion = MemoryRegion::new(vaddr_start, segment_len);
+        map_and_validate(&config, vregion, paddr_start);
 
         let segment_buf =
             unsafe { slice::from_raw_parts_mut(vaddr_start.as_mut_ptr::<u8>(), segment_len) };
@@ -291,12 +291,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         igvm_params_phys_address = loaded_kernel_phys_end;
         igvm_params_size = igvm_params.size();
 
-        map_and_validate(
-            &config,
-            igvm_params_virt_address,
-            igvm_params_phys_address,
-            igvm_params_size,
-        );
+        let igvm_params_vregion = MemoryRegion::new(igvm_params_virt_address, igvm_params_size);
+        map_and_validate(&config, igvm_params_vregion, igvm_params_phys_address);
 
         let igvm_params_src_addr = VirtAddr::from(launch_info.igvm_params as u64);
         let igvm_src =
@@ -317,12 +313,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let heap_area_phys_start = loaded_kernel_phys_end;
     let heap_area_virt_start = loaded_kernel_virt_end;
     let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
-    map_and_validate(
-        &config,
-        heap_area_virt_start,
-        heap_area_phys_start,
-        heap_area_size,
-    );
+    let heap_area_virt_region = MemoryRegion::new(heap_area_virt_start, heap_area_size);
+    map_and_validate(&config, heap_area_virt_region, heap_area_phys_start);
 
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
