@@ -9,6 +9,7 @@ use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
+use crate::utils::MemoryRegion;
 use core::fmt::Debug;
 
 use super::{
@@ -79,34 +80,42 @@ pub fn virt_log_usage() {
     );
 }
 
-pub fn virt_alloc_range_4k(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
+pub fn virt_alloc_range_4k(
+    size_bytes: usize,
+    alignment: usize,
+) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
     // Each bit in our bitmap represents a 4K page
     if (size_bytes & (PAGE_SIZE - 1)) != 0 {
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT;
-    this_cpu_mut().vrange_4k.alloc(page_count, alignment)
+    let addr = this_cpu_mut().vrange_4k.alloc(page_count, alignment)?;
+    Ok(MemoryRegion::new(addr, size_bytes))
 }
 
-pub fn virt_free_range_4k(vaddr: VirtAddr, size_bytes: usize) {
+pub fn virt_free_range_4k(vregion: MemoryRegion<VirtAddr>) {
     this_cpu_mut()
         .vrange_4k
-        .free(vaddr, size_bytes >> PAGE_SHIFT);
+        .free(vregion.start(), vregion.len() >> PAGE_SHIFT);
 }
 
-pub fn virt_alloc_range_2m(size_bytes: usize, alignment: usize) -> Result<VirtAddr, SvsmError> {
+pub fn virt_alloc_range_2m(
+    size_bytes: usize,
+    alignment: usize,
+) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
     // Each bit in our bitmap represents a 2M page
     if (size_bytes & (PAGE_SIZE_2M - 1)) != 0 {
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT_2M;
-    this_cpu_mut().vrange_2m.alloc(page_count, alignment)
+    let addr = this_cpu_mut().vrange_2m.alloc(page_count, alignment)?;
+    Ok(MemoryRegion::new(addr, size_bytes))
 }
 
-pub fn virt_free_range_2m(vaddr: VirtAddr, size_bytes: usize) {
+pub fn virt_free_range_2m(vregion: MemoryRegion<VirtAddr>) {
     this_cpu_mut()
         .vrange_2m
-        .free(vaddr, size_bytes >> PAGE_SHIFT_2M);
+        .free(vregion.start(), vregion.len() >> PAGE_SHIFT_2M);
 }
 
 #[cfg(test)]
