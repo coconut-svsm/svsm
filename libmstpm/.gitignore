@@ -1,1 +1,2 @@
 libmstpm.a
+src/bindings.rs
