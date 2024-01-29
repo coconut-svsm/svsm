@@ -578,6 +578,7 @@ dependencies = [
  "gdbstub_arch",
  "igvm_defs",
  "intrusive-collections",
+ "libmstpm",
  "log",
  "memoffset",
  "packit",
