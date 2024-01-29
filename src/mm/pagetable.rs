@@ -575,52 +575,38 @@ impl PageTable {
 
     pub fn map_region_4k(
         &mut self,
-        start: VirtAddr,
-        end: VirtAddr,
+        vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE)
-            .map(VirtAddr::from)
-        {
-            let offset = addr - start;
+        for addr in vregion.iter_pages(PageSize::Regular) {
+            let offset = addr - vregion.start();
             self.map_4k(addr, phys + offset, flags)?;
         }
         Ok(())
     }
 
-    pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE)
-            .map(VirtAddr::from)
-        {
+    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Regular) {
             self.unmap_4k(addr);
         }
     }
 
     pub fn map_region_2m(
         &mut self,
-        start: VirtAddr,
-        end: VirtAddr,
+        vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE_2M)
-            .map(VirtAddr::from)
-        {
-            let offset = addr - start;
+        for addr in vregion.iter_pages(PageSize::Huge) {
+            let offset = addr - vregion.start();
             self.map_2m(addr, phys + offset, flags)?;
         }
         Ok(())
     }
 
-    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE_2M)
-            .map(VirtAddr::from)
-        {
+    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Huge) {
             self.unmap_2m(addr);
         }
     }

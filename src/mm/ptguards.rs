@@ -38,31 +38,29 @@ impl PerCPUPageMappingGuard {
         let flags = PTEntryFlags::data();
         let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
-        let vaddr = if huge {
+        let raw_mapping = if huge {
             let vaddr = virt_alloc_range_2m(size, 0)?;
-            if let Err(e) =
-                this_cpu_mut()
-                    .get_pgtable()
-                    .map_region_2m(vaddr, vaddr + size, paddr_start, flags)
+            let region = MemoryRegion::new(vaddr, size);
+            if let Err(e) = this_cpu_mut()
+                .get_pgtable()
+                .map_region_2m(region, paddr_start, flags)
             {
                 virt_free_range_2m(vaddr, size);
                 return Err(e);
             }
-            vaddr
+            region
         } else {
             let vaddr = virt_alloc_range_4k(size, 0)?;
-            if let Err(e) =
-                this_cpu_mut()
-                    .get_pgtable()
-                    .map_region_4k(vaddr, vaddr + size, paddr_start, flags)
+            let region = MemoryRegion::new(vaddr, size);
+            if let Err(e) = this_cpu_mut()
+                .get_pgtable()
+                .map_region_4k(region, paddr_start, flags)
             {
                 virt_free_range_4k(vaddr, size);
                 return Err(e);
             }
-            vaddr
+            region
         };
-
-        let raw_mapping = MemoryRegion::new(vaddr, size);
 
         Ok(PerCPUPageMappingGuard {
             mapping: raw_mapping,
@@ -82,14 +80,13 @@ impl PerCPUPageMappingGuard {
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
         let start = self.mapping.start();
-        let end = self.mapping.end();
         let size = self.mapping.len();
 
         if self.huge {
-            this_cpu_mut().get_pgtable().unmap_region_2m(start, end);
+            this_cpu_mut().get_pgtable().unmap_region_2m(self.mapping);
             virt_free_range_2m(start, size);
         } else {
-            this_cpu_mut().get_pgtable().unmap_region_4k(start, end);
+            this_cpu_mut().get_pgtable().unmap_region_4k(self.mapping);
             virt_free_range_4k(start, size);
         }
         flush_address_sync(start);
