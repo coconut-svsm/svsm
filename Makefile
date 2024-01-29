@@ -145,4 +145,3 @@ clean:
 	rm -rf bin
 
 .PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf
-

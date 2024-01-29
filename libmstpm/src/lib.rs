@@ -8,3 +8,6 @@
 //! for the vTPM.
 
 #![no_std]
+
+/// C bindings
+pub mod bindings;

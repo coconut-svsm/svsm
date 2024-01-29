@@ -26,7 +26,7 @@ MSTPM_MAKEFILE = $(MSTPM_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBTPM) $(LIBPLATFORM)
 
-all: libmstpm.a
+all: libmstpm.a src/bindings.rs
 
 libmstpm.a: $(LIBS)
 	rm -f $@
@@ -119,12 +119,25 @@ $(MSTPM_MAKEFILE):
 			CFLAGS="${MSTPM_CFLAGS}" \
 			LIBCRYPTO_LIBS="${$(LIBCRT) $(LIBCRYPTO)}")
 
+# bindings.rs
+BINDGEN_FLAGS = --use-core
+CLANG_FLAGS = -Wno-incompatible-library-redeclaration
+
+src/bindings.rs: deps/libmstpm.h $(LIBTPM)
+	echo "#![allow(non_upper_case_globals)]" > $@
+	echo "#![allow(non_camel_case_types)]" >> $@
+	echo "#![allow(non_snake_case)]" >> $@
+	echo "#![allow(unused)]" >> $@
+	echo "#![allow(improper_ctypes)]" >> $@
+	bindgen $(BINDGEN_FLAGS) deps/libmstpm.h -- $(CLANG_FLAGS) >> $@
+
 clean: $(OPENSSL_MAKEFILE) $(MSTPM_MAKEFILE)
 	make -C $(LIBCRT_DIR) clean
 	make -C $(OPENSSL_DIR) clean
 	sed -i '/^AX_PTHREAD/d' $(MSTPM_DIR)/configure.ac
 	make -C $(MSTPM_DIR) clean
 	rm -f libmstpm.a
+	rm -f src/bindings.rs
 
 distclean: clean
 	rm -f $(OPENSSL_MAKEFILE)
