@@ -14,7 +14,7 @@ use crate::cpu::vmsa::init_guest_vmsa;
 use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::{allocate_page, allocate_zeroed_page};
+use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
@@ -339,9 +339,13 @@ impl PerCpu {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_page().expect("Failed to allocate GHCB page");
-        self.ghcb = ghcb_page.as_mut_ptr::<GHCB>();
-        unsafe { (*self.ghcb).init() }
+        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
+        if let Err(e) = GHCB::init(ghcb_page) {
+            free_page(ghcb_page);
+            return Err(e);
+        };
+        self.ghcb = ghcb_page.as_mut_ptr();
+        Ok(())
     }
 
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
