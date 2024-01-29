@@ -1615,6 +1615,64 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
 /// [`TestRootMem::setup()`].
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 
+pub fn mem_allocate(layout: Layout) -> *mut u8 {
+    unsafe { ALLOCATOR.alloc(layout) }
+}
+
+/// Grow or shrink `ptr` to have `new_size` bytes.
+///
+/// # Safety
+///
+/// This function is unsafe for the same reasons as the GlocalAlloc::realloc() trait
+pub unsafe fn mem_reallocate(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+    unsafe { ALLOCATOR.realloc(ptr, layout, new_size) }
+}
+
+/// Deallocate `ptr` with a given `layout`
+///
+/// # Safety
+///
+/// This function is unsafe for the same reasons as the GlobalAlloc::dealloc() trait
+pub unsafe fn mem_deallocate(ptr: *mut u8, layout: Layout) {
+    unsafe { ALLOCATOR.dealloc(ptr, layout) }
+}
+
+pub const MIN_ALIGN: usize = 32;
+
+pub fn layout_from_size(size: usize) -> Layout {
+    let align: usize = {
+        if (size % PAGE_SIZE) == 0 {
+            PAGE_SIZE
+        } else {
+            MIN_ALIGN
+        }
+    };
+    Layout::from_size_align(size, align).unwrap()
+}
+
+pub fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
+    let va = VirtAddr::from(ptr);
+
+    let Ok(pfn) = ROOT_MEM.lock().get_pfn(va) else {
+        return None;
+    };
+    let info = ROOT_MEM.lock().read_page_info(pfn);
+
+    match info {
+        PageInfo::Allocated(ai) => {
+            let base: usize = 2;
+            let size: usize = base.pow(ai.order as u32) * PAGE_SIZE;
+            Some(Layout::from_size_align(size, PAGE_SIZE).unwrap())
+        }
+        PageInfo::Slab(si) => {
+            let slab: *const Slab = si.slab.as_ptr();
+            let size: usize = unsafe { (*slab).common.item_size as usize };
+            Some(Layout::from_size_align(size, size).unwrap())
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
