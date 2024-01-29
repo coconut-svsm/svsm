@@ -39,8 +39,8 @@ use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE};
-use svsm::utils::halt;
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
+use svsm::utils::{halt, MemoryRegion};
 
 extern "C" {
     pub static heap_start: u8;
@@ -144,7 +144,7 @@ fn map_and_validate(config: &SvsmConfig, vaddr: VirtAddr, paddr: PhysAddr, len: 
             )
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }
-    pvalidate_range(vaddr, vaddr + len, PvalidateOp::Valid)
+    pvalidate_range(MemoryRegion::new(vaddr, len), PvalidateOp::Valid)
         .expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + len);
 }
