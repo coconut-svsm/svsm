@@ -29,7 +29,7 @@ enum UnwoundStackFrame {
     Invalid,
 }
 
-type StacksBounds = [StackBounds; 2];
+type StacksBounds = [StackBounds; 3];
 
 #[derive(Debug)]
 struct StackUnwinder {
@@ -57,6 +57,7 @@ impl StackUnwinder {
                 bottom: top_of_df_stack - STACK_SIZE,
                 top: top_of_df_stack,
             },
+            this_cpu().current_stack,
         ];
 
         Self::new(VirtAddr::from(rbp), stacks)
