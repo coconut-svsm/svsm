@@ -44,9 +44,16 @@ use intrusive_collections::LinkedList;
 
 #[derive(Debug, Default)]
 pub struct RunQueue {
+    /// Linked list with runable tasks
     run_list: LinkedList<TaskRunListAdapter>,
+
+    /// Pointer to currently running task
     current_task: Option<TaskPointer>,
+
+    /// Idle task - runs when there is no other runnable task
     idle_task: OnceCell<TaskPointer>,
+
+    /// Temporary storage for tasks which are about to be terminated
     terminated_task: Option<TaskPointer>,
 }
 
