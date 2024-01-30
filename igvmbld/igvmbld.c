@@ -42,6 +42,7 @@ int is_qemu;
 int is_hyperv;
 int com_port = 1;
 int is_verbose;
+int sort_pages;
 
 const uint16_t com_io_ports[] = { 0x3f8, 0x2f8, 0x3e8, 0x2e8 };
 
@@ -98,6 +99,51 @@ DATA_OBJ *insert_data_object(DATA_OBJ *data_object)
 {
     data_object->next = data_object_list;
     data_object_list = data_object;
+    return data_object;
+}
+
+DATA_OBJ *insert_data_object_sorted(DATA_OBJ** sorted, DATA_OBJ *data_object)
+{
+    DATA_OBJ *insert_after = NULL;
+    DATA_OBJ *insert_before = *sorted;
+
+    if (!insert_before)
+    {
+        // First entry.
+        data_object->next = *sorted;
+        *sorted = data_object;
+    }
+    else
+    {
+        while (insert_before)
+        {
+            // Sort by address but always ensure the VP context is first.
+            if (insert_before->data_type == IGVM_VHT_VP_CONTEXT)
+            {
+                insert_after = insert_before;
+                insert_before = insert_before->next;
+                continue;
+            }
+            if ((data_object->data_type == IGVM_VHT_VP_CONTEXT) ||
+                (data_object->address < insert_before->address))
+            {
+                if (!insert_after) {
+                    data_object->next = insert_before;
+                    *sorted = data_object;
+                    return data_object;
+                }
+                else {
+                    data_object->next = insert_before;
+                    insert_after->next = data_object;
+                    return data_object;
+                }
+            }
+            insert_after = insert_before;
+            insert_before = insert_before->next;
+        }
+        insert_after->next = data_object;
+        data_object->next = NULL;
+    }
     return data_object;
 }
 
@@ -453,6 +499,21 @@ void generate_parameter_headers(void)
     }
 }
 
+void sort_data_headers(void) 
+{
+    DATA_OBJ *sorted = NULL;
+    DATA_OBJ *data_obj = data_object_list;
+
+    while (data_obj != NULL)
+    {
+        DATA_OBJ *data_obj_next = data_obj->next;
+        insert_data_object_sorted(&sorted, data_obj);
+        data_obj = data_obj_next;
+    }
+
+    data_object_list = sorted;
+}
+
 void generate_data_headers(void)
 {
     uint64_t address;
@@ -463,6 +524,11 @@ void generate_data_headers(void)
     uint32_t page_count;
     IGVM_VHS_PAGE_DATA *page_data;
     uint32_t struct_size;
+
+    if (sort_pages)
+    {
+        sort_data_headers();
+    }
 
     // For each data block, allocate an array of data headers to describe the
     // data.
@@ -806,6 +872,10 @@ int parse_options(int argc, const char *argv[])
                  (0 == strcmp(argv[0], "-v")))
         {
             is_verbose = 1;
+        }
+        else if (0 == strcmp(argv[0], "--sort"))
+        {
+            sort_pages = 1;
         }
         else if (0 == strcmp(argv[0], "--firmware"))
         {
