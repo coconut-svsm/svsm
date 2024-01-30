@@ -163,6 +163,8 @@ pub struct TaskContext {
 pub struct Task {
     pub rsp: u64,
 
+    stack_bounds: StackBounds,
+
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
 
@@ -228,6 +230,7 @@ impl Task {
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_stack()")
                 .bits() as u64,
+            stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
             state: TaskState::RUNNING,
@@ -240,12 +243,18 @@ impl Task {
         Ok(task)
     }
 
+    pub fn stack_bounds(&self) -> StackBounds {
+        self.stack_bounds
+    }
+
     pub fn set_current(&mut self, previous_task: *mut Task) {
         // This function is called by one task but returns in the context of
         // another task. The context of the current task is saved and execution
         // can resume at the point of the task switch, effectively completing
         // the function call for the original task.
         let new_task_addr = (self as *mut Task) as u64;
+
+        this_cpu_mut().current_stack = self.stack_bounds;
 
         // Switch to the new task
         unsafe {

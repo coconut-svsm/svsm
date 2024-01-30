@@ -16,6 +16,7 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
+use crate::mm::stack::StackBounds;
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -243,6 +244,10 @@ pub struct PerCpu {
 
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLock<RunQueue>,
+
+    /// Stack boundaries of the currently running task. This is stored in
+    /// [PerCpu] because it needs lockless read access.
+    pub current_stack: StackBounds,
 }
 
 impl PerCpu {
@@ -262,6 +267,7 @@ impl PerCpu {
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
             runqueue: RWLock::new(RunQueue::new(apic_id)),
+            current_stack: StackBounds::default(),
         }
     }
 
