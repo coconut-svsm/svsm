@@ -39,6 +39,10 @@ pub struct CmdOptions {
     /// Print verbose output
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
+
+    /// Sort the IGVM Page directives by GPA from lowest to highest
+    #[arg(long, default_value_t = false)]
+    pub sort: bool,
 }
 
 impl CmdOptions {

@@ -53,6 +53,9 @@ firmware - OVMF on QEMU and IGVM-based firmware on Hyper-V.
   -v, --verbose
           Print verbose output
 
+  --sort
+          Sort the IGVM Page directives by GPA from lowest to highest
+          
   -h, --help
           Print help (see a summary with '-h')
 ```

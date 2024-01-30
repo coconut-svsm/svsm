@@ -4,6 +4,7 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -62,10 +63,57 @@ impl IgvmBuilder {
         })
     }
 
+    fn compare_pages(
+        directive_a: &IgvmDirectiveHeader,
+        directive_b: &IgvmDirectiveHeader,
+    ) -> Ordering {
+        let a = match directive_a {
+            IgvmDirectiveHeader::PageData {
+                gpa,
+                compatibility_mask: _,
+                flags: _,
+                data_type: _,
+                data: _,
+            } => gpa,
+            _ => panic!("Attempted to compare non-page directive"),
+        };
+        let b = match directive_b {
+            IgvmDirectiveHeader::PageData {
+                gpa,
+                compatibility_mask: _,
+                flags: _,
+                data_type: _,
+                data: _,
+            } => gpa,
+            _ => panic!("Attempted to compare non-page directive"),
+        };
+        a.cmp(b)
+    }
+
     pub fn build(mut self) -> Result<(), Box<dyn Error>> {
         let param_block = self.create_param_block()?;
         self.build_directives(&param_block)?;
         self.build_platforms(&param_block);
+
+        // Separate the directive pages out from the others so we can populate them last.
+        let others: Vec<IgvmDirectiveHeader> = self
+            .directives
+            .iter()
+            .filter(|directive| Self::filter_pages(directive, false))
+            .cloned()
+            .collect();
+        let mut pages: Vec<IgvmDirectiveHeader> = self
+            .directives
+            .iter()
+            .filter(|directive| Self::filter_pages(directive, true))
+            .cloned()
+            .collect();
+
+        if self.options.sort {
+            pages.sort_by(Self::compare_pages);
+        }
+        self.directives = others;
+        self.directives.append(&mut pages);
 
         if self.options.verbose {
             println!("{param_block:#X?}");
@@ -382,5 +430,18 @@ impl IgvmBuilder {
             });
         }
         Ok(())
+    }
+
+    fn filter_pages(directive: &IgvmDirectiveHeader, is_page: bool) -> bool {
+        match directive {
+            IgvmDirectiveHeader::PageData {
+                gpa: _,
+                compatibility_mask: _,
+                flags: _,
+                data_type: _,
+                data: _,
+            } => is_page,
+            _ => !is_page,
+        }
     }
 }
