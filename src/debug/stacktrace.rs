@@ -9,23 +9,9 @@ use crate::{
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
+    mm::stack::StackBounds,
 };
 use core::{arch::asm, mem};
-
-#[derive(Debug, Default)]
-struct StackBounds {
-    bottom: VirtAddr,
-    top: VirtAddr,
-}
-
-impl StackBounds {
-    fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
-        match begin.checked_add(len) {
-            Some(end) => begin >= self.bottom && end <= self.top,
-            None => false,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct StackFrame {
