@@ -5,7 +5,7 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 use crate::{
-    address::{Address, VirtAddr},
+    address::VirtAddr,
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
@@ -86,7 +86,7 @@ impl StackUnwinder {
             }
         };
 
-        let is_last = Self::frame_is_last(rbp, rip, stacks);
+        let is_last = Self::frame_is_last(rbp);
         let is_exception_frame = is_exception_handler_return_site(rip);
 
         if !is_last && !is_exception_frame {
@@ -142,16 +142,11 @@ impl StackUnwinder {
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }
 
-    fn frame_is_last(rbp: VirtAddr, _rip: VirtAddr, stacks: &StacksBounds) -> bool {
-        // The BSP's and secondary APs' Rust entry points are getting jumped to
-        // with rsp set to the top of the respective runtime stack each. First
-        // thing they'd do when compiled with frame pointers enabled is to push
-        // some garbage rbp and 'movq rsp, rbp' afterwards. That is, their rbp
-        // would point to the word at the top of the runtime stack.
-        stacks.iter().any(|stack| {
-            let word_size = mem::size_of::<VirtAddr>();
-            stack.top.checked_sub(word_size) == Some(rbp)
-        })
+    fn frame_is_last(rbp: VirtAddr) -> bool {
+        // A new task is launched with RBP = 0, which is pushed onto the stack
+        // immediatly and can serve as a marker when the end of the stack has
+        // been reached.
+        rbp == VirtAddr::new(0)
     }
 }
 
