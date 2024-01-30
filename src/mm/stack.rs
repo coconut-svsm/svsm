@@ -44,6 +44,22 @@ impl StackBounds {
             None => false,
         }
     }
+
+    /// Creates a remapped version of this stuct StackBounds
+    ///
+    /// # Arguments
+    ///
+    /// * `base`: Virtual base address where stack is mapped
+    ///
+    /// # Returns
+    ///
+    /// New struct StackBounds with remapped values
+    pub fn map_at(&self, base: VirtAddr) -> Self {
+        Self {
+            top: self.top + base.bits(),
+            bottom: self.bottom + base.bits(),
+        }
+    }
 }
 
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks

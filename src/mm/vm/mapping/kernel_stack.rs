@@ -9,6 +9,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::address_space::STACK_SIZE;
 use crate::mm::pagetable::PTEntryFlags;
+use crate::mm::stack::StackBounds;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::page_align_up;
 
@@ -39,6 +40,26 @@ impl VMKernelStack {
     pub fn top_of_stack(&self, base: VirtAddr) -> VirtAddr {
         let guard_size = self.guard_pages * PAGE_SIZE;
         base + guard_size + self.alloc.mapping_size()
+    }
+
+    /// Returns the stack bounds of this kernel stack
+    ///
+    /// # Arguments
+    ///
+    /// * `base` - Virtual base address this stack is mapped at (including
+    ///            guard pages).
+    ///
+    /// # Returns
+    ///
+    /// [StackBounds] object containing the actual bottom and top addresses for
+    /// the stack
+    pub fn bounds(&self, base: VirtAddr) -> StackBounds {
+        let mapping_size = self.alloc.mapping_size();
+        let guard_size = self.guard_pages * PAGE_SIZE;
+        StackBounds {
+            bottom: base + guard_size,
+            top: base + guard_size + mapping_size,
+        }
     }
 
     /// Create a new [`VMKernelStack`] with a given size. This function will

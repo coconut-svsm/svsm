@@ -20,6 +20,7 @@ use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
+use crate::mm::stack::StackBounds;
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
 
@@ -214,13 +215,19 @@ impl Task {
         let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
         vm_kernel_range.initialize()?;
 
-        let (stack, rsp_offset) = Self::allocate_stack(entry)?;
+        let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
 
+        let bounds = raw_bounds.map_at(SVSM_PERTASK_STACK_BASE);
+
         let task: Box<Task> = Box::new(Task {
-            rsp: (SVSM_PERTASK_STACK_BASE.bits() + rsp_offset.bits()) as u64,
+            rsp: bounds
+                .top
+                .checked_sub(rsp_offset)
+                .expect("Invalid stack offset from task::allocate_stack()")
+                .bits() as u64,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
             state: TaskState::RUNNING,
@@ -264,16 +271,19 @@ impl Task {
         self.on_switch_hook = hook;
     }
 
-    fn allocate_stack(entry: extern "C" fn()) -> Result<(Arc<Mapping>, VirtAddr), SvsmError> {
+    fn allocate_stack(
+        entry: extern "C" fn(),
+    ) -> Result<(Arc<Mapping>, StackBounds, usize), SvsmError> {
         let stack = VMKernelStack::new()?;
-        let offset = stack.top_of_stack(VirtAddr::from(0u64));
+        let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(Mapping::new(stack));
         let percpu_mapping = this_cpu_mut().new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
-        let stack_ptr: *mut u64 = (percpu_mapping.virt_addr().bits() + offset.bits()) as *mut u64;
+        let stack_ptr: *mut u64 =
+            (percpu_mapping.virt_addr().bits() + bounds.top.bits()) as *mut u64;
 
         // 'Push' the task frame onto the stack
         unsafe {
@@ -285,10 +295,7 @@ impl Task {
             stack_ptr.offset(-1).write(task_exit as *const () as u64);
         }
 
-        Ok((
-            mapping,
-            offset - (size_of::<TaskContext>() + size_of::<u64>()),
-        ))
+        Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
     }
 
     fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
