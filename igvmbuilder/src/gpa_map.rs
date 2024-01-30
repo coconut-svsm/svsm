@@ -10,6 +10,7 @@ use std::fs::metadata;
 use igvm_defs::PAGE_SIZE_4K;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
+use crate::firmware::Firmware;
 
 #[derive(Debug, Copy, Clone)]
 pub struct GpaRange {
@@ -59,13 +60,17 @@ pub struct GpaMap {
     pub igvm_param_block: GpaRange,
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
+    pub guest_context: GpaRange,
     pub firmware: GpaRange,
     pub kernel: GpaRange,
     pub vmsa: GpaRange,
 }
 
 impl GpaMap {
-    pub fn new(options: &CmdOptions) -> Result<Self, Box<dyn Error>> {
+    pub fn new(
+        options: &CmdOptions,
+        firmware: &Option<Box<dyn Firmware>>,
+    ) -> Result<Self, Box<dyn Error>> {
         //   0x000000-0x00EFFF: zero-filled (must be pre-validated)
         //   0x00F000-0x00FFFF: initial stage 2 stack page
         //   0x010000-0x0nnnnn: stage 2 image
@@ -89,31 +94,28 @@ impl GpaMap {
 
         let stage2_image = GpaRange::new(0x10000, stage2_len as u64)?;
 
-        // Plan to load the kernel image at a base address of 1 MB unless it must
-        // be relocated due to firmware.
-        let kernel_address = 1 << 20;
-        // TODO: If Hyper-V then parse the firmware and determine if the kernel
-        // address changes. Also calculate vtom from firmware
-
-        let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
-        let kernel_fs = GpaRange::new(kernel_elf.end, kernel_fs_len as u64)?;
-
         // Calculate the firmware range
-        let firmware = if let Some(firmware) = &options.firmware {
-            match options.hypervisor {
-                Hypervisor::QEMU => {
-                    // OVMF must be located to end at 4GB.
-                    let len = metadata(firmware)?.len() as usize;
-                    if len > 0xffffffff {
-                        return Err("OVMF firmware is too large".into());
-                    }
-                    GpaRange::new((0xffffffff - len + 1) as u64, len as u64)?
-                }
-                Hypervisor::HyperV => return Err("Hyper-V firmware not yet implemented".into()),
-            }
+        let firmware_range = if let Some(firmware) = firmware {
+            let fw_start = firmware.get_fw_info().start as u64;
+            let fw_size = firmware.get_fw_info().size as u64;
+            GpaRange::new(fw_start, fw_size)?
         } else {
             GpaRange::new(0, 0)?
         };
+
+        let kernel_address = match options.hypervisor {
+            Hypervisor::QEMU => {
+                // Plan to load the kernel image at a base address of 1 MB unless it must
+                // be relocated due to firmware.
+                1 << 20
+            }
+            Hypervisor::HyperV => {
+                // Load the kernel image after the firmware.
+                firmware_range.end
+            }
+        };
+        let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
+        let kernel_fs = GpaRange::new(kernel_elf.end, kernel_fs_len as u64)?;
 
         // Calculate the kernel size and base.
         let kernel = match options.hypervisor {
@@ -126,6 +128,21 @@ impl GpaMap {
                 GpaRange::new(0x04000000, 0x01000000)?
             }
         };
+
+        let igvm_param_block = GpaRange::new_page(kernel_elf.end)?;
+        let general_params = GpaRange::new_page(igvm_param_block.end)?;
+        let memory_map = GpaRange::new_page(general_params.end)?;
+        let guest_context = if let Some(firmware) = firmware {
+            if firmware.get_guest_context().is_some() {
+                // Locate the guest context after the memory map parameter page
+                GpaRange::new_page(memory_map.end)?
+            } else {
+                GpaRange::new(0, 0)?
+            }
+        } else {
+            GpaRange::new(0, 0)?
+        };
+
         let gpa_map = Self {
             low_memory: GpaRange::new(0, 0xf000)?,
             stage2_stack: GpaRange::new_page(0xf000)?,
@@ -135,10 +152,11 @@ impl GpaMap {
             cpuid_page: GpaRange::new_page(0x9f000)?,
             kernel_elf,
             kernel_fs,
-            igvm_param_block: GpaRange::new_page(kernel_elf.end)?,
-            general_params: GpaRange::new_page(kernel_elf.end + PAGE_SIZE_4K)?,
-            memory_map: GpaRange::new_page(kernel_elf.end + 2 * PAGE_SIZE_4K)?,
-            firmware,
+            igvm_param_block,
+            general_params,
+            memory_map,
+            guest_context,
+            firmware: firmware_range,
             kernel,
             vmsa: GpaRange::new_page(kernel.start)?,
         };

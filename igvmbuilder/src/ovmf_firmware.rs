@@ -5,10 +5,15 @@
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
 use std::error::Error;
+use std::fs::File;
+use std::io::Read;
 use std::mem::size_of;
 
+use igvm::IgvmDirectiveHeader;
+use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::{uuid, Uuid};
 
+use crate::firmware::Firmware;
 use crate::igvm_params::IgvmParamBlockFwInfo;
 
 const OVMF_TABLE_FOOTER_GUID: Uuid = uuid!("96b582de-1fb2-45f7-baea-a366c55a082d");
@@ -201,4 +206,70 @@ pub fn parse_ovmf(
     }
 
     Ok(())
+}
+
+pub struct OvmfFirmware {
+    fw_info: IgvmParamBlockFwInfo,
+    directives: Vec<IgvmDirectiveHeader>,
+}
+
+impl OvmfFirmware {
+    pub fn parse(
+        filename: &String,
+        _parameter_count: u32,
+        compatibility_mask: u32,
+    ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
+        let mut in_file = File::open(filename)?;
+        let len = in_file.metadata()?.len() as usize;
+        if len > 0xffffffff {
+            return Err("OVMF firmware is too large".into());
+        }
+        let mut data = vec![0u8; len];
+        if in_file.read(&mut data)? != len {
+            return Err("Failed to read OVMF file".into());
+        }
+        let mut fw_info = IgvmParamBlockFwInfo::default();
+        parse_ovmf(&data, &mut fw_info)?;
+
+        // OVMF must be located to end at 4GB.
+        fw_info.start = (0xffffffff - len + 1) as u32;
+        fw_info.size = len as u32;
+
+        // Build page directives for the file contents.
+        let mut gpa: u64 = fw_info.start.into();
+        let mut directives = Vec::<IgvmDirectiveHeader>::new();
+        for page_data in data.chunks(PAGE_SIZE_4K as usize) {
+            directives.push(IgvmDirectiveHeader::PageData {
+                gpa,
+                compatibility_mask,
+                flags: IgvmPageDataFlags::new(),
+                data_type: IgvmPageDataType::NORMAL,
+                data: page_data.to_vec(),
+            });
+            gpa += PAGE_SIZE_4K;
+        }
+
+        Ok(Box::new(Self {
+            fw_info,
+            directives,
+        }))
+    }
+}
+
+impl Firmware for OvmfFirmware {
+    fn directives(&self) -> &Vec<igvm::IgvmDirectiveHeader> {
+        &self.directives
+    }
+
+    fn get_guest_context(&self) -> Option<crate::igvm_params::IgvmGuestContext> {
+        None
+    }
+
+    fn get_vtom(&self) -> u64 {
+        0
+    }
+
+    fn get_fw_info(&self) -> IgvmParamBlockFwInfo {
+        self.fw_info
+    }
 }

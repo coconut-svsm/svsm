@@ -18,8 +18,10 @@ use igvm_defs::{
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
-use crate::firmware::Firmware;
-use crate::igvm_params::{IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem};
+use crate::firmware::{parse_firmware, Firmware};
+use crate::igvm_params::{
+    IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
+};
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::construct_vmsa;
 use crate::GpaMap;
@@ -29,10 +31,11 @@ const COMPATIBILITY_MASK: u32 = 1;
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
+const IGVM_PARAMETER_COUNT: u32 = 2;
 
 pub struct IgvmBuilder {
     options: CmdOptions,
-    firmware: Option<Firmware>,
+    firmware: Option<Box<dyn Firmware>>,
     gpa_map: GpaMap,
     platforms: Vec<IgvmPlatformHeader>,
     directives: Vec<IgvmDirectiveHeader>,
@@ -41,8 +44,15 @@ pub struct IgvmBuilder {
 impl IgvmBuilder {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let options = CmdOptions::parse();
-        let firmware = Firmware::parse(&options)?;
-        let gpa_map = GpaMap::new(&options)?;
+        let firmware = match options.firmware {
+            Some(_) => Some(parse_firmware(
+                &options,
+                IGVM_PARAMETER_COUNT,
+                COMPATIBILITY_MASK,
+            )?),
+            None => None,
+        };
+        let gpa_map = GpaMap::new(&options, &firmware)?;
         Ok(Self {
             options,
             firmware,
@@ -75,7 +85,17 @@ impl IgvmBuilder {
     fn create_param_block(&self) -> Result<IgvmParamBlock, Box<dyn Error>> {
         let param_page_offset = PAGE_SIZE_4K as u32;
         let memory_map_offset = param_page_offset + PAGE_SIZE_4K as u32;
-        let memory_map_end_offset = memory_map_offset + PAGE_SIZE_4K as u32;
+        let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
+        {
+            (0, memory_map_offset + PAGE_SIZE_4K as u32)
+        } else {
+            (
+                memory_map_offset + PAGE_SIZE_4K as u32,
+                memory_map_offset
+                    + PAGE_SIZE_4K as u32
+                    + self.gpa_map.guest_context.get_size() as u32,
+            )
+        };
 
         // Populate the firmware metadata.
         let (fw_info, vtom) = if let Some(firmware) = &self.firmware {
@@ -105,10 +125,10 @@ impl IgvmBuilder {
 
         // Most of the parameter block can be initialised with constants.
         let mut param_block = IgvmParamBlock {
-            param_area_size: memory_map_end_offset,
+            param_area_size,
             param_page_offset,
             memory_map_offset,
-            guest_context_offset: 0,
+            guest_context_offset,
             cpuid_page: self.gpa_map.cpuid_page.get_start() as u32,
             secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
@@ -150,6 +170,15 @@ impl IgvmBuilder {
     }
 
     fn build_directives(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
+        // Populate firmware directives.
+        if let Some(firmware) = &self.firmware {
+            self.directives.append(&mut firmware.directives().clone());
+            // If the firmware has a guest context then add it.
+            if let Some(guest_context) = firmware.get_guest_context() {
+                self.add_guest_context(&guest_context)?;
+            }
+        }
+
         // Describe the kernel RAM region
         self.directives.push(IgvmDirectiveHeader::RequiredMemory {
             gpa: param_block.kernel_base,
@@ -204,11 +233,6 @@ impl IgvmBuilder {
             self.gpa_map.vmsa.get_start(),
             COMPATIBILITY_MASK,
         )?);
-
-        // Populate the firmware pages.
-        if let Some(firmware) = self.options.firmware.clone() {
-            self.add_data_pages_from_file(&firmware, self.gpa_map.firmware.get_start())?;
-        }
 
         // Add the IGVM parameter block
         self.add_param_block(param_block)?;
@@ -313,6 +337,31 @@ impl IgvmBuilder {
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
             data: param_block_page.to_vec(),
+        });
+        Ok(())
+    }
+
+    fn add_guest_context(
+        &mut self,
+        guest_context: &IgvmGuestContext,
+    ) -> Result<(), Box<dyn Error>> {
+        let guest_context_data = unsafe {
+            let ptr = guest_context as *const IgvmGuestContext
+                as *const [u8; size_of::<IgvmGuestContext>()];
+            &*ptr
+        };
+        if guest_context_data.len() > PAGE_SIZE_4K as usize {
+            return Err("IGVM parameter block size exceeds 4K".into());
+        }
+        let mut guest_context_page = [0u8; PAGE_SIZE_4K as usize];
+        guest_context_page[..guest_context_data.len()].clone_from_slice(guest_context_data);
+
+        self.directives.push(IgvmDirectiveHeader::PageData {
+            gpa: self.gpa_map.guest_context.get_start(),
+            compatibility_mask: COMPATIBILITY_MASK,
+            flags: IgvmPageDataFlags::new(),
+            data_type: IgvmPageDataType::NORMAL,
+            data: guest_context_page.to_vec(),
         });
         Ok(())
     }

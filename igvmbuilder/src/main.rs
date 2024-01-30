@@ -13,8 +13,9 @@ mod cpuid;
 mod firmware;
 mod gpa_map;
 mod igvm_builder;
+mod igvm_firmware;
 mod igvm_params;
-mod ovmfmeta;
+mod ovmf_firmware;
 mod stage2_stack;
 mod vmsa;
 
