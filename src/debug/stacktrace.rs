@@ -4,24 +4,20 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-#[cfg(feature = "enable-stacktrace")]
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
 };
-#[cfg(feature = "enable-stacktrace")]
 use core::{arch::asm, mem};
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Debug, Default)]
 struct StackBounds {
     bottom: VirtAddr,
     top: VirtAddr,
 }
 
-#[cfg(feature = "enable-stacktrace")]
 impl StackBounds {
     fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
         match begin.checked_add(len) {
@@ -31,7 +27,6 @@ impl StackBounds {
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug, Default)]
 struct StackFrame {
     rbp: VirtAddr,
@@ -42,24 +37,20 @@ struct StackFrame {
     _stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
 }
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug)]
 enum UnwoundStackFrame {
     Valid(StackFrame),
     Invalid,
 }
 
-#[cfg(feature = "enable-stacktrace")]
 type StacksBounds = [StackBounds; 2];
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Debug)]
 struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,
 }
 
-#[cfg(feature = "enable-stacktrace")]
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -177,7 +168,6 @@ impl StackUnwinder {
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 impl Iterator for StackUnwinder {
     type Item = UnwoundStackFrame;
 
@@ -209,7 +199,6 @@ impl Iterator for StackUnwinder {
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 pub fn print_stack(skip: usize) {
     let unwinder = StackUnwinder::unwind_this_cpu();
     log::info!("---BACKTRACE---:");
@@ -220,9 +209,4 @@ pub fn print_stack(skip: usize) {
         }
     }
     log::info!("---END---");
-}
-
-#[cfg(not(feature = "enable-stacktrace"))]
-pub fn print_stack(_: usize) {
-    log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
 }
