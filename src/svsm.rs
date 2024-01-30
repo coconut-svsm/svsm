@@ -13,10 +13,12 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
+use core::mem::{align_of, size_of};
 use core::panic::PanicInfo;
+use core::ptr;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use svsm::address::{PhysAddr, VirtAddr};
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -52,8 +54,6 @@ use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
-
-use core::ptr;
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -97,20 +97,22 @@ global_asm!(
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
+const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
+
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let start = guard.virt_addr();
-    let end = start + PAGE_SIZE;
+    let start = guard.virt_addr().as_mut_ptr::<u8>();
 
-    let target = ptr::NonNull::new(start.as_mut_ptr::<SnpCpuidTable>()).unwrap();
-
-    // Zero target
-    zero_mem_region(start, end);
-
-    // Copy data
+    // SAFETY: this is called from CPU 0, so the underlying physical address
+    // is not being aliased. We are mapping a full page, which is 4k-aligned,
+    // and is enough for SnpCpuidTable. We also assert above at compile time
+    // that SnpCpuidTable fits within a page, so the write is safe.
     unsafe {
-        let dst = target.as_ptr();
-        *dst = *CPUID_PAGE;
+        // Zero target and copy data
+        start.write_bytes(0, PAGE_SIZE);
+        start
+            .cast::<SnpCpuidTable>()
+            .copy_from_nonoverlapping(&*CPUID_PAGE, 1);
     }
 
     Ok(())
@@ -243,10 +245,11 @@ static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort> = ImmutAfterInitCell::uninit();
 
 pub fn boot_stack_info() {
-    unsafe {
-        let vaddr = VirtAddr::from(&bsp_stack_end as *const u8);
-        log::info!("Boot stack starts        @ {:#018x}", vaddr);
-    }
+    // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
+    // static, but we're simply printing its address. We are not creating a
+    // reference so this is safe.
+    let vaddr = unsafe { VirtAddr::from(ptr::addr_of!(bsp_stack_end)) };
+    log::info!("Boot stack starts        @ {:#018x}", vaddr);
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
@@ -278,6 +281,12 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Already initialized launch info");
 
     let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
+    if !cpuid_table_virt.is_aligned(align_of::<SnpCpuidTable>()) {
+        panic!("Misaligned SNP CPUID table address");
+    }
+    // SAFETY: this is the main function for the SVSM and no other CPUs have
+    // been brought up, so the pointer cannot be aliased. We have verified that
+    // the pointer is aligned so we can create a temporary reference.
     unsafe {
         CPUID_PAGE
             .init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>()))
@@ -301,6 +310,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
         - launch_info.kernel_elf_stage2_virt_start) as usize;
     let kernel_elf_buf_ptr = launch_info.kernel_elf_stage2_virt_start as *const u8;
+    // SAFETY: we trust stage 2 to pass on a correct pointer and length. This
+    // cannot be aliased because we are on CPU 0 and other CPUs have not been
+    // brought up. The resulting slice is &[u8], so there are no alignment
+    // requirements.
     let kernel_elf_buf = unsafe { slice::from_raw_parts(kernel_elf_buf_ptr, kernel_elf_len) };
     let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
         Ok(kernel_elf) => kernel_elf,
@@ -310,20 +323,25 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     paging_init();
     init_page_table(&launch_info, &kernel_elf);
 
-    unsafe {
-        let bsp_percpu = PerCpu::alloc(0)
+    // SAFETY: this PerCpu has just been allocated and no other CPUs have been
+    // brought up, thus it cannot be aliased and we can get a mutable
+    // reference to it. We trust PerCpu::alloc() to return a valid and
+    // aligned pointer.
+    let bsp_percpu = unsafe {
+        PerCpu::alloc(0)
             .expect("Failed to allocate BSP per-cpu data")
             .as_mut()
-            .unwrap();
+            .unwrap()
+    };
 
-        bsp_percpu
-            .setup()
-            .expect("Failed to setup BSP per-cpu area");
-        bsp_percpu
-            .setup_on_cpu()
-            .expect("Failed to run percpu.setup_on_cpu()");
-        bsp_percpu.load();
-    }
+    bsp_percpu
+        .setup()
+        .expect("Failed to setup BSP per-cpu area");
+    bsp_percpu
+        .setup_on_cpu()
+        .expect("Failed to run percpu.setup_on_cpu()");
+    bsp_percpu.load();
+
     idt_init();
 
     CONSOLE_SERIAL
