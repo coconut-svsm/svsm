@@ -9,7 +9,7 @@ extern crate alloc;
 use core::ptr::null_mut;
 
 use super::INITIAL_TASK_ID;
-use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter, TASK_FLAG_SHARE_PT};
+use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
@@ -141,14 +141,13 @@ impl RunQueue {
             .map_or(INITIAL_TASK_ID, |t| t.get_task_id())
     }
 
-    /// Allocates the idle task for this RunQueue. This function sets a
+    /// Sets the idle task for this RunQueue. This function sets a
     /// OnceCell at the end and can thus be only called once.
     ///
     /// # Returns
     ///
     /// Ok(()) on success, SvsmError on failure
-    pub fn allocate_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let task = Task::create(entry, TASK_FLAG_SHARE_PT)?;
+    pub fn set_idle_task(&self, task: TaskPointer) {
         task.set_idle_task();
 
         // Add idle task to global task list
@@ -157,7 +156,6 @@ impl RunQueue {
         self.idle_task
             .set(task)
             .expect("Idle task already allocated");
-        Ok(())
     }
 
     pub fn current_task(&self) -> TaskPointer {
@@ -208,11 +206,12 @@ impl TaskList {
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
 pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
-    let task = Task::create(entry, flags)?;
+    let cpu = this_cpu_mut();
+    let task = Task::create(cpu, entry, flags)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    this_cpu().runqueue().lock_write().handle_task(task.clone());
+    cpu.runqueue().lock_write().handle_task(task.clone());
 
     schedule();
 

@@ -26,7 +26,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::{RunQueue, TaskPointer, WaitQueue};
+use crate::task::{RunQueue, Task, TaskPointer, WaitQueue, TASK_FLAG_SHARE_PT};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
@@ -451,8 +451,10 @@ impl PerCpu {
         self.register_ghcb()
     }
 
-    pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        self.runqueue.lock_read().allocate_idle_task(entry)
+    pub fn setup_idle_task(&mut self, entry: extern "C" fn()) -> Result<(), SvsmError> {
+        let idle_task = Task::create(self, entry, TASK_FLAG_SHARE_PT)?;
+        self.runqueue.lock_read().set_idle_task(idle_task);
+        Ok(())
     }
 
     pub fn load_pgtable(&mut self) {

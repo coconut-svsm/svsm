@@ -13,7 +13,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::msr::{rdtsc, read_flags};
-use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
@@ -239,20 +239,24 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
+    pub fn create(
+        cpu: &mut PerCpu,
+        entry: extern "C" fn(),
+        flags: u16,
+    ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
-            this_cpu().get_pgtable().clone_shared()?
+            cpu.get_pgtable().clone_shared()?
         } else {
             Self::allocate_page_table()?
         };
 
-        this_cpu().populate_page_table(&mut pgtable);
+        cpu.populate_page_table(&mut pgtable);
 
         let mut vm_kernel_range =
             VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
-        let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(entry)?;
+        let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(cpu, entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
@@ -275,7 +279,7 @@ impl Task {
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
-                cpu: this_cpu().get_apic_id(),
+                cpu: cpu.get_apic_id(),
                 runtime: TaskRuntimeImpl::default(),
             }),
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -338,13 +342,14 @@ impl Task {
     }
 
     fn allocate_stack(
+        cpu: &mut PerCpu,
         entry: extern "C" fn(),
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(Mapping::new(stack));
-        let percpu_mapping = this_cpu_mut().new_mapping(mapping.clone())?;
+        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
