@@ -6,11 +6,14 @@
 
 pub mod core;
 pub mod errors;
+#[cfg(feature = "mstpm")]
+pub mod vtpm;
 
 use cpuarch::vmsa::{GuestVMExit, VMSA};
 
 // SVSM protocols
 pub const SVSM_CORE_PROTOCOL: u32 = 0;
+pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
