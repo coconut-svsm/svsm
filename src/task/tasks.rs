@@ -6,9 +6,7 @@
 
 extern crate alloc;
 
-use alloc::boxed::Box;
 use alloc::sync::Arc;
-use core::arch::{asm, global_asm};
 use core::fmt;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -18,11 +16,12 @@ use crate::cpu::msr::{rdtsc, read_flags};
 use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
-use crate::locking::SpinLock;
+use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::stack::StackBounds;
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{current_task_terminated, schedule};
 
@@ -31,6 +30,7 @@ pub const INITIAL_TASK_ID: u32 = 1;
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
     RUNNING,
+    BLOCKED,
     #[default]
     TERMINATED,
 }
@@ -160,6 +160,30 @@ pub struct TaskContext {
 }
 
 #[repr(C)]
+struct TaskSchedState {
+    /// Whether this is an idle task
+    idle_task: bool,
+
+    /// Current state of the task
+    state: TaskState,
+
+    /// CPU this task is currently assigned to
+    cpu: u32,
+
+    /// Amount of CPU resource the task has consumed
+    pub runtime: TaskRuntimeImpl,
+}
+
+impl TaskSchedState {
+    pub fn panic_on_idle(&mut self, msg: &str) -> &mut Self {
+        if self.idle_task {
+            panic!("{}", msg);
+        }
+        self
+    }
+}
+
+#[repr(C)]
 pub struct Task {
     pub rsp: u64,
 
@@ -171,50 +195,61 @@ pub struct Task {
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
-    /// Current state of the task
-    pub state: TaskState,
-
-    /// Task affinity
-    /// None: The task can be scheduled to any CPU
-    /// u32:  The APIC ID of the CPU that the task must run on
-    pub affinity: Option<u32>,
-
-    // APIC ID of the CPU that task has been assigned to. If 'None' then
-    // the task is not currently assigned to a CPU
-    pub allocation: Option<u32>,
+    /// State relevant for scheduler
+    sched_state: RWLock<TaskSchedState>,
 
     /// ID of the task
-    pub id: u32,
+    id: u32,
 
-    /// Amount of CPU resource the task has consumed
-    pub runtime: TaskRuntimeImpl,
+    /// Link to global task list
+    list_link: LinkedListAtomicLink,
 
-    /// Optional hook that is called immediately after switching to this task
-    /// before the context is restored
-    pub on_switch_hook: Option<fn(&Self)>,
+    /// Link to scheduler run queue
+    runlist_link: LinkedListAtomicLink,
+}
+
+// SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
+// of  `Task` are Send + Sync except for the intrusive_collection links, which
+// are only Send. The only access to these is via the intrusive_adapter!
+// generated code which does not use them concurrently across threads.
+unsafe impl Sync for Task {}
+
+pub type TaskPointer = Arc<Task>;
+
+intrusive_adapter!(pub TaskRunListAdapter = TaskPointer: Task { runlist_link: LinkedListAtomicLink });
+intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link: LinkedListAtomicLink });
+
+impl PartialEq for Task {
+    fn eq(&self, other: &Self) -> bool {
+        let a = self as *const Self;
+        let b = other as *const Self;
+        a == b
+    }
 }
 
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Task")
             .field("rsp", &self.rsp)
-            .field("state", &self.state)
-            .field("affinity", &self.affinity)
+            .field("state", &self.sched_state.lock_read().state)
             .field("id", &self.id)
-            .field("runtime", &self.runtime)
+            .field("runtime", &self.sched_state.lock_read().runtime)
             .finish()
     }
 }
 
 impl Task {
-    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<Box<Task>, SvsmError> {
+    pub fn create(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
             this_cpu().get_pgtable().clone_shared()?
         } else {
             Self::allocate_page_table()?
         };
 
-        let mut vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::USER);
+        this_cpu().populate_page_table(&mut pgtable);
+
+        let mut vm_kernel_range =
+            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
         let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(entry)?;
@@ -224,7 +259,7 @@ impl Task {
 
         let bounds = raw_bounds.map_at(SVSM_PERTASK_STACK_BASE);
 
-        let task: Box<Task> = Box::new(Task {
+        Ok(Arc::new(Task {
             rsp: bounds
                 .top
                 .checked_sub(rsp_offset)
@@ -233,51 +268,69 @@ impl Task {
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
-            state: TaskState::RUNNING,
-            affinity: None,
-            allocation: None,
+            sched_state: RWLock::new(TaskSchedState {
+                idle_task: false,
+                state: TaskState::RUNNING,
+                cpu: this_cpu().get_apic_id(),
+                runtime: TaskRuntimeImpl::default(),
+            }),
             id: TASK_ID_ALLOCATOR.next_id(),
-            runtime: TaskRuntimeImpl::default(),
-            on_switch_hook: None,
-        });
-        Ok(task)
+            list_link: LinkedListAtomicLink::default(),
+            runlist_link: LinkedListAtomicLink::default(),
+        }))
     }
 
     pub fn stack_bounds(&self) -> StackBounds {
         self.stack_bounds
     }
 
-    pub fn set_current(&mut self, previous_task: *mut Task) {
-        // This function is called by one task but returns in the context of
-        // another task. The context of the current task is saved and execution
-        // can resume at the point of the task switch, effectively completing
-        // the function call for the original task.
-        let new_task_addr = (self as *mut Task) as u64;
-
-        this_cpu_mut().current_stack = self.stack_bounds;
-
-        // Switch to the new task
-        unsafe {
-            asm!(
-                r#"
-                    call switch_context
-                "#,
-                in("rsi") previous_task as u64,
-                in("rdi") new_task_addr,
-                options(att_syntax));
-        }
+    pub fn get_task_id(&self) -> u32 {
+        self.id
     }
 
-    pub fn set_affinity(&mut self, affinity: Option<u32>) {
-        self.affinity = affinity;
+    pub fn set_task_running(&self) {
+        self.sched_state.lock_write().state = TaskState::RUNNING;
+    }
+
+    pub fn set_task_terminated(&self) {
+        self.sched_state
+            .lock_write()
+            .panic_on_idle("Trying to terminate idle task")
+            .state = TaskState::TERMINATED;
+    }
+
+    pub fn set_task_blocked(&self) {
+        self.sched_state
+            .lock_write()
+            .panic_on_idle("Trying to block idle task")
+            .state = TaskState::BLOCKED;
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.sched_state.lock_read().state == TaskState::RUNNING
+    }
+
+    pub fn is_terminated(&self) -> bool {
+        self.sched_state.lock_read().state == TaskState::TERMINATED
+    }
+
+    pub fn set_idle_task(&self) {
+        self.sched_state.lock_write().idle_task = true;
+    }
+
+    pub fn is_idle_task(&self) -> bool {
+        self.sched_state.lock_read().idle_task
+    }
+
+    pub fn update_cpu(&self, new_cpu: u32) -> u32 {
+        let mut state = self.sched_state.lock_write();
+        let old_cpu = state.cpu;
+        state.cpu = new_cpu;
+        old_cpu
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
-    }
-
-    pub fn set_on_switch_hook(&mut self, hook: Option<fn(&Task)>) {
-        self.on_switch_hook = hook;
     }
 
     fn allocate_stack(
@@ -321,88 +374,3 @@ extern "C" fn task_exit() {
     }
     schedule();
 }
-
-#[allow(unused)]
-#[no_mangle]
-extern "C" fn apply_new_context(new_task: *mut Task) -> u64 {
-    unsafe {
-        let mut pt = (*new_task).page_table.lock();
-        this_cpu().populate_page_table(&mut pt);
-        pt.cr3_value().bits() as u64
-    }
-}
-
-#[allow(unused)]
-#[no_mangle]
-extern "C" fn on_switch(new_task: &mut Task) {
-    if let Some(hook) = new_task.on_switch_hook {
-        hook(new_task);
-    }
-}
-
-global_asm!(
-    r#"
-        .text
-
-    switch_context:
-        // Save the current context. The layout must match the TaskContext structure.
-        pushfq
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-        pushq   %rsp
-        
-        // Save the current stack pointer
-        testq   %rsi, %rsi
-        jz      1f
-        movq    %rsp, (%rsi)
-
-    1:
-        // Switch to the new task state
-        mov     %rdi, %rbx
-        call    apply_new_context
-        mov     %rax, %cr3
-
-        // Switch to the new task stack
-        movq    (%rbx), %rsp
-
-        // We've already restored rsp
-        addq        $8, %rsp
-
-        mov         %rbx, %rdi
-        call        on_switch
-
-        // Restore the task context
-        popq        %r15
-        popq        %r14
-        popq        %r13
-        popq        %r12
-        popq        %r11
-        popq        %r10
-        popq        %r9
-        popq        %r8
-        popq        %rbp
-        popq        %rdi
-        popq        %rsi
-        popq        %rdx
-        popq        %rcx
-        popq        %rbx
-        popq        %rax
-        popfq
-
-        ret
-    "#,
-    options(att_syntax)
-);
