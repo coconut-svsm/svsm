@@ -11,7 +11,8 @@
 pub mod mstpm;
 
 use crate::protocols::vtpm::TpmPlatformCommand;
-use crate::protocols::errors::SvsmReqError;
+use crate::vtpm::mstpm::MsTpm as Vtpm;
+use crate::{locking::SpinLock, protocols::errors::SvsmReqError};
 
 /// Basic services required to perform the VTPM Protocol
 pub trait VtpmProtocolInterface {
@@ -65,4 +66,17 @@ pub trait VtpmInterface: MsTpmSimulatorInterface {
     /// Prepare the TPM to be used for the first time. At this stage,
     /// the TPM is manufactured.
     fn init(&mut self) -> Result<(), SvsmReqError>;
+}
+
+static VTPM: SpinLock<Vtpm> = SpinLock::new(Vtpm::new());
+
+/// Initialize the TPM by calling the init() implementation of the
+/// [`VtpmInterface`]
+pub fn vtpm_init() -> Result<(), SvsmReqError> {
+    let mut vtpm = VTPM.lock();
+    if vtpm.is_powered_on() {
+        return Ok(());
+    }
+    vtpm.init()?;
+    Ok(())
 }

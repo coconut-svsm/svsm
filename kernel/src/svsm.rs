@@ -50,6 +50,8 @@ use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+#[cfg(feature = "mstpm")]
+use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -427,6 +429,9 @@ pub extern "C" fn svsm_main() {
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
+
+    #[cfg(feature = "mstpm")]
+    vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();
 
