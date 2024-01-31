@@ -9,6 +9,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart, PageTableRef};
+use crate::mm::GlobalBox;
 use crate::types::{PageSize, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_down, align_up};
 
@@ -20,7 +21,6 @@ use intrusive_collections::Bound;
 use super::{Mapping, VMMAdapter, VMM};
 
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -217,7 +217,7 @@ impl VMR {
         start_pfn: usize,
         cursor: &mut CursorMut<'_, VMMAdapter>,
     ) -> Result<(), SvsmError> {
-        let vmm = Box::new(VMM::new(start_pfn, mapping));
+        let vmm = GlobalBox::try_new(VMM::new(start_pfn, mapping))?;
         if let Err(e) = self.map_vmm(&vmm) {
             self.unmap_vmm(&vmm);
             Err(e)
@@ -355,7 +355,7 @@ impl VMR {
     /// # Returns
     ///
     /// The removed mapping on success, SvsmError::Mem on error
-    pub fn remove(&self, base: VirtAddr) -> Result<Box<VMM>, SvsmError> {
+    pub fn remove(&self, base: VirtAddr) -> Result<GlobalBox<VMM>, SvsmError> {
         let mut tree = self.tree.lock_write();
         let addr = base.pfn();
 
