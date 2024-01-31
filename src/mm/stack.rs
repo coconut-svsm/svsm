@@ -17,6 +17,51 @@ use crate::mm::{
 use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 
+/// Covers a virtual address range of a stack
+#[derive(Debug, Default, Copy, Clone)]
+pub struct StackBounds {
+    /// Stack bottom virtual address
+    pub bottom: VirtAddr,
+
+    /// Stack top virtual address
+    pub top: VirtAddr,
+}
+
+impl StackBounds {
+    /// Checks whether a given virtual address range is fully on the stack
+    ///
+    /// # Arguments
+    ///
+    /// * `begin` - Start virtual address of the checked range
+    /// * `len` - Length of the checked range in bytes
+    ///
+    /// # Returns
+    ///
+    /// `true` if range is fully on the stack, `false` if not.
+    pub fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
+        match begin.checked_add(len) {
+            Some(end) => begin >= self.bottom && end <= self.top,
+            None => false,
+        }
+    }
+
+    /// Creates a remapped version of this stuct StackBounds
+    ///
+    /// # Arguments
+    ///
+    /// * `base`: Virtual base address where stack is mapped
+    ///
+    /// # Returns
+    ///
+    /// New struct StackBounds with remapped values
+    pub fn map_at(&self, base: VirtAddr) -> Self {
+        Self {
+            top: self.top + base.bits(),
+            bottom: self.bottom + base.bits(),
+        }
+    }
+}
+
 // Limit maximum number of stacks for now, address range support 2**16 8k stacks
 const MAX_STACKS: usize = 1024;
 const BMP_QWORDS: usize = MAX_STACKS / 64;

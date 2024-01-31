@@ -176,12 +176,10 @@ pub fn triple_fault() {
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 extern "C" {
     static generic_idt_handler_return: u8;
 }
 
-#[cfg(feature = "enable-stacktrace")]
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
     let addr = unsafe { VirtAddr::from(&generic_idt_handler_return as *const u8) };
     addr == rip

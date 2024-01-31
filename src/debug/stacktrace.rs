@@ -4,34 +4,15 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-#[cfg(feature = "enable-stacktrace")]
 use crate::{
-    address::{Address, VirtAddr},
+    address::VirtAddr,
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
+    mm::stack::StackBounds,
 };
-#[cfg(feature = "enable-stacktrace")]
 use core::{arch::asm, mem};
 
-#[cfg(feature = "enable-stacktrace")]
-#[derive(Debug, Default)]
-struct StackBounds {
-    bottom: VirtAddr,
-    top: VirtAddr,
-}
-
-#[cfg(feature = "enable-stacktrace")]
-impl StackBounds {
-    fn range_is_on_stack(&self, begin: VirtAddr, len: usize) -> bool {
-        match begin.checked_add(len) {
-            Some(end) => begin >= self.bottom && end <= self.top,
-            None => false,
-        }
-    }
-}
-
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug, Default)]
 struct StackFrame {
     rbp: VirtAddr,
@@ -42,24 +23,20 @@ struct StackFrame {
     _stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
 }
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Clone, Copy, Debug)]
 enum UnwoundStackFrame {
     Valid(StackFrame),
     Invalid,
 }
 
-#[cfg(feature = "enable-stacktrace")]
-type StacksBounds = [StackBounds; 2];
+type StacksBounds = [StackBounds; 3];
 
-#[cfg(feature = "enable-stacktrace")]
 #[derive(Debug)]
 struct StackUnwinder {
     next_frame: Option<UnwoundStackFrame>,
     stacks: StacksBounds,
 }
 
-#[cfg(feature = "enable-stacktrace")]
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -80,6 +57,7 @@ impl StackUnwinder {
                 bottom: top_of_df_stack - STACK_SIZE,
                 top: top_of_df_stack,
             },
+            this_cpu().current_stack,
         ];
 
         Self::new(VirtAddr::from(rbp), stacks)
@@ -108,7 +86,7 @@ impl StackUnwinder {
             }
         };
 
-        let is_last = Self::frame_is_last(rbp, rip, stacks);
+        let is_last = Self::frame_is_last(rbp);
         let is_exception_frame = is_exception_handler_return_site(rip);
 
         if !is_last && !is_exception_frame {
@@ -164,20 +142,14 @@ impl StackUnwinder {
         Self::check_unwound_frame(rbp, rsp, rip, stacks)
     }
 
-    fn frame_is_last(rbp: VirtAddr, _rip: VirtAddr, stacks: &StacksBounds) -> bool {
-        // The BSP's and secondary APs' Rust entry points are getting jumped to
-        // with rsp set to the top of the respective runtime stack each. First
-        // thing they'd do when compiled with frame pointers enabled is to push
-        // some garbage rbp and 'movq rsp, rbp' afterwards. That is, their rbp
-        // would point to the word at the top of the runtime stack.
-        stacks.iter().any(|stack| {
-            let word_size = mem::size_of::<VirtAddr>();
-            stack.top.checked_sub(word_size) == Some(rbp)
-        })
+    fn frame_is_last(rbp: VirtAddr) -> bool {
+        // A new task is launched with RBP = 0, which is pushed onto the stack
+        // immediatly and can serve as a marker when the end of the stack has
+        // been reached.
+        rbp == VirtAddr::new(0)
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 impl Iterator for StackUnwinder {
     type Item = UnwoundStackFrame;
 
@@ -209,7 +181,6 @@ impl Iterator for StackUnwinder {
     }
 }
 
-#[cfg(feature = "enable-stacktrace")]
 pub fn print_stack(skip: usize) {
     let unwinder = StackUnwinder::unwind_this_cpu();
     log::info!("---BACKTRACE---:");
@@ -220,9 +191,4 @@ pub fn print_stack(skip: usize) {
         }
     }
     log::info!("---END---");
-}
-
-#[cfg(not(feature = "enable-stacktrace"))]
-pub fn print_stack(_: usize) {
-    log::info!("Stack unwinding not supported - set 'enable-stacktrace' at compile time");
 }

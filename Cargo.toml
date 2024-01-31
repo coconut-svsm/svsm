@@ -33,8 +33,7 @@ cpuarch = { path = "cpuarch" }
 test = { version = "0.1.0", path = "test" }
 
 [features]
-default = ["enable-stacktrace"]
-enable-stacktrace = []
+default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 
 [dev-dependencies]
