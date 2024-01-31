@@ -51,7 +51,7 @@ fn get_object() -> MyType {
 }
 ```
 
-- It is good practice to document arguments under a `# Arguements` section, as
+- It is good practice to document arguments under a `# Arguments` section, as
   well as return values under `# Returns`.
 
 ```rust
