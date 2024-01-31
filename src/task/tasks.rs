@@ -348,8 +348,7 @@ impl Task {
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
-        let stack_ptr: *mut u64 =
-            (percpu_mapping.virt_addr().bits() + bounds.end().bits()) as *mut u64;
+        let stack_ptr = (percpu_mapping.virt_addr() + bounds.end().bits()).as_mut_ptr::<u64>();
 
         // 'Push' the task frame onto the stack
         unsafe {
