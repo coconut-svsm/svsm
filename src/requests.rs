@@ -6,7 +6,7 @@
 
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{process_requests, this_cpu, this_cpu_mut, wait_for_requests};
+use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
@@ -18,7 +18,7 @@ use cpuarch::vmsa::GuestVMExit;
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {
-    let cpu = this_cpu_mut();
+    let cpu = this_cpu();
     let mut locked = cpu.guest_vmsa_ref();
     let mut ret = Ok(());
 
@@ -81,11 +81,15 @@ pub fn request_loop() {
         // the guest to execute.  When halting, assume that the hypervisor
         // will schedule the guest VMPL on its own.
         if update_mappings().is_ok() {
-            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
-            let vmsa = vmsa_ref.vmsa();
-
-            // Make VMSA runnable again by setting EFER.SVME
-            vmsa.enable();
+            // Make VMSA runnable again by setting EFER.SVME.  This requires a
+            // separate scope so the CPU reference does not outlive the use of
+            // the VMSA reference.
+            {
+                let cpu = this_cpu();
+                let mut vmsa_ref = cpu.guest_vmsa_ref();
+                let vmsa = vmsa_ref.vmsa();
+                vmsa.enable();
+            }
 
             flush_tlb_global_sync();
 
@@ -106,7 +110,8 @@ pub fn request_loop() {
         // Obtain a reference to the VMSA just long enough to extract the
         // request parameters.
         let (protocol, request) = {
-            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let cpu = this_cpu();
+            let mut vmsa_ref = cpu.guest_vmsa_ref();
             let vmsa = vmsa_ref.vmsa();
 
             // Clear EFER.SVME in guest VMSA
@@ -156,7 +161,8 @@ pub extern "C" fn request_processing_main() {
         // request parameters.
         let mut rax: u64;
         let mut request_info = {
-            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let cpu = this_cpu();
+            let mut vmsa_ref = cpu.guest_vmsa_ref();
             let vmsa = vmsa_ref.vmsa();
 
             // Clear EFER.SVME in guest VMSA
@@ -200,7 +206,8 @@ pub extern "C" fn request_processing_main() {
 
         // Write back results
         {
-            let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+            let cpu = this_cpu();
+            let mut vmsa_ref = cpu.guest_vmsa_ref();
             let vmsa = vmsa_ref.vmsa();
             vmsa.rax = rax;
             request_info.params.write_back(vmsa);

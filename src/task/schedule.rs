@@ -206,8 +206,8 @@ impl TaskList {
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
 pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
-    let cpu = this_cpu_mut();
-    let task = Task::create(cpu, entry, flags)?;
+    let mut cpu = this_cpu_mut();
+    let task = Task::create(&mut cpu, entry, flags)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
@@ -227,7 +227,8 @@ pub fn is_current_task(id: u32) -> bool {
 }
 
 pub unsafe fn current_task_terminated() {
-    let mut rq = this_cpu().runqueue().lock_write();
+    let cpu = this_cpu();
+    let mut rq = cpu.runqueue().lock_write();
     let task_node = rq
         .current_task
         .as_mut()

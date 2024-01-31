@@ -174,7 +174,7 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 }
 
 fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let cpu = this_cpu_mut();
+    let mut cpu = this_cpu_mut();
 
     if let Some(caa) = fw_meta.caa_page {
         cpu.shared.update_guest_caa(caa);
@@ -187,7 +187,8 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 }
 
 fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
-    let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+    let cpu = this_cpu();
+    let mut vmsa_ref = cpu.guest_vmsa_ref();
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
     let vmsa = vmsa_ref.vmsa();
 
