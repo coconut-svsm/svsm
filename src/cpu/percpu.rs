@@ -35,6 +35,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::mem::size_of;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 use cpuarch::vmsa::{VMSASegment, VMSA};
@@ -253,6 +254,10 @@ pub struct PerCpu {
 
     /// WaitQueue for request processing
     request_waitqueue: WaitQueue,
+
+    // The borrow count tuple holds (total, mutable) borrow counts.
+    #[cfg(debug_assertions)]
+    borrow_count: (usize, usize),
 }
 
 impl PerCpu {
@@ -274,6 +279,11 @@ impl PerCpu {
             runqueue: RWLock::new(RunQueue::new()),
             current_stack: MemoryRegion::new(VirtAddr::null(), 0),
             request_waitqueue: WaitQueue::new(),
+
+            // Every new CPU is constructed with via a raw pointer so no
+            // borrow is active at the time of construction.
+            #[cfg(debug_assertions)]
+            borrow_count: (0, 0),
         }
     }
 
@@ -293,6 +303,7 @@ impl PerCpu {
             (*percpu_shared) = PerCpuShared::new();
 
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
+
             (*percpu) = PerCpu::new(apic_id, &*percpu_shared);
 
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, shared_vaddr));
@@ -632,12 +643,88 @@ impl PerCpu {
     }
 }
 
-pub fn this_cpu() -> &'static PerCpu {
-    unsafe { SVSM_PERCPU_BASE.as_ptr::<PerCpu>().as_ref().unwrap() }
+/// # Safety
+///
+/// This function performs no borrow checks and should only be used by callers
+/// that can guarantee safe access when borrow checks are not honored.
+pub unsafe fn this_cpu_unsafe() -> *mut PerCpu {
+    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>()
 }
 
-pub fn this_cpu_mut() -> &'static mut PerCpu {
-    unsafe { SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>().as_mut().unwrap() }
+#[derive(Debug)]
+pub struct CpuRef {
+    cpu: &'static mut PerCpu,
+}
+
+impl Deref for CpuRef {
+    type Target = PerCpu;
+    fn deref(&self) -> &PerCpu {
+        self.cpu
+    }
+}
+
+#[derive(Debug)]
+pub struct CpuRefMut {
+    cpu: &'static mut PerCpu,
+}
+
+impl Deref for CpuRefMut {
+    type Target = PerCpu;
+    fn deref(&self) -> &PerCpu {
+        self.cpu
+    }
+}
+
+impl DerefMut for CpuRefMut {
+    fn deref_mut(&mut self) -> &mut PerCpu {
+        self.cpu
+    }
+}
+
+pub fn this_cpu() -> CpuRef {
+    unsafe {
+        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
+        #[cfg(debug_assertions)]
+        {
+            // Prohibit a shared borrow if a mutable borrow exists.
+            assert!((*cpu).borrow_count.1 == 0);
+            (*cpu).borrow_count.0 += 1;
+        }
+        CpuRef { cpu: &mut *cpu }
+    }
+}
+
+pub fn this_cpu_mut() -> CpuRefMut {
+    unsafe {
+        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
+        #[cfg(debug_assertions)]
+        {
+            // Prohibit a mutable borrow if any other borrow exists.
+            assert!((*cpu).borrow_count.0 == 0);
+            assert!((*cpu).borrow_count.1 == 0);
+            (*cpu).borrow_count.0 += 1;
+            (*cpu).borrow_count.1 += 1;
+        }
+        CpuRefMut { cpu: &mut *cpu }
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for CpuRef {
+    fn drop(&mut self) {
+        assert!(self.cpu.borrow_count.0 != 0);
+        self.cpu.borrow_count.0 -= 1;
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Drop for CpuRefMut {
+    fn drop(&mut self) {
+        assert!(self.cpu.borrow_count.0 == 1);
+        self.cpu.borrow_count.0 = 0;
+        assert!(self.cpu.borrow_count.1 == 1);
+        self.cpu.borrow_count.1 = 0;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
