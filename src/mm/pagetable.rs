@@ -15,6 +15,7 @@ use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::MemoryRegion;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::{cmp, ptr};
@@ -574,64 +575,50 @@ impl PageTable {
 
     pub fn map_region_4k(
         &mut self,
-        start: VirtAddr,
-        end: VirtAddr,
+        vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE)
-            .map(VirtAddr::from)
-        {
-            let offset = addr - start;
+        for addr in vregion.iter_pages(PageSize::Regular) {
+            let offset = addr - vregion.start();
             self.map_4k(addr, phys + offset, flags)?;
         }
         Ok(())
     }
 
-    pub fn unmap_region_4k(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE)
-            .map(VirtAddr::from)
-        {
+    pub fn unmap_region_4k(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Regular) {
             self.unmap_4k(addr);
         }
     }
 
     pub fn map_region_2m(
         &mut self,
-        start: VirtAddr,
-        end: VirtAddr,
+        vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE_2M)
-            .map(VirtAddr::from)
-        {
-            let offset = addr - start;
+        for addr in vregion.iter_pages(PageSize::Huge) {
+            let offset = addr - vregion.start();
             self.map_2m(addr, phys + offset, flags)?;
         }
         Ok(())
     }
 
-    pub fn unmap_region_2m(&mut self, start: VirtAddr, end: VirtAddr) {
-        for addr in (start.bits()..end.bits())
-            .step_by(PAGE_SIZE_2M)
-            .map(VirtAddr::from)
-        {
+    pub fn unmap_region_2m(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        for addr in vregion.iter_pages(PageSize::Huge) {
             self.unmap_2m(addr);
         }
     }
 
     pub fn map_region(
         &mut self,
-        start: VirtAddr,
-        end: VirtAddr,
+        region: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
     ) -> Result<(), SvsmError> {
-        let mut vaddr = start;
+        let mut vaddr = region.start();
+        let end = region.end();
         let mut paddr = phys;
 
         while vaddr < end {
@@ -653,8 +640,9 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn unmap_region(&mut self, start: VirtAddr, end: VirtAddr) {
-        let mut vaddr = start;
+    pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
+        let mut vaddr = vregion.start();
+        let end = vregion.end();
 
         while vaddr < end {
             let mapping = self.walk_addr(vaddr);

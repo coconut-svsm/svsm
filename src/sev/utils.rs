@@ -7,6 +7,7 @@
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::MemoryRegion;
 use core::arch::asm;
 use core::fmt;
 
@@ -50,11 +51,8 @@ impl fmt::Display for SevSnpError {
     }
 }
 
-fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: PvalidateOp) -> Result<(), SvsmError> {
-    for addr in (start.bits()..end.bits())
-        .step_by(PAGE_SIZE)
-        .map(VirtAddr::from)
-    {
+fn pvalidate_range_4k(region: MemoryRegion<VirtAddr>, valid: PvalidateOp) -> Result<(), SvsmError> {
+    for addr in region.iter_pages(PageSize::Regular) {
         pvalidate(addr, PageSize::Regular, valid)?;
     }
 
@@ -62,11 +60,11 @@ fn pvalidate_range_4k(start: VirtAddr, end: VirtAddr, valid: PvalidateOp) -> Res
 }
 
 pub fn pvalidate_range(
-    start: VirtAddr,
-    end: VirtAddr,
+    region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    let mut addr = start;
+    let mut addr = region.start();
+    let end = region.end();
 
     while addr < end {
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
@@ -74,7 +72,7 @@ pub fn pvalidate_range(
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
                 SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                    pvalidate_range_4k(addr, addr + PAGE_SIZE_2M, valid)
+                    pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
                 }
                 _ => Err(err),
             })?;
