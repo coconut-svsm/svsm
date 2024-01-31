@@ -125,7 +125,7 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
     zero_mem_region(start, start + PAGE_SIZE);
 
     // Copy secrets page
-    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
+    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL)?;
 
     let &li = &*LAUNCH_INFO;
 

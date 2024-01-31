@@ -5,12 +5,11 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::VirtAddr;
+use crate::error::SvsmError;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
+use crate::mm::GlobalBox;
 use crate::sev::vmsa::VMPL_MAX;
 use crate::types::GUEST_VMPL;
-
-extern crate alloc;
-use alloc::boxed::Box;
 
 pub const VMPCK_SIZE: usize = 32;
 
@@ -73,13 +72,13 @@ impl SecretsPage {
         }
     }
 
-    pub fn copy_for_vmpl(&self, vmpl: usize) -> Box<SecretsPage> {
-        let mut sp = Box::new(*self);
+    pub fn copy_for_vmpl(&self, vmpl: usize) -> Result<GlobalBox<SecretsPage>, SvsmError> {
+        let mut sp = GlobalBox::try_new(*self)?;
         for idx in 0..vmpl {
             sp.clear_vmpck(idx);
         }
 
-        sp
+        Ok(sp)
     }
 
     pub fn set_svsm_data(&mut self, base: u64, size: u64, caa_addr: u64) {
