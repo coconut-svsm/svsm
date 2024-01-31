@@ -9,7 +9,7 @@ use crate::{
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
-    mm::stack::StackBounds,
+    utils::MemoryRegion,
 };
 use core::{arch::asm, mem};
 
@@ -29,7 +29,7 @@ enum UnwoundStackFrame {
     Invalid,
 }
 
-type StacksBounds = [StackBounds; 3];
+type StacksBounds = [MemoryRegion<VirtAddr>; 3];
 
 #[derive(Debug)]
 struct StackUnwinder {
@@ -49,14 +49,8 @@ impl StackUnwinder {
         let top_of_df_stack = this_cpu().get_top_of_df_stack();
 
         let stacks: StacksBounds = [
-            StackBounds {
-                bottom: top_of_init_stack - STACK_SIZE,
-                top: top_of_init_stack,
-            },
-            StackBounds {
-                bottom: top_of_df_stack - STACK_SIZE,
-                top: top_of_df_stack,
-            },
+            MemoryRegion::from_addresses(top_of_init_stack - STACK_SIZE, top_of_init_stack),
+            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
             this_cpu().current_stack,
         ];
 
@@ -79,11 +73,8 @@ impl StackUnwinder {
     ) -> UnwoundStackFrame {
         // The next frame's rsp should live on some valid stack, otherwise mark
         // the unwound frame as invalid.
-        let stack = match stacks.iter().find(|stack| stack.range_is_on_stack(rsp, 0)) {
-            Some(stack) => stack,
-            None => {
-                return UnwoundStackFrame::Invalid;
-            }
+        let Some(stack) = stacks.iter().find(|stack| stack.contains(rsp)) else {
+            return UnwoundStackFrame::Invalid;
         };
 
         let is_last = Self::frame_is_last(rbp);
@@ -96,7 +87,7 @@ impl StackUnwinder {
             }
         }
 
-        let _stack_depth = stack.top - rsp;
+        let _stack_depth = stack.end() - rsp;
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
@@ -111,10 +102,11 @@ impl StackUnwinder {
     fn unwind_framepointer_frame(rbp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
         let rsp = rbp;
 
-        if !stacks
-            .iter()
-            .any(|stack| stack.range_is_on_stack(rsp, 2 * mem::size_of::<VirtAddr>()))
-        {
+        let Some(range) = MemoryRegion::checked_new(rsp, 2 * mem::size_of::<VirtAddr>()) else {
+            return UnwoundStackFrame::Invalid;
+        };
+
+        if !stacks.iter().any(|stack| stack.contains_region(&range)) {
             return UnwoundStackFrame::Invalid;
         }
 
@@ -127,10 +119,12 @@ impl StackUnwinder {
     }
 
     fn unwind_exception_frame(rsp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
-        if !stacks
-            .iter()
-            .any(|stack| stack.range_is_on_stack(rsp, mem::size_of::<X86ExceptionContext>()))
-        {
+        let Some(range) = MemoryRegion::checked_new(rsp, mem::size_of::<X86ExceptionContext>())
+        else {
+            return UnwoundStackFrame::Invalid;
+        };
+
+        if !stacks.iter().any(|stack| stack.contains_region(&range)) {
             return UnwoundStackFrame::Invalid;
         }
 

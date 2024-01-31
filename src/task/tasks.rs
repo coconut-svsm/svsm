@@ -18,9 +18,9 @@ use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
-use crate::mm::stack::StackBounds;
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{current_task_terminated, schedule};
@@ -187,7 +187,7 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
-    stack_bounds: StackBounds,
+    stack_bounds: MemoryRegion<VirtAddr>,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
@@ -257,11 +257,15 @@ impl Task {
 
         vm_kernel_range.populate(&mut pgtable);
 
-        let bounds = raw_bounds.map_at(SVSM_PERTASK_STACK_BASE);
+        // Remap at the per-task offset
+        let bounds = MemoryRegion::new(
+            SVSM_PERTASK_STACK_BASE + raw_bounds.start().into(),
+            raw_bounds.len(),
+        );
 
         Ok(Arc::new(Task {
             rsp: bounds
-                .top
+                .end()
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_stack()")
                 .bits() as u64,
@@ -280,7 +284,7 @@ impl Task {
         }))
     }
 
-    pub fn stack_bounds(&self) -> StackBounds {
+    pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
         self.stack_bounds
     }
 
@@ -335,7 +339,7 @@ impl Task {
 
     fn allocate_stack(
         entry: extern "C" fn(),
-    ) -> Result<(Arc<Mapping>, StackBounds, usize), SvsmError> {
+    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
@@ -345,7 +349,7 @@ impl Task {
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
         let stack_ptr: *mut u64 =
-            (percpu_mapping.virt_addr().bits() + bounds.top.bits()) as *mut u64;
+            (percpu_mapping.virt_addr().bits() + bounds.end().bits()) as *mut u64;
 
         // 'Push' the task frame onto the stack
         unsafe {
