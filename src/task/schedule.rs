@@ -103,7 +103,6 @@ impl RunQueue {
     /// [TaskPointer] to the first task to run
     pub fn schedule_init(&mut self) -> TaskPointer {
         let task = self.get_next_task();
-        this_cpu_mut().current_stack = task.stack_bounds();
         self.current_task = Some(task.clone());
         task
     }
@@ -130,7 +129,6 @@ impl RunQueue {
 
         // Check if task switch is needed
         if current != next {
-            this_cpu_mut().current_stack = next.stack_bounds();
             Some((current, next))
         } else {
             None
@@ -267,7 +265,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 /// function has ran it is safe to call [schedule()] on the current CPU.
 pub fn schedule_init() {
     unsafe {
-        let next = task_pointer(this_cpu().runqueue().lock_write().schedule_init());
+        let next = task_pointer(this_cpu_mut().schedule_init());
         switch_to(null_mut(), next);
     }
 }
@@ -276,7 +274,7 @@ pub fn schedule_init() {
 /// run-list. In case the current task is terminated, it will be destroyed after
 /// the switch to the next task.
 pub fn schedule() {
-    let work = this_cpu().runqueue().lock_write().schedule_prepare();
+    let work = this_cpu_mut().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!
     if work.is_some() {

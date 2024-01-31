@@ -617,7 +617,20 @@ impl PerCpu {
         self.vm_range.handle_page_fault(vaddr, write)
     }
 
-    /// Access the PerCpu runqueue protected with a lock
+    pub fn schedule_init(&mut self) -> TaskPointer {
+        let task = self.runqueue.lock_write().schedule_init();
+        self.current_stack = task.stack_bounds();
+        task
+    }
+
+    pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
+        let ret = self.runqueue.lock_write().schedule_prepare();
+        if let Some((_, ref next)) = ret {
+            self.current_stack = next.stack_bounds();
+        };
+        ret
+    }
+
     pub fn runqueue(&self) -> &RWLock<RunQueue> {
         &self.runqueue
     }
