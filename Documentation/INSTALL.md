@@ -7,7 +7,7 @@ upstream in their respective repositories yet:
 * Linux host kernel with SVSM support
 * Linux guest kernel with SVSM support
 * EDK2 with SVSM support
-* A modified QEMU which supports the current SVSM launch protocol
+* A modified QEMU which supports launching guests configured using IGVM
 * The SVSM source-code repository
 
 The next sections will guide through the process of installing these
@@ -67,9 +67,12 @@ to run AMD SEV-SNP guests.
 Building QEMU
 -------------
 
-Currently the COCONUT-SVSM uses a specific launch protocol which
-requires changes to QEMU. So a special QEMU build is needed to run the
-code.
+COCONUT-SVSM is packaged during the build into a file conforming to the
+[Independent Guest Virtual Machine (IGVM)
+format](https://docs.rs/igvm_defs/0.1.3/igvm_defs/index.html). Current versions
+of QEMU do not support launching guests using IGVM, but a branch is available
+that includes this capability. This will need to be built in order to be able to
+launch COCONUT-SVSM.
 
 First make sure to have all build requirements for QEMU installed. RPM
 and DEB based distributions provide ways to install build dependencies
@@ -81,26 +84,36 @@ $ sudo zypper refresh
 $ sudo zypper si -d qemu-kvm
 ```
 
+Support for IGVM within QEMU depends on the IGVM library. This will need to be
+built and installed prior to building QEMU.
+
+```
+git clone https://github.com/microsoft/igvm
+cd igvm
+make -f igvm_c/Makefile
+sudo make -f igvm_c/Makefile install
+```
+
 After the build dependencies are installed, clone the QEMU repository
-with the SVSM changes:
+and switch to the branch that supports IGVM:
 
 ```
 $ git clone https://github.com/coconut-svsm/qemu
 $ cd qemu
-$ git checkout svsm-v8.0.0
+$ git checkout svsm-igvm
 ```
 
 Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
 ```
-$ ./configure --prefix=$HOME/bin/qemu-svsm/ --target-list=x86_64-softmmu
+$ ./configure --prefix=$HOME/bin/qemu-svsm/ --target-list=x86_64-softmmu --enable-igvm
 $ ninja -C build/
 $ make install
 ```
 
 QEMU is now installed and ready to run an AMD SEV-SNP guest with an
-SVSM.
+SVSM embedded in an IGVM file.
 
 Building the guest firmware
 ---------------------------
@@ -137,12 +150,12 @@ $ source ./edksetup.sh
 $ build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -p OvmfPkg/OvmfPkgX64.dsc
 ```
 
-This will build the OVMF code and variable binaries to use with QEMU.
-You can copy them to a known location after the build is complete:
+This will build the OVMF binary that will be packaged into the IGVM file to use
+with QEMU.
+You can copy the firmware file to a known location after the build is complete:
 
 ```
-$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF_CODE.fd /path/to/firmware/
-$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF_VARS.fd /path/to/firmware/
+$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF.fd /path/to/firmware/
 ```
 
 Preparing the guest image
@@ -186,13 +199,13 @@ $ cd svsm
 That checks out the SVSM which can be built by
 
 ```
-$ make
+$ FW_FILE=/path/to/firmware/OVMF.fd make
 ```
 
 to get a debug build of the SVSM or
 
 ```
-$ make RELEASE=1
+$ FW_FILE=/path/to/firmware/OVMF.fd make RELEASE=1
 ```
 
 to build the SVSM with the release target. When the build is finished
@@ -225,24 +238,16 @@ guest:
   -cpu EPYC-v4 \
   -machine q35,confidential-guest-support=sev0,memory-backend=ram1,kvm-type=protected \
   -object memory-backend-memfd-private,id=ram1,size=8G,share=true \
-  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,svsm=on \
+  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=/path/to/coconut-qemu.igvm \
 ```
 
 This selects the ```EPYC-v4``` CPU type which will pass the CPUID validation
-done by the AMD security processor. It also allocates memory
-from the ```memory-backend-memfd-private``` backend, which is a requirement to
-run SEV-SNP guests. An ```sev-snp-guest``` object needs to be defined to
-enable SEV-SNP protection for the guest. The 'svsm=on' parameter makes
-QEMU reserve a small amount of guest memory for the SVSM.
-
-Further, the OVMF binaries and the SVSM binary need to be passed to
-QEMU. This happens via pflash drives:
-
-```
-  -drive if=pflash,format=raw,unit=0,file=/path/to/firmware/OVMF_CODE.fd,readonly=on \
-  -drive if=pflash,format=raw,unit=1,file=/path/to/firmware/OVMF_VARS.fd,snapshot=on \
-  -drive if=pflash,format=raw,unit=2,file=/path/to/svsm/svsm.bin,readonly=on \
-```
+done by the AMD security processor. It also allocates memory from the
+```memory-backend-memfd-private``` backend, which is a requirement to run
+SEV-SNP guests. An ```sev-snp-guest``` object needs to be defined to enable
+SEV-SNP protection for the guest. The `igvm-file` parameter informs QEMU to load
+and configure the guest using directives in the specified IGVM file, which
+contains both the COCONUT-SVSM and OVMF binary images.
 
 With these extensions QEMU will launch an SEV-SNP protected guest with
 the COCONUT-SVSM.
@@ -250,17 +255,15 @@ the COCONUT-SVSM.
 A complete QEMU command-line may look like this:
 
 ```
+$ export IGVM=/path/to/coconut-qemu.igvm
 $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -enable-kvm \
   -cpu EPYC-v4 \
   -machine q35,confidential-guest-support=sev0,memory-backend=ram1,kvm-type=protected \
   -object memory-backend-memfd-private,id=ram1,size=8G,share=true \
-  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,svsm=on \
+  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=$IGVM \
   -smp 8 \
   -no-reboot \
-  -drive if=pflash,format=raw,unit=0,file=/path/to/firmware/OVMF_CODE.fd,readonly=on \
-  -drive if=pflash,format=raw,unit=1,file=/path/to/firmware/OVMF_VARS.fd,snapshot=on \
-  -drive if=pflash,format=raw,unit=2,file=/path/to/svsm/svsm.bin,readonly=on \
   -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
   -drive file=/path/to/guest/image.qcow2,if=none,id=disk0,format=qcow2,snapshot=off \
   -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
@@ -314,7 +317,7 @@ source-level debugging of the SVSM kernel code. To enable the GDB stub pass
 ```FEATURES=enable-gdb``` to the ```make``` comannd line:
 
 ```
-$ make FEATURES=enable-gdb
+$ FW_FILE=/path/to/firmware/OVMF.fd make FEATURES=enable-gdb
 ```
 
 The GDB stub remains dormant until a CPU exception occurs, either through a
