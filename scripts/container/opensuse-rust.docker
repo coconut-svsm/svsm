@@ -19,7 +19,9 @@ ARG USER_NAME user
 SHELL ["/bin/bash", "-c"]
 
 RUN zypper ref && \
-    zypper install -y system-user-mail make gcc curl && \
+    zypper install -y system-user-mail make gcc curl \
+        patterns-devel-base-devel_basis glibc-devel-static git libclang13 \
+        autoconf autoconf-archive pkg-config automake libopenssl-devel perl && \
     useradd -u $USER_ID -m $USER_NAME
 
 USER $USER_NAME

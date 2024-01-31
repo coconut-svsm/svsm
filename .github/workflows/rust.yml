@@ -28,6 +28,9 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      - name: Install Microsoft TPM build dependencies
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake libssl-dev
+
       # ubuntu-latest does not have binutils 2.39, which we need for
       # ld to work, so build all the objects without performing the
       # final linking step.
