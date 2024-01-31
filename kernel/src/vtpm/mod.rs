@@ -10,8 +10,8 @@
 /// TPM 2.0 Reference Implementation by Microsoft
 pub mod mstpm;
 
-use crate::protocols::vtpm::TpmPlatformCommand;
 use crate::vtpm::mstpm::MsTpm as Vtpm;
+use crate::{locking::LockGuard, protocols::vtpm::TpmPlatformCommand};
 use crate::{locking::SpinLock, protocols::errors::SvsmReqError};
 
 /// Basic services required to perform the VTPM Protocol
@@ -79,4 +79,8 @@ pub fn vtpm_init() -> Result<(), SvsmReqError> {
     }
     vtpm.init()?;
     Ok(())
+}
+
+pub fn vtpm_get_locked<'a>() -> LockGuard<'a, Vtpm> {
+    VTPM.lock()
 }
