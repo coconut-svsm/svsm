@@ -8,7 +8,7 @@ extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut, PerCpu};
+use crate::cpu::percpu::{this_cpu_mut, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
@@ -61,7 +61,7 @@ fn start_ap() {
         .setup_on_cpu()
         .expect("setup_on_cpu() failed");
 
-    this_cpu()
+    this_cpu_mut()
         .setup_idle_task(ap_request_loop)
         .expect("Failed to allocated idle task for AP");
 
