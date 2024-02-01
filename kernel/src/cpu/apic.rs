@@ -9,6 +9,7 @@ use crate::platform::guest_cpu::GuestCpuState;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LocalApic {
     irr: [u32; 8],
+    _allowed_irr: [u32; 8],
     isr_stack_index: usize,
     isr_stack: [u8; 16],
     update_required: bool,
@@ -20,6 +21,7 @@ impl LocalApic {
     pub fn new() -> Self {
         LocalApic {
             irr: [0; 8],
+            _allowed_irr: [0; 8],
             isr_stack_index: 0,
             isr_stack: [0; 16],
             update_required: false,
