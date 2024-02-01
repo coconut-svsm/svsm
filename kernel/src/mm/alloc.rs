@@ -18,13 +18,20 @@ use log;
 #[cfg(any(test, feature = "fuzzing-hooks"))]
 use crate::locking::LockGuard;
 
+/// Represents possible errors that can occur during memory allocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AllocError {
+    /// The provided page type is invalid.
     InvalidPageType,
+    /// The heap address is invalid.
     InvalidHeapAddress(VirtAddr),
+    /// Out of memory error.
     OutOfMemory,
+    /// The specified page order is invalid.
     InvalidPageOrder(usize),
+    /// The file page has an invalid virtual address.
     InvalidFilePage(VirtAddr),
+    /// The page frame number (PFN) is invalid.
     InvalidPfn(usize),
 }
 
@@ -34,9 +41,18 @@ impl From<AllocError> for SvsmError {
     }
 }
 
-// Support allocations up to order-5 (128kb)
+/// Maximum order of page allocations (up to 128kb)
 pub const MAX_ORDER: usize = 6;
 
+/// Calculates the order of a given size for page allocation.
+///
+/// # Arguments
+///
+/// * `size` - The size for which to calculate the order.
+///
+/// # Returns
+///
+/// The calculated order.
 pub fn get_order(size: usize) -> usize {
     (size
         .checked_next_power_of_two()
@@ -44,6 +60,7 @@ pub fn get_order(size: usize) -> usize {
         .saturating_sub(PAGE_SHIFT)
 }
 
+/// Enum representing the type of a memory page.
 #[derive(Clone, Copy, Debug)]
 #[repr(u64)]
 enum PageType {
@@ -71,6 +88,7 @@ impl TryFrom<u64> for PageType {
     }
 }
 
+/// Storage type of a memory page, including encoding and decoding methods
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 struct PageStorageType(u64);
@@ -82,52 +100,97 @@ impl PageStorageType {
     const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
     const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
 
+    /// Creates a new [`PageStorageType`] with the specified page type.
+    ///
+    /// # Arguments
+    ///
+    /// * `t` - The page type.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of [`PageStorageType`].
     const fn new(t: PageType) -> Self {
         Self(t as u64)
     }
 
+    /// Encodes the order of the page.
+    ///
+    /// # Arguments
+    ///
+    /// * `order` - The order to encode.
+    ///
+    /// # Returns
+    ///
+    /// The updated [`PageStorageType`].
     fn encode_order(self, order: usize) -> Self {
         Self(self.0 | ((order as u64) & Self::ORDER_MASK) << Self::TYPE_SHIFT)
     }
 
+    /// Encodes the index of the next page.
+    ///
+    /// # Arguments
+    ///
+    /// * `next_page` - The index of the next page.
+    ///
+    /// # Returns
+    ///
+    /// The updated [`PageStorageType`].
     fn encode_next(self, next_page: usize) -> Self {
         Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
     }
 
+    /// Encodes the reference count.
+    ///
+    /// # Arguments
+    ///
+    /// * `refcount` - The reference count to encode.
+    ///
+    /// # Returns
+    ///
+    /// The updated [`PageStorageType`].
     fn encode_refcount(self, refcount: u64) -> Self {
         Self(self.0 | refcount << Self::TYPE_SHIFT)
     }
 
+    /// Decodes the order of the page.
     fn decode_order(&self) -> usize {
         ((self.0 >> Self::TYPE_SHIFT) & Self::ORDER_MASK) as usize
     }
 
+    /// Decodes the index of the next page.
     fn decode_next(&self) -> usize {
         ((self.0 & Self::NEXT_MASK) >> Self::NEXT_SHIFT) as usize
     }
 
+    /// Decodes the reference count.
     fn decode_refcount(&self) -> u64 {
         self.0 >> Self::TYPE_SHIFT
     }
 
+    /// Retrieves the page type from the [`PageStorageType`].
     fn page_type(&self) -> Result<PageType, AllocError> {
         PageType::try_from(self.0 & Self::TYPE_MASK)
     }
 }
 
+/// Struct representing information about a free memory page.
 #[derive(Clone, Copy, Debug)]
 struct FreeInfo {
+    /// Index of the next free page.
     next_page: usize,
+    /// Order of the free page.
     order: usize,
 }
 
 impl FreeInfo {
+    /// Encodes the [`FreeInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Free)
             .encode_order(self.order)
             .encode_next(self.next_page)
     }
 
+    /// Decodes a [`FreeInfo`] into a [`PageStorageType`].
     fn decode(mem: PageStorageType) -> Self {
         let next_page = mem.decode_next();
         let order = mem.decode_order();
@@ -135,85 +198,102 @@ impl FreeInfo {
     }
 }
 
+/// Struct representing information about an allocated memory page.
 #[derive(Clone, Copy, Debug)]
 struct AllocatedInfo {
     order: usize,
 }
 
 impl AllocatedInfo {
+    /// Encodes the [`AllocatedInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Allocated).encode_order(self.order)
     }
 
+    /// Decodes a [`PageStorageType`] into an [`AllocatedInfo`].
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         Self { order }
     }
 }
 
+/// Struct representing information about a slab memory page.
 #[derive(Clone, Copy, Debug)]
 struct SlabPageInfo;
 
 impl SlabPageInfo {
+    /// Encodes the [`SlabPageInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::SlabPage)
     }
 
+    /// Decodes a [`PageStorageType`] into a [`SlabPageInfo`].
     fn decode(_mem: PageStorageType) -> Self {
         Self
     }
 }
 
+/// Struct representing information about a compound memory page.
 #[derive(Clone, Copy, Debug)]
 struct CompoundInfo {
     order: usize,
 }
 
 impl CompoundInfo {
+    /// Encodes the [`CompoundInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Compound).encode_order(self.order)
     }
 
+    /// Decodes a [`PageStorageType`] into a [`CompoundInfo`].
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         Self { order }
     }
 }
 
+/// Struct representing information about a reserved memory page.
 #[derive(Clone, Copy, Debug)]
 struct ReservedInfo;
 
 impl ReservedInfo {
+    /// Encodes the [`ReservedInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Reserved)
     }
 
+    /// Decodes a [`PageStorageType`] into a [`ReservedInfo`].
     fn decode(_mem: PageStorageType) -> Self {
         Self
     }
 }
 
+/// Struct representing information about a file memory page.
 #[derive(Clone, Copy, Debug)]
 struct FileInfo {
-    /// Reference count
+    /// Reference count of the file page.
     ref_count: u64,
 }
 
 impl FileInfo {
+    /// Creates a new [`FileInfo`] with the specified reference count.
     const fn new(ref_count: u64) -> Self {
         Self { ref_count }
     }
 
+    /// Encodes the [`FileInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::File).encode_refcount(self.ref_count)
     }
 
+    /// Decodes a [`PageStorageType`] into a [`FileInfo`].
     fn decode(mem: PageStorageType) -> Self {
         let ref_count = mem.decode_refcount();
         Self { ref_count }
     }
 }
 
+/// Enum representing different types of page information.
 #[derive(Clone, Copy, Debug)]
 enum PageInfo {
     Free(FreeInfo),
@@ -225,6 +305,7 @@ enum PageInfo {
 }
 
 impl PageInfo {
+    /// Converts [`PageInfo`] into a [`PageStorageType`].
     fn to_mem(self) -> PageStorageType {
         match self {
             Self::Free(fi) => fi.encode(),
@@ -236,6 +317,7 @@ impl PageInfo {
         }
     }
 
+    /// Converts a [`PageStorageType`] into [`PageInfo`].
     fn from_mem(mem: PageStorageType) -> Self {
         let Ok(page_type) = mem.page_type() else {
             panic!("Unknown page type in {:?}", mem);
@@ -252,12 +334,15 @@ impl PageInfo {
     }
 }
 
+/// Represents info about allocated and free pages in different orders.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MemInfo {
     total_pages: [usize; MAX_ORDER],
     free_pages: [usize; MAX_ORDER],
 }
 
+/// Memory region with its physical/virtual addresses, page count, as well
+/// as other details.
 #[derive(Debug, Default)]
 struct MemoryRegion {
     start_phys: PhysAddr,
@@ -269,6 +354,7 @@ struct MemoryRegion {
 }
 
 impl MemoryRegion {
+    /// Creates a new [`MemoryRegion`] with default values.
     const fn new() -> Self {
         Self {
             start_phys: PhysAddr::null(),
@@ -280,6 +366,7 @@ impl MemoryRegion {
         }
     }
 
+    /// Converts a physical address within this memory region to a virtual address.
     #[allow(dead_code)]
     fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
         let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
@@ -298,12 +385,15 @@ impl MemoryRegion {
         Some(self.start_virt + offset)
     }
 
+    /// Converts a virtual address to a physical address within the memory region.
     #[allow(dead_code)]
     fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
         let offset = self.get_virt_offset(vaddr)?;
         Some(self.start_phys + offset)
     }
 
+    /// Gets a pointer to the page information for a given page frame number.
+    ///
     /// # Safety
     ///
     /// The caller must provide a valid pfn, otherwise the returned pointer is
@@ -313,40 +403,53 @@ impl MemoryRegion {
         self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn)
     }
 
+    /// Checks if a page frame number is valid.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the page frame number is invalid.
     fn check_pfn(&self, pfn: usize) {
         if pfn >= self.page_count {
             panic!("Invalid Page Number {}", pfn);
         }
     }
 
+    /// Calculates the end virtual address of the memory region.
     fn end_virt(&self) -> VirtAddr {
         self.start_virt + (self.page_count * PAGE_SIZE)
     }
 
+    /// Writes page information for a given page frame number.
     fn write_page_info(&self, pfn: usize, pi: PageInfo) {
         self.check_pfn(pfn);
 
         let info: PageStorageType = pi.to_mem();
+        // SAFETY: we have checked that the pfn is valid via check_pfn() above.
         unsafe { self.page_info_ptr(pfn).write(info) };
     }
 
+    /// Reads page information for a given page frame number.
     fn read_page_info(&self, pfn: usize) -> PageInfo {
         self.check_pfn(pfn);
 
+        // SAFETY: we have checked that the pfn is valid via check_pfn() above.
         let info = unsafe { self.page_info_ptr(pfn).read() };
         PageInfo::from_mem(info)
     }
 
+    /// Gets the virtual offset of a virtual address within the memory region.
     fn get_virt_offset(&self, vaddr: VirtAddr) -> Option<usize> {
         (self.start_virt <= vaddr && vaddr < self.end_virt()).then(|| vaddr - self.start_virt)
     }
 
+    /// Gets the page frame number for a given virtual address.
     fn get_pfn(&self, vaddr: VirtAddr) -> Result<usize, AllocError> {
         self.get_virt_offset(vaddr)
             .map(|off| off / PAGE_SIZE)
             .ok_or(AllocError::InvalidHeapAddress(vaddr))
     }
 
+    /// Gets the next available page frame number for a given order.
     fn get_next_page(&mut self, order: usize) -> Result<usize, AllocError> {
         let pfn = self.next_page[order];
 
@@ -369,6 +472,7 @@ impl MemoryRegion {
         Ok(pfn)
     }
 
+    /// Marks a compound page and updates page information for neighboring pages.
     fn mark_compound_page(&mut self, pfn: usize, order: usize) {
         let nr_pages: usize = 1 << order;
         let compound = PageInfo::Compound(CompoundInfo { order });
@@ -377,6 +481,7 @@ impl MemoryRegion {
         }
     }
 
+    /// Initializes a compound page with given page frame numbers and order.
     fn init_compound_page(&mut self, pfn: usize, order: usize, next_pfn: usize) {
         let head = PageInfo::Free(FreeInfo {
             next_page: next_pfn,
@@ -386,6 +491,7 @@ impl MemoryRegion {
         self.mark_compound_page(pfn, order);
     }
 
+    /// Splits a page into two pages of the next lower order.
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         if !(1..MAX_ORDER).contains(&order) {
             return Err(AllocError::InvalidPageOrder(order));
@@ -408,6 +514,7 @@ impl MemoryRegion {
         Ok(())
     }
 
+    /// Refills the free page list for a given order.
     fn refill_page_list(&mut self, order: usize) -> Result<(), AllocError> {
         let next_page = *self
             .next_page
@@ -422,6 +529,7 @@ impl MemoryRegion {
         self.split_page(pfn, order + 1)
     }
 
+    /// Allocates pages with a specific order and page information.
     fn allocate_pages_info(&mut self, order: usize, pg: PageInfo) -> Result<VirtAddr, AllocError> {
         self.refill_page_list(order)?;
         let pfn = self.get_next_page(order)?;
@@ -429,15 +537,18 @@ impl MemoryRegion {
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
 
+    /// Allocates pages with a specific order.
     fn allocate_pages(&mut self, order: usize) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Allocated(AllocatedInfo { order });
         self.allocate_pages_info(order, pg)
     }
 
+    /// Allocates a single page.
     fn allocate_page(&mut self) -> Result<VirtAddr, AllocError> {
         self.allocate_pages(0)
     }
 
+    /// Allocates a zeroed page.
     fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, AllocError> {
         let vaddr = self.allocate_page()?;
 
@@ -446,16 +557,19 @@ impl MemoryRegion {
         Ok(vaddr)
     }
 
+    /// Allocates a slab page.
     fn allocate_slab_page(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Slab(SlabPageInfo);
         self.allocate_pages_info(0, pg)
     }
 
+    /// Allocates a file page with initial reference count.
     fn allocate_file_page(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::File(FileInfo::new(1));
         self.allocate_pages_info(0, pg)
     }
 
+    /// Gets a file page and increments its reference count.
     fn get_file_page(&mut self, vaddr: VirtAddr) -> Result<(), AllocError> {
         let pfn = self.get_pfn(vaddr)?;
         let page = self.read_page_info(pfn);
@@ -470,6 +584,7 @@ impl MemoryRegion {
         Ok(())
     }
 
+    /// Releases a file page and decrements its reference count.
     fn put_file_page(&mut self, vaddr: VirtAddr) -> Result<(), AllocError> {
         let pfn = self.get_pfn(vaddr)?;
         let page = self.read_page_info(pfn);
@@ -490,6 +605,7 @@ impl MemoryRegion {
         Ok(())
     }
 
+    /// Finds the neighboring page frame number for a compound page.
     fn compound_neighbor(&self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         if order >= MAX_ORDER - 1 {
             return Err(AllocError::InvalidPageOrder(order));
@@ -504,6 +620,7 @@ impl MemoryRegion {
         Ok(pfn)
     }
 
+    /// Merges two pages of the same order into a new compound page.
     fn merge_pages(&mut self, pfn1: usize, pfn2: usize, order: usize) -> Result<usize, AllocError> {
         if order >= MAX_ORDER - 1 {
             return Err(AllocError::InvalidPageOrder(order));
@@ -530,6 +647,7 @@ impl MemoryRegion {
         Ok(pfn)
     }
 
+    /// Gets the next free page frame number from the free list.
     fn next_free_pfn(&self, pfn: usize, order: usize) -> usize {
         let page = self.read_page_info(pfn);
         let PageInfo::Free(fi) = page else {
@@ -539,6 +657,15 @@ impl MemoryRegion {
         fi.next_page
     }
 
+    /// Allocates a specific page frame number (`pfn`) within a given order.
+    /// If the page frame number is not found or is already allocated, an error
+    /// is returned. If the requested page frame number is the first in the
+    /// list, it is marked as allocated, and the next page in the list becomes
+    /// the new first page.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order` is greater than [`MAX_ORDER`].
     fn allocate_pfn(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         let first_pfn = self.next_page[order];
 
@@ -581,6 +708,11 @@ impl MemoryRegion {
         }
     }
 
+    /// Frees a raw page by updating the free list and marking it as a free page.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `order` is greater than [`MAX_ORDER`].
     fn free_page_raw(&mut self, pfn: usize, order: usize) {
         let old_next = self.next_page[order];
         let pg = PageInfo::Free(FreeInfo {
@@ -594,6 +726,9 @@ impl MemoryRegion {
         self.free_pages[order] += 1;
     }
 
+    /// Attempts to merge a given page with its neighboring page.
+    /// If successful, returns the new page frame number after merging.
+    /// If unsuccessful, the page remains unmerged, and an error is returned.
     fn try_to_merge_page(&mut self, pfn: usize, order: usize) -> Result<usize, AllocError> {
         let neighbor_pfn = self.compound_neighbor(pfn, order)?;
         let neighbor_page = self.read_page_info(neighbor_pfn);
@@ -613,6 +748,9 @@ impl MemoryRegion {
         Ok(new_pfn)
     }
 
+    /// Frees a page of a specific order. If merging is successful, it
+    /// continues merging until merging is no longer possible. If merging
+    /// fails, the page is marked as a free page.
     fn free_page_order(&mut self, pfn: usize, order: usize) {
         match self.try_to_merge_page(pfn, order) {
             Err(_) => {
@@ -624,6 +762,8 @@ impl MemoryRegion {
         }
     }
 
+    /// Frees a page based on its virtual address, determining the page
+    /// order and freeing accordingly.
     fn free_page(&mut self, vaddr: VirtAddr) {
         let Ok(pfn) = self.get_pfn(vaddr) else {
             return;
@@ -652,6 +792,8 @@ impl MemoryRegion {
         }
     }
 
+    /// Retrieves information about memory, including total and free pages
+    /// in different orders.
     fn memory_info(&self) -> MemInfo {
         MemInfo {
             total_pages: self.nr_pages,
@@ -659,6 +801,9 @@ impl MemoryRegion {
         }
     }
 
+    /// Initializes memory by marking certain pages as reserved and the rest
+    /// as allocated. It then frees all pages and organizes them into their
+    /// respective order buckets.
     fn init_memory(&mut self) {
         let size = size_of::<PageStorageType>();
         let meta_pages = align_up(self.page_count * size, PAGE_SIZE) / PAGE_SIZE;
@@ -713,6 +858,8 @@ impl MemoryRegion {
     }
 }
 
+/// Represents a reference to a memory page, holding both virtual and
+/// physical addresses.
 #[derive(Debug)]
 pub struct PageRef {
     virt_addr: VirtAddr,
@@ -720,6 +867,12 @@ pub struct PageRef {
 }
 
 impl PageRef {
+    /// Creates a new [`PageRef`] instance with the given virtual and physical addresses.
+    ///
+    /// # Arguments
+    ///
+    /// * `virt_addr` - Virtual address of the memory page.
+    /// * `phys_addr` - Physical address of the memory page.
     pub const fn new(virt_addr: VirtAddr, phys_addr: PhysAddr) -> Self {
         Self {
             virt_addr,
@@ -727,16 +880,19 @@ impl PageRef {
         }
     }
 
+    /// Returns the virtual address of the memory page.
     pub fn virt_addr(&self) -> VirtAddr {
         self.virt_addr
     }
 
+    /// Returns the physical address of the memory page.
     pub fn phys_addr(&self) -> PhysAddr {
         self.phys_addr
     }
 }
 
 impl AsRef<[u8; PAGE_SIZE]> for PageRef {
+    /// Returns a reference to the underlying array representing the memory page.
     fn as_ref(&self) -> &[u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_ref().unwrap() }
@@ -744,6 +900,7 @@ impl AsRef<[u8; PAGE_SIZE]> for PageRef {
 }
 
 impl AsMut<[u8; PAGE_SIZE]> for PageRef {
+    /// Returns a mutable reference to the underlying array representing the memory page.
     fn as_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
         let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
         unsafe { ptr.as_mut().unwrap() }
@@ -751,6 +908,7 @@ impl AsMut<[u8; PAGE_SIZE]> for PageRef {
 }
 
 impl Clone for PageRef {
+    /// Clones the [`PageRef`] instance, obtaining a new reference to the same memory page.
     fn clone(&self) -> Self {
         get_file_page(self.virt_addr).expect("Failed to get page reference");
         PageRef {
@@ -761,11 +919,18 @@ impl Clone for PageRef {
 }
 
 impl Drop for PageRef {
+    /// Drops the [`PageRef`] instance, decreasing the reference count for
+    /// the associated memory page.
     fn drop(&mut self) {
         put_file_page(self.virt_addr).expect("Failed to drop page reference");
     }
 }
 
+/// Prints memory information based on the provided [`MemInfo`] structure.
+///
+/// # Arguments
+///
+/// * `info` - Reference to [`MemInfo`] structure containing memory information.
 pub fn print_memory_info(info: &MemInfo) {
     let mut pages_4k = 0;
     let mut free_pages_4k = 0;
@@ -789,30 +954,73 @@ pub fn print_memory_info(info: &MemInfo) {
     );
 }
 
+/// Static spinlock-protected instance of [`MemoryRegion`] representing the
+/// root memory region.
 static ROOT_MEM: SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());
 
+/// Allocates a single memory page from the root memory region.
+///
+/// # Returns
+///
+/// Result containing the virtual address of the allocated page or an
+/// `SvsmError` if allocation fails.
 pub fn allocate_page() -> Result<VirtAddr, SvsmError> {
     Ok(ROOT_MEM.lock().allocate_page()?)
 }
 
+/// Allocates multiple memory pages with a specified order from the root
+/// memory region.
+///
+/// # Arguments
+///
+/// * `order` - Order of the allocation, determining the number of pages (2^order).
+///
+/// # Returns
+///
+/// Result containing the virtual address of the allocated pages or an
+/// `SvsmError` if allocation fails.
 pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
     Ok(ROOT_MEM.lock().allocate_pages(order)?)
 }
 
+/// Allocate a slab page.
+///
+/// # Returns
+///
+/// Result containing the virtual address of the allocated slab page or an
+/// `SvsmError` if allocation fails.
 pub fn allocate_slab_page() -> Result<VirtAddr, SvsmError> {
     Ok(ROOT_MEM.lock().allocate_slab_page()?)
 }
 
+/// Allocate a zeroed page.
+///
+/// # Returns
+///
+/// Result containing the virtual address of the allocated zeroed page or an
+/// `SvsmError` if allocation fails.
 pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
     Ok(ROOT_MEM.lock().allocate_zeroed_page()?)
 }
 
+/// Allocate a file page.
+///
+/// # Returns
+///
+/// Result containing the virtual address of the allocated file page or an
+/// `SvsmError` if allocation fails.
 pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
     let vaddr = ROOT_MEM.lock().allocate_file_page()?;
     zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     Ok(vaddr)
 }
 
+/// Allocate a reference-counted file page.
+///
+/// # Returns
+///
+/// Result containing a page reference to the virtual address of the
+/// allocated file page or an `SvsmError` if allocation fails.
 pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
     let v = allocate_file_page()?;
     let p = virt_to_phys(v);
@@ -828,14 +1036,18 @@ fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
     Ok(ROOT_MEM.lock().put_file_page(vaddr)?)
 }
 
+/// Free the page at the given virtual address.
 pub fn free_page(vaddr: VirtAddr) {
     ROOT_MEM.lock().free_page(vaddr)
 }
 
+/// Retrieve information about the root memory
 pub fn memory_info() -> MemInfo {
     ROOT_MEM.lock().memory_info()
 }
 
+/// Represents a slab memory page, used for efficient allocation of
+/// fixed-size objects.
 #[derive(Debug, Default)]
 struct SlabPage {
     vaddr: VirtAddr,
@@ -847,6 +1059,7 @@ struct SlabPage {
 }
 
 impl SlabPage {
+    /// Creates a new [`SlabPage`] instance with default values.
     const fn new() -> Self {
         Self {
             vaddr: VirtAddr::null(),
@@ -858,6 +1071,7 @@ impl SlabPage {
         }
     }
 
+    /// Initialize the [`SlabPage`] with a given item size
     fn init(&mut self, mut item_size: u16) -> Result<(), AllocError> {
         if self.item_size != 0 {
             return Ok(());
@@ -879,6 +1093,7 @@ impl SlabPage {
         Ok(())
     }
 
+    /// Free the memory (destroy) the [`SlabPage`]
     fn destroy(&mut self) {
         if self.vaddr.is_null() {
             return;
@@ -887,6 +1102,7 @@ impl SlabPage {
         free_page(self.vaddr);
     }
 
+    /// Get the capacity of the [`SlabPage`]
     fn get_capacity(&self) -> u16 {
         self.capacity
     }
@@ -895,6 +1111,7 @@ impl SlabPage {
         self.free
     }
 
+    /// Get the virtual address of the next [`SlabPage`]
     fn get_next_page(&self) -> VirtAddr {
         self.next_page
     }
@@ -942,6 +1159,7 @@ impl SlabPage {
     }
 }
 
+/// Represents common information shared among multiple slab pages.
 #[derive(Debug, Default)]
 #[repr(align(16))]
 struct SlabCommon {
@@ -955,6 +1173,11 @@ struct SlabCommon {
 }
 
 impl SlabCommon {
+    /// Creates a new [`SlabCommon`] instance with the specified item size.
+    ///
+    /// # Arguments
+    ///
+    /// * `item_size` - Size of each item in the slab.
     const fn new(item_size: u16) -> Self {
         Self {
             item_size,
@@ -967,6 +1190,7 @@ impl SlabCommon {
         }
     }
 
+    /// Initialize the [`SlabCommon`] with default values
     fn init(&mut self) -> Result<(), AllocError> {
         self.page.init(self.item_size)?;
 
@@ -979,6 +1203,7 @@ impl SlabCommon {
         Ok(())
     }
 
+    /// Add other [`SlabPage`]
     fn add_slab_page(&mut self, new_page: &mut SlabPage) {
         let old_next_page = self.page.get_next_page();
         new_page.set_next_page(old_next_page);
@@ -992,6 +1217,8 @@ impl SlabCommon {
         self.free += capacity;
     }
 
+    /// Allocate other slot, caller must make sure there's at least one
+    /// free slot
     fn allocate_slot(&mut self) -> VirtAddr {
         // Caller must make sure there's at least one free slot.
         assert_ne!(self.free, 0);
@@ -1018,6 +1245,7 @@ impl SlabCommon {
         }
     }
 
+    /// Deallocate a slot given its virtual address
     fn deallocate_slot(&mut self, vaddr: VirtAddr) {
         let mut page = &mut self.page;
         loop {
@@ -1075,22 +1303,26 @@ impl SlabCommon {
     }
 }
 
+/// Represents a slab page for the [`SlabPageSlab`] allocator.
 #[derive(Debug)]
 struct SlabPageSlab {
     common: SlabCommon,
 }
 
 impl SlabPageSlab {
+    /// Creates a new [`SlabPageSlab`] with a default [`SlabCommon`].
     const fn new() -> Self {
         Self {
             common: SlabCommon::new(size_of::<SlabPage>() as u16),
         }
     }
 
+    /// Initializes the [`SlabPageSlab`], allocating the first slab page if necessary.
     fn init(&mut self) -> Result<(), AllocError> {
         self.common.init()
     }
 
+    /// Grows the slab by allocating a new slab page.
     fn grow_slab(&mut self) -> Result<(), AllocError> {
         if self.common.capacity == 0 {
             self.init()?;
@@ -1117,6 +1349,7 @@ impl SlabPageSlab {
         Ok(())
     }
 
+    /// Shrinks the slab by freeing unused slab pages.
     fn shrink_slab(&mut self) {
         // The SlabPageSlab uses SlabPages on its own and freeing a SlabPage can empty another SlabPage.
         while self.common.free_pages > 1 {
@@ -1125,29 +1358,46 @@ impl SlabPageSlab {
         }
     }
 
+    /// Allocates a slot in the slab.
+    ///
+    /// # Returns
+    ///
+    /// Result containing a pointer to the allocated [`SlabPage`] or an `AllocError`.
     fn allocate(&mut self) -> Result<*mut SlabPage, AllocError> {
         self.grow_slab()?;
         Ok(self.common.allocate_slot().as_mut_ptr::<SlabPage>())
     }
 
+    /// Deallocates a slab page, freeing the associated memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `slab_page` - Pointer to the [`SlabPage`] to deallocate.
     fn deallocate(&mut self, slab_page: *mut SlabPage) {
         self.common.deallocate_slot(VirtAddr::from(slab_page));
         self.shrink_slab();
     }
 }
 
+/// Represents a slab allocator for fixed-size objects.
 #[derive(Debug, Default)]
 struct Slab {
     common: SlabCommon,
 }
 
 impl Slab {
+    /// Creates a new [`Slab`] instance with the specified item size.
+    ///
+    /// # Arguments
+    ///
+    /// * `item_size` - Size of each item in the slab.
     const fn new(item_size: u16) -> Self {
         Self {
             common: SlabCommon::new(item_size),
         }
     }
 
+    /// Initialize the [`Slab`] instance
     fn init(&mut self) -> Result<(), AllocError> {
         self.common.init()
     }
@@ -1195,17 +1445,29 @@ impl Slab {
     }
 }
 
+/// Static spinlock-protected instance of [`SlabPageSlab`] representing the
+/// slab page allocator.
 static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new());
 
+/// Represents a simple virtual-to-physical memory allocator ([`SvsmAllocator`])
+/// implementing the [`GlobalAlloc`] trait.
+///
+/// This allocator uses slab allocation for fixed-size objects and falls
+/// back to page allocation for larger objects.
 #[derive(Debug)]
 pub struct SvsmAllocator {
     slabs: [SpinLock<Slab>; 7],
 }
 
 impl SvsmAllocator {
+    /// Minimum slab size for the allocator.
     const MIN_SLAB_SIZE: u16 = 32;
+
+    /// Minimum alignment for the allocator.
     const MIN_ALIGNMENT: u32 = Self::MIN_SLAB_SIZE.trailing_zeros();
 
+    /// Creates a new instance of [`SvsmAllocator`] with initialized slab
+    /// allocators.
     pub const fn new() -> Self {
         Self {
             slabs: [
@@ -1233,7 +1495,7 @@ impl SvsmAllocator {
     }
 
     /// Resets the internal state. This is equivalent to reassigning `self`
-    /// with `Self::new()`.
+    /// with a newly created [`SvsmAllocator`] with `Self::new()`.
     #[cfg(all(not(test_in_svsm), any(test, feature = "fuzzing-hooks")))]
     fn reset(&self) {
         *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
@@ -1246,7 +1508,10 @@ impl SvsmAllocator {
     }
 }
 
+/// Implements the [`GlobalAlloc`] trait for [`SvsmAllocator`], allowing it to
+/// be used as a global allocator for Rust programs.
 unsafe impl GlobalAlloc for SvsmAllocator {
+    /// Allocates memory based on the specified layout.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
         let ret = match self.get_slab(size) {
@@ -1263,6 +1528,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
         ret.map_or_else(|_| ptr::null_mut(), |addr| addr.as_mut_ptr::<u8>())
     }
 
+    /// Deallocates memory based on the specified pointer and layout.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let virt_addr = VirtAddr::from(ptr);
         let size = layout.size();
@@ -1292,6 +1558,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 #[cfg_attr(not(target_os = "none"), allow(dead_code))]
 static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
+/// Initializes the root memory region with the specified physical start
+/// address, virtual start address, and page count.
 pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
     {
         let mut region = ROOT_MEM.lock();
@@ -1325,13 +1593,26 @@ pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 #[cfg(any(test, feature = "fuzzing-hooks"))]
 impl TestRootMem<'_> {
     #[cfg(test_in_svsm)]
+    /// Sets up a test environment, returning a guard to ensure memory is
+    /// held for the test's duration. This test function is intended to
+    /// called inside a running SVSM.
+    ///
+    /// # Returns
+    ///
+    /// A guard that ensures the memory lock is held during the test.
     #[must_use = "memory guard must be held for the whole test"]
     pub fn setup(_size: usize) -> Self {
         // We do not need to set up root memory if running inside the SVSM.
         Self(TEST_ROOT_MEM_LOCK.lock())
     }
 
-    /// Acquire a lock on global memory and initialize it
+    /// Sets up a test environment, returning a guard to ensure memory is
+    /// held for the test's duration. This function does not run inside
+    /// the SVSM.
+    ///
+    /// # Returns
+    ///
+    /// A guard that ensures the memory lock is held during the test.
     #[cfg(not(test_in_svsm))]
     #[must_use = "memory guard must be held for the whole test"]
     pub fn setup(size: usize) -> Self {
@@ -1376,14 +1657,16 @@ impl Drop for TestRootMem<'_> {
     }
 }
 
+/// Tests the setup of the root memory
 #[test]
 fn test_root_mem_setup() {
     let test_mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     drop(test_mem_lock);
 }
 
+/// Tests the allocation and deallocation of a single page, verifying the
+/// memory information.
 #[test]
-// Allocate one page and free it again, verify that memory_info() reflects it.
 fn test_page_alloc_one() {
     let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
     let mut root_mem = ROOT_MEM.lock();
@@ -1398,8 +1681,8 @@ fn test_page_alloc_one() {
 
 #[test]
 #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-// Allocate and free all available compound pages, verify that memory_info()
-// reflects it.
+/// Allocate and free all available compound pages, verify that memory_info()
+/// reflects it.
 fn test_page_alloc_all_compound() {
     extern crate alloc;
     use alloc::vec::Vec;
@@ -1431,8 +1714,8 @@ fn test_page_alloc_all_compound() {
 
 #[test]
 #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-// Allocate and free all available 4k pages, verify that memory_info()
-// reflects it.
+/// Allocate and free all available 4k pages, verify that memory_info()
+/// reflects it.
 fn test_page_alloc_all_single() {
     extern crate alloc;
     use alloc::vec::Vec;
@@ -1464,8 +1747,8 @@ fn test_page_alloc_all_single() {
 
 #[test]
 #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-// Allocate and free all available compound pages, verify that any subsequent
-// allocation fails.
+/// Allocate and free all available compound pages, verify that any subsequent
+/// allocation fails.
 fn test_page_alloc_oom() {
     extern crate alloc;
     use alloc::vec::Vec;
@@ -1535,7 +1818,7 @@ fn test_page_file() {
 const TEST_SLAB_SIZES: [usize; 7] = [32, 64, 128, 256, 512, 1024, 2048];
 
 #[test]
-// Allocate and free a couple of objects for each slab size.
+/// Allocate and free a couple of objects for each slab size.
 fn test_slab_alloc_free_many() {
     extern crate alloc;
     use alloc::vec::Vec;
@@ -1575,8 +1858,8 @@ fn test_slab_alloc_free_many() {
 
 #[test]
 #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-// Allocate enough objects so that the SlabPageSlab will need a SlabPage for
-// itself twice.
+/// Allocate enough objects so that the SlabPageSlab will need a SlabPage for
+/// itself twice.
 fn test_slab_page_slab_for_self() {
     extern crate alloc;
     use alloc::vec::Vec;
@@ -1612,8 +1895,8 @@ fn test_slab_page_slab_for_self() {
 
 #[test]
 #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-// Allocate enough objects to hit an OOM situation and verify null gets
-// returned at some point.
+/// Allocate enough objects to hit an OOM situation and verify null gets
+/// returned at some point.
 fn test_slab_oom() {
     extern crate alloc;
     use alloc::vec::Vec;
