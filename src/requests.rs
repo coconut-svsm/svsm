@@ -6,7 +6,7 @@
 
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+use crate::cpu::percpu::{process_requests, this_cpu, this_cpu_mut, wait_for_requests};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
@@ -120,7 +120,7 @@ pub fn request_loop() {
         match check_requests() {
             Ok(pending) => {
                 if pending {
-                    this_cpu_mut().process_requests();
+                    process_requests();
                 }
             }
             Err(SvsmReqError::RequestError(code)) => {
@@ -150,7 +150,7 @@ pub extern "C" fn request_processing_main() {
     log::info!("Launching request-processing task on CPU {}", apic_id);
 
     loop {
-        this_cpu_mut().wait_for_requests();
+        wait_for_requests();
 
         // Obtain a reference to the VMSA just long enough to extract the
         // request parameters.

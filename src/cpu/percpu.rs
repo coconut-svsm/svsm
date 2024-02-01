@@ -26,7 +26,9 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::{RunQueue, Task, TaskPointer, WaitQueue, TASK_FLAG_SHARE_PT};
+use crate::task::{
+    schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue, TASK_FLAG_SHARE_PT,
+};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
@@ -254,14 +256,6 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
-    pub fn wait_for_requests(&mut self) {
-        self.request_waitqueue.wait_for_event();
-    }
-
-    pub fn process_requests(&mut self) {
-        self.request_waitqueue.wakeup();
-    }
-
     fn new(apic_id: u32, shared: &'static PerCpuShared) -> Self {
         PerCpu {
             shared,
@@ -734,6 +728,21 @@ impl PerCpuVmsas {
         }
 
         Ok(guard.swap_remove(index))
+    }
+}
+
+pub fn wait_for_requests() {
+    let current_task = current_task();
+    this_cpu_mut()
+        .request_waitqueue
+        .wait_for_event(current_task);
+    schedule();
+}
+
+pub fn process_requests() {
+    let maybe_task = this_cpu_mut().request_waitqueue.wakeup();
+    if let Some(task) = maybe_task {
+        schedule_task(task);
     }
 }
 
