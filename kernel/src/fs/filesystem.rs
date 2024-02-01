@@ -178,7 +178,7 @@ impl SvsmFs {
         self.root = Some(root.clone());
     }
 
-    #[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+    #[cfg(all(any(test, feature = "fuzzing-hooks"), not(test_in_svsm)))]
     fn uninitialize(&mut self) {
         self.root = None;
     }
@@ -212,12 +212,12 @@ pub fn initialize_fs() {
     FS_ROOT.lock_write().initialize(&root_dir);
 }
 
-#[cfg(any(test, fuzzing))]
+#[cfg(any(test, feature = "fuzzing-hooks"))]
 #[cfg_attr(test_in_svsm, derive(Clone, Copy))]
 #[derive(Debug)]
 pub struct TestFileSystemGuard;
 
-#[cfg(any(test, fuzzing))]
+#[cfg(any(test, feature = "fuzzing-hooks"))]
 impl TestFileSystemGuard {
     /// Create a test filesystem.
     ///
@@ -238,7 +238,7 @@ impl TestFileSystemGuard {
     }
 }
 
-#[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+#[cfg(all(any(test, feature = "fuzzing-hooks"), not(test_in_svsm)))]
 impl Drop for TestFileSystemGuard {
     fn drop(&mut self) {
         // Uninitialize the filesystem only if running in userspace.

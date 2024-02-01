@@ -60,7 +60,7 @@ impl CmdOptions {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum Hypervisor {
     /// Build an IGVM file compatible with QEMU
-    QEMU,
+    Qemu,
 
     /// Build an IGVM file compatible with Hyper-V
     HyperV,

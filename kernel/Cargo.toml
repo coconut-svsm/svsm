@@ -1,0 +1,46 @@
+[package]
+name = "svsm"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "stage2"
+path = "src/stage2.rs"
+test = false
+
+[[bin]]
+name = "svsm"
+path = "src/svsm.rs"
+test = false
+
+[lib]
+test = true
+doctest = true
+
+[dependencies]
+bootlib.workspace = true
+cpuarch.workspace = true
+
+aes-gcm = { workspace = true, features = ["aes", "alloc"] }
+bitflags.workspace = true
+gdbstub = { workspace = true, optional = true }
+gdbstub_arch = { workspace = true, optional = true }
+igvm_defs = { workspace = true, features = ["unstable"] }
+intrusive-collections.workspace = true
+log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
+packit.workspace = true
+
+
+[target."x86_64-unknown-none".dev-dependencies]
+kernel_test.workspace = true
+
+[features]
+default = []
+enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
+fuzzing-hooks = []
+
+[dev-dependencies]
+memoffset.workspace = true
+
+[lints]
+workspace = true

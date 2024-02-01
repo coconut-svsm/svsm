@@ -18,7 +18,7 @@ pub trait BitmapAllocator {
     fn empty(&self) -> bool;
     fn capacity(&self) -> usize;
     fn used(&self) -> usize;
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing-hooks")]
     fn max_align(&self) -> usize {
         (<Self as BitmapAllocator>::CAPACITY.ilog2() - 1) as usize
     }
@@ -36,7 +36,7 @@ impl BitmapAllocator64 {
         Self { bits: u64::MAX }
     }
 
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing-hooks")]
     pub fn get_bits(&self) -> u64 {
         self.bits
     }
@@ -108,7 +108,7 @@ impl BitmapAllocatorTree<BitmapAllocator64> {
         }
     }
 
-    #[cfg(fuzzing)]
+    #[cfg(feature = "fuzzing-hooks")]
     pub fn get_child(&self, index: usize) -> BitmapAllocator64 {
         self.child[index]
     }

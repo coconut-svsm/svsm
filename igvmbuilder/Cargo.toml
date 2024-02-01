@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.4.14", features = ["derive"] }
-igvm_defs = { version = "0.1.3" }
-igvm = { version = "0.1.3" }
-zerocopy = "0.7.32"
-bitflags = "2.4"
-uuid = "1.6.1"
+bitflags.workspace = true
+clap = { workspace = true, default-features = true, features = ["derive"] }
+igvm_defs.workspace = true
+igvm.workspace = true
+uuid.workspace = true
+zerocopy.workspace = true
 
+[lints]
+workspace = true

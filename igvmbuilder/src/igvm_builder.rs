@@ -161,7 +161,7 @@ impl IgvmBuilder {
                 prevalidated: [IgvmParamBlockFwMem { base: 0, size: 0 }; 8],
             };
             let vtom = match self.options.hypervisor {
-                Hypervisor::QEMU => 0,
+                Hypervisor::Qemu => 0,
                 Hypervisor::HyperV => {
                     // Set the shared GPA boundary at bit 46, below the lowest possible
                     // C-bit position.
@@ -190,7 +190,7 @@ impl IgvmBuilder {
 
         // Calculate the kernel size and base.
         match self.options.hypervisor {
-            Hypervisor::QEMU => {
+            Hypervisor::Qemu => {
                 // Place the kernel area at 512 GB with a size of 16 MB.
                 param_block.kernel_base = 0x0000008000000000;
                 param_block.kernel_size = 0x01000000;

@@ -8,18 +8,10 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-arbitrary = { version = "1.3.0", features = ["derive"] }
-libfuzzer-sys = "0.4"
+svsm = { workspace = true, features = ["fuzzing-hooks"] }
 
-[dependencies.svsm]
-path = ".."
-
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-
-[profile.release]
-debug = 1
+arbitrary = { workspace = true, features = ["derive"] }
+libfuzzer-sys.workspace = true
 
 [[bin]]
 name = "fw_meta"
@@ -62,3 +54,6 @@ name = "bitmap_allocator"
 path = "fuzz_targets/bitmap_allocator.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true
