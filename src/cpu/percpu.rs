@@ -16,7 +16,6 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
-use crate::mm::stack::StackBounds;
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -29,6 +28,7 @@ use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
 use crate::task::{RunQueue, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
@@ -247,7 +247,7 @@ pub struct PerCpu {
 
     /// Stack boundaries of the currently running task. This is stored in
     /// [PerCpu] because it needs lockless read access.
-    pub current_stack: StackBounds,
+    pub current_stack: MemoryRegion<VirtAddr>,
 
     /// WaitQueue for request processing
     request_waitqueue: WaitQueue,
@@ -278,7 +278,7 @@ impl PerCpu {
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
             runqueue: RWLock::new(RunQueue::new()),
-            current_stack: StackBounds::default(),
+            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
             request_waitqueue: WaitQueue::new(),
         }
     }

@@ -203,4 +203,22 @@ where
     pub fn contains(&self, addr: A) -> bool {
         self.start() <= addr && addr < self.end()
     }
+
+    /// Check whether this region fully contains a different region.
+    ///
+    /// ```rust
+    /// # use svsm::address::VirtAddr;
+    /// # use svsm::utils::MemoryRegion;
+    /// # use svsm::types::PAGE_SIZE;
+    /// let big = MemoryRegion::new(VirtAddr::from(0xffffff1000u64), PAGE_SIZE * 2);
+    /// let small = MemoryRegion::new(VirtAddr::from(0xffffff1000u64), PAGE_SIZE);
+    /// let overlapping = MemoryRegion::new(VirtAddr::from(0xffffff0000u64), PAGE_SIZE * 2);
+    /// assert!(big.contains_region(&small));
+    /// assert!(!small.contains_region(&big));
+    /// assert!(!overlapping.contains_region(&big));
+    /// assert!(!big.contains_region(&overlapping));
+    /// ```
+    pub fn contains_region(&self, other: &Self) -> bool {
+        self.start() <= other.start() && other.end() <= self.end()
+    }
 }
