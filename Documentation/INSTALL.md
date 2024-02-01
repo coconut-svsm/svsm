@@ -139,15 +139,16 @@ openSUSE you can do this by:
 $ sudo zypper si -d qemu-ovmf-x86_64
 ```
 
-Then go back to the EDK2 source directory and follow these steps to
-build the firmware:
+Then go back to the EDK2 source directory and follow the steps below to
+build the firmware. `-DTPM2_ENABLE` is required only if you want to use
+the SVSM vTPM.
 
 ```
 $ export PYTHON3_ENABLE=TRUE
 $ export PYTHON_COMMAND=python3
 $ make -j16 -C BaseTools/
-$ source ./edksetup.sh
-$ build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -p OvmfPkg/OvmfPkgX64.dsc
+$ source ./edksetup.sh --reconfig
+$ build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -DTPM2_ENABLE -p OvmfPkg/OvmfPkgX64.dsc
 ```
 
 This will build the OVMF binary that will be packaged into the IGVM file to use
@@ -180,6 +181,9 @@ the guest kernel configuration you can follow the same steps as for the
 host kernel. Best results are achieved by re-using the kernel
 configuration from the distribution like for the host kernel.
 
+The `CONFIG_TCG_PLATFORM` is required in the guest kernel if you want to
+use the SVSM vTPM.
+
 Building the COCONUT-SVSM
 -------------------------
 
@@ -189,11 +193,22 @@ Building the SVSM itself requires:
 - `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
 - `binutils` >= 2.39
 
+You may also need to install the Microsoft TPM build dependencies. On OpenSUSE
+you can do this by:
+
+```
+$ sudo zypper in system-user-mail make gcc curl patterns-devel-base-devel_basis \
+      glibc-devel-static git libclang13 autoconf autoconf-archive pkg-config \
+      automake libopenssl-devel perl
+```
+
 Then checkout the SVSM repository and build the SVSM binary:
 
 ```
 $ git clone https://github.com/coconut-svsm/svsm
 $ cd svsm
+$ git submodule update --init
+$ cargo install bindgen-cli
 ```
 
 That checks out the SVSM which can be built by
