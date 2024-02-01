@@ -1,5 +1,5 @@
 FEATURES ?= "default"
-CARGO_ARGS = --features ${FEATURES}
+SVSM_ARGS = --features ${FEATURES}
 
 ifdef RELEASE
 TARGET_PATH=release
@@ -38,7 +38,7 @@ igvm: $(IGVM_FILES)
 
 $(IGVMBUILDER):
 	mkdir -v -p bin
-	CARGO_TARGET_DIR=target cargo build --target=x86_64-unknown-linux-gnu --manifest-path igvmbuilder/Cargo.toml
+	CARGO_TARGET_DIR=target cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu --manifest-path igvmbuilder/Cargo.toml
 
 bin/coconut-qemu.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf ${BUILD_FW} qemu
@@ -68,11 +68,11 @@ stage1/meta.bin: utils/gen_meta utils/print-meta
 	./utils/gen_meta $@
 
 stage1/stage2.bin:
-	cargo build ${CARGO_ARGS} --bin stage2
+	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
 stage1/kernel.elf:
-	cargo build ${CARGO_ARGS} --bin svsm
+	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin svsm
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
 
 stage1/test-kernel.elf:
