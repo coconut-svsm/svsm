@@ -61,7 +61,7 @@ pub fn make_page_private(vaddr: VirtAddr) {
             PageSize::Regular,
             PageStateChangeOp::PscPrivate,
         )
-        .expect("Hypervisor failed to make page shared");
+        .expect("Hypervisor failed to make page private");
 
     // Revoke page validation before changing page state.
     pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)
