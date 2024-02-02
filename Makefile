@@ -31,19 +31,25 @@ C_BIT_POS ?= 51
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
+IGVMBIN = bin/igvmbld
 
 all: stage1/kernel.elf svsm.bin igvm
 
-igvm: $(IGVM_FILES)
+igvm: $(IGVM_FILES) $(IGVMBIN)
+
+$(IGVMBIN): $(IGVMBUILDER)
+	mkdir -v -p bin
+	cp -f $(IGVMBUILDER) $@
 
 $(IGVMBUILDER):
-	mkdir -v -p bin
 	CARGO_TARGET_DIR=target cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu --manifest-path igvmbuilder/Cargo.toml
 
 bin/coconut-qemu.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
+	mkdir -v -p bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf ${BUILD_FW} qemu
 
 bin/coconut-hyperv.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
+	mkdir -v -p bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --comport 3 hyper-v
 
 test:
