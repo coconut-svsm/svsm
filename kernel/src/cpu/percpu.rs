@@ -118,9 +118,9 @@ impl VmsaRef {
 
 #[derive(Debug)]
 struct IstStacks {
-    double_fault_stack: Option<VirtAddr>,
-    debug_stack: Option<VirtAddr>,
-    vmm_comm_stack: Option<VirtAddr>,
+    double_fault_stack: Option<MemoryRegion<VirtAddr>>,
+    debug_stack: Option<MemoryRegion<VirtAddr>>,
+    vmm_comm_stack: Option<MemoryRegion<VirtAddr>>,
 }
 
 impl IstStacks {
@@ -243,7 +243,7 @@ pub struct PerCpu {
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     ghcb: *mut GHCB,
-    init_stack: Option<VirtAddr>,
+    init_stack: Option<MemoryRegion<VirtAddr>>,
     ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
@@ -349,14 +349,13 @@ impl PerCpu {
         *my_pgtable = pgtable;
     }
 
-    fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
+    fn allocate_stack(&mut self, base: VirtAddr) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
         let stack = VMKernelStack::new()?;
-        let top_of_stack = stack.top_of_stack(base);
+        let region = stack.bounds(base);
         let mapping = Arc::new(Mapping::new(stack));
 
         self.vm_range.insert_at(base, mapping)?;
-
-        Ok(top_of_stack)
+        Ok(region)
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
@@ -390,17 +389,17 @@ impl PerCpu {
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.unwrap()
+        self.init_stack.unwrap().end()
     }
 
     pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.unwrap()
+        self.ist.double_fault_stack.unwrap().end()
     }
 
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
-        self.tss.ist_stacks[IST_DB] = self.ist.debug_stack.unwrap();
-        self.tss.ist_stacks[IST_VC] = self.ist.vmm_comm_stack.unwrap();
+        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap().end();
+        self.tss.ist_stacks[IST_DB] = self.ist.debug_stack.unwrap().end();
+        self.tss.ist_stacks[IST_VC] = self.ist.vmm_comm_stack.unwrap().end();
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
