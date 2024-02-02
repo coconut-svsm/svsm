@@ -143,9 +143,7 @@ intrusive_adapter!(pub TaskListAdapter = TaskPointer: Task { list_link: LinkedLi
 
 impl PartialEq for Task {
     fn eq(&self, other: &Self) -> bool {
-        let a = self as *const Self;
-        let b = other as *const Self;
-        a == b
+        core::ptr::eq(self, other)
     }
 }
 
