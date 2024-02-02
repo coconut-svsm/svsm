@@ -84,7 +84,7 @@ impl RunQueue {
     fn get_next_task(&mut self) -> TaskPointer {
         self.run_list
             .pop_front()
-            .unwrap_or(self.idle_task.get().unwrap().clone())
+            .unwrap_or_else(|| self.idle_task.get().unwrap().clone())
     }
 
     /// Update state before a task is scheduled out. Non-idle tasks in RUNNING
