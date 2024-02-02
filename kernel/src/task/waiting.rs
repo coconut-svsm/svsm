@@ -24,11 +24,6 @@ impl WaitQueue {
     }
 
     pub fn wakeup(&mut self) -> Option<TaskPointer> {
-        if self.waiter.is_some() {
-            let task = self.waiter.take().unwrap();
-            Some(task)
-        } else {
-            None
-        }
+        self.waiter.take()
     }
 }
