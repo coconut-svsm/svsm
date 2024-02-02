@@ -396,6 +396,10 @@ impl PerCpu {
         self.ist.double_fault_stack.unwrap().end()
     }
 
+    pub fn get_vc_stack_bounds(&self) -> Option<MemoryRegion<VirtAddr>> {
+        self.ist.vmm_comm_stack
+    }
+
     fn setup_tss(&mut self) {
         self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap().end();
         self.tss.ist_stacks[IST_DB] = self.ist.debug_stack.unwrap().end();
