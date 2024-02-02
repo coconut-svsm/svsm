@@ -301,20 +301,18 @@ pub fn schedule() {
     let work = this_cpu_mut().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!
-    if work.is_some() {
+    if let Some((current, next)) = work {
+        // Update per-cpu mappings if needed
+        let apic_id = this_cpu().get_apic_id();
+
+        if next.update_cpu(apic_id) != apic_id {
+            // Task has changed CPU, update per-cpu mappings
+            let mut pt = next.page_table.lock();
+            this_cpu().populate_page_table(&mut pt);
+        }
+
+        // Get task-pointers, consuming the Arcs and release their reference
         unsafe {
-            // Get current and next task
-            let (current, next) = work.unwrap();
-
-            // Update per-cpu mappings if needed
-            let apic_id = this_cpu().get_apic_id();
-            if next.update_cpu(apic_id) != apic_id {
-                // Task has changed CPU, update per-cpu mappings
-                let mut pt = next.page_table.lock();
-                this_cpu().populate_page_table(&mut pt);
-            }
-
-            // Get task-pointers, consuming the Arcs and release their reference
             let a = task_pointer(current);
             let b = task_pointer(next);
 
