@@ -76,6 +76,11 @@ impl RunQueue {
     /// # Returns
     ///
     /// Pointer to next task to run
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no tasks to run and no idle task has been
+    /// allocated via [`set_idle_task()`](Self::set_idle_task).
     fn get_next_task(&mut self) -> TaskPointer {
         self.run_list
             .pop_front()
@@ -108,14 +113,18 @@ impl RunQueue {
     }
 
     /// Prepares a task switch. The function checks if a task switch needs to
-    /// be done and return pointers to the current and next task. It will also
-    /// call handle_task() on the current task in case a task-switch is
-    /// requested.
+    /// be done and return pointers to the current and next task. It will
+    /// also call `handle_task()` on the current task in case a task-switch
+    /// is requested.
     ///
     /// # Returns
     ///
-    /// None when no task-switch is needed
-    /// Some() with current and next task in case a task-switch is required
+    /// `None` when no task-switch is needed.
+    /// `Some` with current and next task in case a task-switch is required.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task.
     pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
         // Remove current and put it back into the RunQueue in case it is still
         // runnable. This is important to make sure the last runnable task
@@ -147,6 +156,10 @@ impl RunQueue {
     /// # Returns
     ///
     /// Ok(()) on success, SvsmError on failure
+    ///
+    /// # Panics
+    ///
+    /// Panics if the idle task was already set.
     pub fn set_idle_task(&self, task: TaskPointer) {
         task.set_idle_task();
 
@@ -158,6 +171,11 @@ impl RunQueue {
             .expect("Idle task already allocated");
     }
 
+    /// Gets a pointer to the current task
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task.
     pub fn current_task(&self) -> TaskPointer {
         self.current_task.as_ref().unwrap().clone()
     }
@@ -227,6 +245,11 @@ pub fn is_current_task(id: u32) -> bool {
     }
 }
 
+/// Terminates the current task.
+///
+/// # Panics
+///
+/// Panics if there is no current task.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
     let mut rq = cpu.runqueue().lock_write();
