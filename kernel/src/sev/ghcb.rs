@@ -102,6 +102,7 @@ enum GHCBExitCode {
     HV_DOORBELL = 0x8000_0014,
     HV_IPI = 0x8000_0015,
     CONFIGURE_INT_INJ = 0x8000_0019,
+    SPECIFIC_EOI = 0x8000_001B,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -608,6 +609,13 @@ impl GHCB {
     pub fn configure_interrupt_injection(&self, vector: usize) -> Result<(), SvsmError> {
         self.clear();
         self.vmgexit(GHCBExitCode::CONFIGURE_INT_INJ, vector as u64, 0)?;
+        Ok(())
+    }
+
+    pub fn specific_eoi(&self, vector: u8, vmpl: u8) -> Result<(), SvsmError> {
+        self.clear();
+        let exit_info = ((vmpl as u64) << 16) | (vector as u64);
+        self.vmgexit(GHCBExitCode::SPECIFIC_EOI, exit_info, 0)?;
         Ok(())
     }
 

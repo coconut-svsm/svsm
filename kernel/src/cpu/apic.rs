@@ -5,7 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::VirtAddr;
-use crate::cpu::percpu::{this_cpu, PerCpuShared};
+use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared};
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
@@ -21,6 +21,8 @@ const APIC_REGISTER_PPR: u64 = 0x80A;
 const APIC_REGISTER_EOI: u64 = 0x80B;
 const APIC_REGISTER_ISR_0: u64 = 0x810;
 const APIC_REGISTER_ISR_7: u64 = 0x817;
+const APIC_REGISTER_TMR_0: u64 = 0x818;
+const APIC_REGISTER_TMR_7: u64 = 0x81F;
 const APIC_REGISTER_IRR_0: u64 = 0x820;
 const APIC_REGISTER_IRR_7: u64 = 0x827;
 const APIC_REGISTER_ICR: u64 = 0x830;
@@ -104,6 +106,8 @@ pub struct LocalApic {
     allowed_irr: [u32; 8],
     isr_stack_index: usize,
     isr_stack: [u8; 16],
+    tmr: [u32; 8],
+    host_tmr: [u32; 8],
     update_required: bool,
     interrupt_delivered: bool,
     interrupt_queued: bool,
@@ -117,6 +121,8 @@ impl LocalApic {
             allowed_irr: [0; 8],
             isr_stack_index: 0,
             isr_stack: [0; 16],
+            tmr: [0; 8],
+            host_tmr: [0; 8],
             update_required: false,
             interrupt_delivered: false,
             interrupt_queued: false,
@@ -136,18 +142,22 @@ impl LocalApic {
         0
     }
 
-    fn remove_irr(&mut self, irq: u8) {
-        self.irr[irq as usize >> 5] &= !(1 << (irq & 31));
+    fn remove_vector_register(register: &mut [u32; 8], irq: u8) {
+        register[irq as usize >> 5] &= !(1 << (irq & 31));
     }
 
-    fn insert_irr(&mut self, irq: u8) {
-        self.irr[irq as usize >> 5] |= 1 << (irq & 31);
+    fn insert_vector_register(register: &mut [u32; 8], irq: u8) {
+        register[irq as usize >> 5] |= 1 << (irq & 31);
+    }
+
+    fn test_vector_register(register: &[u32; 8], irq: u8) -> bool {
+        (register[irq as usize >> 5] & 1 << (irq & 31)) != 0
     }
 
     fn rewind_pending_interrupt(&mut self, irq: u8) {
         let new_index = self.isr_stack_index.checked_sub(1).unwrap();
         assert!(self.isr_stack.get(new_index) == Some(&irq));
-        self.insert_irr(irq);
+        Self::insert_vector_register(&mut self.irr, irq);
         self.isr_stack_index = new_index;
         self.update_required = true;
     }
@@ -304,12 +314,14 @@ impl LocalApic {
                 // Mark this interrupt in-service.  It will be recalled if
                 // the ISR is examined again before the interrupt is actually
                 // delivered.
-                self.remove_irr(irq);
+                Self::remove_vector_register(&mut self.irr, irq);
                 self.isr_stack[self.isr_stack_index] = irq;
                 self.isr_stack_index += 1;
 
-                // Configure a lazy EOI if possible.
-                if try_lazy_eoi {
+                // Configure a lazy EOI if possible.  Lazy EOI is not possible
+                // for level-sensitive interrupts, because an explicit EOI
+                // is required to acknowledge the interrupt at the source.
+                if try_lazy_eoi && !Self::test_vector_register(&self.tmr, irq) {
                     // A lazy EOI is possible only if there is no other
                     // interrupt pending.  If another interrupt is pending,
                     // then an explicit EOI will be required to prompt
@@ -332,11 +344,29 @@ impl LocalApic {
         }
     }
 
+    fn perform_host_eoi(vector: u8) {
+        // Errors from the host are not expected and cannot be meaningfully
+        // handled, so simply ignore them.
+        let _r = current_ghcb().specific_eoi(vector, GUEST_VMPL.try_into().unwrap());
+        assert!(_r.is_ok());
+    }
+
     pub fn perform_eoi(&mut self) {
         // Pop any in-service interrupt from the stack, and schedule the APIC
         // for reevaluation.
         if self.isr_stack_index != 0 {
             self.isr_stack_index -= 1;
+            let vector = self.isr_stack[self.isr_stack_index];
+            if Self::test_vector_register(&self.tmr, vector) {
+                if Self::test_vector_register(&self.host_tmr, vector) {
+                    Self::perform_host_eoi(vector);
+                    Self::remove_vector_register(&mut self.host_tmr, vector);
+                } else {
+                    // FIXME: should do something with locally generated
+                    // level-sensitive interrupts.
+                }
+                Self::remove_vector_register(&mut self.tmr, vector);
+            }
             self.update_required = true;
             self.lazy_eoi_pending = false;
         }
@@ -352,10 +382,13 @@ impl LocalApic {
         value
     }
 
-    fn post_interrupt(&mut self, irq: u8) {
+    fn post_interrupt(&mut self, irq: u8, level_sensitive: bool) {
         // Set the appropriate bit in the IRR.  Once set, signal that interrupt
         // processing is required before returning to the guest.
-        self.insert_irr(irq);
+        Self::insert_vector_register(&mut self.irr, irq);
+        if level_sensitive {
+            Self::insert_vector_register(&mut self.tmr, irq);
+        }
         self.update_required = true;
     }
 
@@ -381,6 +414,11 @@ impl LocalApic {
                 let offset = register - APIC_REGISTER_ISR_0;
                 Ok(self.get_isr(offset.try_into().unwrap()) as u64)
             }
+            APIC_REGISTER_TMR_0..=APIC_REGISTER_TMR_7 => {
+                let offset = register - APIC_REGISTER_TMR_0;
+                let index: usize = offset.try_into().unwrap();
+                Ok(self.tmr[index] as u64)
+            }
             APIC_REGISTER_TPR => Ok(cpu_state.get_tpr() as u64),
             APIC_REGISTER_PPR => Ok(self.get_ppr(cpu_state) as u64),
             _ => Err(ApicError::ApicError),
@@ -405,7 +443,7 @@ impl LocalApic {
             return Err(ApicError::ApicError);
         }
 
-        self.post_interrupt(icr.vector());
+        self.post_interrupt(icr.vector(), false);
 
         Ok(())
     }
@@ -440,7 +478,7 @@ impl LocalApic {
                 if value > 0xFF {
                     Err(ApicError::ApicError)
                 } else {
-                    self.post_interrupt((value & 0xFF) as u8);
+                    self.post_interrupt((value & 0xFF) as u8, false);
                     Ok(())
                 }
             }
@@ -458,11 +496,14 @@ impl LocalApic {
         }
     }
 
-    fn signal_one_host_interrupt(&mut self, vector: u8) {
+    fn signal_one_host_interrupt(&mut self, vector: u8, level_sensitive: bool) -> bool {
         let index = (vector >> 5) as usize;
         let mask = 1 << (vector & 31);
         if (self.allowed_irr[index] & mask) != 0 {
-            self.post_interrupt(vector);
+            self.post_interrupt(vector, level_sensitive);
+            true
+        } else {
+            false
         }
     }
 
@@ -471,7 +512,7 @@ impl LocalApic {
         while bits != 0 {
             let index = 31 - bits.leading_zeros();
             bits &= !(1 << index);
-            self.post_interrupt(vector + index as u8);
+            self.post_interrupt(vector + index as u8, false);
         }
     }
 
@@ -485,9 +526,11 @@ impl LocalApic {
             // First consume any level-sensitive vector that is present.
             let mut flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
             if flags.level_sensitive() {
+                let mut vector;
                 // Consume the correct vector atomically.
                 loop {
                     let mut new_flags = flags;
+                    vector = flags.pending_vector();
                     new_flags.set_pending_vector(0);
                     new_flags.set_level_sensitive(false);
                     if let Err(fail_flags) = descriptor.status.compare_exchange(
@@ -498,13 +541,14 @@ impl LocalApic {
                     ) {
                         flags = fail_flags.into();
                     } else {
-                        //flags = new_flags;
+                        flags = new_flags;
                         break;
                     }
                 }
-                // FIXME - signal the flags.vector as a level-sensitive
-                // interrupt.
-                panic!("No support yet for host-presented level-sensitive interrupts");
+
+                if self.signal_one_host_interrupt(vector, true) {
+                    Self::insert_vector_register(&mut self.host_tmr, vector);
+                }
             }
 
             // If a single vector is present, then signal it, otherwise
@@ -526,7 +570,7 @@ impl LocalApic {
                     descriptor
                         .status
                         .fetch_and(!(1u32 << 31), Ordering::Relaxed);
-                    self.signal_one_host_interrupt(31);
+                    self.signal_one_host_interrupt(31, false);
                 }
 
                 for i in 1..8 {
@@ -550,7 +594,7 @@ impl LocalApic {
                     )
                     .is_ok()
                 {
-                    self.signal_one_host_interrupt(flags.pending_vector());
+                    self.signal_one_host_interrupt(flags.pending_vector(), false);
                 }
             }
         }
