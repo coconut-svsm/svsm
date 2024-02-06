@@ -132,7 +132,7 @@ impl<T> SpinLock<T> {
     ///     *guard += 1;
     /// }; // Lock is automatically released when `guard` goes out of scope.
     /// ```
-    pub fn lock(&self) -> LockGuard<T> {
+    pub fn lock(&self) -> LockGuard<'_, T> {
         let ticket = self.current.fetch_add(1, Ordering::Relaxed);
         loop {
             let h = self.holder.load(Ordering::Acquire);
@@ -151,7 +151,7 @@ impl<T> SpinLock<T> {
     /// lock is not available, it returns `None`. If the lock is
     /// successfully acquired, it returns a [`LockGuard`] that automatically
     /// releases the lock when it goes out of scope.
-    pub fn try_lock(&self) -> Option<LockGuard<T>> {
+    pub fn try_lock(&self) -> Option<LockGuard<'_, T>> {
         let current = self.current.load(Ordering::Relaxed);
         let holder = self.holder.load(Ordering::Acquire);
 

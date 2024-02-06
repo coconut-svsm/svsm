@@ -61,7 +61,7 @@ bitflags! {
 }
 
 impl Display for GHCBHvFeatures {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("{:#x}", self.bits()))
     }
 }

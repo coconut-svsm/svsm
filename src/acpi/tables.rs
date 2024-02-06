@@ -41,7 +41,7 @@ impl RSDPDesc {
     ///
     /// A [`Result`] containing the [`RSDPDesc`] if successful, or an [`SvsmError`] on failure.
     ///
-    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+    fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
         let mut buf = mem::MaybeUninit::<Self>::uninit();
         let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
         let size = file.size() as usize;
@@ -282,7 +282,7 @@ impl ACPITableBuffer {
     /// # Returns
     ///
     /// A new [`ACPITableBuffer`] instance containing ACPI tables and their metadata.
-    fn from_fwcfg(fw_cfg: &FwCfg) -> Result<Self, SvsmError> {
+    fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
         let file = fw_cfg.file_selector("etc/acpi/tables")?;
         let size = file.size() as usize;
 
@@ -320,7 +320,7 @@ impl ACPITableBuffer {
     /// # Returns
     ///
     /// A [`Result`] indicating success or an error if ACPI tables cannot be loaded.
-    fn load_tables(&mut self, fw_cfg: &FwCfg) -> Result<(), SvsmError> {
+    fn load_tables(&mut self, fw_cfg: &FwCfg<'_>) -> Result<(), SvsmError> {
         let desc = RSDPDesc::from_fwcfg(fw_cfg)?;
 
         let rsdt = self.acpi_table_from_offset(desc.rsdt_addr as usize)?;
@@ -480,7 +480,7 @@ pub struct ACPICPUInfo {
 ///     }
 /// }
 /// ```
-pub fn load_acpi_cpu_info(fw_cfg: &FwCfg) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmError> {
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;

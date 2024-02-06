@@ -29,7 +29,7 @@ bitflags! {
 }
 
 impl fmt::Display for SEVStatusFlags {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut first = true;
 
         if self.contains(SEVStatusFlags::SEV) {

@@ -268,13 +268,13 @@ impl PageTable {
         Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
     }
 
-    fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
+    fn walk_addr_lvl0(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
         let idx = PageTable::index::<0>(vaddr);
 
         Mapping::Level0(&mut page[idx])
     }
 
-    fn walk_addr_lvl1(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
+    fn walk_addr_lvl1(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
         let idx = PageTable::index::<1>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
@@ -285,7 +285,7 @@ impl PageTable {
         };
     }
 
-    fn walk_addr_lvl2(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
+    fn walk_addr_lvl2(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
         let idx = PageTable::index::<2>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
@@ -296,7 +296,7 @@ impl PageTable {
         };
     }
 
-    fn walk_addr_lvl3(page: &mut PTPage, vaddr: VirtAddr) -> Mapping {
+    fn walk_addr_lvl3(page: &mut PTPage, vaddr: VirtAddr) -> Mapping<'_> {
         let idx = PageTable::index::<3>(vaddr);
         let entry = page[idx];
         let ret = PageTable::entry_to_pagetable(entry);
@@ -307,11 +307,11 @@ impl PageTable {
         };
     }
 
-    pub fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping {
+    pub fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         PageTable::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
-    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
+    fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -335,7 +335,7 @@ impl PageTable {
         unsafe { PageTable::alloc_pte_lvl2(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
+    fn alloc_pte_lvl2(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let flags = entry.flags();
 
         if flags.contains(PTEntryFlags::PRESENT) {
@@ -359,7 +359,7 @@ impl PageTable {
         unsafe { PageTable::alloc_pte_lvl1(&mut (*page)[idx], vaddr, size) }
     }
 
-    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping {
+    fn alloc_pte_lvl1(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let flags = entry.flags();
 
         if size == PageSize::Huge || flags.contains(PTEntryFlags::PRESENT) {
@@ -383,7 +383,7 @@ impl PageTable {
         unsafe { Mapping::Level0(&mut (*page)[idx]) }
     }
 
-    pub fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping {
+    pub fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
 
         match m {
@@ -394,7 +394,7 @@ impl PageTable {
         }
     }
 
-    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping {
+    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
 
         match m {
@@ -431,7 +431,7 @@ impl PageTable {
         Ok(())
     }
 
-    pub fn split_4k(mapping: Mapping) -> Result<(), SvsmError> {
+    pub fn split_4k(mapping: Mapping<'_>) -> Result<(), SvsmError> {
         match mapping {
             Mapping::Level0(_entry) => Ok(()),
             Mapping::Level1(entry) => PageTable::do_split_4k(entry),
@@ -777,11 +777,11 @@ impl RawPageTablePart {
         virt_to_phys(VirtAddr::from(self as *const RawPageTablePart))
     }
 
-    fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping {
+    fn walk_addr(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         PageTable::walk_addr_lvl2(&mut self.page, vaddr)
     }
 
-    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping {
+    fn alloc_pte_4k(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
 
         match m {
@@ -792,7 +792,7 @@ impl RawPageTablePart {
         }
     }
 
-    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping {
+    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
 
         match m {

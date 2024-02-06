@@ -57,7 +57,7 @@ pub fn init_console() {
 }
 
 #[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
+pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
     if !*CONSOLE_INITIALIZED {
         return;
@@ -84,11 +84,11 @@ impl ConsoleLogger {
 }
 
 impl log::Log for ConsoleLogger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
         true
     }
 
-    fn log(&self, record: &log::Record) {
+    fn log(&self, record: &log::Record<'_>) {
         if !self.enabled(record.metadata()) {
             return;
         }

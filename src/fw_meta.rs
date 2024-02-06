@@ -120,7 +120,7 @@ impl PartialEq for Uuid {
 }
 
 impl fmt::Display for Uuid {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for i in 0..16 {
             write!(f, "{:02x}", self.data[i])?;
             if i == 3 || i == 5 || i == 7 || i == 9 {
@@ -360,7 +360,7 @@ fn parse_sev_meta(
 }
 
 fn validate_fw_mem_region(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     let pstart = region.start();
@@ -399,7 +399,7 @@ fn validate_fw_mem_region(
 }
 
 fn validate_fw_memory_vec(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     regions: Vec<MemoryRegion<PhysAddr>>,
 ) -> Result<(), SvsmError> {
     if regions.is_empty() {
@@ -422,7 +422,7 @@ fn validate_fw_memory_vec(
 }
 
 pub fn validate_fw_memory(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     fw_meta: &SevFWMetaData,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {

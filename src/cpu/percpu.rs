@@ -364,7 +364,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> LockGuard<PageTableRef> {
+    pub fn get_pgtable(&self) -> LockGuard<'_, PageTableRef> {
         self.pgtbl.lock()
     }
 
@@ -541,7 +541,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn guest_vmsa_ref(&self) -> LockGuard<GuestVmsaRef> {
+    pub fn guest_vmsa_ref(&self) -> LockGuard<'_, GuestVmsaRef> {
         self.shared.guest_vmsa.lock()
     }
 
@@ -606,7 +606,7 @@ impl PerCpu {
     /// the mapping which remains valid until the ['VRMapping'] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping, SvsmError> {
+    pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping<'_>, SvsmError> {
         VMRMapping::new(&mut self.vm_range, mapping)
     }
 

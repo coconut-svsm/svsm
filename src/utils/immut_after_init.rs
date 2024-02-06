@@ -223,7 +223,7 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// ```
 ///
 #[derive(Debug)]
-pub struct ImmutAfterInitRef<'a, T: 'a> {
+pub struct ImmutAfterInitRef<'a, T> {
     #[doc(hidden)]
     ptr: ImmutAfterInitCell<*const T>,
     #[doc(hidden)]

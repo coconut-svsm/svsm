@@ -81,7 +81,7 @@ pub enum ElfError {
 }
 
 impl fmt::Display for ElfError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::FileTooShort => {
                 write!(f, "ELF file too short")
@@ -464,7 +464,7 @@ impl<'a> Elf64File<'a> {
             return Err(ElfError::InvalidSectionIndex);
         }
 
-        let mut sh_strtab: Option<Elf64Strtab> = None;
+        let mut sh_strtab = None;
         for i in 0..elf_hdr.e_shnum {
             let shdr = Self::read_shdr_from_file(elf_file_buf, &elf_hdr, i);
             Self::verify_shdr(&shdr, elf_file_buf.len(), elf_hdr.e_shnum)?;
@@ -691,7 +691,7 @@ impl<'a> Elf64File<'a> {
     /// # Returns
     ///
     /// An [`Elf64ShdrIterator`] over the ELF Section Headers.
-    pub fn shdrs_iter(&self) -> Elf64ShdrIterator {
+    pub fn shdrs_iter(&self) -> Elf64ShdrIterator<'_> {
         Elf64ShdrIterator::new(self)
     }
 

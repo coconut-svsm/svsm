@@ -8,7 +8,7 @@ use crate::utils::immut_after_init::ImmutAfterInitRef;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use log;
 
-static CPUID_PAGE: ImmutAfterInitRef<SnpCpuidTable> = ImmutAfterInitRef::uninit();
+static CPUID_PAGE: ImmutAfterInitRef<'_, SnpCpuidTable> = ImmutAfterInitRef::uninit();
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     CPUID_PAGE

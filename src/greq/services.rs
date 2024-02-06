@@ -6,8 +6,6 @@
 
 //! API to send `SNP_GUEST_REQUEST` commands to the PSP
 
-extern crate alloc;
-
 use crate::{
     greq::{
         driver::{send_extended_guest_request, send_regular_guest_request},
