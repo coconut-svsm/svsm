@@ -693,10 +693,8 @@ pub struct PageTableRef {
 }
 
 impl PageTableRef {
-    pub fn new(pgtable: &mut PageTable) -> PageTableRef {
-        PageTableRef {
-            pgtable_ptr: pgtable as *mut PageTable,
-        }
+    pub fn new(pgtable_ptr: *mut PageTable) -> PageTableRef {
+        Self { pgtable_ptr }
     }
 
     pub const fn unset() -> PageTableRef {
