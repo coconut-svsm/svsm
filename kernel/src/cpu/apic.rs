@@ -5,9 +5,11 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::VirtAddr;
-use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared};
+use crate::cpu::idt::common::INT_INJ_VECTOR;
+use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
+use crate::platform::SVSM_PLATFORM;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
@@ -258,14 +260,29 @@ impl LocalApic {
         }
     }
 
+    pub fn consume_pending_ipis(&mut self, cpu_shared: &PerCpuShared) {
+        // Scan the IPI IRR vector and transfer any pending IPIs into the local
+        // IRR vector.
+        for (i, irr) in self.irr.iter_mut().enumerate() {
+            *irr |= cpu_shared.ipi_irr_vector(i);
+        }
+        self.update_required = true;
+    }
+
     pub fn present_interrupts<T: GuestCpuState>(
         &mut self,
+        cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
         caa_addr: Option<VirtAddr>,
     ) {
         // Make sure any interrupts being presented by the host have been
         // consumed.
         self.consume_host_interrupts();
+
+        // Consume any pending IPIs.
+        if cpu_shared.ipi_pending() {
+            self.consume_pending_ipis(cpu_shared);
+        }
 
         if self.update_required {
             // Make sure that all previously delivered interrupts have been
@@ -392,6 +409,128 @@ impl LocalApic {
         self.update_required = true;
     }
 
+    fn send_logical_ipi(&mut self, icr: ApicIcr) -> bool {
+        let vector = icr.vector();
+        let mut signal = false;
+
+        // Check whether the current CPU matches the destination.
+        let destination = icr.destination();
+        let apic_id = this_cpu().get_apic_id();
+        if Self::logical_destination_match(destination, apic_id) {
+            self.post_interrupt(vector, false);
+        }
+
+        // Enumerate all CPUs to see which have APIC IDs that match the
+        // requested destination.  Skip the current CPU, since it was checked
+        // above.
+        for cpu_ref in PERCPU_AREAS.iter() {
+            let cpu = cpu_ref.unwrap();
+            let this_apic_id = cpu.apic_id();
+            if (this_apic_id != apic_id)
+                && Self::logical_destination_match(destination, this_apic_id)
+            {
+                cpu.request_ipi(vector);
+                signal = true;
+            }
+        }
+
+        signal
+    }
+
+    fn logical_destination_match(destination: u32, apic_id: u32) -> bool {
+        // CHeck for a cluster match.
+        if (destination >> 16) != (apic_id >> 4) {
+            false
+        } else {
+            let bit = 1u32 << (apic_id & 0xF);
+            (destination & bit) != 0
+        }
+    }
+
+    fn send_physical_ipi(&mut self, icr: ApicIcr) -> bool {
+        // If the target APIC ID matches the current processor, then treat this
+        // as a self-IPI.  Otherwise, locate the target processor by APIC ID.
+        let destination = icr.destination();
+        if destination == this_cpu().get_apic_id() {
+            self.post_interrupt(icr.vector(), false);
+            false
+        } else {
+            // If the target CPU cannot be located, then simply drop the
+            // request.
+            if let Some(cpu) = PERCPU_AREAS.get(destination) {
+                cpu.request_ipi(icr.vector());
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    fn send_ipi(&mut self, icr: ApicIcr) {
+        let (signal_host, include_others, include_self) = match icr.destination_shorthand() {
+            IcrDestFmt::Dest => {
+                if icr.destination() == 0xFFFF_FFFF {
+                    // This is a broadcast, so treat it as all with self.
+                    (true, true, true)
+                } else {
+                    let signal_host = if icr.destination_mode() {
+                        self.send_logical_ipi(icr)
+                    } else {
+                        self.send_physical_ipi(icr)
+                    };
+
+                    // Any possible self-IPI was handled above as part of
+                    // delivery to the correct destination.
+                    (signal_host, false, false)
+                }
+            }
+            IcrDestFmt::OnlySelf => (false, false, true),
+            IcrDestFmt::AllButSelf => (true, true, false),
+            IcrDestFmt::AllWithSelf => (true, true, true),
+        };
+
+        let vector = icr.vector();
+
+        if include_others {
+            // Enumerate all processors in the system except for the
+            // current CPU and indicate that an IPI has been requested.
+            let apic_id = this_cpu().get_apic_id();
+            for cpu_ref in PERCPU_AREAS.iter() {
+                let cpu = cpu_ref.unwrap();
+                if cpu.apic_id() != apic_id {
+                    cpu.request_ipi(vector);
+                }
+            }
+        }
+
+        if include_self {
+            self.post_interrupt(vector, false);
+        }
+
+        if signal_host {
+            // Calculate an ICR value to use for a host IPI request.  This will
+            // be a fixed interrupt on the interrupt notification vector using
+            // the destination format specified in the ICR value.
+            let mut hv_icr = ApicIcr::new()
+                .with_vector(INT_INJ_VECTOR as u8)
+                .with_message_type(IcrMessageType::Fixed)
+                .with_destination_mode(icr.destination_mode())
+                .with_destination_shorthand(icr.destination_shorthand())
+                .with_destination(icr.destination());
+
+            // Avoid a self interrupt if the target is all-including-self,
+            // because the self IPI was delivered above.  In the case of
+            // a logical cluster IPI, it is impractical to avoid the self
+            // interrupt, but such cases should be rare.
+            if hv_icr.destination_shorthand() == IcrDestFmt::AllWithSelf {
+                hv_icr.set_destination_shorthand(IcrDestFmt::AllButSelf);
+            }
+
+            let _r = SVSM_PLATFORM.as_dyn_ref().post_irq(hv_icr.into());
+            assert!(_r.is_ok());
+        }
+    }
+
     pub fn read_register<T: GuestCpuState>(
         &mut self,
         cpu_shared: &PerCpuShared,
@@ -438,12 +577,7 @@ impl LocalApic {
             return Err(ApicError::ApicError);
         }
 
-        // FIXME - support destinations other than self.
-        if icr.destination_shorthand() != IcrDestFmt::OnlySelf {
-            return Err(ApicError::ApicError);
-        }
-
-        self.post_interrupt(icr.vector(), false);
+        self.send_ipi(icr);
 
         Ok(())
     }

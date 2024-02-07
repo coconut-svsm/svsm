@@ -40,11 +40,12 @@ use alloc::vec::Vec;
 use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::slice::Iter;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use cpuarch::vmsa::{VMSASegment, VMSA};
 
-#[derive(Debug)]
-struct PerCpuInfo {
+#[derive(Copy, Clone, Debug)]
+pub struct PerCpuInfo {
     apic_id: u32,
     cpu_shared: &'static PerCpuShared,
 }
@@ -55,6 +56,10 @@ impl PerCpuInfo {
             apic_id,
             cpu_shared,
         }
+    }
+
+    pub fn unwrap(&self) -> &'static PerCpuShared {
+        self.cpu_shared
     }
 }
 
@@ -83,6 +88,11 @@ impl PerCpuAreas {
     unsafe fn push(&self, info: PerCpuInfo) {
         let ptr = self.areas.get().as_mut().unwrap();
         ptr.push(info);
+    }
+
+    pub fn iter(&self) -> Iter<'_, PerCpuInfo> {
+        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
+        ptr.iter()
     }
 
     // Fails if no such area exists or its address is NULL
@@ -207,6 +217,8 @@ pub struct PerCpuShared {
     apic_id: u32,
     guest_vmsa: SpinLock<GuestVmsaRef>,
     online: AtomicBool,
+    ipi_irr: [AtomicU32; 8],
+    ipi_pending: AtomicBool,
 }
 
 impl PerCpuShared {
@@ -215,6 +227,17 @@ impl PerCpuShared {
             apic_id,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             online: AtomicBool::new(false),
+            ipi_irr: [
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+                AtomicU32::new(0),
+            ],
+            ipi_pending: AtomicBool::new(false),
         }
     }
 
@@ -255,6 +278,23 @@ impl PerCpuShared {
 
     pub fn is_online(&self) -> bool {
         self.online.load(Ordering::Acquire)
+    }
+
+    pub fn request_ipi(&self, vector: u8) {
+        let index = vector >> 5;
+        let bit = 1u32 << (vector & 31);
+        // Request the IPI via the IRR vector before signaling that an IPI has
+        // been requested.
+        self.ipi_irr[index as usize].fetch_or(bit, Ordering::Relaxed);
+        self.ipi_pending.store(true, Ordering::Release);
+    }
+
+    pub fn ipi_pending(&self) -> bool {
+        self.ipi_pending.swap(false, Ordering::Acquire)
+    }
+
+    pub fn ipi_irr_vector(&self, index: usize) -> u32 {
+        self.ipi_irr[index].swap(0, Ordering::Relaxed)
     }
 }
 
@@ -671,7 +711,9 @@ impl PerCpu {
 
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa_addr: Option<VirtAddr>) {
         if self.apic_emulation.get() {
-            self.apic.borrow_mut().present_interrupts(vmsa, caa_addr);
+            self.apic
+                .borrow_mut()
+                .present_interrupts(self.shared(), vmsa, caa_addr);
         }
     }
 
