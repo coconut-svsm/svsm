@@ -200,15 +200,11 @@ impl<T: Sized + Copy> GuestPtr<T> {
     }
 
     pub fn write(&self, buf: T) -> Result<(), SvsmError> {
-        let src = &buf as *const T;
-
-        unsafe { do_movsb(src, self.ptr) }
+        unsafe { do_movsb(&buf, self.ptr) }
     }
 
     pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
-        let src = buf as *const T;
-
-        unsafe { do_movsb(src, self.ptr) }
+        unsafe { do_movsb(buf, self.ptr) }
     }
 
     pub fn cast<N: Sized + Copy>(&self) -> GuestPtr<N>
