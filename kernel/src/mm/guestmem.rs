@@ -172,14 +172,11 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
 }
 
 #[derive(Debug)]
-pub struct GuestPtr<T>
-where
-    T: Sized + Copy,
-{
+pub struct GuestPtr<T: Copy> {
     ptr: *mut T,
 }
 
-impl<T: Sized + Copy> GuestPtr<T> {
+impl<T: Copy> GuestPtr<T> {
     pub fn new(v: VirtAddr) -> Self {
         Self {
             ptr: v.as_mut_ptr::<T>(),
@@ -207,11 +204,8 @@ impl<T: Sized + Copy> GuestPtr<T> {
         unsafe { do_movsb(buf, self.ptr) }
     }
 
-    pub fn cast<N: Sized + Copy>(&self) -> GuestPtr<N>
-    where
-        N: Sized + Copy,
-    {
-        GuestPtr::<N>::from_ptr(self.ptr.cast::<N>())
+    pub fn cast<N: Copy>(&self) -> GuestPtr<N> {
+        GuestPtr::from_ptr(self.ptr.cast())
     }
 
     pub fn offset(&self, count: isize) -> Self {
