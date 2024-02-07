@@ -201,13 +201,15 @@ impl GuestVmsaRef {
 
 #[derive(Debug)]
 pub struct PerCpuShared {
+    apic_id: u32,
     guest_vmsa: SpinLock<GuestVmsaRef>,
     online: AtomicBool,
 }
 
 impl PerCpuShared {
-    fn new() -> Self {
+    fn new(apic_id: u32) -> Self {
         PerCpuShared {
+            apic_id,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             online: AtomicBool::new(false),
         }
@@ -255,7 +257,6 @@ const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 pub struct PerCpu {
     shared: PerCpuShared,
 
-    apic_id: u32,
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
     svsm_vmsa: Cell<Option<VmsaRef>>,
@@ -283,7 +284,6 @@ pub struct PerCpu {
 impl PerCpu {
     fn new(apic_id: u32) -> Self {
         Self {
-            apic_id,
             pgtbl: RefCell::new(PageTableRef::unset()),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: Cell::new(None),
@@ -294,7 +294,7 @@ impl PerCpu {
             runqueue: RefCell::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
 
-            shared: PerCpuShared::new(),
+            shared: PerCpuShared::new(apic_id),
             ghcb: Cell::new(None),
             hv_doorbell: Cell::new(ptr::null()),
             init_stack: Cell::new(None),
@@ -353,8 +353,8 @@ impl PerCpu {
         self.current_stack.get()
     }
 
-    pub const fn get_apic_id(&self) -> u32 {
-        self.apic_id
+    pub fn get_apic_id(&self) -> u32 {
+        self.shared().apic_id
     }
 
     fn allocate_page_table(&self) -> Result<(), SvsmError> {
@@ -570,13 +570,13 @@ impl PerCpu {
     }
 
     pub fn unmap_guest_vmsa(&self) {
-        assert!(self.apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().apic_id == this_cpu().get_apic_id());
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
-        assert!(self.apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().apic_id == this_cpu().get_apic_id());
         let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
