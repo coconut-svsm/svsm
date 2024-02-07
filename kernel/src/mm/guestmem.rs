@@ -223,12 +223,13 @@ impl<T: Sized + Copy> GuestPtr<T> {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_read_u8_valid_address() {
-        use crate::mm::guestmem::*;
         // Create a region to read from
         let test_buffer: [u8; 6] = [0; 6];
         let test_address = VirtAddr::from(test_buffer.as_ptr());
@@ -241,7 +242,6 @@ mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_write_u8_valid_address() {
-        use crate::mm::guestmem::*;
         // Create a mutable region we can write into
         let mut test_buffer: [u8; 6] = [0; 6];
         let test_address = VirtAddr::from(test_buffer.as_mut_ptr());
