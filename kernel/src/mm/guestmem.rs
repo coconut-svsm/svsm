@@ -177,16 +177,19 @@ pub struct GuestPtr<T: Copy> {
 }
 
 impl<T: Copy> GuestPtr<T> {
+    #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
             ptr: v.as_mut_ptr::<T>(),
         }
     }
 
-    pub fn from_ptr(p: *mut T) -> Self {
+    #[inline]
+    pub const fn from_ptr(p: *mut T) -> Self {
         Self { ptr: p }
     }
 
+    #[inline]
     pub fn read(&self) -> Result<T, SvsmError> {
         let mut buf = MaybeUninit::<T>::uninit();
 
@@ -196,18 +199,22 @@ impl<T: Copy> GuestPtr<T> {
         }
     }
 
+    #[inline]
     pub fn write(&self, buf: T) -> Result<(), SvsmError> {
         unsafe { do_movsb(&buf, self.ptr) }
     }
 
+    #[inline]
     pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
         unsafe { do_movsb(buf, self.ptr) }
     }
 
-    pub fn cast<N: Copy>(&self) -> GuestPtr<N> {
+    #[inline]
+    pub const fn cast<N: Copy>(&self) -> GuestPtr<N> {
         GuestPtr::from_ptr(self.ptr.cast())
     }
 
+    #[inline]
     pub fn offset(&self, count: isize) -> Self {
         GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
