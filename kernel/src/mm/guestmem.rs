@@ -209,7 +209,7 @@ impl<T: Copy> GuestPtr<T> {
     }
 
     pub fn offset(&self, count: isize) -> Self {
-        unsafe { GuestPtr::from_ptr(self.ptr.offset(count)) }
+        GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
 
