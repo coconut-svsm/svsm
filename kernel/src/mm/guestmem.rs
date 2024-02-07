@@ -225,7 +225,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_read_u8_valid_address() {
         // Create a region to read from
         let test_buffer: [u8; 6] = [0; 6];
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_write_u8_valid_address() {
         // Create a mutable region we can write into
         let mut test_buffer: [u8; 6] = [0; 6];
