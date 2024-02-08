@@ -6,6 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
+use crate::globalbox_upcast;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
@@ -22,7 +23,6 @@ use intrusive_collections::{
 use core::ops::Range;
 
 extern crate alloc;
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 
 /// Information required to resolve a page fault within a virtual mapping
@@ -143,27 +143,28 @@ pub trait VirtualMapping: fmt::Debug {
 
 #[derive(Debug)]
 pub struct Mapping {
-    mapping: RWLock<Box<dyn VirtualMapping>>,
+    mapping: RWLock<GlobalBox<dyn VirtualMapping>>,
 }
 
 unsafe impl Send for Mapping {}
 unsafe impl Sync for Mapping {}
 
 impl Mapping {
-    pub fn new<T>(mapping: T) -> Self
+    pub fn new<T>(mapping: T) -> Result<Self, SvsmError>
     where
         T: VirtualMapping + 'static,
     {
-        Mapping {
-            mapping: RWLock::new(Box::new(mapping)),
-        }
+        let boxed = globalbox_upcast!(GlobalBox::try_new(mapping)?, VirtualMapping);
+        Ok(Self {
+            mapping: RWLock::new(boxed),
+        })
     }
 
-    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get(&self) -> ReadLockGuard<'_, GlobalBox<dyn VirtualMapping>> {
         self.mapping.lock_read()
     }
 
-    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mut(&self) -> WriteLockGuard<'_, GlobalBox<dyn VirtualMapping>> {
         self.mapping.lock_write()
     }
 }
@@ -231,11 +232,11 @@ impl VMM {
         )
     }
 
-    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mapping(&self) -> ReadLockGuard<'_, GlobalBox<dyn VirtualMapping>> {
         self.mapping.get()
     }
 
-    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, GlobalBox<dyn VirtualMapping>> {
         self.mapping.get_mut()
     }
 

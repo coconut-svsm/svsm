@@ -347,7 +347,7 @@ impl PerCpu {
     fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
         let top_of_stack = stack.top_of_stack(base);
-        let mapping = Arc::new(Mapping::new(stack));
+        let mapping = Arc::new(Mapping::new(stack)?);
 
         self.vm_range.insert_at(base, mapping)?;
 
@@ -406,7 +406,7 @@ impl PerCpu {
         let vaddr = VirtAddr::from(self as *const PerCpu);
         let paddr = virt_to_phys(vaddr);
 
-        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true)?);
         self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
 
         Ok(())
@@ -414,12 +414,12 @@ impl PerCpu {
 
     fn initialize_vm_ranges(&mut self) -> Result<(), SvsmError> {
         let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
-        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
+        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k)?);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
 
         let size_2m = SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M;
-        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m));
+        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m)?);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
 
@@ -534,7 +534,7 @@ impl PerCpu {
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.apic_id == this_cpu().get_apic_id());
-        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true)?);
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
 
@@ -565,7 +565,7 @@ impl PerCpu {
     pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true)?);
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())

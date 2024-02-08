@@ -49,7 +49,7 @@ impl VMalloc {
     ///
     /// New [`Mapping`] on success, Err(SvsmError::Mem) on error
     pub fn new_mapping(size: usize) -> Result<Mapping, SvsmError> {
-        Ok(Mapping::new(Self::new(size)?))
+        Mapping::new(Self::new(size)?)
     }
 
     fn alloc_pages(&mut self) -> Result<(), SvsmError> {

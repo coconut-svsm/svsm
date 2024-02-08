@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::PhysAddr;
+use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 
 use super::{Mapping, VirtualMapping};
@@ -41,7 +42,7 @@ impl VMReserved {
     /// # Returns
     ///
     /// New Mapping of VMReserved
-    pub fn new_mapping(size: usize) -> Mapping {
+    pub fn new_mapping(size: usize) -> Result<Mapping, SvsmError> {
         Mapping::new(Self::new(size))
     }
 }

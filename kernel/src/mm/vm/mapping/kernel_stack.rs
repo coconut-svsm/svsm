@@ -101,7 +101,7 @@ impl VMKernelStack {
     ///
     /// Initialized Mapping to stack on success, Err(SvsmError::Mem) on error
     pub fn new_mapping() -> Result<Mapping, SvsmError> {
-        Ok(Mapping::new(Self::new()?))
+        Mapping::new(Self::new()?)
     }
 
     fn alloc_pages(&mut self) -> Result<(), SvsmError> {

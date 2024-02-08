@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr};
+use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 
 use super::{Mapping, VirtualMapping};
@@ -51,7 +52,7 @@ impl VMPhysMem {
     /// # Returns
     ///
     /// New [`Mapping`] containing [`VMPhysMem`]
-    pub fn new_mapping(base: PhysAddr, size: usize, writable: bool) -> Mapping {
+    pub fn new_mapping(base: PhysAddr, size: usize, writable: bool) -> Result<Mapping, SvsmError> {
         Mapping::new(Self::new(base, size, writable))
     }
 }
