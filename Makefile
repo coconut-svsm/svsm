@@ -120,6 +120,10 @@ svsm.bin: stage1/stage1
 svsm-test.bin: stage1/stage1-test
 	objcopy -O binary $< $@
 
+clippy:
+	cargo clippy --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+
 clean:
 	cargo clean
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
