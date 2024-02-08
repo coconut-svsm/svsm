@@ -31,7 +31,7 @@ $SUDO_CMD $QEMU \
 	-no-reboot \
 	-drive if=pflash,format=raw,unit=0,file=$OVMF_PATH/OVMF_CODE.fd,readonly=on \
 	-drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd,snapshot=on \
-	-drive if=pflash,format=raw,unit=2,file=./svsm.bin,readonly=on \
+	-drive if=pflash,format=raw,unit=2,file=./svsm-test.bin,readonly=on \
 	-nographic \
 	-monitor none \
 	-serial stdio \

@@ -15,7 +15,7 @@ CARGO_ARGS += -vv
 endif
 
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
-KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
+SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
 FS_FILE ?= none
 
@@ -29,11 +29,12 @@ endif
 C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
+STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
 
-all: stage1/kernel.elf svsm.bin igvm
+all: svsm.bin igvm
 
 igvm: $(IGVM_FILES) $(IGVMBIN)
 
@@ -44,18 +45,18 @@ $(IGVMBIN): $(IGVMBUILDER)
 $(IGVMBUILDER):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
+bin/coconut-qemu.igvm: $(IGVMBUILDER) stage1/svsm-kernel.elf stage1/stage2.bin
 	mkdir -v -p bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf ${BUILD_FW} qemu
+	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/svsm-kernel.elf ${BUILD_FW} qemu
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
+bin/coconut-hyperv.igvm: $(IGVMBUILDER) stage1/svsm-kernel.elf stage1/stage2.bin
 	mkdir -v -p bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --comport 3 hyper-v
+	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/svsm-kernel.elf --comport 3 hyper-v
 
 test:
 	cargo test --workspace --target=x86_64-unknown-linux-gnu
 
-test-in-svsm: utils/cbit stage1/test-kernel.elf svsm.bin
+test-in-svsm: utils/cbit svsm-test.bin
 	./scripts/test-in-svsm.sh
 
 doc:
@@ -77,13 +78,13 @@ stage1/stage2.bin:
 	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
-stage1/kernel.elf:
+stage1/svsm-kernel.elf:
 	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin svsm
-	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
+	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 stage1/test-kernel.elf:
 	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
-	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} stage1/kernel.elf
+	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} stage1/test-kernel.elf
 
 stage1/svsm-fs.bin:
 ifneq ($(FS_FILE), none)
@@ -91,15 +92,28 @@ ifneq ($(FS_FILE), none)
 endif
 	touch stage1/svsm-fs.bin
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin stage1/kernel.elf
+stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin stage1/svsm-kernel.elf
+	ln -sf svsm-kernel.elf stage1/kernel.elf
 	cc -c -o $@ stage1/stage1.S
+	rm -f stage1/kernel.elf
+
+stage1/stage1-test.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin stage1/test-kernel.elf
+	ln -sf test-kernel.elf stage1/kernel.elf
+	cc -c -o $@ stage1/stage1.S
+	rm -f stage1/kernel.elf
 
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
 
 stage1/stage1: ${STAGE1_OBJS}
 	$(CC) -o $@ $(STAGE1_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
 
+stage1/stage1-test: ${STAGE1_TEST_OBJS}
+	$(CC) -o $@ $(STAGE1_TEST_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
+
 svsm.bin: stage1/stage1
+	objcopy -O binary $< $@
+
+svsm-test.bin: stage1/stage1-test
 	objcopy -O binary $< $@
 
 clean:
@@ -107,4 +121,3 @@ clean:
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 	rm -rf bin
 
-.PHONY: stage1/stage2.bin stage1/kernel.elf stage1/test-kernel.elf svsm.bin clean stage1/svsm-fs.bin test test-in-svsm

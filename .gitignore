@@ -7,6 +7,7 @@ bin/
 target/
 gen_meta
 stage1/stage1
+stage1/stage1-test
 print-meta
 cbit
 .idea/
