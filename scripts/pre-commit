@@ -9,7 +9,8 @@ check_file_header() {
 	header_warning="Header format incorrect in $1, follow the header structure in other files"
 	IFS=$'\n'
 	arr=($(head -n 5 "$1"))
-	if  ! [[ "${arr[0]}" == "// SPDX-License-Identifier: MIT OR Apache-2.0" ]] ; then
+	if  ! [[ "${arr[0]}" == "// SPDX-License-Identifier: MIT OR Apache-2.0" ||
+	         "${arr[0]}" == "// SPDX-License-Identifier: MIT" ]] ; then
 		echo "${header_warning}"
 		return 1
 	fi
