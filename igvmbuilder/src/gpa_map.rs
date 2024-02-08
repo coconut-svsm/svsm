@@ -84,8 +84,8 @@ impl GpaMap {
         //   0xFFnn0000-0xFFFFFFFF: OVMF firmware (QEMU only, if specified)
 
         // Obtain the lengths of the binary files
-        let stage2_len = metadata(&options.stage2)?.len() as usize;
-        let kernel_elf_len = metadata(&options.kernel)?.len() as usize;
+        let stage2_len = Self::get_metadata(&options.stage2)?.len() as usize;
+        let kernel_elf_len = Self::get_metadata(&options.kernel)?.len() as usize;
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
         } else {
@@ -164,5 +164,13 @@ impl GpaMap {
             println!("GPA Map: {gpa_map:#X?}");
         }
         Ok(gpa_map)
+    }
+
+    pub fn get_metadata(path: &String) -> Result<std::fs::Metadata, Box<dyn Error>> {
+        let meta = metadata(path).map_err(|e| {
+            eprintln!("Failed to access {}", path);
+            e
+        })?;
+        Ok(meta)
     }
 }
