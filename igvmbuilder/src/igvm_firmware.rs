@@ -48,7 +48,10 @@ impl IgvmFirmware {
     ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
         // Read and parse Hyper-V firmware.
         let mut igvm_fw = IgvmFirmware::new(parameter_count);
-        let igvm_buffer = fs::read(filename)?;
+        let igvm_buffer = fs::read(filename).map_err(|e| {
+            eprintln!("Failed to open firmware file {}", filename);
+            e
+        })?;
         let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
 
         let directives: Result<Vec<IgvmDirectiveHeader>, Box<dyn Error>> = igvm
