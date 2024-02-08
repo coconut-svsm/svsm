@@ -91,7 +91,7 @@ ifneq ($(FS_FILE), none)
 endif
 	touch stage1/svsm-fs.bin
 
-stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin
+stage1/stage1.o: stage1/stage1.S stage1/stage2.bin stage1/svsm-fs.bin stage1/kernel.elf
 	cc -c -o $@ stage1/stage1.S
 
 stage1/reset.o:  stage1/reset.S stage1/meta.bin
