@@ -244,8 +244,81 @@ impl PerCpuShared {
 }
 
 #[derive(Debug)]
+pub struct PerCpuUnsafe {
+    shared: PerCpuShared,
+    private: *mut PerCpu,
+}
+
+impl PerCpuUnsafe {
+    pub fn new(private: *mut PerCpu) -> Self {
+        Self {
+            private,
+            shared: PerCpuShared::new(),
+        }
+    }
+
+    pub fn alloc(apic_id: u32) -> Result<*mut PerCpuUnsafe, SvsmError> {
+        let vaddr = allocate_zeroed_page()?;
+        unsafe {
+            // Within each CPU state page, the first portion is the private
+            // mutable state and remainder is the shared state.
+            let unsafe_size = size_of::<PerCpuUnsafe>();
+            let private_size = size_of::<PerCpu>();
+            if unsafe_size + private_size > PAGE_SIZE {
+                panic!("Per-CPU data is larger than one page!");
+            }
+            let percpu_unsafe = vaddr.as_mut_ptr::<PerCpuUnsafe>();
+
+            let private_vaddr = vaddr + unsafe_size;
+            let percpu = private_vaddr.as_mut_ptr::<PerCpu>();
+
+            (*percpu_unsafe) = PerCpuUnsafe::new(percpu);
+
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &(*percpu_unsafe).shared));
+            Ok(percpu_unsafe)
+        }
+    }
+
+    pub fn shared(&self) -> &PerCpuShared {
+        &self.shared
+    }
+
+    pub fn mut_cpu_ptr(&self) -> *mut PerCpu {
+        self.private
+    }
+
+    pub fn cpu(&self) -> CpuRef {
+        unsafe {
+            let cpu = self.private;
+            #[cfg(debug_assertions)]
+            {
+                // Prohibit a shared borrow if a mutable borrow exists.
+                assert!((*cpu).borrow_count.1 == 0);
+                (*cpu).borrow_count.0 += 1;
+            }
+            CpuRef { cpu: &mut *cpu }
+        }
+    }
+
+    pub fn cpu_mut(&self) -> CpuRefMut {
+        unsafe {
+            let cpu = self.private;
+            #[cfg(debug_assertions)]
+            {
+                // Prohibit a mutable borrow if any other borrow exists.
+                assert!((*cpu).borrow_count.0 == 0);
+                assert!((*cpu).borrow_count.1 == 0);
+                (*cpu).borrow_count.0 += 1;
+                (*cpu).borrow_count.1 += 1;
+            }
+            CpuRefMut { cpu: &mut *cpu }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct PerCpu {
-    shared: *const PerCpuShared,
+    cpu_unsafe: *const PerCpuUnsafe,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     ghcb: *mut GHCB,
@@ -279,9 +352,9 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
-    fn new(apic_id: u32, shared: *const PerCpuShared) -> Self {
+    fn new(apic_id: u32, cpu_unsafe: *const PerCpuUnsafe) -> Self {
         PerCpu {
-            shared,
+            cpu_unsafe,
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
@@ -305,31 +378,22 @@ impl PerCpu {
     }
 
     pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
         unsafe {
-            // Within each CPU state page, the first portion is the private
-            // mutable state and remainder is the shared state.
-            let private_size = size_of::<PerCpu>();
-            let shared_size = size_of::<PerCpuShared>();
-            if private_size + shared_size > PAGE_SIZE {
-                panic!("Per-CPU data is larger than one page!");
-            }
+            let percpu_unsafe = PerCpuUnsafe::alloc(apic_id)?;
 
-            let shared_vaddr = vaddr + private_size;
-            let percpu_shared = shared_vaddr.as_mut_ptr::<PerCpuShared>();
-            (*percpu_shared) = PerCpuShared::new();
-
-            let percpu = vaddr.as_mut_ptr::<PerCpu>();
-
-            (*percpu) = PerCpu::new(apic_id, percpu_shared);
-
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &*percpu_shared));
+            let percpu = (*percpu_unsafe).mut_cpu_ptr();
+            (*percpu) = PerCpu::new(apic_id, percpu_unsafe);
             Ok(percpu)
         }
     }
 
-    pub fn shared(&self) -> &'static PerCpuShared {
-        unsafe { &*self.shared }
+    pub fn cpu_unsafe(&self) -> *const PerCpuUnsafe {
+        self.cpu_unsafe
+    }
+
+    fn shared(&self) -> &'static PerCpuShared {
+        let cpu_unsafe = unsafe { &*self.cpu_unsafe };
+        cpu_unsafe.shared()
     }
 
     pub const fn get_apic_id(&self) -> u32 {
@@ -401,7 +465,7 @@ impl PerCpu {
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
         let flags = PTEntryFlags::data();
 
@@ -409,7 +473,7 @@ impl PerCpu {
     }
 
     pub fn map_self(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
 
         let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
@@ -648,19 +712,12 @@ impl PerCpu {
     }
 }
 
-/// # Safety
-///
-/// This function performs no borrow checks and should only be used by callers
-/// that can guarantee safe access when borrow checks are not honored.
-pub unsafe fn this_cpu_unsafe() -> *mut PerCpu {
-    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>()
+pub fn this_cpu_unsafe() -> *mut PerCpuUnsafe {
+    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpuUnsafe>()
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
-    unsafe {
-        let cpu_shared_ptr = (*this_cpu_unsafe()).shared;
-        &*cpu_shared_ptr
-    }
+    unsafe { (*this_cpu_unsafe()).shared() }
 }
 
 #[derive(Debug)]
@@ -694,31 +751,13 @@ impl DerefMut for CpuRefMut {
 }
 
 pub fn this_cpu() -> CpuRef {
-    unsafe {
-        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-        #[cfg(debug_assertions)]
-        {
-            // Prohibit a shared borrow if a mutable borrow exists.
-            assert!((*cpu).borrow_count.1 == 0);
-            (*cpu).borrow_count.0 += 1;
-        }
-        CpuRef { cpu: &mut *cpu }
-    }
+    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
+    cpu_unsafe.cpu()
 }
 
 pub fn this_cpu_mut() -> CpuRefMut {
-    unsafe {
-        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-        #[cfg(debug_assertions)]
-        {
-            // Prohibit a mutable borrow if any other borrow exists.
-            assert!((*cpu).borrow_count.0 == 0);
-            assert!((*cpu).borrow_count.1 == 0);
-            (*cpu).borrow_count.0 += 1;
-            (*cpu).borrow_count.1 += 1;
-        }
-        CpuRefMut { cpu: &mut *cpu }
-    }
+    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
+    cpu_unsafe.cpu_mut()
 }
 
 #[cfg(debug_assertions)]

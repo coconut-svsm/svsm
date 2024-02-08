@@ -32,7 +32,7 @@ fn start_cpu(apic_id: u32, vtom: u64) {
         let sev_features = vmsa.vmsa().sev_features;
         let vmsa_pa = vmsa.paddr;
 
-        let percpu_shared = percpu.shared();
+        let percpu_shared = (*percpu.cpu_unsafe()).shared();
 
         vmsa.vmsa().enable();
         current_ghcb()
