@@ -121,3 +121,4 @@ clean:
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 	rm -rf bin
 
+.PHONY: test clean
