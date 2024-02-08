@@ -12,7 +12,7 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::msr::{rdtsc, read_flags};
+use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
@@ -75,81 +75,6 @@ impl TaskIDAllocator {
 
 static TASK_ID_ALLOCATOR: TaskIDAllocator = TaskIDAllocator::new();
 
-/// This trait is used to implement the strategy that determines
-/// how much CPU time a task has been allocated. The task with the
-/// lowest runtime value is likely to be the next scheduled task
-pub trait TaskRuntime {
-    /// Called when a task is allocated to a CPU just before the task
-    /// context is restored. The task should start tracking the CPU
-    /// execution allocation at this point.
-    fn schedule_in(&mut self);
-
-    /// Called by the scheduler at the point the task is interrupted
-    /// and marked for deallocation from the CPU. The task should
-    /// update the runtime calculation at this point.
-    fn schedule_out(&mut self);
-
-    /// Overrides the calculated runtime value with the given value.
-    /// This can be used to set or adjust the runtime of a task.
-    fn set(&mut self, runtime: u64);
-
-    /// Returns a value that represents the amount of CPU the task
-    /// has been allocated
-    fn value(&self) -> u64;
-}
-
-/// Tracks task runtime based on the CPU timestamp counter
-#[derive(Default, Debug)]
-#[repr(transparent)]
-pub struct TscRuntime {
-    runtime: u64,
-}
-
-impl TaskRuntime for TscRuntime {
-    fn schedule_in(&mut self) {
-        self.runtime = rdtsc();
-    }
-
-    fn schedule_out(&mut self) {
-        self.runtime += rdtsc() - self.runtime;
-    }
-
-    fn set(&mut self, runtime: u64) {
-        self.runtime = runtime;
-    }
-
-    fn value(&self) -> u64 {
-        self.runtime
-    }
-}
-
-/// Tracks task runtime based on the number of times the task has been
-/// scheduled
-#[derive(Default, Debug, Clone, Copy)]
-#[repr(transparent)]
-pub struct CountRuntime {
-    count: u64,
-}
-
-impl TaskRuntime for CountRuntime {
-    fn schedule_in(&mut self) {
-        self.count += 1;
-    }
-
-    fn schedule_out(&mut self) {}
-
-    fn set(&mut self, runtime: u64) {
-        self.count = runtime;
-    }
-
-    fn value(&self) -> u64 {
-        self.count
-    }
-}
-
-// Define which runtime counter to use
-type TaskRuntimeImpl = CountRuntime;
-
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TaskContext {
@@ -169,9 +94,6 @@ struct TaskSchedState {
 
     /// CPU this task is currently assigned to
     cpu: u32,
-
-    /// Amount of CPU resource the task has consumed
-    pub runtime: TaskRuntimeImpl,
 }
 
 impl TaskSchedState {
@@ -233,7 +155,6 @@ impl fmt::Debug for Task {
             .field("rsp", &self.rsp)
             .field("state", &self.sched_state.lock_read().state)
             .field("id", &self.id)
-            .field("runtime", &self.sched_state.lock_read().runtime)
             .finish()
     }
 }
@@ -280,7 +201,6 @@ impl Task {
                 idle_task: false,
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
-                runtime: TaskRuntimeImpl::default(),
             }),
             id: TASK_ID_ALLOCATOR.next_id(),
             list_link: LinkedListAtomicLink::default(),
