@@ -172,24 +172,24 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
 }
 
 #[derive(Debug)]
-pub struct GuestPtr<T>
-where
-    T: Sized + Copy,
-{
+pub struct GuestPtr<T: Copy> {
     ptr: *mut T,
 }
 
-impl<T: Sized + Copy> GuestPtr<T> {
+impl<T: Copy> GuestPtr<T> {
+    #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
             ptr: v.as_mut_ptr::<T>(),
         }
     }
 
-    pub fn from_ptr(p: *mut T) -> Self {
+    #[inline]
+    pub const fn from_ptr(p: *mut T) -> Self {
         Self { ptr: p }
     }
 
+    #[inline]
     pub fn read(&self) -> Result<T, SvsmError> {
         let mut buf = MaybeUninit::<T>::uninit();
 
@@ -199,36 +199,34 @@ impl<T: Sized + Copy> GuestPtr<T> {
         }
     }
 
+    #[inline]
     pub fn write(&self, buf: T) -> Result<(), SvsmError> {
-        let src = &buf as *const T;
-
-        unsafe { do_movsb(src, self.ptr) }
+        unsafe { do_movsb(&buf, self.ptr) }
     }
 
+    #[inline]
     pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
-        let src = buf as *const T;
-
-        unsafe { do_movsb(src, self.ptr) }
+        unsafe { do_movsb(buf, self.ptr) }
     }
 
-    pub fn cast<N: Sized + Copy>(&self) -> GuestPtr<N>
-    where
-        N: Sized + Copy,
-    {
-        GuestPtr::<N>::from_ptr(self.ptr.cast::<N>())
+    #[inline]
+    pub const fn cast<N: Copy>(&self) -> GuestPtr<N> {
+        GuestPtr::from_ptr(self.ptr.cast())
     }
 
+    #[inline]
     pub fn offset(&self, count: isize) -> Self {
-        unsafe { GuestPtr::from_ptr(self.ptr.offset(count)) }
+        GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_read_u8_valid_address() {
-        use crate::mm::guestmem::*;
         // Create a region to read from
         let test_buffer: [u8; 6] = [0; 6];
         let test_address = VirtAddr::from(test_buffer.as_ptr());
@@ -239,9 +237,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_write_u8_valid_address() {
-        use crate::mm::guestmem::*;
         // Create a mutable region we can write into
         let mut test_buffer: [u8; 6] = [0; 6];
         let test_address = VirtAddr::from(test_buffer.as_mut_ptr());
