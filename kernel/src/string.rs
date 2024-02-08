@@ -96,7 +96,7 @@ impl<const N: usize> PartialEq<FixedString<N>> for FixedString<N> {
 }
 
 impl<const T: usize> fmt::Display for FixedString<T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for b in self.data.iter().take(self.len) {
             write!(f, "{}", *b)?;
         }

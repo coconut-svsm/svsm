@@ -155,11 +155,11 @@ impl Mapping {
         }
     }
 
-    pub fn get(&self) -> ReadLockGuard<Box<dyn VirtualMapping>> {
+    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.lock_read()
     }
 
-    pub fn get_mut(&self) -> WriteLockGuard<Box<dyn VirtualMapping>> {
+    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.lock_write()
     }
 }
@@ -236,11 +236,11 @@ impl VMM {
         )
     }
 
-    pub fn get_mapping(&self) -> ReadLockGuard<Box<dyn VirtualMapping>> {
+    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.get()
     }
 
-    pub fn get_mapping_mut(&self) -> WriteLockGuard<Box<dyn VirtualMapping>> {
+    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.get_mut()
     }
 

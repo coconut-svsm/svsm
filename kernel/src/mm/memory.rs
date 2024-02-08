@@ -21,7 +21,7 @@ use super::pagetable::LAUNCH_VMSA_ADDR;
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
 pub fn init_memory_map(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
     let mut regions = config.get_memory_regions()?;

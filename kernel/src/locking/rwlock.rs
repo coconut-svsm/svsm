@@ -206,7 +206,7 @@ impl<T> RWLock<T> {
     ///
     /// A [`ReadLockGuard`] that provides read access to the protected data.
     ///
-    pub fn lock_read(&self) -> ReadLockGuard<T> {
+    pub fn lock_read(&self) -> ReadLockGuard<'_, T> {
         loop {
             let val = self.wait_for_writers();
             let (readers, _) = split_val(val);
@@ -235,7 +235,7 @@ impl<T> RWLock<T> {
     ///
     /// A [`WriteLockGuard`] that provides write access to the protected data.
     ///
-    pub fn lock_write(&self) -> WriteLockGuard<T> {
+    pub fn lock_write(&self) -> WriteLockGuard<'_, T> {
         // Waiting for current writer to finish
         loop {
             let val = self.wait_for_writers();

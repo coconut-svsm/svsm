@@ -4,8 +4,6 @@
 //
 // Author: Thomas Leroy <tleroy@suse.de>
 
-extern crate alloc;
-
 use crate::cpu::vc::VcError;
 use crate::cpu::vc::VcErrorType;
 use crate::error::SvsmError;

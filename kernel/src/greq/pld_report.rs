@@ -6,8 +6,6 @@
 
 //! `SNP_GUEST_REQUEST` command to request an attestation report.
 
-extern crate alloc;
-
 use core::mem::size_of;
 
 use crate::protocols::errors::SvsmReqError;

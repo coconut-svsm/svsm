@@ -82,9 +82,9 @@ fn shutdown_percpu() {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort> = ImmutAfterInitCell::uninit();
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn setup_env(config: &SvsmConfig) {
+fn setup_env(config: &SvsmConfig<'_>) {
     gdt().load();
     early_idt_init_no_ghcb();
 
@@ -123,7 +123,7 @@ fn setup_env(config: &SvsmConfig) {
     sev_status_verify();
 }
 
-fn map_and_validate(config: &SvsmConfig, vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) {
+fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -371,7 +371,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
 }
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo<'_>) -> ! {
     log::error!("Panic: {}", info);
     loop {
         halt();

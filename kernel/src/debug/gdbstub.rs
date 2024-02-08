@@ -11,8 +11,6 @@
 //
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
-    extern crate alloc;
-
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, VC_VECTOR};
@@ -171,9 +169,9 @@ pub mod svsm_gdbstub {
     }
 
     static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
-    static GDB_STATE: SpinLock<Option<SvsmGdbStub>> = SpinLock::new(None);
+    static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
     static GDB_IO: SVSMIOPort = SVSMIOPort::new();
-    static mut GDB_SERIAL: SerialPort = SerialPort {
+    static mut GDB_SERIAL: SerialPort<'_> = SerialPort {
         driver: &GDB_IO,
         port: 0x2f8,
     };
@@ -524,7 +522,7 @@ pub mod svsm_gdbstub {
         }
 
         #[inline(always)]
-        fn support_resume(&mut self) -> Option<MultiThreadResumeOps<Self>> {
+        fn support_resume(&mut self) -> Option<MultiThreadResumeOps<'_, Self>> {
             Some(self)
         }
 

@@ -215,7 +215,7 @@ impl VMR {
         &self,
         mapping: Arc<Mapping>,
         start_pfn: usize,
-        cursor: &mut CursorMut<VMMAdapter>,
+        cursor: &mut CursorMut<'_, VMMAdapter>,
     ) -> Result<(), SvsmError> {
         let vmm = Box::new(VMM::new(start_pfn, mapping));
         if let Err(e) = self.map_vmm(&vmm) {

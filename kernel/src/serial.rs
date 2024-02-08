@@ -89,7 +89,7 @@ impl<'a> Terminal for SerialPort<'a> {
     }
 }
 
-pub static DEFAULT_SERIAL_PORT: SerialPort = SerialPort {
+pub static DEFAULT_SERIAL_PORT: SerialPort<'_> = SerialPort {
     driver: &DEFAULT_IO_DRIVER,
     port: SERIAL_PORT,
 };

@@ -7,8 +7,6 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-extern crate alloc;
-
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
@@ -187,7 +185,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
+fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     let cpu = this_cpu();
     let mut vmsa_ref = cpu.guest_vmsa_ref();
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
@@ -205,7 +203,7 @@ fn launch_fw(config: &SvsmConfig) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn validate_fw(config: &SvsmConfig, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
+fn validate_fw(config: &SvsmConfig<'_>, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
     let kernel_region = new_kernel_region(launch_info);
     let flash_regions = config.get_fw_regions(&kernel_region);
 
@@ -243,7 +241,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
 }
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort> = ImmutAfterInitCell::uninit();
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 pub fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
@@ -462,7 +460,7 @@ pub extern "C" fn svsm_main() {
 }
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo<'_>) -> ! {
     secrets_page_mut().clear_vmpck(0);
     secrets_page_mut().clear_vmpck(1);
     secrets_page_mut().clear_vmpck(2);

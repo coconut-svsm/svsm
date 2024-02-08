@@ -24,7 +24,7 @@ struct IgvmParamInfo<'a> {
     igvm_params: Option<IgvmParams<'a>>,
 }
 
-pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File) {
+pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File<'_>) {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
     let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
@@ -100,7 +100,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
 }
 
 fn invalidate_boot_memory_region(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     log::info!(
@@ -131,7 +131,7 @@ fn invalidate_boot_memory_region(
 }
 
 pub fn invalidate_early_boot_memory(
-    config: &SvsmConfig,
+    config: &SvsmConfig<'_>,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
     // Early boot memory must be invalidated after changing to the SVSM page
