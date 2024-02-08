@@ -163,10 +163,12 @@ pub fn sev_restricted_injection() -> bool {
 }
 
 pub fn sev_status_verify() {
-    let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
+    let required = SEVStatusFlags::SEV
+        | SEVStatusFlags::SEV_ES
+        | SEVStatusFlags::SEV_SNP
+        | SEVStatusFlags::REST_INJ;
     let supported = SEVStatusFlags::DBGSWP
         | SEVStatusFlags::VTOM
-        | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION
         | SEVStatusFlags::SMT_PROT;
