@@ -52,7 +52,7 @@ gdt32_descr:
 END(to_pm_mode)
 
 	.section .sevmeta
-	.incbin "stage1/meta.bin"
+	.incbin "bin/meta.bin"
 
 	.code16gcc
 	.section .resetvector

@@ -196,8 +196,8 @@ $ make RELEASE=1
 ```
 
 to build the SVSM with the release target. When the build is finished
-there is the ```svsm.bin``` file in the top-directory of the repository. This
-is the file which needs to be passed to QEMU.
+there is the ```svsm.bin``` file in the `bin` directory at the top level of the
+repository. This is the file which needs to be passed to QEMU.
 
 The project also contains a number of unit-tests which can be run by
 
