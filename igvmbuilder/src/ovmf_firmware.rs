@@ -189,10 +189,7 @@ fn parse_inner_table(
     Ok(table.data_offset)
 }
 
-pub fn parse_ovmf(
-    data: &Vec<u8>,
-    firmware: &mut IgvmParamBlockFwInfo,
-) -> Result<(), Box<dyn Error>> {
+pub fn parse_ovmf(data: &[u8], firmware: &mut IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
     let mut current_offset = data.len() - FOOTER_OFFSET;
     let ovmf_table = read_table(current_offset, data)?;
