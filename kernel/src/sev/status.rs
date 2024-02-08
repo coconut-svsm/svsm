@@ -134,7 +134,7 @@ fn read_sev_status() -> SEVStatusFlags {
     SEVStatusFlags::from_bits_truncate(read_msr(SEV_STATUS))
 }
 
-fn sev_flags() -> SEVStatusFlags {
+pub fn sev_flags() -> SEVStatusFlags {
     *SEV_FLAGS
 }
 
@@ -176,5 +176,12 @@ pub fn sev_status_verify() {
     if !not_supported_check.is_empty() {
         log::error!("Unsupported features enabled: {}", not_supported_check);
         panic!("Unsupported SEV features enabled");
+    }
+}
+
+impl SEVStatusFlags {
+    pub fn as_sev_features(&self) -> u64 {
+        let sev_features = self.bits();
+        sev_features >> 2
     }
 }
