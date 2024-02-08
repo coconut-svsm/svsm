@@ -12,6 +12,7 @@ pub mod boot_stage2;
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::asm;
 use core::panic::PanicInfo;
+use core::ptr::addr_of_mut;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
@@ -66,7 +67,7 @@ fn init_percpu() {
             .as_mut()
             .unwrap();
 
-        bsp_percpu.set_pgtable(PageTableRef::new(&mut pgtable));
+        bsp_percpu.set_pgtable(PageTableRef::new(addr_of_mut!(pgtable)));
         bsp_percpu
             .map_self_stage2()
             .expect("Failed to map per-cpu area");
@@ -100,7 +101,7 @@ fn setup_env(config: &SvsmConfig<'_>) {
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
     sev_status_init();
-    set_init_pgtable(PageTableRef::new(unsafe { &mut pgtable }));
+    set_init_pgtable(PageTableRef::new(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
     init_percpu();
 
