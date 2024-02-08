@@ -63,13 +63,13 @@ impl<'a> Handle<'a> {
     }
 }
 
-static MEM: OnceLock<TestRootMem> = OnceLock::new();
+static MEM: OnceLock<TestRootMem<'_>> = OnceLock::new();
 
-fuzz_target!(|actions: Vec<FsAction>| {
+fuzz_target!(|actions: Vec<FsAction<'_>>| {
     // Initialize memory only once
     let _mem = MEM.get_or_init(|| TestRootMem::setup(ROOT_MEM_SIZE));
 
-    let mut files = Vec::<Handle>::new();
+    let mut files = Vec::new();
     let mut aux_buf = vec![POISON_BYTE; MAX_READ_SIZE.max(MAX_WRITE_SIZE)];
     let _test_fs = TestFileSystemGuard::setup();
 
