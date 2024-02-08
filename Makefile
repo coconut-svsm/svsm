@@ -82,7 +82,7 @@ stage1/kernel.elf:
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
 
 stage1/test-kernel.elf:
-	LINK_TEST=1 cargo +nightly test --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ${TEST_KERNEL_ELF}"]'
+	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} stage1/kernel.elf
 
 stage1/svsm-fs.bin:

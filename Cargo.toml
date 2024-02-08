@@ -14,7 +14,7 @@ members = [
 # internal library crates
 bootlib = { path = "bootlib" }
 cpuarch = { path = "cpuarch" }
-kernel_test = { path = "kernel_test" }
+test = { path = "test" }
 svsm = { path = "kernel" }
 
 # crates.io
