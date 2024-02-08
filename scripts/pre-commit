@@ -41,8 +41,8 @@ for file in `git diff --name-only --staged`; do
     fi
 done
 
-cargo clippy --all-features -- -D warnings || exit 1
-cargo clippy --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
+cargo clippy --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings || exit 1
+cargo clippy --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
 RUSTFLAGS="--cfg fuzzing" cargo clippy \
     --all-features \
     --target=x86_64-unknown-linux-gnu \

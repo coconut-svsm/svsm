@@ -10,3 +10,9 @@ stage1/stage1
 print-meta
 cbit
 .idea/
+
+# local fuzzing artifacts
+**/fuzz/target
+**/fuzz/corpus
+**/fuzz/artifacts
+**/fuzz/coverage

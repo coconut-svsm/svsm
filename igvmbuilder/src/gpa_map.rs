@@ -104,7 +104,7 @@ impl GpaMap {
         };
 
         let kernel_address = match options.hypervisor {
-            Hypervisor::QEMU => {
+            Hypervisor::Qemu => {
                 // Plan to load the kernel image at a base address of 1 MB unless it must
                 // be relocated due to firmware.
                 1 << 20
@@ -119,7 +119,7 @@ impl GpaMap {
 
         // Calculate the kernel size and base.
         let kernel = match options.hypervisor {
-            Hypervisor::QEMU => {
+            Hypervisor::Qemu => {
                 // Place the kernel area at 512 GB with a size of 16 MB.
                 GpaRange::new(0x0000008000000000, 0x01000000)?
             }

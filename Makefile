@@ -23,7 +23,7 @@ FW_FILE ?= none
 ifneq ($(FW_FILE), none)
 BUILD_FW = --firmware ${FW_FILE}
 else
-BUILD_FW = 
+BUILD_FW =
 endif
 
 C_BIT_POS ?= 51
@@ -42,7 +42,7 @@ $(IGVMBIN): $(IGVMBUILDER)
 	cp -f $(IGVMBUILDER) $@
 
 $(IGVMBUILDER):
-	CARGO_TARGET_DIR=target cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu --manifest-path igvmbuilder/Cargo.toml
+	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
 
 bin/coconut-qemu.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
 	mkdir -v -p bin
@@ -53,13 +53,13 @@ bin/coconut-hyperv.igvm: $(IGVMBUILDER) stage1/kernel.elf stage1/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 stage1/stage2.bin --kernel stage1/kernel.elf --comport 3 hyper-v
 
 test:
-	cargo test --target=x86_64-unknown-linux-gnu
+	cargo test --workspace --target=x86_64-unknown-linux-gnu
 
 test-in-svsm: utils/cbit stage1/test-kernel.elf svsm.bin
 	./scripts/test-in-svsm.sh
 
 doc:
-	cargo doc --open --all-features --document-private-items
+	cargo doc -p svsm --open --all-features --document-private-items
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
@@ -82,7 +82,7 @@ stage1/kernel.elf:
 	objcopy -O elf64-x86-64 --strip-unneeded ${KERNEL_ELF} $@
 
 stage1/test-kernel.elf:
-	LINK_TEST=1 cargo +nightly test --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ${TEST_KERNEL_ELF}"]'
+	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} stage1/kernel.elf
 
 stage1/svsm-fs.bin:
@@ -104,7 +104,6 @@ svsm.bin: stage1/stage1
 
 clean:
 	cargo clean
-	CARGO_TARGET_DIR=target cargo clean --target=x86_64-unknown-linux-gnu --manifest-path igvmbuilder/Cargo.toml
 	rm -f stage1/stage2.bin svsm.bin stage1/meta.bin stage1/kernel.elf stage1/stage1 stage1/svsm-fs.bin ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 	rm -rf bin
 

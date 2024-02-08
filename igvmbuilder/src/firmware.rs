@@ -27,7 +27,7 @@ pub fn parse_firmware(
 ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
     if let Some(filename) = &options.firmware {
         match options.hypervisor {
-            crate::cmd_options::Hypervisor::QEMU => {
+            crate::cmd_options::Hypervisor::Qemu => {
                 OvmfFirmware::parse(filename, parameter_count, compatibility_mask)
             }
             crate::cmd_options::Hypervisor::HyperV => {
