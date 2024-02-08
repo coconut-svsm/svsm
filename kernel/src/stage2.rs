@@ -60,19 +60,16 @@ fn setup_stage2_allocator() {
 }
 
 fn init_percpu() {
-    unsafe {
-        let bsp_percpu = PerCpu::alloc(0)
-            .expect("Failed to allocate BSP per-cpu data")
-            .as_mut()
-            .unwrap();
+    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
+    unsafe {
         bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
-        bsp_percpu
-            .map_self_stage2()
-            .expect("Failed to map per-cpu area");
-        bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
-        bsp_percpu.register_ghcb().expect("Failed to register GHCB");
     }
+    bsp_percpu
+        .map_self_stage2()
+        .expect("Failed to map per-cpu area");
+    bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
+    bsp_percpu.register_ghcb().expect("Failed to register GHCB");
 }
 
 fn shutdown_percpu() {

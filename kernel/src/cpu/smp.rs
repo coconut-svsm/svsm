@@ -13,35 +13,34 @@ use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
 fn start_cpu(apic_id: u32, vtom: u64) {
-    unsafe {
-        let start_rip: u64 = (start_ap as *const u8) as u64;
-        let percpu = PerCpu::alloc(apic_id)
-            .expect("Failed to allocate AP per-cpu data")
-            .as_mut()
-            .unwrap();
+    let start_rip: u64 = (start_ap as *const u8) as u64;
+    let mut percpu = PerCpu::alloc(apic_id).expect("Failed to allocate AP per-cpu data");
 
-        percpu.setup().expect("Failed to setup AP per-cpu area");
-        percpu
-            .alloc_svsm_vmsa()
-            .expect("Failed to allocate AP SVSM VMSA");
+    percpu.setup().expect("Failed to setup AP per-cpu area");
+    percpu
+        .alloc_svsm_vmsa()
+        .expect("Failed to allocate AP SVSM VMSA");
 
-        let mut vmsa = percpu.get_svsm_vmsa().unwrap();
-        init_svsm_vmsa(vmsa.vmsa(), vtom);
-        percpu.prepare_svsm_vmsa(start_rip);
+    let mut vmsa = percpu.get_svsm_vmsa().unwrap();
+    init_svsm_vmsa(vmsa.vmsa(), vtom);
+    percpu.prepare_svsm_vmsa(start_rip);
 
-        let sev_features = vmsa.vmsa().sev_features;
-        let vmsa_pa = vmsa.paddr;
+    let sev_features = vmsa.vmsa().sev_features;
+    let vmsa_pa = vmsa.paddr;
 
-        let percpu_shared = (*percpu.cpu_unsafe()).shared();
+    let percpu_shared = unsafe { (*percpu.cpu_unsafe()).shared() };
 
-        vmsa.vmsa().enable();
-        current_ghcb()
-            .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
-            .expect("Failed to launch secondary CPU");
-        loop {
-            if percpu_shared.is_online() {
-                break;
-            }
+    // Drop the reference to the target CPU so it does not observe a borrow
+    // conflict when it starts running.
+    drop(percpu);
+
+    vmsa.vmsa().enable();
+    current_ghcb()
+        .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
+        .expect("Failed to launch secondary CPU");
+    loop {
+        if percpu_shared.is_online() {
+            break;
         }
     }
 }

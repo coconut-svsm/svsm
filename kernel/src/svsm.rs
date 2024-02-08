@@ -317,12 +317,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     // brought up, thus it cannot be aliased and we can get a mutable
     // reference to it. We trust PerCpu::alloc() to return a valid and
     // aligned pointer.
-    let bsp_percpu = unsafe {
-        PerCpu::alloc(0)
-            .expect("Failed to allocate BSP per-cpu data")
-            .as_mut()
-            .unwrap()
-    };
+    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup()
@@ -336,6 +331,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     bsp_percpu
         .setup_idle_task(svsm_main)
         .expect("Failed to allocate idle task for BSP");
+
+    drop(bsp_percpu);
 
     idt_init();
 
