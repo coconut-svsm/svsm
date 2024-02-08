@@ -76,10 +76,15 @@ impl RunQueue {
     /// # Returns
     ///
     /// Pointer to next task to run
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no tasks to run and no idle task has been
+    /// allocated via [`set_idle_task()`](Self::set_idle_task).
     fn get_next_task(&mut self) -> TaskPointer {
         self.run_list
             .pop_front()
-            .unwrap_or(self.idle_task.get().unwrap().clone())
+            .unwrap_or_else(|| self.idle_task.get().unwrap().clone())
     }
 
     /// Update state before a task is scheduled out. Non-idle tasks in RUNNING
@@ -108,14 +113,18 @@ impl RunQueue {
     }
 
     /// Prepares a task switch. The function checks if a task switch needs to
-    /// be done and return pointers to the current and next task. It will also
-    /// call handle_task() on the current task in case a task-switch is
-    /// requested.
+    /// be done and return pointers to the current and next task. It will
+    /// also call `handle_task()` on the current task in case a task-switch
+    /// is requested.
     ///
     /// # Returns
     ///
-    /// None when no task-switch is needed
-    /// Some() with current and next task in case a task-switch is required
+    /// `None` when no task-switch is needed.
+    /// `Some` with current and next task in case a task-switch is required.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task.
     pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
         // Remove current and put it back into the RunQueue in case it is still
         // runnable. This is important to make sure the last runnable task
@@ -147,6 +156,10 @@ impl RunQueue {
     /// # Returns
     ///
     /// Ok(()) on success, SvsmError on failure
+    ///
+    /// # Panics
+    ///
+    /// Panics if the idle task was already set.
     pub fn set_idle_task(&self, task: TaskPointer) {
         task.set_idle_task();
 
@@ -158,6 +171,11 @@ impl RunQueue {
             .expect("Idle task already allocated");
     }
 
+    /// Gets a pointer to the current task
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no current task.
     pub fn current_task(&self) -> TaskPointer {
         self.current_task.as_ref().unwrap().clone()
     }
@@ -227,6 +245,11 @@ pub fn is_current_task(id: u32) -> bool {
     }
 }
 
+/// Terminates the current task.
+///
+/// # Panics
+///
+/// Panics if there is no current task.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
     let mut rq = cpu.runqueue().lock_write();
@@ -278,20 +301,18 @@ pub fn schedule() {
     let work = this_cpu_mut().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!
-    if work.is_some() {
+    if let Some((current, next)) = work {
+        // Update per-cpu mappings if needed
+        let apic_id = this_cpu().get_apic_id();
+
+        if next.update_cpu(apic_id) != apic_id {
+            // Task has changed CPU, update per-cpu mappings
+            let mut pt = next.page_table.lock();
+            this_cpu().populate_page_table(&mut pt);
+        }
+
+        // Get task-pointers, consuming the Arcs and release their reference
         unsafe {
-            // Get current and next task
-            let (current, next) = work.unwrap();
-
-            // Update per-cpu mappings if needed
-            let apic_id = this_cpu().get_apic_id();
-            if next.update_cpu(apic_id) != apic_id {
-                // Task has changed CPU, update per-cpu mappings
-                let mut pt = next.page_table.lock();
-                this_cpu().populate_page_table(&mut pt);
-            }
-
-            // Get task-pointers, consuming the Arcs and release their reference
             let a = task_pointer(current);
             let b = task_pointer(next);
 
