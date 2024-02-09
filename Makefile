@@ -8,6 +8,10 @@ else
 TARGET_PATH=debug
 endif
 
+ifdef OFFLINE
+CARGO_ARGS += --locked --offline
+endif
+
 ifeq ($(V), 1)
 CARGO_ARGS += -v
 else ifeq ($(V), 2)
