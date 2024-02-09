@@ -45,11 +45,9 @@ done
 # Run clippy on SVSM kernel
 cargo clippy --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings || exit 1
 # Run clippy on std-dependent packages
-cargo clippy --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
-RUSTFLAGS="--cfg fuzzing" cargo clippy \
-    --all-features \
-    --target=x86_64-unknown-linux-gnu \
-    --manifest-path fuzz/Cargo.toml -- -D warnings || exit 1
+cargo clippy --workspace --all-features --exclude svsm --exclude svsm-fuzz --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
+# Run clippy on fuzzing harnesses
+RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
 # Run clippy on tests
 cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings || exit 1
 
