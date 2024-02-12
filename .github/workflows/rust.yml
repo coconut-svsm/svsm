@@ -53,7 +53,21 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --target=x86_64-unknown-linux-gnu -- -D warnings
+
+      - name: Clippy on svsm-fuzz
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
+        env:
+          RUSTFLAGS: --cfg fuzzing
+
+      - name: Clippy on tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Check documentation
         run: make doc
