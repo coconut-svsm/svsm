@@ -63,6 +63,8 @@ pub struct SnpCpuidPage {
     cpuid_info: [SnpCpuidLeaf; 64],
 }
 
+const _: () = assert!(size_of::<SnpCpuidPage>() as u64 <= PAGE_SIZE_4K);
+
 impl Default for SnpCpuidPage {
     fn default() -> Self {
         Self {
@@ -116,25 +118,17 @@ impl SnpCpuidPage {
         gpa: u64,
         compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
-    ) -> Result<(), Box<dyn Error>> {
-        let cpuid_data = unsafe {
-            let ptr = self as *const SnpCpuidPage as *const [u8; size_of::<SnpCpuidPage>()];
-            &*ptr
-        };
-        if cpuid_data.len() > PAGE_SIZE_4K as usize {
-            return Err("CPUID page size exceeds 4K".into());
-        }
-        let mut cpuid_page = [0u8; PAGE_SIZE_4K as usize];
-        cpuid_page[..cpuid_data.len()].clone_from_slice(cpuid_data);
+    ) {
+        let mut data = self.as_bytes().to_vec();
+        data.resize(PAGE_SIZE_4K as usize, 0);
 
         directives.push(IgvmDirectiveHeader::PageData {
             gpa,
             compatibility_mask,
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::CPUID_DATA,
-            data: cpuid_page.to_vec(),
+            data,
         });
-        Ok(())
     }
 
     fn add(&mut self, leaf: SnpCpuidLeaf) -> Result<(), Box<dyn Error>> {
