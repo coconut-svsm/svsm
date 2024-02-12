@@ -61,7 +61,7 @@ impl<'a> SerialPort<'a> {
     }
 }
 
-impl<'a> Terminal for SerialPort<'a> {
+impl Terminal for SerialPort<'_> {
     fn put_byte(&self, ch: u8) {
         let driver = &self.driver;
         let port = self.port;

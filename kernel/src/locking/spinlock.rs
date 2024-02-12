@@ -33,7 +33,7 @@ pub struct LockGuard<'a, T> {
 }
 
 /// Implements the behavior of the [`LockGuard`] when it is dropped
-impl<'a, T> Drop for LockGuard<'a, T> {
+impl<T> Drop for LockGuard<'_, T> {
     /// Automatically releases the lock when the guard is dropped
     fn drop(&mut self) {
         self.holder.fetch_add(1, Ordering::Release);
@@ -42,7 +42,7 @@ impl<'a, T> Drop for LockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`LockGuard`] to
 /// access the protected data.
-impl<'a, T> Deref for LockGuard<'a, T> {
+impl<T> Deref for LockGuard<'_, T> {
     type Target = T;
     /// Provides read-only access to the protected data
     fn deref(&self) -> &T {
@@ -52,7 +52,7 @@ impl<'a, T> Deref for LockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`LockGuard`] to
 /// access the protected data in a mutable way.
-impl<'a, T> DerefMut for LockGuard<'a, T> {
+impl<T> DerefMut for LockGuard<'_, T> {
     /// Provides mutable access to the protected data
     fn deref_mut(&mut self) -> &mut T {
         self.data

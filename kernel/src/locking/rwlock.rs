@@ -19,7 +19,7 @@ pub struct ReadLockGuard<'a, T> {
 }
 
 /// Implements the behavior of the [`ReadLockGuard`] when it is dropped
-impl<'a, T> Drop for ReadLockGuard<'a, T> {
+impl<T> Drop for ReadLockGuard<'_, T> {
     /// Release the read lock
     fn drop(&mut self) {
         self.rwlock.fetch_sub(1, Ordering::Release);
@@ -28,7 +28,7 @@ impl<'a, T> Drop for ReadLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`ReadLockGuard`] to
 /// access the protected data.
-impl<'a, T> Deref for ReadLockGuard<'a, T> {
+impl<T> Deref for ReadLockGuard<'_, T> {
     type Target = T;
     /// Allow reading the protected data through deref
     fn deref(&self) -> &T {
@@ -47,7 +47,7 @@ pub struct WriteLockGuard<'a, T> {
 }
 
 /// Implements the behavior of the [`WriteLockGuard`] when it is dropped
-impl<'a, T> Drop for WriteLockGuard<'a, T> {
+impl<T> Drop for WriteLockGuard<'_, T> {
     fn drop(&mut self) {
         // There are no readers - safe to just set lock to 0
         self.rwlock.store(0, Ordering::Release);
@@ -56,7 +56,7 @@ impl<'a, T> Drop for WriteLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`WriteLockGuard`] to
 /// access the protected data.
-impl<'a, T> Deref for WriteLockGuard<'a, T> {
+impl<T> Deref for WriteLockGuard<'_, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.data
@@ -65,7 +65,7 @@ impl<'a, T> Deref for WriteLockGuard<'a, T> {
 
 /// Implements the behavior of dereferencing the [`WriteLockGuard`] to
 /// access the protected data in a mutable way.
-impl<'a, T> DerefMut for WriteLockGuard<'a, T> {
+impl<T> DerefMut for WriteLockGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }

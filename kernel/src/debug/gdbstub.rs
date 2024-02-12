@@ -221,7 +221,7 @@ pub mod svsm_gdbstub {
         target: GdbStubTarget,
     }
 
-    impl<'a> fmt::Debug for SvsmGdbStub<'a> {
+    impl fmt::Debug for SvsmGdbStub<'_> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "SvsmGdbStub")
         }

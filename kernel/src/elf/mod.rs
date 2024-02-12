@@ -2124,7 +2124,7 @@ impl<'a> Elf64ShdrIterator<'a> {
     }
 }
 
-impl<'a> Iterator for Elf64ShdrIterator<'a> {
+impl Iterator for Elf64ShdrIterator<'_> {
     type Item = Elf64Shdr;
 
     /// Retrieves the next section header from the ELF64 file.
@@ -2321,7 +2321,7 @@ impl<'a, RP: Elf64RelocProcessor> Elf64AppliedRelaIterator<'a, RP> {
     }
 }
 
-impl<'a, RP: Elf64RelocProcessor> Iterator for Elf64AppliedRelaIterator<'a, RP> {
+impl<RP: Elf64RelocProcessor> Iterator for Elf64AppliedRelaIterator<'_, RP> {
     type Item = Result<Option<Elf64RelocOp>, ElfError>;
 
     /// Advances the iterator to the next relocation operation, processes it,

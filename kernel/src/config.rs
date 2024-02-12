@@ -64,7 +64,7 @@ pub enum SvsmConfig<'a> {
     IgvmConfig(IgvmParams<'a>),
 }
 
-impl<'a> SvsmConfig<'a> {
+impl SvsmConfig<'_> {
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         match self {
             SvsmConfig::FirmwareConfig(fw_cfg) => fw_cfg.find_kernel_region(),
