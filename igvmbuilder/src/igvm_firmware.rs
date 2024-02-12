@@ -209,18 +209,18 @@ impl IgvmFirmware {
                         // page so it can be copied into the correct location by
                         // the SVSM.
                         self.update_gpa_range(*gpa, *gpa + PAGE_SIZE_4K);
-                        let secrets_page = u32::try_from(*gpa);
+                        let secrets_page = match u32::try_from(*gpa) {
+                            Ok(val) => val,
+                            Err(e) => return Some(Err(e.into())),
+                        };
                         // The Hyper-V firmware reserves the page following the
                         // secrets page for the calling area.
-                        let caa_page = u32::try_from(*gpa + PAGE_SIZE_4K);
-                        if secrets_page.is_err() {
-                            return Some(Err(secrets_page.err().unwrap().into()));
-                        }
-                        if caa_page.is_err() {
-                            return Some(Err(caa_page.err().unwrap().into()));
-                        }
-                        self.fw_info.secrets_page = secrets_page.unwrap();
-                        self.fw_info.caa_page = caa_page.unwrap();
+                        let caa_page = match u32::try_from(*gpa + PAGE_SIZE_4K) {
+                            Ok(val) => val,
+                            Err(e) => return Some(Err(e.into())),
+                        };
+                        self.fw_info.secrets_page = secrets_page;
+                        self.fw_info.caa_page = caa_page;
                         None
                     } else {
                         None
