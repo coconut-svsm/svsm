@@ -80,9 +80,7 @@ impl<'a> FwCfg<'a> {
 
     pub fn read_le<T>(&self) -> T
     where
-        T: core::ops::Shl<usize, Output = T>
-            + core::ops::BitOr<T, Output = T>
-            + core::convert::From<u8>,
+        T: core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> + From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;
@@ -95,9 +93,7 @@ impl<'a> FwCfg<'a> {
 
     pub fn read_be<T>(&self) -> T
     where
-        T: core::ops::Shl<usize, Output = T>
-            + core::ops::BitOr<T, Output = T>
-            + core::convert::From<u8>,
+        T: core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> + From<u8>,
     {
         let mut val = T::from(0u8);
         let io = &self.driver;

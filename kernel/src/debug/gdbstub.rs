@@ -391,7 +391,7 @@ pub mod svsm_gdbstub {
 
         type Error = usize;
 
-        fn base_ops(&mut self) -> gdbstub::target::ext::base::BaseOps<'_, Self::Arch, Self::Error> {
+        fn base_ops(&mut self) -> BaseOps<'_, Self::Arch, Self::Error> {
             BaseOps::MultiThread(self)
         }
 
@@ -529,7 +529,7 @@ pub mod svsm_gdbstub {
 
         fn list_active_threads(
             &mut self,
-            thread_is_active: &mut dyn FnMut(gdbstub::common::Tid),
+            thread_is_active: &mut dyn FnMut(Tid),
         ) -> Result<(), Self::Error> {
             let mut tl = TASKLIST.lock();
 

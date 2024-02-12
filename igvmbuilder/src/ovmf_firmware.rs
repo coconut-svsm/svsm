@@ -260,7 +260,7 @@ impl OvmfFirmware {
 }
 
 impl Firmware for OvmfFirmware {
-    fn directives(&self) -> &Vec<igvm::IgvmDirectiveHeader> {
+    fn directives(&self) -> &Vec<IgvmDirectiveHeader> {
         &self.directives
     }
 

@@ -11,7 +11,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 use bitflags::bitflags;
 use core::cmp;
-use core::convert;
 use core::ffi;
 use core::fmt;
 use core::matches;
@@ -251,7 +250,7 @@ impl Elf64AddrRange {
     }
 }
 
-impl convert::TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
+impl TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
     type Error = ElfError;
 
     /// Tries to create an [`Elf64AddrRange`] from a tuple of [`(Elf64Addr, Elf64Xword)`].
@@ -315,7 +314,7 @@ impl convert::TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
 ///
 /// assert_eq!(range1.partial_cmp(&range2), Some(Ordering::Less));
 /// ```
-impl cmp::PartialOrd for Elf64AddrRange {
+impl PartialOrd for Elf64AddrRange {
     fn partial_cmp(&self, other: &Elf64AddrRange) -> Option<cmp::Ordering> {
         if self.vaddr_end <= other.vaddr_begin {
             Some(cmp::Ordering::Less)
@@ -338,7 +337,7 @@ pub struct Elf64FileRange {
     pub offset_end: usize,
 }
 
-impl convert::TryFrom<(Elf64Off, Elf64Xword)> for Elf64FileRange {
+impl TryFrom<(Elf64Off, Elf64Xword)> for Elf64FileRange {
     type Error = ElfError;
 
     /// Tries to create an [`Elf64FileRange`] from a tuple of [`(Elf64Off, Elf64Xword)`].
