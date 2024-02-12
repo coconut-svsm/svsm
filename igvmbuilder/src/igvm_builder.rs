@@ -285,7 +285,7 @@ impl IgvmBuilder {
             self.gpa_map.cpuid_page.get_start(),
             COMPATIBILITY_MASK,
             &mut self.directives,
-        )?;
+        );
 
         // Secrets page
         self.add_empty_pages(
