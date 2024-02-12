@@ -126,8 +126,9 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
     let insn = vc_decode_insn(ctx).expect("Could not decode instruction");
 
     match error_code {
-        // If the debugger is enabled then handle the DB exception
-        // by directly invoking the exception handler
+        // If the gdb stub is enabled then debugging operations such as single stepping
+        // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
+        // clear, or a VC exception with an error code of X86_TRAP if set.
         X86_TRAP => handle_debug_exception(ctx, ctx.vector),
         SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
         SVM_EXIT_IOIO => {
