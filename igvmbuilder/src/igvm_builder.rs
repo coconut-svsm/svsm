@@ -368,7 +368,7 @@ impl IgvmBuilder {
             return Err("IGVM parameter block size exceeds 4K".into());
         }
         let mut param_block_page = [0u8; PAGE_SIZE_4K as usize];
-        param_block_page[..param_block_data.len()].clone_from_slice(param_block_data);
+        param_block_page[..param_block_data.len()].copy_from_slice(param_block_data);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.igvm_param_block.get_start(),
@@ -393,7 +393,7 @@ impl IgvmBuilder {
             return Err("IGVM parameter block size exceeds 4K".into());
         }
         let mut guest_context_page = [0u8; PAGE_SIZE_4K as usize];
-        guest_context_page[..guest_context_data.len()].clone_from_slice(guest_context_data);
+        guest_context_page[..guest_context_data.len()].copy_from_slice(guest_context_data);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.guest_context.get_start(),
