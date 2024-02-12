@@ -191,7 +191,10 @@ fn parse_inner_table(
 
 pub fn parse_ovmf(data: &[u8], firmware: &mut IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
-    let mut current_offset = data.len() - FOOTER_OFFSET;
+    let mut current_offset = data
+        .len()
+        .checked_sub(FOOTER_OFFSET)
+        .ok_or("OVMF firmware file is too small")?;
     let ovmf_table = read_table(current_offset, data)?;
     if ovmf_table.uuid != OVMF_TABLE_FOOTER_GUID.to_bytes_le() {
         return Err("OVMF table footer not found".into());
