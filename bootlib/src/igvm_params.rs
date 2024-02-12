@@ -52,7 +52,8 @@ pub struct IgvmParamBlockFwInfo {
     /// memory and will not be loaded into the ROM range.
     pub in_low_memory: u8,
 
-    _reserved: [u8; 7],
+    #[doc(hidden)]
+    pub _reserved: [u8; 7],
 
     /// The guest physical address at which the firmware expects to find the
     /// secrets page.
@@ -104,7 +105,8 @@ pub struct IgvmParamBlock {
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 
-    _reserved: [u16; 3],
+    #[doc(hidden)]
+    pub _reserved: [u16; 3],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.

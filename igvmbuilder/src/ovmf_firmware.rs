@@ -9,12 +9,12 @@ use std::fs::File;
 use std::io::Read;
 use std::mem::size_of;
 
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::{uuid, Uuid};
 
 use crate::firmware::Firmware;
-use crate::igvm_params::IgvmParamBlockFwInfo;
 
 const OVMF_TABLE_FOOTER_GUID: Uuid = uuid!("96b582de-1fb2-45f7-baea-a366c55a082d");
 const OVMF_SEV_METADATA_GUID: Uuid = uuid!("dc886566-984a-4798-a75e-5585a7bf67cc");
@@ -261,7 +261,7 @@ impl Firmware for OvmfFirmware {
         &self.directives
     }
 
-    fn get_guest_context(&self) -> Option<crate::igvm_params::IgvmGuestContext> {
+    fn get_guest_context(&self) -> Option<IgvmGuestContext> {
         None
     }
 
