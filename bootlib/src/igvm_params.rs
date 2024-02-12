@@ -10,7 +10,7 @@
 /// The IGVM parameter page is an unmeasured page containing individual
 /// parameters that are provided by the host loader.
 #[repr(C, packed)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct IgvmParamPage {
     /// The number of vCPUs that are configured for the guest VM.
     pub cpu_count: u32,
@@ -77,7 +77,7 @@ pub struct IgvmParamBlockFwInfo {
 /// builder which describes where the additional IGVM parameter information
 /// has been placed into the guest address space.
 #[repr(C, packed)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct IgvmParamBlock {
     /// The total size of the parameter area, beginning with the parameter
     /// block itself and including any additional parameter pages which follow.
