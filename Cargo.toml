@@ -41,6 +41,8 @@ packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 future_incompatible = "deny"
 nonstandard_style = "deny"
 rust_2018_idioms = "deny"
+missing_copy_implementations = "deny"
+missing_debug_implementations = "deny"
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"
