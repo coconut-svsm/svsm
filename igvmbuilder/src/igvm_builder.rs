@@ -10,6 +10,9 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::mem::size_of;
 
+use bootlib::igvm_params::{
+    IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
+};
 use clap::Parser;
 use igvm::{IgvmDirectiveHeader, IgvmFile, IgvmPlatformHeader, IgvmRevision};
 use igvm_defs::{
@@ -20,9 +23,6 @@ use igvm_defs::{
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
-use crate::igvm_params::{
-    IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
-};
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::construct_vmsa;
 use crate::GpaMap;
@@ -162,12 +162,12 @@ impl IgvmBuilder {
                 start: 0,
                 size: 0,
                 in_low_memory: 0,
-                _reserved: [0u8; 7],
                 secrets_page: 0,
                 caa_page: 0,
                 cpuid_page: 0,
                 prevalidated_count: 0,
                 prevalidated: [IgvmParamBlockFwMem { base: 0, size: 0 }; 8],
+                ..Default::default()
             };
             let vtom = match self.options.hypervisor {
                 Hypervisor::Qemu => 0,
@@ -189,12 +189,12 @@ impl IgvmBuilder {
             cpuid_page: self.gpa_map.cpuid_page.get_start() as u32,
             secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
-            _reserved: [0u16; 3],
             firmware: fw_info,
             kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
             kernel_size: self.gpa_map.kernel.get_size() as u32,
             kernel_base: self.gpa_map.kernel.get_start(),
             vtom,
+            ..Default::default()
         };
 
         // Calculate the kernel size and base.

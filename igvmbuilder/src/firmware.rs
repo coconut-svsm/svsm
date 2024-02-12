@@ -6,11 +6,11 @@
 
 use std::error::Error;
 
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
 use igvm::IgvmDirectiveHeader;
 
 use crate::cmd_options::CmdOptions;
 use crate::igvm_firmware::IgvmFirmware;
-use crate::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
 use crate::ovmf_firmware::OvmfFirmware;
 
 pub trait Firmware {
