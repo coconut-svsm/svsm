@@ -178,7 +178,7 @@ impl SnpGuestRequestDriver {
         &mut self,
         msg_type: SnpGuestRequestMsgType,
         msg_seqno: u64,
-        buffer: &mut [u8],
+        buffer: &[u8],
         command_len: usize,
     ) -> Result<(), SvsmReqError> {
         // VMPL0 `SNP_GUEST_REQUEST` commands are encrypted with the VMPCK0 key
