@@ -105,7 +105,7 @@ impl IgvmBuilder {
             })?;
 
         let mut binary_file = Vec::new();
-        file.serialize(&mut binary_file).unwrap();
+        file.serialize(&mut binary_file)?;
 
         let mut output = File::create(&self.options.output).map_err(|e| {
             eprintln!("Failed to create output file {}", self.options.output);
