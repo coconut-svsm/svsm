@@ -18,8 +18,23 @@ use log;
 
 use super::pagetable::LAUNCH_VMSA_ADDR;
 
+/// Global memory map containing various memory regions.
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
+/// Initializes the global memory map based on the provided configuration
+/// and kernel launch information.
+///
+/// # Arguments
+///
+/// * `config` - A reference to the [`SvsmConfig`] containing memory region
+///   information.
+/// * `launch_info` - A reference to the [`KernelLaunchInfo`] containing
+///   information about the kernel region.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the memory map is successfully initialized, otherwise
+/// returns an error of type `SvsmError`.
 pub fn init_memory_map(
     config: &SvsmConfig<'_>,
     launch_info: &KernelLaunchInfo,
@@ -77,6 +92,8 @@ pub fn init_memory_map(
     Ok(())
 }
 
+/// Returns `true` if the provided physical address `paddr` is valid, i.e.
+/// it is within the configured memory regions, otherwise returns `false`.
 pub fn valid_phys_address(paddr: PhysAddr) -> bool {
     let page_addr = paddr.page_align();
 
@@ -93,9 +110,14 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
         .any(|region| region.contains(paddr))
 }
 
+/// The starting address of the ISA range.
 const ISA_RANGE_START: PhysAddr = PhysAddr::new(0xa0000);
+
+/// The ending address of the ISA range.
 const ISA_RANGE_END: PhysAddr = PhysAddr::new(0x100000);
 
+/// Returns `true` if the provided physical address `paddr` is writable,
+/// otherwise returns `false`.
 pub fn writable_phys_addr(paddr: PhysAddr) -> bool {
     // The ISA range is not writable
     if paddr >= ISA_RANGE_START && paddr < ISA_RANGE_END {
