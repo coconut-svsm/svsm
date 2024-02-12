@@ -87,7 +87,7 @@ default_entry_no_ist	name=ud		handler=panic			error_code=0	vector=6
 default_entry_no_ist	name=nm		handler=panic			error_code=0	vector=7
 
 // #DF Double-Fault Exception (Vector 8)
-default_entry_no_ist	name=df		handler=panic			error_code=1	vector=8
+default_entry_no_ist	name=df		handler=double_fault		error_code=1	vector=8
 
 // Coprocessor-Segment-Overrun Exception (Vector 9)
 // No handler - reserved vector

@@ -46,15 +46,7 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
     match ctx.vector {
         DB_VECTOR => ex_handler_debug(ctx),
         BP_VECTOR => ex_handler_breakpoint(ctx),
-        DF_VECTOR => {
-            let cr2 = read_cr2();
-            let rip = ctx.frame.rip;
-            let rsp = ctx.frame.rsp;
-            panic!(
-                "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
-                rip, rsp, cr2
-            );
-        }
+        DF_VECTOR => ex_handler_double_fault(ctx),
         GP_VECTOR => {
             let rip = ctx.frame.rip;
             let err = ctx.error_code;
@@ -115,6 +107,18 @@ extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
 #[no_mangle]
 extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
     handle_debug_exception(ctx, BP_VECTOR);
+}
+
+// Doube-Fault handler
+#[no_mangle]
+extern "C" fn ex_handler_double_fault(ctx: &mut X86ExceptionContext) {
+    let cr2 = read_cr2();
+    let rip = ctx.frame.rip;
+    let rsp = ctx.frame.rsp;
+    panic!(
+        "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
+        rip, rsp, cr2
+    );
 }
 
 #[no_mangle]
