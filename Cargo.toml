@@ -44,6 +44,7 @@ rust_2018_idioms = "deny"
 missing_copy_implementations = "deny"
 missing_debug_implementations = "deny"
 single_use_lifetimes = "warn"
+trivial-numeric-casts = "deny"
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"
