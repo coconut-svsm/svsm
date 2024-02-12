@@ -66,7 +66,7 @@ default_return:
 default_entry_no_ist	name=de		handler=panic			error_code=0	vector=0
 
 // #DB Debug Exception (Vector 1)
-default_entry_no_ist	name=db		handler=panic			error_code=0	vector=1
+default_entry_no_ist	name=db		handler=debug			error_code=0	vector=1
 
 // NMI Non-Maskable-Interrupt Exception (Vector 2)
 default_entry_no_ist	name=nmi	handler=panic			error_code=0	vector=2
