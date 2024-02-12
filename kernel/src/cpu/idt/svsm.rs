@@ -48,23 +48,7 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
         BP_VECTOR => ex_handler_breakpoint(ctx),
         DF_VECTOR => ex_handler_double_fault(ctx),
         GP_VECTOR => ex_handler_general_protection(ctx),
-        PF_VECTOR => {
-            let cr2 = read_cr2();
-            let rip = ctx.frame.rip;
-            let err = ctx.error_code;
-
-            if this_cpu()
-                .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
-                .is_err()
-                && !handle_exception_table(ctx)
-            {
-                handle_debug_exception(ctx, ctx.vector);
-                panic!(
-                    "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
-                    rip, cr2, err
-                );
-            }
-        }
+        PF_VECTOR => ex_handler_page_fault(ctx),
         VC_VECTOR => handle_vc_exception(ctx),
         HV_VECTOR =>
             // #HV processing is not required in the SVSM.  If a maskable
@@ -121,6 +105,26 @@ extern "C" fn ex_handler_general_protection(ctx: &mut X86ExceptionContext) {
         panic!(
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
             rip, err
+        );
+    }
+}
+
+// Page-Fault handler
+#[no_mangle]
+extern "C" fn ex_handler_page_fault(ctx: &mut X86ExceptionContext) {
+    let cr2 = read_cr2();
+    let rip = ctx.frame.rip;
+    let err = ctx.error_code;
+
+    if this_cpu()
+        .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
+        .is_err()
+        && !handle_exception_table(ctx)
+    {
+        handle_debug_exception(ctx, ctx.vector);
+        panic!(
+            "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+            rip, cr2, err
         );
     }
 }

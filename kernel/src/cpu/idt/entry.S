@@ -105,7 +105,7 @@ default_entry_no_ist	name=ss		handler=panic			error_code=1	vector=12
 default_entry_no_ist	name=gp		handler=general_protection	error_code=1	vector=13
 
 // #PF Page-Fault Exception (Vector 14)
-default_entry_no_ist	name=pf		handler=panic			error_code=1	vector=14
+default_entry_no_ist	name=pf		handler=page_fault		error_code=1	vector=14
 
 // Vector 15 not defined
 
