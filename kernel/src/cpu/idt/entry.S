@@ -129,7 +129,7 @@ default_entry_no_ist	name=cp		handler=panic			error_code=1	vector=21
 // Vectors 22-27 not defined
 
 // #HV Hypervisor Injection Exception (Vector 28)
-default_entry_no_ist	name=hv		handler=panic			error_code=0	vector=28
+default_entry_no_ist	name=hv		handler=hypervisor_injection	error_code=0	vector=28
 
 // #VC VMM Communication Exception (Vector 29)
 default_entry_no_ist	name=vc		handler=panic			error_code=1	vector=29
