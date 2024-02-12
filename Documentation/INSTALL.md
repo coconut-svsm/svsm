@@ -309,6 +309,43 @@ in the terminal:
 ...
 ```
 
+Launch Script
+-------------
+
+A script is provided in `scripts/launch_guest.sh` that makes it easy to launch a
+guest that supports SEV-SNP with COCONUT-SVSM. If the QEMU built in the previous
+step is installed and in your PATH then you can start the guest by running the
+script from the root of the repository:
+
+```
+scripts/launch_guest.sh
+```
+
+The script makes use of the `cbit` utility to determine the correct value for
+the `cbitpos` QEMU parameter. This needs to be built with the following command:
+
+```
+make utils/cbit
+```
+
+The path to QEMU can also be specified either by setting the `QEMU` variable, or
+by passing the path as a parameter:
+
+```
+QEMU=/path/to/qemu-system-x86_64 scripts/launch_guest.sh
+
+scripts/launch_guest --qemu /path/to/qemu-system-x86_64
+```
+
+The script supports a number of other options described in the table below
+
+| Command-line     | Variable | Default               | Description                                                                  |
+| ---------------- | -------- | --------------------- | ---------------------------------------------------------------------------- |
+| `--qemu [path]`  | QEMU     | qemu-system-x86_64    | Path to QEMU binary to use.                                                  |
+| `--igvm [path]`  | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
+| `--image [path]` | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
+| `--debugserial`  | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |
+
 Debugging using GDB
 -------------------
 
