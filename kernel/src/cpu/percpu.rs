@@ -576,7 +576,7 @@ impl PerCpu {
             selector: SVSM_TSS,
             flags: SVSM_TR_FLAGS,
             limit: TSS_LIMIT as u32,
-            base: (&self.tss as *const X86Tss) as u64,
+            base: ptr::addr_of!(self.tss) as u64,
         }
     }
 

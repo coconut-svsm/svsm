@@ -12,6 +12,7 @@ extern "C" {
 use super::idt::common::X86ExceptionContext;
 use crate::address::{Address, VirtAddr};
 use core::mem;
+use core::ptr::addr_of;
 
 #[repr(C, packed)]
 struct ExceptionTableEntry {
@@ -21,8 +22,8 @@ struct ExceptionTableEntry {
 
 fn check_exception_table(rip: VirtAddr) -> VirtAddr {
     unsafe {
-        let ex_table_start = VirtAddr::from(&exception_table_start as *const u8);
-        let ex_table_end = VirtAddr::from(&exception_table_end as *const u8);
+        let ex_table_start = VirtAddr::from(addr_of!(exception_table_start));
+        let ex_table_end = VirtAddr::from(addr_of!(exception_table_end));
         let mut current = ex_table_start;
 
         loop {
@@ -47,8 +48,8 @@ fn check_exception_table(rip: VirtAddr) -> VirtAddr {
 
 pub fn dump_exception_table() {
     unsafe {
-        let ex_table_start = VirtAddr::from(&exception_table_start as *const u8);
-        let ex_table_end = VirtAddr::from(&exception_table_end as *const u8);
+        let ex_table_start = VirtAddr::from(addr_of!(exception_table_start));
+        let ex_table_end = VirtAddr::from(addr_of!(exception_table_end));
         let mut current = ex_table_start;
 
         loop {
