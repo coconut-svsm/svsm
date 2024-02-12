@@ -45,6 +45,7 @@ pub fn idt_init() {
 pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
     match ctx.vector {
         DB_VECTOR => ex_handler_debug(ctx),
+        BP_VECTOR => ex_handler_breakpoint(ctx),
         DF_VECTOR => {
             let cr2 = read_cr2();
             let rip = ctx.frame.rip;
@@ -83,7 +84,6 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
             }
         }
         VC_VECTOR => handle_vc_exception(ctx),
-        BP_VECTOR => handle_debug_exception(ctx, ctx.vector),
         HV_VECTOR =>
             // #HV processing is not required in the SVSM.  If a maskable
         // interrupt occurs, it will be processed prior to the next exit.
@@ -109,6 +109,12 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
 #[no_mangle]
 extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
     handle_debug_exception(ctx, DB_VECTOR);
+}
+
+// Breakpoint handler
+#[no_mangle]
+extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
+    handle_debug_exception(ctx, BP_VECTOR);
 }
 
 #[no_mangle]

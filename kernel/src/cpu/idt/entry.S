@@ -72,7 +72,7 @@ default_entry_no_ist	name=db		handler=debug			error_code=0	vector=1
 default_entry_no_ist	name=nmi	handler=panic			error_code=0	vector=2
 
 // #BP Breakpoint Exception (Vector 3)
-default_entry_no_ist	name=bp		handler=panic			error_code=0	vector=3
+default_entry_no_ist	name=bp		handler=breakpoint		error_code=0	vector=3
 
 // #OF Overflow Exception (Vector 4)
 default_entry_no_ist	name=of		handler=panic			error_code=0	vector=4
