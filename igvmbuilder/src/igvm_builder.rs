@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::mem::{self, size_of};
+use std::mem::size_of;
 
 use bootlib::igvm_params::{
     IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
@@ -19,6 +19,7 @@ use igvm_defs::{
     IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
     IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
 };
+use zerocopy::AsBytes;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
@@ -33,6 +34,9 @@ const COMPATIBILITY_MASK: u32 = 1;
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
 const IGVM_PARAMETER_COUNT: u32 = 2;
+
+const _: () = assert!(size_of::<IgvmParamBlock>() as u64 <= PAGE_SIZE_4K);
+const _: () = assert!(size_of::<IgvmGuestContext>() as u64 <= PAGE_SIZE_4K);
 
 pub struct IgvmBuilder {
     options: CmdOptions,
@@ -211,7 +215,7 @@ impl IgvmBuilder {
             self.directives.extend_from_slice(firmware.directives());
             // If the firmware has a guest context then add it.
             if let Some(guest_context) = firmware.get_guest_context() {
-                self.add_guest_context(&guest_context)?;
+                self.add_guest_context(&guest_context);
             }
         }
 
@@ -271,7 +275,7 @@ impl IgvmBuilder {
         )?);
 
         // Add the IGVM parameter block
-        self.add_param_block(param_block)?;
+        self.add_param_block(param_block);
 
         // Add the kernel elf binary
         self.add_data_pages_from_file(
@@ -358,51 +362,30 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn add_param_block(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
-        // SAFETY: source and destination types have the same size. [u8; N]
-        // has no invalid representations and an alignment requirement of 1,
-        // so the transmute is always safe.
-        let param_block_data: &[u8; size_of::<IgvmParamBlock>()] =
-            unsafe { mem::transmute(param_block) };
-        if param_block_data.len() > PAGE_SIZE_4K as usize {
-            return Err("IGVM parameter block size exceeds 4K".into());
-        }
-        let mut param_block_page = [0u8; PAGE_SIZE_4K as usize];
-        param_block_page[..param_block_data.len()].copy_from_slice(param_block_data);
+    fn add_param_block(&mut self, param_block: &IgvmParamBlock) {
+        let mut data = param_block.as_bytes().to_vec();
+        data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.igvm_param_block.get_start(),
             compatibility_mask: COMPATIBILITY_MASK,
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
-            data: param_block_page.to_vec(),
+            data,
         });
-        Ok(())
     }
 
-    fn add_guest_context(
-        &mut self,
-        guest_context: &IgvmGuestContext,
-    ) -> Result<(), Box<dyn Error>> {
-        // SAFETY: source and destination types have the same size. [u8; N]
-        // has no invalid representations and an alignment requirement of 1,
-        // so the transmute is always safe.
-        let guest_context_data: &[u8; size_of::<IgvmGuestContext>()] =
-            unsafe { mem::transmute(guest_context) };
-        if guest_context_data.len() > PAGE_SIZE_4K as usize {
-            return Err("IGVM parameter block size exceeds 4K".into());
-        }
-        let mut guest_context_page = [0u8; PAGE_SIZE_4K as usize];
-        guest_context_page[..guest_context_data.len()].copy_from_slice(guest_context_data);
+    fn add_guest_context(&mut self, guest_context: &IgvmGuestContext) {
+        let mut data = guest_context.as_bytes().to_vec();
+        data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.guest_context.get_start(),
             compatibility_mask: COMPATIBILITY_MASK,
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
-            data: guest_context_page.to_vec(),
+            data,
         });
-        Ok(())
     }
 
     fn add_empty_pages(
