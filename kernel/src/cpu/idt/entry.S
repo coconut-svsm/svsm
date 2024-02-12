@@ -132,7 +132,7 @@ default_entry_no_ist	name=cp		handler=panic			error_code=1	vector=21
 default_entry_no_ist	name=hv		handler=hypervisor_injection	error_code=0	vector=28
 
 // #VC VMM Communication Exception (Vector 29)
-default_entry_no_ist	name=vc		handler=panic			error_code=1	vector=29
+default_entry_no_ist	name=vc		handler=vmm_communication	error_code=1	vector=29
 
 // #SX Security Exception (Vector 30)
 default_entry_no_ist	name=sx		handler=panic			error_code=1	vector=30
