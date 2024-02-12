@@ -152,7 +152,7 @@ fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, pa
 // Launch info from stage1, usually at the bottom of the stack
 // The layout has to match the order in which the parts are pushed to the stack
 // in stage1/stage1.S
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Stage1LaunchInfo {
     kernel_elf_start: u32,
