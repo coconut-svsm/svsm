@@ -105,9 +105,22 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext) {
+    let vec = ctx.vector;
+    let rip = ctx.frame.rip;
+    let err = ctx.error_code;
+    panic!(
+        "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
+        vec, rip, err
+    );
+}
+
 extern "C" {
     static svsm_idt_handler_array: u8;
 }
+
+global_asm!(include_str!("entry.S"), options(att_syntax));
 
 global_asm!(
     r#"
