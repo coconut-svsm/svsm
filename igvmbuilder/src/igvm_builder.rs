@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::mem::size_of;
+use std::mem::{self, size_of};
 
 use bootlib::igvm_params::{
     IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
@@ -359,11 +359,11 @@ impl IgvmBuilder {
     }
 
     fn add_param_block(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
-        let param_block_data = unsafe {
-            let ptr =
-                param_block as *const IgvmParamBlock as *const [u8; size_of::<IgvmParamBlock>()];
-            &*ptr
-        };
+        // SAFETY: source and destination types have the same size. [u8; N]
+        // has no invalid representations and an alignment requirement of 1,
+        // so the transmute is always safe.
+        let param_block_data: &[u8; size_of::<IgvmParamBlock>()] =
+            unsafe { mem::transmute(param_block) };
         if param_block_data.len() > PAGE_SIZE_4K as usize {
             return Err("IGVM parameter block size exceeds 4K".into());
         }
@@ -384,11 +384,11 @@ impl IgvmBuilder {
         &mut self,
         guest_context: &IgvmGuestContext,
     ) -> Result<(), Box<dyn Error>> {
-        let guest_context_data = unsafe {
-            let ptr = guest_context as *const IgvmGuestContext
-                as *const [u8; size_of::<IgvmGuestContext>()];
-            &*ptr
-        };
+        // SAFETY: source and destination types have the same size. [u8; N]
+        // has no invalid representations and an alignment requirement of 1,
+        // so the transmute is always safe.
+        let guest_context_data: &[u8; size_of::<IgvmGuestContext>()] =
+            unsafe { mem::transmute(guest_context) };
         if guest_context_data.len() > PAGE_SIZE_4K as usize {
             return Err("IGVM parameter block size exceeds 4K".into());
         }
