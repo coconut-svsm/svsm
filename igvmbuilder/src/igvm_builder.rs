@@ -208,7 +208,7 @@ impl IgvmBuilder {
     fn build_directives(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
         // Populate firmware directives.
         if let Some(firmware) = &self.firmware {
-            self.directives.append(&mut firmware.directives().clone());
+            self.directives.extend_from_slice(firmware.directives());
             // If the firmware has a guest context then add it.
             if let Some(guest_context) = firmware.get_guest_context() {
                 self.add_guest_context(&guest_context)?;
