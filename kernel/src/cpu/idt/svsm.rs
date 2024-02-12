@@ -47,17 +47,7 @@ pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
         DB_VECTOR => ex_handler_debug(ctx),
         BP_VECTOR => ex_handler_breakpoint(ctx),
         DF_VECTOR => ex_handler_double_fault(ctx),
-        GP_VECTOR => {
-            let rip = ctx.frame.rip;
-            let err = ctx.error_code;
-
-            if !handle_exception_table(ctx) {
-                panic!(
-                    "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
-                    rip, err
-                );
-            }
-        }
+        GP_VECTOR => ex_handler_general_protection(ctx),
         PF_VECTOR => {
             let cr2 = read_cr2();
             let rip = ctx.frame.rip;
@@ -119,6 +109,20 @@ extern "C" fn ex_handler_double_fault(ctx: &mut X86ExceptionContext) {
         "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
         rip, rsp, cr2
     );
+}
+
+// General-Protection handler
+#[no_mangle]
+extern "C" fn ex_handler_general_protection(ctx: &mut X86ExceptionContext) {
+    let rip = ctx.frame.rip;
+    let err = ctx.error_code;
+
+    if !handle_exception_table(ctx) {
+        panic!(
+            "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
+            rip, err
+        );
+    }
 }
 
 #[no_mangle]
