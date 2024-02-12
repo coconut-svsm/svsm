@@ -224,8 +224,8 @@ impl OvmfFirmware {
         if len > 0xffffffff {
             return Err("OVMF firmware is too large".into());
         }
-        let mut data = vec![0u8; len];
-        if in_file.read(&mut data)? != len {
+        let mut data = Vec::with_capacity(len);
+        if in_file.read_to_end(&mut data)? != len {
             return Err("Failed to read OVMF file".into());
         }
         let mut fw_info = IgvmParamBlockFwInfo::default();
