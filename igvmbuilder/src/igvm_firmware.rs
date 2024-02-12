@@ -248,15 +248,8 @@ impl IgvmFirmware {
                 }
                 None
             }
-            IgvmDirectiveHeader::RequiredMemory {
-                gpa: _,
-                compatibility_mask: _,
-                number_of_bytes: _,
-                vtl2_protectable: _,
-            } => {
-                // This can be ignored when importing firmware files.
-                None
-            }
+            // This can be ignored when importing firmware files.
+            IgvmDirectiveHeader::RequiredMemory { .. } => None,
             _ => Some(Err(
                 "IGVM firmware file contains unsupported directives".into()
             )),
