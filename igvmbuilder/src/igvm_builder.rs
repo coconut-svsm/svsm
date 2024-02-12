@@ -82,18 +82,11 @@ impl IgvmBuilder {
         self.build_platforms(&param_block);
 
         // Separate the directive pages out from the others so we can populate them last.
-        let others: Vec<IgvmDirectiveHeader> = self
+        let (mut pages, others): (Vec<_>, Vec<_>) = self
             .directives
             .iter()
-            .filter(|directive| Self::filter_pages(directive, false))
             .cloned()
-            .collect();
-        let mut pages: Vec<IgvmDirectiveHeader> = self
-            .directives
-            .iter()
-            .filter(|directive| Self::filter_pages(directive, true))
-            .cloned()
-            .collect();
+            .partition(Self::filter_pages);
 
         if self.options.sort {
             pages.sort_by(Self::compare_pages);
@@ -430,16 +423,7 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn filter_pages(directive: &IgvmDirectiveHeader, is_page: bool) -> bool {
-        match directive {
-            IgvmDirectiveHeader::PageData {
-                gpa: _,
-                compatibility_mask: _,
-                flags: _,
-                data_type: _,
-                data: _,
-            } => is_page,
-            _ => !is_page,
-        }
+    fn filter_pages(directive: &IgvmDirectiveHeader) -> bool {
+        matches!(directive, IgvmDirectiveHeader::PageData { .. })
     }
 }
