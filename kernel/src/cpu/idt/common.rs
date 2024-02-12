@@ -12,7 +12,7 @@ use core::arch::{asm, global_asm};
 use core::mem;
 
 pub const _DE_VECTOR: usize = 0;
-pub const _DB_VECTOR: usize = 1;
+pub const DB_VECTOR: usize = 1;
 pub const _NMI_VECTOR: usize = 2;
 pub const BP_VECTOR: usize = 3;
 pub const _OF_VECTOR: usize = 4;
