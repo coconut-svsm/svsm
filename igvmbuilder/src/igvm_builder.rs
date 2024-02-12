@@ -67,25 +67,11 @@ impl IgvmBuilder {
         directive_a: &IgvmDirectiveHeader,
         directive_b: &IgvmDirectiveHeader,
     ) -> Ordering {
-        let a = match directive_a {
-            IgvmDirectiveHeader::PageData {
-                gpa,
-                compatibility_mask: _,
-                flags: _,
-                data_type: _,
-                data: _,
-            } => gpa,
-            _ => panic!("Attempted to compare non-page directive"),
+        let IgvmDirectiveHeader::PageData { gpa: a, .. } = directive_a else {
+            panic!("Attempted to compare non-page directive");
         };
-        let b = match directive_b {
-            IgvmDirectiveHeader::PageData {
-                gpa,
-                compatibility_mask: _,
-                flags: _,
-                data_type: _,
-                data: _,
-            } => gpa,
-            _ => panic!("Attempted to compare non-page directive"),
+        let IgvmDirectiveHeader::PageData { gpa: b, .. } = directive_b else {
+            panic!("Attempted to compare non-page directive");
         };
         a.cmp(b)
     }
