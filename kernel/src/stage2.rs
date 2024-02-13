@@ -12,7 +12,7 @@ pub mod boot_stage2;
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::asm;
 use core::panic::PanicInfo;
-use core::ptr::addr_of_mut;
+use core::ptr::{addr_of, addr_of_mut};
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
@@ -52,8 +52,8 @@ extern "C" {
 }
 
 fn setup_stage2_allocator() {
-    let vstart = unsafe { VirtAddr::from(&heap_start as *const u8).page_align_up() };
-    let vend = unsafe { VirtAddr::from(&heap_end as *const u8).page_align() };
+    let vstart = unsafe { VirtAddr::from(addr_of!(heap_start)).page_align_up() };
+    let vend = unsafe { VirtAddr::from(addr_of!(heap_end)).page_align() };
     let pstart = PhysAddr::from(vstart.bits()); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 

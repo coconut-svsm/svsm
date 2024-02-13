@@ -32,7 +32,7 @@ pub fn page_offset(x: usize) -> usize {
 
 pub fn overlap<T>(x1: T, x2: T, y1: T, y2: T) -> bool
 where
-    T: core::cmp::PartialOrd,
+    T: PartialOrd,
 {
     x1 <= y2 && y1 <= x2
 }

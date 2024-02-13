@@ -10,6 +10,7 @@ use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
+use core::ptr::addr_of;
 
 pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
@@ -187,7 +188,7 @@ extern "C" {
 }
 
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
-    let addr = unsafe { VirtAddr::from(&generic_idt_handler_return as *const u8) };
+    let addr = unsafe { VirtAddr::from(addr_of!(generic_idt_handler_return)) };
     addr == rip
 }
 

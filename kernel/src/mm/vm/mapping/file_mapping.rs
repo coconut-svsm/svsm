@@ -46,11 +46,11 @@ impl VirtualMapping for VMWriteFileMapping {
         self.0.mapping_size()
     }
 
-    fn map(&self, offset: usize) -> Option<crate::address::PhysAddr> {
+    fn map(&self, offset: usize) -> Option<PhysAddr> {
         self.0.map(offset)
     }
 
-    fn pt_flags(&self, _offset: usize) -> crate::mm::pagetable::PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         PTEntryFlags::task_data()
     }
 }
@@ -184,7 +184,7 @@ impl VirtualMapping for VMFileMapping {
         self.size
     }
 
-    fn map(&self, offset: usize) -> Option<crate::address::PhysAddr> {
+    fn map(&self, offset: usize) -> Option<PhysAddr> {
         let page_index = offset / PAGE_SIZE;
         if page_index >= self.pages.len() {
             return None;
@@ -197,7 +197,7 @@ impl VirtualMapping for VMFileMapping {
         self.pages[page_index].as_ref().map(|p| p.phys_addr())
     }
 
-    fn pt_flags(&self, offset: usize) -> crate::mm::pagetable::PTEntryFlags {
+    fn pt_flags(&self, offset: usize) -> PTEntryFlags {
         match self.permission {
             VMFileMappingPermission::Read => PTEntryFlags::task_data_ro(),
             VMFileMappingPermission::Write => {

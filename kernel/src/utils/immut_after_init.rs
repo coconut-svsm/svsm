@@ -295,7 +295,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     }
 }
 
-impl<'a, T> Deref for ImmutAfterInitRef<'a, T> {
+impl<T> Deref for ImmutAfterInitRef<'_, T> {
     type Target = T;
 
     /// Dereference the referenced value *without* lifetime propagation. Must
@@ -307,5 +307,5 @@ impl<'a, T> Deref for ImmutAfterInitRef<'a, T> {
     }
 }
 
-unsafe impl<'a, T> Send for ImmutAfterInitRef<'a, T> {}
-unsafe impl<'a, T> Sync for ImmutAfterInitRef<'a, T> {}
+unsafe impl<T> Send for ImmutAfterInitRef<'_, T> {}
+unsafe impl<T> Sync for ImmutAfterInitRef<'_, T> {}

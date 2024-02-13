@@ -123,7 +123,7 @@ fn read_table(current_offset: usize, data: &[u8]) -> Result<TableInfo, Box<dyn E
     }
     Ok(TableInfo {
         uuid: entry_uuid,
-        data_offset: current_offset - table_size as usize,
+        data_offset: current_offset - table_size,
         data_length: (table_size - uuid_size - 2) as u16,
     })
 }
@@ -260,7 +260,7 @@ impl OvmfFirmware {
 }
 
 impl Firmware for OvmfFirmware {
-    fn directives(&self) -> &Vec<igvm::IgvmDirectiveHeader> {
+    fn directives(&self) -> &Vec<IgvmDirectiveHeader> {
         &self.directives
     }
 

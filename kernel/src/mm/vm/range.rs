@@ -456,7 +456,7 @@ impl<'a> VMRMapping<'a> {
     }
 }
 
-impl<'a> Drop for VMRMapping<'a> {
+impl Drop for VMRMapping<'_> {
     fn drop(&mut self) {
         self.vmr
             .remove(self.va)
