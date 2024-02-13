@@ -24,14 +24,17 @@ struct IgvmParamInfo<'a> {
     igvm_params: Option<IgvmParams<'a>>,
 }
 
-pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64File<'_>) {
+pub fn init_page_table(
+    launch_info: &KernelLaunchInfo,
+    kernel_elf: &elf::Elf64File<'_>,
+) -> Result<(), SvsmError> {
     let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
     let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
         let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
         IgvmParamInfo {
             virt_addr: addr,
-            igvm_params: Some(IgvmParams::new(addr)),
+            igvm_params: Some(IgvmParams::new(addr)?),
         }
     } else {
         IgvmParamInfo {
@@ -97,6 +100,7 @@ pub fn init_page_table(launch_info: &KernelLaunchInfo, kernel_elf: &elf::Elf64Fi
     pgtable.load();
 
     set_init_pgtable(pgtable);
+    Ok(())
 }
 
 fn invalidate_boot_memory_region(

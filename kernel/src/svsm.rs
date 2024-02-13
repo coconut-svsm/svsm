@@ -320,7 +320,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     };
 
     paging_init();
-    init_page_table(&launch_info, &kernel_elf);
+    init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
     // SAFETY: this PerCpu has just been allocated and no other CPUs have been
     // brought up, thus it cannot be aliased and we can get a mutable
@@ -388,7 +388,8 @@ pub extern "C" fn svsm_main() {
 
     let launch_info = &*LAUNCH_INFO;
     let config = if launch_info.igvm_params_virt_addr != 0 {
-        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr));
+        let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
+            .expect("Invalid IGVM parameters");
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
