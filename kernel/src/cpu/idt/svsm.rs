@@ -48,34 +48,34 @@ extern "C" {
 fn init_ist_vectors() {
     idt_mut().set_entry(
         DF_VECTOR,
-        IdtEntry::ist_entry_with_handler(asm_entry_df, IST_DF.try_into().unwrap()),
+        IdtEntry::ist_entry(asm_entry_df, IST_DF.try_into().unwrap()),
     );
 }
 
 pub fn early_idt_init() {
     let mut idt = idt_mut();
-    idt.set_entry(DE_VECTOR, IdtEntry::entry_with_handler(asm_entry_de));
-    idt.set_entry(DB_VECTOR, IdtEntry::entry_with_handler(asm_entry_db));
-    idt.set_entry(NMI_VECTOR, IdtEntry::entry_with_handler(asm_entry_nmi));
-    idt.set_entry(BP_VECTOR, IdtEntry::entry_with_handler(asm_entry_bp));
-    idt.set_entry(OF_VECTOR, IdtEntry::entry_with_handler(asm_entry_of));
-    idt.set_entry(BR_VECTOR, IdtEntry::entry_with_handler(asm_entry_br));
-    idt.set_entry(UD_VECTOR, IdtEntry::entry_with_handler(asm_entry_ud));
-    idt.set_entry(NM_VECTOR, IdtEntry::entry_with_handler(asm_entry_nm));
-    idt.set_entry(DF_VECTOR, IdtEntry::entry_with_handler(asm_entry_df));
-    idt.set_entry(TS_VECTOR, IdtEntry::entry_with_handler(asm_entry_ts));
-    idt.set_entry(NP_VECTOR, IdtEntry::entry_with_handler(asm_entry_np));
-    idt.set_entry(SS_VECTOR, IdtEntry::entry_with_handler(asm_entry_ss));
-    idt.set_entry(GP_VECTOR, IdtEntry::entry_with_handler(asm_entry_gp));
-    idt.set_entry(PF_VECTOR, IdtEntry::entry_with_handler(asm_entry_pf));
-    idt.set_entry(MF_VECTOR, IdtEntry::entry_with_handler(asm_entry_mf));
-    idt.set_entry(AC_VECTOR, IdtEntry::entry_with_handler(asm_entry_ac));
-    idt.set_entry(MCE_VECTOR, IdtEntry::entry_with_handler(asm_entry_mce));
-    idt.set_entry(XF_VECTOR, IdtEntry::entry_with_handler(asm_entry_xf));
-    idt.set_entry(CP_VECTOR, IdtEntry::entry_with_handler(asm_entry_cp));
-    idt.set_entry(HV_VECTOR, IdtEntry::entry_with_handler(asm_entry_hv));
-    idt.set_entry(VC_VECTOR, IdtEntry::entry_with_handler(asm_entry_vc));
-    idt.set_entry(SX_VECTOR, IdtEntry::entry_with_handler(asm_entry_sx));
+    idt.set_entry(DE_VECTOR, IdtEntry::entry(asm_entry_de));
+    idt.set_entry(DB_VECTOR, IdtEntry::entry(asm_entry_db));
+    idt.set_entry(NMI_VECTOR, IdtEntry::entry(asm_entry_nmi));
+    idt.set_entry(BP_VECTOR, IdtEntry::entry(asm_entry_bp));
+    idt.set_entry(OF_VECTOR, IdtEntry::entry(asm_entry_of));
+    idt.set_entry(BR_VECTOR, IdtEntry::entry(asm_entry_br));
+    idt.set_entry(UD_VECTOR, IdtEntry::entry(asm_entry_ud));
+    idt.set_entry(NM_VECTOR, IdtEntry::entry(asm_entry_nm));
+    idt.set_entry(DF_VECTOR, IdtEntry::entry(asm_entry_df));
+    idt.set_entry(TS_VECTOR, IdtEntry::entry(asm_entry_ts));
+    idt.set_entry(NP_VECTOR, IdtEntry::entry(asm_entry_np));
+    idt.set_entry(SS_VECTOR, IdtEntry::entry(asm_entry_ss));
+    idt.set_entry(GP_VECTOR, IdtEntry::entry(asm_entry_gp));
+    idt.set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf));
+    idt.set_entry(MF_VECTOR, IdtEntry::entry(asm_entry_mf));
+    idt.set_entry(AC_VECTOR, IdtEntry::entry(asm_entry_ac));
+    idt.set_entry(MCE_VECTOR, IdtEntry::entry(asm_entry_mce));
+    idt.set_entry(XF_VECTOR, IdtEntry::entry(asm_entry_xf));
+    idt.set_entry(CP_VECTOR, IdtEntry::entry(asm_entry_cp));
+    idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
+    idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
+    idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
     idt.load();
 }
 

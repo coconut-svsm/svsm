@@ -84,20 +84,16 @@ impl IdtEntry {
         IdtEntry { low, high }
     }
 
-    pub fn entry(target: VirtAddr) -> Self {
+    pub fn raw_entry(target: VirtAddr) -> Self {
         IdtEntry::create(target, SVSM_CS, 0)
     }
 
-    pub fn ist_entry(target: VirtAddr, ist: u8) -> Self {
-        IdtEntry::create(target, SVSM_CS, ist)
-    }
-
-    pub fn entry_with_handler(handler: unsafe extern "C" fn()) -> Self {
+    pub fn entry(handler: unsafe extern "C" fn()) -> Self {
         let target = VirtAddr::from(handler as *const ());
         IdtEntry::create(target, SVSM_CS, 0)
     }
 
-    pub fn ist_entry_with_handler(handler: unsafe extern "C" fn(), ist: u8) -> Self {
+    pub fn ist_entry(handler: unsafe extern "C" fn(), ist: u8) -> Self {
         let target = VirtAddr::from(handler as *const ());
         IdtEntry::create(target, SVSM_CS, ist)
     }
@@ -132,7 +128,7 @@ impl IDT {
         let handlers = VirtAddr::from(handler_array);
 
         for idx in 0..size {
-            self.set_entry(idx, IdtEntry::entry(handlers + (32 * idx)));
+            self.set_entry(idx, IdtEntry::raw_entry(handlers + (32 * idx)));
         }
 
         self
