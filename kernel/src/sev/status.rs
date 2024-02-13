@@ -186,6 +186,10 @@ pub fn sev_status_verify() {
 }
 
 impl SEVStatusFlags {
+    pub fn from_sev_features(sev_features: u64) -> Self {
+        SEVStatusFlags::from_bits(sev_features << 2).unwrap()
+    }
+
     pub fn as_sev_features(&self) -> u64 {
         let sev_features = self.bits();
         sev_features >> 2
