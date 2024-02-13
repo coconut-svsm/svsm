@@ -92,6 +92,16 @@ impl IdtEntry {
         IdtEntry::create(target, SVSM_CS, ist)
     }
 
+    pub fn entry_with_handler(handler: unsafe extern "C" fn()) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, 0)
+    }
+
+    pub fn ist_entry_with_handler(handler: unsafe extern "C" fn(), ist: u8) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, ist)
+    }
+
     pub const fn no_handler() -> Self {
         IdtEntry { low: 0, high: 0 }
     }
