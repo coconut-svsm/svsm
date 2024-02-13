@@ -7,10 +7,12 @@
 //! This crate provides definitions of IGVM parameters to be parsed by
 //! COCONUT-SVSM to determine its configuration.
 
+use zerocopy::AsBytes;
+
 /// The IGVM parameter page is an unmeasured page containing individual
 /// parameters that are provided by the host loader.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(AsBytes, Clone, Copy, Debug, Default)]
 pub struct IgvmParamPage {
     /// The number of vCPUs that are configured for the guest VM.
     pub cpu_count: u32,
@@ -24,7 +26,7 @@ pub struct IgvmParamPage {
 /// An entry that represents an area of pre-validated memory defined by the
 /// firmware in the IGVM file.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(AsBytes, Clone, Copy, Debug, Default)]
 pub struct IgvmParamBlockFwMem {
     /// The base physical address of the prevalidated memory region.
     pub base: u32,
@@ -36,7 +38,7 @@ pub struct IgvmParamBlockFwMem {
 /// The portion of the IGVM parameter block that describes metadata about
 /// the firmware image embedded in the IGVM file.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(AsBytes, Clone, Copy, Debug, Default)]
 pub struct IgvmParamBlockFwInfo {
     /// The guest physical address of the start of the guest firmware. The
     /// permissions on the pages in the firmware range are adjusted to the guest
@@ -78,7 +80,7 @@ pub struct IgvmParamBlockFwInfo {
 /// builder which describes where the additional IGVM parameter information
 /// has been placed into the guest address space.
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(AsBytes, Clone, Copy, Debug, Default)]
 pub struct IgvmParamBlock {
     /// The total size of the parameter area, beginning with the parameter
     /// block itself and including any additional parameter pages which follow.
@@ -129,7 +131,7 @@ pub struct IgvmParamBlock {
 /// The IGVM context page is a measured page that is used to specify the start
 /// context for the guest VMPL.  If present, it overrides the processor state
 /// initialized at reset.
-#[derive(Copy, Debug, Clone, Default)]
+#[derive(AsBytes, Copy, Debug, Clone, Default)]
 #[repr(C, packed)]
 pub struct IgvmGuestContext {
     pub cr0: u64,
