@@ -84,31 +84,6 @@ pub fn idt_init() {
     init_ist_vectors();
 }
 
-#[no_mangle]
-pub extern "C" fn generic_idt_handler(ctx: &mut X86ExceptionContext) {
-    match ctx.vector {
-        DB_VECTOR => ex_handler_debug(ctx),
-        BP_VECTOR => ex_handler_breakpoint(ctx),
-        DF_VECTOR => ex_handler_double_fault(ctx),
-        GP_VECTOR => ex_handler_general_protection(ctx),
-        PF_VECTOR => ex_handler_page_fault(ctx),
-        HV_VECTOR => ex_handler_hypervisor_injection(ctx),
-        VC_VECTOR => ex_handler_vmm_communication(ctx),
-        _ => {
-            let err = ctx.error_code;
-            let vec = ctx.vector;
-            let rip = ctx.frame.rip;
-
-            if !handle_exception_table(ctx) {
-                panic!(
-                    "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-                    vec, rip, err
-                );
-            }
-        }
-    }
-}
-
 // Debug handler
 #[no_mangle]
 extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
@@ -194,45 +169,3 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext) {
 }
 
 global_asm!(include_str!("entry.S"), options(att_syntax));
-
-global_asm!(
-    r#"
-        .text
-    push_regs:
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-
-        movq    %rsp, %rdi
-        call    generic_idt_handler
-
-        jmp generic_idt_handler_return
-    
-        .align 32
-        .globl svsm_idt_handler_array
-    svsm_idt_handler_array:
-        i = 0
-        .rept 32
-        .align 32
-        .if ((0x20027d00 >> i) & 1) == 0
-        pushq   $0
-        .endif
-        pushq   $i  /* Vector Number */
-        jmp push_regs
-        i = i + 1
-        .endr
-    "#,
-    options(att_syntax)
-);
