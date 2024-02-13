@@ -11,29 +11,29 @@ use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
 use core::mem;
 
-pub const _DE_VECTOR: usize = 0;
+pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
-pub const _NMI_VECTOR: usize = 2;
+pub const NMI_VECTOR: usize = 2;
 pub const BP_VECTOR: usize = 3;
-pub const _OF_VECTOR: usize = 4;
-pub const _BR_VECTOR: usize = 5;
-pub const _UD_VECTOR: usize = 6;
-pub const _NM_VECTOR: usize = 7;
+pub const OF_VECTOR: usize = 4;
+pub const BR_VECTOR: usize = 5;
+pub const UD_VECTOR: usize = 6;
+pub const NM_VECTOR: usize = 7;
 pub const DF_VECTOR: usize = 8;
-pub const _CSO_VECTOR: usize = 9;
-pub const _TS_VECTOR: usize = 10;
-pub const _NP_VECTOR: usize = 11;
-pub const _SS_VECTOR: usize = 12;
+pub const CSO_VECTOR: usize = 9;
+pub const TS_VECTOR: usize = 10;
+pub const NP_VECTOR: usize = 11;
+pub const SS_VECTOR: usize = 12;
 pub const GP_VECTOR: usize = 13;
 pub const PF_VECTOR: usize = 14;
-pub const _MF_VECTOR: usize = 16;
-pub const _AC_VECTOR: usize = 17;
-pub const _MCE_VECTOR: usize = 18;
-pub const _XF_VECTOR: usize = 19;
-pub const _CP_VECTOR: usize = 21;
+pub const MF_VECTOR: usize = 16;
+pub const AC_VECTOR: usize = 17;
+pub const MCE_VECTOR: usize = 18;
+pub const XF_VECTOR: usize = 19;
+pub const CP_VECTOR: usize = 21;
 pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
-pub const _SX_VECTOR: usize = 30;
+pub const SX_VECTOR: usize = 30;
 
 pub const PF_ERROR_WRITE: usize = 2;
 
@@ -84,11 +84,17 @@ impl IdtEntry {
         IdtEntry { low, high }
     }
 
-    pub fn entry(target: VirtAddr) -> Self {
+    pub fn raw_entry(target: VirtAddr) -> Self {
         IdtEntry::create(target, SVSM_CS, 0)
     }
 
-    pub fn ist_entry(target: VirtAddr, ist: u8) -> Self {
+    pub fn entry(handler: unsafe extern "C" fn()) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, 0)
+    }
+
+    pub fn ist_entry(handler: unsafe extern "C" fn(), ist: u8) -> Self {
+        let target = VirtAddr::from(handler as *const ());
         IdtEntry::create(target, SVSM_CS, ist)
     }
 
@@ -122,7 +128,7 @@ impl IDT {
         let handlers = VirtAddr::from(handler_array);
 
         for idx in 0..size {
-            self.set_entry(idx, IdtEntry::entry(handlers + (32 * idx)));
+            self.set_entry(idx, IdtEntry::raw_entry(handlers + (32 * idx)));
         }
 
         self
