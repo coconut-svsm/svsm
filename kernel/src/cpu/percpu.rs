@@ -219,6 +219,7 @@ pub struct PerCpuShared {
     online: AtomicBool,
     ipi_irr: [AtomicU32; 8],
     ipi_pending: AtomicBool,
+    nmi_pending: AtomicBool,
 }
 
 impl PerCpuShared {
@@ -238,6 +239,7 @@ impl PerCpuShared {
                 AtomicU32::new(0),
             ],
             ipi_pending: AtomicBool::new(false),
+            nmi_pending: AtomicBool::new(false),
         }
     }
 
@@ -289,12 +291,21 @@ impl PerCpuShared {
         self.ipi_pending.store(true, Ordering::Release);
     }
 
+    pub fn request_nmi(&self) {
+        self.nmi_pending.store(true, Ordering::Relaxed);
+        self.ipi_pending.store(true, Ordering::Release);
+    }
+
     pub fn ipi_pending(&self) -> bool {
         self.ipi_pending.swap(false, Ordering::Acquire)
     }
 
     pub fn ipi_irr_vector(&self, index: usize) -> u32 {
         self.ipi_irr[index].swap(0, Ordering::Relaxed)
+    }
+
+    pub fn nmi_pending(&self) -> bool {
+        self.nmi_pending.swap(false, Ordering::Relaxed)
     }
 }
 

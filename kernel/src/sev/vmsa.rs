@@ -75,6 +75,12 @@ impl GuestCpuState for VMSA {
         vintr_ctrl.set_v_tpr(tpr >> 4)
     }
 
+    fn request_nmi(&mut self) {
+        self.event_inj = VmsaEventInject::new()
+            .with_valid(true)
+            .with_event_type(VmsaEventType::NMI);
+    }
+
     fn queue_interrupt(&mut self, irq: u8) {
         // Schedule the interrupt vector for delivery as a virtual interrupt.
         let mut vintr_ctrl = self.vintr_ctrl;
@@ -108,6 +114,18 @@ impl GuestCpuState for VMSA {
 
     fn interrupts_enabled(&self) -> bool {
         (self.rflags & 0x200) != 0
+    }
+
+    fn check_and_clear_pending_nmi(&mut self) -> bool {
+        // Check to see whether the current event injection is for an
+        // NMI.  If so, clear the pending event..
+        let event_inj = self.event_inj;
+        if event_inj.valid() && event_inj.event_type() == VmsaEventType::NMI {
+            self.event_inj = VmsaEventInject::new();
+            true
+        } else {
+            false
+        }
     }
 
     fn check_and_clear_pending_interrupt_event(&mut self) -> u8 {

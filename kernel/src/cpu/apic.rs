@@ -114,6 +114,7 @@ pub struct LocalApic {
     interrupt_delivered: bool,
     interrupt_queued: bool,
     lazy_eoi_pending: bool,
+    nmi_pending: bool,
 }
 
 impl LocalApic {
@@ -129,6 +130,7 @@ impl LocalApic {
             interrupt_delivered: false,
             interrupt_queued: false,
             lazy_eoi_pending: false,
+            nmi_pending: false,
         }
     }
 
@@ -266,6 +268,9 @@ impl LocalApic {
         for (i, irr) in self.irr.iter_mut().enumerate() {
             *irr |= cpu_shared.ipi_irr_vector(i);
         }
+        if cpu_shared.nmi_pending() {
+            self.nmi_pending = true;
+        }
         self.update_required = true;
     }
 
@@ -288,6 +293,13 @@ impl LocalApic {
             // Make sure that all previously delivered interrupts have been
             // processed before attempting to process any more.
             self.check_delivered_interrupts(cpu_state, caa_addr);
+            self.update_required = false;
+
+            // If an NMI is pending, then present it first.
+            if self.nmi_pending {
+                cpu_state.request_nmi();
+                self.nmi_pending = false;
+            }
 
             let irq = self.scan_irr();
             let current_priority = if self.isr_stack_index != 0 {
@@ -357,7 +369,6 @@ impl LocalApic {
                     }
                 }
             }
-            self.update_required = false;
         }
     }
 
@@ -409,15 +420,31 @@ impl LocalApic {
         self.update_required = true;
     }
 
+    fn post_icr_interrupt(&mut self, icr: ApicIcr) {
+        if icr.message_type() == IcrMessageType::Nmi {
+            self.nmi_pending = true;
+            self.update_required = true;
+        } else {
+            self.post_interrupt(icr.vector(), false);
+        }
+    }
+
+    fn post_ipi_one_target(cpu: &PerCpuShared, icr: ApicIcr) {
+        if icr.message_type() == IcrMessageType::Nmi {
+            cpu.request_nmi();
+        } else {
+            cpu.request_ipi(icr.vector());
+        }
+    }
+
     fn send_logical_ipi(&mut self, icr: ApicIcr) -> bool {
-        let vector = icr.vector();
         let mut signal = false;
 
         // Check whether the current CPU matches the destination.
         let destination = icr.destination();
         let apic_id = this_cpu().get_apic_id();
         if Self::logical_destination_match(destination, apic_id) {
-            self.post_interrupt(vector, false);
+            self.post_icr_interrupt(icr);
         }
 
         // Enumerate all CPUs to see which have APIC IDs that match the
@@ -429,7 +456,7 @@ impl LocalApic {
             if (this_apic_id != apic_id)
                 && Self::logical_destination_match(destination, this_apic_id)
             {
-                cpu.request_ipi(vector);
+                Self::post_ipi_one_target(cpu, icr);
                 signal = true;
             }
         }
@@ -489,8 +516,6 @@ impl LocalApic {
             IcrDestFmt::AllWithSelf => (true, true, true),
         };
 
-        let vector = icr.vector();
-
         if include_others {
             // Enumerate all processors in the system except for the
             // current CPU and indicate that an IPI has been requested.
@@ -498,13 +523,13 @@ impl LocalApic {
             for cpu_ref in PERCPU_AREAS.iter() {
                 let cpu = cpu_ref.unwrap();
                 if cpu.apic_id() != apic_id {
-                    cpu.request_ipi(vector);
+                    Self::post_ipi_one_target(cpu, icr);
                 }
             }
         }
 
         if include_self {
-            self.post_interrupt(vector, false);
+            self.post_icr_interrupt(icr);
         }
 
         if signal_host {
@@ -567,13 +592,17 @@ impl LocalApic {
     fn handle_icr_write(&mut self, value: u64) -> Result<(), ApicError> {
         let icr = ApicIcr::from(value);
 
-        // Only fixed interrupts can be handled.
-        if icr.message_type() != IcrMessageType::Fixed {
-            return Err(ApicError::ApicError);
-        }
+        // Verify that this message type is supported.
+        let valid_type = match icr.message_type() {
+            IcrMessageType::Fixed => {
+                // Only asserted edge-triggered interrupts can be handled.
+                !icr.trigger_mode() && icr.assert()
+            }
+            IcrMessageType::Nmi => true,
+            _ => false,
+        };
 
-        // Only asserted edge-triggered interrupts can be handled.
-        if icr.trigger_mode() || !icr.assert() {
+        if !valid_type {
             return Err(ApicError::ApicError);
         }
 
@@ -745,6 +774,12 @@ impl LocalApic {
             .status
             .fetch_or(multiple_vectors_mask, Ordering::Relaxed);
 
+        // Indicate whether an NMI is pending.
+        if self.nmi_pending {
+            let nmi_mask: u32 = HVExtIntStatus::new().with_nmi_pending(true).into();
+            descriptor.status.fetch_or(nmi_mask, Ordering::Relaxed);
+        }
+
         // If a single, edge-triggered interrupt is present in the interrupt
         // descriptor, then transfer it to the local IRR.  Level-sensitive
         // interrupts can be left alone since the host must be prepared to
@@ -788,6 +823,11 @@ impl LocalApic {
     ) {
         // Ensure that any previous interrupt delivery is complete.
         self.check_delivered_interrupts(cpu_state, caa_addr);
+
+        // Rewind any pending NMI.
+        if cpu_state.check_and_clear_pending_nmi() {
+            self.nmi_pending = true;
+        }
 
         // Hand the current APIC state off to the host.
         self.handoff_to_host();
