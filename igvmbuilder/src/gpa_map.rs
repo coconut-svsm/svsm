@@ -130,7 +130,7 @@ impl GpaMap {
             }
         };
 
-        let igvm_param_block = GpaRange::new_page(kernel_elf.get_end())?;
+        let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
         let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
         let memory_map = GpaRange::new_page(general_params.get_end())?;
         let guest_context = if let Some(firmware) = firmware {
