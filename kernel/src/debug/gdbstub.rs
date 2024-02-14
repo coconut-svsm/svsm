@@ -233,9 +233,7 @@ pub mod svsm_gdbstub {
         exception_type: ExceptionType,
         gdb_state: &mut LockGuard<'_, Option<SvsmGdbStub<'_>>>,
     ) {
-        let SvsmGdbStub { gdb, mut target } = gdb_state.take().unwrap_or_else(|| {
-            panic!("Invalid GDB state");
-        });
+        let SvsmGdbStub { gdb, mut target } = gdb_state.take().expect("Invalid GDB state");
 
         target.set_regs(ctx);
 
@@ -267,10 +265,9 @@ pub mod svsm_gdbstub {
                 } else {
                     MultiThreadStopReason::SwBreak(tid)
                 };
-                match gdb_inner.report_stop(&mut target, reason) {
-                    Ok(gdb) => gdb,
-                    Err(_) => panic!("Failed to handle software breakpoint"),
-                }
+                gdb_inner
+                    .report_stop(&mut target, reason)
+                    .expect("Failed to handle software breakpoint")
             }
             _ => gdb,
         };
@@ -285,11 +282,9 @@ pub mod svsm_gdbstub {
                         .borrow_conn()
                         .read()
                         .expect("Failed to read from GDB port");
-                    match gdb_inner.incoming_data(&mut target, byte) {
-                        Ok(gdb) => gdb,
-                        Err(_) => panic!("Could not open serial port for GDB connection. \
-                                    Please ensure the virtual machine is configured to provide a second serial port.")
-                    }
+                    gdb_inner.incoming_data(&mut target, byte)
+                        .expect("Could not open serial port for GDB connection. \
+                                Please ensure the virtual machine is configured to provide a second serial port.")
                 }
                 GdbStubStateMachine::Running(gdb_inner) => {
                     new_gdb = gdb_inner.into();
