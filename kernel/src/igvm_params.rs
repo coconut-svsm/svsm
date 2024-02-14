@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::fw_meta::SevFWMetaData;
@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
-use core::mem::{align_of, size_of};
+use core::mem::size_of;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -60,10 +60,9 @@ impl IgvmParams<'_> {
     }
 
     fn try_aligned_ref<'a, T>(addr: VirtAddr) -> Result<&'a T, SvsmError> {
-        if !addr.is_aligned(align_of::<T>()) {
-            return Err(SvsmError::Firmware);
-        }
-        Ok(unsafe { &*addr.as_ptr::<T>() })
+        // SAFETY: we trust the caller to provide an address pointing to valid
+        // memory which is not mutably aliased.
+        unsafe { addr.aligned_ref::<T>().ok_or(SvsmError::Firmware) }
     }
 
     pub fn size(&self) -> usize {
