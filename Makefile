@@ -57,10 +57,13 @@ bin/coconut-qemu.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
 bin/coconut-hyperv.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v
 
+bin/coconut-test-qemu.igvm: $(IGVMBUILDER) bin/test-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu
+
 test:
 	cargo test --workspace --target=x86_64-unknown-linux-gnu
 
-test-in-svsm: utils/cbit bin/svsm-test.bin
+test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
 	./scripts/test-in-svsm.sh
 
 doc:
@@ -115,9 +118,6 @@ bin/stage1-test: ${STAGE1_TEST_OBJS}
 	$(CC) -o $@ $(STAGE1_TEST_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
 
 bin/svsm.bin: bin/stage1
-	objcopy -O binary $< $@
-
-bin/svsm-test.bin: bin/stage1-test
 	objcopy -O binary $< $@
 
 clippy:
