@@ -90,12 +90,10 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
     let err = ctx.error_code;
     let rip = ctx.frame.rip;
 
-    /*
-     * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-     * This is currently only relevant for IOIO handling. This field is currently reset in
-     * the ioio_{in,ou} methods but it would be better to move the reset out of the different
-     * handlers.
-     */
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
+    // This is currently only relevant for IOIO handling. This field is currently reset in
+    // the ioio_{in,ou} methods but it would be better to move the reset out of the different
+    // handlers.
     let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
@@ -120,12 +118,10 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
     let error_code = ctx.error_code;
     let rip = ctx.frame.rip;
 
-    /*
-     * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-     * This is currently only relevant for IOIO handling. This field is currently reset in
-     * the ioio_{in,ou} methods but it would be better to move the reset out of the different
-     * handlers.
-     */
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
+    // This is currently only relevant for IOIO handling. This field is currently reset in
+    // the ioio_{in,ou} methods but it would be better to move the reset out of the different
+    // handlers.
     let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx).expect("Could not decode instruction");
@@ -151,15 +147,13 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
 }
 
 fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    /*
-     * Section 2.3.1 GHCB MSR Protocol in SEV-ES Guest-Hypervisor Communication Block
-     * Standardization Rev. 2.02.
-     * For SEV-ES/SEV-SNP, we can use the CPUID table already defined and populated with
-     * firmware information.
-     * We choose for now not to call the hypervisor to perform CPUID, since it's no trusted.
-     * Since GHCB is not needed to handle CPUID with the firmware table, we can call the handler
-     * very soon in stage 2.
-     */
+    // Section 2.3.1 GHCB MSR Protocol in SEV-ES Guest-Hypervisor Communication Block
+    // Standardization Rev. 2.02.
+    // For SEV-ES/SEV-SNP, we can use the CPUID table already defined and populated with
+    // firmware information.
+    // We choose for now not to call the hypervisor to perform CPUID, since it's no trusted.
+    // Since GHCB is not needed to handle CPUID with the firmware table, we can call the handler
+    // very soon in stage 2.
 
     snp_cpuid(ctx)
 }
