@@ -477,8 +477,12 @@ pub mod svsm_gdbstub {
         fn write_registers(
             &mut self,
             regs: &<Self::Arch as gdbstub::arch::Arch>::Registers,
-            _tid: Tid,
+            tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
+            if !is_current_task(tid.get() as u32) {
+                return Err(TargetError::NonFatal);
+            }
+
             let context = self.ctx_mut().unwrap();
 
             context.ret_addr = regs.rip;
