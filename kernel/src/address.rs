@@ -59,6 +59,11 @@ pub trait Address:
     }
 
     #[inline]
+    fn is_aligned_to<T>(&self) -> bool {
+        self.is_aligned(core::mem::align_of::<T>())
+    }
+
+    #[inline]
     fn is_page_aligned(&self) -> bool {
         self.is_aligned(PAGE_SIZE)
     }
@@ -213,6 +218,34 @@ impl VirtAddr {
     #[inline]
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         self.0 as *mut T
+    }
+
+    /// Converts the `VirtAddr` to a reference to the given type, checking
+    /// that the address is not NULL and properly aligned.
+    ///
+    /// # Safety
+    ///
+    /// All safety requirements for pointers apply, minus alignment and NULL
+    /// checks, which this function already does.
+    #[inline]
+    pub unsafe fn aligned_ref<'a, T>(&self) -> Option<&'a T> {
+        self.is_aligned_to::<T>()
+            .then(|| self.as_ptr::<T>().as_ref())
+            .flatten()
+    }
+
+    /// Converts the `VirtAddr` to a reference to the given type, checking
+    /// that the address is not NULL and properly aligned.
+    ///
+    /// # Safety
+    ///
+    /// All safety requirements for pointers apply, minus alignment and NULL
+    /// checks, which this function already does.
+    #[inline]
+    pub unsafe fn aligned_mut<'a, T>(&self) -> Option<&'a mut T> {
+        self.is_aligned_to::<T>()
+            .then(|| self.as_mut_ptr::<T>().as_mut())
+            .flatten()
     }
 
     pub const fn const_add(&self, offset: usize) -> Self {
