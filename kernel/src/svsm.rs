@@ -191,7 +191,7 @@ fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
     let vmsa = vmsa_ref.vmsa();
 
-    config.initialize_guest_vmsa(vmsa);
+    config.initialize_guest_vmsa(vmsa)?;
 
     log::info!("VMSA PA: {:#x}", vmsa_pa);
 
