@@ -74,17 +74,17 @@ startup_32:
 
 	.align	4
 stage2_bin:
-	.incbin "stage1/stage2.bin"
+	.incbin "bin/stage2.bin"
 	.align 4
 stage2_bin_end:
 
 kernel_elf:
-	.incbin "stage1/kernel.elf"
+	.incbin "bin/kernel.elf"
 	.align 4
 kernel_elf_end:
 
 kernel_fs_bin:
-	.incbin "stage1/svsm-fs.bin"
+	.incbin "bin/svsm-fs.bin"
 kernel_fs_bin_end:
 
 	.align 4
