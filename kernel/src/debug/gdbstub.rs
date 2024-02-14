@@ -186,6 +186,7 @@ pub mod svsm_gdbstub {
     }
 
     impl GdbTaskContext {
+        #[must_use = "The task switch will have no effect if the context is dropped"]
         fn switch_to_task(id: u32) -> Self {
             let cr3 = if is_current_task(id) {
                 0
