@@ -314,11 +314,11 @@ pub mod svsm_gdbstub {
     struct GdbStubConnection;
 
     impl GdbStubConnection {
-        pub const fn new() -> Self {
+        const fn new() -> Self {
             Self {}
         }
 
-        pub fn read(&mut self) -> Result<u8, &'static str> {
+        fn read(&mut self) -> Result<u8, &'static str> {
             unsafe { Ok(GDB_SERIAL.get_byte()) }
         }
     }
@@ -351,7 +351,7 @@ pub mod svsm_gdbstub {
     }
 
     impl GdbStubTarget {
-        pub const fn new() -> Self {
+        const fn new() -> Self {
             Self {
                 ctx: 0,
                 breakpoints: [GdbStubBreakpoint {
@@ -362,7 +362,7 @@ pub mod svsm_gdbstub {
             }
         }
 
-        pub fn set_regs(&mut self, ctx: &TaskContext) {
+        fn set_regs(&mut self, ctx: &TaskContext) {
             self.ctx = (ctx as *const _) as usize;
         }
 
