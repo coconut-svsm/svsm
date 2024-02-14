@@ -277,6 +277,11 @@ impl IgvmBuilder {
         // Add the IGVM parameter block
         self.add_param_block(param_block);
 
+        // Add optional filesystem image
+        if let Some(fs) = &self.options.filesystem {
+            self.add_data_pages_from_file(&fs.clone(), self.gpa_map.kernel_fs.get_start())?;
+        }
+
         // Add the kernel elf binary
         self.add_data_pages_from_file(
             &self.options.kernel.clone(),

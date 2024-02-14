@@ -29,7 +29,7 @@ impl Stage2Stack {
             kernel_start: gpa_map.kernel_elf.get_start() as u32,
             kernel_end: (gpa_map.kernel_elf.get_start() + gpa_map.kernel_elf.get_size()) as u32,
             filesystem_start: gpa_map.kernel_fs.get_start() as u32,
-            filesystem_end: gpa_map.kernel_fs.get_end() as u32,
+            filesystem_end: (gpa_map.kernel_fs.get_start() + gpa_map.kernel_fs.get_size()) as u32,
             igvm_param_block: gpa_map.igvm_param_block.get_start() as u32,
             reserved: 0,
         }

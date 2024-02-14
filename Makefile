@@ -21,6 +21,7 @@ endif
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
+FS_BIN=bin/svsm-fs.bin
 FS_FILE ?= none
 
 FW_FILE ?= none
@@ -51,8 +52,8 @@ $(IGVMBIN): $(IGVMBUILDER) bin
 $(IGVMBUILDER):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf ${BUILD_FW} qemu
+bin/coconut-qemu.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
+	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
 
 bin/coconut-hyperv.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v
@@ -90,11 +91,11 @@ bin/test-kernel.elf: bin
 	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
 
-bin/svsm-fs.bin: bin
+${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
-	cp -f $(FS_FILE) bin/svsm-fs.bin
+	cp -f $(FS_FILE) ${FS_BIN}
 endif
-	touch bin/svsm-fs.bin
+	touch ${FS_BIN}
 
 stage1/stage1.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin
 	ln -sf svsm-kernel.elf bin/kernel.elf

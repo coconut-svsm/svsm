@@ -39,6 +39,7 @@ impl GpaRange {
     pub fn get_start(&self) -> u64 {
         self.start
     }
+
     pub fn get_end(&self) -> u64 {
         self.end
     }
@@ -111,11 +112,11 @@ impl GpaMap {
             }
             Hypervisor::HyperV => {
                 // Load the kernel image after the firmware.
-                firmware_range.end
+                firmware_range.get_end()
             }
         };
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
-        let kernel_fs = GpaRange::new(kernel_elf.end, kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(kernel_elf.get_end(), kernel_fs_len as u64)?;
 
         // Calculate the kernel size and base.
         let kernel = match options.hypervisor {
@@ -129,13 +130,13 @@ impl GpaMap {
             }
         };
 
-        let igvm_param_block = GpaRange::new_page(kernel_elf.end)?;
-        let general_params = GpaRange::new_page(igvm_param_block.end)?;
-        let memory_map = GpaRange::new_page(general_params.end)?;
+        let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
+        let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
+        let memory_map = GpaRange::new_page(general_params.get_end())?;
         let guest_context = if let Some(firmware) = firmware {
             if firmware.get_guest_context().is_some() {
                 // Locate the guest context after the memory map parameter page
-                GpaRange::new_page(memory_map.end)?
+                GpaRange::new_page(memory_map.get_end())?
             } else {
                 GpaRange::new(0, 0)?
             }
@@ -147,7 +148,7 @@ impl GpaMap {
             low_memory: GpaRange::new(0, 0xf000)?,
             stage2_stack: GpaRange::new_page(0xf000)?,
             stage2_image,
-            stage2_free: GpaRange::new(stage2_image.end, 0x9e000 - &stage2_image.end)?,
+            stage2_free: GpaRange::new(stage2_image.get_end(), 0x9e000 - &stage2_image.get_end())?,
             secrets_page: GpaRange::new_page(0x9e000)?,
             cpuid_page: GpaRange::new_page(0x9f000)?,
             kernel_elf,
