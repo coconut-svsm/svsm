@@ -341,15 +341,22 @@ pub mod svsm_gdbstub {
     }
 
     struct GdbStubTarget {
-        ctx: usize,
+        ctx: *mut TaskContext,
         breakpoints: [GdbStubBreakpoint; MAX_BREAKPOINTS],
         is_single_step: u32,
     }
 
+    // SAFETY: this can only be unsafe via aliasing of the ctx field,
+    // which is the exception context on the stack and should not be accessed
+    // from any other thread.
+    unsafe impl Send for GdbStubTarget {}
+    // SAFETY: see safety comment above
+    unsafe impl Sync for GdbStubTarget {}
+
     impl GdbStubTarget {
         const fn new() -> Self {
             Self {
-                ctx: 0,
+                ctx: core::ptr::null_mut(),
                 breakpoints: [GdbStubBreakpoint {
                     addr: VirtAddr::null(),
                     inst: 0,
@@ -358,8 +365,24 @@ pub mod svsm_gdbstub {
             }
         }
 
-        fn set_regs(&mut self, ctx: &TaskContext) {
-            self.ctx = (ctx as *const _) as usize;
+        fn ctx(&self) -> Option<&TaskContext> {
+            // SAFETY: this is a pointer to the exception context on the
+            // stack, so it is not aliased from a different task. We trust
+            // the debug exception handler to pass a well-aligned pointer
+            // pointing to valid memory.
+            unsafe { self.ctx.as_ref() }
+        }
+
+        fn ctx_mut(&mut self) -> Option<&mut TaskContext> {
+            // SAFETY: this is a pointer to the exception context on the
+            // stack, so it is not aliased from a different task. We trust
+            // the debug exception handler to pass a well-aligned pointer
+            // pointing to valid memory.
+            unsafe { self.ctx.as_mut() }
+        }
+
+        fn set_regs(&mut self, ctx: &mut TaskContext) {
+            self.ctx = core::ptr::from_mut(ctx)
         }
 
         fn is_breakpoint(&self, rip: usize) -> bool {
@@ -433,10 +456,7 @@ pub mod svsm_gdbstub {
             tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
             if is_current_task(tid.get() as u32) {
-                unsafe {
-                    let context = (self.ctx as *const TaskContext).as_ref().unwrap();
-                    *regs = X86_64CoreRegs::from(context);
-                }
+                *regs = X86_64CoreRegs::from(self.ctx().unwrap());
             } else {
                 let task = TASKLIST.lock().get_task(tid.get() as u32);
                 if let Some(task) = task {
@@ -459,28 +479,26 @@ pub mod svsm_gdbstub {
             regs: &<Self::Arch as gdbstub::arch::Arch>::Registers,
             _tid: Tid,
         ) -> gdbstub::target::TargetResult<(), Self> {
-            unsafe {
-                let context = (self.ctx as *mut TaskContext).as_mut().unwrap();
+            let context = self.ctx_mut().unwrap();
 
-                context.ret_addr = regs.rip;
-                context.regs.rax = regs.regs[0] as usize;
-                context.regs.rbx = regs.regs[1] as usize;
-                context.regs.rcx = regs.regs[2] as usize;
-                context.regs.rdx = regs.regs[3] as usize;
-                context.regs.rsi = regs.regs[4] as usize;
-                context.regs.rdi = regs.regs[5] as usize;
-                context.regs.rbp = regs.regs[6] as usize;
-                context.rsp = regs.regs[7];
-                context.regs.r8 = regs.regs[8] as usize;
-                context.regs.r9 = regs.regs[9] as usize;
-                context.regs.r10 = regs.regs[10] as usize;
-                context.regs.r11 = regs.regs[11] as usize;
-                context.regs.r12 = regs.regs[12] as usize;
-                context.regs.r13 = regs.regs[13] as usize;
-                context.regs.r14 = regs.regs[14] as usize;
-                context.regs.r15 = regs.regs[15] as usize;
-                context.flags = regs.eflags as u64;
-            }
+            context.ret_addr = regs.rip;
+            context.regs.rax = regs.regs[0] as usize;
+            context.regs.rbx = regs.regs[1] as usize;
+            context.regs.rcx = regs.regs[2] as usize;
+            context.regs.rdx = regs.regs[3] as usize;
+            context.regs.rsi = regs.regs[4] as usize;
+            context.regs.rdi = regs.regs[5] as usize;
+            context.regs.rbp = regs.regs[6] as usize;
+            context.rsp = regs.regs[7];
+            context.regs.r8 = regs.regs[8] as usize;
+            context.regs.r9 = regs.regs[9] as usize;
+            context.regs.r10 = regs.regs[10] as usize;
+            context.regs.r11 = regs.regs[11] as usize;
+            context.regs.r12 = regs.regs[12] as usize;
+            context.regs.r13 = regs.regs[13] as usize;
+            context.regs.r14 = regs.regs[14] as usize;
+            context.regs.r15 = regs.regs[15] as usize;
+            context.flags = regs.eflags as u64;
             Ok(())
         }
 
