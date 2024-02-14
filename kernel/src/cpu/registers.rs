@@ -4,6 +4,8 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+use super::X86ExceptionContext;
+
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86GeneralRegs {
@@ -43,4 +45,14 @@ pub struct X86InterruptFrame {
     pub flags: usize,
     pub rsp: usize,
     pub ss: usize,
+}
+
+/// Indicates if the exception related to ctx was raised from user-mode.
+///
+/// # Returns:
+///
+/// [`true`] if the exception context ctx was raised from uer-mode.
+/// [`false`] otherwise.
+pub fn from_user(ctx: &X86ExceptionContext) -> bool {
+    (ctx.frame.cs & 3) != 0
 }

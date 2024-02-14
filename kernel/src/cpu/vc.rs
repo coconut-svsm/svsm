@@ -5,13 +5,18 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::idt::common::X86ExceptionContext;
+use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::insn::{insn_fetch, Instruction};
+use crate::cpu::percpu::this_cpu;
+use crate::cpu::registers::from_user;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
-use core::fmt;
+use crate::utils::align_down;
+use core::mem::size_of;
+use core::{fmt, ptr};
 
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
@@ -256,4 +261,43 @@ fn vc_decode_insn(ctx: &mut X86ExceptionContext) -> Result<Instruction, SvsmErro
 
 fn vc_decoding_needed(error_code: usize) -> bool {
     !(SVM_EXIT_EXCP_BASE..=SVM_EXIT_LAST_EXCP).contains(&error_code)
+}
+
+/// Used to move to a safe stack if #VC is a nested one or raised from user-mode.
+///
+/// # Arguments:
+///
+/// - `ctx`: registers from the exception raising context that have been pushed on the initial
+/// handler stack at the early handling stage.
+///
+/// # Returns:
+///
+/// [`VirtAddr`]: the new stack address. This address is directly moved to RSP in the caller.
+/// Therefore, the new address should absolutely be valid.
+#[no_mangle]
+extern "C" fn vc_switch_off_ist(ctx: &X86ExceptionContext) -> VirtAddr {
+    // Detect user #VC or nested IST #VC
+    let mut new_rsp = if from_user(ctx) || vc_on_ist_stack(ctx) {
+        this_cpu().current_stack.end()
+    } else {
+        VirtAddr::from(ctx.frame.rsp)
+    };
+
+    new_rsp =
+        VirtAddr::from(align_down(usize::from(new_rsp), 8) - size_of::<X86ExceptionContext>());
+
+    // Copy the x86 exception context to the new stack
+    // Safety: ctx content is user-controlled but its size is fixed.
+    // dst is not controllable by user. new_rsp can only be on current task's stack.
+    // dst is also properly aligned by the code above.
+    unsafe { ptr::write::<X86ExceptionContext>(new_rsp.as_mut_ptr(), *ctx) }
+
+    new_rsp
+}
+
+fn vc_on_ist_stack(ctx: &X86ExceptionContext) -> bool {
+    this_cpu()
+        .get_vc_stack_bounds()
+        .unwrap()
+        .contains(VirtAddr::from(ctx.frame.rsp))
 }

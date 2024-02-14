@@ -45,6 +45,10 @@ extern "C" {
     fn asm_entry_sx();
 }
 
+extern "C" {
+    fn asm_entry_ist_vc();
+}
+
 fn init_ist_vectors() {
     idt_mut().set_entry(
         DF_VECTOR,
@@ -56,7 +60,7 @@ fn init_ist_vectors() {
     );
     idt_mut().set_entry(
         VC_VECTOR,
-        IdtEntry::ist_entry(asm_entry_vc, IST_VC.try_into().unwrap()),
+        IdtEntry::ist_entry(asm_entry_ist_vc, IST_VC.try_into().unwrap()),
     );
 }
 
