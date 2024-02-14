@@ -17,6 +17,12 @@ use crate::sev::utils::pvalidate;
 use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
 
+/// Makes a virtual page shared by revoking its validation, updating the
+/// page state, and modifying the page tables accordingly.
+///
+/// # Arguments
+///
+/// * `vaddr` - The virtual address of the page to be made shared.
 pub fn make_page_shared(vaddr: VirtAddr) {
     // Revoke page validation before changing page state.
     pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)
@@ -44,6 +50,12 @@ pub fn make_page_shared(vaddr: VirtAddr) {
     flush_tlb_global_sync();
 }
 
+/// Makes a virtual page private by updating the page tables, modifying the
+/// page state, and revalidating the page.
+///
+/// # Arguments
+///
+/// * `vaddr` - The virtual address of the page to be made private.
 pub fn make_page_private(vaddr: VirtAddr) {
     // Update the page tables to map the page as private.
     this_cpu_mut()
