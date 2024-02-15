@@ -35,7 +35,7 @@ pub struct IgvmParams<'a> {
     igvm_param_block: &'a IgvmParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
-    igvm_guest_context_address: VirtAddr,
+    igvm_guest_context: Option<&'a IgvmGuestContext>,
 }
 
 impl IgvmParams<'_> {
@@ -45,17 +45,18 @@ impl IgvmParams<'_> {
         let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
         let memory_map_address = addr + param_block.memory_map_offset as usize;
         let memory_map = Self::try_aligned_ref::<IgvmMemoryMap>(memory_map_address)?;
-        let guest_context_address = if param_block.guest_context_offset != 0 {
-            addr + param_block.guest_context_offset.try_into().unwrap()
+        let guest_context = if param_block.guest_context_offset != 0 {
+            let offset = usize::try_from(param_block.guest_context_offset).unwrap();
+            Some(Self::try_aligned_ref::<IgvmGuestContext>(addr + offset)?)
         } else {
-            VirtAddr::null()
+            None
         };
 
         Ok(Self {
             igvm_param_block: param_block,
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
-            igvm_guest_context_address: guest_context_address,
+            igvm_guest_context: guest_context,
         })
     }
 
@@ -232,12 +233,9 @@ impl IgvmParams<'_> {
     }
 
     pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
-        if self.igvm_param_block.guest_context_offset == 0 {
+        let Some(guest_context) = self.igvm_guest_context else {
             return Ok(());
-        }
-
-        let guest_context =
-            Self::try_aligned_ref::<IgvmGuestContext>(self.igvm_guest_context_address)?;
+        };
 
         // Copy the specified registers into the VMSA.
         vmsa.cr0 = guest_context.cr0;
