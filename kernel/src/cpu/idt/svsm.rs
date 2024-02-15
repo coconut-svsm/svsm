@@ -43,6 +43,7 @@ extern "C" {
     fn asm_entry_hv();
     fn asm_entry_vc();
     fn asm_entry_sx();
+    fn asm_entry_int80();
 }
 
 fn init_ist_vectors() {
@@ -76,6 +77,11 @@ pub fn early_idt_init() {
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
     idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
+
+    // Interupts
+    idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
+
+    // Load IDT
     idt.load();
 }
 
@@ -155,6 +161,12 @@ extern "C" fn ex_handler_hypervisor_injection(_ctx: &mut X86ExceptionContext) {
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctx: &mut X86ExceptionContext) {
     handle_vc_exception(ctx).expect("Failed to handle #VC");
+}
+
+// System Call SoftIRQ handler
+#[no_mangle]
+extern "C" fn ex_handler_system_call(ctx: &mut X86ExceptionContext) {
+    ctx.regs.rax = !0;
 }
 
 #[no_mangle]
