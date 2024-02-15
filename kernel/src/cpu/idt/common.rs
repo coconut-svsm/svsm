@@ -66,7 +66,23 @@ const IDT_TARGET_MASK_1_SHIFT: u64 = 0;
 const IDT_TARGET_MASK_2_SHIFT: u64 = 48 - 16;
 const IDT_TARGET_MASK_3_SHIFT: u64 = 32;
 
-const IDT_TYPE_MASK: u64 = 0xeu64 << 40; // Only interrupt gates for now
+const IDT_TYPE_MASK: u8 = 0x0f;
+const IDT_TYPE_SHIFT: u64 = 40;
+const IDT_TYPE_CALL: u8 = 0x0c;
+const IDT_TYPE_INT: u8 = 0x0e;
+const IDT_TYPE_TRAP: u8 = 0x0f;
+
+fn idt_type_mask(t: u8) -> u64 {
+    ((t & IDT_TYPE_MASK) as u64) << IDT_TYPE_SHIFT
+}
+
+const IDT_DPL_MASK: u8 = 0x03;
+const IDT_DPL_SHIFT: u64 = 45;
+
+fn idt_dpl_mask(dpl: u8) -> u64 {
+    ((dpl & IDT_DPL_MASK) as u64) << IDT_DPL_SHIFT
+}
+
 const IDT_PRESENT_MASK: u64 = 0x1u64 << 47;
 const IDT_CS_SHIFT: u64 = 16;
 
@@ -74,14 +90,15 @@ const IDT_IST_MASK: u64 = 0x7;
 const IDT_IST_SHIFT: u64 = 32;
 
 impl IdtEntry {
-    fn create(target: VirtAddr, cs: u16, ist: u8) -> Self {
+    fn create(target: VirtAddr, cs: u16, desc_type: u8, dpl: u8, ist: u8) -> Self {
         let vaddr = target.bits() as u64;
         let cs_mask = (cs as u64) << IDT_CS_SHIFT;
         let ist_mask = ((ist as u64) & IDT_IST_MASK) << IDT_IST_SHIFT;
         let low = (vaddr & IDT_TARGET_MASK_1) << IDT_TARGET_MASK_1_SHIFT
             | (vaddr & IDT_TARGET_MASK_2) << IDT_TARGET_MASK_2_SHIFT
-            | IDT_TYPE_MASK
+            | idt_type_mask(desc_type)
             | IDT_PRESENT_MASK
+            | idt_dpl_mask(dpl)
             | cs_mask
             | ist_mask;
         let high = (vaddr & IDT_TARGET_MASK_3) >> IDT_TARGET_MASK_3_SHIFT;
@@ -90,17 +107,32 @@ impl IdtEntry {
     }
 
     pub fn raw_entry(target: VirtAddr) -> Self {
-        IdtEntry::create(target, SVSM_CS, 0)
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, 0)
     }
 
     pub fn entry(handler: unsafe extern "C" fn()) -> Self {
         let target = VirtAddr::from(handler as *const ());
-        IdtEntry::create(target, SVSM_CS, 0)
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, 0)
+    }
+
+    pub fn user_entry(handler: unsafe extern "C" fn()) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 3, 0)
     }
 
     pub fn ist_entry(handler: unsafe extern "C" fn(), ist: u8) -> Self {
         let target = VirtAddr::from(handler as *const ());
-        IdtEntry::create(target, SVSM_CS, ist)
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_INT, 0, ist)
+    }
+
+    pub fn trap_entry(handler: unsafe extern "C" fn()) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_TRAP, 0, 0)
+    }
+
+    pub fn call_entry(handler: unsafe extern "C" fn()) -> Self {
+        let target = VirtAddr::from(handler as *const ());
+        IdtEntry::create(target, SVSM_CS, IDT_TYPE_CALL, 3, 0)
     }
 
     pub const fn no_handler() -> Self {
