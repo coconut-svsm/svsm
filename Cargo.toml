@@ -12,6 +12,8 @@ members = [
     "elf",
     # Microsoft TPM library
     "libmstpm",
+    # syscall interface definitions
+    "syscall",
 ]
 
 
@@ -23,6 +25,7 @@ test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
 libmstpm = { path = "libmstpm" }
+syscall = { path = "syscall" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
