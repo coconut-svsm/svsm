@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::fw_meta::SevFWMetaData;
@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
-use core::mem::{align_of, size_of};
+use core::mem::size_of;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -35,7 +35,7 @@ pub struct IgvmParams<'a> {
     igvm_param_block: &'a IgvmParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
-    igvm_guest_context_address: VirtAddr,
+    igvm_guest_context: Option<&'a IgvmGuestContext>,
 }
 
 impl IgvmParams<'_> {
@@ -45,25 +45,25 @@ impl IgvmParams<'_> {
         let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
         let memory_map_address = addr + param_block.memory_map_offset as usize;
         let memory_map = Self::try_aligned_ref::<IgvmMemoryMap>(memory_map_address)?;
-        let guest_context_address = if param_block.guest_context_offset != 0 {
-            addr + param_block.guest_context_offset.try_into().unwrap()
+        let guest_context = if param_block.guest_context_offset != 0 {
+            let offset = usize::try_from(param_block.guest_context_offset).unwrap();
+            Some(Self::try_aligned_ref::<IgvmGuestContext>(addr + offset)?)
         } else {
-            VirtAddr::null()
+            None
         };
 
         Ok(Self {
             igvm_param_block: param_block,
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
-            igvm_guest_context_address: guest_context_address,
+            igvm_guest_context: guest_context,
         })
     }
 
     fn try_aligned_ref<'a, T>(addr: VirtAddr) -> Result<&'a T, SvsmError> {
-        if !addr.is_aligned(align_of::<T>()) {
-            return Err(SvsmError::Firmware);
-        }
-        Ok(unsafe { &*addr.as_ptr::<T>() })
+        // SAFETY: we trust the caller to provide an address pointing to valid
+        // memory which is not mutably aliased.
+        unsafe { addr.aligned_ref::<T>().ok_or(SvsmError::Firmware) }
     }
 
     pub fn size(&self) -> usize {
@@ -232,69 +232,70 @@ impl IgvmParams<'_> {
         self.igvm_param_block.firmware.in_low_memory != 0
     }
 
-    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) {
-        if self.igvm_param_block.guest_context_offset != 0 {
-            let guest_context =
-                unsafe { &*self.igvm_guest_context_address.as_ptr::<IgvmGuestContext>() };
+    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
+        let Some(guest_context) = self.igvm_guest_context else {
+            return Ok(());
+        };
 
-            // Copy the specified registers into the VMSA.
-            vmsa.cr0 = guest_context.cr0;
-            vmsa.cr3 = guest_context.cr3;
-            vmsa.cr4 = guest_context.cr4;
-            vmsa.efer = guest_context.efer;
-            vmsa.rip = guest_context.rip;
-            vmsa.rax = guest_context.rax;
-            vmsa.rcx = guest_context.rcx;
-            vmsa.rdx = guest_context.rdx;
-            vmsa.rbx = guest_context.rbx;
-            vmsa.rsp = guest_context.rsp;
-            vmsa.rbp = guest_context.rbp;
-            vmsa.rsi = guest_context.rsi;
-            vmsa.rdi = guest_context.rdi;
-            vmsa.r8 = guest_context.r8;
-            vmsa.r9 = guest_context.r9;
-            vmsa.r10 = guest_context.r10;
-            vmsa.r11 = guest_context.r11;
-            vmsa.r12 = guest_context.r12;
-            vmsa.r13 = guest_context.r13;
-            vmsa.r14 = guest_context.r14;
-            vmsa.r15 = guest_context.r15;
-            vmsa.gdt.base = guest_context.gdt_base;
-            vmsa.gdt.limit = guest_context.gdt_limit;
+        // Copy the specified registers into the VMSA.
+        vmsa.cr0 = guest_context.cr0;
+        vmsa.cr3 = guest_context.cr3;
+        vmsa.cr4 = guest_context.cr4;
+        vmsa.efer = guest_context.efer;
+        vmsa.rip = guest_context.rip;
+        vmsa.rax = guest_context.rax;
+        vmsa.rcx = guest_context.rcx;
+        vmsa.rdx = guest_context.rdx;
+        vmsa.rbx = guest_context.rbx;
+        vmsa.rsp = guest_context.rsp;
+        vmsa.rbp = guest_context.rbp;
+        vmsa.rsi = guest_context.rsi;
+        vmsa.rdi = guest_context.rdi;
+        vmsa.r8 = guest_context.r8;
+        vmsa.r9 = guest_context.r9;
+        vmsa.r10 = guest_context.r10;
+        vmsa.r11 = guest_context.r11;
+        vmsa.r12 = guest_context.r12;
+        vmsa.r13 = guest_context.r13;
+        vmsa.r14 = guest_context.r14;
+        vmsa.r15 = guest_context.r15;
+        vmsa.gdt.base = guest_context.gdt_base;
+        vmsa.gdt.limit = guest_context.gdt_limit;
 
-            // If a non-zero code selector is specified, then set the code
-            // segment attributes based on EFER.LMA.
-            if guest_context.code_selector != 0 {
-                vmsa.cs.selector = guest_context.code_selector;
-                let efer_lma = EFERFlags::LMA;
-                if (vmsa.efer & efer_lma.bits()) != 0 {
-                    vmsa.cs.flags = 0xA9B;
-                } else {
-                    vmsa.cs.flags = 0xC9B;
-                    vmsa.cs.limit = 0xFFFFFFFF;
-                }
-            }
-
-            let efer_svme = EFERFlags::SVME;
-            vmsa.efer &= !efer_svme.bits();
-
-            // If a non-zero data selector is specified, then modify the data
-            // segment attributes to be compatible with protected mode.
-            if guest_context.data_selector != 0 {
-                vmsa.ds.selector = guest_context.data_selector;
-                vmsa.ds.flags = 0xA93;
-                vmsa.ds.limit = 0xFFFFFFFF;
-                vmsa.ss = vmsa.ds;
-                vmsa.es = vmsa.ds;
-                vmsa.fs = vmsa.ds;
-                vmsa.gs = vmsa.ds;
-            }
-
-            // Configure vTOM if reqested.
-            if self.igvm_param_block.vtom != 0 {
-                vmsa.vtom = self.igvm_param_block.vtom;
-                vmsa.sev_features |= 2; // VTOM feature
+        // If a non-zero code selector is specified, then set the code
+        // segment attributes based on EFER.LMA.
+        if guest_context.code_selector != 0 {
+            vmsa.cs.selector = guest_context.code_selector;
+            let efer_lma = EFERFlags::LMA;
+            if (vmsa.efer & efer_lma.bits()) != 0 {
+                vmsa.cs.flags = 0xA9B;
+            } else {
+                vmsa.cs.flags = 0xC9B;
+                vmsa.cs.limit = 0xFFFFFFFF;
             }
         }
+
+        let efer_svme = EFERFlags::SVME;
+        vmsa.efer &= !efer_svme.bits();
+
+        // If a non-zero data selector is specified, then modify the data
+        // segment attributes to be compatible with protected mode.
+        if guest_context.data_selector != 0 {
+            vmsa.ds.selector = guest_context.data_selector;
+            vmsa.ds.flags = 0xA93;
+            vmsa.ds.limit = 0xFFFFFFFF;
+            vmsa.ss = vmsa.ds;
+            vmsa.es = vmsa.ds;
+            vmsa.fs = vmsa.ds;
+            vmsa.gs = vmsa.ds;
+        }
+
+        // Configure vTOM if requested.
+        if self.igvm_param_block.vtom != 0 {
+            vmsa.vtom = self.igvm_param_block.vtom;
+            vmsa.sev_features |= 2; // VTOM feature
+        }
+
+        Ok(())
     }
 }

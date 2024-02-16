@@ -166,9 +166,9 @@ impl SvsmConfig<'_> {
         }
     }
 
-    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) {
+    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
         match self {
-            SvsmConfig::FirmwareConfig(_) => (),
+            SvsmConfig::FirmwareConfig(_) => Ok(()),
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.initialize_guest_vmsa(vmsa),
         }
     }
