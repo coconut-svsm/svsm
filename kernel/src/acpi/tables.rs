@@ -43,16 +43,16 @@ impl RSDPDesc {
     ///
     fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
         let mut buf = mem::MaybeUninit::<Self>::uninit();
-        let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
-        let size = file.size() as usize;
+        let path = option_env!("ACPI_RSDP_PATH").unwrap_or("etc/acpi/rsdp");
+        let file = fw_cfg.file_selector(path)?;
 
-        if size != mem::size_of::<Self>() {
+        if (file.size() as usize) < mem::size_of::<Self>() {
             return Err(SvsmError::Acpi);
         }
 
         fw_cfg.select(file.selector());
         let ptr = buf.as_mut_ptr().cast::<u8>();
-        for i in 0..size {
+        for i in 0..mem::size_of::<Self>() {
             let byte: u8 = fw_cfg.read_le();
             unsafe { ptr.add(i).write(byte) };
         }
@@ -283,7 +283,8 @@ impl ACPITableBuffer {
     ///
     /// A new [`ACPITableBuffer`] instance containing ACPI tables and their metadata.
     fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
-        let file = fw_cfg.file_selector("etc/acpi/tables")?;
+        let path = option_env!("ACPI_TABLES_PATH").unwrap_or("etc/acpi/tables");
+        let file = fw_cfg.file_selector(path)?;
         let size = file.size() as usize;
 
         let mut buf = Vec::<u8>::new();
