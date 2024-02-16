@@ -9,6 +9,8 @@ use core::fmt::Debug;
 
 use crate::locking::{LockGuard, SpinLock};
 use crate::string::FixedString;
+
+#[cfg(not(test))]
 use crate::types::{LINE_BUFFER_SIZE, PAGE_SIZE};
 use crate::utils::StringRingBuffer;
 
@@ -16,6 +18,7 @@ use alloc::string::ToString;
 use alloc::vec;
 use alloc::vec::Vec;
 
+#[cfg(not(test))]
 const BUF_SIZE: usize = PAGE_SIZE / core::mem::size_of::<char>();
 
 #[derive(Copy, Clone, Debug)]
@@ -64,4 +67,93 @@ pub fn log_buffer() -> LockGuard<'static, LogBuffer> {
 
 pub fn get_lb() -> &'static SpinLock<LogBuffer> {
     unsafe { &LB }
+}
+
+#[cfg(test)]
+const BUF_SIZE: usize = 64;
+
+#[cfg(test)]
+use crate::types::LINE_BUFFER_SIZE;
+
+#[test]
+fn test_read_write_normal() {
+    let mut fs = FixedString::<LINE_BUFFER_SIZE>::new();
+    for i in 1..=LINE_BUFFER_SIZE {
+        fs.push(char::from_u32(i as u32).unwrap());
+    }
+
+    log_buffer().write_log(&fs);
+
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), LINE_BUFFER_SIZE);
+    for i in 1..=v.len() {
+        assert_eq!(i as u8, v[i - 1]);
+    }
+}
+
+#[test]
+fn test_read_write_interleaved() {
+    let mut fs = FixedString::<LINE_BUFFER_SIZE>::new();
+    for i in 1..=LINE_BUFFER_SIZE / 2 {
+        fs.push(char::from_u32(i as u32).unwrap());
+    }
+
+    log_buffer().write_log(&fs);
+
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), LINE_BUFFER_SIZE / 2);
+    for i in 1..=v.len() {
+        assert_eq!(i as u8, v[i - 1]);
+    }
+
+    fs.clear();
+    for i in LINE_BUFFER_SIZE / 2..LINE_BUFFER_SIZE {
+        fs.push(char::from_u32((i + 1) as u32).unwrap());
+    }
+
+    log_buffer().write_log(&fs);
+
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), LINE_BUFFER_SIZE / 2);
+    for i in 1..v.len() {
+        let val = (i + LINE_BUFFER_SIZE / 2) as u8;
+        assert_eq!(val, v[i - 1]);
+    }
+}
+
+#[test]
+fn test_write_wrap_around() {
+    let mut fs = FixedString::<LINE_BUFFER_SIZE>::new();
+    for i in 1..=LINE_BUFFER_SIZE / 2 {
+        fs.push(char::from_u32(i as u32).unwrap());
+    }
+
+    log_buffer().write_log(&fs);
+
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), LINE_BUFFER_SIZE / 2);
+    for i in 1..=v.len() {
+        assert_eq!(i as u8, v[i - 1]);
+    }
+
+    fs.clear();
+    for i in 1..=LINE_BUFFER_SIZE {
+        let val = (i + LINE_BUFFER_SIZE / 2) as u32;
+        fs.push(char::from_u32(val).unwrap());
+    }
+
+    log_buffer().write_log(&fs);
+
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), LINE_BUFFER_SIZE);
+    for i in 1..v.len() {
+        let val = (i + LINE_BUFFER_SIZE / 2) as u8;
+        assert_eq!(val, v[i - 1]);
+    }
+}
+
+#[test]
+fn test_read_empty_buffer() {
+    let v = log_buffer().read_log();
+    assert_eq!(v.len(), 0);
 }
