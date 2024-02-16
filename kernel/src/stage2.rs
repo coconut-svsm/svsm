@@ -114,6 +114,7 @@ fn setup_env(config: &SvsmConfig<'_>) {
             port: config.debug_serial_port(),
         })
         .expect("console serial output already configured");
+    (*CONSOLE_SERIAL).init();
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
