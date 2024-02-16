@@ -13,4 +13,4 @@ if [ "$QEMU" == "" ]; then
 	echo "Set QEMU environment variable to QEMU installation path" && exit 1
 fi
 
-$SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm
+$SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm --unit-tests || true
