@@ -26,8 +26,8 @@ use core::mem;
 /// or the `format!` macro, like this:
 ///
 /// ```rust
-/// use svsm::error::SvsmError;
 /// use svsm::elf::ElfError;
+/// use svsm::error::SvsmError;
 ///
 /// let error = ElfError::InvalidAddressRange;
 /// let error_message = error.to_string();
@@ -203,7 +203,6 @@ pub type Elf64char = u8;
 /// Represents a 64-bit ELF virtual address range.
 ///
 /// In mathematical notation, the range is [vaddr_begin, vaddr_end)
-///
 #[derive(PartialEq, Eq, Debug, Default, Clone, Copy)]
 pub struct Elf64AddrRange {
     pub vaddr_begin: Elf64Addr,
@@ -217,7 +216,7 @@ impl Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64AddrRange, Elf64Addr};
+    /// use svsm::elf::{Elf64Addr, Elf64AddrRange};
     ///
     /// let range = Elf64AddrRange {
     ///     vaddr_begin: 0x1000,
@@ -236,7 +235,7 @@ impl Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64AddrRange, Elf64Addr};
+    /// use svsm::elf::{Elf64Addr, Elf64AddrRange};
     ///
     /// let range1 = Elf64AddrRange {
     ///     vaddr_begin: 0x1000,
@@ -266,7 +265,7 @@ impl TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64AddrRange, Elf64Addr, Elf64Xword};
+    /// use svsm::elf::{Elf64Addr, Elf64AddrRange, Elf64Xword};
     ///
     /// let vaddr_begin = 0x1000;
     /// let size = 0x100;
@@ -306,11 +305,17 @@ impl TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
 /// # Examples
 ///
 /// ```rust
-/// use svsm::elf::Elf64AddrRange;
 /// use core::cmp::Ordering;
+/// use svsm::elf::Elf64AddrRange;
 ///
-/// let range1 = Elf64AddrRange { vaddr_begin: 0x1000, vaddr_end: 0x1100 };
-/// let range2 = Elf64AddrRange { vaddr_begin: 0x1100, vaddr_end: 0x1200 };
+/// let range1 = Elf64AddrRange {
+///     vaddr_begin: 0x1000,
+///     vaddr_end: 0x1100,
+/// };
+/// let range2 = Elf64AddrRange {
+///     vaddr_begin: 0x1100,
+///     vaddr_end: 0x1200,
+/// };
 ///
 /// assert_eq!(range1.partial_cmp(&range2), Some(Ordering::Less));
 /// ```
@@ -347,7 +352,6 @@ impl TryFrom<(Elf64Off, Elf64Xword)> for Elf64FileRange {
     ///
     /// Returns an [`ElfError::InvalidFileRange`] if the calculation of `offset_end`
     /// results in an invalid file range.
-    ///
     fn try_from(value: (Elf64Off, Elf64Xword)) -> Result<Self, Self::Error> {
         let offset_begin = usize::try_from(value.0).map_err(|_| ElfError::InvalidFileRange)?;
         let size = usize::try_from(value.1).map_err(|_| ElfError::InvalidFileRange)?;
@@ -386,7 +390,6 @@ impl<'a> Elf64File<'a> {
     /// # Errors
     ///
     /// Returns an [`ElfError`] if there are issues parsing the ELF file.
-    ///
     pub fn read(elf_file_buf: &'a [u8]) -> Result<Self, ElfError> {
         let mut elf_hdr = Elf64Hdr::read(elf_file_buf)?;
 
@@ -736,7 +739,6 @@ impl<'a> Elf64File<'a> {
     /// * If the file offset calculations result in an invalid file range.
     /// * If the virtual address range extends beyond the loaded segment's file content,
     ///   indicating an unbacked virtual address range.
-    ///
     fn map_vaddr_to_file_off(
         &self,
         vaddr_begin: Elf64Addr,
@@ -813,7 +815,6 @@ impl<'a> Elf64File<'a> {
     ///   a reference to the corresponding slice of bytes from the ELF file buffer.
     /// - [`Err<ElfError>`]: If an error occurs during mapping, such as an unmapped or unbacked
     ///   virtual address range, returns an [`ElfError`].
-    ///
     fn map_vaddr_to_file_buf(
         &self,
         vaddr_begin: Elf64Addr,
@@ -855,7 +856,6 @@ impl<'a> Elf64File<'a> {
     /// # Returns
     ///
     /// - [`Elf64Off`]: The alignment offset for the image's load address.
-    ///
     fn image_load_align_offset(&self) -> Elf64Off {
         if self.max_load_segment_align == 0 {
             return 0;
@@ -907,7 +907,6 @@ impl<'a> Elf64File<'a> {
     /// # Returns
     ///
     /// An [`Elf64ImageLoadSegmentIterator`] over the loaded image segments.
-    ///
     pub fn image_load_segment_iter(
         &'a self,
         image_load_addr: Elf64Addr,
@@ -941,7 +940,6 @@ impl<'a> Elf64File<'a> {
     ///   returns [`None`].
     /// - [`Err<ElfError>`]: If an error occurs while processing relocations, returns an
     ///   [`ElfError`].
-    ///
     pub fn apply_dyn_relas<RP: Elf64RelocProcessor>(
         &'a self,
         rela_proc: RP,
@@ -996,7 +994,6 @@ impl<'a> Elf64File<'a> {
     /// # Returns
     ///
     /// The adjusted entry point virtual address.
-    ///
     pub fn get_entry(&self, image_load_addr: Elf64Addr) -> Elf64Addr {
         self.elf_hdr
             .e_entry
@@ -1096,7 +1093,6 @@ impl Elf64Hdr {
     /// - [`ElfError::UnsupportedVersion`]: The version of the ELF file is not supported.
     /// - [`ElfError::UnsupportedOsAbi`]: The ELF file uses an unsupported OS/ABI.
     /// - Other errors specific to reading and parsing the header fields.
-    ///
     fn read(buf: &[u8]) -> Result<Self, ElfError> {
         // Examine the e_ident[] magic.
         if buf.len() < 16 {
