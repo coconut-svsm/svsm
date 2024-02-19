@@ -10,6 +10,8 @@ members = [
     "fuzz",
     # ELF loader
     "elf",
+    # Microsoft TPM library
+    "libmstpm",
 ]
 
 
@@ -20,6 +22,7 @@ cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
+libmstpm = { path = "libmstpm" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
