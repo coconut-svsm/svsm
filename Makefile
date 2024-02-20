@@ -1,6 +1,9 @@
 FEATURES ?= "default"
 SVSM_ARGS = --features ${FEATURES}
 
+FEATURES_TEST ?= "default-test"
+SVSM_ARGS_TEST = --no-default-features --features ${FEATURES_TEST}
+
 ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
@@ -73,7 +76,7 @@ bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf b
 	$(IGVMMEASURE) $@
 
 test:
-	cargo test ${CARGO_ARGS} --workspace --target=x86_64-unknown-linux-gnu
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --target=x86_64-unknown-linux-gnu
 
 test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
 	./scripts/test-in-svsm.sh
