@@ -17,7 +17,9 @@ fn main() {
     println!("cargo:rustc-link-arg-bin=svsm=--no-relax");
     println!("cargo:rustc-link-arg-bin=svsm=-Tkernel/src/svsm.lds");
     println!("cargo:rustc-link-arg-bin=svsm=-no-pie");
-    if std::env::var("CARGO_FEATURE_MSTPM").is_ok() {
+    if std::env::var("CARGO_FEATURE_MSTPM").is_ok()
+        && std::env::var("CARGO_FEATURE_DEFAULT_TEST").is_err()
+    {
         println!("cargo:rustc-link-arg-bin=svsm=-Llibmstpm");
         println!("cargo:rustc-link-arg-bin=svsm=-lmstpm");
     }
