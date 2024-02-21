@@ -14,7 +14,7 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
 use core::ptr;
 
-#[cfg(any(test, feature = "fuzzing-hooks"))]
+#[cfg(any(test, fuzzing))]
 use crate::locking::LockGuard;
 
 /// Represents possible errors that can occur during memory allocation.
@@ -1495,7 +1495,7 @@ impl SvsmAllocator {
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with a newly created [`SvsmAllocator`] with `Self::new()`.
-    #[cfg(all(not(test_in_svsm), any(test, feature = "fuzzing-hooks")))]
+    #[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
     fn reset(&self) {
         *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
         *self.slabs[1].lock() = Slab::new(Self::MIN_SLAB_SIZE * 2);
@@ -1575,7 +1575,7 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
         .expect("Failed to initialize SLAB_PAGE_SLAB");
 }
 
-#[cfg(any(test, feature = "fuzzing-hooks"))]
+#[cfg(any(test, fuzzing))]
 /// A global lock on global memory. Should only be acquired via
 /// [`TestRootMem::setup()`].
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
@@ -1584,12 +1584,12 @@ static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 
 /// A dummy struct to acquire a lock over global memory for tests.
-#[cfg(any(test, feature = "fuzzing-hooks"))]
+#[cfg(any(test, fuzzing))]
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
-#[cfg(any(test, feature = "fuzzing-hooks"))]
+#[cfg(any(test, fuzzing))]
 impl TestRootMem<'_> {
     #[cfg(test_in_svsm)]
     /// Sets up a test environment, returning a guard to ensure memory is
@@ -1637,7 +1637,7 @@ impl TestRootMem<'_> {
     }
 }
 
-#[cfg(all(not(test_in_svsm), any(test, feature = "fuzzing-hooks")))]
+#[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
 impl Drop for TestRootMem<'_> {
     /// If running tests in userspace, destroy root memory before
     /// dropping the lock over it.
