@@ -73,3 +73,26 @@ jobs:
         run: make doc
         env:
           RUSTDOCFLAGS: -D warnings
+
+  nightly-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            target: x86_64-unknown-none
+            profile: minimal
+            override: true
+            components: rustfmt
+
+      - name: Format doctests
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check --config "format_code_in_doc_comments=true"
