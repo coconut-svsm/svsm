@@ -122,8 +122,10 @@ bin/svsm-test.bin: bin/stage1-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings
-	cargo clippy --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
 clean:
 	cargo clean
