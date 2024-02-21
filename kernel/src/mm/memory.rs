@@ -14,7 +14,6 @@ use crate::locking::RWLock;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use bootlib::kernel_launch::KernelLaunchInfo;
-use log;
 
 use super::pagetable::LAUNCH_VMSA_ADDR;
 

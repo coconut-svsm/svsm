@@ -13,7 +13,6 @@ use crate::utils::{align_down, align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
 use core::ptr;
-use log;
 
 #[cfg(any(test, feature = "fuzzing-hooks"))]
 use crate::locking::LockGuard;
