@@ -129,7 +129,6 @@ pub fn writable_phys_addr(paddr: PhysAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::address::PhysAddr;
 
     #[test]
     #[cfg_attr(test_in_svsm, ignore = "Offline testing")]

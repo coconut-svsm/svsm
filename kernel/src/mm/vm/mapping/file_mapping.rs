@@ -249,18 +249,13 @@ impl VirtualMapping for VMFileMapping {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::{
-        address::{Address, VirtAddr},
-        fs::{create, open, unlink, FileHandle, TestFileSystemGuard},
-        mm::{
-            alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
-            pagetable::PTEntryFlags,
-            vm::{VirtualMapping, VMR},
-        },
+        address::VirtAddr,
+        fs::{create, open, unlink, TestFileSystemGuard},
+        mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
         types::PAGE_SIZE,
     };
-
-    use super::*;
 
     fn create_512b_test_file() -> (FileHandle, &'static str) {
         let fh = create("test1").unwrap();

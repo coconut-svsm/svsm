@@ -540,7 +540,6 @@ impl SnpGuestRequestExtData {
 mod tests {
     use super::*;
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
-    use crate::sev::secrets_page::VMPCK_SIZE;
     use memoffset::offset_of;
 
     #[test]
