@@ -46,7 +46,7 @@ pub enum ImmutAfterInitError {
 /// initialized at runtime:
 /// ```
 /// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
-/// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
+/// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
 /// pub fn main() {
 ///     unsafe { X.init(&123) };
 ///     assert_eq!(*X, 123);
@@ -58,14 +58,13 @@ pub enum ImmutAfterInitError {
 /// already:
 /// ```
 /// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
-/// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::new(0);
+/// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::new(0);
 /// pub fn main() {
 ///     assert_eq!(*X, 0);
 ///     unsafe { X.reinit(&123) };
 ///     assert_eq!(*X, 123);
 /// }
 /// ```
-///
 #[derive(Debug)]
 pub struct ImmutAfterInitCell<T> {
     #[doc(hidden)]
@@ -174,7 +173,6 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
-///
 
 /// A `ImmutAfterInitRef` can either get initialized statically at link time or
 /// once from initialization code, basically following the protocol of a
@@ -185,8 +183,8 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// `ImmutAfterInitCell`'s contents,
 /// ```
 /// # use svsm::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
-/// static X : ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
-/// static RX : ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
+/// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
+/// static RX: ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
 /// fn main() {
 ///     unsafe { X.init(&123) };
 ///     unsafe { RX.init_from_cell(&X) };
@@ -196,8 +194,8 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// or to plain value directly:
 /// ```
 /// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
-/// static X : i32 = 123;
-/// static RX : ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
+/// static X: i32 = 123;
+/// static RX: ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
 /// fn main() {
 ///     unsafe { RX.init_from_ref(&X) };
 ///     assert_eq!(*RX, 123);

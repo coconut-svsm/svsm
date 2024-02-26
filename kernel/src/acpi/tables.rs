@@ -40,7 +40,6 @@ impl RSDPDesc {
     /// # Returns
     ///
     /// A [`Result`] containing the [`RSDPDesc`] if successful, or an [`SvsmError`] on failure.
-    ///
     fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
         let mut buf = mem::MaybeUninit::<Self>::uninit();
         let file = fw_cfg.file_selector("etc/acpi/rsdp")?;
@@ -474,7 +473,7 @@ pub struct ACPICPUInfo {
 ///         for info in cpu_info {
 ///             // You can print id (info.apic_id) and whether it is enabled (info.enabled)
 ///         }
-///     },
+///     }
 ///     Err(err) => {
 ///         // Print error
 ///     }
