@@ -271,6 +271,7 @@ impl IgvmBuilder {
         // Place the VMSA at the base of the kernel region.
         self.directives.push(construct_vmsa(
             self.gpa_map.vmsa.get_start(),
+            param_block.vtom,
             COMPATIBILITY_MASK,
         )?);
 

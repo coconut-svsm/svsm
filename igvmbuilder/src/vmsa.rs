@@ -15,6 +15,7 @@ use crate::stage2_stack::Stage2Stack;
 
 pub fn construct_vmsa(
     gpa_start: u64,
+    vtom: u64,
     compatibility_mask: u32,
 ) -> Result<IgvmDirectiveHeader, Box<dyn Error>> {
     let mut vmsa_box = SevVmsa::new_box_zeroed();
@@ -52,6 +53,10 @@ pub fn construct_vmsa(
     let mut features = SevFeatures::new();
     features.set_snp(true);
     features.set_restrict_injection(true);
+    if vtom != 0 {
+        vmsa.virtual_tom = vtom;
+        features.set_vtom(true);
+    }
     vmsa.sev_features = features;
 
     Ok(IgvmDirectiveHeader::SnpVpContext {
