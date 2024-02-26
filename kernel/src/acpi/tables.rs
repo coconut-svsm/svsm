@@ -11,7 +11,6 @@ use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
 use alloc::vec::Vec;
 use core::mem;
-use log;
 
 /// ACPI Root System Description Pointer (RSDP)
 /// used by ACPI programming interface

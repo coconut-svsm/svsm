@@ -37,7 +37,6 @@ test.workspace = true
 [features]
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
-fuzzing-hooks = []
 
 [dev-dependencies]
 memoffset.workspace = true
