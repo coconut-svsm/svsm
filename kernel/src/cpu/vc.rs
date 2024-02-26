@@ -237,7 +237,7 @@ fn handle_ioio(
     }
 }
 
-fn vc_decode_insn(ctx: &mut X86ExceptionContext) -> Result<Instruction, SvsmError> {
+fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
     if !vc_decoding_needed(ctx.error_code) {
         return Ok(Instruction::default());
     }
