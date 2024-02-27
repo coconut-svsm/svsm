@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use zerocopy::AsBytes;
+
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct KernelLaunchInfo {
@@ -35,4 +37,18 @@ impl KernelLaunchInfo {
     pub fn heap_area_virt_end(&self) -> u64 {
         self.heap_area_virt_start + self.heap_area_size()
     }
+}
+
+// Stage 2 launch info from stage1
+// The layout has to match the order in which the parts are pushed to the stack
+// in stage1/stage1.S
+#[derive(AsBytes, Default, Debug, Clone, Copy)]
+#[repr(C, packed)]
+pub struct Stage2LaunchInfo {
+    pub kernel_elf_start: u32,
+    pub kernel_elf_end: u32,
+    pub kernel_fs_start: u32,
+    pub kernel_fs_end: u32,
+    pub igvm_params: u32,
+    pub padding: u32,
 }
