@@ -13,6 +13,7 @@ use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
+use crate::sev::status::vtom_enabled;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
@@ -24,14 +25,15 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 const ENTRY_COUNT: usize = 512;
-static ENCRYPT_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
+static PRIVATE_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
+static SHARED_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static MAX_PHYS_ADDR: ImmutAfterInitCell<u64> = ImmutAfterInitCell::uninit();
 pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
-pub fn paging_init_early() {
-    init_encrypt_mask();
+pub fn paging_init_early(vtom: u64) {
+    init_encrypt_mask(vtom.try_into().unwrap());
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
@@ -39,8 +41,8 @@ pub fn paging_init_early() {
     FEATURE_MASK.reinit(&feature_mask);
 }
 
-pub fn paging_init() {
-    init_encrypt_mask();
+pub fn paging_init(vtom: u64) {
+    init_encrypt_mask(vtom.try_into().unwrap());
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -52,12 +54,25 @@ pub fn paging_init() {
     FEATURE_MASK.reinit(&feature_mask);
 }
 
-fn init_encrypt_mask() {
-    // Find C bit position
-    let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
-    let c_bit = res.ebx & 0x3f;
-    let mask = 1u64 << c_bit;
-    ENCRYPT_MASK.reinit(&(mask as usize));
+fn init_encrypt_mask(vtom: usize) {
+    // Determine whether VTOM is in use.
+
+    let zero: usize = 0;
+    let addr_mask_width = if vtom_enabled() {
+        PRIVATE_PTE_MASK.reinit(&zero);
+        SHARED_PTE_MASK.reinit(&vtom);
+        // Find the MSB of VTOM to define the number of bits in the effective
+        // address.
+        63 - vtom.leading_zeros()
+    } else {
+        // Find C bit position
+        let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
+        let c_bit = res.ebx & 0x3f;
+        let mask = 1u64 << c_bit;
+        PRIVATE_PTE_MASK.reinit(&(mask as usize));
+        SHARED_PTE_MASK.reinit(&zero);
+        c_bit
+    };
 
     // Find physical address size.
     let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
@@ -75,14 +90,18 @@ fn init_encrypt_mask() {
     // If the C-bit is a physical address bit however, the guest physical
     // address space is effectively reduced by 1 bit.
     // - APM2, 15.34.6 Page Table Support
-    let effective_phys_addr_size = cmp::min(c_bit, phys_addr_size);
+    let effective_phys_addr_size = cmp::min(addr_mask_width, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
     MAX_PHYS_ADDR.reinit(&max_addr);
 }
 
-fn encrypt_mask() -> usize {
-    *ENCRYPT_MASK
+fn private_pte_mask() -> usize {
+    *PRIVATE_PTE_MASK
+}
+
+fn shared_pte_mask() -> usize {
+    *SHARED_PTE_MASK
 }
 
 /// Returns the exclusive end of the physical address space.
@@ -94,12 +113,16 @@ fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
     flags & *FEATURE_MASK
 }
 
-fn strip_c_bit(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !encrypt_mask())
+fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
+    PhysAddr::from(paddr.bits() & !private_pte_mask() | shared_pte_mask())
 }
 
-fn set_c_bit(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() | encrypt_mask())
+fn make_private_address(paddr: PhysAddr) -> PhysAddr {
+    PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
+}
+
+fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
+    PhysAddr::from(paddr.bits() & !(shared_pte_mask() | private_pte_mask()))
 }
 
 bitflags! {
@@ -175,7 +198,7 @@ impl PTEntry {
 
     pub fn address(&self) -> PhysAddr {
         let addr = PhysAddr::from(self.0.bits() & 0x000f_ffff_ffff_f000);
-        strip_c_bit(addr)
+        strip_confidentiality_bits(addr)
     }
 }
 
@@ -227,8 +250,7 @@ impl PageTable {
 
     pub fn cr3_value(&self) -> PhysAddr {
         let pgtable = VirtAddr::from(self as *const PageTable);
-        let cr3 = virt_to_phys(pgtable);
-        set_c_bit(cr3)
+        virt_to_phys(pgtable)
     }
 
     pub fn clone_shared(&self) -> Result<PageTableRef, SvsmError> {
@@ -328,7 +350,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(set_c_bit(paddr), flags);
+        entry.set(paddr, flags);
 
         let idx = PageTable::index::<2>(vaddr);
 
@@ -352,7 +374,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(set_c_bit(paddr), flags);
+        entry.set(paddr, flags);
 
         let idx = PageTable::index::<1>(vaddr);
 
@@ -376,7 +398,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(set_c_bit(paddr), flags);
+        entry.set(paddr, flags);
 
         let idx = PageTable::index::<0>(vaddr);
 
@@ -420,11 +442,14 @@ impl PageTable {
             let addr_4k = addr_2m + (i * PAGE_SIZE);
             unsafe {
                 (*page).entries[i].clear();
-                (*page).entries[i].set(set_c_bit(addr_4k), flags);
+                (*page).entries[i].set(make_private_address(addr_4k), flags);
             }
         }
 
-        entry.set(set_c_bit(virt_to_phys(VirtAddr::from(page))), flags);
+        entry.set(
+            make_private_address(virt_to_phys(VirtAddr::from(page))),
+            flags,
+        );
 
         flush_tlb_global_sync();
 
@@ -440,20 +465,20 @@ impl PageTable {
         }
     }
 
-    fn clear_c_bit(entry: &mut PTEntry) {
+    fn make_pte_shared(entry: &mut PTEntry) {
         let flags = entry.flags();
         let addr = entry.address();
 
         // entry.address() returned with c-bit clear already
-        entry.set(addr, flags);
+        entry.set(make_shared_address(addr), flags);
     }
 
-    fn set_c_bit(entry: &mut PTEntry) {
+    fn make_pte_private(entry: &mut PTEntry) {
         let flags = entry.flags();
         let addr = entry.address();
 
         // entry.address() returned with c-bit clear already
-        entry.set(set_c_bit(addr), flags);
+        entry.set(make_private_address(addr), flags);
     }
 
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
@@ -461,7 +486,7 @@ impl PageTable {
         PageTable::split_4k(mapping)?;
 
         if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            PageTable::clear_c_bit(entry);
+            PageTable::make_pte_shared(entry);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -473,7 +498,7 @@ impl PageTable {
         PageTable::split_4k(mapping)?;
 
         if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
-            PageTable::set_c_bit(entry);
+            PageTable::make_pte_private(entry);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -500,7 +525,7 @@ impl PageTable {
         let mapping = self.alloc_pte_2m(vaddr);
 
         if let Mapping::Level1(entry) = mapping {
-            entry.set(set_c_bit(paddr), flags | PTEntryFlags::HUGE);
+            entry.set(make_private_address(paddr), flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -529,7 +554,7 @@ impl PageTable {
         let mapping = self.alloc_pte_4k(vaddr);
 
         if let Mapping::Level0(entry) = mapping {
-            entry.set(set_c_bit(paddr), flags);
+            entry.set(make_private_address(paddr), flags);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -671,7 +696,9 @@ impl PageTable {
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
         let entry = &mut self.root[idx];
-        entry.set(set_c_bit(paddr), flags);
+        // The C bit is not required here because all page table fetches are
+        // made as C=1.
+        entry.set(paddr, flags);
     }
 }
 
@@ -810,7 +837,11 @@ impl RawPageTablePart {
     ) -> Result<(), SvsmError> {
         let mapping = self.alloc_pte_4k(vaddr);
 
-        let addr = if !shared { set_c_bit(paddr) } else { paddr };
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
 
         if let Mapping::Level0(entry) = mapping {
             entry.set(addr, flags);
@@ -855,7 +886,11 @@ impl RawPageTablePart {
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.alloc_pte_2m(vaddr);
-        let addr = if !shared { set_c_bit(paddr) } else { paddr };
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
 
         if let Mapping::Level1(entry) = mapping {
             entry.set(addr, flags | PTEntryFlags::HUGE);

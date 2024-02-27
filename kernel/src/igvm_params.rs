@@ -298,4 +298,8 @@ impl IgvmParams<'_> {
 
         Ok(())
     }
+
+    pub fn get_vtom(&self) -> u64 {
+        self.igvm_param_block.vtom
+    }
 }

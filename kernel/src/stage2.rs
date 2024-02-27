@@ -88,6 +88,7 @@ static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::
 fn setup_env(config: &SvsmConfig<'_>) {
     gdt().load();
     early_idt_init_no_ghcb();
+    sev_status_init();
 
     install_console_logger("Stage2");
     init_kernel_mapping_info(
@@ -96,11 +97,10 @@ fn setup_env(config: &SvsmConfig<'_>) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early();
+    paging_init_early(config.get_vtom());
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
-    sev_status_init();
     set_init_pgtable(PageTableRef::new(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
     init_percpu();
@@ -337,6 +337,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         stage2_igvm_params_size: igvm_params_size as u64,
         igvm_params_phys_addr: u64::from(igvm_params_phys_address),
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
+        vtom: config.get_vtom(),
         debug_serial_port: config.debug_serial_port(),
     };
 
