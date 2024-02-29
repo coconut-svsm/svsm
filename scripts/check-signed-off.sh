@@ -42,14 +42,10 @@ fi
 start=$1
 end=$2
 
-commits=$(git log "${start}".."${end}" --format="%H")
+commits=$(git log --no-merges "${start}".."${end}" --format="%H")
 for c in ${commits[@]}; do
 
 	echo "Checking $c"
-
-	# If a commit has more than more parent it is a merge commit, so ignore it
-	parents=$(git cat-file -p "$c" | grep -c parent)
-	[ "$parents" -gt "1" ] && continue
 
 	nonempty_body "$c"
 	if [ "$?" != "0" ]; then
