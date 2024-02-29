@@ -43,9 +43,9 @@ impl Stage2Stack {
         compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
     ) {
-        let mut stage2_stack_data = self.as_bytes().to_vec();
+        let stage2_stack_data = self.as_bytes();
         let mut stage2_stack_page = vec![0u8; PAGE_SIZE_4K as usize - stage2_stack_data.len()];
-        stage2_stack_page.append(&mut stage2_stack_data);
+        stage2_stack_page.extend_from_slice(stage2_stack_data);
 
         directives.push(IgvmDirectiveHeader::PageData {
             gpa,
