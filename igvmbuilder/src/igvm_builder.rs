@@ -323,7 +323,7 @@ impl IgvmBuilder {
             self.gpa_map.stage2_stack.get_start(),
             COMPATIBILITY_MASK,
             &mut self.directives,
-        )?;
+        );
 
         // Populate the empty region at the bottom of RAM.
         self.add_empty_pages(

@@ -4,7 +4,7 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
-use std::error::Error;
+use std::mem::size_of;
 
 use bootlib::kernel_launch::Stage2LaunchInfo;
 use igvm::IgvmDirectiveHeader;
@@ -16,6 +16,8 @@ use crate::gpa_map::GpaMap;
 pub struct Stage2Stack {
     stage2_stack: Stage2LaunchInfo,
 }
+
+const _: () = assert!((size_of::<Stage2Stack>() as u64) <= PAGE_SIZE_4K);
 
 impl Stage2Stack {
     pub fn new(gpa_map: &GpaMap) -> Self {
@@ -35,14 +37,10 @@ impl Stage2Stack {
         gpa: u64,
         compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut stage2_stack_data = self.stage2_stack.as_bytes().to_vec();
+    ) {
+        let stage2_stack_data = self.stage2_stack.as_bytes();
         let mut stage2_stack_page = vec![0u8; PAGE_SIZE_4K as usize - stage2_stack_data.len()];
-        stage2_stack_page.append(&mut stage2_stack_data);
-
-        if stage2_stack_page.len() > PAGE_SIZE_4K as usize {
-            return Err("Stage 2 stack size exceeds 4K".into());
-        }
+        stage2_stack_page.extend_from_slice(stage2_stack_data);
 
         directives.push(IgvmDirectiveHeader::PageData {
             gpa,
@@ -51,7 +49,5 @@ impl Stage2Stack {
             data_type: IgvmPageDataType::NORMAL,
             data: stage2_stack_page,
         });
-
-        Ok(())
     }
 }
