@@ -391,6 +391,9 @@ pub extern "C" fn svsm_main() {
     let config = if launch_info.igvm_params_virt_addr != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
             .expect("Invalid IGVM parameters");
+        if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
+            panic!("Launch VTOM does not match VTOM from IGVM parameters");
+        }
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))

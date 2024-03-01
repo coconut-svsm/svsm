@@ -67,6 +67,10 @@ startup_32:
 	leal	kernel_elf(%ebp), %edi
 	pushl	%edi
 
+	/* Reserve space for VTOM */
+	pushl	%eax
+	pushl	%eax
+
 	/* Jump to stage 2 */
 	movl	$STAGE2_START, %eax
 	jmp	*%eax

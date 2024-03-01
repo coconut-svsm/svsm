@@ -318,7 +318,7 @@ impl IgvmBuilder {
         )?;
 
         // Populate the stage 2 stack.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map);
+        let stage2_stack = Stage2Stack::new(&self.gpa_map, param_block.vtom);
         stage2_stack.add_directive(
             self.gpa_map.stage2_stack.get_start(),
             COMPATIBILITY_MASK,

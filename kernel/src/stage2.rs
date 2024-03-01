@@ -85,7 +85,7 @@ fn shutdown_percpu() {
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn setup_env(config: &SvsmConfig<'_>) {
+fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
     gdt().load();
     early_idt_init_no_ghcb();
     sev_status_init();
@@ -97,7 +97,7 @@ fn setup_env(config: &SvsmConfig<'_>) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(config.get_vtom());
+    paging_init_early(launch_info.vtom);
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
@@ -163,7 +163,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
     };
 
-    setup_env(&config);
+    setup_env(&config, launch_info);
 
     let r = config
         .find_kernel_region()
@@ -324,7 +324,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         stage2_igvm_params_size: igvm_params_size as u64,
         igvm_params_phys_addr: u64::from(igvm_params_phys_address),
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
-        vtom: config.get_vtom(),
+        vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
     };
 

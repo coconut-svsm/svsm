@@ -46,6 +46,8 @@ impl KernelLaunchInfo {
 #[derive(AsBytes, Default, Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Stage2LaunchInfo {
+    // VTOM must be the first field.
+    pub vtom: u64,
     pub kernel_elf_start: u32,
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,

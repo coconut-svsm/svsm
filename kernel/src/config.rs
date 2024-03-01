@@ -172,11 +172,4 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.initialize_guest_vmsa(vmsa),
         }
     }
-
-    pub fn get_vtom(&self) -> u64 {
-        match self {
-            SvsmConfig::FirmwareConfig(_) => 0,
-            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_vtom(),
-        }
-    }
 }
