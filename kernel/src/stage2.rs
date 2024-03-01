@@ -9,7 +9,7 @@
 
 pub mod boot_stage2;
 
-use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut};
@@ -150,21 +150,8 @@ fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, pa
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
 }
 
-// Launch info from stage1, usually at the bottom of the stack
-// The layout has to match the order in which the parts are pushed to the stack
-// in stage1/stage1.S
-#[derive(Default, Debug, Clone, Copy)]
-#[repr(C, packed)]
-pub struct Stage1LaunchInfo {
-    kernel_elf_start: u32,
-    kernel_elf_end: u32,
-    kernel_fs_start: u32,
-    kernel_fs_end: u32,
-    igvm_params: u32,
-}
-
 #[no_mangle]
-pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
+pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
