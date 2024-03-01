@@ -11,7 +11,7 @@ use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
 
-fn start_cpu(apic_id: u32) {
+fn start_cpu(apic_id: u32, vtom: u64) {
     unsafe {
         let start_rip: u64 = (start_ap as *const u8) as u64;
         let percpu = PerCpu::alloc(apic_id)
@@ -25,7 +25,7 @@ fn start_cpu(apic_id: u32) {
             .expect("Failed to allocate AP SVSM VMSA");
 
         let mut vmsa = percpu.get_svsm_vmsa().unwrap();
-        init_svsm_vmsa(vmsa.vmsa());
+        init_svsm_vmsa(vmsa.vmsa(), vtom);
         percpu.prepare_svsm_vmsa(start_rip);
 
         let sev_features = vmsa.vmsa().sev_features;
@@ -43,11 +43,11 @@ fn start_cpu(apic_id: u32) {
     }
 }
 
-pub fn start_secondary_cpus(cpus: &[ACPICPUInfo]) {
+pub fn start_secondary_cpus(cpus: &[ACPICPUInfo], vtom: u64) {
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
-        start_cpu(c.apic_id);
+        start_cpu(c.apic_id, vtom);
         count += 1;
     }
     log::info!("Brought {} AP(s) online", count);

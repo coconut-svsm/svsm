@@ -117,6 +117,12 @@ global_asm!(
         testl $0x04, %eax
         jz .Lno_sev_snp
 
+        /*
+         * Check whether VTOM is selected
+         */
+        testl $0x08, %eax
+        jnz .Lvtom
+
         /* Determine the PTE C-bit position from the CPUID page. */
 
         /* Read the number of entries. */
@@ -172,6 +178,10 @@ global_asm!(
         subl $32, %ebx
         xorl %eax, %eax
         btsl %ebx, %eax
+        ret
+
+    .Lvtom:
+        xorl %eax, %eax
         ret
 
     .Lno_sev_snp:

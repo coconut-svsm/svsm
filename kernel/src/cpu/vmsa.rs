@@ -52,7 +52,7 @@ fn svsm_idt_segment() -> VMSASegment {
     }
 }
 
-pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
+pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64) {
     vmsa.es = svsm_data_segment();
     vmsa.cs = svsm_code_segment();
     vmsa.ss = svsm_data_segment();
@@ -76,6 +76,7 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA) {
     vmsa.x87_ftw = 0x5555;
     vmsa.x87_fcw = 0x0040;
     vmsa.vmpl = 0;
+    vmsa.vtom = vtom;
 
     vmsa.sev_features = sev_flags().as_sev_features();
 }
