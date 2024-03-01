@@ -917,6 +917,19 @@ impl PageRef {
     pub fn phys_addr(&self) -> PhysAddr {
         self.phys_addr
     }
+
+    pub fn try_copy_page(&self) -> Result<Self, SvsmError> {
+        let virt_addr = allocate_file_page()?;
+        unsafe {
+            let src = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
+            let dst = virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
+            ptr::copy_nonoverlapping(src, dst, 1);
+        }
+        Ok(PageRef {
+            virt_addr,
+            phys_addr: virt_to_phys(virt_addr),
+        })
+    }
 }
 
 impl AsRef<[u8; PAGE_SIZE]> for PageRef {
