@@ -165,7 +165,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
-    let platform_type = SvsmPlatformType::Snp;
+    let platform_type = SvsmPlatformType::from_u32(launch_info.platform_type);
     let mut platform_cell = SvsmPlatformCell::new(platform_type);
     let platform = platform_cell.as_mut_dyn_ref();
 

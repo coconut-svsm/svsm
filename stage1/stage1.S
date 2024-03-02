@@ -53,7 +53,6 @@ startup_32:
 	/* Write startup information to stage2 stack */
 	xorl 	%eax, %eax
 	pushl	%eax
-	pushl	%eax
 
 	leal	kernel_fs_bin_end(%ebp), %edi
 	pushl	%edi
@@ -66,6 +65,9 @@ startup_32:
 
 	leal	kernel_elf(%ebp), %edi
 	pushl	%edi
+
+	/* Push the value 1 to indicate SNP */
+	pushl	$1
 
 	/* Reserve space for VTOM */
 	pushl	%eax
