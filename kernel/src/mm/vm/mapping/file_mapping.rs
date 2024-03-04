@@ -29,6 +29,8 @@ bitflags! {
         const Write = 1 << 1;
         // Read-only access that allows execution
         const Execute = 1 << 2;
+        // Map private copies of file pages
+        const Private = 1 << 3;
     }
 }
 
@@ -85,7 +87,11 @@ impl VMFileMapping {
             let page_ref = file
                 .mapping(offset + page_index * PAGE_SIZE)
                 .ok_or(SvsmError::Mem)?;
-            pages.push(page_ref);
+            if flags.contains(VMFileMappingFlags::Private) {
+                pages.push(page_ref.try_copy_page()?);
+            } else {
+                pages.push(page_ref);
+            }
         }
         Ok(Self {
             size: page_size,
