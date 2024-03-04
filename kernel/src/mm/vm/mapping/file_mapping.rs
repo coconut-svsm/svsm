@@ -8,6 +8,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use bitflags::bitflags;
+
 use super::{VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
@@ -18,14 +20,16 @@ use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum VMFileMappingPermission {
-    /// Read-only access to the file
-    Read,
-    // Read/Write access to a copy of the files pages
-    Write,
-    // Read-only access that allows execution
-    Execute,
+bitflags! {
+    #[derive(Debug, PartialEq, Copy, Clone)]
+    pub struct VMFileMappingFlags : u32 {
+        /// Read-only access to the file
+        const Read = 1 << 0;
+        // Read/Write access to a copy of the files pages
+        const Write = 1 << 1;
+        // Read-only access that allows execution
+        const Execute = 1 << 2;
+    }
 }
 
 /// Map view of a ramfs file into virtual memory
@@ -34,8 +38,8 @@ pub struct VMFileMapping {
     /// The size of the mapping in bytes
     size: usize,
 
-    /// The permission to apply to the virtual mapping
-    permission: VMFileMappingPermission,
+    /// The flags to apply to the virtual mapping
+    flags: VMFileMappingFlags,
 
     /// A vec containing references to mapped pages within the file
     pages: Vec<Option<PageRef>>,
@@ -63,7 +67,7 @@ impl VMFileMapping {
         file: FileHandle,
         offset: usize,
         size: usize,
-        permission: VMFileMappingPermission,
+        flags: VMFileMappingFlags,
     ) -> Result<Self, SvsmError> {
         let page_size = align_up(size, PAGE_SIZE);
         let file_size = align_up(file.size(), PAGE_SIZE);
@@ -82,7 +86,7 @@ impl VMFileMapping {
         }
         Ok(Self {
             size: page_size,
-            permission,
+            flags,
             pages,
         })
     }
@@ -121,11 +125,17 @@ impl VirtualMapping for VMFileMapping {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        match self.permission {
-            VMFileMappingPermission::Read => PTEntryFlags::task_data_ro(),
-            VMFileMappingPermission::Write => PTEntryFlags::task_data(),
-            VMFileMappingPermission::Execute => PTEntryFlags::task_exec(),
+        let mut flags = PTEntryFlags::empty();
+
+        if self.flags.contains(VMFileMappingFlags::Write) {
+            flags |= PTEntryFlags::WRITABLE;
         }
+
+        if !self.flags.contains(VMFileMappingFlags::Execute) {
+            flags |= PTEntryFlags::NX;
+        }
+
+        flags
     }
 
     fn handle_page_fault(
@@ -177,10 +187,10 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_512b_test_file();
-        let vm = VMFileMapping::new(fh, 0, 512, VMFileMappingPermission::Read)
+        let vm = VMFileMapping::new(fh, 0, 512, VMFileMappingFlags::Read)
             .expect("Failed to create new VMFileMapping");
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
-        assert_eq!(vm.permission, VMFileMappingPermission::Read);
+        assert!(vm.flags.contains(VMFileMappingFlags::Read));
         assert_eq!(vm.pages.len(), 1);
         unlink(name).unwrap();
     }
@@ -195,12 +205,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(
-            fh,
-            offset,
-            fh2.size() - offset,
-            VMFileMappingPermission::Read,
-        );
+        let vm = VMFileMapping::new(fh, offset, fh2.size() - offset, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -212,7 +217,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, VMFileMappingPermission::Read);
+        let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -224,18 +229,17 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, PAGE_SIZE, fh2.size(), VMFileMappingPermission::Read);
+        let vm = VMFileMapping::new(fh, PAGE_SIZE, fh2.size(), VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
 
-    fn test_map_first_page(permission: VMFileMappingPermission) {
+    fn test_map_first_page(flags: VMFileMappingFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_512b_test_file();
-        let vm =
-            VMFileMapping::new(fh, 0, 512, permission).expect("Failed to create new VMFileMapping");
+        let vm = VMFileMapping::new(fh, 0, 512, flags).expect("Failed to create new VMFileMapping");
 
         let res = vm
             .map(0)
@@ -251,13 +255,13 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_multiple_pages(permission: VMFileMappingPermission) {
+    fn test_map_multiple_pages(flags: VMFileMappingFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size(), permission)
+        let vm = VMFileMapping::new(fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
         for i in 0..4 {
@@ -275,13 +279,13 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_unaligned_file_size(permission: VMFileMappingPermission) {
+    fn test_map_unaligned_file_size(flags: VMFileMappingFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_5000b_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size(), permission)
+        let vm = VMFileMapping::new(fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
         assert_eq!(vm.mapping_size(), PAGE_SIZE * 2);
@@ -302,13 +306,13 @@ mod tests {
         unlink(name).unwrap();
     }
 
-    fn test_map_non_zero_offset(permission: VMFileMappingPermission) {
+    fn test_map_non_zero_offset(flags: VMFileMappingFlags) {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 2 * PAGE_SIZE, PAGE_SIZE, permission)
+        let vm = VMFileMapping::new(fh, 2 * PAGE_SIZE, PAGE_SIZE, flags)
             .expect("Failed to create new VMFileMapping");
 
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
@@ -329,41 +333,41 @@ mod tests {
 
     #[test]
     fn test_map_first_page_readonly() {
-        test_map_first_page(VMFileMappingPermission::Read)
+        test_map_first_page(VMFileMappingFlags::Read)
     }
 
     #[test]
     fn test_map_multiple_pages_readonly() {
-        test_map_multiple_pages(VMFileMappingPermission::Read)
+        test_map_multiple_pages(VMFileMappingFlags::Read)
     }
 
     #[test]
     fn test_map_unaligned_file_size_readonly() {
-        test_map_unaligned_file_size(VMFileMappingPermission::Read)
+        test_map_unaligned_file_size(VMFileMappingFlags::Read)
     }
 
     #[test]
     fn test_map_non_zero_offset_readonly() {
-        test_map_non_zero_offset(VMFileMappingPermission::Read)
+        test_map_non_zero_offset(VMFileMappingFlags::Read)
     }
 
     #[test]
     fn test_map_first_page_readwrite() {
-        test_map_first_page(VMFileMappingPermission::Write)
+        test_map_first_page(VMFileMappingFlags::Write)
     }
 
     #[test]
     fn test_map_multiple_pages_readwrite() {
-        test_map_multiple_pages(VMFileMappingPermission::Write)
+        test_map_multiple_pages(VMFileMappingFlags::Write)
     }
 
     #[test]
     fn test_map_unaligned_file_size_readwrite() {
-        test_map_unaligned_file_size(VMFileMappingPermission::Write)
+        test_map_unaligned_file_size(VMFileMappingFlags::Write)
     }
 
     #[test]
     fn test_map_non_zero_offset_readwrite() {
-        test_map_non_zero_offset(VMFileMappingPermission::Write)
+        test_map_non_zero_offset(VMFileMappingFlags::Write)
     }
 }
