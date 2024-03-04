@@ -6,54 +6,17 @@
 
 extern crate alloc;
 
-use core::slice::from_raw_parts_mut;
-
-#[cfg(not(test))]
-use alloc::sync::Arc;
-
 use alloc::vec::Vec;
 
-#[cfg(not(test))]
-use super::{Mapping, VMPhysMem};
-
-use super::{RawAllocMapping, VMPageFaultResolution, VirtualMapping};
-#[cfg(test)]
-use crate::address::Address;
+use super::{VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::VMR;
 use crate::mm::PageRef;
 use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
-use crate::types::{PageSize, PAGE_SHIFT};
+use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
-
-#[derive(Debug)]
-struct VMWriteFileMapping(RawAllocMapping);
-
-impl VMWriteFileMapping {
-    pub fn get_alloc(&self) -> &RawAllocMapping {
-        &self.0
-    }
-
-    pub fn get_alloc_mut(&mut self) -> &mut RawAllocMapping {
-        &mut self.0
-    }
-}
-
-impl VirtualMapping for VMWriteFileMapping {
-    fn mapping_size(&self) -> usize {
-        self.0.mapping_size()
-    }
-
-    fn map(&self, offset: usize) -> Option<PhysAddr> {
-        self.0.map(offset)
-    }
-
-    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        PTEntryFlags::task_data()
-    }
-}
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum VMFileMappingPermission {
@@ -68,9 +31,6 @@ pub enum VMFileMappingPermission {
 /// Map view of a ramfs file into virtual memory
 #[derive(Debug)]
 pub struct VMFileMapping {
-    /// The file that this mapping relates to
-    file: FileHandle,
-
     /// The size of the mapping in bytes
     size: usize,
 
@@ -79,9 +39,6 @@ pub struct VMFileMapping {
 
     /// A vec containing references to mapped pages within the file
     pages: Vec<Option<PageRef>>,
-
-    /// A copy of the file pages for mappings with Write permission
-    write_copy: Option<VMWriteFileMapping>,
 }
 
 impl VMFileMapping {
@@ -123,44 +80,15 @@ impl VMFileMapping {
         for page_index in 0..count {
             pages.push(file.mapping(offset + page_index * PAGE_SIZE));
         }
-        // For ranges with write access we need to take a copy of the ram pages
-        // to allow them to be written to without modifying the contents of the
-        // file itself and also to prevent pointer aliasing with any other
-        // FileHandles that may be open on the same file.
-        let write_copy = if permission == VMFileMappingPermission::Write {
-            Some(VMWriteFileMapping(RawAllocMapping::new(size)))
-        } else {
-            None
-        };
-
         Ok(Self {
-            file,
             size: page_size,
             permission,
             pages,
-            write_copy,
         })
     }
 }
 
 #[cfg(not(test))]
-fn copy_page(
-    vmr: &VMR,
-    file: &FileHandle,
-    offset: usize,
-    paddr_dst: PhysAddr,
-    page_size: PageSize,
-) -> Result<(), SvsmError> {
-    let page_size = usize::from(page_size);
-    let temp_map = VMPhysMem::new(paddr_dst, page_size, true);
-    let vaddr_new_page = vmr.insert(Arc::new(Mapping::new(temp_map)))?;
-    let slice = unsafe { from_raw_parts_mut(vaddr_new_page.as_mut_ptr::<u8>(), page_size) };
-    file.seek(offset);
-    file.read(slice)?;
-    vmr.remove(vaddr_new_page)?;
-    Ok(())
-}
-
 #[cfg(test)]
 fn copy_page(
     _vmr: &VMR,
@@ -189,61 +117,24 @@ impl VirtualMapping for VMFileMapping {
         if page_index >= self.pages.len() {
             return None;
         }
-        if let Some(write_copy) = &self.write_copy {
-            if let Some(write_addr) = write_copy.map(offset) {
-                return Some(write_addr);
-            };
-        }
         self.pages[page_index].as_ref().map(|p| p.phys_addr())
     }
 
-    fn pt_flags(&self, offset: usize) -> PTEntryFlags {
+    fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
         match self.permission {
             VMFileMappingPermission::Read => PTEntryFlags::task_data_ro(),
-            VMFileMappingPermission::Write => {
-                if let Some(write_copy) = &self.write_copy {
-                    if write_copy.get_alloc().present(offset) {
-                        PTEntryFlags::task_data()
-                    } else {
-                        PTEntryFlags::task_data_ro()
-                    }
-                } else {
-                    PTEntryFlags::task_data_ro()
-                }
-            }
+            VMFileMappingPermission::Write => PTEntryFlags::task_data(),
             VMFileMappingPermission::Execute => PTEntryFlags::task_exec(),
         }
     }
 
     fn handle_page_fault(
         &mut self,
-        vmr: &VMR,
-        offset: usize,
-        write: bool,
+        _vmr: &VMR,
+        _offset: usize,
+        _write: bool,
     ) -> Result<VMPageFaultResolution, SvsmError> {
-        let page_size = self.page_size();
-        let page_size_bytes = usize::from(page_size);
-
-        if !write {
-            return Err(SvsmError::Mem);
-        }
-
-        let Some(write_copy) = self.write_copy.as_mut() else {
-            return Err(SvsmError::Mem);
-        };
-
-        // This is a writeable region with copy-on-write access. The
-        // page fault will have occurred because the page has not yet
-        // been allocated. Allocate a page and copy the readonly source
-        // page into the new writeable page.
-        let offset_aligned = offset & !(page_size_bytes - 1);
-        write_copy.get_alloc_mut().alloc_page(offset_aligned)?;
-        let paddr_new_page = write_copy.map(offset_aligned).ok_or(SvsmError::Mem)?;
-        copy_page(vmr, &self.file, offset_aligned, paddr_new_page, page_size)?;
-        Ok(VMPageFaultResolution {
-            paddr: paddr_new_page,
-            flags: PTEntryFlags::task_data(),
-        })
+        Err(SvsmError::Mem)
     }
 }
 
@@ -251,7 +142,6 @@ impl VirtualMapping for VMFileMapping {
 mod tests {
     use super::*;
     use crate::{
-        address::VirtAddr,
         fs::{create, open, unlink, TestFileSystemGuard},
         mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
         types::PAGE_SIZE,
@@ -475,90 +365,5 @@ mod tests {
     #[test]
     fn test_map_non_zero_offset_readwrite() {
         test_map_non_zero_offset(VMFileMappingPermission::Write)
-    }
-
-    #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-    fn test_handle_page_fault() {
-        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        let _test_fs = TestFileSystemGuard::setup();
-
-        let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
-        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), VMFileMappingPermission::Write)
-            .expect("Failed to create new VMFileMapping");
-
-        let vmr = VMR::new(
-            VirtAddr::from(0usize),
-            VirtAddr::from(16usize * PAGE_SIZE),
-            PTEntryFlags::data(),
-        );
-        let res = vm
-            .handle_page_fault(&vmr, PAGE_SIZE, true)
-            .expect("handle_page_fault() failed");
-        assert!(vm.write_copy.is_some());
-        assert_eq!(
-            vm.write_copy.as_ref().unwrap().0.mapping_size(),
-            vm.mapping_size()
-        );
-        assert_eq!(
-            res.paddr,
-            vm.write_copy
-                .as_ref()
-                .unwrap()
-                .0
-                .map(PAGE_SIZE)
-                .expect("Page not allocated")
-        );
-        // create_16k_test_file() populates the first byte of each 4K page with
-        // the page number. We can use this to check if the copy from the file
-        // page to the writeable page worked correctly.
-        assert_eq!(unsafe { (res.paddr.bits() as *const u8).read() }, 1);
-
-        assert_eq!(
-            vm.map(PAGE_SIZE).expect("Failed to map file page"),
-            res.paddr
-        );
-        unlink(name).unwrap();
-    }
-
-    #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
-    fn test_handle_page_fault_unaligned_addr() {
-        let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        let _test_fs = TestFileSystemGuard::setup();
-
-        let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
-        let mut vm = VMFileMapping::new(fh, 0, fh2.size(), VMFileMappingPermission::Write)
-            .expect("Failed to create new VMFileMapping");
-
-        let vmr = VMR::new(
-            VirtAddr::from(0usize),
-            VirtAddr::from(16usize * PAGE_SIZE),
-            PTEntryFlags::data(),
-        );
-        let res = vm
-            .handle_page_fault(&vmr, PAGE_SIZE * 2 + 1, true)
-            .expect("handle_page_fault() failed");
-        assert_eq!(
-            res.paddr,
-            vm.write_copy
-                .as_ref()
-                .unwrap()
-                .0
-                .map(PAGE_SIZE * 2)
-                .expect("Page not allocated")
-        );
-        // create_16k_test_file() populates the first byte of each 4K page with
-        // the page number. We can use this to check if the copy from the file
-        // page to the writeable page worked correctly.
-        assert_eq!(unsafe { (res.paddr.bits() as *const u8).read() }, 2);
-
-        assert_eq!(
-            vm.map(PAGE_SIZE * 2).expect("Failed to map file page"),
-            res.paddr
-        );
-        unlink(name).unwrap();
     }
 }
