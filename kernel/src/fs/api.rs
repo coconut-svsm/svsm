@@ -113,7 +113,20 @@ pub trait File: Debug + Send + Sync {
     ///
     /// size of the file in bytes.
     fn size(&self) -> usize;
-    fn mapping(&self, offset: usize) -> Option<PageRef>;
+
+    /// Get reference to backing pages of the file
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: offset to the requested page in bytes
+    ///
+    /// # Returns
+    ///
+    /// [`Option<PageRef>`]: An [`Option`] with the requested page reference.
+    /// `None` if the offset is not backed by a page.
+    fn mapping(&self, _offset: usize) -> Option<PageRef> {
+        None
+    }
 }
 
 /// Represents directory operations
