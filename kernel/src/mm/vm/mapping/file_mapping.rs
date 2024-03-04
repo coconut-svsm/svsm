@@ -42,7 +42,7 @@ pub struct VMFileMapping {
     flags: VMFileMappingFlags,
 
     /// A vec containing references to mapped pages within the file
-    pages: Vec<Option<PageRef>>,
+    pages: Vec<PageRef>,
 }
 
 impl VMFileMapping {
@@ -80,9 +80,12 @@ impl VMFileMapping {
 
         // Take references to the file pages
         let count = page_size >> PAGE_SHIFT;
-        let mut pages = Vec::<Option<PageRef>>::new();
+        let mut pages = Vec::<PageRef>::new();
         for page_index in 0..count {
-            pages.push(file.mapping(offset + page_index * PAGE_SIZE));
+            let page_ref = file
+                .mapping(offset + page_index * PAGE_SIZE)
+                .ok_or(SvsmError::Mem)?;
+            pages.push(page_ref);
         }
         Ok(Self {
             size: page_size,
@@ -121,7 +124,7 @@ impl VirtualMapping for VMFileMapping {
         if page_index >= self.pages.len() {
             return None;
         }
-        self.pages[page_index].as_ref().map(|p| p.phys_addr())
+        Some(self.pages[page_index].phys_addr())
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
