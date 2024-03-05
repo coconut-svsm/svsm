@@ -41,6 +41,7 @@ pub const MF_VECTOR: usize = 16;
 pub const AC_VECTOR: usize = 17;
 pub const MCE_VECTOR: usize = 18;
 pub const XF_VECTOR: usize = 19;
+pub const VE_VECTOR: usize = 20;
 pub const CP_VECTOR: usize = 21;
 pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;

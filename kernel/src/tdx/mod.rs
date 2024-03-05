@@ -6,5 +6,6 @@
 
 pub mod error;
 pub mod tdcall;
+pub mod ve;
 
 pub use error::TdxError;
