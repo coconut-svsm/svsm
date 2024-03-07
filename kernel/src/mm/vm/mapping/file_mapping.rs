@@ -66,7 +66,7 @@ impl VMFileMapping {
     ///
     /// Initialized mapping on success, Err(SvsmError::Mem) on error
     pub fn new(
-        file: FileHandle,
+        file: &FileHandle,
         offset: usize,
         size: usize,
         flags: VMFileMappingFlags,
@@ -196,7 +196,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_512b_test_file();
-        let vm = VMFileMapping::new(fh, 0, 512, VMFileMappingFlags::Read)
+        let vm = VMFileMapping::new(&fh, 0, 512, VMFileMappingFlags::Read)
             .expect("Failed to create new VMFileMapping");
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
         assert!(vm.flags.contains(VMFileMappingFlags::Read));
@@ -214,7 +214,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, offset, fh2.size() - offset, VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, offset, fh2.size() - offset, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -226,7 +226,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size() + 1, VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, 0, fh2.size() + 1, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -238,7 +238,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, PAGE_SIZE, fh2.size(), VMFileMappingFlags::Read);
+        let vm = VMFileMapping::new(&fh, PAGE_SIZE, fh2.size(), VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
     }
@@ -248,7 +248,8 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_512b_test_file();
-        let vm = VMFileMapping::new(fh, 0, 512, flags).expect("Failed to create new VMFileMapping");
+        let vm =
+            VMFileMapping::new(&fh, 0, 512, flags).expect("Failed to create new VMFileMapping");
 
         let res = vm
             .map(0)
@@ -270,7 +271,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size(), flags)
+        let vm = VMFileMapping::new(&fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
         for i in 0..4 {
@@ -294,7 +295,7 @@ mod tests {
 
         let (fh, name) = create_5000b_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 0, fh2.size(), flags)
+        let vm = VMFileMapping::new(&fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
         assert_eq!(vm.mapping_size(), PAGE_SIZE * 2);
@@ -321,7 +322,7 @@ mod tests {
 
         let (fh, name) = create_16k_test_file();
         let fh2 = open(name).unwrap();
-        let vm = VMFileMapping::new(fh, 2 * PAGE_SIZE, PAGE_SIZE, flags)
+        let vm = VMFileMapping::new(&fh, 2 * PAGE_SIZE, PAGE_SIZE, flags)
             .expect("Failed to create new VMFileMapping");
 
         assert_eq!(vm.mapping_size(), PAGE_SIZE);
