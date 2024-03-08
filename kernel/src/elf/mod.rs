@@ -1196,7 +1196,7 @@ bitflags! {
 
 impl Elf64Phdr {
     /// Represents a null program header type
-    pub const PT_NULL: Elf64Word = 1;
+    pub const PT_NULL: Elf64Word = 0;
     /// Represents a loadable segment program header type
     pub const PT_LOAD: Elf64Word = 1;
     /// Represents a dynamic segment program header type
