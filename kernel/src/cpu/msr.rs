@@ -51,6 +51,30 @@ pub fn rdtsc() -> u64 {
     (eax as u64) | (edx as u64) << 32
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RdtscpOut {
+    pub timestamp: u64,
+    pub pid: u32,
+}
+
+pub fn rdtscp() -> RdtscpOut {
+    let eax: u32;
+    let edx: u32;
+    let ecx: u32;
+
+    unsafe {
+        asm!("rdtsc",
+             out("eax") eax,
+             out("ecx") ecx,
+             out("edx") edx,
+             options(att_syntax, nomem, nostack));
+    }
+    RdtscpOut {
+        timestamp: (eax as u64) | (edx as u64) << 32,
+        pid: ecx,
+    }
+}
+
 pub fn read_flags() -> u64 {
     let rax: u64;
     unsafe {

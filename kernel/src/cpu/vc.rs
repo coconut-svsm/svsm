@@ -260,8 +260,10 @@ fn vc_decoding_needed(error_code: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
     use crate::cpu::percpu::this_cpu_mut;
     use crate::sev::ghcb::GHCB;
+    use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
     use core::arch::asm;
     use core::arch::x86_64::__cpuid_count;
 
@@ -325,9 +327,20 @@ mod tests {
             ret
         }
     }
+    fn inb_from_testdev_echo() -> u8 {
+        unsafe {
+            let ret: u8;
+            asm!("inb $0xe0, %al", out("al") ret, options(att_syntax));
+            ret
+        }
+    }
 
     fn outb(port: u16, value: u8) {
         unsafe { asm!("outb %al, %dx", in("al") value, in("dx") port, options(att_syntax)) }
+    }
+
+    fn outb_to_testdev_echo(value: u8) {
+        unsafe { asm!("outb %al, $0xe0", in("al") value, options(att_syntax)) }
     }
 
     fn inw(port: u16) -> u16 {
@@ -337,9 +350,20 @@ mod tests {
             ret
         }
     }
+    fn inw_from_testdev_echo() -> u16 {
+        unsafe {
+            let ret: u16;
+            asm!("inw $0xe0, %ax", out("ax") ret, options(att_syntax));
+            ret
+        }
+    }
 
     fn outw(port: u16, value: u16) {
         unsafe { asm!("outw %ax, %dx", in("ax") value, in("dx") port, options(att_syntax)) }
+    }
+
+    fn outw_to_testdev_echo(value: u16) {
+        unsafe { asm!("outw %ax, $0xe0", in("ax") value, options(att_syntax)) }
     }
 
     fn inl(port: u16) -> u32 {
@@ -349,9 +373,26 @@ mod tests {
             ret
         }
     }
+    fn inl_from_testdev_echo() -> u32 {
+        unsafe {
+            let ret: u32;
+            asm!("inl $0xe0, %eax", out("eax") ret, options(att_syntax));
+            ret
+        }
+    }
 
     fn outl(port: u16, value: u32) {
         unsafe { asm!("outl %eax, %dx", in("eax") value, in("dx") port, options(att_syntax)) }
+    }
+
+    fn outl_to_testdev_echo(value: u32) {
+        unsafe { asm!("outl %eax, $0xe0", in("eax") value, options(att_syntax)) }
+    }
+
+    fn rep_outsw(port: u16, data: &[u16]) {
+        unsafe {
+            asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), in("rcx") data.len(), options(att_syntax))
+        }
     }
 
     #[test]
@@ -385,5 +426,187 @@ mod tests {
             TEST_VAL,
             verify_ghcb_gets_altered(|| inl(TESTDEV_ECHO_LAST_PORT))
         );
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_port_io_8_hardcoded() {
+        const TEST_VAL: u8 = 0x12;
+        verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
+        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inb_from_testdev_echo));
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_port_io_16_hardcoded() {
+        const TEST_VAL: u16 = 0x4321;
+        verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
+        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inw_from_testdev_echo));
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_port_io_32_hardcoded() {
+        const TEST_VAL: u32 = 0xabcd1234;
+        verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
+        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inl_from_testdev_echo));
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_port_io_string_16_get_last() {
+        const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
+        verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
+        assert_eq!(
+            TEST_DATA.last().unwrap(),
+            &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
+        );
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_sev_snp_enablement_msr() {
+        const MSR_SEV_STATUS: u32 = 0b10;
+        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b100;
+
+        let sev_status = verify_ghcb_gets_altered(|| read_msr(MSR_SEV_STATUS));
+        assert_ne!(sev_status & MSR_SEV_STATUS_SEV_SNP_ENABLED, 0);
+    }
+
+    const MSR_APIC_BASE: u32 = 0x1b;
+
+    const APIC_DEFAULT_PHYS_BASE: u64 = 0xfee00000; // KVM's default
+    const APIC_BASE_PHYS_ADDR_MASK: u64 = 0xffffff000; // bit 12-35
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_rdmsr_apic() {
+        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
+        assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_rdmsr_debug_ctl() {
+        const MSR_DEBUG_CTL: u32 = 0x1d9;
+        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
+        assert_eq!(apic_base, 0);
+    }
+
+    const MSR_TSC_AUX: u32 = 0xc0000103;
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_wrmsr_tsc_aux() {
+        let test_val = 0x1234;
+        verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
+        let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
+        assert_eq!(test_val, readback);
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_vmmcall_error() {
+        let res = verify_ghcb_gets_altered(|| unsafe { raw_vmmcall(1005, 0, 0, 0) });
+        assert_eq!(res, -1000);
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_vmmcall_vapic_poll_irq() {
+        const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
+
+        let res =
+            verify_ghcb_gets_altered(|| unsafe { raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0) });
+        assert_eq!(res, 0);
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_read_write_dr7() {
+        const DR7_DEFAULT: u64 = 0x400;
+        const DR7_TEST: u64 = 0x401;
+
+        let old_dr7 = verify_ghcb_gets_altered(get_dr7);
+        assert_eq!(old_dr7, DR7_DEFAULT);
+
+        verify_ghcb_gets_altered(|| unsafe { set_dr7(DR7_TEST) });
+        let new_dr7 = verify_ghcb_gets_altered(get_dr7);
+        assert_eq!(new_dr7, DR7_TEST);
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_rdtsc() {
+        let mut prev: u64 = rdtsc();
+        for _ in 0..50 {
+            let cur = rdtsc();
+            assert!(cur > prev);
+            prev = cur;
+        }
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_rdtscp() {
+        let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
+            .expect("pid should be 32 bits");
+        let RdtscpOut {
+            timestamp: mut prev,
+            pid,
+        } = rdtscp();
+        assert_eq!(pid, expected_pid);
+        for _ in 0..50 {
+            let RdtscpOut {
+                timestamp: cur,
+                pid,
+            } = rdtscp();
+            assert_eq!(pid, expected_pid);
+            assert!(cur > prev);
+            prev = cur;
+        }
+    }
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "Currently unhandled by #VC handler"]
+    fn test_wbinvd() {
+        verify_ghcb_gets_altered(|| unsafe {
+            asm!("wbinvd");
+        });
+    }
+
+    const APIC_DEFAULT_VERSION_REGISTER_OFFSET: u64 = 0x30;
+    const EXPECTED_APIC_VERSION_NUMBER: u32 = 0x50014;
+
+    #[test]
+    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "apic mmio is not supported"]
+    fn test_mmio_apic_version() {
+        let mut version: u32 = 0;
+        let address = u32::try_from(APIC_DEFAULT_PHYS_BASE + APIC_DEFAULT_VERSION_REGISTER_OFFSET)
+            .expect("APIC address should fit in 32 bits");
+        verify_ghcb_gets_altered(|| unsafe {
+            asm!(
+                "mov (%edx), %eax",
+                out("eax") version,
+                in("edx") address,
+                options(att_syntax)
+            )
+        });
+        assert_eq!(version, EXPECTED_APIC_VERSION_NUMBER);
     }
 }

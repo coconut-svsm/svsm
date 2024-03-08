@@ -132,6 +132,38 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     }
 }
 
+/// Executes the vmmcall instruction.
+/// # Safety
+/// See cpu vendor documentation for what this can do.
+pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
+    let new_eax;
+    asm!(
+            // bx register is reserved by llvm so it can't be passed in directly and must be
+            // restored
+            "xchg %rbx, {0:r}",
+            "vmmcall",
+            "xchg %rbx, {0:r}",
+            in(reg) ebx as u64,
+            inout("eax") eax => new_eax,
+            in("ecx") ecx,
+            in("edx") edx,
+            options(att_syntax));
+    new_eax
+}
+
+/// Sets the dr7 register to the given value
+/// # Safety
+/// See cpu vendor documentation for what this can do.
+pub unsafe fn set_dr7(new_val: u64) {
+    asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
+}
+
+pub fn get_dr7() -> u64 {
+    let out;
+    unsafe { asm!("mov %dr7, {0}", out(reg) out, options(att_syntax)) };
+    out
+}
+
 pub fn raw_vmgexit() {
     unsafe {
         asm!("rep; vmmcall", options(att_syntax));
