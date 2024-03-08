@@ -1201,6 +1201,18 @@ impl Elf64Phdr {
     pub const PT_LOAD: Elf64Word = 1;
     /// Represents a dynamic segment program header type
     pub const PT_DYNAMIC: Elf64Word = 2;
+    /// Represents a interpreter program header type
+    pub const PT_INTERP: Elf64Word = 3;
+    /// Represents a Note program header type
+    pub const PT_NOTE: Elf64Word = 4;
+    /// Represents a Shared Library program header type
+    pub const PT_SHLIB: Elf64Word = 5;
+    /// Represents the Program Header Table itself
+    pub const PT_PHDR: Elf64Word = 6;
+    /// Processor-specific entries lower bound
+    pub const PT_LOPROC: Elf64Word = 0x70000000;
+    /// Processor-specific entries upper bound
+    pub const PT_HIPROC: Elf64Word = 0x7fffffff;
 
     /// Reads a program header from a byte buffer and returns an [`Elf64Phdr`] instance.
     ///
