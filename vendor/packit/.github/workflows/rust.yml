@@ -1,0 +1,67 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install minimal stable with clippy and rustfmt
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: rustfmt, clippy
+    
+    - uses: actions-rs/cargo@v1
+      name: Build (all features)
+      with:
+        command: build
+        args: --verbose --all-features
+    
+    - uses: actions-rs/cargo@v1
+      name: Build (no features)
+      with:
+        command: build
+        args: --verbose --no-default-features
+        
+    - uses: actions-rs/cargo@v1
+      name: Test (all features)
+      with:
+        command: test
+        args: --verbose --all-features
+
+    - uses: actions-rs/cargo@v1
+      name: Test (no features)
+      with:
+        command: test
+        args: --verbose --no-default-features
+    
+    - name: Format
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        args: --all -- --check
+
+    - name: Clippy (no features)
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --no-default-features
+        
+    - name: Clippy (all features)
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-features

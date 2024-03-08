@@ -11,3 +11,14 @@ rustflags = [
 rustflags = [
        "-C", "code-model=kernel",
 ]
+
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source."git+https://github.com/coconut-svsm/packit"]
+git = "https://github.com/coconut-svsm/packit"
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+
