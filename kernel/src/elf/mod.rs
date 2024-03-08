@@ -661,9 +661,11 @@ impl<'a> Elf64File<'a> {
             return Err(ElfError::InvalidSectionIndex);
         }
 
-        let file_range = shdr.file_range();
-        if file_range.offset_end > elf_file_buf_len {
-            return Err(ElfError::FileTooShort);
+        if shdr.sh_type != Elf64Shdr::SHT_NOBITS {
+            let file_range = shdr.file_range();
+            if file_range.offset_end > elf_file_buf_len {
+                return Err(ElfError::FileTooShort);
+            }
         }
 
         Ok(())
