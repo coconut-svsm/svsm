@@ -2550,7 +2550,7 @@ mod tests {
 
         // Use the Elf64File::read method to create an Elf64File instance
         let res = Elf64File::read(&byte_data);
-        assert_eq!(res, Err(crate::elf::ElfError::InvalidPhdrSize));
+        assert_eq!(res, Err(ElfError::InvalidPhdrSize));
 
         // Construct an Elf64Hdr instance from the byte data
         let elf_hdr = Elf64Hdr::read(&byte_data);
