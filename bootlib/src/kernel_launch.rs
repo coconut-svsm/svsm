@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::platform::SvsmPlatformType;
+
 use zerocopy::AsBytes;
 
 #[derive(Copy, Clone, Debug)]
@@ -29,6 +31,7 @@ pub struct KernelLaunchInfo {
     pub igvm_params_virt_addr: u64,
     pub vtom: u64,
     pub debug_serial_port: u16,
+    pub platform_type: SvsmPlatformType,
 }
 
 impl KernelLaunchInfo {

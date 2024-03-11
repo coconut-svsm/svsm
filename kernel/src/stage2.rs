@@ -10,6 +10,7 @@
 pub mod boot_stage2;
 
 use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
+use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut};
@@ -34,10 +35,11 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
+use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
-use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
+use svsm::sev::{pvalidate_range, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
@@ -81,10 +83,14 @@ fn shutdown_percpu() {
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
+fn setup_env(
+    config: &SvsmConfig<'_>,
+    platform: &mut dyn SvsmPlatform,
+    launch_info: &Stage2LaunchInfo,
+) {
     gdt().load();
     early_idt_init_no_ghcb();
-    sev_status_init();
+    platform.env_setup();
 
     install_console_logger("Stage2");
     init_kernel_mapping_info(
@@ -118,7 +124,7 @@ fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
     dump_cpuid_table();
-    sev_status_verify();
+    platform.env_setup_late();
 }
 
 fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) {
@@ -159,6 +165,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
+    let platform_type = SvsmPlatformType::Snp;
+    let mut platform_cell = SvsmPlatformCell::new(platform_type);
+    let platform = platform_cell.as_mut_dyn_ref();
+
     let config = if launch_info.igvm_params != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
             .expect("Invalid IGVM parameters");
@@ -167,7 +177,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
     };
 
-    setup_env(&config, launch_info);
+    setup_env(&config, platform, launch_info);
 
     let r = config
         .find_kernel_region()
@@ -328,6 +338,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
+        platform_type,
     };
 
     check_launch_info(&launch_info);
