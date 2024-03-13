@@ -111,8 +111,15 @@ impl GpaMap {
                 1 << 20
             }
             Hypervisor::HyperV => {
-                // Load the kernel image after the firmware.
-                firmware_range.get_end()
+                // Load the kernel image after the firmware, but now lower than
+                // 1 MB.
+                let firmware_end = firmware_range.get_end();
+                let addr_1mb = 1 << 20;
+                if firmware_end < addr_1mb {
+                    addr_1mb
+                } else {
+                    firmware_end
+                }
             }
         };
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
