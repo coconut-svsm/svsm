@@ -71,11 +71,15 @@ impl IgvmBuilder {
         directive_a: &IgvmDirectiveHeader,
         directive_b: &IgvmDirectiveHeader,
     ) -> Ordering {
-        let IgvmDirectiveHeader::PageData { gpa: a, .. } = directive_a else {
-            panic!("Attempted to compare non-page directive");
+        let a = match directive_a {
+            IgvmDirectiveHeader::PageData { gpa, .. }
+            | IgvmDirectiveHeader::SnpVpContext { gpa, .. } => gpa,
+            _ => panic!("Attempted to compare non-page/vp directive"),
         };
-        let IgvmDirectiveHeader::PageData { gpa: b, .. } = directive_b else {
-            panic!("Attempted to compare non-page directive");
+        let b = match directive_b {
+            IgvmDirectiveHeader::PageData { gpa, .. }
+            | IgvmDirectiveHeader::SnpVpContext { gpa, .. } => gpa,
+            _ => panic!("Attempted to compare non-page/vp directive"),
         };
         a.cmp(b)
     }
@@ -268,7 +272,7 @@ impl IgvmBuilder {
             },
         ));
 
-        // Place the VMSA at the base of the kernel region.
+        // Add the VMSA.
         self.directives.push(construct_vmsa(
             self.gpa_map.vmsa.get_start(),
             param_block.vtom,
@@ -414,5 +418,6 @@ impl IgvmBuilder {
 
     fn filter_pages(directive: &IgvmDirectiveHeader) -> bool {
         matches!(directive, IgvmDirectiveHeader::PageData { .. })
+            || matches!(directive, IgvmDirectiveHeader::SnpVpContext { .. })
     }
 }
