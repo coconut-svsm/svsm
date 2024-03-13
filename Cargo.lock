@@ -317,6 +317,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hmac-sha512"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4ce1f4656bae589a3fab938f9f09bf58645b7ed01a2c5f8a3c238e01a4ef78a"
+
+[[package]]
 name = "igvm"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -354,6 +360,17 @@ dependencies = [
  "igvm",
  "igvm_defs",
  "uuid",
+ "zerocopy 0.7.32",
+]
+
+[[package]]
+name = "igvmmeasure"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hmac-sha512",
+ "igvm",
+ "igvm_defs",
  "zerocopy 0.7.32",
 ]
 
