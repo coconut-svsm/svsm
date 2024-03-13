@@ -38,8 +38,8 @@ pub fn construct_vmsa(
     // EFER.SVME.
     vmsa.efer = 0x1000;
 
-    // CR0.PE | CR0.NE.
-    vmsa.cr0 = 0x21;
+    // CR0.PE | CR0.NE | CR0.ET.
+    vmsa.cr0 = 0x31;
 
     // CR4.MCE.
     vmsa.cr4 = 0x40;
@@ -57,6 +57,7 @@ pub fn construct_vmsa(
         vmsa.virtual_tom = vtom;
         features.set_vtom(true);
     }
+    features.set_debug_swap(true);
     vmsa.sev_features = features;
 
     Ok(IgvmDirectiveHeader::SnpVpContext {
