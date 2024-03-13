@@ -66,7 +66,7 @@ pub enum ImmutAfterInitError {
 /// }
 /// ```
 #[derive(Debug)]
-pub struct ImmutAfterInitCell<T> {
+pub struct ImmutAfterInitCell<T: Copy> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
     // Used to keep track of the initialization state. Even though this
@@ -75,7 +75,7 @@ pub struct ImmutAfterInitCell<T> {
     init: AtomicBool,
 }
 
-impl<T> ImmutAfterInitCell<T> {
+impl<T: Copy> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
     /// initialized by means of [`Self::init()`] before first usage.
     pub const fn uninit() -> Self {
@@ -158,7 +158,7 @@ impl<T> ImmutAfterInitCell<T> {
     }
 }
 
-impl<T> Deref for ImmutAfterInitCell<T> {
+impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
     /// Dereference the wrapped value. Must **only ever** get called on an
@@ -168,8 +168,8 @@ impl<T> Deref for ImmutAfterInitCell<T> {
     }
 }
 
-unsafe impl<T> Send for ImmutAfterInitCell<T> {}
-unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
+unsafe impl<T: Copy + Send> Send for ImmutAfterInitCell<T> {}
+unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
@@ -221,14 +221,14 @@ unsafe impl<T> Sync for ImmutAfterInitCell<T> {}
 /// ```
 ///
 #[derive(Debug)]
-pub struct ImmutAfterInitRef<'a, T> {
+pub struct ImmutAfterInitRef<'a, T: Copy> {
     #[doc(hidden)]
     ptr: ImmutAfterInitCell<*const T>,
     #[doc(hidden)]
     _phantom: PhantomData<&'a &'a T>,
 }
 
-impl<'a, T> ImmutAfterInitRef<'a, T> {
+impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// Create an unitialized `ImmutAfterInitRef` instance. The reference itself
     /// must get initialized via either of [`Self::init_from_ref()`] or
     /// [`Self::init_from_cell()`] before first dereferencing it.
@@ -276,7 +276,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     }
 }
 
-impl<'a, T> ImmutAfterInitRef<'a, T> {
+impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to
     /// value wrapped in a [`ImmutAfterInitCell`].
     ///
@@ -293,7 +293,7 @@ impl<'a, T> ImmutAfterInitRef<'a, T> {
     }
 }
 
-impl<T> Deref for ImmutAfterInitRef<'_, T> {
+impl<T: Copy> Deref for ImmutAfterInitRef<'_, T> {
     type Target = T;
 
     /// Dereference the referenced value *without* lifetime propagation. Must
@@ -305,5 +305,5 @@ impl<T> Deref for ImmutAfterInitRef<'_, T> {
     }
 }
 
-unsafe impl<T> Send for ImmutAfterInitRef<'_, T> {}
-unsafe impl<T> Sync for ImmutAfterInitRef<'_, T> {}
+unsafe impl<T: Copy + Send> Send for ImmutAfterInitRef<'_, T> {}
+unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitRef<'_, T> {}
