@@ -32,13 +32,19 @@ pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
+fn reinit_feature_mask(feature_mask: &PTEntryFlags) {
+    FEATURE_MASK
+        .reinit(feature_mask)
+        .expect("could not reinit FEATURE_MASK");
+}
+
 pub fn paging_init_early(vtom: u64) {
     init_encrypt_mask(vtom.try_into().unwrap());
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    FEATURE_MASK.reinit(&feature_mask);
+    reinit_feature_mask(&feature_mask);
 }
 
 pub fn paging_init(vtom: u64) {
@@ -51,28 +57,31 @@ pub fn paging_init(vtom: u64) {
     if !cpu_has_pge() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    FEATURE_MASK.reinit(&feature_mask);
+    reinit_feature_mask(&feature_mask);
 }
 
 fn init_encrypt_mask(vtom: usize) {
     // Determine whether VTOM is in use.
 
     let zero: usize = 0;
-    let addr_mask_width = if vtom_enabled() {
-        PRIVATE_PTE_MASK.reinit(&zero);
-        SHARED_PTE_MASK.reinit(&vtom);
+    let (private_pte_mask, shared_pte_mask, addr_mask_width) = if vtom_enabled() {
         // Find the MSB of VTOM to define the number of bits in the effective
         // address.
-        63 - vtom.leading_zeros()
+        (zero, vtom, 63 - vtom.leading_zeros())
     } else {
         // Find C bit position
         let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
         let c_bit = res.ebx & 0x3f;
         let mask = 1u64 << c_bit;
-        PRIVATE_PTE_MASK.reinit(&(mask as usize));
-        SHARED_PTE_MASK.reinit(&zero);
-        c_bit
+        (mask as usize, zero, c_bit)
     };
+
+    PRIVATE_PTE_MASK
+        .reinit(&private_pte_mask)
+        .expect("could not reinitialize PRIVATE_PTE_MASK");
+    SHARED_PTE_MASK
+        .reinit(&shared_pte_mask)
+        .expect("could not reinitialize SHARED_PTE_MASK");
 
     // Find physical address size.
     let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
@@ -93,7 +102,9 @@ fn init_encrypt_mask(vtom: usize) {
     let effective_phys_addr_size = cmp::min(addr_mask_width, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
-    MAX_PHYS_ADDR.reinit(&max_addr);
+    MAX_PHYS_ADDR
+        .reinit(&max_addr)
+        .expect("could not reinitialize MAX_PHYS_ADDR");
 }
 
 fn private_pte_mask() -> usize {
