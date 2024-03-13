@@ -168,8 +168,8 @@ impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     }
 }
 
-unsafe impl<T: Copy> Send for ImmutAfterInitCell<T> {}
-unsafe impl<T: Copy> Sync for ImmutAfterInitCell<T> {}
+unsafe impl<T: Copy + Send> Send for ImmutAfterInitCell<T> {}
+unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
@@ -305,5 +305,5 @@ impl<T: Copy> Deref for ImmutAfterInitRef<'_, T> {
     }
 }
 
-unsafe impl<T: Copy> Send for ImmutAfterInitRef<'_, T> {}
-unsafe impl<T: Copy> Sync for ImmutAfterInitRef<'_, T> {}
+unsafe impl<T: Copy + Send> Send for ImmutAfterInitRef<'_, T> {}
+unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitRef<'_, T> {}
