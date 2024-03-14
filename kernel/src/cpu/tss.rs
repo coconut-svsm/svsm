@@ -10,6 +10,8 @@ use crate::address::VirtAddr;
 // IST offsets
 pub const _IST_INVALID: usize = 0;
 pub const IST_DF: usize = 1;
+pub const IST_DB: usize = 2;
+pub const IST_VC: usize = 3;
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed)]

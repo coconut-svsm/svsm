@@ -58,6 +58,27 @@ asm_entry_\name:
 	jmp	default_return
 .endm
 
+.macro vc_entry name: req handler:req error_code:req vector:req
+	.globl asm_entry_ist_\name
+asm_entry_ist_\name:
+	.if \error_code == 0
+	pushq $0
+	.endif
+	pushq	$\vector
+	push_regs
+
+	// Switch off IST stack to handle nested #VC.
+	// vc_switch_off_ist() moves stack to the current kernel stack's stack,
+	// wheather #VC was raised from CPL-0 or CPL-3.
+	movq	%rsp, %rdi
+	call	vc_switch_off_ist
+	movq %rax, %rsp
+
+    movq %rsp, %rdi
+	call ex_handler_\handler
+	jmp	default_return
+.endm
+
 default_return:
 	pop_regs
 	iretq
@@ -133,6 +154,7 @@ default_entry_no_ist	name=hv		handler=hypervisor_injection	error_code=0	vector=2
 
 // #VC VMM Communication Exception (Vector 29)
 default_entry_no_ist	name=vc		handler=vmm_communication	error_code=1	vector=29
+vc_entry               	name=vc		handler=vmm_communication	error_code=1	vector=29
 
 // #SX Security Exception (Vector 30)
 default_entry_no_ist	name=sx		handler=panic			error_code=1	vector=30

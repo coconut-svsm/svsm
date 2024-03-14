@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use super::gdt_mut;
-use super::tss::{X86Tss, IST_DF};
+use super::tss::{X86Tss, IST_DB, IST_DF, IST_VC};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
@@ -21,7 +21,8 @@ use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, V
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
-    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DB_BASE,
+    SVSM_STACK_IST_DF_BASE, SVSM_STACK_IST_VC_BASE,
 };
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
@@ -117,13 +118,17 @@ impl VmsaRef {
 
 #[derive(Debug)]
 struct IstStacks {
-    double_fault_stack: Option<VirtAddr>,
+    double_fault_stack: Option<MemoryRegion<VirtAddr>>,
+    debug_stack: Option<MemoryRegion<VirtAddr>>,
+    vmm_comm_stack: Option<MemoryRegion<VirtAddr>>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
             double_fault_stack: None,
+            debug_stack: None,
+            vmm_comm_stack: None,
         }
     }
 }
@@ -238,7 +243,7 @@ pub struct PerCpu {
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     ghcb: *mut GHCB,
-    init_stack: Option<VirtAddr>,
+    init_stack: Option<MemoryRegion<VirtAddr>>,
     ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
@@ -344,14 +349,13 @@ impl PerCpu {
         *my_pgtable = pgtable;
     }
 
-    fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
+    fn allocate_stack(&mut self, base: VirtAddr) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
         let stack = VMKernelStack::new()?;
-        let top_of_stack = stack.top_of_stack(base);
+        let region = stack.bounds(base);
         let mapping = Arc::new(Mapping::new(stack));
 
         self.vm_range.insert_at(base, mapping)?;
-
-        Ok(top_of_stack)
+        Ok(region)
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
@@ -361,6 +365,8 @@ impl PerCpu {
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
         self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        self.ist.debug_stack = Some(self.allocate_stack(SVSM_STACK_IST_DB_BASE)?);
+        self.ist.vmm_comm_stack = Some(self.allocate_stack(SVSM_STACK_IST_VC_BASE)?);
         Ok(())
     }
 
@@ -383,15 +389,21 @@ impl PerCpu {
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.unwrap()
+        self.init_stack.unwrap().end()
     }
 
     pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.unwrap()
+        self.ist.double_fault_stack.unwrap().end()
+    }
+
+    pub fn get_vc_stack_bounds(&self) -> Option<MemoryRegion<VirtAddr>> {
+        self.ist.vmm_comm_stack
     }
 
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
+        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap().end();
+        self.tss.ist_stacks[IST_DB] = self.ist.debug_stack.unwrap().end();
+        self.tss.ist_stacks[IST_VC] = self.ist.vmm_comm_stack.unwrap().end();
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
