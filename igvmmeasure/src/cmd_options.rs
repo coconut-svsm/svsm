@@ -20,6 +20,10 @@ pub struct CmdOptions {
     #[arg(short, long, default_value_t = false)]
     pub bare: bool,
 
+    /// Check that the IGVM file conforms to QEMU/KVM restrictions
+    #[arg(short, long, default_value_t = false)]
+    pub check_kvm: bool,
+
     /// Platform to calculate the launch measurement for
     #[arg(short, long, value_enum, default_value_t = Platform::SevSnp)]
     pub platform: Platform,

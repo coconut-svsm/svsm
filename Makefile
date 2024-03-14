@@ -62,7 +62,7 @@ $(IGVMMEASURE):
 
 bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
-	$(IGVMMEASURE) $@
+	$(IGVMMEASURE) --check-kvm $@
 
 bin/coconut-hyperv.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v

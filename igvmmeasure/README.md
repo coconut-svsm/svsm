@@ -16,6 +16,18 @@ expected.
 Given an IGVM file, igvmmeasure parses the directives in the file and calculates
 the launch digest and outputs it as a hexadecimal string.
 
+## IGVM validation
+There are some restrictions on the contents of an IGVM file when using QEMU with
+KVM which impose some rules on the directives in the IGVM file. This is due to
+the way the initial guest state is passed from QEMU user mode to KVM in the
+kernel. Therefore, IGVM files for this virtualization stack must conform to
+these rules.
+
+Passing the `--check-kvm` option to igvmmeasure will result in some basic checks
+being performed on the directives in the file during the measurement process.
+This can be use to help diagnose measurement mismatches, or to abort the IGVM
+build process if a non-conformant file is generated.
+
 ## Usage
 `igvmmeasure [OPTIONS] <IGVM_FILE>`
 
@@ -34,5 +46,6 @@ the launch digest and outputs it as a hexadecimal string.
           [default: sev-snp]
           Possible values:
           - sev-snp: Calculate the launch measurement for SEV-SNP
+  -c, --check-kvm  Check that the IGVM file conforms to QEMU/KVM restrictions
   -h, --help       Print help
 ```

@@ -15,6 +15,75 @@ use zerocopy::AsBytes;
 use crate::cmd_options::CmdOptions;
 use crate::page_info::PageInfo;
 
+enum IgvmMeasureError {
+    InvalidVmsaCount,
+    InvalidVmsaGpa,
+    InvalidVmsaCr0,
+    InvalidDebugSwap,
+    InvalidVmsaOrder,
+}
+
+impl std::fmt::Display for IgvmMeasureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IgvmMeasureError::InvalidVmsaCount => {
+                write!(
+                    f,
+                    "KVM check failure: More than one VMSA has been provided \
+                    in the IGVM file. QEMU/KVM only supports setting of the \
+                    VMSA for the first virtual CPU."
+                )
+            }
+            IgvmMeasureError::InvalidVmsaGpa => {
+                write!(
+                    f,
+                    "KVM check failure: The GPA for the VMSA does not match \
+                    the address hardcoded in KVM. KVM will always populate \
+                    the VMSA at GPA 0xFFFFFFFFF000. The IGVM file must set \
+                    the GPA for the VMSA to this address."
+                )
+            }
+            IgvmMeasureError::InvalidVmsaCr0 => {
+                write!(
+                    f,
+                    "KVM check failure: CR0 in the VMSA in the IGVM file is \
+                    not set to 0x31. The value of CR0 is overridden by KVM \
+                    during initial measurement. Therefore the IGVM file must \
+                    be configured to match the value set by KVM."
+                )
+            }
+            IgvmMeasureError::InvalidDebugSwap => {
+                write!(
+                    f,
+                    "KVM check failure: DEBUG_SWAP(0x20) is not set in \
+                    sev_features in the VMSA file. This feature is \
+                    automatically applied by KVM during the initial \
+                    measurement so it must be specified in the VMSA in \
+                    the IGVM file in order to match."
+                )
+            }
+            IgvmMeasureError::InvalidVmsaOrder => {
+                write!(
+                    f,
+                    "KVM check failure: The VMSA must be the final page \
+                        directive in the IGVM file. \
+                        This is because QEMU/KVM measures the VMSA page \
+                        when the measurement is finalized and not in the \
+                        order specified in the IGVM file. Make sure your \
+                        IGVM file places the VMSA directive after any other \
+                        measured or unmeasured page directives."
+                )
+            }
+        }
+    }
+}
+impl std::fmt::Debug for IgvmMeasureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+impl Error for IgvmMeasureError {}
+
 #[derive(PartialEq)]
 enum SnpPageType {
     None,
@@ -52,6 +121,7 @@ pub struct IgvmMeasure<'a> {
     last_next_gpa: u64,
     last_len: u64,
     compatibility_mask: u32,
+    vmsa_count: u32,
 }
 
 const PAGE_SIZE_2M: u64 = 2 * 1024 * 1024;
@@ -66,6 +136,7 @@ impl<'a> IgvmMeasure<'a> {
             last_next_gpa: 0,
             last_len: 0,
             compatibility_mask: 0,
+            vmsa_count: 0,
         }
     }
 
@@ -107,12 +178,15 @@ impl<'a> IgvmMeasure<'a> {
                 }
                 IgvmDirectiveHeader::ParameterInsert(param) => {
                     if (param.compatibility_mask & self.compatibility_mask) != 0 {
+                        if self.options.check_kvm && (self.vmsa_count > 0) {
+                            return Err(IgvmMeasureError::InvalidVmsaOrder.into());
+                        }
                         self.measure_page(
                             param.gpa,
                             &IgvmPageDataFlags::new().with_unmeasured(true),
                             IgvmPageDataType::NORMAL,
                             &[],
-                        )?
+                        )?;
                     }
                 }
                 IgvmDirectiveHeader::SnpVpContext {
@@ -121,9 +195,7 @@ impl<'a> IgvmMeasure<'a> {
                     vp_index: _vp_index,
                     vmsa,
                 } => {
-                    if (*compatibility_mask & self.compatibility_mask) != 0 {
-                        self.measure_vmsa(*gpa, vmsa);
-                    }
+                    self.measure_vmsa(*gpa, *compatibility_mask, vmsa)?;
                 }
                 _ => (),
             }
@@ -223,11 +295,39 @@ impl<'a> IgvmMeasure<'a> {
         }
     }
 
-    fn measure_vmsa(&mut self, gpa: u64, vmsa: &SevVmsa) {
+    fn check_vmsa(&mut self, gpa: u64, vmsa: &SevVmsa) -> Result<(), IgvmMeasureError> {
+        if self.options.check_kvm {
+            if self.vmsa_count > 0 {
+                return Err(IgvmMeasureError::InvalidVmsaCount);
+            }
+            if gpa != 0xFFFFFFFFF000 {
+                return Err(IgvmMeasureError::InvalidVmsaGpa);
+            }
+            if vmsa.cr0 != 0x31 {
+                return Err(IgvmMeasureError::InvalidVmsaCr0);
+            }
+            if !vmsa.sev_features.debug_swap() {
+                return Err(IgvmMeasureError::InvalidDebugSwap);
+            }
+        }
+        Ok(())
+    }
+
+    fn measure_vmsa(
+        &mut self,
+        gpa: u64,
+        _compatibility_mask: u32,
+        vmsa: &SevVmsa,
+    ) -> Result<(), Box<dyn Error>> {
+        self.check_vmsa(gpa, vmsa)?;
+
         let mut vmsa_page = vmsa.as_bytes().to_vec();
         vmsa_page.resize(PAGE_SIZE_4K as usize, 0);
         self.log_page(SnpPageType::Vmsa, gpa, PAGE_SIZE_4K);
         let page_info = PageInfo::new_vmsa_page(self.digest, gpa, &vmsa_page);
         self.digest = page_info.update_hash();
+        self.vmsa_count += 1;
+
+        Ok(())
     }
 }
