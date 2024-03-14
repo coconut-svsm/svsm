@@ -14,6 +14,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 DEBUG_SERIAL=""
 QEMU_EXIT_DEVICE=""
+QEMU_TEST_IO_DEVICE=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --unit-tests)
       QEMU_EXIT_DEVICE="-device isa-debug-exit,iobase=0xf4,iosize=0x04"
+      QEMU_TEST_IO_DEVICE="-device pc-testdev"
       shift
       ;;
     -*|--*)
@@ -110,6 +112,7 @@ $SUDO_CMD \
     -monitor none \
     -serial stdio \
     $DEBUG_SERIAL \
-    $QEMU_EXIT_DEVICE
+    $QEMU_EXIT_DEVICE \
+    $QEMU_TEST_IO_DEVICE
 
 stty intr ^C
