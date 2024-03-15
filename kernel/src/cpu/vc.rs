@@ -5,11 +5,14 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::idt::common::X86ExceptionContext;
+use super::insn::MAX_INSN_SIZE;
+use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::{insn_fetch, Instruction};
+use crate::cpu::insn::Instruction;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
+use crate::mm::GuestPtr;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
 use core::fmt;
 
@@ -244,9 +247,13 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
 
     // TODO: the instruction fetch will likely to be handled differently when
     // #VC exception will be raised from CPL > 0.
-    // TODO: handle invalid RIPs with exception fixup
-    // SAFETY: safe if [rip;rip+MAX_INSN_SIZE] doesn't overlap with an unmapped page
-    let insn_raw = unsafe { insn_fetch(ctx.frame.rip as *const u8) };
+
+    let rip: GuestPtr<[u8; MAX_INSN_SIZE]> = GuestPtr::new(VirtAddr::from(ctx.frame.rip));
+
+    // rip and rip+15 addresses should belong to a mapped page.
+    // To ensure this, we rely on GuestPtr::read() that uses the exception table
+    // to handle faults while fetching.
+    let insn_raw = rip.read()?;
 
     let mut insn = Instruction::new(insn_raw);
     insn.decode()?;
