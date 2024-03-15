@@ -248,4 +248,25 @@ mod tests {
 
         assert_eq!(test_buffer[0], data_to_write);
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "inline assembly")]
+    fn test_read_15_bytes_valid_address() {
+        let test_buffer = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+        let test_addr = VirtAddr::from(test_buffer.as_ptr());
+        let ptr: GuestPtr<[u8; 15]> = GuestPtr::new(test_addr);
+        let result = ptr.read().unwrap();
+
+        assert_eq!(result, test_buffer);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "inline assembly")]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_read_invalid_address() {
+        let ptr: GuestPtr<u8> = GuestPtr::new(VirtAddr::new(0xDEAD_BEEF));
+
+        let err = ptr.read();
+        assert!(err.is_err());
+    }
 }
