@@ -265,17 +265,9 @@ impl PageTable {
     }
 
     pub fn clone_shared(&self) -> Result<PageTableRef, SvsmError> {
-        let root_ptr = PageTable::allocate_page_table()?;
-        let pgtable = root_ptr.cast::<PageTable>();
-
-        unsafe {
-            let root = root_ptr.as_mut().unwrap();
-            root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
-        }
-
-        Ok(PageTableRef {
-            pgtable_ptr: pgtable,
-        })
+        let mut pgtable = PageTableRef::alloc()?;
+        pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
+        Ok(pgtable)
     }
 
     pub fn copy_entry(&mut self, other: &PageTable, entry: usize) {
@@ -727,22 +719,29 @@ pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
 
 #[derive(Debug)]
 pub struct PageTableRef {
-    pgtable_ptr: *mut PageTable,
+    ptr: *mut PageTable,
+    owned: bool,
 }
 
 impl PageTableRef {
-    pub fn new(pgtable_ptr: *mut PageTable) -> PageTableRef {
-        Self { pgtable_ptr }
+    #[inline]
+    pub const fn shared(ptr: *mut PageTable) -> Self {
+        Self { ptr, owned: false }
     }
 
+    pub fn alloc() -> Result<Self, SvsmError> {
+        let ptr = allocate_zeroed_page()?.as_mut_ptr();
+        Ok(Self { ptr, owned: true })
+    }
+
+    #[inline]
     pub const fn unset() -> PageTableRef {
-        PageTableRef {
-            pgtable_ptr: ptr::null_mut(),
-        }
+        Self::shared(ptr::null_mut())
     }
 
+    #[inline]
     fn is_set(&self) -> bool {
-        !self.pgtable_ptr.is_null()
+        !self.ptr.is_null()
     }
 }
 
@@ -751,14 +750,22 @@ impl Deref for PageTableRef {
 
     fn deref(&self) -> &Self::Target {
         assert!(self.is_set());
-        unsafe { &*self.pgtable_ptr }
+        unsafe { &*self.ptr }
     }
 }
 
 impl DerefMut for PageTableRef {
     fn deref_mut(&mut self) -> &mut Self::Target {
         assert!(self.is_set());
-        unsafe { &mut *self.pgtable_ptr }
+        unsafe { &mut *self.ptr }
+    }
+}
+
+impl Drop for PageTableRef {
+    fn drop(&mut self) {
+        if self.owned {
+            free_page(VirtAddr::from(self.ptr))
+        }
     }
 }
 
