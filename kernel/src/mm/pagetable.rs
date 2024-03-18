@@ -749,15 +749,13 @@ impl Deref for PageTableRef {
     type Target = PageTable;
 
     fn deref(&self) -> &Self::Target {
-        assert!(self.is_set());
-        unsafe { &*self.ptr }
+        unsafe { self.ptr.as_ref().unwrap() }
     }
 }
 
 impl DerefMut for PageTableRef {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        assert!(self.is_set());
-        unsafe { &mut *self.ptr }
+        unsafe { self.ptr.as_mut().unwrap() }
     }
 }
 
