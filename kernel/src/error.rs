@@ -8,6 +8,7 @@ use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
 use crate::mm::alloc::AllocError;
+use crate::mm::pagetable::PageTableError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
@@ -48,4 +49,6 @@ pub enum SvsmError {
     Task(TaskError),
     // Errors from #VC handler
     Vc(VcError),
+    // Page table errors
+    PageTable(PageTableError),
 }

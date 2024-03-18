@@ -32,23 +32,44 @@ pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
+#[derive(Clone, Copy, Debug)]
+pub enum PageTableError {
+    /// An operation was attempted on an incorrect mapping level.
+    InvalidMappingLevel(u8),
+    /// C-Bit possition is missing in CPUID table.
+    CpuidMissingCBit,
+    /// Physical address size is missing in CPUID table.
+    CpuidMissingPhysAddrSize,
+    /// Attempted to access an unmapped virtual address.
+    NotPresent(VirtAddr),
+    /// Attempted to use a regular level 1 page table entry as a huge mapping
+    NotHuge(VirtAddr),
+}
+
+impl From<PageTableError> for SvsmError {
+    fn from(err: PageTableError) -> Self {
+        Self::PageTable(err)
+    }
+}
+
 fn reinit_feature_mask(feature_mask: &PTEntryFlags) {
     FEATURE_MASK
         .reinit(feature_mask)
         .expect("could not reinit FEATURE_MASK");
 }
 
-pub fn paging_init_early(vtom: u64) {
-    init_encrypt_mask(vtom.try_into().unwrap());
+pub fn paging_init_early(vtom: u64) -> Result<(), SvsmError> {
+    init_encrypt_mask(vtom.try_into().unwrap())?;
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
     reinit_feature_mask(&feature_mask);
+    Ok(())
 }
 
-pub fn paging_init(vtom: u64) {
-    init_encrypt_mask(vtom.try_into().unwrap());
+pub fn paging_init(vtom: u64) -> Result<(), SvsmError> {
+    init_encrypt_mask(vtom.try_into().unwrap())?;
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -58,9 +79,10 @@ pub fn paging_init(vtom: u64) {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
     reinit_feature_mask(&feature_mask);
+    Ok(())
 }
 
-fn init_encrypt_mask(vtom: usize) {
+fn init_encrypt_mask(vtom: usize) -> Result<(), PageTableError> {
     // Determine whether VTOM is in use.
 
     let zero: usize = 0;
@@ -70,7 +92,7 @@ fn init_encrypt_mask(vtom: usize) {
         (zero, vtom, 63 - vtom.leading_zeros())
     } else {
         // Find C bit position
-        let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
+        let res = cpuid_table(0x8000001f).ok_or(PageTableError::CpuidMissingCBit)?;
         let c_bit = res.ebx & 0x3f;
         let mask = 1u64 << c_bit;
         (mask as usize, zero, c_bit)
@@ -84,7 +106,7 @@ fn init_encrypt_mask(vtom: usize) {
         .expect("could not reinitialize SHARED_PTE_MASK");
 
     // Find physical address size.
-    let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
+    let res = cpuid_table(0x80000008).ok_or(PageTableError::CpuidMissingPhysAddrSize)?;
     let guest_phys_addr_size = (res.eax >> 16) & 0xff;
     let host_phys_addr_size = res.eax & 0xff;
     let phys_addr_size = if guest_phys_addr_size == 0 {
@@ -105,6 +127,7 @@ fn init_encrypt_mask(vtom: usize) {
     MAX_PHYS_ADDR
         .reinit(&max_addr)
         .expect("could not reinitialize MAX_PHYS_ADDR");
+    Ok(())
 }
 
 fn private_pte_mask() -> usize {
@@ -246,6 +269,17 @@ pub enum Mapping<'a> {
     Level2(&'a mut PTEntry),
     Level1(&'a mut PTEntry),
     Level0(&'a mut PTEntry),
+}
+
+impl Mapping<'_> {
+    const fn level(&self) -> u8 {
+        match self {
+            Self::Level3(..) => 3,
+            Self::Level2(..) => 2,
+            Self::Level1(..) => 1,
+            Self::Level0(..) => 0,
+        }
+    }
 }
 
 #[repr(C)]
@@ -461,10 +495,10 @@ impl PageTable {
 
     pub fn split_4k(mapping: Mapping<'_>) -> Result<(), SvsmError> {
         match mapping {
-            Mapping::Level0(_entry) => Ok(()),
+            Mapping::Level0(..) => Ok(()),
             Mapping::Level1(entry) => PageTable::do_split_4k(entry),
-            Mapping::Level2(_entry) => Err(SvsmError::Mem),
-            Mapping::Level3(_entry) => Err(SvsmError::Mem),
+            Mapping::Level2(..) => Err(PageTableError::InvalidMappingLevel(2).into()),
+            Mapping::Level3(..) => Err(PageTableError::InvalidMappingLevel(3).into()),
         }
     }
 
@@ -487,24 +521,26 @@ impl PageTable {
     pub fn set_shared_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let mapping = self.walk_addr(vaddr);
         PageTable::split_4k(mapping)?;
+        let mapping = self.walk_addr(vaddr);
 
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
+        if let Mapping::Level0(entry) = mapping {
             PageTable::make_pte_shared(entry);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
     pub fn set_encrypted_4k(&mut self, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let mapping = self.walk_addr(vaddr);
         PageTable::split_4k(mapping)?;
+        let mapping = self.walk_addr(vaddr);
 
-        if let Mapping::Level0(entry) = self.walk_addr(vaddr) {
+        if let Mapping::Level0(entry) = mapping {
             PageTable::make_pte_private(entry);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
@@ -531,7 +567,7 @@ impl PageTable {
             entry.set(make_private_address(paddr), flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
@@ -560,7 +596,7 @@ impl PageTable {
             entry.set(make_private_address(paddr), flags);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
@@ -582,22 +618,23 @@ impl PageTable {
             Mapping::Level0(entry) => {
                 let offset = vaddr.page_offset();
                 if !entry.flags().contains(PTEntryFlags::PRESENT) {
-                    return Err(SvsmError::Mem);
+                    return Err(PageTableError::NotPresent(vaddr).into());
                 }
                 Ok(entry.address() + offset)
             }
             Mapping::Level1(entry) => {
                 let offset = vaddr.bits() & (PAGE_SIZE_2M - 1);
-                if !entry.flags().contains(PTEntryFlags::PRESENT)
-                    || !entry.flags().contains(PTEntryFlags::HUGE)
-                {
-                    return Err(SvsmError::Mem);
+                if !entry.flags().contains(PTEntryFlags::PRESENT) {
+                    return Err(PageTableError::NotPresent(vaddr).into());
+                }
+                if !entry.flags().contains(PTEntryFlags::HUGE) {
+                    return Err(PageTableError::NotHuge(vaddr).into());
                 }
 
                 Ok(entry.address() + offset)
             }
-            Mapping::Level2(_entry) => Err(SvsmError::Mem),
-            Mapping::Level3(_entry) => Err(SvsmError::Mem),
+            Mapping::Level2(_entry) => Err(PageTableError::InvalidMappingLevel(2).into()),
+            Mapping::Level3(_entry) => Err(PageTableError::InvalidMappingLevel(3).into()),
         }
     }
 
@@ -863,7 +900,7 @@ impl RawPageTablePart {
             entry.set(addr, flags);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
@@ -912,7 +949,7 @@ impl RawPageTablePart {
             entry.set(addr, flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
-            Err(SvsmError::Mem)
+            Err(PageTableError::InvalidMappingLevel(mapping.level()).into())
         }
     }
 
@@ -1000,9 +1037,7 @@ impl PageTablePart {
     /// * `flags` - PTEntryFlags used for the mapping
     /// * `shared` - Defines whether the page is mapped shared or private
     ///
-    /// # Returns
-    ///
-    /// OK(()) on Success, Err(SvsmError::Mem) on error.
+    /// # Errors
     ///
     /// This function can fail when there not enough memory to allocate pages for the mapping.
     ///
@@ -1049,9 +1084,7 @@ impl PageTablePart {
     /// * `flags` - PTEntryFlags used for the mapping
     /// * `shared` - Defines whether the page is mapped shared or private
     ///
-    /// # Returns
-    ///
-    /// OK(()) on Success, Err(SvsmError::Mem) on error.
+    /// # Errors
     ///
     /// This function can fail when there not enough memory to allocate pages for the mapping.
     ///

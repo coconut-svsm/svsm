@@ -97,7 +97,7 @@ fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(launch_info.vtom);
+    paging_init_early(launch_info.vtom).expect("Could not configure early paging");
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
