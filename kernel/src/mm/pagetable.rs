@@ -870,7 +870,7 @@ impl RawPageTablePart {
         }
     }
 
-    pub fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
+    fn alloc_pte_2m(&mut self, vaddr: VirtAddr) -> Mapping<'_> {
         let m = self.walk_addr(vaddr);
 
         match m {
@@ -928,7 +928,7 @@ impl RawPageTablePart {
         }
     }
 
-    pub fn map_2m(
+    fn map_2m(
         &mut self,
         vaddr: VirtAddr,
         paddr: PhysAddr,
@@ -953,7 +953,7 @@ impl RawPageTablePart {
         }
     }
 
-    pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
+    fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.walk_addr(vaddr);
