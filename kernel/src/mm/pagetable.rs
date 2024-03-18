@@ -786,12 +786,14 @@ impl Deref for PageTableRef {
     type Target = PageTable;
 
     fn deref(&self) -> &Self::Target {
+        // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
         unsafe { self.ptr.as_ref().unwrap() }
     }
 }
 
 impl DerefMut for PageTableRef {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
         unsafe { self.ptr.as_mut().unwrap() }
     }
 }
