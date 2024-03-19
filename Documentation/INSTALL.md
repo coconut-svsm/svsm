@@ -344,7 +344,7 @@ by passing the path as a parameter:
 ```
 QEMU=/path/to/qemu-system-x86_64 scripts/launch_guest.sh
 
-scripts/launch_guest --qemu /path/to/qemu-system-x86_64
+scripts/launch_guest.sh --qemu /path/to/qemu-system-x86_64
 ```
 
 The script supports a number of other options described in the table below
