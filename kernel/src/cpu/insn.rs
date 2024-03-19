@@ -184,24 +184,6 @@ impl Instruction {
     }
 }
 
-/// Copy the instruction bytes where rip points to.
-///
-/// # Arguments
-///
-/// rip: instruction pointer as [`*const u8`].
-///
-/// # Returns
-///
-/// [`[u8; MAX_INSN_SIZE]`]: the 15-byte buffer where rip points to.
-///
-/// # Safety
-///
-///  The caller should validate that `rip` is set to a valid address
-///  and that the next [`MAX_INSN_SIZE`] bytes are within valid memory.
-pub unsafe fn insn_fetch(rip: *const u8) -> [u8; MAX_INSN_SIZE] {
-    rip.cast::<[u8; MAX_INSN_SIZE]>().read()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{InsnBuffer, Instruction, MAX_INSN_SIZE};
