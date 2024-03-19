@@ -236,7 +236,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size() as usize / PAGE_SIZE,
+        launch_info.heap_area_size as usize / PAGE_SIZE,
     );
 }
 

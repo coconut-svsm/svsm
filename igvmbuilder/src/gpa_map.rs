@@ -166,7 +166,7 @@ impl GpaMap {
             guest_context,
             firmware: firmware_range,
             kernel,
-            vmsa: GpaRange::new_page(kernel.start)?,
+            vmsa: GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?,
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");
