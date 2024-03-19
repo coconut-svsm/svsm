@@ -154,7 +154,7 @@ extern "C" fn ex_handler_hypervisor_injection(_ctx: &mut X86ExceptionContext) {
 // VMM Communication handler
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctx: &mut X86ExceptionContext) {
-    handle_vc_exception(ctx);
+    handle_vc_exception(ctx).expect("Failed to handle #VC");
 }
 
 #[no_mangle]
