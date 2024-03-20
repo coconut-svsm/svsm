@@ -11,8 +11,10 @@
 extern crate alloc;
 
 mod error;
+mod types;
 
 pub use error::ElfError;
+pub use types::*;
 
 use alloc::vec::Vec;
 use bitflags::bitflags;
@@ -20,16 +22,6 @@ use core::cmp;
 use core::ffi;
 use core::matches;
 use core::mem;
-
-pub type Elf64Addr = u64;
-pub type Elf64Off = u64;
-pub type Elf64Half = u16;
-pub type Elf64Word = u32;
-#[allow(unused)]
-pub type Elf64Sword = i32;
-pub type Elf64Xword = u64;
-pub type Elf64Sxword = i64;
-pub type Elf64char = u8;
 
 /// Represents a 64-bit ELF virtual address range.
 ///
