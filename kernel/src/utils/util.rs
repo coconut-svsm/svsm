@@ -7,13 +7,21 @@
 use crate::address::{Address, VirtAddr};
 use crate::types::PAGE_SIZE;
 use core::arch::asm;
+use core::ops::{Add, BitAnd, Not, Sub};
 
-pub fn align_up(addr: usize, align: usize) -> usize {
-    (addr + (align - 1)) & !(align - 1)
+pub fn align_up<T>(addr: T, align: T) -> T
+where
+    T: Add<Output = T> + Sub<Output = T> + BitAnd<Output = T> + Not<Output = T> + From<u8> + Copy,
+{
+    let mask: T = align - T::from(1u8);
+    (addr + mask) & !mask
 }
 
-pub fn align_down(addr: usize, align: usize) -> usize {
-    addr & !(align - 1)
+pub fn align_down<T>(addr: T, align: T) -> T
+where
+    T: Sub<Output = T> + Not<Output = T> + BitAnd<Output = T> + From<u8> + Copy,
+{
+    addr & !(align - T::from(1u8))
 }
 
 pub fn halt() {
@@ -23,7 +31,7 @@ pub fn halt() {
 }
 
 pub fn page_align_up(x: usize) -> usize {
-    (x + PAGE_SIZE - 1) & !(PAGE_SIZE - 1)
+    align_up(x, PAGE_SIZE)
 }
 
 pub fn page_offset(x: usize) -> usize {
