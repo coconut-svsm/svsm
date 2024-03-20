@@ -36,6 +36,15 @@ pub struct CmdOptions {
     /// When false, the page is measured as a normal page containing all zeros.
     #[arg(short, long, default_value_t = false)]
     pub native_zero: bool,
+
+    /// If an ID block is present within the IGVM file then by default an
+    /// error will be generated if the expected measurement differs from
+    /// the calculated measurement.
+    ///
+    /// If this option is set then the expected measurement in the ID block
+    /// is ignored.
+    #[arg(short, long, default_value_t = false)]
+    pub ignore_idblock: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]

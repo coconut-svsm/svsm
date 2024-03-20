@@ -51,5 +51,9 @@ build process if a non-conformant file is generated.
           Determine how to pages that contain only zeroes in the IGVM file.
           When true, zero pages are measured using the native zero page type if the underlying platform supports it.
           When false, the page is measured as a normal page containing all zeros.
+  -i, --ignore-idblock
+          If an ID block is present within the IGVM file then by default an error will be generated if the expected
+          measurement differs from the calculated measurement.
+          If this option is set then the expected measurement in the ID block is ignored.
   -h, --help       Print help
 ```

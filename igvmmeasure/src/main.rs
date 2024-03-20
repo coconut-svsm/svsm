@@ -35,5 +35,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
     }
 
+    if !options.ignore_idblock {
+        igvm.check_id_block()?;
+    }
+
     Ok(())
 }

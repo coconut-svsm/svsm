@@ -15,12 +15,13 @@ use zerocopy::AsBytes;
 use crate::cmd_options::CmdOptions;
 use crate::page_info::PageInfo;
 
-enum IgvmMeasureError {
+pub enum IgvmMeasureError {
     InvalidVmsaCount,
     InvalidVmsaGpa,
     InvalidVmsaCr0,
     InvalidDebugSwap,
     InvalidVmsaOrder,
+    IDBlockMismatch([u8; 48]),
 }
 
 impl std::fmt::Display for IgvmMeasureError {
@@ -74,6 +75,16 @@ impl std::fmt::Display for IgvmMeasureError {
                         measured or unmeasured page directives."
                 )
             }
+            IgvmMeasureError::IDBlockMismatch(expected) => {
+                write!(
+                    f,
+                    "An ID block has been provided in the IGVM file but the \
+                        calculated measurement does not match the expected \
+                        measurement in the ID block. \n\
+                        Expected: "
+                )?;
+                expected.iter().try_for_each(|val| write!(f, "{:02X}", val))
+            }
         }
     }
 }
@@ -122,6 +133,7 @@ pub struct IgvmMeasure<'a> {
     last_len: u64,
     compatibility_mask: u32,
     vmsa_count: u32,
+    id_block_ld: Option<[u8; 48]>,
 }
 
 const PAGE_SIZE_2M: u64 = 2 * 1024 * 1024;
@@ -137,6 +149,7 @@ impl<'a> IgvmMeasure<'a> {
             last_len: 0,
             compatibility_mask: 0,
             vmsa_count: 0,
+            id_block_ld: None,
         }
     }
 
@@ -152,6 +165,15 @@ impl<'a> IgvmMeasure<'a> {
             }
         }
         Err("IGVM file is not compatible with the specified platform.".into())
+    }
+
+    pub fn check_id_block(&self) -> Result<(), IgvmMeasureError> {
+        if let Some(expected_ld) = self.id_block_ld {
+            if expected_ld != self.digest {
+                return Err(IgvmMeasureError::IDBlockMismatch(expected_ld));
+            }
+        }
+        Ok(())
     }
 
     pub fn measure(&mut self) -> Result<[u8; 48], Box<dyn Error>> {
@@ -196,6 +218,15 @@ impl<'a> IgvmMeasure<'a> {
                     vmsa,
                 } => {
                     self.measure_vmsa(*gpa, *compatibility_mask, vmsa)?;
+                }
+                IgvmDirectiveHeader::SnpIdBlock {
+                    compatibility_mask,
+                    ld,
+                    ..
+                } => {
+                    if (self.compatibility_mask & compatibility_mask) != 0 {
+                        self.id_block_ld = Some(*ld);
+                    }
                 }
                 _ => (),
             }
