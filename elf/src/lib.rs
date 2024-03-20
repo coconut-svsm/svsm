@@ -12,10 +12,12 @@ extern crate alloc;
 
 mod addr_range;
 mod error;
+mod file_range;
 mod types;
 
 pub use addr_range::Elf64AddrRange;
 pub use error::ElfError;
+pub use file_range::Elf64FileRange;
 pub use types::*;
 
 use alloc::vec::Vec;
@@ -24,38 +26,6 @@ use core::cmp;
 use core::ffi;
 use core::matches;
 use core::mem;
-
-/// This struct represents a parsed 64-bit ELF file. It contains information
-/// about the ELF file's header, load segments, dynamic section, and more.
-
-#[derive(Default, Debug, Clone, Copy, PartialEq)]
-pub struct Elf64FileRange {
-    pub offset_begin: usize,
-    pub offset_end: usize,
-}
-
-impl TryFrom<(Elf64Off, Elf64Xword)> for Elf64FileRange {
-    type Error = ElfError;
-
-    /// Tries to create an [`Elf64FileRange`] from a tuple of [`(Elf64Off, Elf64Xword)`].
-    ///
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`ElfError::InvalidFileRange`] if the calculation of `offset_end`
-    /// results in an invalid file range.
-    fn try_from(value: (Elf64Off, Elf64Xword)) -> Result<Self, Self::Error> {
-        let offset_begin = usize::try_from(value.0).map_err(|_| ElfError::InvalidFileRange)?;
-        let size = usize::try_from(value.1).map_err(|_| ElfError::InvalidFileRange)?;
-        let offset_end = offset_begin
-            .checked_add(size)
-            .ok_or(ElfError::InvalidFileRange)?;
-        Ok(Self {
-            offset_begin,
-            offset_end,
-        })
-    }
-}
 
 /// This struct represents a parsed 64-bit ELF file. It contains information
 /// about the ELF file's header, load segments, dynamic section, and more.
