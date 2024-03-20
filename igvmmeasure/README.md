@@ -47,5 +47,9 @@ build process if a non-conformant file is generated.
           Possible values:
           - sev-snp: Calculate the launch measurement for SEV-SNP
   -c, --check-kvm  Check that the IGVM file conforms to QEMU/KVM restrictions
+  -n, --native-zero
+          Determine how to pages that contain only zeroes in the IGVM file.
+          When true, zero pages are measured using the native zero page type if the underlying platform supports it.
+          When false, the page is measured as a normal page containing all zeros.
   -h, --help       Print help
 ```

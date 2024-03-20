@@ -269,8 +269,17 @@ impl<'a> IgvmMeasure<'a> {
                     self.log_page(SnpPageType::Unmeasured, gpa, PAGE_SIZE_4K);
                     Some(PageInfo::new_unmeasured_page(self.digest, gpa))
                 } else if data.is_empty() {
-                    self.log_page(SnpPageType::Zero, gpa, PAGE_SIZE_4K);
-                    Some(PageInfo::new_zero_page(self.digest, gpa))
+                    if self.options.native_zero {
+                        self.log_page(SnpPageType::Zero, gpa, PAGE_SIZE_4K);
+                        Some(PageInfo::new_zero_page(self.digest, gpa))
+                    } else {
+                        self.log_page(SnpPageType::Normal, gpa, PAGE_SIZE_4K);
+                        Some(PageInfo::new_normal_page(
+                            self.digest,
+                            gpa,
+                            &vec![0u8; PAGE_SIZE_4K as usize],
+                        ))
+                    }
                 } else {
                     self.log_page(SnpPageType::Normal, gpa, data.len() as u64);
                     Some(PageInfo::new_normal_page(self.digest, gpa, data))

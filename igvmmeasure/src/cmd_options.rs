@@ -27,6 +27,15 @@ pub struct CmdOptions {
     /// Platform to calculate the launch measurement for
     #[arg(short, long, value_enum, default_value_t = Platform::SevSnp)]
     pub platform: Platform,
+
+    /// Determine how to pages that contain only zeroes in the IGVM file.
+    ///
+    /// When true, zero pages are measured using the native zero page type
+    /// if the underlying platform supports it.
+    ///
+    /// When false, the page is measured as a normal page containing all zeros.
+    #[arg(short, long, default_value_t = false)]
+    pub native_zero: bool,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
