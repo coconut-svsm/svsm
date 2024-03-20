@@ -40,9 +40,9 @@ use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PageSize, PAGE_SIZE};
+use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
-use svsm::utils::{halt, MemoryRegion};
+use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
     pub static heap_start: u8;
@@ -148,6 +148,14 @@ fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, pa
     }
     pvalidate_range(vregion, PvalidateOp::Valid).expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
+}
+
+#[inline]
+fn check_launch_info(launch_info: &KernelLaunchInfo) {
+    let offset: u64 = launch_info.heap_area_virt_start - launch_info.heap_area_phys_start;
+    let align: u64 = PAGE_SIZE_2M.try_into().unwrap();
+
+    assert!(is_aligned(offset, align));
 }
 
 #[no_mangle]
@@ -325,6 +333,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
     };
+
+    check_launch_info(&launch_info);
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
