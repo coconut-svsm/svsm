@@ -95,6 +95,12 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_memory_regions(),
         }
     }
+    pub fn reserved_kernel_area_size(&self) -> usize {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => 0,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.reserved_kernel_area_size(),
+        }
+    }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
         match self {
             SvsmConfig::FirmwareConfig(fw_cfg) => load_acpi_cpu_info(fw_cfg),

@@ -188,13 +188,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_vaddr_alloc_base = kernel_vaddr_alloc_info.range.vaddr_begin;
 
     // Determine the starting physical address at which the kernel should be
-    // relocated.  If IGVM parameters are present, then this will follow the
-    // IGVM parameters.  Otherwise, it will be the base of the kernel
-    // region.
+    // relocated.
     let mut loaded_kernel_phys_end = kernel_region_phys_start;
-    if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
-        loaded_kernel_phys_end = loaded_kernel_phys_end + igvm_params.reserved_kernel_area_size();
-    }
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
@@ -300,9 +295,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     }
 
     // Map the rest of the memory region to right after the kernel image.
+    // Exclude any memory reserved by the configuration.
     let heap_area_phys_start = loaded_kernel_phys_end;
     let heap_area_virt_start = loaded_kernel_virt_end;
-    let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
+    let heap_area_size =
+        kernel_region_phys_end - heap_area_phys_start - config.reserved_kernel_area_size();
     let heap_area_virt_region = MemoryRegion::new(heap_area_virt_start, heap_area_size);
     map_and_validate(&config, heap_area_virt_region, heap_area_phys_start);
 
@@ -312,6 +309,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         kernel_region_phys_start: u64::from(kernel_region_phys_start),
         kernel_region_phys_end: u64::from(kernel_region_phys_end),
         heap_area_phys_start: u64::from(heap_area_phys_start),
+        heap_area_size: heap_area_size as u64,
         kernel_region_virt_start: u64::from(loaded_kernel_virt_start),
         heap_area_virt_start: u64::from(heap_area_virt_start),
         kernel_elf_stage2_virt_start: u64::from(kernel_elf_start),

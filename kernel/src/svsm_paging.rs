@@ -47,10 +47,6 @@ pub fn init_page_table(
     // The memory backing the kernel ELF segments gets allocated back to back
     // from the physical memory region by the Stage2 loader.
     let mut phys = PhysAddr::from(launch_info.kernel_region_phys_start);
-    if let Some(ref igvm_params) = igvm_param_info.igvm_params {
-        phys = phys + igvm_params.reserved_kernel_area_size();
-    }
-
     for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
         let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
         let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
@@ -87,7 +83,7 @@ pub fn init_page_table(
     // Map subsequent heap area.
     let heap_vregion = MemoryRegion::new(
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size() as usize,
+        launch_info.heap_area_size as usize,
     );
     pgtable
         .map_region(
