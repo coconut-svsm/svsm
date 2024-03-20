@@ -8,6 +8,7 @@
 
 use super::types::*;
 use super::Elf64AddrRange;
+use super::Elf64File;
 use super::Elf64FileRange;
 use super::ElfError;
 use bitflags::bitflags;
@@ -159,5 +160,49 @@ impl Elf64Shdr {
         } else {
             Elf64FileRange::try_from((self.sh_offset, 0)).unwrap()
         }
+    }
+}
+
+/// Represents an iterator over section headers in an ELF64 file
+#[derive(Debug)]
+pub struct Elf64ShdrIterator<'a> {
+    /// The ELF64 file from which section headers are being iterated
+    elf_file: &'a Elf64File<'a>,
+    /// Next index to be retrieved
+    next: Elf64Word,
+}
+
+impl<'a> Elf64ShdrIterator<'a> {
+    /// Creates a new [`Elf64ShdrIterator`] instance for iterating section headers
+    /// in an ELF64 file.
+    ///
+    /// # Arguments
+    ///
+    /// - `elf_file`: The ELF64 file to iterate section headers from.
+    ///
+    /// # Returns
+    ///
+    /// - [`Self`]: A [`Self`] instance for iterating section headers.
+    pub fn new(elf_file: &'a Elf64File<'a>) -> Self {
+        Self { elf_file, next: 0 }
+    }
+}
+
+impl Iterator for Elf64ShdrIterator<'_> {
+    type Item = Elf64Shdr;
+
+    /// Retrieves the next section header from the ELF64 file.
+    ///
+    /// # Returns
+    ///
+    /// - [`Option<Self::Item>`]: An option containing the next [`Elf64Shdr`] if available, or [`None`]
+    ///   if all section headers have been iterated.
+    fn next(&mut self) -> Option<Self::Item> {
+        let cur = self.next;
+        if cur == self.elf_file.elf_hdr.e_shnum {
+            return None;
+        }
+        self.next += 1;
+        Some(self.elf_file.read_shdr(cur))
     }
 }
