@@ -6,6 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
+#![no_std]
+
 extern crate alloc;
 
 use alloc::vec::Vec;
@@ -26,8 +28,7 @@ use core::mem;
 /// or the `format!` macro, like this:
 ///
 /// ```rust
-/// use svsm::elf::ElfError;
-/// use svsm::error::SvsmError;
+/// use elf::ElfError;
 ///
 /// let error = ElfError::InvalidAddressRange;
 /// let error_message = error.to_string();
@@ -216,7 +217,7 @@ impl Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64Addr, Elf64AddrRange};
+    /// use elf::{Elf64Addr, Elf64AddrRange};
     ///
     /// let range = Elf64AddrRange {
     ///     vaddr_begin: 0x1000,
@@ -235,7 +236,7 @@ impl Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64Addr, Elf64AddrRange};
+    /// use elf::{Elf64Addr, Elf64AddrRange};
     ///
     /// let range1 = Elf64AddrRange {
     ///     vaddr_begin: 0x1000,
@@ -265,7 +266,7 @@ impl TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
     /// # Examples
     ///
     /// ```rust
-    /// use svsm::elf::{Elf64Addr, Elf64AddrRange, Elf64Xword};
+    /// use elf::{Elf64Addr, Elf64AddrRange, Elf64Xword};
     ///
     /// let vaddr_begin = 0x1000;
     /// let size = 0x100;
@@ -306,7 +307,7 @@ impl TryFrom<(Elf64Addr, Elf64Xword)> for Elf64AddrRange {
 ///
 /// ```rust
 /// use core::cmp::Ordering;
-/// use svsm::elf::Elf64AddrRange;
+/// use elf::Elf64AddrRange;
 ///
 /// let range1 = Elf64AddrRange {
 ///     vaddr_begin: 0x1000,
