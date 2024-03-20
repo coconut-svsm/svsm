@@ -30,6 +30,16 @@ pub struct VcError {
     pub error_type: VcErrorType,
 }
 
+impl VcError {
+    const fn new(ctx: &X86ExceptionContext, error_type: VcErrorType) -> Self {
+        Self {
+            rip: ctx.frame.rip,
+            code: ctx.error_code,
+            error_type,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum VcErrorType {
     Unsupported,
@@ -65,28 +75,21 @@ impl fmt::Display for VcError {
     }
 }
 
-pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) {
+pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
-    let rip = ctx.frame.rip;
-
-    let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
+    let insn = vc_decode_insn(ctx)?;
 
     match err {
-        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
-        _ => {
-            panic!(
-                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
-                rip, err,
-            )
-        }
-    }
+        SVM_EXIT_CPUID => handle_cpuid(ctx),
+        _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
+    }?;
 
     vc_finish_insn(ctx, &insn);
+    Ok(())
 }
 
-pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
+pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
-    let rip = ctx.frame.rip;
 
     /*
      * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
@@ -96,27 +99,20 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) {
      */
     let mut ghcb = current_ghcb();
 
-    let insn = vc_decode_insn(ctx).expect("Could not decode instructions");
+    let insn = vc_decode_insn(ctx)?;
 
     match err {
-        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
-        SVM_EXIT_IOIO => {
-            handle_ioio(ctx, &mut ghcb, &insn).expect("Could not handle IOIO #VC exception")
-        }
-        _ => {
-            panic!(
-                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
-                rip, err
-            );
-        }
-    }
+        SVM_EXIT_CPUID => handle_cpuid(ctx),
+        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+        _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
+    }?;
 
     vc_finish_insn(ctx, &insn);
+    Ok(())
 }
 
-pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
+pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
-    let rip = ctx.frame.rip;
 
     /*
      * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
@@ -126,26 +122,23 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) {
      */
     let mut ghcb = current_ghcb();
 
-    let insn = vc_decode_insn(ctx).expect("Could not decode instruction");
+    let insn = vc_decode_insn(ctx)?;
 
     match error_code {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
-        X86_TRAP => handle_debug_exception(ctx, ctx.vector),
-        SVM_EXIT_CPUID => handle_cpuid(ctx).expect("Could not handle CPUID #VC exception"),
-        SVM_EXIT_IOIO => {
-            handle_ioio(ctx, &mut ghcb, &insn).expect("Could not handle IOIO #VC exception")
+        X86_TRAP => {
+            handle_debug_exception(ctx, ctx.vector);
+            Ok(())
         }
-        _ => {
-            panic!(
-                "Unsupported #VC exception RIP {:#018x} error code: {:#018x}",
-                rip, error_code
-            )
-        }
-    }
+        SVM_EXIT_CPUID => handle_cpuid(ctx),
+        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+        _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
+    }?;
 
     vc_finish_insn(ctx, &insn);
+    Ok(())
 }
 
 fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
@@ -166,11 +159,7 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let mut leaf = CpuidLeaf::new(ctx.regs.rax as u32, ctx.regs.rcx as u32);
 
     let Some(ret) = cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, 0, 0) else {
-        return Err(SvsmError::Vc(VcError {
-            rip: ctx.frame.rip,
-            code: ctx.error_code,
-            error_type: VcErrorType::UnknownCpuidLeaf,
-        }));
+        return Err(VcError::new(ctx, VcErrorType::UnknownCpuidLeaf).into());
     };
 
     leaf.eax = ret.eax;
@@ -199,11 +188,7 @@ fn handle_ioio(
     let out_value: u64 = ctx.regs.rax as u64;
 
     match insn.opcode[0] {
-        0x6C..=0x6F | 0xE4..=0xE7 => Err(SvsmError::Vc(VcError {
-            rip: ctx.frame.rip,
-            code: ctx.error_code,
-            error_type: VcErrorType::Unsupported,
-        })),
+        0x6C..=0x6F | 0xE4..=0xE7 => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
         0xEC => {
             let ret = ghcb.ioio_in(port, GHCBIOSize::Size8)?;
             ctx.regs.rax = (ret & 0xff) as usize;
@@ -232,11 +217,7 @@ fn handle_ioio(
 
             ghcb.ioio_out(port, size, out_value)
         }
-        _ => Err(SvsmError::Vc(VcError {
-            rip: ctx.frame.rip,
-            code: ctx.error_code,
-            error_type: VcErrorType::DecodeFailed,
-        })),
+        _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
 
