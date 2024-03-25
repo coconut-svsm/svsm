@@ -48,6 +48,7 @@ pub mod svsm_gdbstub {
         unsafe {
             GDB_SERIAL.init();
             let mut target = GdbStubTarget::new();
+            #[allow(static_mut_refs)]
             let gdb = GdbStubBuilder::new(GdbStubConnection::new())
                 .with_packet_buffer(&mut PACKET_BUFFER)
                 .build()
