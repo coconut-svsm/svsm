@@ -8,6 +8,7 @@
 #
 # git clone https://github.com/coconut-svsm/svsm.git
 # cd svsm
+# git submodule update --init --depth=1
 # ./scripts/docker/build.sh 
 
 FROM opensuse/tumbleweed:latest
