@@ -386,8 +386,7 @@ impl PerCpu {
 
     fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
-        let mut pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.vm_range.populate(&mut pgtable_ref);
+        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
         self.set_pgtable(pgtable_ref);
 
         Ok(())
@@ -482,6 +481,11 @@ impl PerCpu {
         Ok(())
     }
 
+    fn finish_page_table(&mut self) {
+        let mut pgtable = self.get_pgtable();
+        self.vm_range.populate(&mut pgtable);
+    }
+
     pub fn dump_vm_ranges(&self) {
         self.vm_range.dump_ranges();
     }
@@ -510,6 +514,8 @@ impl PerCpu {
 
         // Initialize allocator for temporary mappings
         self.virt_range_init();
+
+        self.finish_page_table();
 
         Ok(())
     }
