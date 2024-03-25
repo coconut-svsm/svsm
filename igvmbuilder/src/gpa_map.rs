@@ -151,6 +151,14 @@ impl GpaMap {
             GpaRange::new(0, 0)?
         };
 
+        let vmsa = match options.hypervisor {
+            Hypervisor::Qemu => {
+                // VMSA address is currently hardcoded in kvm
+                GpaRange::new_page(0xFFFFFFFFF000)?
+            }
+            Hypervisor::HyperV => GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?,
+        };
+
         let gpa_map = Self {
             low_memory: GpaRange::new(0, 0xf000)?,
             stage2_stack: GpaRange::new_page(0xf000)?,
@@ -166,7 +174,7 @@ impl GpaMap {
             guest_context,
             firmware: firmware_range,
             kernel,
-            vmsa: GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?,
+            vmsa,
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");

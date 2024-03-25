@@ -38,10 +38,12 @@ STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
+IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
+IGVMMEASUREBIN = bin/igvmmeasure
 
 all: bin/svsm.bin igvm
 
-igvm: $(IGVM_FILES) $(IGVMBIN)
+igvm: $(IGVM_FILES) $(IGVMBIN) $(IGVMMEASUREBIN)
 
 bin:
 	mkdir -v -p bin
@@ -49,17 +51,26 @@ bin:
 $(IGVMBIN): $(IGVMBUILDER) bin
 	cp -f $(IGVMBUILDER) $@
 
+$(IGVMMEASUREBIN): $(IGVMMEASURE) bin
+	cp -f $(IGVMMEASURE) $@
+
 $(IGVMBUILDER):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
+$(IGVMMEASURE):
+	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmmeasure
+
+bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
+	$(IGVMMEASURE) --check-kvm --native-zero $@
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
+bin/coconut-hyperv.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v
+	$(IGVMMEASURE) $@
 
-bin/coconut-test-qemu.igvm: $(IGVMBUILDER) bin/test-kernel.elf bin/stage2.bin
+bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu
+	$(IGVMMEASURE) $@
 
 test:
 	cargo test --workspace --target=x86_64-unknown-linux-gnu
@@ -122,7 +133,7 @@ bin/svsm.bin: bin/stage1
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
 	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
