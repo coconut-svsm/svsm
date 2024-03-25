@@ -90,14 +90,18 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn alloc_page_tables(&self) -> Result<(), SvsmError> {
+    fn alloc_page_tables(&self, lazy: bool) -> Result<(), SvsmError> {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
         let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
         let count = end.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
         let mut vec = self.pgtbl_parts.lock_write();
 
         for idx in 0..count {
-            vec.push(PageTablePart::new(start + (idx * VMR_GRANULE)));
+            let mut part = PageTablePart::new(start + (idx * VMR_GRANULE));
+            if !lazy {
+                part.alloc();
+            }
+            vec.push(part);
         }
 
         Ok(())
@@ -119,15 +123,37 @@ impl VMR {
     /// Initialize this [`VMR`] by checking the `start` and `end` values and
     /// allocating the [`PageTablePart`]s required for the mappings.
     ///
+    /// # Arguments
+    ///
+    /// * `lazy` - When `true`, use lazy allocation of [`PageTablePart`] pages.
+    ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    pub fn initialize(&mut self) -> Result<(), SvsmError> {
+    fn initialize_common(&mut self, lazy: bool) -> Result<(), SvsmError> {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
         let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
         assert!(start < end && start.is_aligned(VMR_GRANULE) && end.is_aligned(VMR_GRANULE));
 
-        self.alloc_page_tables()
+        self.alloc_page_tables(lazy)
+    }
+
+    /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = false`
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    pub fn initialize(&mut self) -> Result<(), SvsmError> {
+        self.initialize_common(false)
+    }
+
+    /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = true`
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    pub fn initialize_lazy(&mut self) -> Result<(), SvsmError> {
+        self.initialize_common(true)
     }
 
     /// Returns the virtual start and end addresses for this region
