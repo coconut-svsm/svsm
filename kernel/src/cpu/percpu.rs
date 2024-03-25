@@ -233,7 +233,7 @@ impl PerCpuShared {
 
 #[derive(Debug)]
 pub struct PerCpu {
-    pub shared: &'static PerCpuShared,
+    shared: *const PerCpuShared,
     online: AtomicBool,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
@@ -268,7 +268,7 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
-    fn new(apic_id: u32, shared: &'static PerCpuShared) -> Self {
+    fn new(apic_id: u32, shared: *const PerCpuShared) -> Self {
         PerCpu {
             shared,
             online: AtomicBool::new(false),
@@ -311,11 +311,15 @@ impl PerCpu {
 
             let percpu = vaddr.as_mut_ptr::<PerCpu>();
 
-            (*percpu) = PerCpu::new(apic_id, &*percpu_shared);
+            (*percpu) = PerCpu::new(apic_id, percpu_shared);
 
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, shared_vaddr));
             Ok(percpu)
         }
+    }
+
+    pub fn shared(&self) -> &'static PerCpuShared {
+        unsafe { &*self.shared }
     }
 
     pub fn set_online(&mut self) {
@@ -542,7 +546,7 @@ impl PerCpu {
     }
 
     pub fn guest_vmsa_ref(&self) -> LockGuard<'_, GuestVmsaRef> {
-        self.shared.guest_vmsa.lock()
+        self.shared().guest_vmsa.lock()
     }
 
     pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
@@ -552,7 +556,7 @@ impl PerCpu {
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
         init_guest_vmsa(vmsa, self.reset_ip);
 
-        self.shared.update_guest_vmsa(paddr);
+        self.shared().update_guest_vmsa(paddr);
 
         Ok(())
     }
@@ -648,6 +652,13 @@ impl PerCpu {
 /// that can guarantee safe access when borrow checks are not honored.
 pub unsafe fn this_cpu_unsafe() -> *mut PerCpu {
     SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>()
+}
+
+pub fn this_cpu_shared() -> &'static PerCpuShared {
+    unsafe {
+        let cpu_shared_ptr = (*this_cpu_unsafe()).shared;
+        &*cpu_shared_ptr
+    }
 }
 
 #[derive(Debug)]

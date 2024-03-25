@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::{this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::cpu::percpu::{this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
@@ -344,7 +344,7 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let pending = GuestPtr::<SvsmCaa>::new(vaddr);
     pending.write(SvsmCaa::zeroed())?;
 
-    this_cpu_mut().shared.update_guest_caa(gpa);
+    this_cpu_shared().update_guest_caa(gpa);
 
     Ok(())
 }

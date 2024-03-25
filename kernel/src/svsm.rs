@@ -26,7 +26,7 @@ use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
+use svsm::cpu::percpu::{this_cpu, this_cpu_mut, this_cpu_shared};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
@@ -166,14 +166,11 @@ fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 }
 
 fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let mut cpu = this_cpu_mut();
-
     if let Some(caa) = fw_meta.caa_page {
-        cpu.shared.update_guest_caa(caa);
+        this_cpu_shared().update_guest_caa(caa);
     }
 
-    cpu.alloc_guest_vmsa()?;
-    drop(cpu);
+    this_cpu_mut().alloc_guest_vmsa()?;
     update_mappings()?;
 
     Ok(())
