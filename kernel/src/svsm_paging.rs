@@ -7,7 +7,6 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::cpu::ghcb::current_ghcb;
-use crate::elf;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
 use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};

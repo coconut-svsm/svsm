@@ -7,7 +7,9 @@ members = [
     # binary targets
     "kernel",
     # fuzzing
-    "fuzz"
+    "fuzz",
+    # ELF loader
+    "elf",
 ]
 
 
@@ -17,6 +19,7 @@ bootlib = { path = "bootlib" }
 cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
+elf = { path = "elf" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }

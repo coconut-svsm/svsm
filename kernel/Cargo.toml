@@ -20,6 +20,7 @@ doctest = true
 [dependencies]
 bootlib.workspace = true
 cpuarch.workspace = true
+elf.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 bitflags.workspace = true
