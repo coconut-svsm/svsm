@@ -16,15 +16,21 @@ LABEL Description="OpenSUSE environment for coconut-svsm build"
 ARG USER_ID 1000
 ARG USER_NAME user
 
+ENV CARGO_HOME=/opt/cargo
+ENV RUSTUP_HOME=/opt/rustup
+
 SHELL ["/bin/bash", "-c"]
 
 RUN zypper ref && \
     zypper install -y system-user-mail make gcc curl \
         patterns-devel-base-devel_basis glibc-devel-static git libclang13 \
         autoconf autoconf-archive pkg-config automake libopenssl-devel perl && \
-    useradd -u $USER_ID -m $USER_NAME
+    useradd -u $USER_ID -m $USER_NAME && \
+       mkdir -p "${CARGO_HOME}" "${RUSTUP_HOME}" && \
+       chown "${USER_NAME}" "${CARGO_HOME}" "${RUSTUP_HOME}"
 
 USER $USER_NAME
+ENV PATH="${PATH}:${CARGO_HOME}/bin"
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup-init.sh && \
     sh /tmp/rustup-init.sh -y \
