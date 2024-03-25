@@ -266,7 +266,7 @@ impl Task {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
-        let mapping = Arc::new(Mapping::new(stack));
+        let mapping = Arc::new(Mapping::new(stack)?);
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
