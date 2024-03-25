@@ -117,6 +117,9 @@ pub struct Task {
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
+    /// Task virtual memory range for use at CPL 3 - None for kernel tasks
+    vm_user_range: Option<VMR>,
+
     /// State relevant for scheduler
     sched_state: RWLock<TaskSchedState>,
 
@@ -187,6 +190,7 @@ impl Task {
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
+            vm_user_range: None,
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
