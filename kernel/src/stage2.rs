@@ -67,7 +67,7 @@ fn init_percpu() {
             .as_mut()
             .unwrap();
 
-        bsp_percpu.set_pgtable(PageTableRef::new(addr_of_mut!(pgtable)));
+        bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
         bsp_percpu
             .map_self_stage2()
             .expect("Failed to map per-cpu area");
@@ -97,11 +97,11 @@ fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(launch_info.vtom);
+    paging_init_early(launch_info.vtom).expect("Could not configure early paging");
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
-    set_init_pgtable(PageTableRef::new(unsafe { addr_of_mut!(pgtable) }));
+    set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
     init_percpu();
 

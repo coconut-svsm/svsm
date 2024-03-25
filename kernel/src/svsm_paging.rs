@@ -10,8 +10,7 @@ use crate::cpu::ghcb::current_ghcb;
 use crate::elf;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
-use crate::mm;
-use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
@@ -28,8 +27,7 @@ pub fn init_page_table(
     launch_info: &KernelLaunchInfo,
     kernel_elf: &elf::Elf64File<'_>,
 ) -> Result<(), SvsmError> {
-    let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
+    let mut pgtable = PageTableRef::alloc()?;
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
         let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
         IgvmParamInfo {
