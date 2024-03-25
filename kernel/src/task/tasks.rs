@@ -17,7 +17,7 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::locking::{RWLock, SpinLock};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
+use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMKernelStack, VMR};
 use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
 use crate::utils::MemoryRegion;
@@ -158,16 +158,8 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(
-        cpu: &mut PerCpu,
-        entry: extern "C" fn(),
-        flags: u16,
-    ) -> Result<TaskPointer, SvsmError> {
-        let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
-            cpu.get_pgtable().clone_shared()?
-        } else {
-            Self::allocate_page_table()?
-        };
+    pub fn create(cpu: &mut PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+        let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
 
@@ -284,13 +276,6 @@ impl Task {
         }
 
         Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
-    }
-
-    fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
-        // Base the new task page table on the initial SVSM kernel page table.
-        // When the pagetable is schedule to a CPU, the per CPU entry will also
-        // be added to the pagetable.
-        get_init_pgtable_locked().clone_shared()
     }
 }
 

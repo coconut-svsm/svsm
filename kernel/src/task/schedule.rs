@@ -223,9 +223,9 @@ impl TaskList {
 
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
-pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
+pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
     let mut cpu = this_cpu_mut();
-    let task = Task::create(&mut cpu, entry, flags)?;
+    let task = Task::create(&mut cpu, entry)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
