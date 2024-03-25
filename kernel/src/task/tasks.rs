@@ -174,7 +174,7 @@ impl Task {
             VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
-        let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(cpu, entry)?;
+        let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
@@ -189,7 +189,7 @@ impl Task {
             rsp: bounds
                 .end()
                 .checked_sub(rsp_offset)
-                .expect("Invalid stack offset from task::allocate_stack()")
+                .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
@@ -259,14 +259,21 @@ impl Task {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
     }
 
-    fn allocate_stack(
-        cpu: &mut PerCpu,
-        entry: extern "C" fn(),
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    fn allocate_stack_common() -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(Mapping::new(stack));
+
+        Ok((mapping, bounds))
+    }
+
+    fn allocate_ktask_stack(
+        cpu: &mut PerCpu,
+        entry: extern "C" fn(),
+    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+        let (mapping, bounds) = Task::allocate_stack_common()?;
+
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
