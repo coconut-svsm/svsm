@@ -246,8 +246,8 @@ guest:
 
 ```
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,kvm-type=protected \
-  -object memory-backend-memfd-private,id=ram1,size=8G,share=true \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1 \
+  -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false\
   -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=/path/to/coconut-qemu.igvm \
 ```
 
@@ -269,8 +269,8 @@ $ export IGVM=/path/to/coconut-qemu.igvm
 $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -enable-kvm \
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,kvm-type=protected \
-  -object memory-backend-memfd-private,id=ram1,size=8G,share=true \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1 \
+  -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
   -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=$IGVM \
   -smp 8 \
   -no-reboot \
@@ -344,7 +344,7 @@ by passing the path as a parameter:
 ```
 QEMU=/path/to/qemu-system-x86_64 scripts/launch_guest.sh
 
-scripts/launch_guest --qemu /path/to/qemu-system-x86_64
+scripts/launch_guest.sh --qemu /path/to/qemu-system-x86_64
 ```
 
 The script supports a number of other options described in the table below
