@@ -249,7 +249,7 @@ fn vc_decoding_needed(error_code: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
-    use crate::cpu::percpu::this_cpu_mut;
+    use crate::cpu::percpu::this_cpu_unsafe;
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
     use core::arch::asm;
@@ -281,17 +281,18 @@ mod tests {
     const GHCB_FILL_TEST_VALUE: u8 = b'1';
 
     fn fill_ghcb_with_test_data() {
-        let ghcb = this_cpu_mut().ghcb_unsafe();
         unsafe {
+            let ghcb = (*this_cpu_unsafe()).ghcb_unsafe();
             // The count param is 1 to only write one ghcb's worth of data
             core::ptr::write_bytes(ghcb, GHCB_FILL_TEST_VALUE, 1);
         }
     }
 
     fn verify_ghcb_was_altered() {
-        let ghcb = this_cpu_mut().ghcb_unsafe();
-        let ghcb_bytes =
-            unsafe { core::slice::from_raw_parts(ghcb.cast::<u8>(), core::mem::size_of::<GHCB>()) };
+        let ghcb_bytes = unsafe {
+            let ghcb = (*this_cpu_unsafe()).ghcb_unsafe();
+            core::slice::from_raw_parts(ghcb.cast::<u8>(), core::mem::size_of::<GHCB>())
+        };
         assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
     }
 

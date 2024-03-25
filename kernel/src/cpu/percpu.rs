@@ -247,6 +247,7 @@ impl PerCpuShared {
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: *mut PerCpu,
+    ghcb: *mut GHCB,
 }
 
 impl PerCpuUnsafe {
@@ -254,6 +255,7 @@ impl PerCpuUnsafe {
         Self {
             private,
             shared: PerCpuShared::new(),
+            ghcb: ptr::null_mut(),
         }
     }
 
@@ -314,6 +316,20 @@ impl PerCpuUnsafe {
             CpuRefMut { cpu: &mut *cpu }
         }
     }
+
+    pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
+        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
+        if let Err(e) = GHCB::init(ghcb_page) {
+            free_page(ghcb_page);
+            return Err(e);
+        };
+        self.ghcb = ghcb_page.as_mut_ptr();
+        Ok(())
+    }
+
+    pub fn ghcb_unsafe(&self) -> *mut GHCB {
+        self.ghcb
+    }
 }
 
 #[derive(Debug)]
@@ -321,7 +337,6 @@ pub struct PerCpu {
     cpu_unsafe: *const PerCpuUnsafe,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
-    ghcb: *mut GHCB,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
     tss: X86Tss,
@@ -357,7 +372,6 @@ impl PerCpu {
             cpu_unsafe,
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
-            ghcb: ptr::null_mut(),
             init_stack: None,
             ist: IstStacks::new(),
             tss: X86Tss::new(),
@@ -439,17 +453,18 @@ impl PerCpu {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        self.ghcb = ghcb_page.as_mut_ptr();
-        Ok(())
+        unsafe {
+            let unsafe_cpu_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            let unsafe_cpu_mut = &mut *unsafe_cpu_mut_ptr;
+            unsafe_cpu_mut.setup_ghcb()
+        }
     }
 
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        unsafe { self.ghcb.as_ref().unwrap().register() }
+        unsafe {
+            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
+            ghcb.as_ref().unwrap().register()
+        }
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -553,19 +568,18 @@ impl PerCpu {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        if self.ghcb.is_null() {
-            return Ok(());
-        }
+        unsafe {
+            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
+            if ghcb.is_null() {
+                return Ok(());
+            }
 
-        unsafe { (*self.ghcb).shutdown() }
+            (*ghcb).shutdown()
+        }
     }
 
     pub fn set_reset_ip(&mut self, reset_ip: u64) {
         self.reset_ip = reset_ip;
-    }
-
-    pub fn ghcb_unsafe(&mut self) -> *mut GHCB {
-        self.ghcb
     }
 
     pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
