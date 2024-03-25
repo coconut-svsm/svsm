@@ -24,6 +24,7 @@ use crate::syscall::*;
 use syscall::*;
 
 extern "C" {
+    pub fn default_return();
     fn asm_entry_de();
     fn asm_entry_db();
     fn asm_entry_nmi();

@@ -237,6 +237,18 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
     Ok(task)
 }
 
+pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
+    let mut cpu = this_cpu_mut();
+    let task = Task::create_user(&mut cpu, user_entry)?;
+    TASKLIST.lock().list().push_back(task.clone());
+
+    // Put task on the runqueue of this CPU
+    cpu.runqueue().lock_write().handle_task(task.clone());
+    drop(cpu);
+
+    Ok(task)
+}
+
 pub fn current_task() -> TaskPointer {
     this_cpu().current_task()
 }

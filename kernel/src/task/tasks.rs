@@ -12,8 +12,10 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::idt::svsm::default_return;
 use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::X86ExceptionContext;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
@@ -22,8 +24,9 @@ use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
 };
+use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -206,6 +209,50 @@ impl Task {
         }))
     }
 
+    pub fn create_user(cpu: &mut PerCpu, user_entry: usize) -> Result<TaskPointer, SvsmError> {
+        let mut pgtable = cpu.get_pgtable().clone_shared()?;
+
+        cpu.populate_page_table(&mut pgtable);
+
+        let mut vm_kernel_range =
+            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+        vm_kernel_range.initialize()?;
+
+        let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
+
+        vm_kernel_range.populate(&mut pgtable);
+
+        let mut vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
+        vm_user_range.initialize_lazy()?;
+
+        // Remap at the per-task offset
+        let bounds = MemoryRegion::new(
+            SVSM_PERTASK_STACK_BASE + raw_bounds.start().into(),
+            raw_bounds.len(),
+        );
+
+        Ok(Arc::new(Task {
+            rsp: bounds
+                .end()
+                .checked_sub(stack_offset)
+                .expect("Invalid stack offset from task::allocate_utask_stack()")
+                .bits() as u64,
+            stack_bounds: bounds,
+            page_table: SpinLock::new(pgtable),
+            vm_kernel_range,
+            vm_user_range: Some(vm_user_range),
+            sched_state: RWLock::new(TaskSchedState {
+                idle_task: false,
+                state: TaskState::RUNNING,
+                cpu: cpu.get_apic_id(),
+            }),
+            id: TASK_ID_ALLOCATOR.next_id(),
+            list_link: LinkedListAtomicLink::default(),
+            runlist_link: LinkedListAtomicLink::default(),
+        }))
+    }
+
     pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
         self.stack_bounds
     }
@@ -291,6 +338,50 @@ impl Task {
         }
 
         Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
+    }
+
+    fn allocate_utask_stack(
+        cpu: &mut PerCpu,
+        user_entry: usize,
+    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+        let (mapping, bounds) = Task::allocate_stack_common()?;
+
+        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
+
+        // We need to setup a context on the stack that matches the stack layout
+        // defined in switch_context below.
+        let stack_ptr = (percpu_mapping.virt_addr() + bounds.end().bits()).as_mut_ptr::<u8>();
+
+        let mut stack_offset = size_of::<X86ExceptionContext>();
+
+        // 'Push' the task frame onto the stack
+        unsafe {
+            // Setup IRQ return frame
+            let mut iret_frame = X86ExceptionContext::default();
+            iret_frame.frame.rip = user_entry;
+            iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
+            iret_frame.frame.flags = 0;
+            iret_frame.frame.rsp = (USER_MEM_END - 8).into();
+            iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
+
+            // Copy IRET frame to stack
+            let stack_iret_frame = stack_ptr.sub(stack_offset).cast::<X86ExceptionContext>();
+            *stack_iret_frame = iret_frame;
+
+            stack_offset += size_of::<TaskContext>();
+
+            let task_context = TaskContext {
+                ret_addr: VirtAddr::from(default_return as *const ())
+                    .bits()
+                    .try_into()
+                    .unwrap(),
+                ..Default::default()
+            };
+            let stack_task_context = stack_ptr.sub(stack_offset).cast::<TaskContext>();
+            *stack_task_context = task_context;
+        }
+
+        Ok((mapping, bounds, stack_offset))
     }
 
     pub fn mmap_common(
