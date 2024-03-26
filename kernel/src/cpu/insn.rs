@@ -9,6 +9,72 @@ use crate::cpu::vc::VcErrorType;
 use crate::error::SvsmError;
 use core::ops::{Index, IndexMut};
 
+/// An immediate value in an instruction
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Immediate {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+}
+
+/// A register in an instruction
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Register {
+    Rax,
+    Rbx,
+    Rcx,
+    Rdx,
+    Rsp,
+    Rbp,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+}
+
+/// An operand in an instruction, which might be a register or an immediate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Operand {
+    Reg(Register),
+    Imm(Immediate),
+}
+
+impl Operand {
+    #[inline]
+    const fn rdx() -> Self {
+        Self::Reg(Register::Rdx)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DecodedInsn {
+    Cpuid,
+    Inl(Operand),
+    Inb(Operand),
+    Inw(Operand),
+    Outl(Operand),
+    Outb(Operand),
+    Outw(Operand),
+}
+
+impl DecodedInsn {
+    pub const fn size(&self) -> usize {
+        match self {
+            Self::Cpuid => 2,
+            Self::Inb(..) => 1,
+            Self::Inw(..) => 2,
+            Self::Inl(..) => 1,
+            Self::Outb(..) => 1,
+            Self::Outw(..) => 2,
+            Self::Outl(..) => 1,
+        }
+    }
+}
+
 pub const MAX_INSN_SIZE: usize = 15;
 pub const MAX_INSN_FIELD_SIZE: usize = 3;
 
@@ -103,90 +169,38 @@ impl Instruction {
     ///
     /// # Returns
     ///
-    /// [`Result<(), SvsmError>`]: A [`Result`] containing the empty
-    /// value on success, or an [`SvsmError`] on failure.
-    pub fn decode(&mut self) -> Result<(), SvsmError> {
-        /*
-         * At this point, we only need to handle IOIO (without string and immediate versions)
-         * and CPUID, that both have a fixed size. No real complex x86 decoder is needed.
-         */
+    /// A [`DecodedInsn`] if the instruction is supported, or an [`SvsmError`] otherwise.
+    pub fn decode(&self) -> Result<DecodedInsn, SvsmError> {
         match self.insn_bytes[0] {
-            // {in, out}w instructions uses a 0x66 operand-size opcode prefix
-            0x66 => {
-                if self.insn_bytes[1] == 0xED || self.insn_bytes[1] == 0xEF {
-                    // for prefix length
-                    self.prefixes = Some(InsnBuffer::new(
-                        self.insn_bytes.buf[..MAX_INSN_FIELD_SIZE]
-                            .try_into()
-                            .unwrap(),
-                        1,
-                    ));
-
-                    // for {in, out}w opcode length
-                    self.opcode.nb_bytes = 1;
-                    self.opcode[0] = self.insn_bytes[1];
-
-                    self.insn_bytes.nb_bytes =
-                        self.prefixes.unwrap().nb_bytes + self.opcode.nb_bytes;
-                    self.opnd_bytes = 2;
-                    return Ok(());
-                }
-
-                Err(SvsmError::Vc(VcError {
-                    rip: 0,
-                    code: 0,
-                    error_type: VcErrorType::DecodeFailed,
-                }))
-            }
-            // inb and oub register opcodes
-            0xEC | 0xEE => {
-                self.opcode.nb_bytes = 1;
-                self.opcode[0] = self.insn_bytes[0];
-
-                self.insn_bytes.nb_bytes = self.opcode.nb_bytes;
-                self.opnd_bytes = 1;
-                Ok(())
-            }
-            // inl and outl register opcodes
-            0xED | 0xEF => {
-                self.opcode.nb_bytes = 1;
-                self.opcode[0] = self.insn_bytes[0];
-
-                self.insn_bytes.nb_bytes = self.opcode.nb_bytes;
-                self.opnd_bytes = 4;
-                Ok(())
-            }
-
+            0xEC => return Ok(DecodedInsn::Inb(Operand::rdx())),
+            0xED => return Ok(DecodedInsn::Inl(Operand::rdx())),
+            0xEE => return Ok(DecodedInsn::Outb(Operand::rdx())),
+            0xEF => return Ok(DecodedInsn::Outl(Operand::rdx())),
+            0x66 => match self.insn_bytes[1] {
+                0xED => return Ok(DecodedInsn::Inw(Operand::rdx())),
+                0xEF => return Ok(DecodedInsn::Outw(Operand::rdx())),
+                _ => (),
+            },
             0x0F => {
-                // CPUID opcode
                 if self.insn_bytes[1] == 0xA2 {
-                    self.opcode.nb_bytes = 2;
-                    let opcode_len = self.opcode.nb_bytes;
-                    self.opcode.buf[..opcode_len]
-                        .clone_from_slice(&self.insn_bytes.buf[..opcode_len]);
-
-                    self.insn_bytes.nb_bytes = self.opcode.nb_bytes;
-                    return Ok(());
+                    return Ok(DecodedInsn::Cpuid);
                 }
-
-                Err(SvsmError::Vc(VcError {
-                    rip: 0,
-                    code: 0,
-                    error_type: VcErrorType::DecodeFailed,
-                }))
             }
-            _ => Err(SvsmError::Vc(VcError {
-                rip: 0,
-                code: 0,
-                error_type: VcErrorType::DecodeFailed,
-            })),
+            _ => (),
         }
+
+        Err(VcError {
+            rip: 0,
+            code: 0,
+            error_type: VcErrorType::DecodeFailed,
+        }
+        .into())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{InsnBuffer, Instruction, MAX_INSN_SIZE};
+    use super::*;
 
     #[test]
     fn test_decode_inw() {
@@ -195,26 +209,10 @@ mod tests {
             0x41,
         ];
 
-        let mut insn = Instruction::new(raw_insn);
-        insn.decode().unwrap();
-
-        let target = Instruction {
-            prefixes: Some(InsnBuffer {
-                buf: [0x66, 0xED, 0x41],
-                nb_bytes: 1,
-            }),
-            insn_bytes: InsnBuffer {
-                buf: raw_insn,
-                nb_bytes: 2,
-            },
-            opcode: InsnBuffer {
-                buf: [0xED, 0, 0],
-                nb_bytes: 1,
-            },
-            opnd_bytes: 2,
-        };
-
-        assert_eq!(target, insn);
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode().unwrap();
+        assert_eq!(decoded, DecodedInsn::Inw(Operand::rdx()));
+        assert_eq!(decoded.size(), 2);
     }
 
     #[test]
@@ -224,23 +222,10 @@ mod tests {
             0x41,
         ];
 
-        let mut insn = Instruction::new(raw_insn);
-        insn.decode().unwrap();
-
-        let target = Instruction {
-            prefixes: None,
-            insn_bytes: InsnBuffer {
-                buf: raw_insn,
-                nb_bytes: 1,
-            },
-            opcode: InsnBuffer {
-                buf: [0xEE, 0, 0],
-                nb_bytes: 1,
-            },
-            opnd_bytes: 1,
-        };
-
-        assert_eq!(target, insn);
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode().unwrap();
+        assert_eq!(decoded, DecodedInsn::Outb(Operand::rdx()));
+        assert_eq!(decoded.size(), 1);
     }
 
     #[test]
@@ -250,23 +235,10 @@ mod tests {
             0x41,
         ];
 
-        let mut insn = Instruction::new(raw_insn);
-        insn.decode().unwrap();
-
-        let target = Instruction {
-            prefixes: None,
-            insn_bytes: InsnBuffer {
-                buf: raw_insn,
-                nb_bytes: 1,
-            },
-            opcode: InsnBuffer {
-                buf: [0xEF, 0, 0],
-                nb_bytes: 1,
-            },
-            opnd_bytes: 4,
-        };
-
-        assert_eq!(target, insn);
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode().unwrap();
+        assert_eq!(decoded, DecodedInsn::Outl(Operand::rdx()));
+        assert_eq!(decoded.size(), 1);
     }
 
     #[test]
@@ -276,23 +248,10 @@ mod tests {
             0x41,
         ];
 
-        let mut insn = Instruction::new(raw_insn);
-        insn.decode().unwrap();
-
-        let target = Instruction {
-            prefixes: None,
-            insn_bytes: InsnBuffer {
-                buf: raw_insn,
-                nb_bytes: 2,
-            },
-            opcode: InsnBuffer {
-                buf: [0x0F, 0xA2, 0],
-                nb_bytes: 2,
-            },
-            opnd_bytes: 4,
-        };
-
-        assert_eq!(target, insn);
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode().unwrap();
+        assert_eq!(decoded, DecodedInsn::Cpuid);
+        assert_eq!(decoded.size(), 2);
     }
 
     #[test]
@@ -302,7 +261,7 @@ mod tests {
             0x41,
         ];
 
-        let mut insn = Instruction::new(raw_insn);
+        let insn = Instruction::new(raw_insn);
         let err = insn.decode();
 
         assert!(err.is_err());

@@ -9,7 +9,7 @@ use super::insn::MAX_INSN_SIZE;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::Instruction;
+use crate::cpu::insn::{DecodedInsn, Instruction, Operand, Register};
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -99,9 +99,9 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 
     let insn = vc_decode_insn(ctx)?;
 
-    match err {
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+    match (err, insn) {
+        (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -120,16 +120,16 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
 
     let insn = vc_decode_insn(ctx)?;
 
-    match error_code {
+    match (error_code, insn) {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
-        X86_TRAP => {
+        (X86_TRAP, _) => {
             handle_debug_exception(ctx, ctx.vector);
             Ok(())
         }
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+        (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -168,55 +168,69 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Instruction) {
-    ctx.frame.rip += insn.len()
+fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Option<DecodedInsn>) {
+    ctx.frame.rip += insn.as_ref().map(DecodedInsn::size).unwrap_or(0);
+}
+
+fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
+    match source {
+        Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
+        Operand::Reg(..) => unreachable!("Port value is always in DX"),
+        _ => todo!(),
+    }
+}
+
+fn ioio_do_in(ghcb: &mut GHCB, port: u16, size: GHCBIOSize) -> Result<usize, SvsmError> {
+    let ret = ghcb.ioio_in(port, size)?;
+    Ok(match size {
+        GHCBIOSize::Size32 => (ret & u32::MAX as u64) as usize,
+        GHCBIOSize::Size16 => (ret & u16::MAX as u64) as usize,
+        GHCBIOSize::Size8 => (ret & u8::MAX as u64) as usize,
+    })
 }
 
 fn handle_ioio(
     ctx: &mut X86ExceptionContext,
     ghcb: &mut GHCB,
-    insn: &Instruction,
+    insn: DecodedInsn,
 ) -> Result<(), SvsmError> {
-    let port: u16 = (ctx.regs.rdx & 0xffff) as u16;
-    let out_value: u64 = ctx.regs.rax as u64;
+    let out_value = ctx.regs.rax as u64;
 
-    match insn.opcode[0] {
-        0x6C..=0x6F | 0xE4..=0xE7 => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
-        0xEC => {
-            let ret = ghcb.ioio_in(port, GHCBIOSize::Size8)?;
-            ctx.regs.rax = (ret & 0xff) as usize;
+    match insn {
+        DecodedInsn::Inl(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size32)?;
             Ok(())
         }
-        0xED => {
-            let (size, mask) = match insn.prefixes {
-                Some(prefix) if prefix.nb_bytes > 0 => (GHCBIOSize::Size16, u16::MAX as u64),
-                _ => (GHCBIOSize::Size32, u32::MAX as u64),
-            };
-
-            let ret = ghcb.ioio_in(port, size)?;
-            ctx.regs.rax = (ret & mask) as usize;
+        DecodedInsn::Inw(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size16)?;
             Ok(())
         }
-        0xEE => ghcb.ioio_out(port, GHCBIOSize::Size8, out_value),
-        0xEF => {
-            let mut size: GHCBIOSize = GHCBIOSize::Size32;
-            if let Some(prefix) = insn.prefixes {
-                // this is always true at the moment
-                if prefix.nb_bytes > 0 {
-                    // outw instruction has a 0x66 operand-size prefix for word-sized operands.
-                    size = GHCBIOSize::Size16;
-                }
-            }
-
-            ghcb.ioio_out(port, size, out_value)
+        DecodedInsn::Inb(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size8)?;
+            Ok(())
+        }
+        DecodedInsn::Outl(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size32, out_value)
+        }
+        DecodedInsn::Outw(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size16, out_value)
+        }
+        DecodedInsn::Outb(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size8, out_value)
         }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
 
-fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
+fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsn>, SvsmError> {
     if !vc_decoding_needed(ctx.error_code) {
-        return Ok(Instruction::default());
+        return Ok(None);
     }
 
     // TODO: the instruction fetch will likely to be handled differently when
@@ -229,10 +243,8 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
     // to handle faults while fetching.
     let insn_raw = rip.read()?;
 
-    let mut insn = Instruction::new(insn_raw);
-    insn.decode()?;
-
-    Ok(insn)
+    let insn = Instruction::new(insn_raw);
+    insn.decode().map(Some)
 }
 
 fn vc_decoding_needed(error_code: usize) -> bool {
