@@ -148,20 +148,13 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
+fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     if let Some(addr) = fw_meta.cpuid_page {
         copy_cpuid_table_to_fw(addr)?;
     }
 
-    let secrets_page = match fw_meta.secrets_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify secrets-page location"),
-    };
-
-    let caa_page = match fw_meta.caa_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify CAA_PAGE location"),
-    };
+    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
+    let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
 
     copy_secrets_page_to_fw(secrets_page, caa_page)?;
 
@@ -424,18 +417,9 @@ pub extern "C" fn svsm_main() {
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
-
-        if let Err(e) = validate_fw_memory(&config, fw_meta, &LAUNCH_INFO) {
-            panic!("Failed to validate firmware memory: {:#?}", e);
-        }
-
-        if let Err(e) = copy_tables_to_fw(fw_meta) {
-            panic!("Failed to copy firmware tables: {:#?}", e);
-        }
-
-        if let Err(e) = validate_fw(&config, &LAUNCH_INFO) {
-            panic!("Failed to validate flash memory: {:#?}", e);
-        }
+        validate_fw_memory(&config, fw_meta, &LAUNCH_INFO).expect("Failed to validate memory");
+        copy_tables_to_fw(fw_meta).expect("Failed to copy firmware tables");
+        validate_fw(&config, &LAUNCH_INFO).expect("Failed to validate flash memory");
     }
 
     guest_request_driver_init();
