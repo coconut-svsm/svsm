@@ -26,11 +26,13 @@ use zerocopy::AsBytes;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
+use crate::platform::PlatformMask;
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::construct_vmsa;
 use crate::GpaMap;
 
-const COMPATIBILITY_MASK: u32 = 1;
+const SNP_COMPATIBILITY_MASK: u32 = 1;
+pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
@@ -52,11 +54,16 @@ pub struct IgvmBuilder {
 impl IgvmBuilder {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let options = CmdOptions::parse();
+
+        // SNP is always included in the compatibility mask regardless of the
+        // provided options.
+        COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
+
         let firmware = match options.firmware {
             Some(_) => Some(parse_firmware(
                 &options,
                 IGVM_PARAMETER_COUNT,
-                COMPATIBILITY_MASK,
+                COMPATIBILITY_MASK.get(),
             )?),
             None => None,
         };
@@ -212,15 +219,17 @@ impl IgvmBuilder {
     }
 
     fn build_platforms(&mut self, param_block: &IgvmParamBlock) {
-        self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
-            IGVM_VHS_SUPPORTED_PLATFORM {
-                compatibility_mask: COMPATIBILITY_MASK,
-                highest_vtl: 2,
-                platform_type: IgvmPlatformType::SEV_SNP,
-                platform_version: 1,
-                shared_gpa_boundary: param_block.vtom,
-            },
-        ));
+        if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+            self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
+                IGVM_VHS_SUPPORTED_PLATFORM {
+                    compatibility_mask: SNP_COMPATIBILITY_MASK,
+                    highest_vtl: 2,
+                    platform_type: IgvmPlatformType::SEV_SNP,
+                    platform_version: 1,
+                    shared_gpa_boundary: param_block.vtom,
+                },
+            ));
+        }
     }
 
     fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
@@ -248,7 +257,7 @@ impl IgvmBuilder {
         // Describe the kernel RAM region
         self.directives.push(IgvmDirectiveHeader::RequiredMemory {
             gpa: param_block.kernel_base,
-            compatibility_mask: COMPATIBILITY_MASK,
+            compatibility_mask: COMPATIBILITY_MASK.get(),
             number_of_bytes: param_block.kernel_size,
             vtl2_protectable: false,
         });
@@ -282,24 +291,26 @@ impl IgvmBuilder {
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self.gpa_map.memory_map.get_start(),
-                compatibility_mask: COMPATIBILITY_MASK,
+                compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self.gpa_map.general_params.get_start(),
-                compatibility_mask: COMPATIBILITY_MASK,
+                compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             },
         ));
 
-        // Add the VMSA.
-        self.directives.push(construct_vmsa(
-            self.gpa_map.vmsa.get_start(),
-            param_block.vtom,
-            COMPATIBILITY_MASK,
-        )?);
+        if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+            // Add the VMSA.
+            self.directives.push(construct_vmsa(
+                self.gpa_map.vmsa.get_start(),
+                param_block.vtom,
+                COMPATIBILITY_MASK.get(),
+            )?);
+        }
 
         // Add the IGVM parameter block
         self.add_param_block(param_block);
@@ -315,20 +326,22 @@ impl IgvmBuilder {
             self.gpa_map.kernel_elf.get_start(),
         )?;
 
-        // CPUID page
-        let cpuid_page = SnpCpuidPage::new()?;
-        cpuid_page.add_directive(
-            self.gpa_map.cpuid_page.get_start(),
-            COMPATIBILITY_MASK,
-            &mut self.directives,
-        );
+        if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+            // CPUID page
+            let cpuid_page = SnpCpuidPage::new()?;
+            cpuid_page.add_directive(
+                self.gpa_map.cpuid_page.get_start(),
+                COMPATIBILITY_MASK.get(),
+                &mut self.directives,
+            );
 
-        // Secrets page
-        self.add_empty_pages(
-            self.gpa_map.secrets_page.get_start(),
-            self.gpa_map.secrets_page.get_size(),
-            IgvmPageDataType::SECRETS,
-        )?;
+            // Secrets page
+            self.add_empty_pages(
+                self.gpa_map.secrets_page.get_start(),
+                self.gpa_map.secrets_page.get_size(),
+                IgvmPageDataType::SECRETS,
+            )?;
+        }
 
         // Populate the empty region above the stage 2 binary.
         self.add_empty_pages(
@@ -347,7 +360,7 @@ impl IgvmBuilder {
         let stage2_stack = Stage2Stack::new(&self.gpa_map, param_block.vtom);
         stage2_stack.add_directive(
             self.gpa_map.stage2_stack.get_start(),
-            COMPATIBILITY_MASK,
+            COMPATIBILITY_MASK.get(),
             &mut self.directives,
         );
 
@@ -387,7 +400,8 @@ impl IgvmBuilder {
             if len == 0 {
                 break;
             }
-            self.directives.push(Self::new_page_data(gpa, 1, buf));
+            self.directives
+                .push(Self::new_page_data(gpa, COMPATIBILITY_MASK.get(), buf));
             gpa += PAGE_SIZE_4K;
             buf = vec![0; 4096];
         }
@@ -400,7 +414,7 @@ impl IgvmBuilder {
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.igvm_param_block.get_start(),
-            compatibility_mask: COMPATIBILITY_MASK,
+            compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
             data,
@@ -413,7 +427,7 @@ impl IgvmBuilder {
 
         self.directives.push(IgvmDirectiveHeader::PageData {
             gpa: self.gpa_map.guest_context.get_start(),
-            compatibility_mask: COMPATIBILITY_MASK,
+            compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
             data,
@@ -429,7 +443,7 @@ impl IgvmBuilder {
         for gpa in (gpa_start..(gpa_start + size)).step_by(PAGE_SIZE_4K as usize) {
             self.directives.push(IgvmDirectiveHeader::PageData {
                 gpa,
-                compatibility_mask: COMPATIBILITY_MASK,
+                compatibility_mask: COMPATIBILITY_MASK.get(),
                 flags: IgvmPageDataFlags::new(),
                 data_type,
                 data: vec![],
