@@ -310,6 +310,7 @@ impl VMR {
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
     pub fn insert_aligned(
         &self,
+        hint: VirtAddr,
         mapping: Arc<Mapping>,
         align: usize,
     ) -> Result<VirtAddr, SvsmError> {
@@ -323,15 +324,20 @@ impl VMR {
             >> PAGE_SHIFT;
         let align = align >> PAGE_SHIFT;
 
-        let mut start = align_up(self.start_pfn, align);
+        let start_pfn = max(self.start_pfn, hint.pfn());
+
+        let mut start = align_up(start_pfn, align);
         let mut end = start;
 
-        if size == 0 {
+        if size == 0 || start_pfn >= self.end_pfn {
             return Err(SvsmError::Mem);
         }
 
         let mut tree = self.tree.lock_write();
-        let mut cursor = tree.front_mut();
+        let mut cursor = tree.upper_bound_mut(Bound::Included(&start_pfn));
+        if cursor.is_null() {
+            cursor = tree.front_mut();
+        }
 
         while let Some(node) = cursor.get() {
             let (node_start, node_end) = node.range_pfn();
@@ -358,8 +364,29 @@ impl VMR {
 
     /// Inserts [`VMM`] into the virtual memory region. This method takes the
     /// next power-of-two larger of the mapping size and uses that as the
-    /// alignment for the mappings base address. With that is calls
-    /// [`VMR::insert_aligned`].
+    /// alignment for the mappings base address. The search for the base
+    /// address starts at `addr`. With that it calls [`VMR::insert_aligned`].
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - The virtual address at which the search for a mapping area
+    ///            starts
+    /// * `mapping` - `Arc` pointer to the VMM to insert
+    ///
+    /// # Returns
+    ///
+    /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
+    pub fn insert_hint(
+        &self,
+        addr: VirtAddr,
+        mapping: Arc<Mapping>,
+    ) -> Result<VirtAddr, SvsmError> {
+        let align = mapping.get().mapping_size().next_power_of_two();
+        self.insert_aligned(addr, mapping, align)
+    }
+
+    /// Inserts [`VMM`] into the virtual memory region. It searches from the
+    /// beginning of the [`VMR`] region for a suitable slot.
     ///
     /// # Arguments
     ///
@@ -369,8 +396,7 @@ impl VMR {
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
     pub fn insert(&self, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
-        let align = mapping.get().mapping_size().next_power_of_two();
-        self.insert_aligned(mapping, align)
+        self.insert_hint(VirtAddr::new(0), mapping)
     }
 
     /// Removes the mapping from a given base address from the RBTree
