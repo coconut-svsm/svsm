@@ -6,10 +6,13 @@
 
 use super::idt::common::X86ExceptionContext;
 use super::insn::MAX_INSN_SIZE;
+use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::insn::{DecodedInsn, Immediate, Instruction, Operand, Register};
+use crate::cpu::percpu::this_cpu;
+use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -23,6 +26,8 @@ pub const SVM_EXIT_IOIO: usize = 0x7b;
 pub const SVM_EXIT_MSR: usize = 0x7c;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
+
+const MSR_SVSM_CAA: u64 = 0xc001f000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VcError {
@@ -140,17 +145,43 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
     Ok(())
 }
 
+#[inline]
+const fn get_msr(regs: &X86GeneralRegs) -> u64 {
+    ((regs.rdx as u64) << 32) | regs.rax as u64 & u32::MAX as u64
+}
+
+/// Handles a read from the SVSM-specific MSR defined the in SVSM spec.
+fn handle_svsm_caa_rdmsr(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
+    let caa = this_cpu()
+        .guest_vmsa_ref()
+        .caa_phys()
+        .ok_or(SvsmError::MissingCAA)?
+        .bits();
+    ctx.regs.rdx = (caa >> 32) & 0xffffffff;
+    ctx.regs.rax = caa & 0xffffffff;
+    Ok(())
+}
+
 fn handle_msr(
     ctx: &mut X86ExceptionContext,
     ghcb: &mut GHCB,
     ins: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match ins {
-        DecodedInsn::Wrmsr => ghcb.wrmsr_regs(&ctx.regs),
-        DecodedInsn::Rdmsr => ghcb.rdmsr_regs(&mut ctx.regs),
+        DecodedInsn::Wrmsr => {
+            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
+                return Ok(());
+            }
+            ghcb.wrmsr_regs(&ctx.regs)
+        }
+        DecodedInsn::Rdmsr => {
+            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
+                return handle_svsm_caa_rdmsr(ctx);
+            }
+            ghcb.rdmsr_regs(&mut ctx.regs)
+        }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
-    }?;
-    Ok(())
+    }
 }
 
 fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
