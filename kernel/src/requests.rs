@@ -16,6 +16,38 @@ use crate::types::GUEST_VMPL;
 use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
 
+/// The SVSM Calling Area (CAA)
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct SvsmCaa {
+    call_pending: u8,
+    mem_available: u8,
+    _rsvd: [u8; 6],
+}
+
+impl SvsmCaa {
+    /// Returns a copy of the this CAA with the `call_pending` field cleared.
+    #[inline]
+    const fn serviced(self) -> Self {
+        Self {
+            call_pending: 0,
+            ..self
+        }
+    }
+
+    /// A CAA with all of its fields set to zero.
+    #[inline]
+    pub const fn zeroed() -> Self {
+        Self {
+            call_pending: 0,
+            mem_available: 0,
+            _rsvd: [0; 6],
+        }
+    }
+}
+
+const _: () = assert!(core::mem::size_of::<SvsmCaa>() == 8);
+
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {
     let cpu = this_cpu();
@@ -68,10 +100,10 @@ fn check_requests() -> Result<bool, SvsmReqError> {
     let cpu = this_cpu();
     let vmsa_ref = cpu.guest_vmsa_ref();
     if let Some(caa_addr) = vmsa_ref.caa_addr() {
-        let guest_pending = GuestPtr::<u64>::new(caa_addr);
-        let p = guest_pending.read()?;
-        guest_pending.write(0)?;
-        Ok(p == 1)
+        let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
+        let caa = calling_area.read()?;
+        calling_area.write(caa.serviced())?;
+        Ok(caa.call_pending != 0)
     } else {
         Ok(false)
     }
