@@ -31,6 +31,8 @@ bitflags! {
         const Execute = 1 << 2;
         // Map private copies of file pages
         const Private = 1 << 3;
+        // Map at a fixed address
+        const Fixed = 1 << 4;
     }
 }
 
