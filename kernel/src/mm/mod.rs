@@ -7,6 +7,7 @@
 pub mod address_space;
 pub mod alloc;
 pub mod guestmem;
+pub mod mappings;
 pub mod memory;
 pub mod page_visibility;
 pub mod pagetable;
