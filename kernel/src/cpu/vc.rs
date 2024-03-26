@@ -20,6 +20,7 @@ pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
 pub const SVM_EXIT_CPUID: usize = 0x72;
 pub const SVM_EXIT_IOIO: usize = 0x7b;
+pub const SVM_EXIT_MSR: usize = 0x7c;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
 
@@ -102,6 +103,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     match (err, insn) {
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
         (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -130,10 +132,24 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
         (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
     vc_finish_insn(ctx, &insn);
+    Ok(())
+}
+
+fn handle_msr(
+    ctx: &mut X86ExceptionContext,
+    ghcb: &mut GHCB,
+    ins: DecodedInsn,
+) -> Result<(), SvsmError> {
+    match ins {
+        DecodedInsn::Wrmsr => ghcb.wrmsr_regs(&ctx.regs),
+        DecodedInsn::Rdmsr => ghcb.rdmsr_regs(&mut ctx.regs),
+        _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
+    }?;
     Ok(())
 }
 
@@ -478,16 +494,14 @@ mod tests {
     const APIC_BASE_PHYS_ADDR_MASK: u64 = 0xffffff000; // bit 12-35
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_apic() {
         let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
         assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_debug_ctl() {
         const MSR_DEBUG_CTL: u32 = 0x1d9;
         let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
@@ -497,8 +511,7 @@ mod tests {
     const MSR_TSC_AUX: u32 = 0xc0000103;
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
         let test_val = 0x1234;
         verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));

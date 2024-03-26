@@ -7,6 +7,7 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
+use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
@@ -122,6 +123,7 @@ enum GHCBExitCode {}
 
 impl GHCBExitCode {
     pub const IOIO: u64 = 0x7b;
+    pub const MSR: u64 = 0x7c;
     pub const SNP_PSC: u64 = 0x8000_0010;
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
@@ -158,6 +160,28 @@ impl GHCB {
 
         flush_tlb_global_sync();
 
+        Ok(())
+    }
+
+    pub fn wrmsr_regs(&mut self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+
+        self.set_rcx(regs.rcx as u64);
+        self.set_rax(regs.rax as u64);
+        self.set_rdx(regs.rdx as u64);
+
+        self.vmgexit(GHCBExitCode::MSR, 1, 0)?;
+        Ok(())
+    }
+
+    pub fn rdmsr_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+
+        self.set_rcx(regs.rcx as u64);
+
+        self.vmgexit(GHCBExitCode::MSR, 0, 0)?;
+        regs.rdx = self.rdx as usize;
+        regs.rax = self.rax as usize;
         Ok(())
     }
 
