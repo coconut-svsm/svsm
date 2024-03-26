@@ -52,7 +52,10 @@ pub fn create_file_mapping(
     Ok(Arc::new(Mapping::new(file_mapping)))
 }
 
-pub fn create_anon_mapping(size: usize) -> Result<Arc<Mapping>, SvsmError> {
-    let alloc = VMalloc::new(size)?;
+pub fn create_anon_mapping(
+    size: usize,
+    flags: VMFileMappingFlags,
+) -> Result<Arc<Mapping>, SvsmError> {
+    let alloc = VMalloc::new(size, flags)?;
     Ok(Arc::new(Mapping::new(alloc)))
 }

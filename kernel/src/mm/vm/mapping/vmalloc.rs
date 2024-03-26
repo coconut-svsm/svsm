@@ -9,7 +9,7 @@ use crate::error::SvsmError;
 use crate::mm::pagetable::PTEntryFlags;
 
 use super::rawalloc::RawAllocMapping;
-use super::{Mapping, VirtualMapping};
+use super::{Mapping, VMFileMappingFlags, VirtualMapping};
 
 /// Virtual mapping backed by allocated pages. This can be used for memory
 /// allocation if there is no need for the memory to be physically contiguous.
@@ -19,6 +19,8 @@ use super::{Mapping, VirtualMapping};
 pub struct VMalloc {
     /// [`RawAllocMapping`] used for memory allocation
     alloc: RawAllocMapping,
+    /// Page-table flags to map pages
+    flags: PTEntryFlags,
 }
 
 impl VMalloc {
@@ -31,10 +33,20 @@ impl VMalloc {
     /// # Returns
     ///
     /// New instance on success, Err(SvsmError::Mem) on error
-    pub fn new(size: usize) -> Result<Self, SvsmError> {
+    pub fn new(size: usize, flags: VMFileMappingFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
+            flags: PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY,
         };
+
+        if flags.contains(VMFileMappingFlags::Write) {
+            vmalloc.flags |= PTEntryFlags::WRITABLE;
+        }
+
+        if !flags.contains(VMFileMappingFlags::Execute) {
+            vmalloc.flags |= PTEntryFlags::NX;
+        }
+
         vmalloc.alloc_pages()?;
         Ok(vmalloc)
     }
@@ -48,8 +60,8 @@ impl VMalloc {
     /// # Returns
     ///
     /// New [`Mapping`] on success, Err(SvsmError::Mem) on error
-    pub fn new_mapping(size: usize) -> Result<Mapping, SvsmError> {
-        Ok(Mapping::new(Self::new(size)?))
+    pub fn new_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
+        Ok(Mapping::new(Self::new(size, flags)?))
     }
 
     fn alloc_pages(&mut self) -> Result<(), SvsmError> {
@@ -71,6 +83,6 @@ impl VirtualMapping for VMalloc {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        PTEntryFlags::WRITABLE | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+        self.flags
     }
 }
