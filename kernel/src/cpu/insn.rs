@@ -65,12 +65,18 @@ impl DecodedInsn {
     pub const fn size(&self) -> usize {
         match self {
             Self::Cpuid => 2,
-            Self::Inb(..) => 1,
-            Self::Inw(..) => 2,
-            Self::Inl(..) => 1,
-            Self::Outb(..) => 1,
-            Self::Outw(..) => 2,
-            Self::Outl(..) => 1,
+            Self::Inb(Operand::Reg(..)) => 1,
+            Self::Inw(Operand::Reg(..)) => 2,
+            Self::Inl(Operand::Reg(..)) => 1,
+            Self::Outb(Operand::Reg(..)) => 1,
+            Self::Outw(Operand::Reg(..)) => 2,
+            Self::Outl(Operand::Reg(..)) => 1,
+            Self::Inb(Operand::Imm(..)) => 2,
+            Self::Inw(Operand::Imm(..)) => 3,
+            Self::Inl(Operand::Imm(..)) => 2,
+            Self::Outb(Operand::Imm(..)) => 2,
+            Self::Outw(Operand::Imm(..)) => 3,
+            Self::Outl(Operand::Imm(..)) => 2,
         }
     }
 }
@@ -172,11 +178,41 @@ impl Instruction {
     /// A [`DecodedInsn`] if the instruction is supported, or an [`SvsmError`] otherwise.
     pub fn decode(&self) -> Result<DecodedInsn, SvsmError> {
         match self.insn_bytes[0] {
+            0xE4 => {
+                return Ok(DecodedInsn::Inb(Operand::Imm(Immediate::U8(
+                    self.insn_bytes[1],
+                ))))
+            }
+            0xE5 => {
+                return Ok(DecodedInsn::Inl(Operand::Imm(Immediate::U8(
+                    self.insn_bytes[1],
+                ))))
+            }
+            0xE6 => {
+                return Ok(DecodedInsn::Outb(Operand::Imm(Immediate::U8(
+                    self.insn_bytes[1],
+                ))))
+            }
+            0xE7 => {
+                return Ok(DecodedInsn::Outl(Operand::Imm(Immediate::U8(
+                    self.insn_bytes[1],
+                ))))
+            }
             0xEC => return Ok(DecodedInsn::Inb(Operand::rdx())),
             0xED => return Ok(DecodedInsn::Inl(Operand::rdx())),
             0xEE => return Ok(DecodedInsn::Outb(Operand::rdx())),
             0xEF => return Ok(DecodedInsn::Outl(Operand::rdx())),
             0x66 => match self.insn_bytes[1] {
+                0xE5 => {
+                    return Ok(DecodedInsn::Inw(Operand::Imm(Immediate::U8(
+                        self.insn_bytes[2],
+                    ))))
+                }
+                0xE7 => {
+                    return Ok(DecodedInsn::Outw(Operand::Imm(Immediate::U8(
+                        self.insn_bytes[2],
+                    ))))
+                }
                 0xED => return Ok(DecodedInsn::Inw(Operand::rdx())),
                 0xEF => return Ok(DecodedInsn::Outw(Operand::rdx())),
                 _ => (),

@@ -9,7 +9,7 @@ use super::insn::MAX_INSN_SIZE;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::{DecodedInsn, Instruction, Operand, Register};
+use crate::cpu::insn::{DecodedInsn, Immediate, Instruction, Operand, Register};
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -176,7 +176,10 @@ fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
     match source {
         Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
         Operand::Reg(..) => unreachable!("Port value is always in DX"),
-        _ => todo!(),
+        Operand::Imm(imm) => match imm {
+            Immediate::U8(val) => val as u16,
+            _ => unreachable!("Port value in immediate is always 1 byte"),
+        },
     }
 }
 
@@ -423,8 +426,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8_hardcoded() {
         const TEST_VAL: u8 = 0x12;
         verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
@@ -432,8 +434,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16_hardcoded() {
         const TEST_VAL: u16 = 0x4321;
         verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
@@ -441,8 +442,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32_hardcoded() {
         const TEST_VAL: u32 = 0xabcd1234;
         verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
