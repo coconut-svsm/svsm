@@ -16,10 +16,14 @@ use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
+use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
-use crate::mm::vm::{Mapping, VMKernelStack, VMR};
-use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
+use crate::mm::{
+    mappings::create_anon_mapping, mappings::create_file_mapping, SVSM_PERTASK_BASE,
+    SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE,
+};
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -280,6 +284,33 @@ impl Task {
         }
 
         Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
+    }
+
+    pub fn mmap_user(
+        &self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        if self.vm_user_range.is_none() {
+            return Err(SvsmError::Mem);
+        }
+
+        let vmr = self.vm_user_range.as_ref().unwrap();
+
+        let mapping = if let Some(f) = file {
+            create_file_mapping(f, offset, size, flags)?
+        } else {
+            create_anon_mapping(size, flags)?
+        };
+
+        if flags.contains(VMFileMappingFlags::Fixed) {
+            Ok(vmr.insert_at(addr, mapping)?)
+        } else {
+            Ok(vmr.insert_hint(addr, mapping)?)
+        }
     }
 }
 
