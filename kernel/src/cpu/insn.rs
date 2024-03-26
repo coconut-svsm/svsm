@@ -130,27 +130,11 @@ where
 
 /// A view of an x86 instruction.
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
-pub struct Instruction {
-    /// Optional x86 instruction prefixes.
-    pub prefixes: Option<InsnBuffer<MAX_INSN_FIELD_SIZE>>,
-    /// Raw bytes copied from rip location.
-    /// After decoding, `self.insn_bytes.nb_bytes` is adjusted
-    /// to the total len of the instruction, prefix included.
-    pub insn_bytes: InsnBuffer<MAX_INSN_SIZE>,
-    /// Mandatory opcode.
-    pub opcode: InsnBuffer<MAX_INSN_FIELD_SIZE>,
-    /// Operand size in bytes.
-    pub opnd_bytes: usize,
-}
+pub struct Instruction(InsnBuffer<MAX_INSN_SIZE>);
 
 impl Instruction {
-    pub fn new(insn_bytes: [u8; MAX_INSN_SIZE]) -> Self {
-        Self {
-            prefixes: None,
-            opcode: InsnBuffer::default(), // we'll copy content later
-            insn_bytes: InsnBuffer::new(insn_bytes, 0),
-            opnd_bytes: 4,
-        }
+    pub fn new(bytes: [u8; MAX_INSN_SIZE]) -> Self {
+        Self(InsnBuffer::new(bytes, 0))
     }
 
     /// Returns the length of the instruction.
@@ -160,12 +144,12 @@ impl Instruction {
     /// [`usize`]: The total size of an  instruction,
     /// prefix included.
     pub fn len(&self) -> usize {
-        self.insn_bytes.nb_bytes
+        self.0.nb_bytes
     }
 
     /// Returns true if the related [`Instruction`] can be considered empty.
     pub fn is_empty(&self) -> bool {
-        self.insn_bytes.nb_bytes == 0
+        self.0.nb_bytes == 0
     }
 
     /// Decode the instruction.
@@ -177,48 +161,24 @@ impl Instruction {
     ///
     /// A [`DecodedInsn`] if the instruction is supported, or an [`SvsmError`] otherwise.
     pub fn decode(&self) -> Result<DecodedInsn, SvsmError> {
-        match self.insn_bytes[0] {
-            0xE4 => {
-                return Ok(DecodedInsn::Inb(Operand::Imm(Immediate::U8(
-                    self.insn_bytes[1],
-                ))))
-            }
-            0xE5 => {
-                return Ok(DecodedInsn::Inl(Operand::Imm(Immediate::U8(
-                    self.insn_bytes[1],
-                ))))
-            }
-            0xE6 => {
-                return Ok(DecodedInsn::Outb(Operand::Imm(Immediate::U8(
-                    self.insn_bytes[1],
-                ))))
-            }
-            0xE7 => {
-                return Ok(DecodedInsn::Outl(Operand::Imm(Immediate::U8(
-                    self.insn_bytes[1],
-                ))))
-            }
+        match self.0[0] {
+            0xE4 => return Ok(DecodedInsn::Inb(Operand::Imm(Immediate::U8(self.0[1])))),
+            0xE5 => return Ok(DecodedInsn::Inl(Operand::Imm(Immediate::U8(self.0[1])))),
+            0xE6 => return Ok(DecodedInsn::Outb(Operand::Imm(Immediate::U8(self.0[1])))),
+            0xE7 => return Ok(DecodedInsn::Outl(Operand::Imm(Immediate::U8(self.0[1])))),
             0xEC => return Ok(DecodedInsn::Inb(Operand::rdx())),
             0xED => return Ok(DecodedInsn::Inl(Operand::rdx())),
             0xEE => return Ok(DecodedInsn::Outb(Operand::rdx())),
             0xEF => return Ok(DecodedInsn::Outl(Operand::rdx())),
-            0x66 => match self.insn_bytes[1] {
-                0xE5 => {
-                    return Ok(DecodedInsn::Inw(Operand::Imm(Immediate::U8(
-                        self.insn_bytes[2],
-                    ))))
-                }
-                0xE7 => {
-                    return Ok(DecodedInsn::Outw(Operand::Imm(Immediate::U8(
-                        self.insn_bytes[2],
-                    ))))
-                }
+            0x66 => match self.0[1] {
+                0xE5 => return Ok(DecodedInsn::Inw(Operand::Imm(Immediate::U8(self.0[2])))),
+                0xE7 => return Ok(DecodedInsn::Outw(Operand::Imm(Immediate::U8(self.0[2])))),
                 0xED => return Ok(DecodedInsn::Inw(Operand::rdx())),
                 0xEF => return Ok(DecodedInsn::Outw(Operand::rdx())),
                 _ => (),
             },
             0x0F => {
-                if self.insn_bytes[1] == 0xA2 {
+                if self.0[1] == 0xA2 {
                     return Ok(DecodedInsn::Cpuid);
                 }
             }
