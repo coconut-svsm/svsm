@@ -286,6 +286,38 @@ impl Task {
         Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
     }
 
+    pub fn mmap_common(
+        vmr: &VMR,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        let mapping = if let Some(f) = file {
+            create_file_mapping(f, offset, size, flags)?
+        } else {
+            create_anon_mapping(size, flags)?
+        };
+
+        if flags.contains(VMFileMappingFlags::Fixed) {
+            Ok(vmr.insert_at(addr, mapping)?)
+        } else {
+            Ok(vmr.insert_hint(addr, mapping)?)
+        }
+    }
+
+    pub fn mmap_kernel(
+        &self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)
+    }
+
     pub fn mmap_user(
         &self,
         addr: VirtAddr,
@@ -300,17 +332,7 @@ impl Task {
 
         let vmr = self.vm_user_range.as_ref().unwrap();
 
-        let mapping = if let Some(f) = file {
-            create_file_mapping(f, offset, size, flags)?
-        } else {
-            create_anon_mapping(size, flags)?
-        };
-
-        if flags.contains(VMFileMappingFlags::Fixed) {
-            Ok(vmr.insert_at(addr, mapping)?)
-        } else {
-            Ok(vmr.insert_hint(addr, mapping)?)
-        }
+        Self::mmap_common(vmr, addr, file, offset, size, flags)
     }
 }
 
