@@ -21,8 +21,8 @@ use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
-    mappings::create_anon_mapping, mappings::create_file_mapping, SVSM_PERTASK_BASE,
-    SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE,
+    mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE,
 };
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
@@ -316,6 +316,18 @@ impl Task {
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
         Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)
+    }
+
+    pub fn mmap_kernel_guard<'a>(
+        &'a self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VMMappingGuard<'a>, SvsmError> {
+        let vaddr = Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)?;
+        Ok(VMMappingGuard::new(&self.vm_kernel_range, vaddr))
     }
 
     pub fn mmap_user(
