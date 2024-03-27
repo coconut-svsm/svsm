@@ -346,6 +346,20 @@ impl Task {
 
         Self::mmap_common(vmr, addr, file, offset, size, flags)
     }
+
+    pub fn munmap_kernel(&self, addr: VirtAddr) -> Result<(), SvsmError> {
+        self.vm_kernel_range.remove(addr)?;
+        Ok(())
+    }
+
+    pub fn munmap_user(&self, addr: VirtAddr) -> Result<(), SvsmError> {
+        if self.vm_user_range.is_none() {
+            return Err(SvsmError::Mem);
+        }
+
+        self.vm_user_range.as_ref().unwrap().remove(addr)?;
+        Ok(())
+    }
 }
 
 extern "C" fn task_exit() {
