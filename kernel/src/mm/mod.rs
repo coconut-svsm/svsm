@@ -26,4 +26,4 @@ pub use pagetable::PageTablePart;
 
 pub use alloc::{allocate_file_page, allocate_file_page_ref, PageRef};
 
-pub use mappings::VMMappingGuard;
+pub use mappings::{mmap_kernel, mmap_user, munmap_kernel, munmap_user, VMMappingGuard};

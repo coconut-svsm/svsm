@@ -8,6 +8,7 @@ use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc, VMR};
+use crate::task::current_task;
 
 use core::ops::Deref;
 
@@ -58,4 +59,32 @@ pub fn create_anon_mapping(
 ) -> Result<Arc<Mapping>, SvsmError> {
     let alloc = VMalloc::new(size, flags)?;
     Ok(Arc::new(Mapping::new(alloc)))
+}
+
+pub fn mmap_user(
+    addr: VirtAddr,
+    file: Option<&FileHandle>,
+    offset: usize,
+    size: usize,
+    flags: VMFileMappingFlags,
+) -> Result<VirtAddr, SvsmError> {
+    current_task().mmap_user(addr, file, offset, size, flags)
+}
+
+pub fn mmap_kernel(
+    addr: VirtAddr,
+    file: Option<&FileHandle>,
+    offset: usize,
+    size: usize,
+    flags: VMFileMappingFlags,
+) -> Result<VirtAddr, SvsmError> {
+    current_task().mmap_kernel(addr, file, offset, size, flags)
+}
+
+pub fn munmap_user(addr: VirtAddr) -> Result<(), SvsmError> {
+    current_task().munmap_user(addr)
+}
+
+pub fn munmap_kernel(addr: VirtAddr) -> Result<(), SvsmError> {
+    current_task().munmap_kernel(addr)
 }
