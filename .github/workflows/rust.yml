@@ -94,6 +94,13 @@ jobs:
             override: true
             components: rustfmt
 
+      # The bindings.rs is auto-generated during make, but we are not
+      # building the code with nightly. So we initialize bindings.rs here
+      # for cargo-fmt in the next workflow, otherwise it will fail reporting
+      # that bindings.rs does not exist.
+      - name: Touch libmstpm bindings
+        run: echo "" > libmstpm/src/bindings.rs
+
       - name: Format doctests
         uses: actions-rs/cargo@v1
         with:
