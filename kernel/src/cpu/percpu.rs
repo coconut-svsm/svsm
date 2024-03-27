@@ -248,6 +248,12 @@ pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: *mut PerCpu,
     ghcb: *mut GHCB,
+    init_stack: Option<VirtAddr>,
+    ist: IstStacks,
+
+    /// Stack boundaries of the currently running task. This is stored in
+    /// [PerCpuUnsafe] because it needs lockless read access.
+    current_stack: MemoryRegion<VirtAddr>,
 }
 
 impl PerCpuUnsafe {
@@ -256,6 +262,9 @@ impl PerCpuUnsafe {
             private,
             shared: PerCpuShared::new(),
             ghcb: ptr::null_mut(),
+            init_stack: None,
+            ist: IstStacks::new(),
+            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
         }
     }
 
@@ -330,6 +339,18 @@ impl PerCpuUnsafe {
     pub fn ghcb_unsafe(&self) -> *mut GHCB {
         self.ghcb
     }
+
+    pub fn get_top_of_stack(&self) -> VirtAddr {
+        self.init_stack.unwrap()
+    }
+
+    pub fn get_top_of_df_stack(&self) -> VirtAddr {
+        self.ist.double_fault_stack.unwrap()
+    }
+
+    pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
+        self.current_stack
+    }
 }
 
 #[derive(Debug)]
@@ -337,8 +358,6 @@ pub struct PerCpu {
     cpu_unsafe: *const PerCpuUnsafe,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
-    init_stack: Option<VirtAddr>,
-    ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
     reset_ip: u64,
@@ -354,10 +373,6 @@ pub struct PerCpu {
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLock<RunQueue>,
 
-    /// Stack boundaries of the currently running task. This is stored in
-    /// [PerCpu] because it needs lockless read access.
-    pub current_stack: MemoryRegion<VirtAddr>,
-
     /// WaitQueue for request processing
     request_waitqueue: WaitQueue,
 
@@ -372,8 +387,6 @@ impl PerCpu {
             cpu_unsafe,
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
-            init_stack: None,
-            ist: IstStacks::new(),
             tss: X86Tss::new(),
             svsm_vmsa: None,
             reset_ip: 0xffff_fff0u64,
@@ -381,7 +394,6 @@ impl PerCpu {
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
             runqueue: RWLock::new(RunQueue::new()),
-            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
             request_waitqueue: WaitQueue::new(),
 
             // Every new CPU is constructed with via a raw pointer so no
@@ -439,12 +451,20 @@ impl PerCpu {
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
-        self.init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
+        let init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).init_stack = init_stack;
+        }
         Ok(())
     }
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        let double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).ist.double_fault_stack = double_fault_stack;
+        }
         Ok(())
     }
 
@@ -467,16 +487,9 @@ impl PerCpu {
         }
     }
 
-    pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.unwrap()
-    }
-
-    pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.unwrap()
-    }
-
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
+        let double_fault_stack = unsafe { (*self.cpu_unsafe).get_top_of_df_stack() };
+        self.tss.ist_stacks[IST_DF] = double_fault_stack;
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
@@ -606,7 +619,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().into();
+        let top_of_stack = unsafe { (*self.cpu_unsafe).get_top_of_stack() };
+        vmsa_ref.rsp = top_of_stack.into();
         vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
@@ -709,14 +723,20 @@ impl PerCpu {
 
     pub fn schedule_init(&mut self) -> TaskPointer {
         let task = self.runqueue.lock_write().schedule_init();
-        self.current_stack = task.stack_bounds();
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).current_stack = task.stack_bounds();
+        }
         task
     }
 
     pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
         let ret = self.runqueue.lock_write().schedule_prepare();
         if let Some((_, ref next)) = ret {
-            self.current_stack = next.stack_bounds();
+            unsafe {
+                let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+                (*cpu_unsafe_mut_ptr).current_stack = next.stack_bounds();
+            }
         };
         ret
     }

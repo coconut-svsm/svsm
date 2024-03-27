@@ -7,7 +7,7 @@
 use crate::{
     address::VirtAddr,
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
-    cpu::percpu::this_cpu,
+    cpu::percpu::this_cpu_unsafe,
     mm::address_space::STACK_SIZE,
     utils::MemoryRegion,
 };
@@ -45,13 +45,19 @@ impl StackUnwinder {
                  options(att_syntax));
         };
 
-        let top_of_init_stack = this_cpu().get_top_of_stack();
-        let top_of_df_stack = this_cpu().get_top_of_df_stack();
+        let (top_of_init_stack, top_of_df_stack, current_stack) = unsafe {
+            let cpu_unsafe = &*this_cpu_unsafe();
+            (
+                cpu_unsafe.get_top_of_stack(),
+                cpu_unsafe.get_top_of_df_stack(),
+                cpu_unsafe.get_current_stack(),
+            )
+        };
 
         let stacks: StacksBounds = [
             MemoryRegion::from_addresses(top_of_init_stack - STACK_SIZE, top_of_init_stack),
             MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
-            this_cpu().current_stack,
+            current_stack,
         ];
 
         Self::new(VirtAddr::from(rbp), stacks)
