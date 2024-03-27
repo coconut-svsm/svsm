@@ -708,6 +708,10 @@ impl PerCpu {
     pub fn runqueue(&self) -> &RWLock<RunQueue> {
         &self.runqueue
     }
+
+    pub fn current_task(&self) -> TaskPointer {
+        self.runqueue.lock_read().current_task()
+    }
 }
 
 pub fn this_cpu_unsafe() -> *mut PerCpuUnsafe {

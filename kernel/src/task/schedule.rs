@@ -237,6 +237,10 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
     Ok(task)
 }
 
+pub fn current_task() -> TaskPointer {
+    this_cpu().current_task()
+}
+
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
     match &this_cpu().runqueue().lock_read().current_task {
