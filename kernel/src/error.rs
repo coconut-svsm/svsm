@@ -34,6 +34,8 @@ pub enum SvsmError {
     MissingVMSA,
     // There is no CAA
     MissingCAA,
+    // There is no secrets page
+    MissingSecrets,
     // Invalid address, usually provided by the guest
     InvalidAddress,
     // Errors related to firmware parsing

@@ -450,7 +450,8 @@ pub fn validate_fw_memory(
     let kernel_region = new_kernel_region(launch_info);
     for region in regions.iter() {
         if region.overlap(&kernel_region) {
-            panic!("FwMeta region ovelaps with kernel");
+            log::error!("FwMeta region ovelaps with kernel");
+            return Err(SvsmError::Firmware);
         }
     }
 
