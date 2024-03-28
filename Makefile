@@ -73,7 +73,7 @@ bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf b
 	$(IGVMMEASURE) $@
 
 test:
-	cargo test --workspace --target=x86_64-unknown-linux-gnu
+	cargo test ${CARGO_ARGS} --workspace --target=x86_64-unknown-linux-gnu
 
 test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
 	./scripts/test-in-svsm.sh
@@ -102,7 +102,7 @@ bin/svsm-kernel.elf: bin
 	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin
-	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
+	LINK_TEST=1 cargo +nightly test ${CARGO_ARGS} -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
 
 ${FS_BIN}: bin
