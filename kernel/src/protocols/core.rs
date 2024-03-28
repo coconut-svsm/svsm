@@ -14,6 +14,7 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
+use crate::requests::SvsmCaa;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
     rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,
@@ -340,8 +341,8 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr() + offset;
 
-    let pending = GuestPtr::<u64>::new(vaddr);
-    pending.write(0)?;
+    let pending = GuestPtr::<SvsmCaa>::new(vaddr);
+    pending.write(SvsmCaa::zeroed())?;
 
     this_cpu_mut().shared.update_guest_caa(gpa);
 
