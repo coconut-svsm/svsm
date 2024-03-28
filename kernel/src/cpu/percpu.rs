@@ -194,12 +194,14 @@ impl GuestVmsaRef {
 #[derive(Debug)]
 pub struct PerCpuShared {
     guest_vmsa: SpinLock<GuestVmsaRef>,
+    online: AtomicBool,
 }
 
 impl PerCpuShared {
     fn new() -> Self {
         PerCpuShared {
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
+            online: AtomicBool::new(false),
         }
     }
 
@@ -229,12 +231,19 @@ impl PerCpuShared {
             locked.update_vmsa(None);
         }
     }
+
+    pub fn set_online(&self) {
+        self.online.store(true, Ordering::Release);
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.online.load(Ordering::Acquire)
+    }
 }
 
 #[derive(Debug)]
 pub struct PerCpu {
     shared: *const PerCpuShared,
-    online: AtomicBool,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     ghcb: *mut GHCB,
@@ -271,7 +280,6 @@ impl PerCpu {
     fn new(apic_id: u32, shared: *const PerCpuShared) -> Self {
         PerCpu {
             shared,
-            online: AtomicBool::new(false),
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
             ghcb: ptr::null_mut(),
@@ -320,14 +328,6 @@ impl PerCpu {
 
     pub fn shared(&self) -> &'static PerCpuShared {
         unsafe { &*self.shared }
-    }
-
-    pub fn set_online(&mut self) {
-        self.online.store(true, Ordering::Relaxed);
-    }
-
-    pub fn is_online(&self) -> bool {
-        self.online.load(Ordering::Acquire)
     }
 
     pub const fn get_apic_id(&self) -> u32 {

@@ -6,7 +6,7 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu_mut, PerCpu};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
@@ -32,12 +32,14 @@ fn start_cpu(apic_id: u32, vtom: u64) {
         let sev_features = vmsa.vmsa().sev_features;
         let vmsa_pa = vmsa.paddr;
 
+        let percpu_shared = percpu.shared();
+
         vmsa.vmsa().enable();
         current_ghcb()
             .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
             .expect("Failed to launch secondary CPU");
         loop {
-            if percpu.is_online() {
+            if percpu_shared.is_online() {
                 break;
             }
         }
@@ -69,7 +71,7 @@ fn start_ap() {
     log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());
 
     // Set CPU online so that BSP can proceed
-    this_cpu_mut().set_online();
+    this_cpu_shared().set_online();
 
     schedule_init();
 }
