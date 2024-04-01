@@ -15,7 +15,7 @@ use bootlib::igvm_params::{
 };
 use clap::Parser;
 use igvm::{
-    IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
+    Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
 use igvm_defs::{
     IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
@@ -28,10 +28,11 @@ use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
 use crate::platform::PlatformMask;
 use crate::stage2_stack::Stage2Stack;
-use crate::vmsa::construct_vmsa;
+use crate::vmsa::{construct_start_context, construct_vmsa};
 use crate::GpaMap;
 
 const SNP_COMPATIBILITY_MASK: u32 = 1;
+const NATIVE_COMPATIBILITY_MASK: u32 = 2;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 
 // Parameter area indices
@@ -44,6 +45,7 @@ const _: () = assert!(size_of::<IgvmGuestContext>() as u64 <= PAGE_SIZE_4K);
 
 pub struct IgvmBuilder {
     options: CmdOptions,
+    use_igvm_v2: bool,
     firmware: Option<Box<dyn Firmware>>,
     gpa_map: GpaMap,
     platforms: Vec<IgvmPlatformHeader>,
@@ -55,9 +57,19 @@ impl IgvmBuilder {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let options = CmdOptions::parse();
 
+        // Assume revision 1 unless some option requires the use of a different
+        // revision.
+        let mut use_igvm_v2 = false;
+
         // SNP is always included in the compatibility mask regardless of the
         // provided options.
         COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
+
+        // Include the NATIVE platform if requested.
+        if options.native {
+            COMPATIBILITY_MASK.add(NATIVE_COMPATIBILITY_MASK);
+            use_igvm_v2 = true;
+        }
 
         let firmware = match options.firmware {
             Some(_) => Some(parse_firmware(
@@ -75,6 +87,7 @@ impl IgvmBuilder {
             platforms: vec![],
             initialization: vec![],
             directives: vec![],
+            use_igvm_v2,
         })
     }
 
@@ -118,8 +131,17 @@ impl IgvmBuilder {
             println!("{param_block:#X?}");
         }
 
+        let igvm_revision = if self.use_igvm_v2 {
+            IgvmRevision::V2 {
+                arch: Arch::X64,
+                page_size: PAGE_SIZE_4K.try_into().unwrap(),
+            }
+        } else {
+            IgvmRevision::V1
+        };
+
         let file = IgvmFile::new(
-            IgvmRevision::V1,
+            igvm_revision,
             self.platforms,
             self.initialization,
             self.directives,
@@ -230,6 +252,17 @@ impl IgvmBuilder {
                 },
             ));
         }
+        if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
+            self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
+                IGVM_VHS_SUPPORTED_PLATFORM {
+                    compatibility_mask: NATIVE_COMPATIBILITY_MASK,
+                    highest_vtl: 2,
+                    platform_type: IgvmPlatformType::NATIVE,
+                    platform_version: 1,
+                    shared_gpa_boundary: 0,
+                },
+            ));
+        }
     }
 
     fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
@@ -238,7 +271,7 @@ impl IgvmBuilder {
             self.initialization
                 .push(IgvmInitializationHeader::GuestPolicy {
                     policy,
-                    compatibility_mask: COMPATIBILITY_MASK,
+                    compatibility_mask: COMPATIBILITY_MASK.get(),
                 })
         }
         Ok(())
@@ -303,13 +336,27 @@ impl IgvmBuilder {
             },
         ));
 
+        // Construct a native context object to capture the start context.
+        let start_context = construct_start_context();
+
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             // Add the VMSA.
             self.directives.push(construct_vmsa(
+                start_context.as_ref(),
                 self.gpa_map.vmsa.get_start(),
                 param_block.vtom,
-                COMPATIBILITY_MASK.get(),
-            )?);
+                SNP_COMPATIBILITY_MASK,
+            ));
+        }
+
+        if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
+            // Include the native start context.
+            self.directives
+                .push(IgvmDirectiveHeader::X64NativeVpContext {
+                    compatibility_mask: NATIVE_COMPATIBILITY_MASK,
+                    context: start_context,
+                    vp_index: 0,
+                });
         }
 
         // Add the IGVM parameter block

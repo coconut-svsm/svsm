@@ -47,6 +47,10 @@ pub struct CmdOptions {
     /// A hex value containing the guest policy to apply. For example: 0x30000
     #[arg(long)]
     pub policy: Option<String>,
+
+    /// Include NATIVE platform target
+    #[arg(long, default_value_t = false)]
+    pub native: bool,
 }
 
 impl CmdOptions {
