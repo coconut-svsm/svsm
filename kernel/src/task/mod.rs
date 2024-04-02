@@ -10,7 +10,7 @@ mod waiting;
 
 pub use schedule::{
     create_kernel_task, create_user_task, current_task, current_task_terminated, is_current_task,
-    schedule, schedule_init, schedule_task, RunQueue, TASKLIST,
+    schedule, schedule_init, schedule_task, terminate, RunQueue, TASKLIST,
 };
 
 pub use tasks::{

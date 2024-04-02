@@ -276,6 +276,14 @@ pub unsafe fn current_task_terminated() {
     TASKLIST.lock().terminate(task_node.clone());
 }
 
+pub fn terminate() {
+    // TODO: re-evaluate whether current_task_terminated() needs to be unsafe
+    unsafe {
+        current_task_terminated();
+    }
+    schedule();
+}
+
 // SAFETY: This function returns a raw pointer to a task. It is safe
 // because this function is only used in the task switch code, which also only
 // takes a single reference to the next and previous tasks. Also, this
