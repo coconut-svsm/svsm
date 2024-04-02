@@ -451,43 +451,19 @@ impl VMR {
     /// '()' if the page fault was successfully handled.
     ///
     /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
-    pub fn handle_page_fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        // Get the mapping that contains the faulting address. This needs to
-        // be done as a separate step, returning a reference to the mapping to
-        // avoid issues with the mapping page fault handler needing mutable access
-        // to `self.tree` via `insert()`.
-        let (pf_mapping, start) = {
-            let tree = self.tree.lock_read();
-            let addr = vaddr.pfn();
-            let cursor = tree.find(&addr);
-            let node = cursor.get().ok_or(SvsmError::Mem)?;
-            let (start, end) = node.range();
-            if vaddr < start || vaddr >= end {
-                return Err(SvsmError::Mem);
-            }
-            (node.get_mapping_clone(), start)
-        };
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, _write: bool) -> Result<(), SvsmError> {
+        // Get the mapping that contains the faulting address and check if the
+        // fault happened on a mapped part of the range.
 
-        let resolution = pf_mapping
-            .get_mut()
-            .handle_page_fault(self, vaddr - start, write)?;
-        // The handler has resolved the page fault by allocating a new page.
-        // Update the page table accordingly.
-        let vaddr = vaddr.page_align();
-        let page_size = pf_mapping.get().page_size();
-        let shared = pf_mapping.get().shared();
-        let mut pgtbl_parts = self.pgtbl_parts.lock_write();
-
-        let (rstart, _) = self.virt_range();
-        let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
-        match page_size {
-            PageSize::Regular => {
-                pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?
-            }
-            PageSize::Huge => {
-                pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?
-            }
+        let tree = self.tree.lock_read();
+        let pfn = vaddr.pfn();
+        let cursor = tree.upper_bound(Bound::Included(&pfn));
+        let node = cursor.get().ok_or(SvsmError::Mem)?;
+        let (start, end) = node.range();
+        if vaddr < start || vaddr >= end {
+            return Err(SvsmError::Mem);
         }
+
         Ok(())
     }
 }
