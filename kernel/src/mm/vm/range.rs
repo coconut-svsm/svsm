@@ -120,6 +120,16 @@ impl VMR {
         }
     }
 
+    pub fn populate_addr(&self, pgtbl: &mut PageTableRef, vaddr: VirtAddr) {
+        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
+        assert!(vaddr >= start && vaddr < end);
+
+        let idx = vaddr.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
+        let parts = self.pgtbl_parts.lock_read();
+        pgtbl.populate_pgtbl_part(&parts[idx]);
+    }
+
     /// Initialize this [`VMR`] by checking the `start` and `end` values and
     /// allocating the [`PageTablePart`]s required for the mappings.
     ///
