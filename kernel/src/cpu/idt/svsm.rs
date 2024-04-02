@@ -20,6 +20,9 @@ use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use core::arch::global_asm;
 
+use crate::syscall::*;
+use syscall::*;
+
 extern "C" {
     fn asm_entry_de();
     fn asm_entry_db();
@@ -166,7 +169,16 @@ extern "C" fn ex_handler_vmm_communication(ctx: &mut X86ExceptionContext) {
 // System Call SoftIRQ handler
 #[no_mangle]
 extern "C" fn ex_handler_system_call(ctx: &mut X86ExceptionContext) {
-    ctx.regs.rax = !0;
+    let Ok(input) = TryInto::<u64>::try_into(ctx.regs.rax) else {
+        ctx.regs.rax = !0;
+        return;
+    };
+
+    ctx.regs.rax = match input {
+        SYS_HELLO => sys_hello(),
+        SYS_EXIT => sys_exit(),
+        _ => !0,
+    };
 }
 
 #[no_mangle]
