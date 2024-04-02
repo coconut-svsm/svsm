@@ -11,6 +11,7 @@ extern crate alloc;
 use super::types::*;
 use super::Elf64AddrRange;
 use super::Elf64File;
+use super::Elf64FileRange;
 use super::Elf64PhdrFlags;
 use super::ElfError;
 use alloc::vec::Vec;
@@ -146,6 +147,8 @@ pub struct Elf64ImageLoadVaddrAllocInfo {
 pub struct Elf64ImageLoadSegment<'a> {
     /// The virtual address (vaddr) range covering by this segment
     pub vaddr_range: Elf64AddrRange,
+    /// The range in the ELF file covering this segment
+    pub file_range: Elf64FileRange,
     /// The contents of the segment in the ELF file
     pub file_contents: &'a [u8],
     /// Flags associated with this segment
@@ -193,6 +196,7 @@ impl<'a> Iterator for Elf64ImageLoadSegmentIterator<'a> {
 
         Some(Elf64ImageLoadSegment {
             vaddr_range,
+            file_range,
             file_contents,
             flags: phdr.p_flags,
         })
