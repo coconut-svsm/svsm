@@ -212,6 +212,11 @@ impl VirtAddr {
         Self(sign_extend(addr))
     }
 
+    /// Returns the index into page-table pages of given levels.
+    pub const fn to_pgtbl_idx<const L: usize>(&self) -> usize {
+        (self.0 >> (12 + L * 9)) & 0x1ffusize
+    }
+
     #[inline]
     pub fn as_ptr<T>(&self) -> *const T {
         self.0 as *const T

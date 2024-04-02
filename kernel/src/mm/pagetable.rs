@@ -280,7 +280,8 @@ impl PageTable {
     }
 
     pub fn index<const L: usize>(vaddr: VirtAddr) -> usize {
-        vaddr.bits() >> (12 + L * 9) & 0x1ff
+        vaddr.to_pgtbl_idx::<L>()
+        //vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
     fn entry_to_pagetable(entry: PTEntry) -> Option<&'static mut PTPage> {
