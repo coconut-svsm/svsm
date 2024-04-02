@@ -6,7 +6,7 @@
 
 use super::super::control_regs::read_cr2;
 use super::super::extable::handle_exception_table;
-use super::super::percpu::this_cpu;
+use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
@@ -18,7 +18,8 @@ use super::common::{
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
-use crate::task::terminate;
+use crate::task::{is_task_fault, terminate};
+
 use core::arch::global_asm;
 
 use crate::syscall::*;
@@ -156,11 +157,22 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext) {
     let cr2 = read_cr2();
     let rip = ctxt.frame.rip;
     let err = ctxt.error_code;
+    let vaddr = VirtAddr::from(cr2);
 
     if user_mode(ctxt) {
-        log::error!("Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
-                rip, cr2, err);
-        terminate();
+        let kill_task: bool = if is_task_fault(vaddr) {
+            current_task()
+                .fault(vaddr, (err & PF_ERROR_WRITE) != 0)
+                .is_err()
+        } else {
+            true
+        };
+
+        if kill_task {
+            log::error!("Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
+                    rip, cr2, err);
+            terminate();
+        }
     } else if this_cpu()
         .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
         .is_err()

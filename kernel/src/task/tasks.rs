@@ -306,6 +306,18 @@ impl Task {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
     }
 
+    pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.vm_user_range.is_some() {
+            let vmr = self.vm_user_range.as_ref().unwrap();
+            let mut pgtbl = self.page_table.lock();
+            vmr.populate_addr(&mut pgtbl, vaddr);
+            vmr.handle_page_fault(vaddr, write)?;
+            Ok(())
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
+
     fn allocate_stack_common() -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
@@ -458,6 +470,11 @@ impl Task {
         self.vm_user_range.as_ref().unwrap().remove(addr)?;
         Ok(())
     }
+}
+
+pub fn is_task_fault(vaddr: VirtAddr) -> bool {
+    (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
+        || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
 }
 
 extern "C" fn task_exit() {

@@ -14,8 +14,8 @@ pub use schedule::{
 };
 
 pub use tasks::{
-    Task, TaskContext, TaskError, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState,
-    INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
+    is_task_fault, Task, TaskContext, TaskError, TaskListAdapter, TaskPointer, TaskRunListAdapter,
+    TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
 };
 
 pub use waiting::WaitQueue;
