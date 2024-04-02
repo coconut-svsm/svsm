@@ -47,6 +47,10 @@ pub struct X86ExceptionContext {
     pub frame: X86InterruptFrame,
 }
 
+pub fn user_mode(ctxt: &X86ExceptionContext) -> bool {
+    (ctxt.frame.cs & 3) == 3
+}
+
 #[derive(Copy, Clone, Default, Debug)]
 #[repr(C, packed)]
 pub struct IdtEntry {
