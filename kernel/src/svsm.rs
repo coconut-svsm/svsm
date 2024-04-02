@@ -47,6 +47,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
+use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
@@ -454,6 +455,10 @@ pub extern "C" fn svsm_main() {
 
     #[cfg(test)]
     crate::test_main();
+
+    if exec_user("/init").is_err() {
+        log::info!("Failed to launch /init");
+    }
 
     request_loop();
 
