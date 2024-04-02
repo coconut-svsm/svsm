@@ -8,6 +8,8 @@ use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use core::fmt;
 use core::ops;
 
+use core::slice;
+
 // The backing type to represent an address;
 type InnerAddr = usize;
 
@@ -250,6 +252,24 @@ impl VirtAddr {
 
     pub const fn const_add(&self, offset: usize) -> Self {
         VirtAddr::new(self.0 + offset)
+    }
+
+    /// Converts the `VirtAddr` to a slice of a given type
+    ///
+    /// # Arguments:
+    ///
+    /// * `len` - Number of elements of type `T` in the slice
+    ///
+    /// # Returns
+    ///
+    /// Slice with `len` elements of type `T`
+    ///
+    /// # Safety
+    ///
+    /// All Safety requirements from [`core::slice::from_raw_parts`] for the
+    /// data pointed to by the `VirtAddr` apply here as well.
+    pub unsafe fn to_slice<T>(&self, len: usize) -> &[T] {
+        slice::from_raw_parts::<T>(self.as_ptr::<T>(), len)
     }
 }
 
