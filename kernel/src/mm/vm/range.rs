@@ -91,8 +91,9 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn alloc_page_tables(&self) -> Result<(), SvsmError> {
-        let count = ((self.end_pfn - self.start_pfn) << PAGE_SHIFT) / VMR_GRANULE;
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
+        let count = end.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
         let mut vec = self.pgtbl_parts.lock_write();
 
         for idx in 0..count {
