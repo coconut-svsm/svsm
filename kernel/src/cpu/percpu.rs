@@ -712,6 +712,10 @@ impl PerCpu {
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue.lock_read().current_task()
     }
+
+    pub fn set_tss_rsp0(&mut self, addr: VirtAddr) {
+        self.tss.stacks[0] = addr;
+    }
 }
 
 pub fn this_cpu_unsafe() -> *mut PerCpuUnsafe {

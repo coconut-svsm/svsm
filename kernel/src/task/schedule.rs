@@ -315,6 +315,8 @@ pub fn schedule() {
             this_cpu().populate_page_table(&mut pt);
         }
 
+        this_cpu_mut().set_tss_rsp0(next.stack_bounds.end());
+
         // Get task-pointers, consuming the Arcs and release their reference
         unsafe {
             let a = task_pointer(current);

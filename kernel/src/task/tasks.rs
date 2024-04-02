@@ -113,7 +113,7 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
-    stack_bounds: MemoryRegion<VirtAddr>,
+    pub stack_bounds: MemoryRegion<VirtAddr>,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
