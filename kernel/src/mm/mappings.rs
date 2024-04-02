@@ -4,12 +4,43 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
-use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc};
+use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc, VMR};
+
+use core::ops::Deref;
 
 extern crate alloc;
 use alloc::sync::Arc;
+
+#[derive(Debug)]
+pub struct VMMappingGuard<'a> {
+    vmr: &'a VMR,
+    start: VirtAddr,
+}
+
+impl<'a> VMMappingGuard<'a> {
+    pub fn new(vmr: &'a VMR, start: VirtAddr) -> Self {
+        VMMappingGuard { vmr, start }
+    }
+}
+
+impl Deref for VMMappingGuard<'_> {
+    type Target = VirtAddr;
+
+    fn deref(&self) -> &VirtAddr {
+        &self.start
+    }
+}
+
+impl Drop for VMMappingGuard<'_> {
+    fn drop(&mut self) {
+        self.vmr
+            .remove(self.start)
+            .expect("Fatal error: Failed to unmap region from MappingGuard");
+    }
+}
 
 pub fn create_file_mapping(
     file: &FileHandle,

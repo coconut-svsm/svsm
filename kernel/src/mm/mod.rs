@@ -25,3 +25,5 @@ pub use ptguards::*;
 pub use pagetable::PageTablePart;
 
 pub use alloc::{allocate_file_page, allocate_file_page_ref, PageRef};
+
+pub use mappings::VMMappingGuard;
