@@ -58,9 +58,18 @@ asm_entry_\name:
 	jmp	default_return
 .endm
 
+.globl default_return
 default_return:
+	testb	$3, 18*8(%rsp) // Check CS in exception frame
+	jnz return_user
 	pop_regs
+default_iret:
 	iretq
+
+return_user:
+	// Put user-mode specific return code here
+	pop_regs
+	jmp default_iret
 
 // #DE Divide-by-Zero-Error Exception (Vector 0)
 default_entry_no_ist	name=de		handler=panic			error_code=0	vector=0
