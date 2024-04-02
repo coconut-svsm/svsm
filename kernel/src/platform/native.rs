@@ -4,7 +4,8 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use crate::platform::SvsmPlatform;
+use crate::cpu::cpuid::CpuidResult;
+use crate::platform::{PageEncryptionMasks, SvsmPlatform};
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {}
@@ -24,4 +25,14 @@ impl Default for NativePlatform {
 impl SvsmPlatform for NativePlatform {
     fn env_setup(&mut self) {}
     fn env_setup_late(&mut self) {}
+    fn get_page_encryption_masks(&self, _vtom: usize) -> PageEncryptionMasks {
+        // Find physical address size.
+        let res = CpuidResult::get(0x80000008, 0);
+        PageEncryptionMasks {
+            private_pte_mask: 0,
+            shared_pte_mask: 0,
+            addr_mask_width: 64,
+            phys_addr_sizes: res.eax,
+        }
+    }
 }

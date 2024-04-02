@@ -12,6 +12,14 @@ use bootlib::platform::SvsmPlatformType;
 pub mod native;
 pub mod snp;
 
+#[derive(Clone, Copy, Debug)]
+pub struct PageEncryptionMasks {
+    pub private_pte_mask: usize,
+    pub shared_pte_mask: usize,
+    pub addr_mask_width: u32,
+    pub phys_addr_sizes: u32,
+}
+
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform {
@@ -21,6 +29,9 @@ pub trait SvsmPlatform {
     /// Performs initialization of the platform runtime environment after
     /// console logging has been initialized.
     fn env_setup_late(&mut self);
+
+    /// Determines the paging encryption masks for the current architecture.
+    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
 }
 
 //FIXME - remove Copy trait

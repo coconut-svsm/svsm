@@ -99,7 +99,7 @@ fn setup_env(
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(launch_info.vtom);
+    paging_init_early(platform, launch_info.vtom);
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
