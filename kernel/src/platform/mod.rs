@@ -5,6 +5,7 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::cpu::percpu::PerCpu;
+use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
 
@@ -36,6 +37,9 @@ pub trait SvsmPlatform {
 
     /// Establishes state required for guest/host communication.
     fn setup_guest_host_comm(&mut self, cpu: &mut PerCpu, is_bsp: bool);
+
+    /// Obtains a console I/O port reference.
+    fn get_console_io_port(&self) -> &'static dyn IOPort;
 }
 
 //FIXME - remove Copy trait

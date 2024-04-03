@@ -9,6 +9,8 @@ use crate::io::IOPort;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::request_termination_msr;
 
+use core::arch::asm;
+
 #[derive(Clone, Copy, Debug)]
 pub struct SVSMIOPort {}
 
@@ -47,5 +49,56 @@ impl IOPort for SVSMIOPort {
             Ok(v) => (v & 0xffff) as u16,
             Err(_e) => request_termination_msr(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NativeIOPort {}
+
+impl NativeIOPort {
+    pub const fn new() -> Self {
+        NativeIOPort {}
+    }
+}
+
+impl IOPort for NativeIOPort {
+    fn outb(&self, port: u16, value: u8) {
+        unsafe {
+            asm!("out %al, %dx",
+                 in("dx") port,
+                 in("al") value,
+                 options(att_syntax));
+        }
+    }
+
+    fn inb(&self, port: u16) -> u8 {
+        let mut ret: u8;
+        unsafe {
+            asm!("in %dx, %al",
+                 in("dx") port,
+                 out("al") ret,
+                 options(att_syntax));
+        }
+        ret
+    }
+
+    fn outw(&self, port: u16, value: u16) {
+        unsafe {
+            asm!("out %ax, %dx",
+                 in("dx") port,
+                 in("ax") value,
+                 options(att_syntax));
+        }
+    }
+
+    fn inw(&self, port: u16) -> u16 {
+        let mut ret: u16;
+        unsafe {
+            asm!("in %dx, %al",
+                 in("dx") port,
+                 out("ax") ret,
+                 options(att_syntax));
+        }
+        ret
     }
 }

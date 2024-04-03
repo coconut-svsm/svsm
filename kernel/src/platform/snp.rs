@@ -6,10 +6,14 @@
 
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::percpu::PerCpu;
+use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, SvsmPlatform};
 use crate::sev::msr_protocol::verify_ghcb_version;
 use crate::sev::status::vtom_enabled;
 use crate::sev::{sev_status_init, sev_status_verify};
+use crate::svsm_console::SVSMIOPort;
+
+static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 
 #[derive(Clone, Copy, Debug)]
 pub struct SnpPlatform {}
@@ -72,5 +76,9 @@ impl SvsmPlatform for SnpPlatform {
             }
         });
         cpu.register_ghcb().expect("Failed to register GHCB");
+    }
+
+    fn get_console_io_port(&self) -> &'static dyn IOPort {
+        &CONSOLE_IO
     }
 }

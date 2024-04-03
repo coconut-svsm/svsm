@@ -6,7 +6,11 @@
 
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
+use crate::platform::IOPort;
 use crate::platform::{PageEncryptionMasks, SvsmPlatform};
+use crate::svsm_console::NativeIOPort;
+
+static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {}
@@ -38,4 +42,8 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn setup_guest_host_comm(&mut self, _cpu: &mut PerCpu, _is_bsp: bool) {}
+
+    fn get_console_io_port(&self) -> &'static dyn IOPort {
+        &CONSOLE_IO
+    }
 }

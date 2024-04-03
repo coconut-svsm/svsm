@@ -39,7 +39,6 @@ use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
 use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::{pvalidate_range, PvalidateOp};
-use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
 use svsm::utils::{halt, is_aligned, MemoryRegion};
@@ -77,7 +76,6 @@ fn shutdown_percpu() {
         .expect("Failed to shut down percpu data (including GHCB)");
 }
 
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 fn setup_env(
@@ -107,7 +105,7 @@ fn setup_env(
 
     CONSOLE_SERIAL
         .init(&SerialPort {
-            driver: &CONSOLE_IO,
+            driver: platform.get_console_io_port(),
             port: config.debug_serial_port(),
         })
         .expect("console serial output already configured");
@@ -169,7 +167,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
             .expect("Invalid IGVM parameters");
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
-        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+        SvsmConfig::FirmwareConfig(FwCfg::new(platform.get_console_io_port()))
     };
 
     setup_env(&config, platform, launch_info);
