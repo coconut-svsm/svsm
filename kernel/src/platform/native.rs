@@ -5,6 +5,7 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::percpu::PerCpu;
 use crate::platform::{PageEncryptionMasks, SvsmPlatform};
 
 #[derive(Clone, Copy, Debug)]
@@ -35,4 +36,6 @@ impl SvsmPlatform for NativePlatform {
             phys_addr_sizes: res.eax,
         }
     }
+
+    fn setup_guest_host_comm(&mut self, _cpu: &mut PerCpu, _is_bsp: bool) {}
 }

@@ -38,7 +38,6 @@ use svsm::mm::validate::{
 use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
 use svsm::sev::ghcb::PageStateChangeOp;
-use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
@@ -61,17 +60,15 @@ fn setup_stage2_allocator() {
     root_mem_init(pstart, vstart, nr_pages);
 }
 
-fn init_percpu() {
+fn init_percpu(platform: &mut dyn SvsmPlatform) {
     let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
-
     unsafe {
         bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
     }
     bsp_percpu
         .map_self_stage2()
         .expect("Failed to map per-cpu area");
-    bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
-    bsp_percpu.register_ghcb().expect("Failed to register GHCB");
+    platform.setup_guest_host_comm(&mut bsp_percpu, true);
 }
 
 fn shutdown_percpu() {
@@ -101,11 +98,9 @@ fn setup_env(
     register_cpuid_table(unsafe { &CPUID_PAGE });
     paging_init_early(platform, launch_info.vtom);
 
-    // Bring up the GCHB for use from the SVSMIOPort console.
-    verify_ghcb_version();
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
-    init_percpu();
+    init_percpu(platform);
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
     early_idt_init();

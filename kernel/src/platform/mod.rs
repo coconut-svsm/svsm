@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::cpu::percpu::PerCpu;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
 
@@ -32,6 +33,9 @@ pub trait SvsmPlatform {
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
+
+    /// Establishes state required for guest/host communication.
+    fn setup_guest_host_comm(&mut self, cpu: &mut PerCpu, is_bsp: bool);
 }
 
 //FIXME - remove Copy trait

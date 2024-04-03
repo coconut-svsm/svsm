@@ -5,7 +5,9 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::cpu::cpuid::cpuid_table;
+use crate::cpu::percpu::PerCpu;
 use crate::platform::{PageEncryptionMasks, SvsmPlatform};
+use crate::sev::msr_protocol::verify_ghcb_version;
 use crate::sev::status::vtom_enabled;
 use crate::sev::{sev_status_init, sev_status_verify};
 
@@ -55,5 +57,20 @@ impl SvsmPlatform for SnpPlatform {
                 phys_addr_sizes: res.eax,
             }
         }
+    }
+
+    fn setup_guest_host_comm(&mut self, cpu: &mut PerCpu, is_bsp: bool) {
+        if is_bsp {
+            verify_ghcb_version();
+        }
+
+        cpu.setup_ghcb().unwrap_or_else(|_| {
+            if is_bsp {
+                panic!("Failed to setup BSP GHCB");
+            } else {
+                panic!("Failed to setup AP GHCB");
+            }
+        });
+        cpu.register_ghcb().expect("Failed to register GHCB");
     }
 }
