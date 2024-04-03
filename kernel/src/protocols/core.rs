@@ -44,14 +44,12 @@ struct PValidateRequest {
     resv: u32,
 }
 
-fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), SvsmReqError> {
+fn core_create_vcpu_error_restore(vaddr: VirtAddr) {
     if let Err(err) = rmp_clear_guest_vmsa(vaddr) {
         log::error!("Failed to restore page permissions: {:#?}", err);
     }
     // In case mappings have been changed
     flush_tlb_global_sync();
-
-    Ok(())
 }
 
 // VMSA validity checks according to SVSM spec
@@ -108,7 +106,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
         PERCPU_VMSAS.unregister(paddr, false).unwrap();
-        core_create_vcpu_error_restore(vaddr)?;
+        core_create_vcpu_error_restore(vaddr);
         return Err(SvsmReqError::invalid_parameter());
     }
 
