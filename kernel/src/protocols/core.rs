@@ -296,6 +296,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         // down the #NPF loops.
         //
         if writable_phys_addr(paddr) {
+            // FIXME: This check leaves a window open for the attack described
+            // above. Remove the check once OVMF and Linux have been fixed and
+            // no longer try to pvalidate MMIO memory.
             zero_mem_region(vaddr, vaddr + page_size_bytes);
         } else {
             log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
