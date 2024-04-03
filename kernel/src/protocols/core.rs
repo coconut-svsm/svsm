@@ -81,7 +81,16 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     // Check CAA address
-    if !valid_phys_address(pcaa) || !pcaa.is_aligned(8) {
+    if !valid_phys_address(pcaa) || !pcaa.is_page_aligned() {
+        return Err(SvsmReqError::invalid_address());
+    }
+
+    // Check whether VMSA page and CAA region overlap
+    //
+    // Since both areas are 4kb aligned and 4kb in size, and correct alignment
+    // was already checked, it is enough here to check whether VMSA and CAA
+    // page have the same starting address.
+    if paddr == pcaa {
         return Err(SvsmReqError::invalid_address());
     }
 
