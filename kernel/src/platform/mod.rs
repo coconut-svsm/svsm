@@ -4,10 +4,14 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::percpu::PerCpu;
+use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
 
 use bootlib::platform::SvsmPlatformType;
 
@@ -40,6 +44,19 @@ pub trait SvsmPlatform {
 
     /// Obtains a console I/O port reference.
     fn get_console_io_port(&self) -> &'static dyn IOPort;
+
+    /// Performs a page state change between private and shared states.
+    fn page_state_change(
+        &self,
+        start: PhysAddr,
+        end: PhysAddr,
+        size: PageSize,
+        make_private: bool,
+    ) -> Result<(), SvsmError>;
+
+    /// Marks a page as valid or invalid as a private page.
+    fn pvalidate_range(&self, region: MemoryRegion<VirtAddr>, valid: bool)
+        -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

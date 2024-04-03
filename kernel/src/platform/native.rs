@@ -6,9 +6,10 @@
 
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
-use crate::platform::IOPort;
-use crate::platform::{PageEncryptionMasks, SvsmPlatform};
+use crate::platform::{IOPort, PageEncryptionMasks, PhysAddr, SvsmError, SvsmPlatform, VirtAddr};
 use crate::svsm_console::NativeIOPort;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
 
 static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
 
@@ -45,5 +46,23 @@ impl SvsmPlatform for NativePlatform {
 
     fn get_console_io_port(&self) -> &'static dyn IOPort {
         &CONSOLE_IO
+    }
+
+    fn page_state_change(
+        &self,
+        _start: PhysAddr,
+        _end: PhysAddr,
+        _size: PageSize,
+        _make_private: bool,
+    ) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    fn pvalidate_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _valid: bool,
+    ) -> Result<(), SvsmError> {
+        Ok(())
     }
 }
