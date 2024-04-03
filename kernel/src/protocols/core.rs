@@ -44,12 +44,22 @@ struct PValidateRequest {
     resv: u32,
 }
 
-fn core_create_vcpu_error_restore(vaddr: VirtAddr) {
-    if let Err(err) = rmp_clear_guest_vmsa(vaddr) {
-        log::error!("Failed to restore page permissions: {:#?}", err);
+fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
+    if let Some(v) = vaddr {
+        if let Err(err) = rmp_clear_guest_vmsa(v) {
+            log::error!("Failed to restore page permissions: {:#?}", err);
+        }
     }
     // In case mappings have been changed
     flush_tlb_global_sync();
+
+    if let Some(p) = paddr {
+        // SAFETY: This can only fail if another CPU unregisters our
+        // unused VMSA. This is not possible, since unregistration of
+        // an unused VMSA only happens in the error path of core_create_vcpu(),
+        // with a physical address that only this CPU managed to register.
+        PERCPU_VMSAS.unregister(p, false).unwrap();
+    }
 }
 
 // VMSA validity checks according to SVSM spec
@@ -89,11 +99,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Make sure the guest can't make modifications to the VMSA page
     rmp_set_guest_vmsa(vaddr).map_err(|err| {
-        // SAFETY: this can only fail if another CPU unregisters our
-        // unused VMSA. This is not possible, since unregistration of
-        // an unused VMSA only happens in the error path for this function,
-        // with a physical address that only this CPU managed to register.
-        PERCPU_VMSAS.unregister(paddr, false).unwrap();
+        core_create_vcpu_error_restore(Some(paddr), None);
         err
     })?;
 
@@ -105,8 +111,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
-        PERCPU_VMSAS.unregister(paddr, false).unwrap();
-        core_create_vcpu_error_restore(vaddr);
+        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
         return Err(SvsmReqError::invalid_parameter());
     }
 
