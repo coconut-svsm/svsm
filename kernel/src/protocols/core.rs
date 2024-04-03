@@ -98,7 +98,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let vaddr = mapping_guard.virt_addr();
 
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_set_guest_vmsa(vaddr).map_err(|err| {
+    rmp_revoke_guest_access(vaddr, PageSize::Regular).map_err(|err| {
         core_create_vcpu_error_restore(Some(paddr), None);
         err
     })?;
@@ -114,6 +114,12 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
         return Err(SvsmReqError::invalid_parameter());
     }
+
+    // Set the VMSA bit
+    rmp_set_guest_vmsa(vaddr).map_err(|err| {
+        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
+        err
+    })?;
 
     assert!(PERCPU_VMSAS.set_used(paddr) == Some(apic_id));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
