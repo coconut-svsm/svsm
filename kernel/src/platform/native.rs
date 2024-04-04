@@ -31,6 +31,15 @@ impl Default for NativePlatform {
 impl SvsmPlatform for NativePlatform {
     fn env_setup(&mut self) {}
     fn env_setup_late(&mut self) {}
+
+    fn setup_percpu(&self, _cpu: &mut PerCpu) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    fn setup_percpu_current(&self, _cpu: &mut PerCpu) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
     fn get_page_encryption_masks(&self, _vtom: usize) -> PageEncryptionMasks {
         // Find physical address size.
         let res = CpuidResult::get(0x80000008, 0);

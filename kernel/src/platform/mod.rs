@@ -11,12 +11,15 @@ use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
 use crate::types::PageSize;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
 use bootlib::platform::SvsmPlatformType;
 
 pub mod native;
 pub mod snp;
+
+pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
 pub struct PageEncryptionMasks {
@@ -35,6 +38,12 @@ pub trait SvsmPlatform {
     /// Performs initialization of the platform runtime environment after
     /// console logging has been initialized.
     fn env_setup_late(&mut self);
+
+    /// Completes initialization of a per-CPU object during construction.
+    fn setup_percpu(&self, cpu: &mut PerCpu) -> Result<(), SvsmError>;
+
+    /// Completes initialization of a per-CPU object on the target CPU.
+    fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError>;
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
@@ -71,6 +80,13 @@ impl SvsmPlatformCell {
         match platform_type {
             SvsmPlatformType::Native => SvsmPlatformCell::Native(NativePlatform::new()),
             SvsmPlatformType::Snp => SvsmPlatformCell::Snp(SnpPlatform::new()),
+        }
+    }
+
+    pub fn as_dyn_ref(&self) -> &dyn SvsmPlatform {
+        match self {
+            SvsmPlatformCell::Native(platform) => platform,
+            SvsmPlatformCell::Snp(platform) => platform,
         }
     }
 

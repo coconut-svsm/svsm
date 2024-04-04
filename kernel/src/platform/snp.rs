@@ -43,6 +43,15 @@ impl SvsmPlatform for SnpPlatform {
         sev_status_verify();
     }
 
+    fn setup_percpu(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
+        // Setup GHCB
+        cpu.setup_ghcb()
+    }
+
+    fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
+        cpu.register_ghcb()
+    }
+
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {
         // Find physical address size.
         let res =
