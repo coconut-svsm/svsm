@@ -54,6 +54,33 @@ pub enum Commands {
         #[arg(short, long)]
         bare: bool,
     },
+    /// Measure the input file and generate a new output file containing a
+    /// signature suitable for the target platform. For SEV-SNP this generates
+    /// an IGVM_VHT_SNP_ID_BLOCK directive in the output file.
+    Sign {
+        /// Output filename of the signed IGVM file that will be created.
+        #[arg(long)]
+        output: String,
+
+        /// Filename of the private key that is used to sign the contents of
+        /// the ID block. For SEV-SNP platforms, this should be an ECDSA P-384
+        /// key. You can create a key using:
+        ///
+        /// $ openssl ecparam -name secp384r1 -genkey -noout -out
+        #[arg(long)]
+        id_key: String,
+
+        /// Filename of the author private key that is used to sign the public
+        /// part of the id_key. For SEV-SNP platforms, this should be an ECDSA
+        /// P-384 key. You can create a key using:
+        ///
+        /// $ openssl ecparam -name secp384r1 -genkey -noout -out
+        ///
+        /// The author key is option. See the SEV-SNP documentation for more
+        /// information.
+        #[arg(long)]
+        author_key: Option<String>,
+    },
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
