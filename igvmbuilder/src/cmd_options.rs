@@ -43,6 +43,10 @@ pub struct CmdOptions {
     /// Sort the IGVM Page directives by GPA from lowest to highest
     #[arg(long, default_value_t = false)]
     pub sort: bool,
+
+    /// A hex value containing the guest policy to apply. For example: 0x30000
+    #[arg(long)]
+    pub policy: Option<String>,
 }
 
 impl CmdOptions {
