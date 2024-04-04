@@ -19,7 +19,7 @@ pub enum PageType {
 }
 
 #[repr(C, packed)]
-#[derive(AsBytes, Debug)]
+#[derive(AsBytes, Debug, Copy, Clone)]
 pub struct PageInfo {
     digest_cur: [u8; 48],
     contents: [u8; 48],
