@@ -96,6 +96,8 @@ enum GHCBExitCode {
     IOIO = 0x7b,
     MSR = 0x7c,
     RDTSCP = 0x87,
+    MMIO_READ = 0x80000001,
+    MMIO_WRITE = 0x80000002,
     SNP_PSC = 0x8000_0010,
     GUEST_REQUEST = 0x8000_0011,
     GUEST_EXT_REQUEST = 0x8000_0012,
@@ -435,6 +437,28 @@ impl GHCB {
         Ok(())
     }
 
+    fn read_buffer_as<T>(&self, offset: usize) -> Result<T, GhcbError>
+    where
+        T: Sized + Copy,
+    {
+        offset
+            .checked_add(mem::size_of::<T>())
+            .filter(|end| *end <= GHCB_BUFFER_SIZE)
+            .ok_or(GhcbError::InvalidOffset)?;
+
+        // SAFETY: we have verified that offset is within bounds and does not
+        // overflow
+        let src = unsafe { self.buffer.as_ptr().add(offset) };
+
+        if src.align_offset(mem::align_of::<T>()) != 0 {
+            return Err(GhcbError::InvalidOffset);
+        }
+
+        // SAFETY: we have verified the pointer is aligned, as well as within
+        // bounds.
+        unsafe { Ok(src.cast::<T>().read_volatile()) }
+    }
+
     fn write_buffer<T>(&self, data: &T, offset: usize) -> Result<(), GhcbError>
     where
         T: Copy,
@@ -558,6 +582,33 @@ impl GHCB {
         let exit_info_2: u64 = vmsa_gpa.into();
         self.set_rax_valid(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
+        Ok(())
+    }
+
+    pub fn mmio_read<T: Sized + Copy>(&self, pa: PhysAddr) -> Result<T, SvsmError> {
+        self.clear();
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(
+            GHCBExitCode::MMIO_READ,
+            u64::from(pa),
+            mem::size_of::<T>() as u64,
+        )?;
+        Ok(self.read_buffer_as::<T>(0)?)
+    }
+
+    pub fn mmio_write<T: Copy + Sized>(&self, pa: PhysAddr, value: &T) -> Result<(), SvsmError> {
+        self.clear();
+        self.write_buffer(value, 0)?;
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(
+            GHCBExitCode::MMIO_WRITE,
+            u64::from(pa),
+            mem::size_of::<T>() as u64,
+        )?;
         Ok(())
     }
 
