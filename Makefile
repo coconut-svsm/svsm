@@ -97,7 +97,7 @@ bin/meta.bin: utils/gen_meta utils/print-meta
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
-	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin stage2
+	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} --no-default-features --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
 bin/svsm-kernel.elf: bin
