@@ -43,12 +43,15 @@ use cpuarch::vmsa::{VMSASegment, VMSA};
 #[derive(Debug)]
 struct PerCpuInfo {
     apic_id: u32,
-    addr: VirtAddr,
+    cpu_shared: &'static PerCpuShared,
 }
 
 impl PerCpuInfo {
-    const fn new(apic_id: u32, addr: VirtAddr) -> Self {
-        Self { apic_id, addr }
+    const fn new(apic_id: u32, cpu_shared: &'static PerCpuShared) -> Self {
+        Self {
+            apic_id,
+            cpu_shared,
+        }
     }
 }
 
@@ -86,10 +89,9 @@ impl PerCpuAreas {
         // going on when casting via as_ref(). This only happens via
         // Self::push(), which is intentionally unsafe and private.
         let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.iter().find(|info| info.apic_id == apic_id).map(|info| {
-            let ptr = info.addr.as_ptr::<PerCpuShared>();
-            unsafe { ptr.as_ref().unwrap() }
-        })
+        ptr.iter()
+            .find(|info| info.apic_id == apic_id)
+            .map(|info| info.cpu_shared)
     }
 }
 
@@ -321,7 +323,7 @@ impl PerCpu {
 
             (*percpu) = PerCpu::new(apic_id, percpu_shared);
 
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, shared_vaddr));
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &*percpu_shared));
             Ok(percpu)
         }
     }
