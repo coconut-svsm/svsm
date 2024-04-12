@@ -5,16 +5,15 @@
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
 use std::error::Error;
-use std::fs;
 
 use igvm::snp_defs::SevVmsa;
-use igvm::{IgvmDirectiveHeader, IgvmFile, IgvmPlatformHeader};
-use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, PAGE_SIZE_4K};
+use igvm::{IgvmDirectiveHeader, IgvmFile};
+use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use zerocopy::AsBytes;
 
-use crate::cmd_options::CmdOptions;
 use crate::page_info::PageInfo;
 
+#[derive(Copy, Clone)]
 pub enum IgvmMeasureError {
     InvalidVmsaCount,
     InvalidVmsaGpa,
@@ -95,7 +94,7 @@ impl std::fmt::Debug for IgvmMeasureError {
 }
 impl Error for IgvmMeasureError {}
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum SnpPageType {
     None,
     Normal,
@@ -124,8 +123,11 @@ impl std::fmt::Display for SnpPageType {
     }
 }
 
-pub struct IgvmMeasure<'a> {
-    options: &'a CmdOptions,
+#[derive(Debug)]
+pub struct IgvmMeasure {
+    show_progress: bool,
+    check_kvm: bool,
+    native_zero: bool,
     digest: [u8; 48],
     last_page_type: SnpPageType,
     last_gpa: u64,
@@ -138,33 +140,29 @@ pub struct IgvmMeasure<'a> {
 
 const PAGE_SIZE_2M: u64 = 2 * 1024 * 1024;
 
-impl<'a> IgvmMeasure<'a> {
-    pub fn new(options: &'a CmdOptions) -> Self {
-        Self {
-            options,
+impl IgvmMeasure {
+    pub fn measure(
+        show_progress: bool,
+        check_kvm: bool,
+        native_zero: bool,
+        compatibility_mask: u32,
+        igvm: &IgvmFile,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mut result = Self {
+            show_progress,
+            check_kvm,
+            native_zero,
             digest: [0u8; 48],
             last_page_type: SnpPageType::None,
             last_gpa: 0,
             last_next_gpa: 0,
             last_len: 0,
-            compatibility_mask: 0,
+            compatibility_mask,
             vmsa_count: 0,
             id_block_ld: None,
-        }
-    }
-
-    fn find_compatibility_mask(&mut self, igvm: &IgvmFile) -> Result<(), Box<dyn Error>> {
-        for platform in igvm.platforms() {
-            let IgvmPlatformHeader::SupportedPlatform(platform) = platform;
-            match platform.platform_type {
-                IgvmPlatformType::SEV_SNP => {
-                    self.compatibility_mask = platform.compatibility_mask;
-                    return Ok(());
-                }
-                _ => continue,
-            }
-        }
-        Err("IGVM file is not compatible with the specified platform.".into())
+        };
+        result.do_measure(igvm)?;
+        Ok(result)
     }
 
     pub fn check_id_block(&self) -> Result<(), IgvmMeasureError> {
@@ -176,15 +174,11 @@ impl<'a> IgvmMeasure<'a> {
         Ok(())
     }
 
-    pub fn measure(&mut self) -> Result<[u8; 48], Box<dyn Error>> {
-        let igvm_buffer = fs::read(&self.options.igvm_file).map_err(|e| {
-            eprintln!("Failed to open firmware file {}", self.options.igvm_file);
-            e
-        })?;
-        let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
+    pub fn digest(&self) -> [u8; 48] {
+        self.digest
+    }
 
-        self.find_compatibility_mask(&igvm)?;
-
+    fn do_measure(&mut self, igvm: &IgvmFile) -> Result<(), Box<dyn Error>> {
         for directive in igvm.directives() {
             match directive {
                 IgvmDirectiveHeader::PageData {
@@ -200,7 +194,7 @@ impl<'a> IgvmMeasure<'a> {
                 }
                 IgvmDirectiveHeader::ParameterInsert(param) => {
                     if (param.compatibility_mask & self.compatibility_mask) != 0 {
-                        if self.options.check_kvm && (self.vmsa_count > 0) {
+                        if self.check_kvm && (self.vmsa_count > 0) {
                             return Err(IgvmMeasureError::InvalidVmsaOrder.into());
                         }
                         self.measure_page(
@@ -232,12 +226,11 @@ impl<'a> IgvmMeasure<'a> {
             }
         }
         self.log_page(SnpPageType::None, 0, 0);
-
-        Ok(self.digest)
+        Ok(())
     }
 
     fn log_page(&mut self, page_type: SnpPageType, gpa: u64, len: u64) {
-        if self.options.verbose {
+        if self.show_progress {
             if (page_type != self.last_page_type) || (gpa != self.last_next_gpa) {
                 if self.last_len > 0 {
                     println!(
@@ -300,7 +293,7 @@ impl<'a> IgvmMeasure<'a> {
                     self.log_page(SnpPageType::Unmeasured, gpa, PAGE_SIZE_4K);
                     Some(PageInfo::new_unmeasured_page(self.digest, gpa))
                 } else if data.is_empty() {
-                    if self.options.native_zero {
+                    if self.native_zero {
                         self.log_page(SnpPageType::Zero, gpa, PAGE_SIZE_4K);
                         Some(PageInfo::new_zero_page(self.digest, gpa))
                     } else {
@@ -336,7 +329,7 @@ impl<'a> IgvmMeasure<'a> {
     }
 
     fn check_vmsa(&mut self, gpa: u64, vmsa: &SevVmsa) -> Result<(), IgvmMeasureError> {
-        if self.options.check_kvm {
+        if self.check_kvm {
             if self.vmsa_count > 0 {
                 return Err(IgvmMeasureError::InvalidVmsaCount);
             }

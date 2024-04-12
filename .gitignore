@@ -11,6 +11,7 @@ stage1/stage1-test
 print-meta
 cbit
 .idea/
+testkeys/
 
 # local fuzzing artifacts
 **/fuzz/target

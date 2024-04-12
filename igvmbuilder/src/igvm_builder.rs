@@ -14,7 +14,9 @@ use bootlib::igvm_params::{
     IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
 };
 use clap::Parser;
-use igvm::{IgvmDirectiveHeader, IgvmFile, IgvmPlatformHeader, IgvmRevision};
+use igvm::{
+    IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
+};
 use igvm_defs::{
     IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
     IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
@@ -43,6 +45,7 @@ pub struct IgvmBuilder {
     firmware: Option<Box<dyn Firmware>>,
     gpa_map: GpaMap,
     platforms: Vec<IgvmPlatformHeader>,
+    initialization: Vec<IgvmInitializationHeader>,
     directives: Vec<IgvmDirectiveHeader>,
 }
 
@@ -63,6 +66,7 @@ impl IgvmBuilder {
             firmware,
             gpa_map,
             platforms: vec![],
+            initialization: vec![],
             directives: vec![],
         })
     }
@@ -87,6 +91,7 @@ impl IgvmBuilder {
     pub fn build(mut self) -> Result<(), Box<dyn Error>> {
         let param_block = self.create_param_block()?;
         self.build_directives(&param_block)?;
+        self.build_initialization()?;
         self.build_platforms(&param_block);
 
         // Separate the directive pages out from the others so we can populate them last.
@@ -106,11 +111,16 @@ impl IgvmBuilder {
             println!("{param_block:#X?}");
         }
 
-        let file = IgvmFile::new(IgvmRevision::V1, self.platforms, vec![], self.directives)
-            .map_err(|e| {
-                eprintln!("Failed to create output file");
-                e
-            })?;
+        let file = IgvmFile::new(
+            IgvmRevision::V1,
+            self.platforms,
+            self.initialization,
+            self.directives,
+        )
+        .map_err(|e| {
+            eprintln!("Failed to create output file");
+            e
+        })?;
 
         let mut binary_file = Vec::new();
         file.serialize(&mut binary_file)?;
@@ -211,6 +221,18 @@ impl IgvmBuilder {
                 shared_gpa_boundary: param_block.vtom,
             },
         ));
+    }
+
+    fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some(policy) = &self.options.policy {
+            let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
+            self.initialization
+                .push(IgvmInitializationHeader::GuestPolicy {
+                    policy,
+                    compatibility_mask: COMPATIBILITY_MASK,
+                })
+        }
+        Ok(())
     }
 
     fn build_directives(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {

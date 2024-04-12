@@ -47,7 +47,6 @@ firmware - OVMF on QEMU and IGVM-based firmware on Hyper-V.
 
   -c, --comport <COMPORT>
           COM port to use for the SVSM console. Valid values are 1-4
-          
           [default: 1]
 
   -v, --verbose
@@ -55,7 +54,10 @@ firmware - OVMF on QEMU and IGVM-based firmware on Hyper-V.
 
   --sort
           Sort the IGVM Page directives by GPA from lowest to highest
-          
+
+--policy <POLICY>
+          A hex value containing the guest policy to apply. For example: 0x30000
+
   -h, --help
           Print help (see a summary with '-h')
 ```
