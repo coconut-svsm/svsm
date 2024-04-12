@@ -6,7 +6,7 @@
 
 pub mod core;
 pub mod errors;
-#[cfg(feature = "mstpm")]
+#[cfg(all(feature = "mstpm", not(test)))]
 pub mod vtpm;
 
 use cpuarch::vmsa::{GuestVMExit, VMSA};

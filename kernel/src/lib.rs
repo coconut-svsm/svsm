@@ -37,7 +37,7 @@ pub mod svsm_paging;
 pub mod task;
 pub mod types;
 pub mod utils;
-#[cfg(feature = "mstpm")]
+#[cfg(all(feature = "mstpm", not(test)))]
 pub mod vtpm;
 
 #[test]
