@@ -9,6 +9,7 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
+use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
@@ -35,6 +36,15 @@ const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
 const CORE_PROTOCOL: u32 = 1;
 const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
 const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
+
+// This lock prevents races around PVALIDATE and CREATE_VCPU
+//
+// Without the lock there is a possible attack where the error path of
+// core_create_vcpu() could give the guest OS access to a SVSM page.
+//
+// The PValidate path will take the lock for read, the create_vcpu path takes
+// the lock for write.
+static PVALIDATE_LOCK: RWLock<()> = RWLock::new(());
 
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
@@ -106,6 +116,9 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr();
 
+    // Prevent any parallel PVALIDATE requests from being processed
+    let lock = PVALIDATE_LOCK.lock_write();
+
     // Make sure the guest can't make modifications to the VMSA page
     rmp_revoke_guest_access(vaddr, PageSize::Regular).map_err(|err| {
         core_create_vcpu_error_restore(Some(paddr), None);
@@ -129,6 +142,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
         err
     })?;
+
+    drop(lock);
 
     assert!(PERCPU_VMSAS.set_used(paddr) == Some(apic_id));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
@@ -243,6 +258,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
+    // Take lock to prevent races with CREATE_VCPU calls
+    let lock = PVALIDATE_LOCK.lock_read();
+
     if valid == PvalidateOp::Invalid {
         *flush |= true;
         rmp_revoke_guest_access(vaddr, huge)?;
@@ -252,6 +270,8 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) if ign_cf => Ok(()),
         _ => Err(err),
     })?;
+
+    drop(lock);
 
     if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
