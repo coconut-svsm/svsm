@@ -12,7 +12,7 @@ use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 
-#[cfg(feature = "mstpm")]
+#[cfg(all(feature = "mstpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{RequestParams, SVSM_CORE_PROTOCOL};
 use crate::types::GUEST_VMPL;
@@ -95,7 +95,7 @@ fn request_loop_once(
 
     match protocol {
         SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
-        #[cfg(feature = "mstpm")]
+        #[cfg(all(feature = "mstpm", not(test)))]
         SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
