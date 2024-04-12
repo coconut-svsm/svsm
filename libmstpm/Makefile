@@ -113,7 +113,6 @@ MSTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 # are not building the simulator.
 $(MSTPM_MAKEFILE):
 	(cd $(MSTPM_DIR) && \
-		sed -i '/^AX_PTHREAD/d' configure.ac && \
 		./bootstrap && \
 		./configure \
 			CFLAGS="${MSTPM_CFLAGS}" \
@@ -134,7 +133,6 @@ src/bindings.rs: deps/libmstpm.h $(LIBTPM)
 clean: $(OPENSSL_MAKEFILE) $(MSTPM_MAKEFILE)
 	make -C $(LIBCRT_DIR) clean
 	make -C $(OPENSSL_DIR) clean
-	sed -i '/^AX_PTHREAD/d' $(MSTPM_DIR)/configure.ac
 	make -C $(MSTPM_DIR) clean
 	rm -f libmstpm.a
 	rm -f src/bindings.rs
