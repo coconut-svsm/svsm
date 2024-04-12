@@ -30,9 +30,8 @@ impl DerefMut for GHCBRef {
 pub fn current_ghcb() -> GHCBRef {
     // FIXME - Add borrow checking to GHCB references.
     unsafe {
-        let cpu_ptr = this_cpu_unsafe();
-        let cpu = &mut *cpu_ptr;
-        let ghcb = cpu.ghcb_unsafe();
+        let cpu_unsafe = &*this_cpu_unsafe();
+        let ghcb = cpu_unsafe.ghcb_unsafe();
         GHCBRef { ghcb }
     }
 }
