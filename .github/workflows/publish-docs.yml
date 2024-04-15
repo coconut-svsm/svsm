@@ -1,0 +1,50 @@
+name: PublishDocs
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Configure Git Credentials
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Install latest Rust stable
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            target: x86_64-unknown-none
+            profile: minimal
+            override: true
+
+      - name: Install Microsoft TPM build dependencies
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake libssl-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          key: mkdocs-material-${{ env.cache_id }}
+          path: .cache
+          restore-keys: |
+            mkdocs-material-
+      - run: pip install mkdocs-material
+
+      - name: Make documentation site
+        run: |
+          make docsite
+
+      - name: Deploy
+        run: mkdocs gh-deploy -f Documentation/mkdocs.yml -d ../target/x86_64-unknown-none/site --dirty --force
