@@ -509,13 +509,12 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_sev_snp_enablement_msr() {
-        const MSR_SEV_STATUS: u32 = 0b10;
-        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b100;
+        const MSR_SEV_STATUS: u32 = 0xc0010131;
+        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b10;
 
-        let sev_status = verify_ghcb_gets_altered(|| read_msr(MSR_SEV_STATUS));
+        let sev_status = read_msr(MSR_SEV_STATUS);
         assert_ne!(sev_status & MSR_SEV_STATUS_SEV_SNP_ENABLED, 0);
     }
 
