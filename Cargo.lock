@@ -833,7 +833,6 @@ dependencies = [
  "intrusive-collections",
  "libmstpm",
  "log",
- "memoffset",
  "packit",
  "test",
 ]
