@@ -1631,10 +1631,9 @@ pub fn layout_from_size(size: usize) -> Layout {
 pub fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
     let va = VirtAddr::from(ptr);
 
-    let Ok(pfn) = ROOT_MEM.lock().get_pfn(va) else {
-        return None;
-    };
-    let info = ROOT_MEM.lock().read_page_info(pfn);
+    let root = ROOT_MEM.lock();
+    let pfn = root.get_pfn(va).ok()?;
+    let info = root.read_page_info(pfn);
 
     match info {
         PageInfo::Allocated(ai) => {
