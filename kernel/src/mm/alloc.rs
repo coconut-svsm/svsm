@@ -1615,28 +1615,6 @@ pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
 /// [`TestRootMem::setup()`].
 static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 
-pub fn mem_allocate(layout: Layout) -> *mut u8 {
-    unsafe { ALLOCATOR.alloc(layout) }
-}
-
-/// Grow or shrink `ptr` to have `new_size` bytes.
-///
-/// # Safety
-///
-/// This function is unsafe for the same reasons as the GlocalAlloc::realloc() trait
-pub unsafe fn mem_reallocate(ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-    unsafe { ALLOCATOR.realloc(ptr, layout, new_size) }
-}
-
-/// Deallocate `ptr` with a given `layout`
-///
-/// # Safety
-///
-/// This function is unsafe for the same reasons as the GlobalAlloc::dealloc() trait
-pub unsafe fn mem_deallocate(ptr: *mut u8, layout: Layout) {
-    unsafe { ALLOCATOR.dealloc(ptr, layout) }
-}
-
 pub const MIN_ALIGN: usize = 32;
 
 pub fn layout_from_size(size: usize) -> Layout {

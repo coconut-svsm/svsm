@@ -10,7 +10,7 @@
 
 use crate::{
     console::_print,
-    mm::alloc::{layout_from_ptr, layout_from_size, mem_allocate, mem_deallocate, mem_reallocate},
+    mm::alloc::{layout_from_ptr, layout_from_size},
     sev::msr_protocol::request_termination_msr,
 };
 
@@ -22,16 +22,20 @@ use core::{
     str::from_utf8,
 };
 
+extern crate alloc;
+use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
+
 #[no_mangle]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
     let layout: Layout = layout_from_size(size as usize);
-    mem_allocate(layout) as *mut c_void
+    unsafe { alloc(layout).cast() }
 }
 
 #[no_mangle]
 pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
     if let Some(new_size) = items.checked_mul(size) {
-        return malloc(new_size);
+        let layout = layout_from_size(new_size as usize);
+        return unsafe { alloc_zeroed(layout).cast() };
     }
     ptr::null_mut()
 }
@@ -41,7 +45,7 @@ pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
     let ptr = p as *mut u8;
     let new_size = size as usize;
     if let Some(layout) = layout_from_ptr(ptr) {
-        return unsafe { mem_reallocate(ptr, layout, new_size) as *mut c_void };
+        return unsafe { _realloc(ptr, layout, new_size).cast() };
     }
     ptr::null_mut()
 }
@@ -52,8 +56,8 @@ pub unsafe extern "C" fn free(p: *mut c_void) {
         return;
     }
     let ptr = p as *mut u8;
-    if let Some(layout) = layout_from_ptr(ptr) {
-        unsafe { mem_deallocate(ptr, layout) }
+    if let Some(layout) = layout_from_ptr(ptr.cast()) {
+        unsafe { dealloc(ptr, layout) }
     }
 }
 
