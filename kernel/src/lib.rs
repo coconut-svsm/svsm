@@ -12,6 +12,7 @@
 
 pub mod acpi;
 pub mod address;
+pub mod alloc;
 pub mod config;
 pub mod console;
 pub mod cpu;
