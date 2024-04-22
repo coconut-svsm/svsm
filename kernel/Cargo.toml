@@ -42,7 +42,6 @@ enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 mstpm = ["dep:libmstpm"]
 
 [dev-dependencies]
-memoffset.workspace = true
 
 [lints]
 workspace = true

@@ -540,10 +540,9 @@ impl SnpGuestRequestExtData {
 mod tests {
     use super::*;
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
-    use memoffset::offset_of;
+    use core::mem::offset_of;
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_snp_guest_request_hdr_offsets() {
         assert_eq!(offset_of!(SnpGuestRequestMsgHdr, authtag), 0);
         assert_eq!(offset_of!(SnpGuestRequestMsgHdr, msg_seqno), 0x20);
@@ -560,7 +559,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "offset_of")]
     fn test_snp_guest_request_msg_offsets() {
         assert_eq!(offset_of!(SnpGuestRequestMsg, hdr), 0);
         assert_eq!(offset_of!(SnpGuestRequestMsg, pld), 0x60);
