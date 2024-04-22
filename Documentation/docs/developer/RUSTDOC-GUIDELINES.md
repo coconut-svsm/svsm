@@ -1,5 +1,5 @@
-Documentation Style
-===================
+Rustdoc Documentation Style
+===========================
 
 In this project, code documentation is generated using Rustdoc, which
 automatically generates interactive web documentation. Here are some

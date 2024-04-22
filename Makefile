@@ -44,6 +44,9 @@ IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
 
+RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
+DOC_SITE = target/x86_64-unknown-none/site
+
 all: bin/svsm.bin igvm
 
 igvm: $(IGVM_FILES) $(IGVMBIN) $(IGVMMEASUREBIN)
@@ -83,6 +86,15 @@ test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
 
 doc:
 	cargo doc -p svsm --open --all-features --document-private-items
+
+docsite:
+	mkdir -p ${DOC_SITE}
+	cargo doc -p svsm --all-features --document-private-items --no-deps
+	mkdocs build -f Documentation/mkdocs.yml -d ../${DOC_SITE}
+	cp -r ${RUSTDOC_OUTPUT} ${DOC_SITE}/rustdoc
+
+docsite-serve:
+	mkdocs serve -f Documentation/mkdocs.yml
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
