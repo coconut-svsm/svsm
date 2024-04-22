@@ -11,12 +11,12 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
-use core::mem::{align_of, size_of};
+use core::mem::size_of;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::address::{PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -250,6 +250,30 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
+/// # Panics
+///
+/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
+fn init_cpuid_table(addr: VirtAddr) {
+    // SAFETY: this is called from the main function for the SVSM and no other
+    // CPUs have been brought up, so the pointer cannot be aliased.
+    // `aligned_mut()` will check alignment for us.
+    let table = unsafe {
+        addr.aligned_mut::<SnpCpuidTable>()
+            .expect("Misaligned SNP CPUID table address")
+    };
+
+    for func in table.func.iter_mut().take(table.count as usize) {
+        if func.eax_in == 0x8000001f {
+            func.eax_out |= 1 << 28;
+        }
+    }
+
+    CPUID_PAGE
+        .init(table)
+        .expect("Already initialized CPUID page");
+    register_cpuid_table(&CPUID_PAGE);
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -270,19 +294,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .init(li)
         .expect("Already initialized launch info");
 
-    let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
-    if !cpuid_table_virt.is_aligned(align_of::<SnpCpuidTable>()) {
-        panic!("Misaligned SNP CPUID table address");
-    }
-    // SAFETY: this is the main function for the SVSM and no other CPUs have
-    // been brought up, so the pointer cannot be aliased. We have verified that
-    // the pointer is aligned so we can create a temporary reference.
-    unsafe {
-        CPUID_PAGE
-            .init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>()))
-            .expect("Already initialized CPUID page")
-    };
-    register_cpuid_table(&CPUID_PAGE);
+    init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
     dump_cpuid_table();
 
     let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);

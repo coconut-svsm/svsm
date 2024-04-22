@@ -6,10 +6,13 @@
 
 use super::idt::common::X86ExceptionContext;
 use super::insn::MAX_INSN_SIZE;
+use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::Instruction;
+use crate::cpu::insn::{DecodedInsn, Immediate, Instruction, Operand, Register};
+use crate::cpu::percpu::this_cpu;
+use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -20,8 +23,11 @@ pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
 pub const SVM_EXIT_CPUID: usize = 0x72;
 pub const SVM_EXIT_IOIO: usize = 0x7b;
+pub const SVM_EXIT_MSR: usize = 0x7c;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
+
+const MSR_SVSM_CAA: u64 = 0xc001f000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VcError {
@@ -91,19 +97,18 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Resu
 pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
 
-    /*
-     * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-     * This is currently only relevant for IOIO handling. This field is currently reset in
-     * the ioio_{in,ou} methods but it would be better to move the reset out of the different
-     * handlers.
-     */
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
+    // This is currently only relevant for IOIO handling. This field is currently reset in
+    // the ioio_{in,ou} methods but it would be better to move the reset out of the different
+    // handlers.
     let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx)?;
 
-    match err {
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+    match (err, insn) {
+        (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -114,26 +119,25 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
 
-    /*
-     * To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-     * This is currently only relevant for IOIO handling. This field is currently reset in
-     * the ioio_{in,ou} methods but it would be better to move the reset out of the different
-     * handlers.
-     */
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
+    // This is currently only relevant for IOIO handling. This field is currently reset in
+    // the ioio_{in,ou} methods but it would be better to move the reset out of the different
+    // handlers.
     let mut ghcb = current_ghcb();
 
     let insn = vc_decode_insn(ctx)?;
 
-    match error_code {
+    match (error_code, insn) {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
-        X86_TRAP => {
+        (X86_TRAP, _) => {
             handle_debug_exception(ctx, ctx.vector);
             Ok(())
         }
-        SVM_EXIT_CPUID => handle_cpuid(ctx),
-        SVM_EXIT_IOIO => handle_ioio(ctx, &mut ghcb, &insn),
+        (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -141,17 +145,53 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
     Ok(())
 }
 
-fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    /*
-     * Section 2.3.1 GHCB MSR Protocol in SEV-ES Guest-Hypervisor Communication Block
-     * Standardization Rev. 2.02.
-     * For SEV-ES/SEV-SNP, we can use the CPUID table already defined and populated with
-     * firmware information.
-     * We choose for now not to call the hypervisor to perform CPUID, since it's no trusted.
-     * Since GHCB is not needed to handle CPUID with the firmware table, we can call the handler
-     * very soon in stage 2.
-     */
+#[inline]
+const fn get_msr(regs: &X86GeneralRegs) -> u64 {
+    ((regs.rdx as u64) << 32) | regs.rax as u64 & u32::MAX as u64
+}
 
+/// Handles a read from the SVSM-specific MSR defined the in SVSM spec.
+fn handle_svsm_caa_rdmsr(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
+    let caa = this_cpu()
+        .guest_vmsa_ref()
+        .caa_phys()
+        .ok_or(SvsmError::MissingCAA)?
+        .bits();
+    ctx.regs.rdx = (caa >> 32) & 0xffffffff;
+    ctx.regs.rax = caa & 0xffffffff;
+    Ok(())
+}
+
+fn handle_msr(
+    ctx: &mut X86ExceptionContext,
+    ghcb: &mut GHCB,
+    ins: DecodedInsn,
+) -> Result<(), SvsmError> {
+    match ins {
+        DecodedInsn::Wrmsr => {
+            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
+                return Ok(());
+            }
+            ghcb.wrmsr_regs(&ctx.regs)
+        }
+        DecodedInsn::Rdmsr => {
+            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
+                return handle_svsm_caa_rdmsr(ctx);
+            }
+            ghcb.rdmsr_regs(&mut ctx.regs)
+        }
+        _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
+    }
+}
+
+fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
+    // Section 2.3.1 GHCB MSR Protocol in SEV-ES Guest-Hypervisor Communication Block
+    // Standardization Rev. 2.02.
+    // For SEV-ES/SEV-SNP, we can use the CPUID table already defined and populated with
+    // firmware information.
+    // We choose for now not to call the hypervisor to perform CPUID, since it's no trusted.
+    // Since GHCB is not needed to handle CPUID with the firmware table, we can call the handler
+    // very soon in stage 2.
     snp_cpuid(ctx)
 }
 
@@ -175,55 +215,72 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Instruction) {
-    ctx.frame.rip += insn.len()
+fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Option<DecodedInsn>) {
+    ctx.frame.rip += insn.as_ref().map(DecodedInsn::size).unwrap_or(0);
+}
+
+fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
+    match source {
+        Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
+        Operand::Reg(..) => unreachable!("Port value is always in DX"),
+        Operand::Imm(imm) => match imm {
+            Immediate::U8(val) => val as u16,
+            _ => unreachable!("Port value in immediate is always 1 byte"),
+        },
+    }
+}
+
+fn ioio_do_in(ghcb: &mut GHCB, port: u16, size: GHCBIOSize) -> Result<usize, SvsmError> {
+    let ret = ghcb.ioio_in(port, size)?;
+    Ok(match size {
+        GHCBIOSize::Size32 => (ret & u32::MAX as u64) as usize,
+        GHCBIOSize::Size16 => (ret & u16::MAX as u64) as usize,
+        GHCBIOSize::Size8 => (ret & u8::MAX as u64) as usize,
+    })
 }
 
 fn handle_ioio(
     ctx: &mut X86ExceptionContext,
     ghcb: &mut GHCB,
-    insn: &Instruction,
+    insn: DecodedInsn,
 ) -> Result<(), SvsmError> {
-    let port: u16 = (ctx.regs.rdx & 0xffff) as u16;
-    let out_value: u64 = ctx.regs.rax as u64;
+    let out_value = ctx.regs.rax as u64;
 
-    match insn.opcode[0] {
-        0x6C..=0x6F | 0xE4..=0xE7 => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
-        0xEC => {
-            let ret = ghcb.ioio_in(port, GHCBIOSize::Size8)?;
-            ctx.regs.rax = (ret & 0xff) as usize;
+    match insn {
+        DecodedInsn::Inl(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size32)?;
             Ok(())
         }
-        0xED => {
-            let (size, mask) = match insn.prefixes {
-                Some(prefix) if prefix.nb_bytes > 0 => (GHCBIOSize::Size16, u16::MAX as u64),
-                _ => (GHCBIOSize::Size32, u32::MAX as u64),
-            };
-
-            let ret = ghcb.ioio_in(port, size)?;
-            ctx.regs.rax = (ret & mask) as usize;
+        DecodedInsn::Inw(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size16)?;
             Ok(())
         }
-        0xEE => ghcb.ioio_out(port, GHCBIOSize::Size8, out_value),
-        0xEF => {
-            let mut size: GHCBIOSize = GHCBIOSize::Size32;
-            if let Some(prefix) = insn.prefixes {
-                // this is always true at the moment
-                if prefix.nb_bytes > 0 {
-                    // outw instruction has a 0x66 operand-size prefix for word-sized operands.
-                    size = GHCBIOSize::Size16;
-                }
-            }
-
-            ghcb.ioio_out(port, size, out_value)
+        DecodedInsn::Inb(source) => {
+            let port = ioio_get_port(source, ctx);
+            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size8)?;
+            Ok(())
+        }
+        DecodedInsn::Outl(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size32, out_value)
+        }
+        DecodedInsn::Outw(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size16, out_value)
+        }
+        DecodedInsn::Outb(source) => {
+            let port = ioio_get_port(source, ctx);
+            ghcb.ioio_out(port, GHCBIOSize::Size8, out_value)
         }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
 
-fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
+fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsn>, SvsmError> {
     if !vc_decoding_needed(ctx.error_code) {
-        return Ok(Instruction::default());
+        return Ok(None);
     }
 
     // TODO: the instruction fetch will likely to be handled differently when
@@ -236,10 +293,8 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Instruction, SvsmError> {
     // to handle faults while fetching.
     let insn_raw = rip.read()?;
 
-    let mut insn = Instruction::new(insn_raw);
-    insn.decode()?;
-
-    Ok(insn)
+    let insn = Instruction::new(insn_raw);
+    insn.decode().map(Some)
 }
 
 fn vc_decoding_needed(error_code: usize) -> bool {
@@ -418,8 +473,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8_hardcoded() {
         const TEST_VAL: u8 = 0x12;
         verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
@@ -427,8 +481,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16_hardcoded() {
         const TEST_VAL: u16 = 0x4321;
         verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
@@ -436,8 +489,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32_hardcoded() {
         const TEST_VAL: u32 = 0xabcd1234;
         verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
@@ -457,13 +509,12 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_sev_snp_enablement_msr() {
-        const MSR_SEV_STATUS: u32 = 0b10;
-        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b100;
+        const MSR_SEV_STATUS: u32 = 0xc0010131;
+        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b10;
 
-        let sev_status = verify_ghcb_gets_altered(|| read_msr(MSR_SEV_STATUS));
+        let sev_status = read_msr(MSR_SEV_STATUS);
         assert_ne!(sev_status & MSR_SEV_STATUS_SEV_SNP_ENABLED, 0);
     }
 
@@ -473,16 +524,14 @@ mod tests {
     const APIC_BASE_PHYS_ADDR_MASK: u64 = 0xffffff000; // bit 12-35
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_apic() {
         let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
         assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_debug_ctl() {
         const MSR_DEBUG_CTL: u32 = 0x1d9;
         let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
@@ -492,8 +541,7 @@ mod tests {
     const MSR_TSC_AUX: u32 = 0xc0000103;
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
         let test_val = 0x1234;
         verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
