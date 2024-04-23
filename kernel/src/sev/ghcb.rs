@@ -228,8 +228,10 @@ impl GHCB {
         self.set_rcx_valid(regs.rcx as u64);
 
         self.vmgexit(GHCBExitCode::MSR, 0, 0)?;
-        regs.rdx = self.rdx as usize;
-        regs.rax = self.rax as usize;
+        let rdx = self.get_rdx_valid()?;
+        let rax = self.get_rax_valid()?;
+        regs.rdx = rdx as usize;
+        regs.rax = rax as usize;
         Ok(())
     }
 
