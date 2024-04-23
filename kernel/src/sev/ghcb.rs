@@ -125,6 +125,7 @@ impl From<GhcbError> for SvsmError {
 enum GHCBExitCode {}
 
 impl GHCBExitCode {
+    pub const RDTSC: u64 = 0x6e;
     pub const IOIO: u64 = 0x7b;
     pub const MSR: u64 = 0x7c;
     pub const SNP_PSC: u64 = 0x8000_0010;
@@ -208,6 +209,16 @@ impl GHCB {
 
         flush_tlb_global_sync();
 
+        Ok(())
+    }
+
+    pub fn rdtsc_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::RDTSC, 0, 0)?;
+        let rax = self.get_rax_valid()?;
+        let rdx = self.get_rdx_valid()?;
+        regs.rax = rax as usize;
+        regs.rdx = rdx as usize;
         Ok(())
     }
 

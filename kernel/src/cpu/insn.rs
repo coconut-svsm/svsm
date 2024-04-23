@@ -60,6 +60,7 @@ pub enum DecodedInsn {
     Outw(Operand),
     Wrmsr,
     Rdmsr,
+    Rdtsc,
 }
 
 impl DecodedInsn {
@@ -79,6 +80,7 @@ impl DecodedInsn {
             Self::Outw(Operand::Imm(..)) => 3,
             Self::Outl(Operand::Imm(..)) => 2,
             Self::Wrmsr | Self::Rdmsr => 2,
+            Self::Rdtsc => 2,
         }
     }
 }
@@ -122,6 +124,7 @@ impl Instruction {
             },
             0x0F => match self.0[1] {
                 0x30 => return Ok(DecodedInsn::Wrmsr),
+                0x31 => return Ok(DecodedInsn::Rdtsc),
                 0x32 => return Ok(DecodedInsn::Rdmsr),
                 0xA2 => return Ok(DecodedInsn::Cpuid),
                 _ => (),
