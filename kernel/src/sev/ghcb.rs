@@ -128,6 +128,7 @@ impl GHCBExitCode {
     pub const RDTSC: u64 = 0x6e;
     pub const IOIO: u64 = 0x7b;
     pub const MSR: u64 = 0x7c;
+    pub const RDTSCP: u64 = 0x87;
     pub const SNP_PSC: u64 = 0x8000_0010;
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
@@ -209,6 +210,18 @@ impl GHCB {
 
         flush_tlb_global_sync();
 
+        Ok(())
+    }
+
+    pub fn rdtscp_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::RDTSCP, 0, 0)?;
+        let rax = self.get_rax_valid()?;
+        let rdx = self.get_rdx_valid()?;
+        let rcx = self.get_rcx_valid()?;
+        regs.rax = rax as usize;
+        regs.rdx = rdx as usize;
+        regs.rcx = rcx as usize;
         Ok(())
     }
 

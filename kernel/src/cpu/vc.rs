@@ -25,6 +25,7 @@ pub const SVM_EXIT_RDTSC: usize = 0x6e;
 pub const SVM_EXIT_CPUID: usize = 0x72;
 pub const SVM_EXIT_IOIO: usize = 0x7b;
 pub const SVM_EXIT_MSR: usize = 0x7c;
+pub const SVM_EXIT_RDTSCP: usize = 0x87;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
 
@@ -98,9 +99,10 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Resu
 pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
 
-    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-    // This is currently only relevant for IOIO and RDTSC handling. This field is currently reset in
-    // the relevant GHCB methods but it would be better to move the reset out of the different
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
+    // the GHCB. This is currently only relevant for IOIO, RDTSC and RDTSCP
+    // handling. This field is currently reset in the relevant GHCB methods
+    // but it would be better to move the reset out of the different
     // handlers.
     let mut ghcb = current_ghcb();
 
@@ -111,6 +113,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
         (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -121,9 +124,10 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
 
-    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of the GHCB.
-    // This is currently only relevant for IOIO and RDTSC handling. This field is currently reset in
-    // the relevant GHCB methods but it would be better to move the reset out of the different
+    // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
+    // the GHCB. This is currently only relevant for IOIO, RDTSC and RDTSCP
+    // handling. This field is currently reset in the relevant GHCB methods
+    // but it would be better to move the reset out of the different
     // handlers.
     let mut ghcb = current_ghcb();
 
@@ -141,6 +145,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
         (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -598,8 +603,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdtscp() {
         let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
             .expect("pid should be 32 bits");
