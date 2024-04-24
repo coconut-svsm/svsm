@@ -138,6 +138,39 @@ pub unsafe trait Hal {
     /// any other thread for the duration of this method call. The `paddr` must be the value
     /// previously returned by the corresponding `share` call.
     unsafe fn unshare(paddr: PhysAddr, buffer: NonNull<[u8]>, direction: BufferDirection);
+
+    /// Performs memory mapped read from location of `src`. `src` itself is not modified,
+    /// the value is returned instead.
+    ///
+    /// The default implementation performs a regular volatile_read. This method is intended
+    /// to be overwritten in case MMIO memory needs to be accessed in a special way (for example AMD SEV-SNP).
+    ///
+    /// # Safety
+    ///
+    /// `src` must be properly alinged and reside at a readable memory address.
+    unsafe fn mmio_read<T>(src: &T) -> T
+    where
+        T: Sized + Copy,
+    {
+        unsafe { (src as *const T).read_volatile() }
+    }
+
+    /// Performs memory mapped write of `value` to the location of `dst`.
+    ///
+    /// The default implementation performs a regular volatile_write. This method is intended
+    /// to be overwritten in case MMIO memory needs to be accessed in a special way (for example AMD SEV-SNP).
+    ///
+    /// # Safety
+    ///
+    /// `dst` must be properly alinged and reside at a writable memory address.
+    unsafe fn mmio_write<T: Sized>(dst: &mut T, value: T)
+    where
+        T: Sized + Copy,
+    {
+        unsafe {
+            (dst as *mut T).write_volatile(value);
+        }
+    }
 }
 
 /// The direction in which a buffer is passed.
