@@ -34,4 +34,7 @@ fn main() {
         println!("cargo:rustc-link-arg=-Tkernel/src/svsm.lds");
         println!("cargo:rustc-link-arg=-no-pie");
     }
+
+    println!("cargo:rerun-if-changed=kernel/src/stage2.lds");
+    println!("cargo:rerun-if-changed=kernel/src/svsm.lds");
 }
