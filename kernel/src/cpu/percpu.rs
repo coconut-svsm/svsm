@@ -26,16 +26,13 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::{
-    schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue, TASK_FLAG_SHARE_PT,
-};
+use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::UnsafeCell;
+use core::cell::{Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
-use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
 use cpuarch::vmsa::{VMSASegment, VMSA};
@@ -43,12 +40,15 @@ use cpuarch::vmsa::{VMSASegment, VMSA};
 #[derive(Debug)]
 struct PerCpuInfo {
     apic_id: u32,
-    addr: VirtAddr,
+    cpu_shared: &'static PerCpuShared,
 }
 
 impl PerCpuInfo {
-    const fn new(apic_id: u32, addr: VirtAddr) -> Self {
-        Self { apic_id, addr }
+    const fn new(apic_id: u32, cpu_shared: &'static PerCpuShared) -> Self {
+        Self {
+            apic_id,
+            cpu_shared,
+        }
     }
 }
 
@@ -86,10 +86,9 @@ impl PerCpuAreas {
         // going on when casting via as_ref(). This only happens via
         // Self::push(), which is intentionally unsafe and private.
         let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.iter().find(|info| info.apic_id == apic_id).map(|info| {
-            let ptr = info.addr.as_ptr::<PerCpuShared>();
-            unsafe { ptr.as_ref().unwrap() }
-        })
+        ptr.iter()
+            .find(|info| info.apic_id == apic_id)
+            .map(|info| info.cpu_shared)
     }
 }
 
@@ -194,12 +193,14 @@ impl GuestVmsaRef {
 #[derive(Debug)]
 pub struct PerCpuShared {
     guest_vmsa: SpinLock<GuestVmsaRef>,
+    online: AtomicBool,
 }
 
 impl PerCpuShared {
     fn new() -> Self {
         PerCpuShared {
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
+            online: AtomicBool::new(false),
         }
     }
 
@@ -229,17 +230,104 @@ impl PerCpuShared {
             locked.update_vmsa(None);
         }
     }
+
+    pub fn set_online(&self) {
+        self.online.store(true, Ordering::Release);
+    }
+
+    pub fn is_online(&self) -> bool {
+        self.online.load(Ordering::Acquire)
+    }
+}
+
+#[derive(Debug)]
+pub struct PerCpuUnsafe {
+    shared: PerCpuShared,
+    private: RefCell<PerCpu>,
+    ghcb: *mut GHCB,
+    init_stack: Option<VirtAddr>,
+    ist: IstStacks,
+
+    /// Stack boundaries of the currently running task. This is stored in
+    /// [PerCpuUnsafe] because it needs lockless read access.
+    current_stack: MemoryRegion<VirtAddr>,
+}
+
+impl PerCpuUnsafe {
+    pub fn new(apic_id: u32, cpu_unsafe_ptr: *const PerCpuUnsafe) -> Self {
+        Self {
+            private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
+            shared: PerCpuShared::new(),
+            ghcb: ptr::null_mut(),
+            init_stack: None,
+            ist: IstStacks::new(),
+            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
+        }
+    }
+
+    pub fn alloc(apic_id: u32) -> Result<*mut PerCpuUnsafe, SvsmError> {
+        let vaddr = allocate_zeroed_page()?;
+        unsafe {
+            // Within each CPU state page, the first portion is the private
+            // mutable state and remainder is the shared state.
+            let unsafe_size = size_of::<PerCpuUnsafe>();
+            let private_size = size_of::<PerCpu>();
+            if unsafe_size + private_size > PAGE_SIZE {
+                panic!("Per-CPU data is larger than one page!");
+            }
+            let percpu_unsafe = vaddr.as_mut_ptr::<PerCpuUnsafe>();
+
+            (*percpu_unsafe) = PerCpuUnsafe::new(apic_id, percpu_unsafe);
+
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &(*percpu_unsafe).shared));
+            Ok(percpu_unsafe)
+        }
+    }
+
+    pub fn shared(&self) -> &PerCpuShared {
+        &self.shared
+    }
+
+    pub fn cpu(&self) -> Ref<'_, PerCpu> {
+        self.private.borrow()
+    }
+
+    pub fn cpu_mut(&self) -> RefMut<'_, PerCpu> {
+        self.private.borrow_mut()
+    }
+
+    pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
+        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
+        if let Err(e) = GHCB::init(ghcb_page) {
+            free_page(ghcb_page);
+            return Err(e);
+        };
+        self.ghcb = ghcb_page.as_mut_ptr();
+        Ok(())
+    }
+
+    pub fn ghcb_unsafe(&self) -> *mut GHCB {
+        self.ghcb
+    }
+
+    pub fn get_top_of_stack(&self) -> VirtAddr {
+        self.init_stack.unwrap()
+    }
+
+    pub fn get_top_of_df_stack(&self) -> VirtAddr {
+        self.ist.double_fault_stack.unwrap()
+    }
+
+    pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
+        self.current_stack
+    }
 }
 
 #[derive(Debug)]
 pub struct PerCpu {
-    pub shared: &'static PerCpuShared,
-    online: AtomicBool,
+    cpu_unsafe: *const PerCpuUnsafe,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
-    ghcb: *mut GHCB,
-    init_stack: Option<VirtAddr>,
-    ist: IstStacks,
     tss: X86Tss,
     svsm_vmsa: Option<VmsaRef>,
     reset_ip: u64,
@@ -255,28 +343,16 @@ pub struct PerCpu {
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLock<RunQueue>,
 
-    /// Stack boundaries of the currently running task. This is stored in
-    /// [PerCpu] because it needs lockless read access.
-    pub current_stack: MemoryRegion<VirtAddr>,
-
     /// WaitQueue for request processing
     request_waitqueue: WaitQueue,
-
-    // The borrow count tuple holds (total, mutable) borrow counts.
-    #[cfg(debug_assertions)]
-    borrow_count: (usize, usize),
 }
 
 impl PerCpu {
-    fn new(apic_id: u32, shared: &'static PerCpuShared) -> Self {
+    fn new(apic_id: u32, cpu_unsafe: *const PerCpuUnsafe) -> Self {
         PerCpu {
-            shared,
-            online: AtomicBool::new(false),
+            cpu_unsafe,
             apic_id,
             pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
-            ghcb: ptr::null_mut(),
-            init_stack: None,
-            ist: IstStacks::new(),
             tss: X86Tss::new(),
             svsm_vmsa: None,
             reset_ip: 0xffff_fff0u64,
@@ -284,46 +360,24 @@ impl PerCpu {
             vrange_4k: VirtualRange::new(),
             vrange_2m: VirtualRange::new(),
             runqueue: RWLock::new(RunQueue::new()),
-            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
             request_waitqueue: WaitQueue::new(),
-
-            // Every new CPU is constructed with via a raw pointer so no
-            // borrow is active at the time of construction.
-            #[cfg(debug_assertions)]
-            borrow_count: (0, 0),
         }
     }
 
-    pub fn alloc(apic_id: u32) -> Result<*mut PerCpu, SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
+    pub fn alloc(apic_id: u32) -> Result<RefMut<'static, PerCpu>, SvsmError> {
         unsafe {
-            // Within each CPU state page, the first portion is the private
-            // mutable state and remainder is the shared state.
-            let private_size = size_of::<PerCpu>();
-            let shared_size = size_of::<PerCpuShared>();
-            if private_size + shared_size > PAGE_SIZE {
-                panic!("Per-CPU data is larger than one page!");
-            }
-
-            let shared_vaddr = vaddr + private_size;
-            let percpu_shared = shared_vaddr.as_mut_ptr::<PerCpuShared>();
-            (*percpu_shared) = PerCpuShared::new();
-
-            let percpu = vaddr.as_mut_ptr::<PerCpu>();
-
-            (*percpu) = PerCpu::new(apic_id, &*percpu_shared);
-
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, shared_vaddr));
-            Ok(percpu)
+            let percpu_unsafe = PerCpuUnsafe::alloc(apic_id)?;
+            Ok((*percpu_unsafe).cpu_mut())
         }
     }
 
-    pub fn set_online(&mut self) {
-        self.online.store(true, Ordering::Relaxed);
+    pub fn cpu_unsafe(&self) -> *const PerCpuUnsafe {
+        self.cpu_unsafe
     }
 
-    pub fn is_online(&self) -> bool {
-        self.online.load(Ordering::Acquire)
+    fn shared(&self) -> &'static PerCpuShared {
+        let cpu_unsafe = unsafe { &*self.cpu_unsafe };
+        cpu_unsafe.shared()
     }
 
     pub const fn get_apic_id(&self) -> u32 {
@@ -332,8 +386,7 @@ impl PerCpu {
 
     fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
-        let mut pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.vm_range.populate(&mut pgtable_ref);
+        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
         self.set_pgtable(pgtable_ref);
 
         Ok(())
@@ -355,12 +408,20 @@ impl PerCpu {
     }
 
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
-        self.init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
+        let init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).init_stack = init_stack;
+        }
         Ok(())
     }
 
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        self.ist.double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        let double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).ist.double_fault_stack = double_fault_stack;
+        }
         Ok(())
     }
 
@@ -369,33 +430,27 @@ impl PerCpu {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        self.ghcb = ghcb_page.as_mut_ptr();
-        Ok(())
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            let cpu_unsafe_mut = &mut *cpu_unsafe_mut_ptr;
+            cpu_unsafe_mut.setup_ghcb()
+        }
     }
 
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        unsafe { self.ghcb.as_ref().unwrap().register() }
-    }
-
-    pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.unwrap()
-    }
-
-    pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.unwrap()
+        unsafe {
+            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
+            ghcb.as_ref().unwrap().register()
+        }
     }
 
     fn setup_tss(&mut self) {
-        self.tss.ist_stacks[IST_DF] = self.ist.double_fault_stack.unwrap();
+        let double_fault_stack = unsafe { (*self.cpu_unsafe).get_top_of_df_stack() };
+        self.tss.ist_stacks[IST_DF] = double_fault_stack;
     }
 
     pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
         let flags = PTEntryFlags::data();
 
@@ -403,7 +458,7 @@ impl PerCpu {
     }
 
     pub fn map_self(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const PerCpu);
+        let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
 
         let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
@@ -424,6 +479,11 @@ impl PerCpu {
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
 
         Ok(())
+    }
+
+    fn finish_page_table(&mut self) {
+        let mut pgtable = self.get_pgtable();
+        self.vm_range.populate(&mut pgtable);
     }
 
     pub fn dump_vm_ranges(&self) {
@@ -455,6 +515,8 @@ impl PerCpu {
         // Initialize allocator for temporary mappings
         self.virt_range_init();
 
+        self.finish_page_table();
+
         Ok(())
     }
 
@@ -464,7 +526,7 @@ impl PerCpu {
     }
 
     pub fn setup_idle_task(&mut self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, TASK_FLAG_SHARE_PT)?;
+        let idle_task = Task::create(self, entry)?;
         self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }
@@ -483,19 +545,18 @@ impl PerCpu {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        if self.ghcb.is_null() {
-            return Ok(());
-        }
+        unsafe {
+            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
+            if ghcb.is_null() {
+                return Ok(());
+            }
 
-        unsafe { (*self.ghcb).shutdown() }
+            (*ghcb).shutdown()
+        }
     }
 
     pub fn set_reset_ip(&mut self, reset_ip: u64) {
         self.reset_ip = reset_ip;
-    }
-
-    pub fn ghcb_unsafe(&mut self) -> *mut GHCB {
-        self.ghcb
     }
 
     pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
@@ -522,7 +583,8 @@ impl PerCpu {
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().into();
+        let top_of_stack = unsafe { (*self.cpu_unsafe).get_top_of_stack() };
+        vmsa_ref.rsp = top_of_stack.into();
         vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
@@ -542,7 +604,7 @@ impl PerCpu {
     }
 
     pub fn guest_vmsa_ref(&self) -> LockGuard<'_, GuestVmsaRef> {
-        self.shared.guest_vmsa.lock()
+        self.shared().guest_vmsa.lock()
     }
 
     pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
@@ -552,7 +614,7 @@ impl PerCpu {
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
         init_guest_vmsa(vmsa, self.reset_ip);
 
-        self.shared.update_guest_vmsa(paddr);
+        self.shared().update_guest_vmsa(paddr);
 
         Ok(())
     }
@@ -625,14 +687,20 @@ impl PerCpu {
 
     pub fn schedule_init(&mut self) -> TaskPointer {
         let task = self.runqueue.lock_write().schedule_init();
-        self.current_stack = task.stack_bounds();
+        unsafe {
+            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+            (*cpu_unsafe_mut_ptr).current_stack = task.stack_bounds();
+        }
         task
     }
 
     pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
         let ret = self.runqueue.lock_write().schedule_prepare();
         if let Some((_, ref next)) = ret {
-            self.current_stack = next.stack_bounds();
+            unsafe {
+                let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
+                (*cpu_unsafe_mut_ptr).current_stack = next.stack_bounds();
+            }
         };
         ret
     }
@@ -640,90 +708,32 @@ impl PerCpu {
     pub fn runqueue(&self) -> &RWLock<RunQueue> {
         &self.runqueue
     }
-}
 
-/// # Safety
-///
-/// This function performs no borrow checks and should only be used by callers
-/// that can guarantee safe access when borrow checks are not honored.
-pub unsafe fn this_cpu_unsafe() -> *mut PerCpu {
-    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>()
-}
+    pub fn current_task(&self) -> TaskPointer {
+        self.runqueue.lock_read().current_task()
+    }
 
-#[derive(Debug)]
-pub struct CpuRef {
-    cpu: &'static mut PerCpu,
-}
-
-impl Deref for CpuRef {
-    type Target = PerCpu;
-    fn deref(&self) -> &PerCpu {
-        self.cpu
+    pub fn set_tss_rsp0(&mut self, addr: VirtAddr) {
+        self.tss.stacks[0] = addr;
     }
 }
 
-#[derive(Debug)]
-pub struct CpuRefMut {
-    cpu: &'static mut PerCpu,
+pub fn this_cpu_unsafe() -> *mut PerCpuUnsafe {
+    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpuUnsafe>()
 }
 
-impl Deref for CpuRefMut {
-    type Target = PerCpu;
-    fn deref(&self) -> &PerCpu {
-        self.cpu
-    }
+pub fn this_cpu_shared() -> &'static PerCpuShared {
+    unsafe { (*this_cpu_unsafe()).shared() }
 }
 
-impl DerefMut for CpuRefMut {
-    fn deref_mut(&mut self) -> &mut PerCpu {
-        self.cpu
-    }
+pub fn this_cpu() -> Ref<'static, PerCpu> {
+    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
+    cpu_unsafe.cpu()
 }
 
-pub fn this_cpu() -> CpuRef {
-    unsafe {
-        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-        #[cfg(debug_assertions)]
-        {
-            // Prohibit a shared borrow if a mutable borrow exists.
-            assert!((*cpu).borrow_count.1 == 0);
-            (*cpu).borrow_count.0 += 1;
-        }
-        CpuRef { cpu: &mut *cpu }
-    }
-}
-
-pub fn this_cpu_mut() -> CpuRefMut {
-    unsafe {
-        let cpu = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-        #[cfg(debug_assertions)]
-        {
-            // Prohibit a mutable borrow if any other borrow exists.
-            assert!((*cpu).borrow_count.0 == 0);
-            assert!((*cpu).borrow_count.1 == 0);
-            (*cpu).borrow_count.0 += 1;
-            (*cpu).borrow_count.1 += 1;
-        }
-        CpuRefMut { cpu: &mut *cpu }
-    }
-}
-
-#[cfg(debug_assertions)]
-impl Drop for CpuRef {
-    fn drop(&mut self) {
-        assert!(self.cpu.borrow_count.0 != 0);
-        self.cpu.borrow_count.0 -= 1;
-    }
-}
-
-#[cfg(debug_assertions)]
-impl Drop for CpuRefMut {
-    fn drop(&mut self) {
-        assert!(self.cpu.borrow_count.0 == 1);
-        self.cpu.borrow_count.0 = 0;
-        assert!(self.cpu.borrow_count.1 == 1);
-        self.cpu.borrow_count.1 = 0;
-    }
+pub fn this_cpu_mut() -> RefMut<'static, PerCpu> {
+    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
+    cpu_unsafe.cpu_mut()
 }
 
 #[derive(Debug, Clone, Copy)]

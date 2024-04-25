@@ -28,6 +28,9 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      - name: Install Microsoft TPM build dependencies
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake libssl-dev
+
       # ubuntu-latest does not have binutils 2.39, which we need for
       # ld to work, so build all the objects without performing the
       # final linking step.
@@ -47,7 +50,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings
+          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --all-features -- -D warnings
 
       - name: Clippy on std x86_64-unknown-linux-gnu
         uses: actions-rs/cargo@v1
@@ -73,3 +76,33 @@ jobs:
         run: make doc
         env:
           RUSTDOCFLAGS: -D warnings
+
+  nightly-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            target: x86_64-unknown-none
+            profile: minimal
+            override: true
+            components: rustfmt
+
+      # The bindings.rs is auto-generated during make, but we are not
+      # building the code with nightly. So we initialize bindings.rs here
+      # for cargo-fmt in the next workflow, otherwise it will fail reporting
+      # that bindings.rs does not exist.
+      - name: Touch libmstpm bindings
+        run: echo "" > libmstpm/src/bindings.rs
+
+      - name: Format doctests
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check --config "format_code_in_doc_comments=true"

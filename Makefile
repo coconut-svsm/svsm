@@ -1,6 +1,9 @@
 FEATURES ?= "default"
 SVSM_ARGS = --features ${FEATURES}
 
+FEATURES_TEST ?= "default-test"
+SVSM_ARGS_TEST = --no-default-features --features ${FEATURES_TEST}
+
 ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
@@ -38,10 +41,15 @@ STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
+IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
+IGVMMEASUREBIN = bin/igvmmeasure
+
+RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
+DOC_SITE = target/x86_64-unknown-none/site
 
 all: bin/svsm.bin igvm
 
-igvm: $(IGVM_FILES) $(IGVMBIN)
+igvm: $(IGVM_FILES) $(IGVMBIN) $(IGVMMEASUREBIN)
 
 bin:
 	mkdir -v -p bin
@@ -49,23 +57,44 @@ bin:
 $(IGVMBIN): $(IGVMBUILDER) bin
 	cp -f $(IGVMBUILDER) $@
 
+$(IGVMMEASUREBIN): $(IGVMMEASURE) bin
+	cp -f $(IGVMMEASURE) $@
+
 $(IGVMBUILDER):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
+$(IGVMMEASURE):
+	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmmeasure
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER) bin/svsm-kernel.elf bin/stage2.bin
+bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
+	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
+	$(IGVMMEASURE) --check-kvm $@ measure
+
+bin/coconut-hyperv.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v
+	$(IGVMMEASURE) $@ measure
+
+bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu
+	$(IGVMMEASURE) $@ measure
 
 test:
-	cargo test --workspace --target=x86_64-unknown-linux-gnu
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --target=x86_64-unknown-linux-gnu
 
-test-in-svsm: utils/cbit bin/svsm-test.bin
+test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
 	./scripts/test-in-svsm.sh
 
 doc:
 	cargo doc -p svsm --open --all-features --document-private-items
+
+docsite:
+	mkdir -p ${DOC_SITE}
+	cargo doc -p svsm --all-features --document-private-items --no-deps
+	mkdocs build -f Documentation/mkdocs.yml -d ../${DOC_SITE}
+	cp -r ${RUSTDOC_OUTPUT} ${DOC_SITE}/rustdoc
+
+docsite-serve:
+	mkdocs serve -f Documentation/mkdocs.yml
 
 utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
@@ -80,7 +109,7 @@ bin/meta.bin: utils/gen_meta utils/print-meta
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
-	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin stage2
+	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} --no-default-features --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
 bin/svsm-kernel.elf: bin
@@ -88,7 +117,7 @@ bin/svsm-kernel.elf: bin
 	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin
-	LINK_TEST=1 cargo +nightly test -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
+	LINK_TEST=1 cargo +nightly test ${CARGO_ARGS} -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
 
 ${FS_BIN}: bin
@@ -118,12 +147,11 @@ bin/stage1-test: ${STAGE1_TEST_OBJS}
 bin/svsm.bin: bin/stage1
 	objcopy -O binary $< $@
 
-bin/svsm-test.bin: bin/stage1-test
-	objcopy -O binary $< $@
-
 clippy:
-	cargo clippy --workspace --exclude igvmbuilder --exclude svsm-fuzz --all-features -- -D warnings
-	cargo clippy --workspace --all-features --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
 clean:
 	cargo clean
@@ -131,5 +159,7 @@ clean:
 	rm -f ${STAGE1_OBJS} utils/gen_meta utils/print-meta
 	rm -rf bin
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf
+distclean: clean
+	$(MAKE) -C libmstpm $@
 
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean

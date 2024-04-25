@@ -111,8 +111,15 @@ impl GpaMap {
                 1 << 20
             }
             Hypervisor::HyperV => {
-                // Load the kernel image after the firmware.
-                firmware_range.get_end()
+                // Load the kernel image after the firmware, but now lower than
+                // 1 MB.
+                let firmware_end = firmware_range.get_end();
+                let addr_1mb = 1 << 20;
+                if firmware_end < addr_1mb {
+                    addr_1mb
+                } else {
+                    firmware_end
+                }
             }
         };
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
@@ -144,6 +151,14 @@ impl GpaMap {
             GpaRange::new(0, 0)?
         };
 
+        let vmsa = match options.hypervisor {
+            Hypervisor::Qemu => {
+                // VMSA address is currently hardcoded in kvm
+                GpaRange::new_page(0xFFFFFFFFF000)?
+            }
+            Hypervisor::HyperV => GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?,
+        };
+
         let gpa_map = Self {
             low_memory: GpaRange::new(0, 0xf000)?,
             stage2_stack: GpaRange::new_page(0xf000)?,
@@ -159,7 +174,7 @@ impl GpaMap {
             guest_context,
             firmware: firmware_range,
             kernel,
-            vmsa: GpaRange::new_page(kernel.start)?,
+            vmsa,
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");

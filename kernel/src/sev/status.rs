@@ -8,7 +8,6 @@ use crate::cpu::msr::{read_msr, SEV_STATUS};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use bitflags::bitflags;
 use core::fmt::{self, Write};
-use log;
 
 bitflags! {
     #[derive(Copy, Clone, PartialEq, Eq)]
@@ -153,9 +152,14 @@ pub fn sev_snp_enabled() -> bool {
     sev_flags().contains(SEVStatusFlags::SEV_SNP)
 }
 
+pub fn vtom_enabled() -> bool {
+    sev_flags().contains(SEVStatusFlags::VTOM)
+}
+
 pub fn sev_status_verify() {
     let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
     let supported = SEVStatusFlags::DBGSWP
+        | SEVStatusFlags::VTOM
         | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION

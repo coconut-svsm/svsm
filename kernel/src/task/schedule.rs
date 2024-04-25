@@ -223,9 +223,9 @@ impl TaskList {
 
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
-pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPointer, SvsmError> {
+pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
     let mut cpu = this_cpu_mut();
-    let task = Task::create(&mut cpu, entry, flags)?;
+    let task = Task::create(&mut cpu, entry)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
@@ -235,6 +235,22 @@ pub fn create_kernel_task(entry: extern "C" fn(), flags: u16) -> Result<TaskPoin
     schedule();
 
     Ok(task)
+}
+
+pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
+    let mut cpu = this_cpu_mut();
+    let task = Task::create_user(&mut cpu, user_entry)?;
+    TASKLIST.lock().list().push_back(task.clone());
+
+    // Put task on the runqueue of this CPU
+    cpu.runqueue().lock_write().handle_task(task.clone());
+    drop(cpu);
+
+    Ok(task)
+}
+
+pub fn current_task() -> TaskPointer {
+    this_cpu().current_task()
 }
 
 /// Check to see if the task scheduled on the current processor has the given id
@@ -247,9 +263,9 @@ pub fn is_current_task(id: u32) -> bool {
 
 /// Terminates the current task.
 ///
-/// # Panics
+/// # Safety
 ///
-/// Panics if there is no current task.
+/// This function must only be called after scheduling is initialized, otherwise it will panic.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
     let mut rq = cpu.runqueue().lock_write();
@@ -258,6 +274,14 @@ pub unsafe fn current_task_terminated() {
         .as_mut()
         .expect("Task termination handler called when there is no current task");
     TASKLIST.lock().terminate(task_node.clone());
+}
+
+pub fn terminate() {
+    // TODO: re-evaluate whether current_task_terminated() needs to be unsafe
+    unsafe {
+        current_task_terminated();
+    }
+    schedule();
 }
 
 // SAFETY: This function returns a raw pointer to a task. It is safe
@@ -310,6 +334,8 @@ pub fn schedule() {
             let mut pt = next.page_table.lock();
             this_cpu().populate_page_table(&mut pt);
         }
+
+        this_cpu_mut().set_tss_rsp0(next.stack_bounds.end());
 
         // Get task-pointers, consuming the Arcs and release their reference
         unsafe {

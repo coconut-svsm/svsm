@@ -39,7 +39,7 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
                 rip, rsp, cr2
             );
         }
-        VC_VECTOR => stage2_handle_vc_exception(ctx),
+        VC_VECTOR => stage2_handle_vc_exception(ctx).expect("Failed to handle #VC"),
         HV_VECTOR =>
             // #HV does not require processing during stage 2 and can be
         // completely ignored.
@@ -69,7 +69,7 @@ pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionConte
                 rip, rsp, cr2
             );
         }
-        VC_VECTOR => stage2_handle_vc_exception_no_ghcb(ctx),
+        VC_VECTOR => stage2_handle_vc_exception_no_ghcb(ctx).expect("Failed to handle #VC"),
         _ => {
             let err = ctx.error_code;
             let vec = ctx.vector;

@@ -8,7 +8,6 @@ use crate::locking::SpinLock;
 use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::fmt;
-use log;
 
 #[derive(Clone, Copy)]
 pub struct Console {
@@ -53,7 +52,9 @@ pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
 pub fn init_console() {
-    CONSOLE_INITIALIZED.reinit(&true);
+    CONSOLE_INITIALIZED
+        .reinit(&true)
+        .expect("could not reinit CONSOLE_INITIALIZED");
 }
 
 #[doc(hidden)]

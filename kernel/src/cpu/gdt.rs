@@ -41,6 +41,14 @@ impl GDTEntry {
     pub const fn data_64_kernel() -> Self {
         Self(0x00cf92000000ffffu64)
     }
+
+    pub const fn code_64_user() -> Self {
+        Self(0x00affb000000ffffu64)
+    }
+
+    pub const fn data_64_user() -> Self {
+        Self(0x00cff2000000ffffu64)
+    }
 }
 
 const GDT_SIZE: u16 = 8;
@@ -57,8 +65,8 @@ impl GDT {
                 GDTEntry::null(),
                 GDTEntry::code_64_kernel(),
                 GDTEntry::data_64_kernel(),
-                GDTEntry::null(),
-                GDTEntry::null(),
+                GDTEntry::code_64_user(),
+                GDTEntry::data_64_user(),
                 GDTEntry::null(),
                 GDTEntry::null(),
                 GDTEntry::null(),

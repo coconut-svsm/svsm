@@ -6,21 +6,27 @@
 
 use super::super::control_regs::read_cr2;
 use super::super::extable::handle_exception_table;
-use super::super::percpu::this_cpu;
+use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::PF_ERROR_WRITE;
 use super::common::{
-    idt_mut, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR,
-    GP_VECTOR, HV_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR,
-    PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
+    idt_mut, user_mode, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR,
+    DF_VECTOR, GP_VECTOR, HV_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR,
+    OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
+use crate::task::{is_task_fault, terminate};
+
 use core::arch::global_asm;
 
+use crate::syscall::*;
+use syscall::*;
+
 extern "C" {
+    pub fn default_return();
     fn asm_entry_de();
     fn asm_entry_db();
     fn asm_entry_nmi();
@@ -43,6 +49,7 @@ extern "C" {
     fn asm_entry_hv();
     fn asm_entry_vc();
     fn asm_entry_sx();
+    fn asm_entry_int80();
 }
 
 fn init_ist_vectors() {
@@ -76,6 +83,11 @@ pub fn early_idt_init() {
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
     idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
+
+    // Interupts
+    idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
+
+    // Load IDT
     idt.load();
 }
 
@@ -98,43 +110,75 @@ extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
 
 // Doube-Fault handler
 #[no_mangle]
-extern "C" fn ex_handler_double_fault(ctx: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
     let cr2 = read_cr2();
-    let rip = ctx.frame.rip;
-    let rsp = ctx.frame.rsp;
-    panic!(
-        "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
-        rip, rsp, cr2
-    );
+    let rip = ctxt.frame.rip;
+    let rsp = ctxt.frame.rsp;
+
+    if user_mode(ctxt) {
+        log::error!(
+            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x} - Terminating task",
+            rip,
+            rsp,
+            cr2
+        );
+        terminate();
+    } else {
+        panic!(
+            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
+            rip, rsp, cr2
+        );
+    }
 }
 
 // General-Protection handler
 #[no_mangle]
-extern "C" fn ex_handler_general_protection(ctx: &mut X86ExceptionContext) {
-    let rip = ctx.frame.rip;
-    let err = ctx.error_code;
+extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
+    let rip = ctxt.frame.rip;
+    let err = ctxt.error_code;
+    let rsp = ctxt.frame.rsp;
 
-    if !handle_exception_table(ctx) {
+    if user_mode(ctxt) {
+        log::error!(
+            "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x} - Terminating task",
+            rip, err, rsp);
+        terminate();
+    } else if !handle_exception_table(ctxt) {
         panic!(
-            "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x}",
-            rip, err
+            "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x}",
+            rip, err, rsp
         );
     }
 }
 
 // Page-Fault handler
 #[no_mangle]
-extern "C" fn ex_handler_page_fault(ctx: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext) {
     let cr2 = read_cr2();
-    let rip = ctx.frame.rip;
-    let err = ctx.error_code;
+    let rip = ctxt.frame.rip;
+    let err = ctxt.error_code;
+    let vaddr = VirtAddr::from(cr2);
 
-    if this_cpu()
+    if user_mode(ctxt) {
+        let kill_task: bool = if is_task_fault(vaddr) {
+            current_task()
+                .fault(vaddr, (err & PF_ERROR_WRITE) != 0)
+                .is_err()
+        } else {
+            true
+        };
+
+        if kill_task {
+            log::error!("Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
+                    rip, cr2, err);
+            terminate();
+        }
+    } else if this_cpu()
         .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
         .is_err()
-        && !handle_exception_table(ctx)
+        && !handle_exception_table(ctxt)
     {
-        handle_debug_exception(ctx, ctx.vector);
+        handle_debug_exception(ctxt, ctxt.vector);
         panic!(
             "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
             rip, cr2, err
@@ -144,7 +188,7 @@ extern "C" fn ex_handler_page_fault(ctx: &mut X86ExceptionContext) {
 
 // Hypervisor Injection handler
 #[no_mangle]
-extern "C" fn ex_handler_hypervisor_injection(_ctx: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_hypervisor_injection(_ctxt: &mut X86ExceptionContext) {
     // #HV processing is not required in the SVSM.  If a maskable
     // interrupt occurs, it will be processed prior to the next exit.
     // There are no NMI sources, and #MC cannot be handled anyway
@@ -153,8 +197,41 @@ extern "C" fn ex_handler_hypervisor_injection(_ctx: &mut X86ExceptionContext) {
 
 // VMM Communication handler
 #[no_mangle]
-extern "C" fn ex_handler_vmm_communication(ctx: &mut X86ExceptionContext) {
-    handle_vc_exception(ctx);
+extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext) {
+    let rip = ctxt.frame.rip;
+    let code = ctxt.error_code;
+
+    if let Err(err) = handle_vc_exception(ctxt) {
+        log::error!("#VC handling error: {:?}", err);
+        if user_mode(ctxt) {
+            log::error!("Failed to handle #VC from user-mode at RIP {:#018x} code: {:#018x} - Terminating task", rip, code);
+            terminate();
+        } else {
+            panic!(
+                "Failed to handle #VC from kernel-mode at RIP {:#018x} code: {:#018x}",
+                rip, code
+            );
+        }
+    }
+}
+
+// System Call SoftIRQ handler
+#[no_mangle]
+extern "C" fn ex_handler_system_call(ctxt: &mut X86ExceptionContext) {
+    if !user_mode(ctxt) {
+        panic!("Syscall handler called from kernel mode!");
+    }
+
+    let Ok(input) = TryInto::<u64>::try_into(ctxt.regs.rax) else {
+        ctxt.regs.rax = !0;
+        return;
+    };
+
+    ctxt.regs.rax = match input {
+        SYS_HELLO => sys_hello(),
+        SYS_EXIT => sys_exit(),
+        _ => !0,
+    };
 }
 
 #[no_mangle]
@@ -162,9 +239,11 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext) {
     let vec = ctx.vector;
     let rip = ctx.frame.rip;
     let err = ctx.error_code;
+    let rsp = ctx.frame.rsp;
+    let ss = ctx.frame.ss;
     panic!(
-        "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-        vec, rip, err
+        "Unhandled exception {} RIP {:#018x} error code: {:#018x} RSP: {:#018x} SS: {:#x}",
+        vec, rip, err, rsp, ss
     );
 }
 

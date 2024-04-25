@@ -9,7 +9,7 @@
 
 pub mod boot_stage2;
 
-use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut};
@@ -23,7 +23,6 @@ use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
-use svsm::elf;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -40,9 +39,9 @@ use svsm::sev::ghcb::PageStateChangeOp;
 use svsm::sev::msr_protocol::verify_ghcb_version;
 use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
 use svsm::svsm_console::SVSMIOPort;
-use svsm::types::{PageSize, PAGE_SIZE};
+use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
-use svsm::utils::{halt, MemoryRegion};
+use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
     pub static heap_start: u8;
@@ -61,19 +60,16 @@ fn setup_stage2_allocator() {
 }
 
 fn init_percpu() {
-    unsafe {
-        let bsp_percpu = PerCpu::alloc(0)
-            .expect("Failed to allocate BSP per-cpu data")
-            .as_mut()
-            .unwrap();
+    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
-        bsp_percpu.set_pgtable(PageTableRef::new(addr_of_mut!(pgtable)));
-        bsp_percpu
-            .map_self_stage2()
-            .expect("Failed to map per-cpu area");
-        bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
-        bsp_percpu.register_ghcb().expect("Failed to register GHCB");
+    unsafe {
+        bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
     }
+    bsp_percpu
+        .map_self_stage2()
+        .expect("Failed to map per-cpu area");
+    bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
+    bsp_percpu.register_ghcb().expect("Failed to register GHCB");
 }
 
 fn shutdown_percpu() {
@@ -85,9 +81,10 @@ fn shutdown_percpu() {
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn setup_env(config: &SvsmConfig<'_>) {
+fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
     gdt().load();
     early_idt_init_no_ghcb();
+    sev_status_init();
 
     install_console_logger("Stage2");
     init_kernel_mapping_info(
@@ -96,12 +93,11 @@ fn setup_env(config: &SvsmConfig<'_>) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early();
+    paging_init_early(launch_info.vtom);
 
     // Bring up the GCHB for use from the SVSMIOPort console.
     verify_ghcb_version();
-    sev_status_init();
-    set_init_pgtable(PageTableRef::new(unsafe { addr_of_mut!(pgtable) }));
+    set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
     init_percpu();
 
@@ -114,6 +110,7 @@ fn setup_env(config: &SvsmConfig<'_>) {
             port: config.debug_serial_port(),
         })
         .expect("console serial output already configured");
+    (*CONSOLE_SERIAL).init();
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
@@ -149,21 +146,16 @@ fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, pa
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
 }
 
-// Launch info from stage1, usually at the bottom of the stack
-// The layout has to match the order in which the parts are pushed to the stack
-// in stage1/stage1.S
-#[derive(Default, Debug, Clone, Copy)]
-#[repr(C, packed)]
-pub struct Stage1LaunchInfo {
-    kernel_elf_start: u32,
-    kernel_elf_end: u32,
-    kernel_fs_start: u32,
-    kernel_fs_end: u32,
-    igvm_params: u32,
+#[inline]
+fn check_launch_info(launch_info: &KernelLaunchInfo) {
+    let offset: u64 = launch_info.heap_area_virt_start - launch_info.heap_area_phys_start;
+    let align: u64 = PAGE_SIZE_2M.try_into().unwrap();
+
+    assert!(is_aligned(offset, align));
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
+pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
@@ -175,7 +167,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
     };
 
-    setup_env(&config);
+    setup_env(&config, launch_info);
 
     let r = config
         .find_kernel_region()
@@ -200,13 +192,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     let kernel_vaddr_alloc_base = kernel_vaddr_alloc_info.range.vaddr_begin;
 
     // Determine the starting physical address at which the kernel should be
-    // relocated.  If IGVM parameters are present, then this will follow the
-    // IGVM parameters.  Otherwise, it will be the base of the kernel
-    // region.
+    // relocated.
     let mut loaded_kernel_phys_end = kernel_region_phys_start;
-    if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
-        loaded_kernel_phys_end = loaded_kernel_phys_end + igvm_params.reserved_kernel_area_size();
-    }
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
@@ -312,9 +299,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
     }
 
     // Map the rest of the memory region to right after the kernel image.
+    // Exclude any memory reserved by the configuration.
     let heap_area_phys_start = loaded_kernel_phys_end;
     let heap_area_virt_start = loaded_kernel_virt_end;
-    let heap_area_size = kernel_region_phys_end - heap_area_phys_start;
+    let heap_area_size =
+        kernel_region_phys_end - heap_area_phys_start - config.reserved_kernel_area_size();
     let heap_area_virt_region = MemoryRegion::new(heap_area_virt_start, heap_area_size);
     map_and_validate(&config, heap_area_virt_region, heap_area_phys_start);
 
@@ -324,6 +313,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         kernel_region_phys_start: u64::from(kernel_region_phys_start),
         kernel_region_phys_end: u64::from(kernel_region_phys_end),
         heap_area_phys_start: u64::from(heap_area_phys_start),
+        heap_area_size: heap_area_size as u64,
         kernel_region_virt_start: u64::from(loaded_kernel_virt_start),
         heap_area_virt_start: u64::from(heap_area_virt_start),
         kernel_elf_stage2_virt_start: u64::from(kernel_elf_start),
@@ -336,8 +326,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage1LaunchInfo) {
         stage2_igvm_params_size: igvm_params_size as u64,
         igvm_params_phys_addr: u64::from(igvm_params_phys_address),
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
+        vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
     };
+
+    check_launch_info(&launch_info);
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);

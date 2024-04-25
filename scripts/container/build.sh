@@ -96,7 +96,7 @@ BuildSvsmReuse()
 
     "${DOCKER_CMD}" exec \
         -it ${CONTAINER_NAME} \
-        /bin/bash -c "source $HOME/.cargo/env && make clean && make"
+        /bin/bash -c "make clean && make"
 }
 
 ####
@@ -111,7 +111,7 @@ BuildSvsmDelete()
           --mount type=bind,source="${WORKDIR}",target="${WORKDIR}"${MOUNT_OPTS} \
           $EXTRA_DOCKER_OPTS \
           ${IMAGE_NAME} \
-          /bin/bash -c "source $HOME/.cargo/env && make clean && make"
+          /bin/bash -c "make clean && make"
 }
 
 ####

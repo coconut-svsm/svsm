@@ -8,7 +8,7 @@ edition = "2021"
 cargo-fuzz = true
 
 [dependencies]
-svsm = { workspace = true, features = ["fuzzing-hooks"] }
+svsm.workspace = true
 
 arbitrary = { workspace = true, features = ["derive"] }
 libfuzzer-sys.workspace = true

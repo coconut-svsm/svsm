@@ -93,7 +93,7 @@ fuzz_target!(|inp: FuzzInput| {
                 }
             }
             Action::AllocateSlab => {
-                if let Ok(page) = allocate_slab_page() {
+                if let Ok(page) = allocate_slab_page(None) {
                     pages.push(page);
                 }
             }

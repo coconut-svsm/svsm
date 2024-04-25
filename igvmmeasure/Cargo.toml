@@ -1,0 +1,15 @@
+[package]
+name = "igvmmeasure"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { workspace = true, default-features = true, features = ["derive"] }
+hmac-sha512.workspace = true
+igvm.workspace = true
+igvm_defs.workspace = true
+p384.workspace = true
+zerocopy.workspace = true
+
+[lints]
+workspace = true

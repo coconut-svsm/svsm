@@ -98,7 +98,6 @@ unsafe impl<T: Send + Sync> Sync for RWLock<T> {}
 /// A tuple containing two 32-bit unsigned integer values. The first
 /// element of the tuple is the lower 32 bits of input value, and the
 /// second is the upper 32 bits.
-///
 #[inline]
 fn split_val(val: u64) -> (u64, u64) {
     (val & 0xffff_ffffu64, val >> 32)
@@ -117,7 +116,6 @@ fn split_val(val: u64) -> (u64, u64) {
 /// # Returns
 ///
 /// A 64-bit value representing the combined state of readers and writers in the RWLock.
-///
 #[inline]
 fn compose_val(readers: u64, writers: u64) -> u64 {
     (readers & 0xffff_ffffu64) | (writers << 32)
@@ -126,7 +124,6 @@ fn compose_val(readers: u64, writers: u64) -> u64 {
 /// A reader-writer lock that allows multiple readers or a single writer
 /// to access the protected data. [`RWLock`] provides exclusive access for
 /// writers and shared access for readers, for efficient synchronization.
-///
 impl<T> RWLock<T> {
     /// Creates a new [`RWLock`] instance with the provided initial data.
     ///
@@ -165,7 +162,6 @@ impl<T> RWLock<T> {
     ///
     /// A 64-bit value representing the current state of the [`RWLock`],
     /// including the count of readers and writers.
-    ///
     #[inline]
     fn wait_for_writers(&self) -> u64 {
         loop {
@@ -186,7 +182,6 @@ impl<T> RWLock<T> {
     ///
     /// A 64-bit value representing the current state of the [`RWLock`],
     /// including the count of readers and writers.
-    ///
     #[inline]
     fn wait_for_readers(&self) -> u64 {
         loop {
@@ -205,7 +200,6 @@ impl<T> RWLock<T> {
     /// # Returns
     ///
     /// A [`ReadLockGuard`] that provides read access to the protected data.
-    ///
     pub fn lock_read(&self) -> ReadLockGuard<'_, T> {
         loop {
             let val = self.wait_for_writers();
@@ -234,7 +228,6 @@ impl<T> RWLock<T> {
     /// # Returns
     ///
     /// A [`WriteLockGuard`] that provides write access to the protected data.
-    ///
     pub fn lock_write(&self) -> WriteLockGuard<'_, T> {
         // Waiting for current writer to finish
         loop {

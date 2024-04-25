@@ -4,17 +4,20 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+mod exec;
 mod schedule;
 mod tasks;
 mod waiting;
 
 pub use schedule::{
-    create_kernel_task, is_current_task, schedule, schedule_init, schedule_task, RunQueue, TASKLIST,
+    create_kernel_task, create_user_task, current_task, current_task_terminated, is_current_task,
+    schedule, schedule_init, schedule_task, terminate, RunQueue, TASKLIST,
 };
 
 pub use tasks::{
-    Task, TaskContext, TaskError, TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState,
-    INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
+    is_task_fault, Task, TaskContext, TaskError, TaskListAdapter, TaskPointer, TaskRunListAdapter,
+    TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
 };
 
+pub use exec::exec_user;
 pub use waiting::WaitQueue;

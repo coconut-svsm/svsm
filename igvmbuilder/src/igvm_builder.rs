@@ -14,7 +14,9 @@ use bootlib::igvm_params::{
     IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
 };
 use clap::Parser;
-use igvm::{IgvmDirectiveHeader, IgvmFile, IgvmPlatformHeader, IgvmRevision};
+use igvm::{
+    IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
+};
 use igvm_defs::{
     IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
     IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
@@ -43,6 +45,7 @@ pub struct IgvmBuilder {
     firmware: Option<Box<dyn Firmware>>,
     gpa_map: GpaMap,
     platforms: Vec<IgvmPlatformHeader>,
+    initialization: Vec<IgvmInitializationHeader>,
     directives: Vec<IgvmDirectiveHeader>,
 }
 
@@ -63,6 +66,7 @@ impl IgvmBuilder {
             firmware,
             gpa_map,
             platforms: vec![],
+            initialization: vec![],
             directives: vec![],
         })
     }
@@ -71,11 +75,15 @@ impl IgvmBuilder {
         directive_a: &IgvmDirectiveHeader,
         directive_b: &IgvmDirectiveHeader,
     ) -> Ordering {
-        let IgvmDirectiveHeader::PageData { gpa: a, .. } = directive_a else {
-            panic!("Attempted to compare non-page directive");
+        let a = match directive_a {
+            IgvmDirectiveHeader::PageData { gpa, .. }
+            | IgvmDirectiveHeader::SnpVpContext { gpa, .. } => gpa,
+            _ => panic!("Attempted to compare non-page/vp directive"),
         };
-        let IgvmDirectiveHeader::PageData { gpa: b, .. } = directive_b else {
-            panic!("Attempted to compare non-page directive");
+        let b = match directive_b {
+            IgvmDirectiveHeader::PageData { gpa, .. }
+            | IgvmDirectiveHeader::SnpVpContext { gpa, .. } => gpa,
+            _ => panic!("Attempted to compare non-page/vp directive"),
         };
         a.cmp(b)
     }
@@ -83,6 +91,7 @@ impl IgvmBuilder {
     pub fn build(mut self) -> Result<(), Box<dyn Error>> {
         let param_block = self.create_param_block()?;
         self.build_directives(&param_block)?;
+        self.build_initialization()?;
         self.build_platforms(&param_block);
 
         // Separate the directive pages out from the others so we can populate them last.
@@ -102,11 +111,16 @@ impl IgvmBuilder {
             println!("{param_block:#X?}");
         }
 
-        let file = IgvmFile::new(IgvmRevision::V1, self.platforms, vec![], self.directives)
-            .map_err(|e| {
-                eprintln!("Failed to create output file");
-                e
-            })?;
+        let file = IgvmFile::new(
+            IgvmRevision::V1,
+            self.platforms,
+            self.initialization,
+            self.directives,
+        )
+        .map_err(|e| {
+            eprintln!("Failed to create output file");
+            e
+        })?;
 
         let mut binary_file = Vec::new();
         file.serialize(&mut binary_file)?;
@@ -209,6 +223,18 @@ impl IgvmBuilder {
         ));
     }
 
+    fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
+        if let Some(policy) = &self.options.policy {
+            let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
+            self.initialization
+                .push(IgvmInitializationHeader::GuestPolicy {
+                    policy,
+                    compatibility_mask: COMPATIBILITY_MASK,
+                })
+        }
+        Ok(())
+    }
+
     fn build_directives(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
         // Populate firmware directives.
         if let Some(firmware) = &self.firmware {
@@ -268,9 +294,10 @@ impl IgvmBuilder {
             },
         ));
 
-        // Place the VMSA at the base of the kernel region.
+        // Add the VMSA.
         self.directives.push(construct_vmsa(
             self.gpa_map.vmsa.get_start(),
+            param_block.vtom,
             COMPATIBILITY_MASK,
         )?);
 
@@ -317,12 +344,12 @@ impl IgvmBuilder {
         )?;
 
         // Populate the stage 2 stack.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map);
+        let stage2_stack = Stage2Stack::new(&self.gpa_map, param_block.vtom);
         stage2_stack.add_directive(
             self.gpa_map.stage2_stack.get_start(),
             COMPATIBILITY_MASK,
             &mut self.directives,
-        )?;
+        );
 
         // Populate the empty region at the bottom of RAM.
         self.add_empty_pages(
@@ -413,5 +440,6 @@ impl IgvmBuilder {
 
     fn filter_pages(directive: &IgvmDirectiveHeader) -> bool {
         matches!(directive, IgvmDirectiveHeader::PageData { .. })
+            || matches!(directive, IgvmDirectiveHeader::SnpVpContext { .. })
     }
 }

@@ -7,11 +7,9 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::cpu::ghcb::current_ghcb;
-use crate::elf;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
-use crate::mm;
-use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
@@ -28,8 +26,7 @@ pub fn init_page_table(
     launch_info: &KernelLaunchInfo,
     kernel_elf: &elf::Elf64File<'_>,
 ) -> Result<(), SvsmError> {
-    let vaddr = mm::alloc::allocate_zeroed_page().expect("Failed to allocate root page-table");
-    let mut pgtable = PageTableRef::new(unsafe { &mut *vaddr.as_mut_ptr::<PageTable>() });
+    let mut pgtable = PageTableRef::alloc()?;
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
         let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
         IgvmParamInfo {
@@ -47,10 +44,6 @@ pub fn init_page_table(
     // The memory backing the kernel ELF segments gets allocated back to back
     // from the physical memory region by the Stage2 loader.
     let mut phys = PhysAddr::from(launch_info.kernel_region_phys_start);
-    if let Some(ref igvm_params) = igvm_param_info.igvm_params {
-        phys = phys + igvm_params.reserved_kernel_area_size();
-    }
-
     for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
         let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
         let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
@@ -87,7 +80,7 @@ pub fn init_page_table(
     // Map subsequent heap area.
     let heap_vregion = MemoryRegion::new(
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size() as usize,
+        launch_info.heap_area_size as usize,
     );
     pgtable
         .map_region(

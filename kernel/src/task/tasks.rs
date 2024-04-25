@@ -12,14 +12,21 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::idt::svsm::default_return;
 use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::X86ExceptionContext;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
+use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
-use crate::mm::vm::{Mapping, VMKernelStack, VMR};
-use crate::mm::{SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE};
+use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
+use crate::mm::{
+    mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
+};
+use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
@@ -109,13 +116,16 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
-    stack_bounds: MemoryRegion<VirtAddr>,
+    pub stack_bounds: MemoryRegion<VirtAddr>,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageTableRef>,
 
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
+
+    /// Task virtual memory range for use at CPL 3 - None for kernel tasks
+    vm_user_range: Option<VMR>,
 
     /// State relevant for scheduler
     sched_state: RWLock<TaskSchedState>,
@@ -158,16 +168,8 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(
-        cpu: &mut PerCpu,
-        entry: extern "C" fn(),
-        flags: u16,
-    ) -> Result<TaskPointer, SvsmError> {
-        let mut pgtable = if (flags & TASK_FLAG_SHARE_PT) != 0 {
-            cpu.get_pgtable().clone_shared()?
-        } else {
-            Self::allocate_page_table()?
-        };
+    pub fn create(cpu: &mut PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+        let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
 
@@ -175,7 +177,7 @@ impl Task {
             VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
-        let (stack, raw_bounds, rsp_offset) = Self::allocate_stack(cpu, entry)?;
+        let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
@@ -190,11 +192,56 @@ impl Task {
             rsp: bounds
                 .end()
                 .checked_sub(rsp_offset)
-                .expect("Invalid stack offset from task::allocate_stack()")
+                .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
+            vm_user_range: None,
+            sched_state: RWLock::new(TaskSchedState {
+                idle_task: false,
+                state: TaskState::RUNNING,
+                cpu: cpu.get_apic_id(),
+            }),
+            id: TASK_ID_ALLOCATOR.next_id(),
+            list_link: LinkedListAtomicLink::default(),
+            runlist_link: LinkedListAtomicLink::default(),
+        }))
+    }
+
+    pub fn create_user(cpu: &mut PerCpu, user_entry: usize) -> Result<TaskPointer, SvsmError> {
+        let mut pgtable = cpu.get_pgtable().clone_shared()?;
+
+        cpu.populate_page_table(&mut pgtable);
+
+        let mut vm_kernel_range =
+            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+        vm_kernel_range.initialize()?;
+
+        let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
+
+        vm_kernel_range.populate(&mut pgtable);
+
+        let mut vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
+        vm_user_range.initialize_lazy()?;
+
+        // Remap at the per-task offset
+        let bounds = MemoryRegion::new(
+            SVSM_PERTASK_STACK_BASE + raw_bounds.start().into(),
+            raw_bounds.len(),
+        );
+
+        Ok(Arc::new(Task {
+            rsp: bounds
+                .end()
+                .checked_sub(stack_offset)
+                .expect("Invalid stack offset from task::allocate_utask_stack()")
+                .bits() as u64,
+            stack_bounds: bounds,
+            page_table: SpinLock::new(pgtable),
+            vm_kernel_range,
+            vm_user_range: Some(vm_user_range),
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
@@ -259,14 +306,33 @@ impl Task {
         self.vm_kernel_range.handle_page_fault(vaddr, write)
     }
 
-    fn allocate_stack(
-        cpu: &mut PerCpu,
-        entry: extern "C" fn(),
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
+        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.vm_user_range.is_some() {
+            let vmr = self.vm_user_range.as_ref().unwrap();
+            let mut pgtbl = self.page_table.lock();
+            vmr.populate_addr(&mut pgtbl, vaddr);
+            vmr.handle_page_fault(vaddr, write)?;
+            Ok(())
+        } else {
+            Err(SvsmError::Mem)
+        }
+    }
+
+    fn allocate_stack_common() -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
         let mapping = Arc::new(Mapping::new(stack));
+
+        Ok((mapping, bounds))
+    }
+
+    fn allocate_ktask_stack(
+        cpu: &mut PerCpu,
+        entry: extern "C" fn(),
+    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+        let (mapping, bounds) = Task::allocate_stack_common()?;
+
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
         // We need to setup a context on the stack that matches the stack layout
@@ -286,12 +352,129 @@ impl Task {
         Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
     }
 
-    fn allocate_page_table() -> Result<PageTableRef, SvsmError> {
-        // Base the new task page table on the initial SVSM kernel page table.
-        // When the pagetable is schedule to a CPU, the per CPU entry will also
-        // be added to the pagetable.
-        get_init_pgtable_locked().clone_shared()
+    fn allocate_utask_stack(
+        cpu: &mut PerCpu,
+        user_entry: usize,
+    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+        let (mapping, bounds) = Task::allocate_stack_common()?;
+
+        let percpu_mapping = cpu.new_mapping(mapping.clone())?;
+
+        // We need to setup a context on the stack that matches the stack layout
+        // defined in switch_context below.
+        let stack_ptr = (percpu_mapping.virt_addr() + bounds.end().bits()).as_mut_ptr::<u8>();
+
+        let mut stack_offset = size_of::<X86ExceptionContext>();
+
+        // 'Push' the task frame onto the stack
+        unsafe {
+            // Setup IRQ return frame
+            let mut iret_frame = X86ExceptionContext::default();
+            iret_frame.frame.rip = user_entry;
+            iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
+            iret_frame.frame.flags = 0;
+            iret_frame.frame.rsp = (USER_MEM_END - 8).into();
+            iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
+
+            // Copy IRET frame to stack
+            let stack_iret_frame = stack_ptr.sub(stack_offset).cast::<X86ExceptionContext>();
+            *stack_iret_frame = iret_frame;
+
+            stack_offset += size_of::<TaskContext>();
+
+            let task_context = TaskContext {
+                ret_addr: VirtAddr::from(default_return as *const ())
+                    .bits()
+                    .try_into()
+                    .unwrap(),
+                ..Default::default()
+            };
+            let stack_task_context = stack_ptr.sub(stack_offset).cast::<TaskContext>();
+            *stack_task_context = task_context;
+        }
+
+        Ok((mapping, bounds, stack_offset))
     }
+
+    pub fn mmap_common(
+        vmr: &VMR,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        let mapping = if let Some(f) = file {
+            create_file_mapping(f, offset, size, flags)?
+        } else {
+            create_anon_mapping(size, flags)?
+        };
+
+        if flags.contains(VMFileMappingFlags::Fixed) {
+            Ok(vmr.insert_at(addr, mapping)?)
+        } else {
+            Ok(vmr.insert_hint(addr, mapping)?)
+        }
+    }
+
+    pub fn mmap_kernel(
+        &self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)
+    }
+
+    pub fn mmap_kernel_guard<'a>(
+        &'a self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VMMappingGuard<'a>, SvsmError> {
+        let vaddr = Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)?;
+        Ok(VMMappingGuard::new(&self.vm_kernel_range, vaddr))
+    }
+
+    pub fn mmap_user(
+        &self,
+        addr: VirtAddr,
+        file: Option<&FileHandle>,
+        offset: usize,
+        size: usize,
+        flags: VMFileMappingFlags,
+    ) -> Result<VirtAddr, SvsmError> {
+        if self.vm_user_range.is_none() {
+            return Err(SvsmError::Mem);
+        }
+
+        let vmr = self.vm_user_range.as_ref().unwrap();
+
+        Self::mmap_common(vmr, addr, file, offset, size, flags)
+    }
+
+    pub fn munmap_kernel(&self, addr: VirtAddr) -> Result<(), SvsmError> {
+        self.vm_kernel_range.remove(addr)?;
+        Ok(())
+    }
+
+    pub fn munmap_user(&self, addr: VirtAddr) -> Result<(), SvsmError> {
+        if self.vm_user_range.is_none() {
+            return Err(SvsmError::Mem);
+        }
+
+        self.vm_user_range.as_ref().unwrap().remove(addr)?;
+        Ok(())
+    }
+}
+
+pub fn is_task_fault(vaddr: VirtAddr) -> bool {
+    (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
+        || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
 }
 
 extern "C" fn task_exit() {

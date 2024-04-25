@@ -126,7 +126,6 @@ pub trait VirtualMapping: core::fmt::Debug {
     ///
     /// * 'write' - `true` if the fault was due to a write to the memory
     ///              location, or 'false' if the fault was due to a read.
-    ///
     fn handle_page_fault(
         &mut self,
         _vmr: &VMR,

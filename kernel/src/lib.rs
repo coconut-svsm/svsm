@@ -17,7 +17,6 @@ pub mod console;
 pub mod cpu;
 pub mod crypto;
 pub mod debug;
-pub mod elf;
 pub mod error;
 pub mod fs;
 pub mod fw_cfg;
@@ -35,9 +34,12 @@ pub mod sev;
 pub mod string;
 pub mod svsm_console;
 pub mod svsm_paging;
+pub mod syscall;
 pub mod task;
 pub mod types;
 pub mod utils;
+#[cfg(all(feature = "mstpm", not(test)))]
+pub mod vtpm;
 
 #[test]
 fn test_nop() {}

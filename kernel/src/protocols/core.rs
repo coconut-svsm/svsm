@@ -6,14 +6,16 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::{this_cpu_mut, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::cpu::percpu::{this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
 use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
+use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
+use crate::requests::SvsmCaa;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
     rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,
@@ -35,6 +37,15 @@ const CORE_PROTOCOL: u32 = 1;
 const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
 const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
 
+// This lock prevents races around PVALIDATE and CREATE_VCPU
+//
+// Without the lock there is a possible attack where the error path of
+// core_create_vcpu() could give the guest OS access to a SVSM page.
+//
+// The PValidate path will take the lock for read, the create_vcpu path takes
+// the lock for write.
+static PVALIDATE_LOCK: RWLock<()> = RWLock::new(());
+
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 struct PValidateRequest {
@@ -43,14 +54,22 @@ struct PValidateRequest {
     resv: u32,
 }
 
-fn core_create_vcpu_error_restore(vaddr: VirtAddr) -> Result<(), SvsmReqError> {
-    if let Err(err) = rmp_clear_guest_vmsa(vaddr) {
-        log::error!("Failed to restore page permissions: {:#?}", err);
+fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
+    if let Some(v) = vaddr {
+        if let Err(err) = rmp_clear_guest_vmsa(v) {
+            log::error!("Failed to restore page permissions: {:#?}", err);
+        }
     }
     // In case mappings have been changed
     flush_tlb_global_sync();
 
-    Ok(())
+    if let Some(p) = paddr {
+        // SAFETY: This can only fail if another CPU unregisters our
+        // unused VMSA. This is not possible, since unregistration of
+        // an unused VMSA only happens in the error path of core_create_vcpu(),
+        // with a physical address that only this CPU managed to register.
+        PERCPU_VMSAS.unregister(p, false).unwrap();
+    }
 }
 
 // VMSA validity checks according to SVSM spec
@@ -72,7 +91,16 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     // Check CAA address
-    if !valid_phys_address(pcaa) || !pcaa.is_aligned(8) {
+    if !valid_phys_address(pcaa) || !pcaa.is_page_aligned() {
+        return Err(SvsmReqError::invalid_address());
+    }
+
+    // Check whether VMSA page and CAA region overlap
+    //
+    // Since both areas are 4kb aligned and 4kb in size, and correct alignment
+    // was already checked, it is enough here to check whether VMSA and CAA
+    // page have the same starting address.
+    if paddr == pcaa {
         return Err(SvsmReqError::invalid_address());
     }
 
@@ -88,13 +116,12 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr();
 
+    // Prevent any parallel PVALIDATE requests from being processed
+    let lock = PVALIDATE_LOCK.lock_write();
+
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_set_guest_vmsa(vaddr).map_err(|err| {
-        // SAFETY: this can only fail if another CPU unregisters our
-        // unused VMSA. This is not possible, since unregistration of
-        // an unused VMSA only happens in the error path for this function,
-        // with a physical address that only this CPU managed to register.
-        PERCPU_VMSAS.unregister(paddr, false).unwrap();
+    rmp_revoke_guest_access(vaddr, PageSize::Regular).map_err(|err| {
+        core_create_vcpu_error_restore(Some(paddr), None);
         err
     })?;
 
@@ -106,10 +133,17 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
-        PERCPU_VMSAS.unregister(paddr, false).unwrap();
-        core_create_vcpu_error_restore(vaddr)?;
+        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
         return Err(SvsmReqError::invalid_parameter());
     }
+
+    // Set the VMSA bit
+    rmp_set_guest_vmsa(vaddr).map_err(|err| {
+        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
+        err
+    })?;
+
+    drop(lock);
 
     assert!(PERCPU_VMSAS.set_used(paddr) == Some(apic_id));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
@@ -224,6 +258,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
 
+    // Take lock to prevent races with CREATE_VCPU calls
+    let lock = PVALIDATE_LOCK.lock_read();
+
     if valid == PvalidateOp::Invalid {
         *flush |= true;
         rmp_revoke_guest_access(vaddr, huge)?;
@@ -233,6 +270,8 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) if ign_cf => Ok(()),
         _ => Err(err),
     })?;
+
+    drop(lock);
 
     if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
@@ -257,6 +296,9 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         // down the #NPF loops.
         //
         if writable_phys_addr(paddr) {
+            // FIXME: This check leaves a window open for the attack described
+            // above. Remove the check once OVMF and Linux have been fixed and
+            // no longer try to pvalidate MMIO memory.
             zero_mem_region(vaddr, vaddr + page_size_bytes);
         } else {
             log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
@@ -340,10 +382,10 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
     let vaddr = mapping_guard.virt_addr() + offset;
 
-    let pending = GuestPtr::<u64>::new(vaddr);
-    pending.write(0)?;
+    let pending = GuestPtr::<SvsmCaa>::new(vaddr);
+    pending.write(SvsmCaa::zeroed())?;
 
-    this_cpu_mut().shared.update_guest_caa(gpa);
+    this_cpu_shared().update_guest_caa(gpa);
 
     Ok(())
 }

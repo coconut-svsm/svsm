@@ -11,12 +11,12 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
-use core::mem::{align_of, size_of};
+use core::mem::size_of;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::address::{PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -26,11 +26,10 @@ use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_mut};
+use svsm::cpu::percpu::{this_cpu, this_cpu_mut, this_cpu_shared, this_cpu_unsafe};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
-use svsm::elf;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
@@ -48,9 +47,12 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
-use svsm::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
+use svsm::task::exec_user;
+use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+#[cfg(all(feature = "mstpm", not(test)))]
+use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
@@ -149,20 +151,13 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
+fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     if let Some(addr) = fw_meta.cpuid_page {
         copy_cpuid_table_to_fw(addr)?;
     }
 
-    let secrets_page = match fw_meta.secrets_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify secrets-page location"),
-    };
-
-    let caa_page = match fw_meta.caa_page {
-        Some(addr) => addr,
-        None => panic!("FW does not specify CAA_PAGE location"),
-    };
+    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
+    let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
 
     copy_secrets_page_to_fw(secrets_page, caa_page)?;
 
@@ -172,14 +167,11 @@ pub fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
 }
 
 fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    let mut cpu = this_cpu_mut();
-
     if let Some(caa) = fw_meta.caa_page {
-        cpu.shared.update_guest_caa(caa);
+        this_cpu_shared().update_guest_caa(caa);
     }
 
-    cpu.alloc_guest_vmsa()?;
-    drop(cpu);
+    this_cpu_mut().alloc_guest_vmsa()?;
     update_mappings()?;
 
     Ok(())
@@ -191,7 +183,7 @@ fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
     let vmsa = vmsa_ref.vmsa();
 
-    config.initialize_guest_vmsa(vmsa);
+    config.initialize_guest_vmsa(vmsa)?;
 
     log::info!("VMSA PA: {:#x}", vmsa_pa);
 
@@ -236,7 +228,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size() as usize / PAGE_SIZE,
+        launch_info.heap_area_size as usize / PAGE_SIZE,
     );
 }
 
@@ -259,6 +251,30 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
+/// # Panics
+///
+/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
+fn init_cpuid_table(addr: VirtAddr) {
+    // SAFETY: this is called from the main function for the SVSM and no other
+    // CPUs have been brought up, so the pointer cannot be aliased.
+    // `aligned_mut()` will check alignment for us.
+    let table = unsafe {
+        addr.aligned_mut::<SnpCpuidTable>()
+            .expect("Misaligned SNP CPUID table address")
+    };
+
+    for func in table.func.iter_mut().take(table.count as usize) {
+        if func.eax_in == 0x8000001f {
+            func.eax_out |= 1 << 28;
+        }
+    }
+
+    CPUID_PAGE
+        .init(table)
+        .expect("Already initialized CPUID page");
+    register_cpuid_table(&CPUID_PAGE);
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -279,19 +295,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .init(li)
         .expect("Already initialized launch info");
 
-    let cpuid_table_virt = VirtAddr::from(launch_info.cpuid_page);
-    if !cpuid_table_virt.is_aligned(align_of::<SnpCpuidTable>()) {
-        panic!("Misaligned SNP CPUID table address");
-    }
-    // SAFETY: this is the main function for the SVSM and no other CPUs have
-    // been brought up, so the pointer cannot be aliased. We have verified that
-    // the pointer is aligned so we can create a temporary reference.
-    unsafe {
-        CPUID_PAGE
-            .init(&*(cpuid_table_virt.as_ptr::<SnpCpuidTable>()))
-            .expect("Already initialized CPUID page")
-    };
-    register_cpuid_table(&CPUID_PAGE);
+    init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
     dump_cpuid_table();
 
     let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
@@ -319,19 +323,14 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init();
+    paging_init(li.vtom);
     init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
     // SAFETY: this PerCpu has just been allocated and no other CPUs have been
     // brought up, thus it cannot be aliased and we can get a mutable
     // reference to it. We trust PerCpu::alloc() to return a valid and
     // aligned pointer.
-    let bsp_percpu = unsafe {
-        PerCpu::alloc(0)
-            .expect("Failed to allocate BSP per-cpu data")
-            .as_mut()
-            .unwrap()
-    };
+    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup()
@@ -346,6 +345,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .setup_idle_task(svsm_main)
         .expect("Failed to allocate idle task for BSP");
 
+    drop(bsp_percpu);
+
     idt_init();
 
     CONSOLE_SERIAL
@@ -354,6 +355,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
             port: debug_serial_port,
         })
         .expect("console serial output already configured");
+    (*CONSOLE_SERIAL).init();
 
     WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
@@ -366,7 +368,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     boot_stack_info();
 
-    let bp = this_cpu().get_top_of_stack();
+    let bp = unsafe {
+        let cpu_unsafe = &*this_cpu_unsafe();
+        cpu_unsafe.get_top_of_stack()
+    };
 
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
@@ -390,6 +395,9 @@ pub extern "C" fn svsm_main() {
     let config = if launch_info.igvm_params_virt_addr != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
             .expect("Invalid IGVM parameters");
+        if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
+            panic!("Launch VTOM does not match VTOM from IGVM parameters");
+        }
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
         SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
@@ -416,23 +424,14 @@ pub extern "C" fn svsm_main() {
 
     log::info!("{} CPU(s) present", nr_cpus);
 
-    start_secondary_cpus(&cpus);
+    start_secondary_cpus(&cpus, launch_info.vtom);
 
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
-
-        if let Err(e) = validate_fw_memory(&config, fw_meta, &LAUNCH_INFO) {
-            panic!("Failed to validate firmware memory: {:#?}", e);
-        }
-
-        if let Err(e) = copy_tables_to_fw(fw_meta) {
-            panic!("Failed to copy firmware tables: {:#?}", e);
-        }
-
-        if let Err(e) = validate_fw(&config, &LAUNCH_INFO) {
-            panic!("Failed to validate flash memory: {:#?}", e);
-        }
+        validate_fw_memory(&config, fw_meta, &LAUNCH_INFO).expect("Failed to validate memory");
+        copy_tables_to_fw(fw_meta).expect("Failed to copy firmware tables");
+        validate_fw(&config, &LAUNCH_INFO).expect("Failed to validate flash memory");
     }
 
     guest_request_driver_init();
@@ -440,6 +439,9 @@ pub extern "C" fn svsm_main() {
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
+
+    #[cfg(all(feature = "mstpm", not(test)))]
+    vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();
 
@@ -449,11 +451,14 @@ pub extern "C" fn svsm_main() {
         }
     }
 
-    create_kernel_task(request_processing_main, TASK_FLAG_SHARE_PT)
-        .expect("Failed to launch request processing task");
+    create_kernel_task(request_processing_main).expect("Failed to launch request processing task");
 
     #[cfg(test)]
     crate::test_main();
+
+    if exec_user("/init").is_err() {
+        log::info!("Failed to launch /init");
+    }
 
     request_loop();
 

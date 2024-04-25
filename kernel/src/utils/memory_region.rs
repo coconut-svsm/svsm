@@ -157,7 +157,7 @@ where
     /// # use svsm::utils::MemoryRegion;
     /// let r1 = MemoryRegion::new(VirtAddr::from(0xffffff0000u64), PAGE_SIZE);
     /// let r2 = MemoryRegion::new(VirtAddr::from(0xffffff1000u64), PAGE_SIZE);
-    /// let r3  = r1.merge(&r2);
+    /// let r3 = r1.merge(&r2);
     /// assert_eq!(r3.start(), r1.start());
     /// assert_eq!(r3.len(), r1.len() + r2.len());
     /// assert_eq!(r3.end(), r2.end());

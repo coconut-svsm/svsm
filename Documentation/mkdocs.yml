@@ -1,0 +1,15 @@
+site_name: COCONUT-SVSM
+theme:
+  name: material
+
+nav:
+  - Documentation Home: 'index.md'
+  - Building and launching:
+    - 'installation/INSTALL.md'
+
+  - Developer Information:
+    - 'developer/DOC-GUIDELINES.md'
+    - Rustdoc Guidelines: 'developer/RUSTDOC-GUIDELINES.md'
+    - Fuzzing: 'developer/FUZZING.md'
+    - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
+  - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'

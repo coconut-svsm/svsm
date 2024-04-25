@@ -6,7 +6,6 @@
 
 use crate::utils::immut_after_init::ImmutAfterInitRef;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use log;
 
 static CPUID_PAGE: ImmutAfterInitRef<'_, SnpCpuidTable> = ImmutAfterInitRef::uninit();
 

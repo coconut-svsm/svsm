@@ -34,9 +34,14 @@ advanced features like TPM emulation and live migration.
 Installation
 ------------
 
-Detailed installation instructions are in the [INSTALL.md](Documentation/INSTALL.md)
+Detailed installation instructions are in the [INSTALL.md](Documentation/docs/installation/INSTALL.md)
 file. It walks through the process of building all the necessary parts
 to get a virtual machine powered by the COCONUT-SVSM up and running.
+
+Documentation
+-------------
+Information about COCONUT-SVSM can be found on at the
+[COCONUT-SVSM documentation site](https://coconut-svsm.github.io/svsm).
 
 Community
 ---------
@@ -62,8 +67,9 @@ Contributing
 
 Contributing to the project is as easy as sending a pull-request via
 GitHub. For detailed instructions on patch formatting and contribution
-guidelines please have a look at [CONTRIBUTING.md](Documentation/CONTRIBUTING.md).
-For documentation guidelines consult [RUSTDOC-GUIDELINES.md](Documentation/RUSTDOC-GUIDELINES.md).
+guidelines please have a look at [CONTRIBUTING.md](Documentation/docs/developer/CONTRIBUTING.md).
+For documentation guidelines consult [RUSTDOC-GUIDELINES.md](Documentation/docs/developer/RUSTDOC-GUIDELINES.md)
+and [DOC-GUIDELINES.md](Documentation/docs/developer/DOC-GUIDELINES.md).
 
 TODO List
 ---------
@@ -77,8 +83,6 @@ any way:
   * vTPM emulation
 * Attestation support
 * Persistency layer (needed for TPM and others)
-* Carry FW as payload of SVSM to make the SVSM binary a drop-in
-  replacement for the FW when launching QEMU
 * Live migration
 
 Documentation

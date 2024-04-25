@@ -11,10 +11,45 @@ use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
-use crate::protocols::RequestParams;
+
+#[cfg(all(feature = "mstpm", not(test)))]
+use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
+use crate::protocols::{RequestParams, SVSM_CORE_PROTOCOL};
 use crate::types::GUEST_VMPL;
 use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
+
+/// The SVSM Calling Area (CAA)
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct SvsmCaa {
+    call_pending: u8,
+    mem_available: u8,
+    _rsvd: [u8; 6],
+}
+
+impl SvsmCaa {
+    /// Returns a copy of the this CAA with the `call_pending` field cleared.
+    #[inline]
+    const fn serviced(self) -> Self {
+        Self {
+            call_pending: 0,
+            ..self
+        }
+    }
+
+    /// A CAA with all of its fields set to zero.
+    #[inline]
+    pub const fn zeroed() -> Self {
+        Self {
+            call_pending: 0,
+            mem_available: 0,
+            _rsvd: [0; 6],
+        }
+    }
+}
+
+const _: () = assert!(core::mem::size_of::<SvsmCaa>() == 8);
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {
@@ -59,7 +94,9 @@ fn request_loop_once(
     }
 
     match protocol {
-        0 => core_protocol_request(request, params).map(|_| true),
+        SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
+        #[cfg(all(feature = "mstpm", not(test)))]
+        SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }
@@ -68,10 +105,10 @@ fn check_requests() -> Result<bool, SvsmReqError> {
     let cpu = this_cpu();
     let vmsa_ref = cpu.guest_vmsa_ref();
     if let Some(caa_addr) = vmsa_ref.caa_addr() {
-        let guest_pending = GuestPtr::<u64>::new(caa_addr);
-        let p = guest_pending.read()?;
-        guest_pending.write(0)?;
-        Ok(p == 1)
+        let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
+        let caa = calling_area.read()?;
+        calling_area.write(caa.serviced())?;
+        Ok(caa.call_pending != 0)
     } else {
         Ok(false)
     }

@@ -10,4 +10,6 @@ pub mod memory_region;
 pub mod util;
 
 pub use memory_region::MemoryRegion;
-pub use util::{align_down, align_up, halt, overlap, page_align_up, page_offset, zero_mem_region};
+pub use util::{
+    align_down, align_up, halt, is_aligned, overlap, page_align_up, page_offset, zero_mem_region,
+};
