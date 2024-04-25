@@ -16,6 +16,7 @@ use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 
 use crate::utils::MemoryRegion;
 
+/// Guard for a per-CPU page mapping to ensure adequate cleanup if drop.
 #[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
@@ -24,6 +25,24 @@ pub struct PerCPUPageMappingGuard {
 }
 
 impl PerCPUPageMappingGuard {
+    /// Creates a new [`PerCPUPageMappingGuard`] for the specified physical
+    /// address range and alignment.
+    ///
+    /// # Arguments
+    ///
+    /// * `paddr_start` - The starting physical address of the range.
+    /// * `paddr_end` - The ending physical address of the range.
+    /// * `alignment` - The desired alignment for the mapping.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the [`PerCPUPageMappingGuard`] if successful,
+    /// or an `SvsmError` if an error occurs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either `paddr_start`, the size, or `paddr_end`, are not
+    /// aligned.
     pub fn create(
         paddr_start: PhysAddr,
         paddr_end: PhysAddr,
@@ -66,10 +85,13 @@ impl PerCPUPageMappingGuard {
         })
     }
 
+    /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
+    /// specified physical address, or an `SvsmError` if an error occurs.
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
         Self::create(paddr, paddr + PAGE_SIZE, 0)
     }
 
+    /// Returns the virtual address associated with the guard.
     pub fn virt_addr(&self) -> VirtAddr {
         self.mapping.start()
     }
