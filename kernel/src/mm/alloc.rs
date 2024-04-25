@@ -98,8 +98,8 @@ impl PageStorageType {
     const NEXT_SHIFT: u64 = 12;
     const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
     const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
-    // SLAB pages are always order-0
-    const SLAB_MASK: u64 = !Self::TYPE_MASK;
+    // Slab item sizes are encoded in a u16
+    const SLAB_MASK: u64 = 0xffff;
 
     /// Creates a new [`PageStorageType`] with the specified page type.
     ///
@@ -149,8 +149,9 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`]
-    fn encode_slab(self, slab: VirtAddr) -> Self {
-        Self(self.0 | (slab.bits() as u64) & Self::SLAB_MASK)
+    fn encode_slab(self, slab: u64) -> Self {
+        let item_size = slab & Self::SLAB_MASK;
+        Self(self.0 | (item_size << Self::TYPE_SHIFT))
     }
 
     /// Encodes the reference count.
@@ -177,8 +178,8 @@ impl PageStorageType {
     }
 
     /// Decodes the slab
-    fn decode_slab(&self) -> VirtAddr {
-        VirtAddr::from(self.0 & Self::SLAB_MASK)
+    fn decode_slab(&self) -> u64 {
+        (self.0 >> Self::TYPE_SHIFT) & Self::SLAB_MASK
     }
 
     /// Decodes the reference count.
@@ -239,19 +240,19 @@ impl AllocatedInfo {
 /// Struct representing information about a slab memory page.
 #[derive(Clone, Copy, Debug)]
 struct SlabPageInfo {
-    slab: VirtAddr,
+    item_size: u64,
 }
 
 impl SlabPageInfo {
     /// Encodes the [`SlabPageInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PageType::SlabPage).encode_slab(self.slab)
+        PageStorageType::new(PageType::SlabPage).encode_slab(self.item_size)
     }
 
     /// Decodes a [`PageStorageType`] into a [`SlabPageInfo`].
     fn decode(mem: PageStorageType) -> Self {
-        let slab = mem.decode_slab();
-        Self { slab }
+        let item_size = mem.decode_slab();
+        Self { item_size }
     }
 }
 
@@ -580,13 +581,13 @@ impl MemoryRegion {
     }
 
     /// Allocates a slab page.
-    fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, AllocError> {
+    fn allocate_slab_page(&mut self, item_size: u16) -> Result<VirtAddr, AllocError> {
         self.refill_page_list(0)?;
 
-        let slab_vaddr = slab.unwrap_or(VirtAddr::null());
         let pfn = self.get_next_page(0)?;
-        assert_eq!(slab_vaddr.bits() & (PageStorageType::TYPE_MASK as usize), 0);
-        let pg = PageInfo::Slab(SlabPageInfo { slab: slab_vaddr });
+        let pg = PageInfo::Slab(SlabPageInfo {
+            item_size: u64::from(item_size),
+        });
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
@@ -1034,8 +1035,8 @@ pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
 ///
 /// Result containing the virtual address of the allocated slab page or an
 /// `SvsmError` if allocation fails.
-pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
-    Ok(ROOT_MEM.lock().allocate_slab_page(slab)?)
+pub fn allocate_slab_page(item_size: u16) -> Result<VirtAddr, SvsmError> {
+    Ok(ROOT_MEM.lock().allocate_slab_page(item_size)?)
 }
 
 /// Allocate a zeroed page.
@@ -1117,7 +1118,7 @@ impl SlabPage {
     }
 
     /// Initialize the [`SlabPage`] with a given item size and slab address
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>, mut item_size: u16) -> Result<(), AllocError> {
+    fn init(&mut self, mut item_size: u16) -> Result<(), AllocError> {
         if self.item_size != 0 {
             return Ok(());
         }
@@ -1129,7 +1130,7 @@ impl SlabPage {
             item_size = 32;
         }
 
-        let vaddr = ROOT_MEM.lock().allocate_slab_page(slab_vaddr)?;
+        let vaddr = ROOT_MEM.lock().allocate_slab_page(item_size)?;
         self.vaddr = vaddr;
         self.item_size = item_size;
         self.capacity = (PAGE_SIZE as u16) / item_size;
@@ -1236,8 +1237,8 @@ impl SlabCommon {
     }
 
     /// Initialize the [`SlabCommon`] with default values
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), AllocError> {
-        self.page.init(slab_vaddr, self.item_size)?;
+    fn init(&mut self) -> Result<(), AllocError> {
+        self.page.init(self.item_size)?;
 
         self.capacity = self.page.get_capacity() as u32;
         self.free = self.capacity;
@@ -1364,7 +1365,7 @@ impl SlabPageSlab {
 
     /// Initializes the [`SlabPageSlab`], allocating the first slab page if necessary.
     fn init(&mut self) -> Result<(), AllocError> {
-        self.common.init(None)
+        self.common.init()
     }
 
     /// Grows the slab by allocating a new slab page.
@@ -1384,7 +1385,7 @@ impl SlabPageSlab {
         let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage>() };
 
         *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(None, self.common.item_size) {
+        if let Err(e) = slab_page.init(self.common.item_size) {
             self.common.deallocate_slot(page_vaddr);
             return Err(e);
         }
@@ -1444,8 +1445,7 @@ impl Slab {
 
     /// Initialize the [`Slab`] instance
     fn init(&mut self) -> Result<(), AllocError> {
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
-        self.common.init(Some(slab_vaddr))
+        self.common.init()
     }
 
     fn grow_slab(&mut self) -> Result<(), AllocError> {
@@ -1461,9 +1461,8 @@ impl Slab {
             .lock()
             .allocate()
             .map(|ptr| unsafe { &mut *ptr })?;
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
         *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
+        if let Err(e) = slab_page.init(self.common.item_size) {
             SLAB_PAGE_SLAB.lock().deallocate(slab_page);
             return Err(e);
         }
@@ -1655,8 +1654,7 @@ pub fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
             Some(Layout::from_size_align(size, PAGE_SIZE).unwrap())
         }
         PageInfo::Slab(si) => {
-            let slab: *const Slab = si.slab.as_ptr();
-            let size: usize = unsafe { (*slab).common.item_size as usize };
+            let size = si.item_size as usize;
             Some(Layout::from_size_align(size, size).unwrap())
         }
         _ => None,
