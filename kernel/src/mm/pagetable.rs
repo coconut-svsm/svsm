@@ -137,7 +137,7 @@ fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct PTEntryFlags: u64 {
         const PRESENT       = 1 << 0;
         const WRITABLE      = 1 << 1;
@@ -280,7 +280,8 @@ impl PageTable {
     }
 
     pub fn index<const L: usize>(vaddr: VirtAddr) -> usize {
-        vaddr.bits() >> (12 + L * 9) & 0x1ff
+        vaddr.to_pgtbl_idx::<L>()
+        //vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
     fn entry_to_pagetable(entry: PTEntry) -> Option<&'static mut PTPage> {
@@ -692,16 +693,17 @@ impl PageTable {
     }
 
     pub fn populate_pgtbl_part(&mut self, part: &PageTablePart) {
-        let idx = part.index();
-        let paddr = part.address();
-        let flags = PTEntryFlags::PRESENT
-            | PTEntryFlags::WRITABLE
-            | PTEntryFlags::USER
-            | PTEntryFlags::ACCESSED;
-        let entry = &mut self.root[idx];
-        // The C bit is not required here because all page table fetches are
-        // made as C=1.
-        entry.set(paddr, flags);
+        if let Some(paddr) = part.address() {
+            let idx = part.index();
+            let flags = PTEntryFlags::PRESENT
+                | PTEntryFlags::WRITABLE
+                | PTEntryFlags::USER
+                | PTEntryFlags::ACCESSED;
+            let entry = &mut self.root[idx];
+            // The C bit is not required here because all page table fetches are
+            // made as C=1.
+            entry.set(paddr, flags);
+        }
     }
 }
 
@@ -952,7 +954,7 @@ impl Drop for RawPageTablePart {
 #[derive(Debug)]
 pub struct PageTablePart {
     /// The root of the page-table sub-tree
-    raw: Box<RawPageTablePart>,
+    raw: Option<Box<RawPageTablePart>>,
     /// The top-level index this PageTablePart is populated at
     idx: usize,
 }
@@ -969,9 +971,25 @@ impl PageTablePart {
     /// A new instance of PageTablePart
     pub fn new(start: VirtAddr) -> Self {
         PageTablePart {
-            raw: Box::<RawPageTablePart>::default(),
+            raw: None,
             idx: PageTable::index::<3>(start),
         }
+    }
+
+    pub fn alloc(&mut self) {
+        self.get_or_init_mut();
+    }
+
+    fn get_or_init_mut(&mut self) -> &mut RawPageTablePart {
+        self.raw.get_or_insert_with(Box::default)
+    }
+
+    fn get_mut(&mut self) -> Option<&mut RawPageTablePart> {
+        self.raw.as_deref_mut()
+    }
+
+    fn get(&self) -> Option<&RawPageTablePart> {
+        self.raw.as_deref()
     }
 
     /// Request PageTable index to populate this instance to
@@ -989,8 +1007,8 @@ impl PageTablePart {
     /// # Returns
     ///
     /// Physical base address of the page-table sub-tree
-    pub fn address(&self) -> PhysAddr {
-        self.raw.address()
+    pub fn address(&self) -> Option<PhysAddr> {
+        self.get().map(|p| p.address())
     }
 
     /// Map a 4KiB page in the page table sub-tree
@@ -1020,7 +1038,7 @@ impl PageTablePart {
     ) -> Result<(), SvsmError> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.raw.map_4k(vaddr, paddr, flags, shared)
+        self.get_or_init_mut().map_4k(vaddr, paddr, flags, shared)
     }
 
     /// Unmaps a 4KiB page from the page table sub-tree
@@ -1039,7 +1057,7 @@ impl PageTablePart {
     pub fn unmap_4k(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.raw.unmap_4k(vaddr)
+        self.get_mut().and_then(|r| r.unmap_4k(vaddr))
     }
 
     /// Map a 2MiB page in the page table sub-tree
@@ -1069,7 +1087,7 @@ impl PageTablePart {
     ) -> Result<(), SvsmError> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.raw.map_2m(vaddr, paddr, flags, shared)
+        self.get_or_init_mut().map_2m(vaddr, paddr, flags, shared)
     }
 
     /// Unmaps a 2MiB page from the page table sub-tree
@@ -1088,6 +1106,6 @@ impl PageTablePart {
     pub fn unmap_2m(&mut self, vaddr: VirtAddr) -> Option<PTEntry> {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
-        self.raw.unmap_2m(vaddr)
+        self.get_mut().and_then(|r| r.unmap_2m(vaddr))
     }
 }

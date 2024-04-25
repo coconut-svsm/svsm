@@ -9,7 +9,7 @@ use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::{this_cpu_mut, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::requests::{request_loop, request_processing_main};
-use crate::task::{create_kernel_task, schedule_init, TASK_FLAG_SHARE_PT};
+use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
 fn start_cpu(apic_id: u32, vtom: u64) {
@@ -77,8 +77,7 @@ fn start_ap() {
 
 #[no_mangle]
 pub extern "C" fn ap_request_loop() {
-    create_kernel_task(request_processing_main, TASK_FLAG_SHARE_PT)
-        .expect("Failed to launch request processing task");
+    create_kernel_task(request_processing_main).expect("Failed to launch request processing task");
     request_loop();
     panic!("Returned from request_loop!");
 }

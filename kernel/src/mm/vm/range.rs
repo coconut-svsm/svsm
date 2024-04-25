@@ -90,13 +90,18 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn alloc_page_tables(&self) -> Result<(), SvsmError> {
-        let count = ((self.end_pfn - self.start_pfn) << PAGE_SHIFT) / VMR_GRANULE;
+    fn alloc_page_tables(&self, lazy: bool) -> Result<(), SvsmError> {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
+        let count = end.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
         let mut vec = self.pgtbl_parts.lock_write();
 
         for idx in 0..count {
-            vec.push(PageTablePart::new(start + (idx * VMR_GRANULE)));
+            let mut part = PageTablePart::new(start + (idx * VMR_GRANULE));
+            if !lazy {
+                part.alloc();
+            }
+            vec.push(part);
         }
 
         Ok(())
@@ -115,18 +120,50 @@ impl VMR {
         }
     }
 
+    pub fn populate_addr(&self, pgtbl: &mut PageTableRef, vaddr: VirtAddr) {
+        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
+        assert!(vaddr >= start && vaddr < end);
+
+        let idx = vaddr.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
+        let parts = self.pgtbl_parts.lock_read();
+        pgtbl.populate_pgtbl_part(&parts[idx]);
+    }
+
     /// Initialize this [`VMR`] by checking the `start` and `end` values and
     /// allocating the [`PageTablePart`]s required for the mappings.
+    ///
+    /// # Arguments
+    ///
+    /// * `lazy` - When `true`, use lazy allocation of [`PageTablePart`] pages.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    fn initialize_common(&mut self, lazy: bool) -> Result<(), SvsmError> {
+        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
+        assert!(start < end && start.is_aligned(VMR_GRANULE) && end.is_aligned(VMR_GRANULE));
+
+        self.alloc_page_tables(lazy)
+    }
+
+    /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = false`
     ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub fn initialize(&mut self) -> Result<(), SvsmError> {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(start < end && start.is_aligned(VMR_GRANULE) && end.is_aligned(VMR_GRANULE));
+        self.initialize_common(false)
+    }
 
-        self.alloc_page_tables()
+    /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = true`
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    pub fn initialize_lazy(&mut self) -> Result<(), SvsmError> {
+        self.initialize_common(true)
     }
 
     /// Returns the virtual start and end addresses for this region
@@ -283,6 +320,7 @@ impl VMR {
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
     pub fn insert_aligned(
         &self,
+        hint: VirtAddr,
         mapping: Arc<Mapping>,
         align: usize,
     ) -> Result<VirtAddr, SvsmError> {
@@ -296,15 +334,20 @@ impl VMR {
             >> PAGE_SHIFT;
         let align = align >> PAGE_SHIFT;
 
-        let mut start = align_up(self.start_pfn, align);
+        let start_pfn = max(self.start_pfn, hint.pfn());
+
+        let mut start = align_up(start_pfn, align);
         let mut end = start;
 
-        if size == 0 {
+        if size == 0 || start_pfn >= self.end_pfn {
             return Err(SvsmError::Mem);
         }
 
         let mut tree = self.tree.lock_write();
-        let mut cursor = tree.front_mut();
+        let mut cursor = tree.upper_bound_mut(Bound::Included(&start_pfn));
+        if cursor.is_null() {
+            cursor = tree.front_mut();
+        }
 
         while let Some(node) = cursor.get() {
             let (node_start, node_end) = node.range_pfn();
@@ -331,8 +374,29 @@ impl VMR {
 
     /// Inserts [`VMM`] into the virtual memory region. This method takes the
     /// next power-of-two larger of the mapping size and uses that as the
-    /// alignment for the mappings base address. With that is calls
-    /// [`VMR::insert_aligned`].
+    /// alignment for the mappings base address. The search for the base
+    /// address starts at `addr`. With that it calls [`VMR::insert_aligned`].
+    ///
+    /// # Arguments
+    ///
+    /// * `addr` - The virtual address at which the search for a mapping area
+    ///            starts
+    /// * `mapping` - `Arc` pointer to the VMM to insert
+    ///
+    /// # Returns
+    ///
+    /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
+    pub fn insert_hint(
+        &self,
+        addr: VirtAddr,
+        mapping: Arc<Mapping>,
+    ) -> Result<VirtAddr, SvsmError> {
+        let align = mapping.get().mapping_size().next_power_of_two();
+        self.insert_aligned(addr, mapping, align)
+    }
+
+    /// Inserts [`VMM`] into the virtual memory region. It searches from the
+    /// beginning of the [`VMR`] region for a suitable slot.
     ///
     /// # Arguments
     ///
@@ -342,8 +406,7 @@ impl VMR {
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
     pub fn insert(&self, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
-        let align = mapping.get().mapping_size().next_power_of_two();
-        self.insert_aligned(mapping, align)
+        self.insert_hint(VirtAddr::new(0), mapping)
     }
 
     /// Removes the mapping from a given base address from the RBTree
@@ -398,43 +461,19 @@ impl VMR {
     /// '()' if the page fault was successfully handled.
     ///
     /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
-    pub fn handle_page_fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        // Get the mapping that contains the faulting address. This needs to
-        // be done as a separate step, returning a reference to the mapping to
-        // avoid issues with the mapping page fault handler needing mutable access
-        // to `self.tree` via `insert()`.
-        let (pf_mapping, start) = {
-            let tree = self.tree.lock_read();
-            let addr = vaddr.pfn();
-            let cursor = tree.find(&addr);
-            let node = cursor.get().ok_or(SvsmError::Mem)?;
-            let (start, end) = node.range();
-            if vaddr < start || vaddr >= end {
-                return Err(SvsmError::Mem);
-            }
-            (node.get_mapping_clone(), start)
-        };
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, _write: bool) -> Result<(), SvsmError> {
+        // Get the mapping that contains the faulting address and check if the
+        // fault happened on a mapped part of the range.
 
-        let resolution = pf_mapping
-            .get_mut()
-            .handle_page_fault(self, vaddr - start, write)?;
-        // The handler has resolved the page fault by allocating a new page.
-        // Update the page table accordingly.
-        let vaddr = vaddr.page_align();
-        let page_size = pf_mapping.get().page_size();
-        let shared = pf_mapping.get().shared();
-        let mut pgtbl_parts = self.pgtbl_parts.lock_write();
-
-        let (rstart, _) = self.virt_range();
-        let idx = PageTable::index::<3>(VirtAddr::from(vaddr - rstart));
-        match page_size {
-            PageSize::Regular => {
-                pgtbl_parts[idx].map_4k(vaddr, resolution.paddr, resolution.flags, shared)?
-            }
-            PageSize::Huge => {
-                pgtbl_parts[idx].map_2m(vaddr, resolution.paddr, resolution.flags, shared)?
-            }
+        let tree = self.tree.lock_read();
+        let pfn = vaddr.pfn();
+        let cursor = tree.upper_bound(Bound::Included(&pfn));
+        let node = cursor.get().ok_or(SvsmError::Mem)?;
+        let (start, end) = node.range();
+        if vaddr < start || vaddr >= end {
+            return Err(SvsmError::Mem);
         }
+
         Ok(())
     }
 }

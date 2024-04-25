@@ -834,6 +834,7 @@ dependencies = [
  "libmstpm",
  "log",
  "packit",
+ "syscall",
  "test",
 ]
 
@@ -867,6 +868,10 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "syscall"
+version = "0.1.0"
 
 [[package]]
 name = "test"

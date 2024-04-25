@@ -154,6 +154,16 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
 
+//
+// User-space mapping constants
+//
+
+/// Start of user memory address range
+pub const USER_MEM_START: VirtAddr = VirtAddr::new(0);
+
+/// End of user memory address range
+pub const USER_MEM_END: VirtAddr = USER_MEM_START.const_add(256 * SIZE_LEVEL3);
+
 #[cfg(test)]
 mod tests {
     use super::*;

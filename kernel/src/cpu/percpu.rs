@@ -26,9 +26,7 @@ use crate::mm::{
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::task::{
-    schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue, TASK_FLAG_SHARE_PT,
-};
+use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
@@ -388,8 +386,7 @@ impl PerCpu {
 
     fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
-        let mut pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.vm_range.populate(&mut pgtable_ref);
+        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
         self.set_pgtable(pgtable_ref);
 
         Ok(())
@@ -484,6 +481,11 @@ impl PerCpu {
         Ok(())
     }
 
+    fn finish_page_table(&mut self) {
+        let mut pgtable = self.get_pgtable();
+        self.vm_range.populate(&mut pgtable);
+    }
+
     pub fn dump_vm_ranges(&self) {
         self.vm_range.dump_ranges();
     }
@@ -513,6 +515,8 @@ impl PerCpu {
         // Initialize allocator for temporary mappings
         self.virt_range_init();
 
+        self.finish_page_table();
+
         Ok(())
     }
 
@@ -522,7 +526,7 @@ impl PerCpu {
     }
 
     pub fn setup_idle_task(&mut self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, TASK_FLAG_SHARE_PT)?;
+        let idle_task = Task::create(self, entry)?;
         self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }
@@ -703,6 +707,14 @@ impl PerCpu {
 
     pub fn runqueue(&self) -> &RWLock<RunQueue> {
         &self.runqueue
+    }
+
+    pub fn current_task(&self) -> TaskPointer {
+        self.runqueue.lock_read().current_task()
+    }
+
+    pub fn set_tss_rsp0(&mut self, addr: VirtAddr) {
+        self.tss.stacks[0] = addr;
     }
 }
 
