@@ -27,9 +27,6 @@ pub fn construct_start_context() -> Box<IgvmNativeVpContextX64> {
     context.data_limit = 0xffffffff;
     context.data_selector = 0x10;
 
-    // EFER.SVME.
-    context.efer = 0x1000;
-
     // CR0.PE | CR0.NE | CR0.ET.
     context.cr0 = 0x31;
 
@@ -103,7 +100,9 @@ pub fn construct_vmsa(
     vmsa.cr0 = context.cr0;
     vmsa.cr3 = context.cr3;
     vmsa.cr4 = context.cr4;
-    vmsa.efer = context.efer;
+
+    // Include EFER.SVME on SNP platforms.
+    vmsa.efer = context.efer | 0x1000;
 
     // Configure non-zero reset state.
     vmsa.pat = 0x0007040600070406;
