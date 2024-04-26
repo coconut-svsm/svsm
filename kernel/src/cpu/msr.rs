@@ -63,7 +63,7 @@ pub fn rdtscp() -> RdtscpOut {
     let ecx: u32;
 
     unsafe {
-        asm!("rdtsc",
+        asm!("rdtscp",
              out("eax") eax,
              out("ecx") ecx,
              out("edx") edx,

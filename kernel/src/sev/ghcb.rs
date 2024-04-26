@@ -17,29 +17,11 @@ use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
-use core::{mem, ptr};
+use core::mem::{self, offset_of};
+use core::ptr;
 
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
-
-// TODO: Fix this when Rust gets decent compile time struct offset support
-const OFF_CPL: u16 = 0xcb;
-const OFF_XSS: u16 = 0x140;
-const OFF_DR7: u16 = 0x160;
-const OFF_RAX: u16 = 0x1f8;
-const OFF_RCX: u16 = 0x308;
-const OFF_RDX: u16 = 0x310;
-const OFF_RBX: u16 = 0x318;
-const OFF_SW_EXIT_CODE: u16 = 0x390;
-const OFF_SW_EXIT_INFO_1: u16 = 0x398;
-const OFF_SW_EXIT_INFO_2: u16 = 0x3a0;
-const OFF_SW_SCRATCH: u16 = 0x3a8;
-const OFF_XCR0: u16 = 0x3e8;
-const OFF_VALID_BITMAP: u16 = 0x3f0;
-const OFF_X87_STATE_GPA: u16 = 0x400;
-const _OFF_BUFFER: u16 = 0x800;
-const OFF_VERSION: u16 = 0xffa;
-const OFF_USAGE: u16 = 0xffc;
 
 #[repr(C, packed)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -69,6 +51,27 @@ const PSC_FLAG_HUGE_SHIFT: u8 = 56;
 const PSC_FLAG_HUGE: u64 = 1 << PSC_FLAG_HUGE_SHIFT;
 
 const GHCB_BUFFER_SIZE: usize = 0x7f0;
+
+macro_rules! ghcb_getter {
+    ($name:ident, $field:ident,$t:ty) => {
+        #[allow(unused)]
+        fn $name(&self) -> Result<$t, GhcbError> {
+            self.is_valid(offset_of!(Self, $field))
+                .then_some(self.$field)
+                .ok_or(GhcbError::VmgexitInvalid)
+        }
+    };
+}
+
+macro_rules! ghcb_setter {
+    ($name:ident, $field:ident, $t:ty) => {
+        #[allow(unused)]
+        fn $name(&mut self, val: $t) {
+            self.$field = val;
+            self.set_valid(offset_of!(Self, $field));
+        }
+    };
+}
 
 #[repr(C, packed)]
 #[derive(Debug)]
@@ -122,8 +125,10 @@ impl From<GhcbError> for SvsmError {
 enum GHCBExitCode {}
 
 impl GHCBExitCode {
+    pub const RDTSC: u64 = 0x6e;
     pub const IOIO: u64 = 0x7b;
     pub const MSR: u64 = 0x7c;
+    pub const RDTSCP: u64 = 0x87;
     pub const SNP_PSC: u64 = 0x8000_0010;
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
@@ -139,6 +144,51 @@ pub enum GHCBIOSize {
 }
 
 impl GHCB {
+    ghcb_getter!(get_cpl_valid, cpl, u8);
+    ghcb_setter!(set_cpl_valid, cpl, u8);
+
+    ghcb_getter!(get_xss_valid, xss, u64);
+    ghcb_setter!(set_xss_valid, xss, u64);
+
+    ghcb_getter!(get_dr7_valid, dr7, u64);
+    ghcb_setter!(set_dr7_valid, dr7, u64);
+
+    ghcb_getter!(get_rax_valid, rax, u64);
+    ghcb_setter!(set_rax_valid, rax, u64);
+
+    ghcb_getter!(get_rcx_valid, rcx, u64);
+    ghcb_setter!(set_rcx_valid, rcx, u64);
+
+    ghcb_getter!(get_rdx_valid, rdx, u64);
+    ghcb_setter!(set_rdx_valid, rdx, u64);
+
+    ghcb_getter!(get_rbx_valid, rbx, u64);
+    ghcb_setter!(set_rbx_valid, rbx, u64);
+
+    ghcb_getter!(get_exit_code_valid, sw_exit_code, u64);
+    ghcb_setter!(set_exit_code_valid, sw_exit_code, u64);
+
+    ghcb_getter!(get_exit_info_1_valid, sw_exit_info_1, u64);
+    ghcb_setter!(set_exit_info_1_valid, sw_exit_info_1, u64);
+
+    ghcb_getter!(get_exit_info_2_valid, sw_exit_info_2, u64);
+    ghcb_setter!(set_exit_info_2_valid, sw_exit_info_2, u64);
+
+    ghcb_getter!(get_sw_scratch_valid, sw_scratch, u64);
+    ghcb_setter!(set_sw_scratch_valid, sw_scratch, u64);
+
+    ghcb_getter!(get_sw_xcr0_valid, xcr0, u64);
+    ghcb_setter!(set_sw_xcr0_valid, xcr0, u64);
+
+    ghcb_getter!(get_sw_x87_state_gpa_valid, x87_state_gpa, u64);
+    ghcb_setter!(set_sw_x87_state_gpa_valid, x87_state_gpa, u64);
+
+    ghcb_getter!(get_version_valid, version, u16);
+    ghcb_setter!(set_version_valid, version, u16);
+
+    ghcb_getter!(get_usage_valid, usage, u32);
+    ghcb_setter!(set_usage_valid, usage, u32);
+
     pub fn init(vaddr: VirtAddr) -> Result<(), SvsmError> {
         let paddr = virt_to_phys(vaddr);
 
@@ -163,12 +213,34 @@ impl GHCB {
         Ok(())
     }
 
+    pub fn rdtscp_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::RDTSCP, 0, 0)?;
+        let rax = self.get_rax_valid()?;
+        let rdx = self.get_rdx_valid()?;
+        let rcx = self.get_rcx_valid()?;
+        regs.rax = rax as usize;
+        regs.rdx = rdx as usize;
+        regs.rcx = rcx as usize;
+        Ok(())
+    }
+
+    pub fn rdtsc_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::RDTSC, 0, 0)?;
+        let rax = self.get_rax_valid()?;
+        let rdx = self.get_rdx_valid()?;
+        regs.rax = rax as usize;
+        regs.rdx = rdx as usize;
+        Ok(())
+    }
+
     pub fn wrmsr_regs(&mut self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
 
-        self.set_rcx(regs.rcx as u64);
-        self.set_rax(regs.rax as u64);
-        self.set_rdx(regs.rdx as u64);
+        self.set_rcx_valid(regs.rcx as u64);
+        self.set_rax_valid(regs.rax as u64);
+        self.set_rdx_valid(regs.rdx as u64);
 
         self.vmgexit(GHCBExitCode::MSR, 1, 0)?;
         Ok(())
@@ -177,11 +249,13 @@ impl GHCB {
     pub fn rdmsr_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
 
-        self.set_rcx(regs.rcx as u64);
+        self.set_rcx_valid(regs.rcx as u64);
 
         self.vmgexit(GHCBExitCode::MSR, 0, 0)?;
-        regs.rdx = self.rdx as usize;
-        regs.rax = self.rax as usize;
+        let rdx = self.get_rdx_valid()?;
+        let rax = self.get_rax_valid()?;
+        regs.rdx = rdx as usize;
+        regs.rax = rax as usize;
         Ok(())
     }
 
@@ -219,25 +293,25 @@ impl GHCB {
 
     pub fn clear(&mut self) {
         // Clear valid bitmap
-        self.valid_bitmap[0] = 0;
-        self.valid_bitmap[1] = 0;
+        self.valid_bitmap = [0, 0];
 
         // Mark valid_bitmap valid
-        self.set_valid(OFF_VALID_BITMAP);
-        self.set_valid(OFF_VALID_BITMAP + 8);
+        let off = offset_of!(Self, valid_bitmap);
+        self.set_valid(off);
+        self.set_valid(off + mem::size_of::<u64>());
     }
 
-    fn set_valid(&mut self, offset: u16) {
-        let bit: usize = (offset as usize >> 3) & 0x3f;
-        let index: usize = (offset as usize >> 9) & 0x1;
+    fn set_valid(&mut self, offset: usize) {
+        let bit: usize = (offset >> 3) & 0x3f;
+        let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
         self.valid_bitmap[index] |= mask;
     }
 
-    fn is_valid(&self, offset: u16) -> bool {
-        let bit: usize = (offset as usize >> 3) & 0x3f;
-        let index: usize = (offset as usize >> 9) & 0x1;
+    fn is_valid(&self, offset: usize) -> bool {
+        let bit: usize = (offset >> 3) & 0x3f;
+        let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
         (self.valid_bitmap[index] & mask) == mask
@@ -250,89 +324,24 @@ impl GHCB {
         exit_info_2: u64,
     ) -> Result<(), GhcbError> {
         // GHCB is version 2
-        self.version = 2;
-        self.set_valid(OFF_VERSION);
-
+        self.set_version_valid(2);
         // GHCB Follows standard format
-        self.usage = 0;
-        self.set_valid(OFF_USAGE);
-
-        self.sw_exit_code = exit_code;
-        self.set_valid(OFF_SW_EXIT_CODE);
-
-        self.sw_exit_info_1 = exit_info_1;
-        self.set_valid(OFF_SW_EXIT_INFO_1);
-
-        self.sw_exit_info_2 = exit_info_2;
-        self.set_valid(OFF_SW_EXIT_INFO_2);
+        self.set_usage_valid(0);
+        self.set_exit_code_valid(exit_code);
+        self.set_exit_info_1_valid(exit_info_1);
+        self.set_exit_info_2_valid(exit_info_2);
 
         let ghcb_address = VirtAddr::from(self as *const GHCB);
         let ghcb_pa = u64::from(virt_to_phys(ghcb_address));
         write_msr(SEV_GHCB, ghcb_pa);
         raw_vmgexit();
 
-        if !self.is_valid(OFF_SW_EXIT_INFO_1) {
-            return Err(GhcbError::VmgexitInvalid);
-        }
-
-        if self.sw_exit_info_1 != 0 {
-            return Err(GhcbError::VmgexitError(
-                self.sw_exit_info_1,
-                self.sw_exit_info_2,
-            ));
+        let sw_exit_info_1 = self.get_exit_info_1_valid()?;
+        if sw_exit_info_1 != 0 {
+            return Err(GhcbError::VmgexitError(sw_exit_info_1, self.sw_exit_info_2));
         }
 
         Ok(())
-    }
-
-    pub fn set_cpl(&mut self, cpl: u8) {
-        self.cpl = cpl;
-        self.set_valid(OFF_CPL);
-    }
-
-    pub fn set_dr7(&mut self, dr7: u64) {
-        self.dr7 = dr7;
-        self.set_valid(OFF_DR7);
-    }
-
-    pub fn set_xss(&mut self, xss: u64) {
-        self.xss = xss;
-        self.set_valid(OFF_XSS);
-    }
-
-    pub fn set_rax(&mut self, rax: u64) {
-        self.rax = rax;
-        self.set_valid(OFF_RAX);
-    }
-
-    pub fn set_rcx(&mut self, rcx: u64) {
-        self.rcx = rcx;
-        self.set_valid(OFF_RCX);
-    }
-
-    pub fn set_rdx(&mut self, rdx: u64) {
-        self.rdx = rdx;
-        self.set_valid(OFF_RDX);
-    }
-
-    pub fn set_rbx(&mut self, rbx: u64) {
-        self.rbx = rbx;
-        self.set_valid(OFF_RBX);
-    }
-
-    pub fn set_sw_scratch(&mut self, scratch: u64) {
-        self.sw_scratch = scratch;
-        self.set_valid(OFF_SW_SCRATCH);
-    }
-
-    pub fn set_sw_xcr0(&mut self, xcr0: u64) {
-        self.xcr0 = xcr0;
-        self.set_valid(OFF_XCR0);
-    }
-
-    pub fn set_sw_x87_state_gpa(&mut self, x87_state_gpa: u64) {
-        self.x87_state_gpa = x87_state_gpa;
-        self.set_valid(OFF_X87_STATE_GPA);
     }
 
     pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, SvsmError> {
@@ -349,10 +358,8 @@ impl GHCB {
         }
 
         self.vmgexit(GHCBExitCode::IOIO, info, 0)?;
-        if !self.is_valid(OFF_RAX) {
-            return Err(GhcbError::VmgexitInvalid.into());
-        }
-        Ok(self.rax)
+        let rax = self.get_rax_valid()?;
+        Ok(rax)
     }
 
     pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), SvsmError> {
@@ -368,7 +375,7 @@ impl GHCB {
             GHCBIOSize::Size32 => info |= 1 << 6,
         }
 
-        self.set_rax(value);
+        self.set_rax_valid(value);
         self.vmgexit(GHCBExitCode::IOIO, info, 0)?;
         Ok(())
     }
@@ -462,11 +469,11 @@ impl GHCB {
 
                 let buffer_va = VirtAddr::from(self.buffer.as_ptr());
                 let buffer_pa = u64::from(virt_to_phys(buffer_va));
-                self.set_sw_scratch(buffer_pa);
+                self.set_sw_scratch_valid(buffer_pa);
 
                 if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
-                    if !self.is_valid(OFF_SW_EXIT_INFO_2) {
-                        e = GhcbError::VmgexitInvalid;
+                    if let Err(err) = self.get_exit_info_2_valid() {
+                        e = err;
                     }
 
                     if let GhcbError::VmgexitError(_, info2) = e {
@@ -498,7 +505,7 @@ impl GHCB {
         self.clear();
         let exit_info_1: u64 = 1 | (vmpl & 0xf) << 16 | apic_id << 32;
         let exit_info_2: u64 = vmsa_gpa.into();
-        self.set_rax(sev_features);
+        self.set_rax_valid(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
         Ok(())
     }
@@ -513,7 +520,7 @@ impl GHCB {
         self.clear();
         let exit_info_1: u64 = (vmpl & 0xf) << 16 | apic_id << 32;
         let exit_info_2: u64 = vmsa_gpa.into();
-        self.set_rax(sev_features);
+        self.set_rax_valid(sev_features);
         self.vmgexit(GHCBExitCode::AP_CREATE, exit_info_1, exit_info_2)?;
         Ok(())
     }
@@ -530,12 +537,9 @@ impl GHCB {
 
         self.vmgexit(GHCBExitCode::GUEST_REQUEST, info1, info2)?;
 
-        if !self.is_valid(OFF_SW_EXIT_INFO_2) {
-            return Err(GhcbError::VmgexitInvalid.into());
-        }
-
-        if self.sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.sw_exit_info_1, self.sw_exit_info_2).into());
+        let sw_exit_info_2 = self.get_exit_info_2_valid()?;
+        if sw_exit_info_2 != 0 {
+            return Err(GhcbError::VmgexitError(self.sw_exit_info_1, sw_exit_info_2).into());
         }
 
         Ok(())
@@ -554,20 +558,18 @@ impl GHCB {
         let info2: u64 = u64::from(virt_to_phys(resp_page));
         let rax: u64 = u64::from(virt_to_phys(data_pages));
 
-        self.set_rax(rax);
-        self.set_rbx(data_size);
+        self.set_rax_valid(rax);
+        self.set_rbx_valid(data_size);
 
         self.vmgexit(GHCBExitCode::GUEST_EXT_REQUEST, info1, info2)?;
 
-        if !self.is_valid(OFF_SW_EXIT_INFO_2) {
-            return Err(GhcbError::VmgexitInvalid.into());
-        }
+        let sw_exit_info_2 = self.get_exit_info_2_valid()?;
 
         // On error, RBX and exit_info_2 are returned for proper error handling.
         // For an extended request, if the buffer provided is too small, the hypervisor
         // will return in RBX the number of contiguous pages required
-        if self.sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.rbx, self.sw_exit_info_2).into());
+        if sw_exit_info_2 != 0 {
+            return Err(GhcbError::VmgexitError(self.rbx, sw_exit_info_2).into());
         }
 
         Ok(())
@@ -577,5 +579,32 @@ impl GHCB {
         self.clear();
         self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ghcb_layout() {
+        assert_eq!(offset_of!(GHCB, cpl), 0x0cb);
+        assert_eq!(offset_of!(GHCB, xss), 0x140);
+        assert_eq!(offset_of!(GHCB, dr7), 0x160);
+        assert_eq!(offset_of!(GHCB, rax), 0x1f8);
+        assert_eq!(offset_of!(GHCB, rcx), 0x308);
+        assert_eq!(offset_of!(GHCB, rdx), 0x310);
+        assert_eq!(offset_of!(GHCB, rbx), 0x318);
+        assert_eq!(offset_of!(GHCB, sw_exit_code), 0x390);
+        assert_eq!(offset_of!(GHCB, sw_exit_info_1), 0x398);
+        assert_eq!(offset_of!(GHCB, sw_exit_info_2), 0x3a0);
+        assert_eq!(offset_of!(GHCB, sw_scratch), 0x3a8);
+        assert_eq!(offset_of!(GHCB, xcr0), 0x3e8);
+        assert_eq!(offset_of!(GHCB, valid_bitmap), 0x3f0);
+        assert_eq!(offset_of!(GHCB, x87_state_gpa), 0x400);
+        assert_eq!(offset_of!(GHCB, buffer), 0x800);
+        assert_eq!(offset_of!(GHCB, version), 0xffa);
+        assert_eq!(offset_of!(GHCB, usage), 0xffc);
+        assert_eq!(mem::size_of::<GHCB>(), 0x1000);
     }
 }
