@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::platform::SvsmPlatformType;
+
 use zerocopy::AsBytes;
 
 #[derive(Copy, Clone, Debug)]
@@ -29,6 +31,7 @@ pub struct KernelLaunchInfo {
     pub igvm_params_virt_addr: u64,
     pub vtom: u64,
     pub debug_serial_port: u16,
+    pub platform_type: SvsmPlatformType,
 }
 
 impl KernelLaunchInfo {
@@ -45,10 +48,13 @@ impl KernelLaunchInfo {
 pub struct Stage2LaunchInfo {
     // VTOM must be the first field.
     pub vtom: u64,
+
+    // platform_type must be the second field.
+    pub platform_type: u32,
+
     pub kernel_elf_start: u32,
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
     pub igvm_params: u32,
-    pub padding: u32,
 }

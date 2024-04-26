@@ -10,6 +10,7 @@
 pub mod boot_stage2;
 
 use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
+use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut};
@@ -20,7 +21,6 @@ use svsm::config::SvsmConfig;
 use svsm::console::{init_console, install_console_logger, WRITER};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
-use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
 use svsm::fw_cfg::FwCfg;
@@ -34,11 +34,8 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
+use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
-use svsm::sev::ghcb::PageStateChangeOp;
-use svsm::sev::msr_protocol::verify_ghcb_version;
-use svsm::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
-use svsm::svsm_console::SVSMIOPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
 use svsm::utils::{halt, is_aligned, MemoryRegion};
@@ -59,17 +56,15 @@ fn setup_stage2_allocator() {
     root_mem_init(pstart, vstart, nr_pages);
 }
 
-fn init_percpu() {
+fn init_percpu(platform: &mut dyn SvsmPlatform) {
     let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
-
     unsafe {
         bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
     }
     bsp_percpu
         .map_self_stage2()
         .expect("Failed to map per-cpu area");
-    bsp_percpu.setup_ghcb().expect("Failed to setup BSP GHCB");
-    bsp_percpu.register_ghcb().expect("Failed to register GHCB");
+    platform.setup_guest_host_comm(&mut bsp_percpu, true);
 }
 
 fn shutdown_percpu() {
@@ -78,13 +73,16 @@ fn shutdown_percpu() {
         .expect("Failed to shut down percpu data (including GHCB)");
 }
 
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
+fn setup_env(
+    config: &SvsmConfig<'_>,
+    platform: &mut dyn SvsmPlatform,
+    launch_info: &Stage2LaunchInfo,
+) {
     gdt().load();
     early_idt_init_no_ghcb();
-    sev_status_init();
+    platform.env_setup();
 
     install_console_logger("Stage2");
     init_kernel_mapping_info(
@@ -93,20 +91,18 @@ fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(launch_info.vtom);
+    paging_init_early(platform, launch_info.vtom);
 
-    // Bring up the GCHB for use from the SVSMIOPort console.
-    verify_ghcb_version();
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
-    init_percpu();
+    init_percpu(platform);
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
     early_idt_init();
 
     CONSOLE_SERIAL
         .init(&SerialPort {
-            driver: &CONSOLE_IO,
+            driver: platform.get_console_io_port(),
             port: config.debug_serial_port(),
         })
         .expect("console serial output already configured");
@@ -118,10 +114,15 @@ fn setup_env(config: &SvsmConfig<'_>, launch_info: &Stage2LaunchInfo) {
     // Console is fully working now and any unsupported configuration can be
     // properly reported.
     dump_cpuid_table();
-    sev_status_verify();
+    platform.env_setup_late();
 }
 
-fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) {
+fn map_and_validate(
+    platform: &dyn SvsmPlatform,
+    config: &SvsmConfig<'_>,
+    vregion: MemoryRegion<VirtAddr>,
+    paddr: PhysAddr,
+) {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -133,16 +134,13 @@ fn map_and_validate(config: &SvsmConfig<'_>, vregion: MemoryRegion<VirtAddr>, pa
         .expect("Error mapping kernel region");
 
     if config.page_state_change_required() {
-        current_ghcb()
-            .page_state_change(
-                paddr,
-                paddr + vregion.len(),
-                PageSize::Huge,
-                PageStateChangeOp::PscPrivate,
-            )
+        platform
+            .page_state_change(paddr, paddr + vregion.len(), PageSize::Huge, true)
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }
-    pvalidate_range(vregion, PvalidateOp::Valid).expect("PVALIDATE kernel region failed");
+    platform
+        .pvalidate_range(vregion, true)
+        .expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
 }
 
@@ -159,15 +157,19 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let kernel_elf_start: PhysAddr = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let kernel_elf_end: PhysAddr = PhysAddr::from(launch_info.kernel_elf_end as u64);
 
+    let platform_type = SvsmPlatformType::from_u32(launch_info.platform_type);
+    let mut platform_cell = SvsmPlatformCell::new(platform_type);
+    let platform = platform_cell.as_mut_dyn_ref();
+
     let config = if launch_info.igvm_params != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
             .expect("Invalid IGVM parameters");
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
-        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+        SvsmConfig::FirmwareConfig(FwCfg::new(platform.get_console_io_port()))
     };
 
-    setup_env(&config, launch_info);
+    setup_env(&config, platform, launch_info);
 
     let r = config
         .find_kernel_region()
@@ -229,7 +231,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         loaded_kernel_phys_end = loaded_kernel_phys_end + segment_len;
 
         let vregion = MemoryRegion::new(vaddr_start, segment_len);
-        map_and_validate(&config, vregion, paddr_start);
+        map_and_validate(platform, &config, vregion, paddr_start);
 
         let segment_buf =
             unsafe { slice::from_raw_parts_mut(vaddr_start.as_mut_ptr::<u8>(), segment_len) };
@@ -281,7 +283,12 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         igvm_params_size = igvm_params.size();
 
         let igvm_params_vregion = MemoryRegion::new(igvm_params_virt_address, igvm_params_size);
-        map_and_validate(&config, igvm_params_vregion, igvm_params_phys_address);
+        map_and_validate(
+            platform,
+            &config,
+            igvm_params_vregion,
+            igvm_params_phys_address,
+        );
 
         let igvm_params_src_addr = VirtAddr::from(launch_info.igvm_params as u64);
         let igvm_src =
@@ -305,7 +312,12 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let heap_area_size =
         kernel_region_phys_end - heap_area_phys_start - config.reserved_kernel_area_size();
     let heap_area_virt_region = MemoryRegion::new(heap_area_virt_start, heap_area_size);
-    map_and_validate(&config, heap_area_virt_region, heap_area_phys_start);
+    map_and_validate(
+        platform,
+        &config,
+        heap_area_virt_region,
+        heap_area_phys_start,
+    );
 
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
@@ -328,6 +340,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
+        platform_type,
     };
 
     check_launch_info(&launch_info);

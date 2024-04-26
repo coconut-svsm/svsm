@@ -15,6 +15,7 @@ mod gpa_map;
 mod igvm_builder;
 mod igvm_firmware;
 mod ovmf_firmware;
+mod platform;
 mod stage2_stack;
 mod vmsa;
 

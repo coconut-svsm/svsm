@@ -35,8 +35,8 @@ clap = { version = "4.4.14", default-features = false}
 gdbstub = { version = "0.6.6", default-features = false }
 gdbstub_arch = { version = "0.2.4" }
 hmac-sha512 = "1.1.5"
-igvm_defs = { version = "0.1.3", default-features = false}
-igvm = { version = "0.1.3", default-features = false}
+igvm_defs = { version = "0.1.9", default-features = false}
+igvm = { version = "0.1.9", default-features = false}
 intrusive-collections = "0.9.6"
 libfuzzer-sys = "0.4"
 log = "0.4.17"

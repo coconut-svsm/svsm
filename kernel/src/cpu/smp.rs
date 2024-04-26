@@ -8,15 +8,19 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::{this_cpu_mut, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
+use crate::platform::SvsmPlatform;
+use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
-fn start_cpu(apic_id: u32, vtom: u64) {
+fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let mut percpu = PerCpu::alloc(apic_id).expect("Failed to allocate AP per-cpu data");
 
-    percpu.setup().expect("Failed to setup AP per-cpu area");
+    percpu
+        .setup(platform)
+        .expect("Failed to setup AP per-cpu area");
     percpu
         .alloc_svsm_vmsa()
         .expect("Failed to allocate AP SVSM VMSA");
@@ -45,12 +49,12 @@ fn start_cpu(apic_id: u32, vtom: u64) {
     }
 }
 
-pub fn start_secondary_cpus(cpus: &[ACPICPUInfo], vtom: u64) {
+pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo], vtom: u64) {
     immut_after_init_set_multithreaded();
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
-        start_cpu(c.apic_id, vtom);
+        start_cpu(platform, c.apic_id, vtom);
         count += 1;
     }
     log::info!("Brought {} AP(s) online", count);
@@ -59,7 +63,7 @@ pub fn start_secondary_cpus(cpus: &[ACPICPUInfo], vtom: u64) {
 #[no_mangle]
 fn start_ap() {
     this_cpu_mut()
-        .setup_on_cpu()
+        .setup_on_cpu(SVSM_PLATFORM.as_dyn_ref())
         .expect("setup_on_cpu() failed");
 
     this_cpu_mut()

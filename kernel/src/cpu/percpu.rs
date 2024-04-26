@@ -23,6 +23,7 @@ use crate::mm::{
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
+use crate::platform::SvsmPlatform;
 use crate::sev::ghcb::GHCB;
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
@@ -490,7 +491,7 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&mut self) -> Result<(), SvsmError> {
+    pub fn setup(&mut self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         // Allocate page-table
         self.allocate_page_table()?;
 
@@ -499,9 +500,6 @@ impl PerCpu {
 
         // Reserve ranges for temporary mappings
         self.initialize_vm_ranges()?;
-
-        // Setup GHCB
-        self.setup_ghcb()?;
 
         // Allocate per-cpu init stack
         self.allocate_init_stack()?;
@@ -517,12 +515,15 @@ impl PerCpu {
 
         self.finish_page_table();
 
+        // Complete platform-specific initialization.
+        platform.setup_percpu(self)?;
+
         Ok(())
     }
 
     // Setup code which needs to run on the target CPU
-    pub fn setup_on_cpu(&self) -> Result<(), SvsmError> {
-        self.register_ghcb()
+    pub fn setup_on_cpu(&mut self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+        platform.setup_percpu_current(self)
     }
 
     pub fn setup_idle_task(&mut self, entry: extern "C" fn()) -> Result<(), SvsmError> {

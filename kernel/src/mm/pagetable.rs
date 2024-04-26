@@ -6,14 +6,13 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
-use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
-use crate::sev::status::vtom_enabled;
+use crate::platform::SvsmPlatform;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
@@ -38,8 +37,8 @@ fn reinit_feature_mask(feature_mask: &PTEntryFlags) {
         .expect("could not reinit FEATURE_MASK");
 }
 
-pub fn paging_init_early(vtom: u64) {
-    init_encrypt_mask(vtom.try_into().unwrap());
+pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) {
+    init_encrypt_mask(platform, vtom.try_into().unwrap());
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
@@ -47,8 +46,8 @@ pub fn paging_init_early(vtom: u64) {
     reinit_feature_mask(&feature_mask);
 }
 
-pub fn paging_init(vtom: u64) {
-    init_encrypt_mask(vtom.try_into().unwrap());
+pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) {
+    init_encrypt_mask(platform, vtom.try_into().unwrap());
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -60,33 +59,18 @@ pub fn paging_init(vtom: u64) {
     reinit_feature_mask(&feature_mask);
 }
 
-fn init_encrypt_mask(vtom: usize) {
-    // Determine whether VTOM is in use.
-
-    let zero: usize = 0;
-    let (private_pte_mask, shared_pte_mask, addr_mask_width) = if vtom_enabled() {
-        // Find the MSB of VTOM to define the number of bits in the effective
-        // address.
-        (zero, vtom, 63 - vtom.leading_zeros())
-    } else {
-        // Find C bit position
-        let res = cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
-        let c_bit = res.ebx & 0x3f;
-        let mask = 1u64 << c_bit;
-        (mask as usize, zero, c_bit)
-    };
+fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) {
+    let masks = platform.get_page_encryption_masks(vtom);
 
     PRIVATE_PTE_MASK
-        .reinit(&private_pte_mask)
+        .reinit(&masks.private_pte_mask)
         .expect("could not reinitialize PRIVATE_PTE_MASK");
     SHARED_PTE_MASK
-        .reinit(&shared_pte_mask)
+        .reinit(&masks.shared_pte_mask)
         .expect("could not reinitialize SHARED_PTE_MASK");
 
-    // Find physical address size.
-    let res = cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
-    let guest_phys_addr_size = (res.eax >> 16) & 0xff;
-    let host_phys_addr_size = res.eax & 0xff;
+    let guest_phys_addr_size = (masks.phys_addr_sizes >> 16) & 0xff;
+    let host_phys_addr_size = masks.phys_addr_sizes & 0xff;
     let phys_addr_size = if guest_phys_addr_size == 0 {
         // When [GuestPhysAddrSize] is zero, refer to the PhysAddrSize field
         // for the maximum guest physical address size.
@@ -99,7 +83,7 @@ fn init_encrypt_mask(vtom: usize) {
     // If the C-bit is a physical address bit however, the guest physical
     // address space is effectively reduced by 1 bit.
     // - APM2, 15.34.6 Page Table Support
-    let effective_phys_addr_size = cmp::min(addr_mask_width, phys_addr_size);
+    let effective_phys_addr_size = cmp::min(masks.addr_mask_width, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
     MAX_PHYS_ADDR

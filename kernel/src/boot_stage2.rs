@@ -109,6 +109,12 @@ global_asm!(
 
     get_pte_c_bit:
         /*
+         * Check if this is an SNP platform.  If not, there is no C bit.
+         */
+        cmpl $1, 8(%esi)
+        jnz .Lvtom
+
+        /*
          * Check that the SNP_Active bit in the SEV_STATUS MSR is set.
          */
         movl $0xc0010131, %ecx
