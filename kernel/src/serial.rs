@@ -45,45 +45,47 @@ impl<'a> SerialPort<'a> {
 
     pub fn init(&self) {
         let divisor: u32 = 115200 / BAUD;
-        let driver = &self.driver;
-        let port = self.port;
 
-        driver.outb(port + LCR, 0x3); // 8n1
-        driver.outb(port + IER, 0); // No Interrupt
-        driver.outb(port + FCR, 0); // No FIFO
-        driver.outb(port + MCR, 0x3); // DTR + RTS
+        self.outb(LCR, 0x3); // 8n1
+        self.outb(IER, 0x0); // No Interrupt
+        self.outb(FCR, 0x0); // No FIFO
+        self.outb(MCR, 0x3); // DTR + RTS
 
-        let c = driver.inb(port + LCR);
-        driver.outb(port + LCR, c | DLAB);
-        driver.outb(port + DLL, (divisor & 0xff) as u8);
-        driver.outb(port + DLH, ((divisor >> 8) & 0xff) as u8);
-        driver.outb(port + LCR, c & !DLAB);
+        let c = self.inb(LCR);
+        self.outb(LCR, c | DLAB);
+        self.outb(DLL, (divisor & 0xff) as u8);
+        self.outb(DLH, ((divisor >> 8) & 0xff) as u8);
+        self.outb(LCR, c & !DLAB);
+    }
+
+    #[inline]
+    fn inb(&self, port: u16) -> u8 {
+        self.driver.inb(self.port + port)
+    }
+
+    #[inline]
+    fn outb(&self, port: u16, val: u8) {
+        self.driver.outb(self.port + port, val);
     }
 }
 
 impl Terminal for SerialPort<'_> {
     fn put_byte(&self, ch: u8) {
-        let driver = &self.driver;
-        let port = self.port;
-
         loop {
-            let xmt = driver.inb(port + LSR);
+            let xmt = self.inb(LSR);
             if (xmt & XMTRDY) == XMTRDY {
                 break;
             }
         }
 
-        driver.outb(port + TXR, ch)
+        self.outb(TXR, ch)
     }
 
     fn get_byte(&self) -> u8 {
-        let driver = &self.driver;
-        let port = self.port;
-
         loop {
-            let rcv = driver.inb(port + LSR);
+            let rcv = self.inb(LSR);
             if (rcv & RCVRDY) == RCVRDY {
-                return driver.inb(port);
+                return self.inb(0);
             }
         }
     }
