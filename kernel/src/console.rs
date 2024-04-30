@@ -113,11 +113,8 @@ impl log::Log for ConsoleLogger {
 
 static CONSOLE_LOGGER: ImmutAfterInitCell<ConsoleLogger> = ImmutAfterInitCell::uninit();
 
-pub fn install_console_logger(component: &'static str) {
-    let logger = ConsoleLogger::new(component);
-    CONSOLE_LOGGER
-        .init(&logger)
-        .expect("Already initialized console logger");
+pub fn install_console_logger(component: &'static str) -> ImmutAfterInitResult<()> {
+    CONSOLE_LOGGER.init(&ConsoleLogger::new(component))?;
 
     if let Err(e) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had
@@ -131,6 +128,7 @@ pub fn install_console_logger(component: &'static str) {
 
     // Log levels are to be configured via the log's library feature configuration.
     log::set_max_level(log::LevelFilter::Trace);
+    Ok(())
 }
 
 #[macro_export]

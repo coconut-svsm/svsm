@@ -84,7 +84,7 @@ fn setup_env(
     early_idt_init_no_ghcb();
     platform.env_setup();
 
-    install_console_logger("Stage2");
+    install_console_logger("Stage2").expect("Console logger already initialized");
     init_kernel_mapping_info(
         VirtAddr::null(),
         VirtAddr::from(640 * 1024usize),

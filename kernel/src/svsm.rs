@@ -359,7 +359,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     (*CONSOLE_SERIAL).init();
 
     init_console(&*CONSOLE_SERIAL).expect("Console writer already initialized");
-    install_console_logger("SVSM");
+    install_console_logger("SVSM").expect("Console logger already initialized");
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
 
