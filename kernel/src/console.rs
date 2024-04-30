@@ -6,18 +6,12 @@
 
 use crate::locking::SpinLock;
 use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
-use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
 
 #[derive(Clone, Copy)]
-pub struct Console {
+struct Console {
     writer: &'static dyn Terminal,
-}
-
-impl Console {
-    pub fn set(&mut self, w: &'static dyn Terminal) {
-        self.writer = w;
-    }
 }
 
 impl fmt::Write for Console {
@@ -37,15 +31,14 @@ impl fmt::Debug for Console {
     }
 }
 
-pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
+static WRITER: SpinLock<Console> = SpinLock::new(Console {
     writer: &DEFAULT_SERIAL_PORT,
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
-pub fn init_console() {
-    CONSOLE_INITIALIZED
-        .reinit(&true)
-        .expect("could not reinit CONSOLE_INITIALIZED");
+pub fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
+    WRITER.lock().writer = writer;
+    CONSOLE_INITIALIZED.reinit(&true)
 }
 
 #[doc(hidden)]
