@@ -42,7 +42,7 @@
         popq    %rbx
         popq    %rax
 
-        addq    $16, %rsp /* Skip vector and error code */
+        addq    $8, %rsp /* Skip error code */
 .endm
 
 .macro default_entry_no_ist name: req handler:req error_code:req vector:req
@@ -51,8 +51,8 @@ asm_entry_\name:
 	.if \error_code == 0
 	pushq $0
 	.endif
-	pushq	$\vector
 	push_regs
+	movl	$\vector, %esi
 	movq	%rsp, %rdi
 	call	ex_handler_\handler
 	jmp	default_return
@@ -60,7 +60,7 @@ asm_entry_\name:
 
 .globl default_return
 default_return:
-	testb	$3, 18*8(%rsp) // Check CS in exception frame
+	testb	$3, 17*8(%rsp) // Check CS in exception frame
 	jnz return_user
 	pop_regs
 default_iret:

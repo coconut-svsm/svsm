@@ -121,7 +121,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     Ok(())
 }
 
-pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
+pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
 
     // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
@@ -138,7 +138,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmErro
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
         (X86_TRAP, _) => {
-            handle_debug_exception(ctx, ctx.vector);
+            handle_debug_exception(ctx, vector);
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),

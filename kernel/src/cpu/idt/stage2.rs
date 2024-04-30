@@ -28,8 +28,8 @@ pub fn early_idt_init() {
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
-    match ctx.vector {
+pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext, vector: usize) {
+    match vector {
         DF_VECTOR => {
             let cr2 = read_cr2();
             let rip = ctx.frame.rip;
@@ -46,20 +46,19 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext) {
             {}
         _ => {
             let err = ctx.error_code;
-            let vec = ctx.vector;
             let rip = ctx.frame.rip;
 
             panic!(
                 "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-                vec, rip, err
+                vector, rip, err
             );
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionContext) {
-    match ctx.vector {
+pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionContext, vector: usize) {
+    match vector {
         DF_VECTOR => {
             let cr2 = read_cr2();
             let rip = ctx.frame.rip;
@@ -72,12 +71,11 @@ pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionConte
         VC_VECTOR => stage2_handle_vc_exception_no_ghcb(ctx).expect("Failed to handle #VC"),
         _ => {
             let err = ctx.error_code;
-            let vec = ctx.vector;
             let rip = ctx.frame.rip;
 
             panic!(
                 "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
-                vec, rip, err
+                vector, rip, err
             );
         }
     }
@@ -93,11 +91,12 @@ global_asm!(
          /* Early tage 2 handler array setup */
         .text
     push_regs_no_ghcb:
-        pushq   %rax
         pushq   %rbx
         pushq   %rcx
         pushq   %rdx
         pushq   %rsi
+        movq    0x20(%rsp), %rsi
+        movq    %rax, 0x20(%rsp)
         pushq   %rdi
         pushq   %rbp
         pushq   %r8
@@ -131,11 +130,12 @@ global_asm!(
         /* Stage 2 handler array setup */
         .text
     push_regs_stage2:
-        pushq   %rax
         pushq   %rbx
         pushq   %rcx
         pushq   %rdx
         pushq   %rsi
+        movq    0x20(%rsp), %rsi
+        movq    %rax, 0x20(%rsp)
         pushq   %rdi
         pushq   %rbp
         pushq   %r8

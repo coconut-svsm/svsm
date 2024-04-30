@@ -153,7 +153,7 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
 
 // Page-Fault handler
 #[no_mangle]
-extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usize) {
     let cr2 = read_cr2();
     let rip = ctxt.frame.rip;
     let err = ctxt.error_code;
@@ -178,7 +178,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext) {
         .is_err()
         && !handle_exception_table(ctxt)
     {
-        handle_debug_exception(ctxt, ctxt.vector);
+        handle_debug_exception(ctxt, vector);
         panic!(
             "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
             rip, cr2, err
@@ -197,11 +197,11 @@ extern "C" fn ex_handler_hypervisor_injection(_ctxt: &mut X86ExceptionContext) {
 
 // VMM Communication handler
 #[no_mangle]
-extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
     let rip = ctxt.frame.rip;
     let code = ctxt.error_code;
 
-    if let Err(err) = handle_vc_exception(ctxt) {
+    if let Err(err) = handle_vc_exception(ctxt, vector) {
         log::error!("#VC handling error: {:?}", err);
         if user_mode(ctxt) {
             log::error!("Failed to handle #VC from user-mode at RIP {:#018x} code: {:#018x} - Terminating task", rip, code);
@@ -235,15 +235,14 @@ extern "C" fn ex_handler_system_call(ctxt: &mut X86ExceptionContext) {
 }
 
 #[no_mangle]
-pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext) {
-    let vec = ctx.vector;
+pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize) {
     let rip = ctx.frame.rip;
     let err = ctx.error_code;
     let rsp = ctx.frame.rsp;
     let ss = ctx.frame.ss;
     panic!(
         "Unhandled exception {} RIP {:#018x} error code: {:#018x} RSP: {:#018x} SS: {:#x}",
-        vec, rip, err, rsp, ss
+        vector, rip, err, rsp, ss
     );
 }
 
