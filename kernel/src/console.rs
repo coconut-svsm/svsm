@@ -11,23 +11,20 @@ use core::fmt;
 
 #[derive(Clone, Copy)]
 pub struct Console {
-    writer: Option<&'static dyn Terminal>,
+    writer: &'static dyn Terminal,
 }
 
 impl Console {
     pub fn set(&mut self, w: &'static dyn Terminal) {
-        self.writer = Some(w);
+        self.writer = w;
     }
 }
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        if let Some(writer) = self.writer {
-            for ch in s.bytes() {
-                writer.put_byte(ch);
-            }
+        for ch in s.bytes() {
+            self.writer.put_byte(ch);
         }
-
         Ok(())
     }
 }
@@ -35,19 +32,13 @@ impl fmt::Write for Console {
 impl fmt::Debug for Console {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Console")
-            .field(
-                "writer",
-                &format_args!(
-                    "{:?}",
-                    self.writer.as_ref().map(|writer| writer as *const _)
-                ),
-            )
+            .field("writer", &format_args!("{:?}", self.writer as *const _,))
             .finish()
     }
 }
 
 pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
-    writer: Some(&DEFAULT_SERIAL_PORT),
+    writer: &DEFAULT_SERIAL_PORT,
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
