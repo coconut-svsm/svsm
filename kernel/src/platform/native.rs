@@ -9,6 +9,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::platform::{IOPort, PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::sev::PvalidateOp;
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -71,7 +72,7 @@ impl SvsmPlatform for NativePlatform {
     fn pvalidate_range(
         &self,
         _region: MemoryRegion<VirtAddr>,
-        _valid: bool,
+        _op: PvalidateOp,
     ) -> Result<(), SvsmError> {
         Ok(())
     }

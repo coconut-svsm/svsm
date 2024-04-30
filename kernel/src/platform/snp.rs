@@ -108,13 +108,8 @@ impl SvsmPlatform for SnpPlatform {
     fn pvalidate_range(
         &self,
         region: MemoryRegion<VirtAddr>,
-        valid: bool,
+        op: PvalidateOp,
     ) -> Result<(), SvsmError> {
-        let pvalidate_op = if valid {
-            PvalidateOp::Valid
-        } else {
-            PvalidateOp::Invalid
-        };
-        pvalidate_range(region, pvalidate_op)
+        pvalidate_range(region, op)
     }
 }
