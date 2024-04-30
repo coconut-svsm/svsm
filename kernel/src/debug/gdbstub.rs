@@ -174,10 +174,7 @@ pub mod svsm_gdbstub {
     static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
     static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
     static GDB_IO: SVSMIOPort = SVSMIOPort::new();
-    static mut GDB_SERIAL: SerialPort<'_> = SerialPort {
-        driver: &GDB_IO,
-        port: 0x2f8,
-    };
+    static mut GDB_SERIAL: SerialPort<'_> = SerialPort::new(&GDB_IO, 0x2f8);
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
     static mut GDB_STACK: [u64; 8192] = [0; 8192];

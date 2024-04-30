@@ -101,10 +101,10 @@ fn setup_env(
     early_idt_init();
 
     CONSOLE_SERIAL
-        .init(&SerialPort {
-            driver: platform.get_console_io_port(),
-            port: config.debug_serial_port(),
-        })
+        .init(&SerialPort::new(
+            platform.get_console_io_port(),
+            config.debug_serial_port(),
+        ))
         .expect("console serial output already configured");
     (*CONSOLE_SERIAL).init();
 

@@ -354,10 +354,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     idt_init();
 
     CONSOLE_SERIAL
-        .init(&SerialPort {
-            driver: &CONSOLE_IO,
-            port: debug_serial_port,
-        })
+        .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
         .expect("console serial output already configured");
     (*CONSOLE_SERIAL).init();
 

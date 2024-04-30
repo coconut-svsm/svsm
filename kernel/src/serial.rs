@@ -34,12 +34,12 @@ pub trait Terminal: Sync {
 
 #[derive(Debug, Copy, Clone)]
 pub struct SerialPort<'a> {
-    pub driver: &'a dyn IOPort,
-    pub port: u16,
+    driver: &'a dyn IOPort,
+    port: u16,
 }
 
 impl<'a> SerialPort<'a> {
-    pub fn new(driver: &'a dyn IOPort, p: u16) -> Self {
+    pub const fn new(driver: &'a dyn IOPort, p: u16) -> Self {
         SerialPort { driver, port: p }
     }
 
@@ -89,7 +89,4 @@ impl Terminal for SerialPort<'_> {
     }
 }
 
-pub static DEFAULT_SERIAL_PORT: SerialPort<'_> = SerialPort {
-    driver: &DEFAULT_IO_DRIVER,
-    port: SERIAL_PORT,
-};
+pub static DEFAULT_SERIAL_PORT: SerialPort<'_> = SerialPort::new(&DEFAULT_IO_DRIVER, SERIAL_PORT);
