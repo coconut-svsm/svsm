@@ -411,11 +411,8 @@ fn build_iv(msg_seqno: u64) -> [u8; IV_SIZE] {
 }
 
 /// Set to encrypted all the 4k pages of a memory range
-fn set_encrypted_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqError> {
-    for addr in (start.bits()..end.bits())
-        .step_by(PAGE_SIZE)
-        .map(VirtAddr::from)
-    {
+fn set_encrypted_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
+    for addr in vregion.iter_pages(PageSize::Regular) {
         this_cpu_mut()
             .get_pgtable()
             .set_encrypted_4k(addr)
@@ -434,11 +431,8 @@ fn set_encrypted_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReq
 }
 
 /// Set to shared all the 4k pages of a memory range
-fn set_shared_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqError> {
-    for addr in (start.bits()..end.bits())
-        .step_by(PAGE_SIZE)
-        .map(VirtAddr::from)
-    {
+fn set_shared_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
+    for addr in vregion.iter_pages(PageSize::Regular) {
         this_cpu_mut()
             .get_pgtable()
             .set_shared_4k(addr)
@@ -493,15 +487,15 @@ impl SnpGuestRequestExtData {
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
         let start = VirtAddr::from(addr_of_mut!(*self));
-        let end = start + size_of::<Self>();
-        set_shared_region_4k(start, end)
+        let region = MemoryRegion::new(start, size_of::<Self>());
+        set_shared_region_4k(region)
     }
 
     /// Set the C-bit (memory encryption bit) for the Self pages
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
         let start = VirtAddr::from(addr_of_mut!(*self));
-        let end = start + size_of::<Self>();
-        set_encrypted_region_4k(start, end)
+        let region = MemoryRegion::new(start, size_of::<Self>());
+        set_encrypted_region_4k(region)
     }
 
     /// Clear the first `n` bytes from data
