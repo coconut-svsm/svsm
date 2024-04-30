@@ -416,7 +416,7 @@ pub extern "C" fn svsm_main() {
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    invalidate_early_boot_memory(&config, launch_info)
+    invalidate_early_boot_memory(platform, &config, launch_info)
         .expect("Failed to invalidate early boot memory");
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
