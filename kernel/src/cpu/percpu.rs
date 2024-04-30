@@ -322,6 +322,14 @@ impl PerCpuUnsafe {
         self.ghcb
     }
 
+    pub fn hv_doorbell_unsafe(&self) -> *mut HVDoorbell {
+        self.hv_doorbell
+    }
+
+    pub fn hv_doorbell_addr(&self) -> usize {
+        ptr::addr_of!(self.hv_doorbell) as usize
+    }
+
     pub fn get_top_of_stack(&self) -> VirtAddr {
         self.init_stack.unwrap()
     }

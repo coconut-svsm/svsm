@@ -5,6 +5,12 @@
 // Authors: Joerg Roedel <jroedel@suse.de>
 
 .code64
+
+.section .data
+.globl HV_DOORBELL_ADDR
+HV_DOORBELL_ADDR:
+	.quad 0
+
 .section .text
 
 .macro push_regs
@@ -57,6 +63,46 @@ asm_entry_\name:
 	call	ex_handler_\handler
 	jmp	default_return
 .endm
+
+// The #HV handler is coded specially in order to deal with control flow
+// alterations that may be required based on when the #HV arrives.
+.globl asm_entry_hv
+asm_entry_hv:
+	// Check whether interrupts were enabled at the time of #HV.  If so,
+	// commit to processing all #HV events immediately.
+	testl 	$0x200, 0x10(%rsp)
+	jnz	continue_hv
+	iretq
+
+continue_hv:
+	pushq	$0
+	pushq	%rax
+	pushq 	%rbx
+        pushq   %rcx
+        pushq   %rdx
+        pushq   %rsi
+        pushq   %rdi
+        pushq   %rbp
+        pushq   %r8
+        pushq   %r9
+        pushq   %r10
+        pushq   %r11
+        pushq   %r12
+        pushq   %r13
+        pushq   %r14
+        pushq   %r15
+	// Load the address of the #HV doorbell page.  The global address
+	// might not yet be configured, and the per-CPU page might also not
+	// yet be configured, so only process events if there is a valid
+	// doorbell page.
+	movq	HV_DOORBELL_ADDR(%rip), %rsi
+	testq	%rsi, %rsi
+	jz	default_return
+	movq	(%rsi), %rdi
+	testq	%rdi, %rdi
+	jz	default_return
+	call 	process_hv_events
+	// fall through to default_return
 
 .globl default_return
 default_return:
@@ -136,9 +182,6 @@ default_entry_no_ist	name=xf		handler=panic			error_code=0	vector=19
 default_entry_no_ist	name=cp		handler=panic			error_code=1	vector=21
 
 // Vectors 22-27 not defined
-
-// #HV Hypervisor Injection Exception (Vector 28)
-default_entry_no_ist	name=hv		handler=hypervisor_injection	error_code=0	vector=28
 
 // #VC VMM Communication Exception (Vector 29)
 default_entry_no_ist	name=vc		handler=vmm_communication	error_code=1	vector=29

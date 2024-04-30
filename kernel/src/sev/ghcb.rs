@@ -5,9 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
-use crate::cpu::X86GeneralRegs;
+use crate::cpu::{flush_tlb_global_sync, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
@@ -19,6 +18,7 @@ use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
+
 use core::mem::{self, offset_of};
 use core::ptr;
 
@@ -115,7 +115,6 @@ impl From<GhcbError> for SvsmError {
     }
 }
 
-#[non_exhaustive]
 enum GHCBExitCode {}
 
 impl GHCBExitCode {
@@ -230,12 +229,20 @@ impl GHCB {
         Ok(())
     }
 
+    pub fn wrmsr(&mut self, msr_index: u32, value: u64) -> Result<(), SvsmError> {
+        self.wrmsr_raw(msr_index as u64, value & 0xFFFF_FFFF, value >> 32)
+    }
+
     pub fn wrmsr_regs(&mut self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
+        self.wrmsr_raw(regs.rcx as u64, regs.rax as u64, regs.rdx as u64)
+    }
+
+    pub fn wrmsr_raw(&mut self, rcx: u64, rax: u64, rdx: u64) -> Result<(), SvsmError> {
         self.clear();
 
-        self.set_rcx_valid(regs.rcx as u64);
-        self.set_rax_valid(regs.rax as u64);
-        self.set_rdx_valid(regs.rdx as u64);
+        self.set_rcx_valid(rcx);
+        self.set_rax_valid(rax);
+        self.set_rdx_valid(rdx);
 
         self.vmgexit(GHCBExitCode::MSR, 1, 0)?;
         Ok(())

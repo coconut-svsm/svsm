@@ -16,8 +16,10 @@ use super::common::{
     OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::percpu::this_cpu_unsafe;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
+use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
 
 use core::arch::global_asm;
@@ -50,6 +52,8 @@ extern "C" {
     fn asm_entry_vc();
     fn asm_entry_sx();
     fn asm_entry_int80();
+
+    pub static mut HV_DOORBELL_ADDR: usize;
 }
 
 fn init_ist_vectors() {
@@ -94,6 +98,19 @@ pub fn early_idt_init() {
 pub fn idt_init() {
     // Set IST vectors
     init_ist_vectors();
+
+    // Capture an address that can be used by assembly code to read the #HV
+    // doorbell page.  The address of each CPU's doorbell page may be
+    // different, but the address of the field in the PerCpu structure that
+    // holds the actual pointer is constant across all CPUs, so that is the
+    // pointer that is actually captured.  The address that is captured is
+    // stored as a usize instead of a typed value, because the declarations
+    // required for type safety here are cumbersome, and the assembly code
+    // that uses the value is not type safe in any case, so enforcing type
+    // safety on the pointer would offer no meaningful value.
+    unsafe {
+        HV_DOORBELL_ADDR = (*this_cpu_unsafe()).hv_doorbell_addr();
+    };
 }
 
 // Debug handler
@@ -186,15 +203,6 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
     }
 }
 
-// Hypervisor Injection handler
-#[no_mangle]
-extern "C" fn ex_handler_hypervisor_injection(_ctxt: &mut X86ExceptionContext) {
-    // #HV processing is not required in the SVSM.  If a maskable
-    // interrupt occurs, it will be processed prior to the next exit.
-    // There are no NMI sources, and #MC cannot be handled anyway
-    // and can safely be ignored.
-}
-
 // VMM Communication handler
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
@@ -244,6 +252,12 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize)
         "Unhandled exception {} RIP {:#018x} error code: {:#018x} RSP: {:#018x} SS: {:#x}",
         vector, rip, err, rsp, ss
     );
+}
+
+#[no_mangle]
+pub extern "C" fn common_isr_handler(_vector: usize) {
+    // Treat any unhandled interrupt as a spurious interrupt.
+    SVSM_PLATFORM.as_dyn_ref().eoi();
 }
 
 global_asm!(include_str!("entry.S"), options(att_syntax));
