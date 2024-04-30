@@ -4,9 +4,11 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
-use crate::platform::{IOPort, PageEncryptionMasks, PhysAddr, SvsmError, SvsmPlatform, VirtAddr};
+use crate::error::SvsmError;
+use crate::platform::{IOPort, PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -61,7 +63,7 @@ impl SvsmPlatform for NativePlatform {
         &self,
         _region: MemoryRegion<PhysAddr>,
         _size: PageSize,
-        _make_private: bool,
+        _op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         Ok(())
     }

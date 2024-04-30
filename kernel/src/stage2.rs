@@ -34,7 +34,7 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
-use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
+use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
@@ -136,7 +136,7 @@ fn map_and_validate(
             .page_state_change(
                 MemoryRegion::new(paddr, vregion.len()),
                 PageSize::Huge,
-                true,
+                PageStateChangeOp::Private,
             )
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }

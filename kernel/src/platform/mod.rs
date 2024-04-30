@@ -29,6 +29,14 @@ pub struct PageEncryptionMasks {
     pub phys_addr_sizes: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PageStateChangeOp {
+    Private,
+    Shared,
+    Psmash,
+    Unsmash,
+}
+
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform {
@@ -59,7 +67,7 @@ pub trait SvsmPlatform {
         &self,
         region: MemoryRegion<PhysAddr>,
         size: PageSize,
-        make_private: bool,
+        op: PageStateChangeOp,
     ) -> Result<(), SvsmError>;
 
     /// Marks a page as valid or invalid as a private page.

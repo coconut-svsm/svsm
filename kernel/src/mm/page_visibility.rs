@@ -12,7 +12,7 @@ use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::virt_to_phys;
-use crate::sev::ghcb::PageStateChangeOp;
+use crate::platform::PageStateChangeOp;
 use crate::sev::utils::pvalidate;
 use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -32,7 +32,7 @@ pub fn make_page_shared(vaddr: VirtAddr) {
         .page_state_change(
             MemoryRegion::new(paddr, PAGE_SIZE),
             PageSize::Regular,
-            PageStateChangeOp::PscShared,
+            PageStateChangeOp::Shared,
         )
         .expect("Hypervisor failed to make page shared");
 
@@ -58,7 +58,7 @@ pub fn make_page_private(vaddr: VirtAddr) {
         .page_state_change(
             MemoryRegion::new(paddr, PAGE_SIZE),
             PageSize::Regular,
-            PageStateChangeOp::PscPrivate,
+            PageStateChangeOp::Private,
         )
         .expect("Hypervisor failed to make page private");
 

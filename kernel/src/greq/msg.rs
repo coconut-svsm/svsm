@@ -24,8 +24,9 @@ use crate::{
     cpu::percpu::this_cpu_mut,
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
     mm::virt_to_phys,
+    platform::PageStateChangeOp,
     protocols::errors::SvsmReqError,
-    sev::{ghcb::PageStateChangeOp, secrets_page::VMPCK_SIZE},
+    sev::secrets_page::VMPCK_SIZE,
     types::{PageSize, PAGE_SIZE},
     utils::MemoryRegion,
 };
@@ -250,7 +251,7 @@ impl SnpGuestRequestMsg {
             .page_state_change(
                 MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
-                PageStateChangeOp::PscShared,
+                PageStateChangeOp::Shared,
             )
             .map_err(|_| SvsmReqError::invalid_request())
     }
@@ -268,7 +269,7 @@ impl SnpGuestRequestMsg {
             .page_state_change(
                 MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
-                PageStateChangeOp::PscPrivate,
+                PageStateChangeOp::Private,
             )
             .map_err(|_| SvsmReqError::invalid_request())
     }
@@ -423,7 +424,7 @@ fn set_encrypted_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmRe
             .page_state_change(
                 MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
-                PageStateChangeOp::PscPrivate,
+                PageStateChangeOp::Private,
             )
             .map_err(|_| SvsmReqError::invalid_request())?;
     }
@@ -443,7 +444,7 @@ fn set_shared_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqEr
             .page_state_change(
                 MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
-                PageStateChangeOp::PscShared,
+                PageStateChangeOp::Shared,
             )
             .map_err(|_| SvsmReqError::invalid_request())?;
     }

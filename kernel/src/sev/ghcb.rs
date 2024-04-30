@@ -14,6 +14,7 @@ use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::virt_to_phys;
+use crate::platform::PageStateChangeOp;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
@@ -30,14 +31,6 @@ pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
     reserved: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum PageStateChangeOp {
-    PscPrivate,
-    PscShared,
-    PscPsmash,
-    PscUnsmash,
 }
 
 const PSC_GFN_MASK: u64 = ((1u64 << 52) - 1) & !0xfffu64;
@@ -436,10 +429,10 @@ impl GHCB {
         let mut paddr = region.start();
         let end = region.end();
         let op_mask: u64 = match op {
-            PageStateChangeOp::PscPrivate => PSC_OP_PRIVATE,
-            PageStateChangeOp::PscShared => PSC_OP_SHARED,
-            PageStateChangeOp::PscPsmash => PSC_OP_PSMASH,
-            PageStateChangeOp::PscUnsmash => PSC_OP_UNSMASH,
+            PageStateChangeOp::Private => PSC_OP_PRIVATE,
+            PageStateChangeOp::Shared => PSC_OP_SHARED,
+            PageStateChangeOp::Psmash => PSC_OP_PSMASH,
+            PageStateChangeOp::Unsmash => PSC_OP_UNSMASH,
         };
 
         self.clear();

@@ -12,7 +12,7 @@ use crate::cpu::ghcb::current_ghcb;
 use crate::error::SvsmError;
 use crate::kernel_region::new_kernel_region;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::sev::ghcb::PageStateChangeOp;
+use crate::platform::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{zero_mem_region, MemoryRegion};
@@ -370,7 +370,7 @@ fn validate_fw_mem_region(
 
     if config.page_state_change_required() {
         current_ghcb()
-            .page_state_change(region, PageSize::Regular, PageStateChangeOp::PscPrivate)
+            .page_state_change(region, PageSize::Regular, PageStateChangeOp::Private)
             .expect("GHCB PSC call failed to validate firmware memory");
     }
 

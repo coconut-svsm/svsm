@@ -11,7 +11,7 @@ use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
 use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::sev::ghcb::PageStateChangeOp;
+use crate::platform::PageStateChangeOp;
 use crate::sev::{pvalidate, PvalidateOp};
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -114,9 +114,7 @@ fn invalidate_boot_memory_region(
     }
 
     if config.page_state_change_required() && !region.is_empty() {
-        current_ghcb()
-            .page_state_change(region, PageSize::Regular, PageStateChangeOp::PscShared)
-            .expect("Failed to invalidate Stage2 memory");
+        current_ghcb().page_state_change(region, PageSize::Regular, PageStateChangeOp::Shared)?;
     }
 
     Ok(())
