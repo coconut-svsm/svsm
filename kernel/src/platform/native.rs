@@ -59,8 +59,7 @@ impl SvsmPlatform for NativePlatform {
 
     fn page_state_change(
         &self,
-        _start: PhysAddr,
-        _end: PhysAddr,
+        _region: MemoryRegion<PhysAddr>,
         _size: PageSize,
         _make_private: bool,
     ) -> Result<(), SvsmError> {

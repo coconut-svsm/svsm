@@ -97,13 +97,12 @@ impl SvsmPlatform for SnpPlatform {
 
     fn page_state_change(
         &self,
-        start: PhysAddr,
-        end: PhysAddr,
+        region: MemoryRegion<PhysAddr>,
         size: PageSize,
         make_private: bool,
     ) -> Result<(), SvsmError> {
         let psc_op = if make_private { PscPrivate } else { PscShared };
-        current_ghcb().page_state_change(start, end, size, psc_op)
+        current_ghcb().page_state_change(region, size, psc_op)
     }
 
     fn pvalidate_range(

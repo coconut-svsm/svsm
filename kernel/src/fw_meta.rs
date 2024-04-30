@@ -370,12 +370,7 @@ fn validate_fw_mem_region(
 
     if config.page_state_change_required() {
         current_ghcb()
-            .page_state_change(
-                pstart,
-                pend,
-                PageSize::Regular,
-                PageStateChangeOp::PscPrivate,
-            )
+            .page_state_change(region, PageSize::Regular, PageStateChangeOp::PscPrivate)
             .expect("GHCB PSC call failed to validate firmware memory");
     }
 

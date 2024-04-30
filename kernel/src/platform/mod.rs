@@ -57,8 +57,7 @@ pub trait SvsmPlatform {
     /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
-        start: PhysAddr,
-        end: PhysAddr,
+        region: MemoryRegion<PhysAddr>,
         size: PageSize,
         make_private: bool,
     ) -> Result<(), SvsmError>;

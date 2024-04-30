@@ -115,12 +115,7 @@ fn invalidate_boot_memory_region(
 
     if config.page_state_change_required() && !region.is_empty() {
         current_ghcb()
-            .page_state_change(
-                region.start(),
-                region.end(),
-                PageSize::Regular,
-                PageStateChangeOp::PscShared,
-            )
+            .page_state_change(region, PageSize::Regular, PageStateChangeOp::PscShared)
             .expect("Failed to invalidate Stage2 memory");
     }
 

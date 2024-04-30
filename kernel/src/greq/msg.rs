@@ -27,6 +27,7 @@ use crate::{
     protocols::errors::SvsmReqError,
     sev::{ghcb::PageStateChangeOp, secrets_page::VMPCK_SIZE},
     types::{PageSize, PAGE_SIZE},
+    utils::MemoryRegion,
 };
 
 /// Version of the message header
@@ -247,8 +248,7 @@ impl SnpGuestRequestMsg {
         let paddr = virt_to_phys(vaddr);
         current_ghcb()
             .page_state_change(
-                paddr,
-                paddr + PAGE_SIZE,
+                MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
                 PageStateChangeOp::PscShared,
             )
@@ -266,8 +266,7 @@ impl SnpGuestRequestMsg {
         let paddr = virt_to_phys(vaddr);
         current_ghcb()
             .page_state_change(
-                paddr,
-                paddr + PAGE_SIZE,
+                MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
                 PageStateChangeOp::PscPrivate,
             )
@@ -425,8 +424,7 @@ fn set_encrypted_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReq
         let paddr = virt_to_phys(addr);
         current_ghcb()
             .page_state_change(
-                paddr,
-                paddr + PAGE_SIZE,
+                MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
                 PageStateChangeOp::PscPrivate,
             )
@@ -449,8 +447,7 @@ fn set_shared_region_4k(start: VirtAddr, end: VirtAddr) -> Result<(), SvsmReqErr
         let paddr = virt_to_phys(addr);
         current_ghcb()
             .page_state_change(
-                paddr,
-                paddr + PAGE_SIZE,
+                MemoryRegion::new(paddr, PAGE_SIZE),
                 PageSize::Regular,
                 PageStateChangeOp::PscShared,
             )

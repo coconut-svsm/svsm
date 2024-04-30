@@ -16,6 +16,7 @@ use crate::sev::ghcb::PageStateChangeOp;
 use crate::sev::utils::pvalidate;
 use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
+use crate::utils::MemoryRegion;
 
 pub fn make_page_shared(vaddr: VirtAddr) {
     // Revoke page validation before changing page state.
@@ -29,8 +30,7 @@ pub fn make_page_shared(vaddr: VirtAddr) {
     // Ask the hypervisor to make the page shared.
     current_ghcb()
         .page_state_change(
-            paddr,
-            paddr + PAGE_SIZE,
+            MemoryRegion::new(paddr, PAGE_SIZE),
             PageSize::Regular,
             PageStateChangeOp::PscShared,
         )
@@ -56,8 +56,7 @@ pub fn make_page_private(vaddr: VirtAddr) {
     let paddr = virt_to_phys(vaddr);
     current_ghcb()
         .page_state_change(
-            paddr,
-            paddr + PAGE_SIZE,
+            MemoryRegion::new(paddr, PAGE_SIZE),
             PageSize::Regular,
             PageStateChangeOp::PscPrivate,
         )

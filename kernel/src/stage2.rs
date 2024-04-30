@@ -133,7 +133,11 @@ fn map_and_validate(
 
     if config.page_state_change_required() {
         platform
-            .page_state_change(paddr, paddr + vregion.len(), PageSize::Huge, true)
+            .page_state_change(
+                MemoryRegion::new(paddr, vregion.len()),
+                PageSize::Huge,
+                true,
+            )
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }
     platform

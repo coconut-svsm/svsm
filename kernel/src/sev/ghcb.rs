@@ -17,6 +17,7 @@ use crate::mm::virt_to_phys;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
+use crate::utils::MemoryRegion;
 use core::mem::{self, offset_of};
 use core::ptr;
 
@@ -425,15 +426,15 @@ impl GHCB {
 
     pub fn page_state_change(
         &mut self,
-        start: PhysAddr,
-        end: PhysAddr,
+        region: MemoryRegion<PhysAddr>,
         size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
         let max_entries: u16 = ((GHCB_BUFFER_SIZE - 8) / 8).try_into().unwrap();
         let mut entries: u16 = 0;
-        let mut paddr = start;
+        let mut paddr = region.start();
+        let end = region.end();
         let op_mask: u64 = match op {
             PageStateChangeOp::PscPrivate => PSC_OP_PRIVATE,
             PageStateChangeOp::PscShared => PSC_OP_SHARED,
