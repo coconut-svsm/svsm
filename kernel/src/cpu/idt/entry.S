@@ -68,17 +68,34 @@ asm_entry_\name:
 // alterations that may be required based on when the #HV arrives.
 .globl asm_entry_hv
 asm_entry_hv:
-	// Check whether interrupts were enabled at the time of #HV.  If so,
-	// commit to processing all #HV events immediately.
-	testl 	$0x200, 0x10(%rsp)
-	jnz	continue_hv
-	iretq
-
-continue_hv:
 	pushq	$0
 	pushq	%rax
 	pushq 	%rbx
         pushq   %rcx
+	// Check whether interrupts were enabled at the time of #HV.  If so,
+	// commit to processing all #HV events immediately.
+	testl 	$0x200, 0x30(%rsp)
+	jnz	continue_hv
+	// Check whether the trap RIP is within the guest return window.
+	movq	0x20(%rsp), %rax // fetch RIP from the trap frame.
+	leaq	switch_vmpl_window_start(%rip), %rbx
+	leaq	switch_vmpl_window_end(%rip), %rcx
+	cmp	%rbx, %rax
+	jb 	postpone_hv
+	cmp	%rcx, %rax
+	jae	postpone_hv
+	// RIP is in the return window, so update RIP to the cancel point.
+	leaq	switch_vmpl_cancel(%rip), %rbx
+	movq	%rbx, 0x20(%rsp)
+	// Defer any further processing until interrupts can be processed.
+postpone_hv:
+	popq	%rcx
+	popq	%rbx
+	popq	%rax
+	addq	$8, %rsp
+	iretq
+
+continue_hv:
         pushq   %rdx
         pushq   %rsi
         pushq   %rdi

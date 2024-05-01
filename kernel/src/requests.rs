@@ -5,12 +5,12 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
+use crate::sev::ghcb::switch_to_vmpl;
 
 #[cfg(all(feature = "mstpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
@@ -132,9 +132,7 @@ pub fn request_loop() {
 
             flush_tlb_global_sync();
 
-            current_ghcb()
-                .run_vmpl(GUEST_VMPL as u64)
-                .expect("Failed to run guest VMPL");
+            switch_to_vmpl(GUEST_VMPL as u32);
         } else {
             loop {
                 log::debug!("No VMSA or CAA! Halting");
