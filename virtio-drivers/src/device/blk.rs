@@ -59,7 +59,7 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
         info!("config: {:?}", config);
         // Safe because config is a valid pointer to the device configuration space.
         let capacity = unsafe {
-            volread!(config, capacity_low) as u64 | (volread!(config, capacity_high) as u64) << 32
+            volread!(H, config, capacity_low) as u64 | (volread!(H, config, capacity_high) as u64) << 32
         };
         info!("found a block device of size {}KB", capacity / 2);
 
