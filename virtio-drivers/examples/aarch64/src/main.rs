@@ -102,7 +102,7 @@ extern "C" fn main(x0: u64, x1: u64, x2: u64, x3: u64) {
                 debug!("Found VirtIO MMIO device at {:?}", region);
 
                 let header = NonNull::new(region.starting_address as *mut VirtIOHeader).unwrap();
-                match unsafe { MmioTransport::new(header) } {
+                match unsafe { MmioTransport::<HalImpl>::new(header) } {
                     Err(e) => warn!("Error creating VirtIO MMIO transport: {}", e),
                     Ok(transport) => {
                         info!(
