@@ -23,7 +23,7 @@ use core::fmt;
 use core::mem::{align_of, size_of, size_of_val};
 use core::str::FromStr;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SevFWMetaData {
     pub cpuid_page: Option<PhysAddr>,
     pub secrets_page: Option<PhysAddr>,
@@ -33,7 +33,7 @@ pub struct SevFWMetaData {
 
 impl SevFWMetaData {
     pub const fn new() -> Self {
-        SevFWMetaData {
+        Self {
             cpuid_page: None,
             secrets_page: None,
             caa_page: None,

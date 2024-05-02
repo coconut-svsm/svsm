@@ -12,13 +12,13 @@ use core::arch::asm;
 use core::mem;
 
 #[repr(C, packed(2))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct GDTDesc {
     size: u16,
     addr: VirtAddr,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct GDTEntry(u64);
 
 impl GDTEntry {
@@ -53,7 +53,7 @@ impl GDTEntry {
 
 const GDT_SIZE: u16 = 8;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct GDT {
     entries: [GDTEntry; GDT_SIZE as usize],
 }

@@ -6,7 +6,7 @@
 
 use super::tasks::TaskPointer;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct WaitQueue {
     waiter: Option<TaskPointer>,
 }

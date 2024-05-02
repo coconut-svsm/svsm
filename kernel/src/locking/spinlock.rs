@@ -80,7 +80,7 @@ impl<T> DerefMut for LockGuard<'_, T> {
 ///     *guard += 2;
 /// };
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SpinLock<T> {
     /// This atomic counter is incremented each time a thread attempts to
     /// acquire the lock. It helps to determine the order in which threads

@@ -103,6 +103,12 @@ impl SecretsPage {
     }
 }
 
+impl Default for SecretsPage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 static SECRETS_PAGE: RWLock<SecretsPage> = RWLock::new(SecretsPage::new());
 
 pub fn secrets_page() -> ReadLockGuard<'static, SecretsPage> {

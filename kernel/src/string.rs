@@ -38,6 +38,12 @@ impl<const T: usize> FixedString<T> {
     }
 }
 
+impl<const N: usize> Default for FixedString<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> From<[u8; N]> for FixedString<N> {
     fn from(arr: [u8; N]) -> FixedString<N> {
         let mut data: [MaybeUninit<char>; N] = array::from_fn(|_| MaybeUninit::uninit());

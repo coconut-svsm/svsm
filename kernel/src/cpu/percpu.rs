@@ -93,7 +93,7 @@ impl PerCpuAreas {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct VmsaRef {
     pub vaddr: VirtAddr,
     pub paddr: PhysAddr,
@@ -128,7 +128,7 @@ impl IstStacks {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct GuestVmsaRef {
     vmsa: Option<PhysAddr>,
     caa: Option<PhysAddr>,

@@ -11,7 +11,7 @@ use crate::sev::msr_protocol::request_termination_msr;
 
 use core::arch::asm;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SVSMIOPort {}
 
 impl SVSMIOPort {
@@ -52,7 +52,7 @@ impl IOPort for SVSMIOPort {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct NativeIOPort {}
 
 impl NativeIOPort {

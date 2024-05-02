@@ -183,7 +183,7 @@ impl RunQueue {
 
 /// Global task list
 /// This contains every task regardless of affinity or run state.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TaskList {
     list: Option<LinkedList<TaskListAdapter>>,
 }

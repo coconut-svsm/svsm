@@ -1501,7 +1501,7 @@ static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new(
 ///
 /// This allocator uses slab allocation for fixed-size objects and falls
 /// back to page allocation for larger objects.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SvsmAllocator {
     slabs: [SpinLock<Slab>; 7],
 }
