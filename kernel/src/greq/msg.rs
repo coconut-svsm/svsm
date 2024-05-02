@@ -20,11 +20,8 @@ use core::{
 
 use crate::{
     address::{Address, VirtAddr},
-    cpu::ghcb::current_ghcb,
-    cpu::percpu::this_cpu_mut,
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
-    mm::virt_to_phys,
-    platform::PageStateChangeOp,
+    mm::page_visibility::{make_page_private, make_page_shared},
     protocols::errors::SvsmReqError,
     sev::secrets_page::VMPCK_SIZE,
     types::{PageSize, PAGE_SIZE},
@@ -241,37 +238,13 @@ impl SnpGuestRequestMsg {
     ///   (returned to the allocator)
     pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
         let vaddr = VirtAddr::from(addr_of_mut!(*self));
-        this_cpu_mut()
-            .get_pgtable()
-            .set_shared_4k(vaddr)
-            .map_err(|_| SvsmReqError::invalid_request())?;
-
-        let paddr = virt_to_phys(vaddr);
-        current_ghcb()
-            .page_state_change(
-                MemoryRegion::new(paddr, PAGE_SIZE),
-                PageSize::Regular,
-                PageStateChangeOp::Shared,
-            )
-            .map_err(|_| SvsmReqError::invalid_request())
+        make_page_shared(vaddr).map_err(|_| SvsmReqError::invalid_request())
     }
 
     /// Set the C-bit (memory encryption bit) for the Self page
     pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
         let vaddr = VirtAddr::from(addr_of_mut!(*self));
-        this_cpu_mut()
-            .get_pgtable()
-            .set_encrypted_4k(vaddr)
-            .map_err(|_| SvsmReqError::invalid_request())?;
-
-        let paddr = virt_to_phys(vaddr);
-        current_ghcb()
-            .page_state_change(
-                MemoryRegion::new(paddr, PAGE_SIZE),
-                PageSize::Regular,
-                PageStateChangeOp::Private,
-            )
-            .map_err(|_| SvsmReqError::invalid_request())
+        make_page_private(vaddr).map_err(|_| SvsmReqError::invalid_request())
     }
 
     /// Fill the [`SnpGuestRequestMsg`] fields with zeros
@@ -414,19 +387,7 @@ fn build_iv(msg_seqno: u64) -> [u8; IV_SIZE] {
 /// Set to encrypted all the 4k pages of a memory range
 fn set_encrypted_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
     for addr in vregion.iter_pages(PageSize::Regular) {
-        this_cpu_mut()
-            .get_pgtable()
-            .set_encrypted_4k(addr)
-            .map_err(|_| SvsmReqError::invalid_request())?;
-
-        let paddr = virt_to_phys(addr);
-        current_ghcb()
-            .page_state_change(
-                MemoryRegion::new(paddr, PAGE_SIZE),
-                PageSize::Regular,
-                PageStateChangeOp::Private,
-            )
-            .map_err(|_| SvsmReqError::invalid_request())?;
+        make_page_private(addr).map_err(|_| SvsmReqError::invalid_request())?;
     }
     Ok(())
 }
@@ -434,19 +395,7 @@ fn set_encrypted_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmRe
 /// Set to shared all the 4k pages of a memory range
 fn set_shared_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
     for addr in vregion.iter_pages(PageSize::Regular) {
-        this_cpu_mut()
-            .get_pgtable()
-            .set_shared_4k(addr)
-            .map_err(|_| SvsmReqError::invalid_request())?;
-
-        let paddr = virt_to_phys(addr);
-        current_ghcb()
-            .page_state_change(
-                MemoryRegion::new(paddr, PAGE_SIZE),
-                PageSize::Regular,
-                PageStateChangeOp::Shared,
-            )
-            .map_err(|_| SvsmReqError::invalid_request())?;
+        make_page_shared(addr).map_err(|_| SvsmReqError::invalid_request())?;
     }
     Ok(())
 }
