@@ -33,11 +33,11 @@ impl<H: Hal, T: Transport, const QUEUE_SIZE: usize> VirtIONetRaw<H, T, QUEUE_SIZ
         let mac;
         // Safe because config points to a valid MMIO region for the config space.
         unsafe {
-            mac = volread!(config, mac);
+            mac = volread!(H, config, mac);
             debug!(
                 "Got MAC={:02x?}, status={:?}",
                 mac,
-                volread!(config, status)
+                volread!(H, config, status)
             );
         }
         let send_queue = VirtQueue::new(
