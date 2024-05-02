@@ -252,7 +252,7 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize> VirtIOSocket<H, T, RX_BU
         debug!("config: {:?}", config);
         // Safe because config is a valid pointer to the device configuration space.
         let guest_cid = unsafe {
-            volread!(config, guest_cid_low) as u64 | (volread!(config, guest_cid_high) as u64) << 32
+            volread!(H, config, guest_cid_low) as u64 | (volread!(H, config, guest_cid_high) as u64) << 32
         };
         debug!("guest cid: {guest_cid:?}");
 
