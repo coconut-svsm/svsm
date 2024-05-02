@@ -135,8 +135,8 @@ impl<H: Hal, T: Transport> VirtIOConsole<H, T> {
             // SAFETY: self.config_space is a valid pointer to the device configuration space.
             unsafe {
                 Some(Size {
-                    columns: volread!(self.config_space, cols),
-                    rows: volread!(self.config_space, rows),
+                    columns: volread!(H, self.config_space, cols),
+                    rows: volread!(H, self.config_space, rows),
                 })
             }
         } else {
