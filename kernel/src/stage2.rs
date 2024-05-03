@@ -18,7 +18,7 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, install_console_logger, WRITER};
+use svsm::console::{init_console, install_console_logger};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
@@ -84,7 +84,7 @@ fn setup_env(
     early_idt_init_no_ghcb();
     platform.env_setup();
 
-    install_console_logger("Stage2");
+    install_console_logger("Stage2").expect("Console logger already initialized");
     init_kernel_mapping_info(
         VirtAddr::null(),
         VirtAddr::from(640 * 1024usize),
@@ -101,15 +101,13 @@ fn setup_env(
     early_idt_init();
 
     CONSOLE_SERIAL
-        .init(&SerialPort {
-            driver: platform.get_console_io_port(),
-            port: config.debug_serial_port(),
-        })
+        .init(&SerialPort::new(
+            platform.get_console_io_port(),
+            config.debug_serial_port(),
+        ))
         .expect("console serial output already configured");
     (*CONSOLE_SERIAL).init();
-
-    WRITER.lock().set(&*CONSOLE_SERIAL);
-    init_console();
+    init_console(&*CONSOLE_SERIAL).expect("Console writer already initialized");
 
     // Console is fully working now and any unsupported configuration can be
     // properly reported.

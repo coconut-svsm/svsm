@@ -6,28 +6,19 @@
 
 use crate::locking::SpinLock;
 use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
-use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
 
 #[derive(Clone, Copy)]
-pub struct Console {
-    writer: Option<&'static dyn Terminal>,
-}
-
-impl Console {
-    pub fn set(&mut self, w: &'static dyn Terminal) {
-        self.writer = Some(w);
-    }
+struct Console {
+    writer: &'static dyn Terminal,
 }
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        if let Some(writer) = self.writer {
-            for ch in s.bytes() {
-                writer.put_byte(ch);
-            }
+        for ch in s.bytes() {
+            self.writer.put_byte(ch);
         }
-
         Ok(())
     }
 }
@@ -35,26 +26,19 @@ impl fmt::Write for Console {
 impl fmt::Debug for Console {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Console")
-            .field(
-                "writer",
-                &format_args!(
-                    "{:?}",
-                    self.writer.as_ref().map(|writer| writer as *const _)
-                ),
-            )
+            .field("writer", &format_args!("{:?}", self.writer as *const _,))
             .finish()
     }
 }
 
-pub static WRITER: SpinLock<Console> = SpinLock::new(Console {
-    writer: Some(&DEFAULT_SERIAL_PORT),
+static WRITER: SpinLock<Console> = SpinLock::new(Console {
+    writer: &DEFAULT_SERIAL_PORT,
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 
-pub fn init_console() {
-    CONSOLE_INITIALIZED
-        .reinit(&true)
-        .expect("could not reinit CONSOLE_INITIALIZED");
+pub fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
+    WRITER.lock().writer = writer;
+    CONSOLE_INITIALIZED.reinit(&true)
 }
 
 #[doc(hidden)]
@@ -129,11 +113,8 @@ impl log::Log for ConsoleLogger {
 
 static CONSOLE_LOGGER: ImmutAfterInitCell<ConsoleLogger> = ImmutAfterInitCell::uninit();
 
-pub fn install_console_logger(component: &'static str) {
-    let logger = ConsoleLogger::new(component);
-    CONSOLE_LOGGER
-        .init(&logger)
-        .expect("Already initialized console logger");
+pub fn install_console_logger(component: &'static str) -> ImmutAfterInitResult<()> {
+    CONSOLE_LOGGER.init(&ConsoleLogger::new(component))?;
 
     if let Err(e) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had
@@ -147,6 +128,7 @@ pub fn install_console_logger(component: &'static str) {
 
     // Log levels are to be configured via the log's library feature configuration.
     log::set_max_level(log::LevelFilter::Trace);
+    Ok(())
 }
 
 #[macro_export]
