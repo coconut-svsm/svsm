@@ -4,6 +4,19 @@
 //
 // Author: Carlos López <carlos.lopez@suse.com>
 
+//! High level error typing for the public SVSM APIs.
+//!
+//! This module contains the generic [`SvsmError`] type, which may be returned
+//! from any public API in this codebase to signal an error during SVSM
+//! operation. Each variant of the type may give more specific information
+//! about the source of the error.
+//!
+//! As a general rule, functions private to a given module may directly return
+//! leaf error types, which are contained in [`SvsmError`] variants. Public
+//! functions should return an [`SvsmError`] containing a leaf error type,
+//! usually the one corresponding to that module. Each module should provide
+//! a way to convert a leaf error into a SvsmError via the [`From`] trait.
+
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
@@ -13,41 +26,37 @@ use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
 use crate::task::TaskError;
 
-// As a general rule, functions private to a given module may use the
-// leaf error types. Public functions should return an SvsmError
-// containing a leaf error type, usually the one corresponding to
-// that module. We always provide a way to convert a leaf error into
-// a SvsmError via the From trait at the module level.
+/// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
-    // Errors related to GHCB
+    /// Errors related to GHCB
     Ghcb(GhcbError),
-    // Errors related to MSR protocol
+    /// Errors related to MSR protocol
     GhcbMsr(GhcbMsrError),
-    // Errors related to SEV-SNP operations, like PVALIDATE or RMPUPDATE
+    /// Errors related to SEV-SNP operations, like PVALIDATE or RMPUPDATE
     SevSnp(SevSnpError),
-    // Generic errors related to memory management
+    /// Generic errors related to memory management
     Mem,
-    // Errors related to the memory allocator
+    /// Errors related to the memory allocator
     Alloc(AllocError),
-    // There is no VMSA
+    /// Error reported when there is no VMSA set up.
     MissingVMSA,
-    // There is no CAA
+    /// Error reported when there is no CAA (Calling Area Address) set up.
     MissingCAA,
-    // There is no secrets page
+    /// Error reported when there is no secrets page set up.
     MissingSecrets,
-    // Invalid address, usually provided by the guest
+    /// Invalid address, usually provided by the guest
     InvalidAddress,
-    // Errors related to firmware parsing
+    /// Errors related to firmware parsing
     Firmware,
-    // Errors related to firmware configuration contents
+    /// Errors related to firmware configuration contents
     FwCfg(FwCfgError),
-    // Errors related to ACPI parsing.
+    /// Errors related to ACPI parsing.
     Acpi,
-    // Errors from file systems
+    /// Errors from the filesystem.
     FileSystem(FsError),
-    // Task management errors,
+    /// Task management errors,
     Task(TaskError),
-    // Errors from #VC handler
+    /// Errors from #VC handler
     Vc(VcError),
 }
