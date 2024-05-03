@@ -27,7 +27,7 @@ use crate::{
     vtpm::{MsTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface},
 };
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct MsTpm {
     is_powered_on: bool,
 }

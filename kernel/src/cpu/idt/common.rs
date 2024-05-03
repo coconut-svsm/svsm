@@ -143,6 +143,7 @@ impl IdtEntry {
 const IDT_ENTRIES: usize = 256;
 
 #[repr(C, packed)]
+#[derive(Default, Clone, Copy, Debug)]
 struct IdtDesc {
     size: u16,
     address: VirtAddr,
@@ -194,6 +195,12 @@ impl IDT {
         let base = (self as *const IDT) as u64;
         let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
         (base, limit)
+    }
+}
+
+impl Default for IDT {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
