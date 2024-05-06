@@ -178,4 +178,11 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.initialize_guest_vmsa(vmsa),
         }
     }
+
+    pub fn use_alternate_injection(&self) -> bool {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => false,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.use_alternate_injection(),
+        }
+    }
 }

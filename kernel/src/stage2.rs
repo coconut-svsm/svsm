@@ -342,6 +342,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         igvm_params_virt_addr: u64::from(igvm_params_virt_address),
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
+        use_alternate_injection: config.use_alternate_injection(),
         platform_type,
     };
 

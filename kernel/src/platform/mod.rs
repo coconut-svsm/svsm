@@ -76,6 +76,12 @@ pub trait SvsmPlatform {
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
 
+    /// Configures the use of alternate injection as requested.
+    fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError>;
+
+    /// Indicates whether this system should make use of alternate injection.
+    fn use_alternate_injection(&self) -> bool;
+
     /// Signal an IRQ on one or more CPUs.
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;
 

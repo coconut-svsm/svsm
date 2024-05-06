@@ -107,8 +107,11 @@ pub struct IgvmParamBlock {
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 
+    /// Indicates whether the guest can support alternate injection.
+    pub use_alternate_injection: u8,
+
     #[doc(hidden)]
-    pub _reserved: [u16; 3],
+    pub _reserved: [u8; 5],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.

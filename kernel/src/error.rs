@@ -64,4 +64,6 @@ pub enum SvsmError {
     Task(TaskError),
     /// Errors from #VC handler
     Vc(VcError),
+    /// The operation is not supported.
+    NotSupported,
 }

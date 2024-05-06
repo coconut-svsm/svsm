@@ -115,7 +115,7 @@ pub fn vmsa_mut_ref_from_vaddr(vaddr: VirtAddr) -> &'static mut VMSA {
     unsafe { vaddr.as_mut_ptr::<VMSA>().as_mut().unwrap() }
 }
 
-pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {
+pub fn init_guest_vmsa(v: &mut VMSA, rip: u64, alternate_injection: bool) {
     v.cr0 = 0x6000_0010;
     v.rflags = 0x2;
     v.rip = rip & 0xffff;
@@ -143,5 +143,11 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64) {
 
     // Ensure that guest VMSAs do not enable restricted injection.
     sev_status.remove(SEVStatusFlags::REST_INJ);
+
+    // Enable alternate injection if requested.
+    if alternate_injection {
+        sev_status.insert(SEVStatusFlags::ALT_INJ);
+    }
+
     v.sev_features = sev_status.as_sev_features();
 }

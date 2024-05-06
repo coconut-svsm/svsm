@@ -81,6 +81,14 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
+    fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    fn use_alternate_injection(&self) -> bool {
+        false
+    }
+
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         write_msr(APIC_MSR_ICR, icr);
         Ok(())

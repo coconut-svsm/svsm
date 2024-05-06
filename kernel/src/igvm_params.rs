@@ -302,4 +302,8 @@ impl IgvmParams<'_> {
     pub fn get_vtom(&self) -> u64 {
         self.igvm_param_block.vtom
     }
+
+    pub fn use_alternate_injection(&self) -> bool {
+        self.igvm_param_block.use_alternate_injection != 0
+    }
 }

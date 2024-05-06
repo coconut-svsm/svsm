@@ -23,12 +23,12 @@ use crate::mm::{
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
-use crate::platform::SvsmPlatform;
+use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::GHCB;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
+use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::allocate_new_vmsa;
-use crate::sev::RMPFlags;
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
@@ -261,6 +261,7 @@ pub struct PerCpu {
     tss: Cell<X86Tss>,
     svsm_vmsa: Cell<Option<VmsaRef>>,
     reset_ip: Cell<u64>,
+    apic_emulation: Cell<bool>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
@@ -293,6 +294,7 @@ impl PerCpu {
             vrange_2m: RefCell::new(VirtualRange::new()),
             runqueue: RefCell::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
+            apic_emulation: Cell::new(false),
 
             shared: PerCpuShared::new(apic_id),
             ghcb: Cell::new(None),
@@ -589,11 +591,16 @@ impl PerCpu {
     }
 
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
+        // Enable alternate injection if the hypervisor supports it.
+        if SVSM_PLATFORM.as_dyn_ref().use_alternate_injection() {
+            self.apic_emulation.set(true);
+        }
+
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip.get());
+        init_guest_vmsa(vmsa, self.reset_ip.get(), self.apic_emulation.get());
 
         self.shared().update_guest_vmsa(paddr);
 

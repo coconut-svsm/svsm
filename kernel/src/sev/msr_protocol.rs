@@ -57,6 +57,7 @@ bitflags! {
         const APIC_ID_LIST            = 1 << 4;
         const SEV_SNP_MULTI_VMPL      = 1 << 5;
         const SEV_PAGE_STATE_CHANGE   = 1 << 6;
+        const SEV_SNP_EXT_INTERRUPTS  = 1 << 7;
     }
 }
 

@@ -11,7 +11,7 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::sev::hv_doorbell::current_hv_doorbell;
-use crate::sev::msr_protocol::verify_ghcb_version;
+use crate::sev::msr_protocol::{hypervisor_ghcb_features, verify_ghcb_version, GHCBHvFeatures};
 use crate::sev::status::vtom_enabled;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
@@ -23,11 +23,15 @@ use crate::utils::MemoryRegion;
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 
 #[derive(Clone, Copy, Debug)]
-pub struct SnpPlatform {}
+pub struct SnpPlatform {
+    use_alternate_injection: bool,
+}
 
 impl SnpPlatform {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            use_alternate_injection: false,
+        }
     }
 }
 
@@ -118,6 +122,23 @@ impl SvsmPlatform for SnpPlatform {
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
         pvalidate_range(region, PvalidateOp::Invalid)
+    }
+
+    fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {
+        // If alternate injection was requested, then it must be supported by
+        // the hypervisor.
+        if alt_inj_requested
+            && !hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_EXT_INTERRUPTS)
+        {
+            return Err(SvsmError::NotSupported);
+        }
+
+        self.use_alternate_injection = alt_inj_requested;
+        Ok(())
+    }
+
+    fn use_alternate_injection(&self) -> bool {
+        self.use_alternate_injection
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {

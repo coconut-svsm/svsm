@@ -59,6 +59,10 @@ pub struct CmdOptions {
     /// Extra SEV features to be enabled in the VMSA (multiple values can be provided separated by ',')
     #[arg(long, value_delimiter = ',')]
     pub sev_features: Vec<SevExtraFeatures>,
+
+    /// Use Alternate Injection if available
+    #[arg(long, default_value_t = false)]
+    pub alt_injection: bool,
 }
 
 impl CmdOptions {
