@@ -117,6 +117,11 @@ impl SvsmPlatform for SnpPlatform {
         pvalidate_range(region, PvalidateOp::Invalid)
     }
 
+    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
+        current_ghcb().hv_ipi(icr)?;
+        Ok(())
+    }
+
     fn eoi(&self) {
         // Issue an explicit EOI unless no explicit EOI is required.
         if !current_hv_doorbell().no_eoi_required() {

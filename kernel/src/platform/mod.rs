@@ -76,6 +76,9 @@ pub trait SvsmPlatform {
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
 
+    /// Signal an IRQ on one or more CPUs.
+    fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;
+
     /// Perform an EOI of the current interrupt.
     fn eoi(&self);
 }

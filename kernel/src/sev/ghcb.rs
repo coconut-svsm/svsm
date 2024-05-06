@@ -100,6 +100,7 @@ enum GHCBExitCode {
     GUEST_EXT_REQUEST = 0x8000_0012,
     AP_CREATE = 0x80000013,
     HV_DOORBELL = 0x8000_0014,
+    HV_IPI = 0x8000_0015,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -594,6 +595,12 @@ impl GHCB {
             return Err(GhcbError::VmgexitError(self.rbx.get(), sw_exit_info_2).into());
         }
 
+        Ok(())
+    }
+
+    pub fn hv_ipi(&self, icr: u64) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::HV_IPI, icr, 0)?;
         Ok(())
     }
 

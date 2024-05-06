@@ -44,6 +44,16 @@ asm_entry_\name:
 	jmp	default_return
 .endm
 
+.macro irq_entry name:req vector:req
+	.globl asm_entry_irq_\name
+asm_entry_irq_\name:
+	pushq	$0
+	push_regs
+	movl	$\vector, %edi
+	call	common_isr_handler
+	jmp	default_return
+.endm
+
 // The #HV handler is coded specially in order to deal with control flow
 // alterations that may be required based on when the #HV arrives.  If the #HV
 // arrives from a context in which interrupts are enabled, then the #HV can
