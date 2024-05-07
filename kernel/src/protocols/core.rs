@@ -400,6 +400,10 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let pending = GuestPtr::<SvsmCaa>::new(vaddr);
     pending.write(SvsmCaa::zeroed())?;
 
+    // Clear any pending interrupt state before remapping the calling area to
+    // ensure that any pending lazy EOI has been processed.
+    this_cpu().clear_pending_interrupts();
+
     this_cpu_shared().update_guest_caa(gpa);
 
     Ok(())

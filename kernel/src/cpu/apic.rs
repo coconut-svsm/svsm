@@ -4,8 +4,11 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
+use crate::address::VirtAddr;
 use crate::cpu::percpu::PerCpuShared;
+use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
+use crate::requests::SvsmCaa;
 
 use bitfield_struct::bitfield;
 
@@ -101,6 +104,7 @@ pub struct LocalApic {
     update_required: bool,
     interrupt_delivered: bool,
     interrupt_queued: bool,
+    lazy_eoi_pending: bool,
 }
 
 impl LocalApic {
@@ -113,6 +117,7 @@ impl LocalApic {
             update_required: false,
             interrupt_delivered: false,
             interrupt_queued: false,
+            lazy_eoi_pending: false,
         }
     }
 
@@ -144,13 +149,18 @@ impl LocalApic {
         self.update_required = true;
     }
 
-    pub fn check_delivered_interrupts<T: GuestCpuState>(&mut self, cpu_state: &mut T) {
+    pub fn check_delivered_interrupts<T: GuestCpuState>(
+        &mut self,
+        cpu_state: &mut T,
+        caa_addr: Option<VirtAddr>,
+    ) {
         // Check to see if a previously delivered interrupt is still pending.
         // If so, move it back to the IRR.
         if self.interrupt_delivered {
             let irq = cpu_state.check_and_clear_pending_interrupt_event();
             if irq != 0 {
                 self.rewind_pending_interrupt(irq);
+                self.lazy_eoi_pending = false;
             }
             self.interrupt_delivered = false;
         }
@@ -161,8 +171,27 @@ impl LocalApic {
             let irq = cpu_state.check_and_clear_pending_virtual_interrupt();
             if irq != 0 {
                 self.rewind_pending_interrupt(irq);
+                self.lazy_eoi_pending = false;
             }
             self.interrupt_queued = false;
+        }
+
+        // If a lazy EOI is pending, then check to see whether an EOI has been
+        // requested by the guest.  Note that if a lazy EOI was dismissed
+        // above, the guest lazy EOI flag need not be cleared here, since
+        // dismissal of any interrupt above will require reprocessing of
+        // interrupt state prior to guest reentry, and that reprocessing will
+        // reset the guest lazy EOI flag.
+        if self.lazy_eoi_pending {
+            if let Some(virt_addr) = caa_addr {
+                let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
+                if let Ok(caa) = calling_area.read() {
+                    if caa.no_eoi_required == 0 {
+                        assert!(self.isr_stack_index != 0);
+                        self.perform_eoi();
+                    }
+                }
+            }
         }
     }
 
@@ -187,6 +216,16 @@ impl LocalApic {
         self.get_ppr_with_tpr(cpu_state.get_tpr())
     }
 
+    fn clear_guest_eoi_pending(caa_addr: Option<VirtAddr>) -> Option<GuestPtr<SvsmCaa>> {
+        let virt_addr = caa_addr?;
+        let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
+        // Ignore errors here, since nothing can be done if an error occurs.
+        if let Ok(caa) = calling_area.read() {
+            let _ = calling_area.write(caa.update_no_eoi_required(0));
+        }
+        Some(calling_area)
+    }
+
     fn deliver_interrupt_immediately<T: GuestCpuState>(
         &mut self,
         irq: u8,
@@ -206,11 +245,15 @@ impl LocalApic {
         }
     }
 
-    pub fn present_interrupts<T: GuestCpuState>(&mut self, cpu_state: &mut T) {
+    pub fn present_interrupts<T: GuestCpuState>(
+        &mut self,
+        cpu_state: &mut T,
+        caa_addr: Option<VirtAddr>,
+    ) {
         if self.update_required {
             // Make sure that all previously delivered interrupts have been
             // processed before attempting to process any more.
-            self.check_delivered_interrupts(cpu_state);
+            self.check_delivered_interrupts(cpu_state, caa_addr);
 
             let irq = self.scan_irr();
             let current_priority = if self.isr_stack_index != 0 {
@@ -218,6 +261,11 @@ impl LocalApic {
             } else {
                 0
             };
+
+            // Assume no lazy EOI can be attempted unless it is recalculated
+            // below.
+            self.lazy_eoi_pending = false;
+            let guest_caa = Self::clear_guest_eoi_pending(caa_addr);
 
             // This interrupt is a candidate for delivery only if its priority
             // exceeds the priority of the highest priority interrupt currently
@@ -227,12 +275,24 @@ impl LocalApic {
             if (irq & 0xF0) > (current_priority & 0xF0) {
                 // Determine whether this interrupt can be injected
                 // immediately.  If not, queue it for delivery when possible.
-                if self.deliver_interrupt_immediately(irq, cpu_state) {
+                let try_lazy_eoi = if self.deliver_interrupt_immediately(irq, cpu_state) {
                     self.interrupt_delivered = true;
+
+                    // Use of lazy EOI can safely be attempted, because the
+                    // highest priority interrupt in service is unambiguous.
+                    true
                 } else {
                     cpu_state.queue_interrupt(irq);
                     self.interrupt_queued = true;
-                }
+
+                    // A lazy EOI can only be attempted if there is no lower
+                    // priority interrupt in service.  If a lower priority
+                    // interrupt is in service, then the lazy EOI handler
+                    // won't know whether the lazy EOI is for the one that
+                    // is already in service or the one that is being queued
+                    // here.
+                    self.isr_stack_index == 0
+                };
 
                 // Mark this interrupt in-service.  It will be recalled if
                 // the ISR is examined again before the interrupt is actually
@@ -240,6 +300,26 @@ impl LocalApic {
                 self.remove_irr(irq);
                 self.isr_stack[self.isr_stack_index] = irq;
                 self.isr_stack_index += 1;
+
+                // Configure a lazy EOI if possible.
+                if try_lazy_eoi {
+                    // A lazy EOI is possible only if there is no other
+                    // interrupt pending.  If another interrupt is pending,
+                    // then an explicit EOI will be required to prompt
+                    // delivery of the next interrupt.
+                    if self.scan_irr() == 0 {
+                        if let Some(calling_area) = guest_caa {
+                            if let Ok(caa) = calling_area.read() {
+                                if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
+                                    // Only track a pending lazy EOI if the
+                                    // calling area page could successfully be
+                                    // updated.
+                                    self.lazy_eoi_pending = true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             self.update_required = false;
         }
@@ -251,6 +331,7 @@ impl LocalApic {
         if self.isr_stack_index != 0 {
             self.isr_stack_index -= 1;
             self.update_required = true;
+            self.lazy_eoi_pending = false;
         }
     }
 
@@ -275,11 +356,12 @@ impl LocalApic {
         &mut self,
         cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
+        caa_addr: Option<VirtAddr>,
         register: u64,
     ) -> Result<u64, ApicError> {
         // Rewind any undelivered interrupt so it is reflected in any register
         // read.
-        self.check_delivered_interrupts(cpu_state);
+        self.check_delivered_interrupts(cpu_state, caa_addr);
 
         match register {
             APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
@@ -324,12 +406,13 @@ impl LocalApic {
     pub fn write_register<T: GuestCpuState>(
         &mut self,
         cpu_state: &mut T,
+        caa_addr: Option<VirtAddr>,
         register: u64,
         value: u64,
     ) -> Result<(), ApicError> {
         // Rewind any undelivered interrupt so it is correctly processed by
         // any register write.
-        self.check_delivered_interrupts(cpu_state);
+        self.check_delivered_interrupts(cpu_state, caa_addr);
 
         match register {
             APIC_REGISTER_TPR => {
