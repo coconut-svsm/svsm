@@ -733,4 +733,78 @@ impl LocalApic {
             }
         }
     }
+
+    fn handoff_to_host(&mut self) {
+        let hv_doorbell = this_cpu().hv_doorbell().unwrap();
+        let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
+        // Establish the IRR as holding multiple vectors regardless of the
+        // number of active vectors, as this makes transferring IRR state
+        // simpler.
+        let multiple_vectors_mask: u32 = HVExtIntStatus::new().with_multiple_vectors(true).into();
+        descriptor
+            .status
+            .fetch_or(multiple_vectors_mask, Ordering::Relaxed);
+
+        // If a single, edge-triggered interrupt is present in the interrupt
+        // descriptor, then transfer it to the local IRR.  Level-sensitive
+        // interrupts can be left alone since the host must be prepared to
+        // consume those directly.  Note that consuming the interrupt does not
+        // require zeroing the vector, since the host is supposed to ignore the
+        // vector field when multiple vectors are present (except for the case
+        // of level-sensitive interrupts).
+        let flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
+        if flags.pending_vector() >= 31 && !flags.level_sensitive() {
+            Self::insert_vector_register(&mut self.irr, flags.pending_vector());
+        }
+
+        // Copy vector 31 if required, and then insert all of the additional
+        // IRR fields into the host IRR.
+        if self.irr[0] & 0x8000_0000 != 0 {
+            let irr_31_mask: u32 = HVExtIntStatus::new().vector_31().into();
+            descriptor.status.fetch_or(irr_31_mask, Ordering::Relaxed);
+        }
+
+        for i in 1..8 {
+            descriptor.irr[i - 1].fetch_or(self.irr[i], Ordering::Relaxed);
+        }
+
+        // Now transfer the contents of the ISR stack into the host ISR.
+        let mut new_isr = [0u32; 8];
+        for i in 0..self.isr_stack_index {
+            let index = (self.isr_stack[i] >> 5) as usize;
+            let bit = 1u32 << (self.isr_stack[i] & 31);
+            new_isr[index] |= bit;
+        }
+
+        for (host_isr, temp_isr) in descriptor.isr.iter().zip(new_isr.iter()) {
+            host_isr.store(*temp_isr, Ordering::Relaxed);
+        }
+    }
+
+    pub fn disable_apic_emulation<T: GuestCpuState>(
+        &mut self,
+        cpu_state: &mut T,
+        caa_addr: Option<VirtAddr>,
+    ) {
+        // Ensure that any previous interrupt delivery is complete.
+        self.check_delivered_interrupts(cpu_state, caa_addr);
+
+        // Hand the current APIC state off to the host.
+        self.handoff_to_host();
+
+        let _ = Self::clear_guest_eoi_pending(caa_addr);
+
+        // Disable alternate injection altogether.
+        cpu_state.disable_alternate_injection();
+
+        // Finally, ask the host to take over APIC
+        // emulation.
+        current_ghcb()
+            .disable_alternate_injection(
+                cpu_state.get_tpr(),
+                cpu_state.in_intr_shadow(),
+                cpu_state.interrupts_enabled(),
+            )
+            .expect("Failed to disable alterate injection");
+    }
 }

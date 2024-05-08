@@ -693,6 +693,14 @@ impl PerCpu {
             // APIC emulation cannot be disabled if the platform has locked
             // the use of APIC emulation.
             SVSM_PLATFORM.as_dyn_ref().disable_apic_emulation()?;
+            let mut vmsa_ref = self.guest_vmsa_ref();
+            let caa_addr = vmsa_ref.caa_addr();
+            let vmsa = vmsa_ref.vmsa();
+            self.apic
+                .borrow_mut()
+                .disable_apic_emulation(vmsa, caa_addr);
+            drop(vmsa_ref);
+
             self.apic_emulation.set(false);
         }
         Ok(())

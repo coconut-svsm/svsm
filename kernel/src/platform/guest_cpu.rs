@@ -13,4 +13,5 @@ pub trait GuestCpuState {
     fn interrupts_enabled(&self) -> bool;
     fn check_and_clear_pending_interrupt_event(&mut self) -> u8;
     fn check_and_clear_pending_virtual_interrupt(&mut self) -> u8;
+    fn disable_alternate_injection(&mut self);
 }

@@ -18,7 +18,7 @@ use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{Bytes, PageSize, PAGE_SIZE_2M};
+use crate::types::{Bytes, PageSize, GUEST_VMPL, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
 use core::arch::global_asm;
@@ -102,6 +102,7 @@ enum GHCBExitCode {
     HV_DOORBELL = 0x8000_0014,
     HV_IPI = 0x8000_0015,
     CONFIGURE_INT_INJ = 0x8000_0019,
+    DISABLE_ALT_INJ = 0x8000_001A,
     SPECIFIC_EOI = 0x8000_001B,
 }
 
@@ -616,6 +617,25 @@ impl GHCB {
         self.clear();
         let exit_info = ((vmpl as u64) << 16) | (vector as u64);
         self.vmgexit(GHCBExitCode::SPECIFIC_EOI, exit_info, 0)?;
+        Ok(())
+    }
+
+    pub fn disable_alternate_injection(
+        &self,
+        tpr: u8,
+        in_intr_shadow: bool,
+        interrupts_enabled: bool,
+    ) -> Result<(), SvsmError> {
+        let mut exit_info = (GUEST_VMPL as u64) << 16;
+        exit_info |= (tpr as u64) << 8;
+        if in_intr_shadow {
+            exit_info |= 2;
+        }
+        if interrupts_enabled {
+            exit_info |= 1;
+        }
+        self.clear();
+        self.vmgexit(GHCBExitCode::DISABLE_ALT_INJ, exit_info, 0)?;
         Ok(())
     }
 
