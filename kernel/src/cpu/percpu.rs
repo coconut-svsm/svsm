@@ -109,8 +109,11 @@ impl VmsaRef {
         }
     }
 
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn vmsa(&mut self) -> &mut VMSA {
         let ptr = self.vaddr.as_mut_ptr::<VMSA>();
+        // SAFETY: this function takes &mut self, so only one mutable
+        // reference to the underlying VMSA can exist.
         unsafe { ptr.as_mut().unwrap() }
     }
 }
@@ -178,8 +181,11 @@ impl GuestVmsaRef {
         self.caa
     }
 
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn vmsa(&mut self) -> &mut VMSA {
         assert!(self.vmsa.is_some());
+        // SAFETY: this function takes &mut self, so only one mutable
+        // reference to the underlying VMSA can exist.
         unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() }
     }
 
@@ -385,7 +391,7 @@ impl PerCpu {
         self.apic_id
     }
 
-    fn allocate_page_table(&mut self) -> Result<(), SvsmError> {
+    fn allocate_page_table(&self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
         self.set_pgtable(pgtable_ref);
@@ -393,12 +399,12 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn set_pgtable(&mut self, pgtable: PageTableRef) {
+    pub fn set_pgtable(&self, pgtable: PageTableRef) {
         let mut my_pgtable = self.get_pgtable();
         *my_pgtable = pgtable;
     }
 
-    fn allocate_stack(&mut self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
+    fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
         let top_of_stack = stack.top_of_stack(base);
         let mapping = Arc::new(Mapping::new(stack));
@@ -450,7 +456,7 @@ impl PerCpu {
         self.tss.ist_stacks[IST_DF] = double_fault_stack;
     }
 
-    pub fn map_self_stage2(&mut self) -> Result<(), SvsmError> {
+    pub fn map_self_stage2(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
         let flags = PTEntryFlags::data();
@@ -458,7 +464,7 @@ impl PerCpu {
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
 
-    pub fn map_self(&mut self) -> Result<(), SvsmError> {
+    pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(self.cpu_unsafe);
         let paddr = virt_to_phys(vaddr);
 
@@ -468,7 +474,7 @@ impl PerCpu {
         Ok(())
     }
 
-    fn initialize_vm_ranges(&mut self) -> Result<(), SvsmError> {
+    fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
         let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
         let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
         self.vm_range
@@ -482,7 +488,7 @@ impl PerCpu {
         Ok(())
     }
 
-    fn finish_page_table(&mut self) {
+    fn finish_page_table(&self) {
         let mut pgtable = self.get_pgtable();
         self.vm_range.populate(&mut pgtable);
     }
@@ -532,10 +538,12 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn load_pgtable(&mut self) {
+    pub fn load_pgtable(&self) {
         self.get_pgtable().load();
     }
 
+    // Ensure this function does not have multiple concurrent callers.
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn load_tss(&mut self) {
         gdt_mut().load_tss(&self.tss);
     }
@@ -608,7 +616,7 @@ impl PerCpu {
         self.shared().guest_vmsa.lock()
     }
 
-    pub fn alloc_guest_vmsa(&mut self) -> Result<(), SvsmError> {
+    pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 

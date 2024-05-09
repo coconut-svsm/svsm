@@ -268,7 +268,7 @@ impl GHCB {
     }
 
     pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self as *const GHCB);
+        let vaddr = VirtAddr::from(ptr::from_mut(self));
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page

@@ -173,8 +173,7 @@ impl Task {
 
         cpu.populate_page_table(&mut pgtable);
 
-        let mut vm_kernel_range =
-            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
         let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
@@ -214,8 +213,7 @@ impl Task {
 
         cpu.populate_page_table(&mut pgtable);
 
-        let mut vm_kernel_range =
-            VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
         let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
@@ -223,7 +221,7 @@ impl Task {
 
         vm_kernel_range.populate(&mut pgtable);
 
-        let mut vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
+        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
         vm_user_range.initialize_lazy()?;
 
         // Remap at the per-task offset

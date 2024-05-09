@@ -414,6 +414,18 @@ impl MemoryRegion {
         Some(self.start_phys + offset)
     }
 
+    /// Gets a mutable pointer to the page information for a given page frame
+    /// number.
+    ///
+    /// # Safety
+    ///
+    /// The caller must provide a valid pfn, otherwise the returned pointer is
+    /// undefined, as the compiler is allowed to optimize assuming there will
+    /// be no arithmetic overflows.
+    unsafe fn page_info_mut_ptr(&mut self, pfn: usize) -> *mut PageStorageType {
+        self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn)
+    }
+
     /// Gets a pointer to the page information for a given page frame number.
     ///
     /// # Safety
@@ -421,8 +433,8 @@ impl MemoryRegion {
     /// The caller must provide a valid pfn, otherwise the returned pointer is
     /// undefined, as the compiler is allowed to optimize assuming there will
     /// be no arithmetic overflows.
-    unsafe fn page_info_ptr(&self, pfn: usize) -> *mut PageStorageType {
-        self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn)
+    unsafe fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
+        self.start_virt.as_ptr::<PageStorageType>().add(pfn)
     }
 
     /// Checks if a page frame number is valid.
@@ -442,12 +454,12 @@ impl MemoryRegion {
     }
 
     /// Writes page information for a given page frame number.
-    fn write_page_info(&self, pfn: usize, pi: PageInfo) {
+    fn write_page_info(&mut self, pfn: usize, pi: PageInfo) {
         self.check_pfn(pfn);
 
         let info: PageStorageType = pi.to_mem();
         // SAFETY: we have checked that the pfn is valid via check_pfn() above.
-        unsafe { self.page_info_ptr(pfn).write(info) };
+        unsafe { self.page_info_mut_ptr(pfn).write(info) };
     }
 
     /// Reads page information for a given page frame number.
@@ -1139,6 +1151,7 @@ impl SlabPage {
     }
 
     /// Free the memory (destroy) the [`SlabPage`]
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn destroy(&mut self) {
         if self.vaddr.is_null() {
             return;
