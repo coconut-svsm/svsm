@@ -140,7 +140,7 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn initialize_common(&mut self, lazy: bool) -> Result<(), SvsmError> {
+    fn initialize_common(&self, lazy: bool) -> Result<(), SvsmError> {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
         let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
         assert!(start < end && start.is_aligned(VMR_GRANULE) && end.is_aligned(VMR_GRANULE));
@@ -153,7 +153,7 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    pub fn initialize(&mut self) -> Result<(), SvsmError> {
+    pub fn initialize(&self) -> Result<(), SvsmError> {
         self.initialize_common(false)
     }
 
@@ -162,7 +162,7 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    pub fn initialize_lazy(&mut self) -> Result<(), SvsmError> {
+    pub fn initialize_lazy(&self) -> Result<(), SvsmError> {
         self.initialize_common(true)
     }
 

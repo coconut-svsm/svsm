@@ -5,6 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 fn main() {
+    // Extra cfgs
+    println!("cargo::rustc-check-cfg=cfg(fuzzing)");
+    println!("cargo::rustc-check-cfg=cfg(test_in_svsm)");
+
     // Stage 2
     println!("cargo:rustc-link-arg-bin=stage2=-nostdlib");
     println!("cargo:rustc-link-arg-bin=stage2=--build-id=none");

@@ -49,7 +49,7 @@ impl RawFileHandle {
         result
     }
 
-    fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
+    fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
         self.file.truncate(offset)
     }
 
