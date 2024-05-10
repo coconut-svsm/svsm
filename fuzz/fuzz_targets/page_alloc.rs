@@ -33,7 +33,7 @@ enum Action {
     /// Allocate a regular page
     Allocate,
     /// Allocate a slab page
-    AllocateSlab,
+    AllocateSlab(u16),
     /// Allocate pages of higher order
     AllocatePages(usize),
     /// Allocate a zeroed page
@@ -92,8 +92,8 @@ fuzz_target!(|inp: FuzzInput| {
                     pages.push(page);
                 }
             }
-            Action::AllocateSlab => {
-                if let Ok(page) = allocate_slab_page(None) {
+            Action::AllocateSlab(size) => {
+                if let Ok(page) = allocate_slab_page(size) {
                     pages.push(page);
                 }
             }

@@ -98,8 +98,8 @@ impl PageStorageType {
     const NEXT_SHIFT: u64 = 12;
     const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
     const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
-    // SLAB pages are always order-0
-    const SLAB_MASK: u64 = !Self::TYPE_MASK;
+    // Slab item sizes are encoded in a u16
+    const SLAB_MASK: u64 = 0xffff;
 
     /// Creates a new [`PageStorageType`] with the specified page type.
     ///
@@ -149,8 +149,9 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`]
-    fn encode_slab(self, slab: VirtAddr) -> Self {
-        Self(self.0 | (slab.bits() as u64) & Self::SLAB_MASK)
+    fn encode_slab(self, slab: u64) -> Self {
+        let item_size = slab & Self::SLAB_MASK;
+        Self(self.0 | (item_size << Self::TYPE_SHIFT))
     }
 
     /// Encodes the reference count.
@@ -177,8 +178,8 @@ impl PageStorageType {
     }
 
     /// Decodes the slab
-    fn decode_slab(&self) -> VirtAddr {
-        VirtAddr::from(self.0 & Self::SLAB_MASK)
+    fn decode_slab(&self) -> u64 {
+        (self.0 >> Self::TYPE_SHIFT) & Self::SLAB_MASK
     }
 
     /// Decodes the reference count.
@@ -239,19 +240,19 @@ impl AllocatedInfo {
 /// Struct representing information about a slab memory page.
 #[derive(Clone, Copy, Debug)]
 struct SlabPageInfo {
-    slab: VirtAddr,
+    item_size: u64,
 }
 
 impl SlabPageInfo {
     /// Encodes the [`SlabPageInfo`] into a [`PageStorageType`].
     fn encode(&self) -> PageStorageType {
-        PageStorageType::new(PageType::SlabPage).encode_slab(self.slab)
+        PageStorageType::new(PageType::SlabPage).encode_slab(self.item_size)
     }
 
     /// Decodes a [`PageStorageType`] into a [`SlabPageInfo`].
     fn decode(mem: PageStorageType) -> Self {
-        let slab = mem.decode_slab();
-        Self { slab }
+        let item_size = mem.decode_slab();
+        Self { item_size }
     }
 }
 
@@ -592,13 +593,13 @@ impl MemoryRegion {
     }
 
     /// Allocates a slab page.
-    fn allocate_slab_page(&mut self, slab: Option<VirtAddr>) -> Result<VirtAddr, AllocError> {
+    fn allocate_slab_page(&mut self, item_size: u16) -> Result<VirtAddr, AllocError> {
         self.refill_page_list(0)?;
 
-        let slab_vaddr = slab.unwrap_or(VirtAddr::null());
         let pfn = self.get_next_page(0)?;
-        assert_eq!(slab_vaddr.bits() & (PageStorageType::TYPE_MASK as usize), 0);
-        let pg = PageInfo::Slab(SlabPageInfo { slab: slab_vaddr });
+        let pg = PageInfo::Slab(SlabPageInfo {
+            item_size: u64::from(item_size),
+        });
         self.write_page_info(pfn, pg);
         Ok(self.start_virt + (pfn * PAGE_SIZE))
     }
@@ -1046,8 +1047,8 @@ pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
 ///
 /// Result containing the virtual address of the allocated slab page or an
 /// `SvsmError` if allocation fails.
-pub fn allocate_slab_page(slab: Option<VirtAddr>) -> Result<VirtAddr, SvsmError> {
-    Ok(ROOT_MEM.lock().allocate_slab_page(slab)?)
+pub fn allocate_slab_page(item_size: u16) -> Result<VirtAddr, SvsmError> {
+    Ok(ROOT_MEM.lock().allocate_slab_page(item_size)?)
 }
 
 /// Allocate a zeroed page.
@@ -1106,46 +1107,33 @@ pub fn memory_info() -> MemInfo {
 /// Represents a slab memory page, used for efficient allocation of
 /// fixed-size objects.
 #[derive(Debug, Default)]
-struct SlabPage {
+struct SlabPage<const N: u16> {
     vaddr: VirtAddr,
-    capacity: u16,
     free: u16,
-    item_size: u16,
     used_bitmap: [u64; 2],
     next_page: VirtAddr,
 }
 
-impl SlabPage {
+impl<const N: u16> SlabPage<N> {
     /// Creates a new [`SlabPage`] instance with default values.
     const fn new() -> Self {
+        assert!(N <= (PAGE_SIZE / 2) as u16);
         Self {
             vaddr: VirtAddr::null(),
-            capacity: 0,
             free: 0,
-            item_size: 0,
             used_bitmap: [0; 2],
             next_page: VirtAddr::null(),
         }
     }
 
-    /// Initialize the [`SlabPage`] with a given item size and slab address
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>, mut item_size: u16) -> Result<(), AllocError> {
-        if self.item_size != 0 {
+    /// Initialize the [`SlabPage`].
+    fn init(&mut self) -> Result<(), AllocError> {
+        if !self.vaddr.is_null() {
             return Ok(());
         }
-
-        assert!(item_size <= (PAGE_SIZE / 2) as u16);
-        assert!(self.vaddr.is_null());
-
-        if item_size < 32 {
-            item_size = 32;
-        }
-
-        let vaddr = ROOT_MEM.lock().allocate_slab_page(slab_vaddr)?;
+        let vaddr = ROOT_MEM.lock().allocate_slab_page(N)?;
         self.vaddr = vaddr;
-        self.item_size = item_size;
-        self.capacity = (PAGE_SIZE as u16) / item_size;
-        self.free = self.capacity;
+        self.free = self.get_capacity();
 
         Ok(())
     }
@@ -1161,8 +1149,8 @@ impl SlabPage {
     }
 
     /// Get the capacity of the [`SlabPage`]
-    fn get_capacity(&self) -> u16 {
-        self.capacity
+    const fn get_capacity(&self) -> u16 {
+        (PAGE_SIZE as u16) / N
     }
 
     fn get_free(&self) -> u16 {
@@ -1183,14 +1171,14 @@ impl SlabPage {
             return Err(AllocError::OutOfMemory);
         }
 
-        for i in 0..self.capacity {
+        for i in 0..self.get_capacity() {
             let idx = (i / 64) as usize;
             let mask = 1u64 << (i % 64);
 
             if self.used_bitmap[idx] & mask == 0 {
                 self.used_bitmap[idx] |= mask;
                 self.free -= 1;
-                return Ok(self.vaddr + ((self.item_size * i) as usize));
+                return Ok(self.vaddr + ((N * i) as usize));
             }
         }
 
@@ -1202,9 +1190,7 @@ impl SlabPage {
             return Err(AllocError::InvalidHeapAddress(vaddr));
         }
 
-        assert!(self.item_size > 0);
-
-        let item_size = self.item_size as usize;
+        let item_size = N as usize;
         let offset = vaddr - self.vaddr;
         let i = offset / item_size;
         let idx = i / 64;
@@ -1220,25 +1206,18 @@ impl SlabPage {
 /// Represents common information shared among multiple slab pages.
 #[derive(Debug, Default)]
 #[repr(align(16))]
-struct SlabCommon {
-    item_size: u16,
+struct SlabCommon<const N: u16> {
     capacity: u32,
     free: u32,
     pages: u32,
     full_pages: u32,
     free_pages: u32,
-    page: SlabPage,
+    page: SlabPage<N>,
 }
 
-impl SlabCommon {
-    /// Creates a new [`SlabCommon`] instance with the specified item size.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_size` - Size of each item in the slab.
-    const fn new(item_size: u16) -> Self {
+impl<const N: u16> SlabCommon<N> {
+    const fn new() -> Self {
         Self {
-            item_size,
             capacity: 0,
             free: 0,
             pages: 0,
@@ -1249,24 +1228,23 @@ impl SlabCommon {
     }
 
     /// Initialize the [`SlabCommon`] with default values
-    fn init(&mut self, slab_vaddr: Option<VirtAddr>) -> Result<(), AllocError> {
-        self.page.init(slab_vaddr, self.item_size)?;
-
+    fn init(&mut self) -> Result<(), AllocError> {
+        self.page.init()?;
         self.capacity = self.page.get_capacity() as u32;
         self.free = self.capacity;
         self.pages = 1;
         self.full_pages = 0;
         self.free_pages = 1;
-
         Ok(())
     }
 
-    /// Add other [`SlabPage`]
-    fn add_slab_page(&mut self, new_page: &mut SlabPage) {
+    /// Add other [`SlabPage`].
+    fn add_slab_page(&mut self, new_page: &mut SlabPage<N>) {
         let old_next_page = self.page.get_next_page();
         new_page.set_next_page(old_next_page);
+
         self.page
-            .set_next_page(VirtAddr::from(new_page as *mut SlabPage));
+            .set_next_page(VirtAddr::from(new_page as *mut SlabPage<N>));
 
         let capacity = new_page.get_capacity() as u32;
         self.pages += 1;
@@ -1298,8 +1276,8 @@ impl SlabCommon {
             }
 
             let next_page = page.get_next_page();
-            assert!(!next_page.is_null()); // Cannot happen with free slots on entry.
-            page = unsafe { &mut *next_page.as_mut_ptr::<SlabPage>() };
+            // Cannot fail with free slots on entry.
+            page = unsafe { next_page.aligned_mut().expect("Invalid next page") };
         }
     }
 
@@ -1323,20 +1301,21 @@ impl SlabCommon {
             }
 
             let next_page = page.get_next_page();
-            assert!(!next_page.is_null()); // Object does not belong to this Slab.
-            page = unsafe { &mut *next_page.as_mut_ptr::<SlabPage>() };
+            // Will fail if the object does not belong to this slab.
+            page = unsafe { next_page.aligned_mut().expect("Invalid next page") };
         }
     }
 
     /// Finds an unused slab page and removes it from the slab.
-    fn free_one_page(&mut self) -> *mut SlabPage {
+    fn free_one_page(&mut self) -> *mut SlabPage<N> {
         let mut last_page = &mut self.page;
         let mut next_page_vaddr = last_page.get_next_page();
         loop {
-            if next_page_vaddr.is_null() {
-                unreachable!("couldn't find page to free");
-            }
-            let slab_page = unsafe { &mut *next_page_vaddr.as_mut_ptr::<SlabPage>() };
+            let slab_page = unsafe {
+                next_page_vaddr
+                    .aligned_mut::<SlabPage<N>>()
+                    .expect("couldn't find page to free")
+            };
             next_page_vaddr = slab_page.get_next_page();
 
             let capacity = slab_page.get_capacity();
@@ -1361,23 +1340,26 @@ impl SlabCommon {
     }
 }
 
+// 32 is chosen arbitrarily here, it does not affect struct layout
+const SLAB_PAGE_SIZE: u16 = size_of::<SlabPage<32>>() as u16;
+
 /// Represents a slab page for the [`SlabPageSlab`] allocator.
 #[derive(Debug)]
 struct SlabPageSlab {
-    common: SlabCommon,
+    common: SlabCommon<SLAB_PAGE_SIZE>,
 }
 
 impl SlabPageSlab {
     /// Creates a new [`SlabPageSlab`] with a default [`SlabCommon`].
     const fn new() -> Self {
         Self {
-            common: SlabCommon::new(size_of::<SlabPage>() as u16),
+            common: SlabCommon::new(),
         }
     }
 
     /// Initializes the [`SlabPageSlab`], allocating the first slab page if necessary.
     fn init(&mut self) -> Result<(), AllocError> {
-        self.common.init(None)
+        self.common.init()
     }
 
     /// Grows the slab by allocating a new slab page.
@@ -1394,10 +1376,10 @@ impl SlabPageSlab {
         assert_ne!(self.common.free, 0);
 
         let page_vaddr = self.common.allocate_slot();
-        let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage>() };
+        let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage<SLAB_PAGE_SIZE>>() };
 
         *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(None, self.common.item_size) {
+        if let Err(e) = slab_page.init() {
             self.common.deallocate_slot(page_vaddr);
             return Err(e);
         }
@@ -1421,9 +1403,9 @@ impl SlabPageSlab {
     /// # Returns
     ///
     /// Result containing a pointer to the allocated [`SlabPage`] or an `AllocError`.
-    fn allocate(&mut self) -> Result<*mut SlabPage, AllocError> {
+    fn allocate(&mut self) -> Result<*mut SlabPage<SLAB_PAGE_SIZE>, AllocError> {
         self.grow_slab()?;
-        Ok(self.common.allocate_slot().as_mut_ptr::<SlabPage>())
+        Ok(self.common.allocate_slot().as_mut_ptr())
     }
 
     /// Deallocates a slab page, freeing the associated memory.
@@ -1431,7 +1413,7 @@ impl SlabPageSlab {
     /// # Arguments
     ///
     /// * `slab_page` - Pointer to the [`SlabPage`] to deallocate.
-    fn deallocate(&mut self, slab_page: *mut SlabPage) {
+    fn deallocate(&mut self, slab_page: *mut SlabPage<SLAB_PAGE_SIZE>) {
         self.common.deallocate_slot(VirtAddr::from(slab_page));
         self.shrink_slab();
     }
@@ -1439,26 +1421,20 @@ impl SlabPageSlab {
 
 /// Represents a slab allocator for fixed-size objects.
 #[derive(Debug, Default)]
-struct Slab {
-    common: SlabCommon,
+struct Slab<const N: u16> {
+    common: SlabCommon<N>,
 }
 
-impl Slab {
-    /// Creates a new [`Slab`] instance with the specified item size.
-    ///
-    /// # Arguments
-    ///
-    /// * `item_size` - Size of each item in the slab.
-    const fn new(item_size: u16) -> Self {
+impl<const N: u16> Slab<N> {
+    const fn new() -> Self {
         Self {
-            common: SlabCommon::new(item_size),
+            common: SlabCommon::new(),
         }
     }
 
     /// Initialize the [`Slab`] instance
     fn init(&mut self) -> Result<(), AllocError> {
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
-        self.common.init(Some(slab_vaddr))
+        self.common.init()
     }
 
     fn grow_slab(&mut self) -> Result<(), AllocError> {
@@ -1470,18 +1446,16 @@ impl Slab {
             return Ok(());
         }
 
-        let slab_page = SLAB_PAGE_SLAB
-            .lock()
-            .allocate()
-            .map(|ptr| unsafe { &mut *ptr })?;
-        let slab_vaddr = VirtAddr::from(self as *mut Slab);
-        *slab_page = SlabPage::new();
-        if let Err(e) = slab_page.init(Some(slab_vaddr), self.common.item_size) {
-            SLAB_PAGE_SLAB.lock().deallocate(slab_page);
+        let slab_page_ptr = SLAB_PAGE_SLAB.lock().allocate()?;
+        let page_ptr = slab_page_ptr.cast::<SlabPage<N>>();
+        unsafe { page_ptr.write(SlabPage::<N>::new()) };
+        let page = unsafe { &mut *page_ptr };
+        if let Err(e) = page.init() {
+            SLAB_PAGE_SLAB.lock().deallocate(slab_page_ptr);
             return Err(e);
         }
 
-        self.common.add_slab_page(slab_page);
+        self.common.add_slab_page(page);
         Ok(())
     }
 
@@ -1491,7 +1465,7 @@ impl Slab {
         }
 
         let slab_page = self.common.free_one_page();
-        SLAB_PAGE_SLAB.lock().deallocate(slab_page);
+        SLAB_PAGE_SLAB.lock().deallocate(slab_page.cast());
     }
 
     fn allocate(&mut self) -> Result<VirtAddr, AllocError> {
@@ -1516,66 +1490,80 @@ static SLAB_PAGE_SLAB: SpinLock<SlabPageSlab> = SpinLock::new(SlabPageSlab::new(
 /// back to page allocation for larger objects.
 #[derive(Debug, Default)]
 pub struct SvsmAllocator {
-    slabs: [SpinLock<Slab>; 7],
+    slab32: SpinLock<Slab<32>>,
+    slab64: SpinLock<Slab<64>>,
+    slab128: SpinLock<Slab<128>>,
+    slab256: SpinLock<Slab<256>>,
+    slab512: SpinLock<Slab<512>>,
+    slab1024: SpinLock<Slab<1024>>,
+    slab2048: SpinLock<Slab<2048>>,
 }
 
 impl SvsmAllocator {
-    /// Minimum slab size for the allocator.
-    const MIN_SLAB_SIZE: u16 = 32;
-
-    /// Minimum alignment for the allocator.
-    const MIN_ALIGNMENT: u32 = Self::MIN_SLAB_SIZE.trailing_zeros();
-
     /// Creates a new instance of [`SvsmAllocator`] with initialized slab
     /// allocators.
     pub const fn new() -> Self {
         Self {
-            slabs: [
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 2)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 4)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 8)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 16)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 32)),
-                SpinLock::new(Slab::new(Self::MIN_SLAB_SIZE * 64)),
-            ],
+            slab32: SpinLock::new(Slab::new()),
+            slab64: SpinLock::new(Slab::new()),
+            slab128: SpinLock::new(Slab::new()),
+            slab256: SpinLock::new(Slab::new()),
+            slab512: SpinLock::new(Slab::new()),
+            slab1024: SpinLock::new(Slab::new()),
+            slab2048: SpinLock::new(Slab::new()),
         }
     }
 
-    /// Get a reference to the appropriate slab for an allocation of the specified size,
-    /// or [`None`] if the size is too big.
-    fn get_slab(&self, size: usize) -> Option<&SpinLock<Slab>> {
-        let slab_size = size.checked_next_power_of_two()?;
-        // Go from an allocation size to an index into `self.slabs`.
-        let idx = slab_size
-            .trailing_zeros()
-            .saturating_sub(Self::MIN_ALIGNMENT) as usize;
-        // The index might be too large, so use a safe getter.
-        self.slabs.get(idx)
+    fn allocate(&self, size: usize) -> Option<Result<VirtAddr, AllocError>> {
+        let size = size.checked_next_power_of_two()?;
+        match size {
+            ..=32 => Some(self.slab32.lock().allocate()),
+            64 => Some(self.slab64.lock().allocate()),
+            128 => Some(self.slab128.lock().allocate()),
+            256 => Some(self.slab256.lock().allocate()),
+            512 => Some(self.slab512.lock().allocate()),
+            1024 => Some(self.slab1024.lock().allocate()),
+            2048 => Some(self.slab2048.lock().allocate()),
+            _ => None,
+        }
+    }
+
+    fn deallocate(&self, addr: VirtAddr, size: usize) -> Option<()> {
+        let size = size.checked_next_power_of_two()?;
+        match size {
+            ..=32 => self.slab32.lock().deallocate(addr),
+            64 => self.slab64.lock().deallocate(addr),
+            128 => self.slab128.lock().deallocate(addr),
+            256 => self.slab256.lock().deallocate(addr),
+            512 => self.slab512.lock().deallocate(addr),
+            1024 => self.slab1024.lock().deallocate(addr),
+            2048 => self.slab2048.lock().deallocate(addr),
+            _ => return None,
+        }
+
+        Some(())
     }
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with a newly created [`SvsmAllocator`] with `Self::new()`.
     #[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
     fn reset(&self) {
-        *self.slabs[0].lock() = Slab::new(Self::MIN_SLAB_SIZE);
-        *self.slabs[1].lock() = Slab::new(Self::MIN_SLAB_SIZE * 2);
-        *self.slabs[2].lock() = Slab::new(Self::MIN_SLAB_SIZE * 4);
-        *self.slabs[3].lock() = Slab::new(Self::MIN_SLAB_SIZE * 8);
-        *self.slabs[4].lock() = Slab::new(Self::MIN_SLAB_SIZE * 16);
-        *self.slabs[5].lock() = Slab::new(Self::MIN_SLAB_SIZE * 32);
-        *self.slabs[6].lock() = Slab::new(Self::MIN_SLAB_SIZE * 64);
+        *self.slab32.lock() = Slab::new();
+        *self.slab64.lock() = Slab::new();
+        *self.slab128.lock() = Slab::new();
+        *self.slab256.lock() = Slab::new();
+        *self.slab512.lock() = Slab::new();
+        *self.slab1024.lock() = Slab::new();
+        *self.slab2048.lock() = Slab::new();
     }
 }
 
-/// Implements the [`GlobalAlloc`] trait for [`SvsmAllocator`], allowing it to
-/// be used as a global allocator for Rust programs.
 unsafe impl GlobalAlloc for SvsmAllocator {
     /// Allocates memory based on the specified layout.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let size = layout.size();
-        let ret = match self.get_slab(size) {
-            Some(slab) => slab.lock().allocate().map_err(|e| e.into()),
+        let ret = match self.allocate(size) {
+            Some(v) => v.map_err(Into::into),
             None => {
                 let order = get_order(size);
                 if order >= MAX_ORDER {
@@ -1584,7 +1572,6 @@ unsafe impl GlobalAlloc for SvsmAllocator {
                 allocate_pages(order)
             }
         };
-
         ret.map_or_else(|_| ptr::null_mut(), |addr| addr.as_mut_ptr::<u8>())
     }
 
@@ -1603,9 +1590,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
             PageInfo::Allocated(_ai) => {
                 free_page(virt_addr);
             }
-            PageInfo::Slab(_si) => {
-                let slab = self.get_slab(size).expect("Invalid page info");
-                slab.lock().deallocate(virt_addr);
+            PageInfo::Slab(_) => {
+                self.deallocate(virt_addr, size).expect("Invalid page info");
             }
             _ => {
                 panic!("Freeing memory on unsupported page type");
@@ -1668,8 +1654,7 @@ pub fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
             Some(Layout::from_size_align(size, PAGE_SIZE).unwrap())
         }
         PageInfo::Slab(si) => {
-            let slab: *const Slab = si.slab.as_ptr();
-            let size: usize = unsafe { (*slab).common.item_size as usize };
+            let size = si.item_size as usize;
             Some(Layout::from_size_align(size, size).unwrap())
         }
         _ => None,
@@ -1964,8 +1949,7 @@ fn test_slab_page_slab_for_self() {
     const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
     const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
 
-    const SLAB_PAGE_SIZE: usize = size_of::<SlabPage>();
-    const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE;
+    const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE as usize;
 
     let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE)
         .unwrap()
