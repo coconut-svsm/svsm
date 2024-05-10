@@ -13,9 +13,9 @@ use alloc::{
     boxed::Box,
 };
 use core::{
-    mem::size_of,
-    ptr::{addr_of, addr_of_mut},
-    slice::{from_raw_parts, from_raw_parts_mut, from_ref},
+    mem::{offset_of, size_of},
+    ptr::{self, addr_of_mut},
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 use crate::{
@@ -149,22 +149,15 @@ impl SnpGuestRequestMsgHdr {
 
     /// Get a slice of the header fields used as additional authenticated data (AAD)
     fn get_aad_slice(&self) -> &[u8] {
-        let self_gva = addr_of!(*self);
-        let algo_gva = addr_of!(self.algo);
-        let algo_offset = algo_gva as isize - self_gva as isize;
+        let algo_offset = offset_of!(Self, algo);
 
-        let slice: &[Self] = from_ref(self);
-        let ptr: *const Self = slice.as_ptr();
-        // SAFETY: we are doing:
-        // &[Self] -> *const Self -> *const u8 -> &[u8]
-        // This is safe as it simply reinterprets the underlying type as bytes
-        // by using the &self borrow. This is safe because Self has no invalid
-        // representations, as it is composed of simple integer types.
-        // &[u8] has no alignment requirements, and this new slice has the
-        // same size as Self, so we are within bounds.
-        let b = unsafe { from_raw_parts(ptr.cast::<u8>(), size_of::<Self>()) };
-
-        &b[algo_offset as usize..]
+        let ptr = ptr::from_ref(self).cast::<u8>();
+        // SAFETY: we are simply reinterpreting Self as a slice of bytes. This
+        // is safe because &[u8] as no alignment requirements and no invalid
+        // representations, and Self is composed of simple integer types. We
+        // make sure the resulting byte slice has the same size as Self.
+        let slice = unsafe { from_raw_parts(ptr, size_of::<Self>()) };
+        &slice[algo_offset..]
     }
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
@@ -481,7 +474,6 @@ impl SnpGuestRequestExtData {
 mod tests {
     use super::*;
     use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
-    use core::mem::offset_of;
 
     #[test]
     fn test_snp_guest_request_hdr_offsets() {
