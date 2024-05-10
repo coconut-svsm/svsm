@@ -8,7 +8,7 @@
 //! Reference Implementation (by Microsoft)
 
 /// Functions required to build the Microsoft TPM libraries
-#[cfg(not(feature = "default-test"))]
+#[cfg(not(any(test, fuzzing)))]
 mod wrapper;
 
 extern crate alloc;
