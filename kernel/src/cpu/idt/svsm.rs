@@ -11,9 +11,9 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::{
     idt_mut, user_mode, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR,
-    DF_VECTOR, GP_VECTOR, HV_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR,
-    OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR,
-    XF_VECTOR,
+    DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR,
+    NP_VECTOR, OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR,
+    VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
@@ -51,6 +51,7 @@ extern "C" {
     fn asm_entry_vc();
     fn asm_entry_sx();
     fn asm_entry_int80();
+    fn asm_entry_irq_int_inj();
 
     pub static mut HV_DOORBELL_ADDR: usize;
 }
@@ -86,6 +87,7 @@ pub fn early_idt_init() {
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
     idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
+    idt.set_entry(INT_INJ_VECTOR, IdtEntry::entry(asm_entry_irq_int_inj));
 
     // Interupts
     idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
@@ -255,6 +257,9 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize)
 
 #[no_mangle]
 pub extern "C" fn common_isr_handler(_vector: usize) {
+    // Interrupt injection requests currently require no processing; they occur
+    // simply to ensure an exit from the guest.
+
     // Treat any unhandled interrupt as a spurious interrupt.
     SVSM_PLATFORM.as_dyn_ref().eoi();
 }

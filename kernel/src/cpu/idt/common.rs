@@ -42,6 +42,8 @@ pub const SX_VECTOR: usize = 30;
 
 pub const PF_ERROR_WRITE: usize = 2;
 
+pub const INT_INJ_VECTOR: usize = 0x50;
+
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {

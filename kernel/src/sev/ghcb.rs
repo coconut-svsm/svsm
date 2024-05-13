@@ -101,6 +101,7 @@ enum GHCBExitCode {
     AP_CREATE = 0x80000013,
     HV_DOORBELL = 0x8000_0014,
     HV_IPI = 0x8000_0015,
+    CONFIGURE_INT_INJ = 0x8000_0019,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -601,6 +602,12 @@ impl GHCB {
     pub fn hv_ipi(&self, icr: u64) -> Result<(), SvsmError> {
         self.clear();
         self.vmgexit(GHCBExitCode::HV_IPI, icr, 0)?;
+        Ok(())
+    }
+
+    pub fn configure_interrupt_injection(&self, vector: usize) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::CONFIGURE_INT_INJ, vector as u64, 0)?;
         Ok(())
     }
 
