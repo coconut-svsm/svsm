@@ -313,7 +313,7 @@ pub mod svsm_gdbstub {
             Self {}
         }
 
-        fn read(&mut self) -> Result<u8, &'static str> {
+        fn read(&self) -> Result<u8, &'static str> {
             unsafe { Ok(GDB_SERIAL.get_byte()) }
         }
     }

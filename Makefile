@@ -1,8 +1,10 @@
 FEATURES ?= "default"
 SVSM_ARGS = --features ${FEATURES}
 
-FEATURES_TEST ?= "default-test"
-SVSM_ARGS_TEST = --no-default-features --features ${FEATURES_TEST}
+SVSM_ARGS_TEST = --no-default-features
+ifdef FEATURES_TEST
+	SVSM_ARGS_TEST += --features ${FEATURES_TEST}
+endif
 
 ifdef RELEASE
 TARGET_PATH=release
