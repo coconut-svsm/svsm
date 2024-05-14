@@ -10,6 +10,7 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
+use crate::sev::PvalidateOp;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
@@ -27,6 +28,14 @@ pub struct PageEncryptionMasks {
     pub shared_pte_mask: usize,
     pub addr_mask_width: u32,
     pub phys_addr_sizes: u32,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PageStateChangeOp {
+    Private,
+    Shared,
+    Psmash,
+    Unsmash,
 }
 
 /// This defines a platform abstraction to permit the SVSM to run on different
@@ -57,15 +66,17 @@ pub trait SvsmPlatform {
     /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
-        start: PhysAddr,
-        end: PhysAddr,
+        region: MemoryRegion<PhysAddr>,
         size: PageSize,
-        make_private: bool,
+        op: PageStateChangeOp,
     ) -> Result<(), SvsmError>;
 
     /// Marks a page as valid or invalid as a private page.
-    fn pvalidate_range(&self, region: MemoryRegion<VirtAddr>, valid: bool)
-        -> Result<(), SvsmError>;
+    fn pvalidate_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        op: PvalidateOp,
+    ) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

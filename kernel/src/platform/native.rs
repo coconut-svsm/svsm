@@ -4,9 +4,12 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
-use crate::platform::{IOPort, PageEncryptionMasks, PhysAddr, SvsmError, SvsmPlatform, VirtAddr};
+use crate::error::SvsmError;
+use crate::platform::{IOPort, PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::sev::PvalidateOp;
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -59,10 +62,9 @@ impl SvsmPlatform for NativePlatform {
 
     fn page_state_change(
         &self,
-        _start: PhysAddr,
-        _end: PhysAddr,
+        _region: MemoryRegion<PhysAddr>,
         _size: PageSize,
-        _make_private: bool,
+        _op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         Ok(())
     }
@@ -70,7 +72,7 @@ impl SvsmPlatform for NativePlatform {
     fn pvalidate_range(
         &self,
         _region: MemoryRegion<VirtAddr>,
-        _valid: bool,
+        _op: PvalidateOp,
     ) -> Result<(), SvsmError> {
         Ok(())
     }

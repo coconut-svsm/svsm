@@ -34,8 +34,9 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
-use svsm::platform::{SvsmPlatform, SvsmPlatformCell};
+use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
 use svsm::serial::SerialPort;
+use svsm::sev::PvalidateOp;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::immut_after_init::ImmutAfterInitCell;
 use svsm::utils::{halt, is_aligned, MemoryRegion};
@@ -133,11 +134,15 @@ fn map_and_validate(
 
     if config.page_state_change_required() {
         platform
-            .page_state_change(paddr, paddr + vregion.len(), PageSize::Huge, true)
+            .page_state_change(
+                MemoryRegion::new(paddr, vregion.len()),
+                PageSize::Huge,
+                PageStateChangeOp::Private,
+            )
             .expect("GHCB::PAGE_STATE_CHANGE call failed for kernel region");
     }
     platform
-        .pvalidate_range(vregion, true)
+        .pvalidate_range(vregion, PvalidateOp::Valid)
         .expect("PVALIDATE kernel region failed");
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
 }

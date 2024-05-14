@@ -4,12 +4,13 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::PerCpu;
+use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::platform::{PageEncryptionMasks, PhysAddr, SvsmError, SvsmPlatform, VirtAddr};
-use crate::sev::ghcb::PageStateChangeOp::{PscPrivate, PscShared};
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::sev::msr_protocol::verify_ghcb_version;
 use crate::sev::status::vtom_enabled;
 use crate::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
@@ -97,25 +98,18 @@ impl SvsmPlatform for SnpPlatform {
 
     fn page_state_change(
         &self,
-        start: PhysAddr,
-        end: PhysAddr,
+        region: MemoryRegion<PhysAddr>,
         size: PageSize,
-        make_private: bool,
+        op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        let psc_op = if make_private { PscPrivate } else { PscShared };
-        current_ghcb().page_state_change(start, end, size, psc_op)
+        current_ghcb().page_state_change(region, size, op)
     }
 
     fn pvalidate_range(
         &self,
         region: MemoryRegion<VirtAddr>,
-        valid: bool,
+        op: PvalidateOp,
     ) -> Result<(), SvsmError> {
-        let pvalidate_op = if valid {
-            PvalidateOp::Valid
-        } else {
-            PvalidateOp::Invalid
-        };
-        pvalidate_range(region, pvalidate_op)
+        pvalidate_range(region, op)
     }
 }

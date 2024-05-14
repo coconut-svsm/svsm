@@ -6,14 +6,14 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
-use crate::cpu::ghcb::current_ghcb;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
 use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::sev::ghcb::PageStateChangeOp;
-use crate::sev::{pvalidate, PvalidateOp};
-use crate::types::PageSize;
+use crate::platform::PageStateChangeOp;
+use crate::platform::SvsmPlatform;
+use crate::sev::PvalidateOp;
+use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 use bootlib::kernel_launch::KernelLaunchInfo;
 
@@ -97,6 +97,7 @@ pub fn init_page_table(
 }
 
 fn invalidate_boot_memory_region(
+    platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -110,24 +111,18 @@ fn invalidate_boot_memory_region(
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
+        platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Invalid)?;
     }
 
     if config.page_state_change_required() && !region.is_empty() {
-        current_ghcb()
-            .page_state_change(
-                region.start(),
-                region.end(),
-                PageSize::Regular,
-                PageStateChangeOp::PscShared,
-            )
-            .expect("Failed to invalidate Stage2 memory");
+        platform.page_state_change(region, PageSize::Regular, PageStateChangeOp::Shared)?;
     }
 
     Ok(())
 }
 
 pub fn invalidate_early_boot_memory(
+    platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
@@ -137,7 +132,7 @@ pub fn invalidate_early_boot_memory(
     // Also invalidate the boot data if required.
     if !config.fw_in_low_memory() {
         let stage2_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
-        invalidate_boot_memory_region(config, stage2_region)?;
+        invalidate_boot_memory_region(platform, config, stage2_region)?;
     }
 
     if config.invalidate_boot_data() {
@@ -147,7 +142,7 @@ pub fn invalidate_early_boot_memory(
             PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
             kernel_elf_size.try_into().unwrap(),
         );
-        invalidate_boot_memory_region(config, kernel_elf_region)?;
+        invalidate_boot_memory_region(platform, config, kernel_elf_region)?;
 
         let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
         if kernel_fs_size > 0 {
@@ -155,7 +150,7 @@ pub fn invalidate_early_boot_memory(
                 PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
                 kernel_fs_size.try_into().unwrap(),
             );
-            invalidate_boot_memory_region(config, kernel_fs_region)?;
+            invalidate_boot_memory_region(platform, config, kernel_fs_region)?;
         }
 
         if launch_info.stage2_igvm_params_size > 0 {
@@ -163,7 +158,7 @@ pub fn invalidate_early_boot_memory(
                 PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
                 launch_info.stage2_igvm_params_size as usize,
             );
-            invalidate_boot_memory_region(config, igvm_params_region)?;
+            invalidate_boot_memory_region(platform, config, igvm_params_region)?;
         }
     }
 

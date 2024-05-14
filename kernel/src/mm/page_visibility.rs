@@ -6,67 +6,61 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::percpu::this_cpu_mut;
+use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::virt_to_phys;
-use crate::sev::ghcb::PageStateChangeOp;
-use crate::sev::utils::pvalidate;
+use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
 use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
+use crate::utils::MemoryRegion;
 
-pub fn make_page_shared(vaddr: VirtAddr) {
+pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
+    let platform = SVSM_PLATFORM.as_dyn_ref();
+
     // Revoke page validation before changing page state.
-    pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)
-        .expect("Pvalidate failed when making page shared");
+    platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Invalid)?;
     let paddr = virt_to_phys(vaddr);
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_clear_valid_4k(paddr);
     }
 
     // Ask the hypervisor to make the page shared.
-    current_ghcb()
-        .page_state_change(
-            paddr,
-            paddr + PAGE_SIZE,
-            PageSize::Regular,
-            PageStateChangeOp::PscShared,
-        )
-        .expect("Hypervisor failed to make page shared");
+    platform.page_state_change(
+        MemoryRegion::new(paddr, PAGE_SIZE),
+        PageSize::Regular,
+        PageStateChangeOp::Shared,
+    )?;
 
     // Update the page tables to map the page as shared.
-    this_cpu_mut()
-        .get_pgtable()
-        .set_shared_4k(vaddr)
-        .expect("Failed to remap shared page in page tables");
+    this_cpu_mut().get_pgtable().set_shared_4k(vaddr)?;
     flush_tlb_global_sync();
+
+    Ok(())
 }
 
-pub fn make_page_private(vaddr: VirtAddr) {
+pub fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
-    this_cpu_mut()
-        .get_pgtable()
-        .set_encrypted_4k(vaddr)
-        .expect("Failed to remap private page in page tables");
+    this_cpu_mut().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
+
+    let platform = SVSM_PLATFORM.as_dyn_ref();
 
     // Ask the hypervisor to make the page private.
     let paddr = virt_to_phys(vaddr);
-    current_ghcb()
-        .page_state_change(
-            paddr,
-            paddr + PAGE_SIZE,
-            PageSize::Regular,
-            PageStateChangeOp::PscPrivate,
-        )
-        .expect("Hypervisor failed to make page private");
+    platform.page_state_change(
+        MemoryRegion::new(paddr, PAGE_SIZE),
+        PageSize::Regular,
+        PageStateChangeOp::Private,
+    )?;
 
     // Revoke page validation before changing page state.
-    pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)
-        .expect("Pvalidate failed when making page private");
+    platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Valid)?;
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_set_valid_4k(paddr);
     }
+
+    Ok(())
 }
