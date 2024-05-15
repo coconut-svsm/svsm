@@ -13,7 +13,9 @@ use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::verify_ghcb_version;
 use crate::sev::status::vtom_enabled;
-use crate::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
+use crate::sev::{
+    init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
+};
 use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -42,6 +44,7 @@ impl SvsmPlatform for SnpPlatform {
 
     fn env_setup_late(&mut self) {
         sev_status_verify();
+        init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
