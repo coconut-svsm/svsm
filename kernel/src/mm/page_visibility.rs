@@ -13,7 +13,6 @@ use crate::mm::validate::{
 };
 use crate::mm::virt_to_phys;
 use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
-use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
@@ -21,7 +20,7 @@ pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     let platform = SVSM_PLATFORM.as_dyn_ref();
 
     // Revoke page validation before changing page state.
-    platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Invalid)?;
+    platform.invalidate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
     let paddr = virt_to_phys(vaddr);
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_clear_valid_4k(paddr);
@@ -60,7 +59,7 @@ pub fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     )?;
 
     // Revoke page validation before changing page state.
-    platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Valid)?;
+    platform.validate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_set_valid_4k(paddr);
     }

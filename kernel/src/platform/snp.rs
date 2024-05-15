@@ -106,12 +106,14 @@ impl SvsmPlatform for SnpPlatform {
         current_ghcb().page_state_change(region, size, op)
     }
 
-    fn pvalidate_range(
-        &self,
-        region: MemoryRegion<VirtAddr>,
-        op: PvalidateOp,
-    ) -> Result<(), SvsmError> {
-        pvalidate_range(region, op)
+    /// Marks a range of pages as valid for use as private pages.
+    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+        pvalidate_range(region, PvalidateOp::Valid)
+    }
+
+    /// Marks a range of pages as invalid for use as private pages.
+    fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+        pvalidate_range(region, PvalidateOp::Invalid)
     }
 
     fn eoi(&self) {
