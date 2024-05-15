@@ -5,9 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
-use crate::cpu::X86GeneralRegs;
+use crate::cpu::percpu::this_cpu_unsafe;
+use crate::cpu::{flush_tlb_global_sync, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
@@ -15,10 +15,13 @@ use crate::mm::validate::{
 };
 use crate::mm::virt_to_phys;
 use crate::platform::PageStateChangeOp;
+use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{PageSize, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
+
+use core::arch::global_asm;
 use core::mem::{self, offset_of};
 use core::ptr;
 
@@ -115,7 +118,6 @@ impl From<GhcbError> for SvsmError {
     }
 }
 
-#[non_exhaustive]
 enum GHCBExitCode {}
 
 impl GHCBExitCode {
@@ -127,7 +129,7 @@ impl GHCBExitCode {
     pub const GUEST_REQUEST: u64 = 0x8000_0011;
     pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
     pub const AP_CREATE: u64 = 0x80000013;
-    pub const RUN_VMPL: u64 = 0x80000018;
+    pub const HV_DOORBELL: u64 = 0x8000_0014;
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -229,12 +231,20 @@ impl GHCB {
         Ok(())
     }
 
+    pub fn wrmsr(&mut self, msr_index: u32, value: u64) -> Result<(), SvsmError> {
+        self.wrmsr_raw(msr_index as u64, value & 0xFFFF_FFFF, value >> 32)
+    }
+
     pub fn wrmsr_regs(&mut self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
+        self.wrmsr_raw(regs.rcx as u64, regs.rax as u64, regs.rdx as u64)
+    }
+
+    pub fn wrmsr_raw(&mut self, rcx: u64, rax: u64, rdx: u64) -> Result<(), SvsmError> {
         self.clear();
 
-        self.set_rcx_valid(regs.rcx as u64);
-        self.set_rax_valid(regs.rax as u64);
-        self.set_rdx_valid(regs.rdx as u64);
+        self.set_rcx_valid(rcx);
+        self.set_rax_valid(rax);
+        self.set_rdx_valid(rdx);
 
         self.vmgexit(GHCBExitCode::MSR, 1, 0)?;
         Ok(())
@@ -519,6 +529,12 @@ impl GHCB {
         Ok(())
     }
 
+    pub fn register_hv_doorbell(&mut self, paddr: PhysAddr) -> Result<(), SvsmError> {
+        self.clear();
+        self.vmgexit(GHCBExitCode::HV_DOORBELL, 1, u64::from(paddr))?;
+        Ok(())
+    }
+
     pub fn guest_request(
         &mut self,
         req_page: VirtAddr,
@@ -568,13 +584,88 @@ impl GHCB {
 
         Ok(())
     }
+}
 
-    pub fn run_vmpl(&mut self, vmpl: u64) -> Result<(), SvsmError> {
-        self.clear();
-        self.vmgexit(GHCBExitCode::RUN_VMPL, vmpl, 0)?;
-        Ok(())
+extern "C" {
+    pub fn switch_to_vmpl_unsafe(hv_doorbell: *mut HVDoorbell, vmpl: u32) -> bool;
+}
+
+pub fn switch_to_vmpl(vmpl: u32) {
+    // The switch to a lower VMPL must be done with an assembly sequence in
+    // order to ensure that any #HV that occurs during the sequence will
+    // correctly block the VMPL switch so that events can be processed.
+    unsafe {
+        let cpu_unsafe = this_cpu_unsafe();
+        let hv_doorbell = (*cpu_unsafe).hv_doorbell_unsafe();
+
+        // Process any pending #HV events before leaving the SVSM.  No event
+        // can cancel the request to enter the guest VMPL, so proceed with
+        // guest entry once events have been handled.
+        if !hv_doorbell.is_null() {
+            (*hv_doorbell).process_pending_events();
+        }
+        if !switch_to_vmpl_unsafe(hv_doorbell, vmpl) {
+            panic!("Failed to switch to VMPL {}", vmpl);
+        }
     }
 }
+
+global_asm!(
+    r#"
+        .globl switch_to_vmpl_unsafe
+    switch_to_vmpl_unsafe:
+
+        /* Upon entry,
+         * rdi = pointer to the HV doorbell page
+         * esi = target VMPL
+         */
+        /* Check if NoFurtherSignal is set (bit 15 of the first word of the
+         * #HV doorbell page).  If so, abort the transition. */
+        test %rdi, %rdi
+        jz switch_vmpl_proceed
+        testw $0x8000, (%rdi)
+
+        /* From this point until the vmgexit, if a #HV arrives, the #HV handler
+         * must prevent the VMPL transition. */
+        .globl switch_vmpl_window_start
+    switch_vmpl_window_start:
+        jnz switch_vmpl_cancel
+
+    switch_vmpl_proceed:
+        /* Use the MSR-based VMPL switch request to avoid any need to use the
+         * GHCB page.  Run VMPL request is 0x16 and response is 0x17. */
+        movl $0x16, %eax
+        movl %esi, %edx
+        movl $0xC0010130, %ecx
+        wrmsr
+        rep; vmmcall
+
+        .globl switch_vmpl_window_end
+    switch_vmpl_window_end:
+        /* Verify that the request was honored.  ECX still contains the MSR
+         * number. */
+        rdmsr
+        andl $0xFFF, %eax
+        cmpl $0x17, %eax
+        jz switch_vmpl_cancel
+        xorl %eax, %eax
+        ret
+
+        /* An aborted VMPL switch is treated as a successful switch. */
+        .globl switch_vmpl_cancel
+    switch_vmpl_cancel:
+        /* Process any pending events if NoFurtherSignal has been set. */
+        test %rdi, %rdi
+        jz no_pending_events
+        testw $0x8000, (%rdi)
+        jz no_pending_events
+        call process_hv_events
+    no_pending_events:
+        movl $1, %eax
+        ret
+        "#,
+    options(att_syntax)
+);
 
 #[cfg(test)]
 mod tests {

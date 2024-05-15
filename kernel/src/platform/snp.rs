@@ -50,7 +50,8 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
-        cpu.register_ghcb()
+        cpu.register_ghcb()?;
+        Ok(())
     }
 
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {
@@ -111,5 +112,11 @@ impl SvsmPlatform for SnpPlatform {
         op: PvalidateOp,
     ) -> Result<(), SvsmError> {
         pvalidate_range(region, op)
+    }
+
+    fn eoi(&self) {
+        // 0x80E is the X2APIC EOI MSR.
+        // Errors here cannot be handled but should not be grounds for panic.
+        let _ = current_ghcb().wrmsr(0x80E, 0);
     }
 }

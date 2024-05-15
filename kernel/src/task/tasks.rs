@@ -366,11 +366,12 @@ impl Task {
 
         // 'Push' the task frame onto the stack
         unsafe {
-            // Setup IRQ return frame
+            // Setup IRQ return frame.  User-mode tasks always run with
+            // interrupts enabled.
             let mut iret_frame = X86ExceptionContext::default();
             iret_frame.frame.rip = user_entry;
             iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
-            iret_frame.frame.flags = 0;
+            iret_frame.frame.flags = 0x202;
             iret_frame.frame.rsp = (USER_MEM_END - 8).into();
             iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
 

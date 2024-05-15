@@ -42,7 +42,6 @@ pub const PF_ERROR_WRITE: usize = 2;
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
     pub regs: X86GeneralRegs,
-    pub vector: usize,
     pub error_code: usize,
     pub frame: X86InterruptFrame,
 }
@@ -257,7 +256,7 @@ global_asm!(
         popq    %rbx
         popq    %rax
 
-        addq    $16, %rsp /* Skip vector and error code */
+        addq    $8, %rsp /* Skip error code */
 
         iretq
         "#,

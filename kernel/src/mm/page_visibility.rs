@@ -6,7 +6,7 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::this_cpu_mut;
+use crate::cpu::percpu::{this_cpu, this_cpu_mut};
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -35,7 +35,10 @@ pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     )?;
 
     // Update the page tables to map the page as shared.
-    this_cpu_mut().get_pgtable().set_shared_4k(vaddr)?;
+    this_cpu()
+        .get_pgtable()
+        .set_shared_4k(vaddr)
+        .expect("Failed to remap shared page in page tables");
     flush_tlb_global_sync();
 
     Ok(())

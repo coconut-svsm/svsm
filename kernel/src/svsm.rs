@@ -397,6 +397,10 @@ pub extern "C" fn svsm_main() {
 
     init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
 
+    this_cpu()
+        .configure_hv_doorbell()
+        .expect("Failed to configure #HV doorbell");
+
     let launch_info = &*LAUNCH_INFO;
     let config = if launch_info.igvm_params_virt_addr != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
