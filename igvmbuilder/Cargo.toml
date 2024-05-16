@@ -3,7 +3,9 @@ name = "igvmbuilder"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+# specify target to avoid feature unification with SVSM
+# see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification
+[target.'cfg(all(target_os = "linux"))'.dependencies]
 bootlib.workspace = true
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
