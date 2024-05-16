@@ -15,22 +15,6 @@ The project builds on support code written for the [linux-svsm](https://github.c
 a software written and published by AMD. This includes the necessary
 hypervisor changes for KVM host, guest, and for the EDK2 firmware.
 
-Some of the key parts already implemented are:
-
-* SVSM core protocol support
-* Boots SMP Linux guests
-* Buddy and slab-based memory allocator
-* PerCPU page-tables with dedicated address space areas for shared and
-  PerCPU mappings
-* Backtraces
-* Exception fixups
-* Multi-stage launch process so it can run from any guest physical
-  address
-
-In the future the COCONUT-SVSM will gain support to run modules at ring
-3. These modules can extend the SVSM base functionality and implement
-advanced features like TPM emulation and live migration.
-
 Installation
 ------------
 
@@ -40,6 +24,7 @@ to get a virtual machine powered by the COCONUT-SVSM up and running.
 
 Documentation
 -------------
+
 Information about COCONUT-SVSM can be found on at the
 [COCONUT-SVSM documentation site](https://coconut-svsm.github.io/svsm).
 
@@ -61,7 +46,6 @@ For security critical bugs please send an email describing the problem
 and the planned CRD (if known) to
 [security@coconut-svsm.dev](mailto:security@coconut-svsm.dev).
 
-
 Contributing
 ------------
 
@@ -70,20 +54,6 @@ GitHub. For detailed instructions on patch formatting and contribution
 guidelines please have a look at [CONTRIBUTING.md](Documentation/docs/developer/CONTRIBUTING.md).
 For documentation guidelines consult [RUSTDOC-GUIDELINES.md](Documentation/docs/developer/RUSTDOC-GUIDELINES.md)
 and [DOC-GUIDELINES.md](Documentation/docs/developer/DOC-GUIDELINES.md).
-
-TODO List
----------
-
-The project is far from being ready. Here is an list of next steps that
-are planned for the COCONUT-SVSM. The items are not sorted in
-any way:
-
-* Improve documentation
-* Support for modules running in ring 3
-  * vTPM emulation
-* Attestation support
-* Persistency layer (needed for TPM and others)
-* Live migration
 
 Documentation
 -------------
