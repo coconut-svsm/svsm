@@ -45,6 +45,7 @@ p384 = { version = "0.13.0" }
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.7.32", features = ["derive"] }
+rdrand = { version = "0.8.3", default-features = false }
 
 # other repos
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }

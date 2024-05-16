@@ -57,6 +57,8 @@ use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
+use rdrand::RdSeed;
+
 extern "C" {
     pub static bsp_stack_end: u8;
 }
@@ -452,6 +454,9 @@ pub extern "C" fn svsm_main() {
 
     #[cfg(all(feature = "mstpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
+
+    let rdrand = unsafe { RdSeed::new_unchecked() };
+    log::info!("rdrand value: {}", rdrand.try_next_u32().unwrap());
 
     virt_log_usage();
 
