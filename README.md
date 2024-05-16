@@ -55,6 +55,9 @@ guidelines please have a look at [CONTRIBUTING.md](Documentation/docs/developer/
 For documentation guidelines consult [RUSTDOC-GUIDELINES.md](Documentation/docs/developer/RUSTDOC-GUIDELINES.md)
 and [DOC-GUIDELINES.md](Documentation/docs/developer/DOC-GUIDELINES.md).
 
+The [development plan document](Documentation/docs/developer/DEVELOPMENT-PLAN.md)
+lists planned and in-progress work items.
+
 Documentation
 -------------
 

@@ -9,6 +9,7 @@ nav:
 
   - Developer Information:
     - 'developer/DOC-GUIDELINES.md'
+    - Development Plan Overview: 'developer/DEVELOPMENT-PLAN.md'
     - Rustdoc Guidelines: 'developer/RUSTDOC-GUIDELINES.md'
     - Fuzzing: 'developer/FUZZING.md'
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'

@@ -15,6 +15,12 @@ repository](https://github.com/coconut-svsm/svsm).
 The Rustdoc documentation can be found by clicking [COCONUT-SVSM
 Rustdoc](rustdoc/svsm) in the navigation menu on the left.
 
+## Development Plan
+
+The [development plan document](developer/DEVELOPMENT-PLAN.md) lists planned
+and in-progress work items for the COCONUT-SVSM project as well as the first
+principles applied when making design decisions.
+
 ## Community
 Development discussions happen on the [project mailing
 list](https://mail.8bytes.org/cgi-bin/mailman/listinfo/svsm-devel)
