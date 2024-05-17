@@ -14,7 +14,7 @@ use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
@@ -24,7 +24,7 @@ use crate::mm::{
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::SvsmPlatform;
-use crate::sev::ghcb::GHCB;
+use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::vmsa::VmsaPage;
@@ -228,7 +228,7 @@ impl PerCpuShared {
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: RefCell<PerCpu>,
-    ghcb: *mut GHCB,
+    ghcb: Option<GhcbPage>,
     hv_doorbell: Option<HVDoorbellPage>,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
@@ -243,7 +243,7 @@ impl PerCpuUnsafe {
         Self {
             private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
             shared: PerCpuShared::new(),
-            ghcb: ptr::null_mut(),
+            ghcb: None,
             hv_doorbell: None,
             init_stack: None,
             ist: IstStacks::new(),
@@ -283,17 +283,15 @@ impl PerCpuUnsafe {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        self.ghcb = ghcb_page.as_mut_ptr();
+        self.ghcb = Some(GhcbPage::new()?);
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&self) -> *mut GHCB {
+    pub fn ghcb_unsafe(&mut self) -> *mut GHCB {
         self.ghcb
+            .as_mut()
+            .map(|g| g.as_mut_ptr())
+            .unwrap_or(ptr::null_mut())
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
