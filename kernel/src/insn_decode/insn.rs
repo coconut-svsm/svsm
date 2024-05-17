@@ -88,7 +88,6 @@ impl DecodedInsn {
 }
 
 pub const MAX_INSN_SIZE: usize = 15;
-pub const MAX_INSN_FIELD_SIZE: usize = 3;
 
 /// A view of an x86 instruction.
 #[derive(Default, Debug, Copy, Clone, PartialEq)]

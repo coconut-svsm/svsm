@@ -5,16 +5,15 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::idt::common::X86ExceptionContext;
-use super::insn::MAX_INSN_SIZE;
 use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::{DecodedInsn, Immediate, Instruction, Operand, Register};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
+use crate::insn_decode::{DecodedInsn, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE};
 use crate::mm::GuestPtr;
 use crate::sev::ghcb::{GHCBIOSize, GHCB};
 use core::fmt;
