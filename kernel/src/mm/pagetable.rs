@@ -14,7 +14,7 @@ use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::platform::SvsmPlatform;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
@@ -31,23 +31,17 @@ pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
-fn reinit_feature_mask(feature_mask: &PTEntryFlags) {
-    FEATURE_MASK
-        .reinit(feature_mask)
-        .expect("could not reinit FEATURE_MASK");
-}
-
-pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) {
-    init_encrypt_mask(platform, vtom.try_into().unwrap());
+pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterInitResult<()> {
+    init_encrypt_mask(platform, vtom.try_into().unwrap())?;
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
-    reinit_feature_mask(&feature_mask);
+    FEATURE_MASK.reinit(&feature_mask)
 }
 
-pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) {
-    init_encrypt_mask(platform, vtom.try_into().unwrap());
+pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterInitResult<()> {
+    init_encrypt_mask(platform, vtom.try_into().unwrap())?;
 
     let mut feature_mask = PTEntryFlags::all();
     if !cpu_has_nx() {
@@ -56,18 +50,14 @@ pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) {
     if !cpu_has_pge() {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    reinit_feature_mask(&feature_mask);
+    FEATURE_MASK.reinit(&feature_mask)
 }
 
-fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) {
+fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) -> ImmutAfterInitResult<()> {
     let masks = platform.get_page_encryption_masks(vtom);
 
-    PRIVATE_PTE_MASK
-        .reinit(&masks.private_pte_mask)
-        .expect("could not reinitialize PRIVATE_PTE_MASK");
-    SHARED_PTE_MASK
-        .reinit(&masks.shared_pte_mask)
-        .expect("could not reinitialize SHARED_PTE_MASK");
+    PRIVATE_PTE_MASK.reinit(&masks.private_pte_mask)?;
+    SHARED_PTE_MASK.reinit(&masks.shared_pte_mask)?;
 
     let guest_phys_addr_size = (masks.phys_addr_sizes >> 16) & 0xff;
     let host_phys_addr_size = masks.phys_addr_sizes & 0xff;
@@ -86,9 +76,7 @@ fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) {
     let effective_phys_addr_size = cmp::min(masks.addr_mask_width, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
-    MAX_PHYS_ADDR
-        .reinit(&max_addr)
-        .expect("could not reinitialize MAX_PHYS_ADDR");
+    MAX_PHYS_ADDR.reinit(&max_addr)
 }
 
 fn private_pte_mask() -> usize {

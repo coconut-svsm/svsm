@@ -92,7 +92,7 @@ fn setup_env(
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(platform, launch_info.vtom);
+    paging_init_early(platform, launch_info.vtom).expect("Failed to initialize early paging");
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();
