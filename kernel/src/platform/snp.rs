@@ -11,6 +11,7 @@ use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::verify_ghcb_version;
 use crate::sev::status::vtom_enabled;
 use crate::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
@@ -115,8 +116,12 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn eoi(&self) {
-        // 0x80E is the X2APIC EOI MSR.
-        // Errors here cannot be handled but should not be grounds for panic.
-        let _ = current_ghcb().wrmsr(0x80E, 0);
+        // Issue an explicit EOI unless no explicit EOI is required.
+        if !current_hv_doorbell().no_eoi_required() {
+            // 0x80B is the X2APIC EOI MSR.
+            // Errors here cannot be handled but should not be grounds for
+            // panic.
+            let _ = current_ghcb().wrmsr(0x80B, 0);
+        }
     }
 }
