@@ -8,6 +8,7 @@ mod decode;
 mod insn;
 mod opcode;
 
+pub use decode::InsnMachineCtx;
 pub use insn::{
     DecodedInsn, Immediate, Instruction, Operand, Register, SegRegister, MAX_INSN_SIZE,
 };

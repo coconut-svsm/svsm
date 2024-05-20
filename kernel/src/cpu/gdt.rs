@@ -137,6 +137,14 @@ impl GDT {
             self.clear_tss_entry()
         }
     }
+
+    pub fn kernel_cs(&self) -> GDTEntry {
+        self.entries[(SVSM_CS / 8) as usize]
+    }
+
+    pub fn kernel_ds(&self) -> GDTEntry {
+        self.entries[(SVSM_DS / 8) as usize]
+    }
 }
 
 static GDT: RWLock<GDT> = RWLock::new(GDT::new());
