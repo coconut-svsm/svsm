@@ -133,7 +133,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_decode_inb() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xE4, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let decoded = Instruction::new(raw_insn).decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::Imm(Immediate::U8(0x41)), Bytes::One)
+        );
+        assert_eq!(decoded.size(), 2);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xEC, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let decoded = Instruction::new(raw_insn).decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::rdx(), Bytes::One)
+        );
+        assert_eq!(decoded.size(), 1);
+    }
+
+    #[test]
     fn test_decode_inw() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x66, 0xE5, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::Imm(Immediate::U8(0x41)), Bytes::Two)
+        );
+        assert_eq!(decoded.size(), 3);
+
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0x66, 0xED, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
@@ -149,7 +189,49 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_inl() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xE5, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::Imm(Immediate::U8(0x41)), Bytes::Four)
+        );
+        assert_eq!(decoded.size(), 2);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xED, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::rdx(), Bytes::Four)
+        );
+        assert_eq!(decoded.size(), 1);
+    }
+
+    #[test]
     fn test_decode_outb() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xE6, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::Imm(Immediate::U8(0x41)), Bytes::One)
+        );
+        assert_eq!(decoded.size(), 2);
+
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0xEE, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
@@ -165,7 +247,49 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_outw() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x66, 0xE7, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::Imm(Immediate::U8(0x41)), Bytes::Two)
+        );
+        assert_eq!(decoded.size(), 3);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x66, 0xEF, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::rdx(), Bytes::Two)
+        );
+        assert_eq!(decoded.size(), 2);
+    }
+
+    #[test]
     fn test_decode_outl() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xE7, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::Imm(Immediate::U8(0x41)), Bytes::Four)
+        );
+        assert_eq!(decoded.size(), 2);
+
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0xEF, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
@@ -191,6 +315,58 @@ mod tests {
         let decoded = insn.decode(&TestCtx).unwrap();
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Cpuid);
         assert_eq!(decoded.size(), 2);
+    }
+
+    #[test]
+    fn test_decode_wrmsr() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x0F, 0x30, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Wrmsr);
+        assert_eq!(decoded.size(), 2);
+    }
+
+    #[test]
+    fn test_decode_rdmsr() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x0F, 0x32, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Rdmsr);
+        assert_eq!(decoded.size(), 2);
+    }
+
+    #[test]
+    fn test_decode_rdtsc() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x0F, 0x31, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Rdtsc);
+        assert_eq!(decoded.size(), 2);
+    }
+
+    #[test]
+    fn test_decode_rdtscp() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x0F, 0x01, 0xF9, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let insn = Instruction::new(raw_insn);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Rdtscp);
+        assert_eq!(decoded.size(), 3);
     }
 
     #[test]
