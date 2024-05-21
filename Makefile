@@ -40,6 +40,7 @@ C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
+STAGE1_TRAMPOLINE_OBJS = stage1/stage1-trampoline.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
@@ -107,7 +108,7 @@ utils/print-meta: utils/print-meta.c
 utils/cbit: utils/cbit.c
 	cc -O3 -Wall -o $@ $<
 
-bin/meta.bin: utils/gen_meta utils/print-meta
+bin/meta.bin: utils/gen_meta utils/print-meta bin
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
@@ -130,13 +131,16 @@ endif
 
 stage1/stage1.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin
 	ln -sf svsm-kernel.elf bin/kernel.elf
-	cc -c -o $@ stage1/stage1.S
+	cc -c -DLOAD_STAGE2 -o $@ $<
 	rm -f bin/kernel.elf
 
 stage1/stage1-test.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin
 	ln -sf test-kernel.elf bin/kernel.elf
-	cc -c -o $@ stage1/stage1.S
+	cc -c -DLOAD_STAGE2 -o $@ $<
 	rm -f bin/kernel.elf
+
+stage1/stage1-trampoline.o: stage1/stage1.S
+	cc -c -o $@ $<
 
 stage1/reset.o:  stage1/reset.S bin/meta.bin
 
@@ -146,7 +150,13 @@ bin/stage1: ${STAGE1_OBJS}
 bin/stage1-test: ${STAGE1_TEST_OBJS}
 	$(CC) -o $@ $(STAGE1_TEST_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
 
+bin/stage1-trampoline: ${STAGE1_TRAMPOLINE_OBJS}
+	$(CC) -o $@ $(STAGE1_TRAMPOLINE_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
+
 bin/svsm.bin: bin/stage1
+	objcopy -O binary $< $@
+
+bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
 
 clippy:
