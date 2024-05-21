@@ -13,7 +13,9 @@ use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use zerocopy::AsBytes;
 
 use crate::gpa_map::GpaMap;
-use crate::igvm_builder::{NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK};
+use crate::igvm_builder::{
+    NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK, TDP_COMPATIBILITY_MASK,
+};
 
 pub struct Stage2Stack {
     stage2_stack: Stage2LaunchInfo,
@@ -43,6 +45,7 @@ impl Stage2Stack {
     ) {
         let compatibility_mask = match platform {
             SvsmPlatformType::Snp => SNP_COMPATIBILITY_MASK,
+            SvsmPlatformType::Tdp => TDP_COMPATIBILITY_MASK,
             SvsmPlatformType::Native => NATIVE_COMPATIBILITY_MASK,
         };
 

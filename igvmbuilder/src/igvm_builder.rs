@@ -429,6 +429,13 @@ impl IgvmBuilder {
                 &mut self.directives,
             );
         }
+        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+            stage2_stack.add_directive(
+                self.gpa_map.stage2_stack.get_start(),
+                SvsmPlatformType::Tdp,
+                &mut self.directives,
+            );
+        }
         if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),

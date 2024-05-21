@@ -39,6 +39,8 @@ pub enum SvsmError {
     GhcbMsr(GhcbMsrError),
     /// Errors related to SEV-SNP operations, like PVALIDATE or RMPUPDATE
     SevSnp(SevSnpError),
+    /// Errors related to TDX operations
+    Tdx,
     /// Generic errors related to memory management
     Mem,
     /// Errors related to the memory allocator
