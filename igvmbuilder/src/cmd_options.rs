@@ -8,6 +8,10 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
 pub struct CmdOptions {
+    /// Optional TDX stage 1 binary file
+    #[arg(long)]
+    pub tdx_stage1: Option<String>,
+
     /// Stage 2 binary file
     #[arg(short, long)]
     pub stage2: String,

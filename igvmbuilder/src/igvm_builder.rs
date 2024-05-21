@@ -10,9 +10,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::mem::size_of;
 
-use bootlib::igvm_params::{
-    IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
-};
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo};
 use bootlib::platform::SvsmPlatformType;
 use clap::Parser;
 use igvm::{
@@ -194,17 +192,7 @@ impl IgvmBuilder {
         let (fw_info, vtom) = if let Some(firmware) = &self.firmware {
             (firmware.get_fw_info(), firmware.get_vtom())
         } else {
-            let fw_info = IgvmParamBlockFwInfo {
-                start: 0,
-                size: 0,
-                in_low_memory: 0,
-                secrets_page: 0,
-                caa_page: 0,
-                cpuid_page: 0,
-                prevalidated_count: 0,
-                prevalidated: [IgvmParamBlockFwMem { base: 0, size: 0 }; 8],
-                ..Default::default()
-            };
+            let fw_info = IgvmParamBlockFwInfo::default();
             let vtom = match self.options.hypervisor {
                 Hypervisor::Qemu => 0,
                 Hypervisor::HyperV => {
@@ -226,6 +214,8 @@ impl IgvmBuilder {
             secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
+            stage1_size: self.gpa_map.stage1_image.get_size() as u32,
+            stage1_base: self.gpa_map.stage1_image.get_start(),
             kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
             kernel_size: self.gpa_map.kernel.get_size() as u32,
             kernel_base: self.gpa_map.kernel.get_start(),
@@ -378,13 +368,18 @@ impl IgvmBuilder {
 
         // Add optional filesystem image
         if let Some(fs) = &self.options.filesystem {
-            self.add_data_pages_from_file(&fs.clone(), self.gpa_map.kernel_fs.get_start())?;
+            self.add_data_pages_from_file(
+                &fs.clone(),
+                self.gpa_map.kernel_fs.get_start(),
+                COMPATIBILITY_MASK.get(),
+            )?;
         }
 
         // Add the kernel elf binary
         self.add_data_pages_from_file(
             &self.options.kernel.clone(),
             self.gpa_map.kernel_elf.get_start(),
+            COMPATIBILITY_MASK.get(),
         )?;
 
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
@@ -405,6 +400,15 @@ impl IgvmBuilder {
             )?;
         }
 
+        // Add optional stage 1 binary.
+        if let Some(stage1) = &self.options.tdx_stage1 {
+            self.add_data_pages_from_file(
+                &stage1.clone(),
+                self.gpa_map.stage1_image.get_start(),
+                TDP_COMPATIBILITY_MASK,
+            )?;
+        }
+
         // Populate the empty region above the stage 2 binary.
         self.add_empty_pages(
             self.gpa_map.stage2_free.get_start(),
@@ -417,6 +421,7 @@ impl IgvmBuilder {
         self.add_data_pages_from_file(
             &self.options.stage2.clone(),
             self.gpa_map.stage2_image.get_start(),
+            COMPATIBILITY_MASK.get(),
         )?;
 
         // Populate the stage 2 stack.  This has different contents on each
@@ -469,6 +474,7 @@ impl IgvmBuilder {
         &mut self,
         path: &String,
         gpa_start: u64,
+        compatibility_mask: u32,
     ) -> Result<(), Box<dyn Error>> {
         let mut gpa = gpa_start;
         let mut in_file = File::open(path).map_err(|e| {
@@ -482,7 +488,7 @@ impl IgvmBuilder {
                 break;
             }
             self.directives
-                .push(Self::new_page_data(gpa, COMPATIBILITY_MASK.get(), buf));
+                .push(Self::new_page_data(gpa, compatibility_mask, buf));
             gpa += PAGE_SIZE_4K;
             buf = vec![0; 4096];
         }

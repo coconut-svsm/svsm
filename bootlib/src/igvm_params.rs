@@ -125,6 +125,15 @@ pub struct IgvmParamBlock {
     /// IGVM file.
     pub firmware: IgvmParamBlockFwInfo,
 
+    /// The number of bytes for the stage1 bootloader
+    pub stage1_size: u32,
+
+    #[doc(hidden)]
+    pub _reserved2: u32,
+
+    /// The guest physical address of the base of the stage1 bootloader
+    pub stage1_base: u64,
+
     /// The amount of space that must be reserved at the base of the kernel
     /// memory region (e.g. for VMSA contents).
     pub kernel_reserved_size: u32,
