@@ -6,6 +6,7 @@
 
 use super::decode::DecodedInsnCtx;
 use super::{InsnError, InsnMachineCtx};
+use crate::types::Bytes;
 
 /// An immediate value in an instruction
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -65,12 +66,8 @@ impl Operand {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DecodedInsn {
     Cpuid,
-    Inl(Operand),
-    Inb(Operand),
-    Inw(Operand),
-    Outl(Operand),
-    Outb(Operand),
-    Outw(Operand),
+    In(Operand, Bytes),
+    Out(Operand, Bytes),
     Wrmsr,
     Rdmsr,
     Rdtsc,
@@ -144,7 +141,10 @@ mod tests {
 
         let insn = Instruction::new(raw_insn);
         let decoded = insn.decode(&TestCtx).unwrap();
-        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Inw(Operand::rdx()));
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::In(Operand::rdx(), Bytes::Two)
+        );
         assert_eq!(decoded.size(), 2);
     }
 
@@ -157,7 +157,10 @@ mod tests {
 
         let insn = Instruction::new(raw_insn);
         let decoded = insn.decode(&TestCtx).unwrap();
-        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Outb(Operand::rdx()));
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::rdx(), Bytes::One)
+        );
         assert_eq!(decoded.size(), 1);
     }
 
@@ -170,7 +173,10 @@ mod tests {
 
         let insn = Instruction::new(raw_insn);
         let decoded = insn.decode(&TestCtx).unwrap();
-        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Outl(Operand::rdx()));
+        assert_eq!(
+            decoded.insn().unwrap(),
+            DecodedInsn::Out(Operand::rdx(), Bytes::Four)
+        );
         assert_eq!(decoded.size(), 1);
     }
 

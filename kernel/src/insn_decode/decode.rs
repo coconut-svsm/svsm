@@ -778,29 +778,23 @@ impl DecodedInsnCtx {
         Ok(match opdesc.class {
             OpCodeClass::Cpuid => DecodedInsn::Cpuid,
             OpCodeClass::In => {
-                let operand = if opdesc.flags.contains(OpCodeFlags::IMM8) {
-                    Operand::Imm(Immediate::U8(self.immediate as u8))
+                if opdesc.flags.contains(OpCodeFlags::IMM8) {
+                    DecodedInsn::In(
+                        Operand::Imm(Immediate::U8(self.immediate as u8)),
+                        self.opsize,
+                    )
                 } else {
-                    Operand::rdx()
-                };
-                match self.opsize {
-                    Bytes::One => DecodedInsn::Inb(operand),
-                    Bytes::Two => DecodedInsn::Inw(operand),
-                    Bytes::Four => DecodedInsn::Inl(operand),
-                    _ => return Err(InsnError::UnSupportedInsn),
+                    DecodedInsn::In(Operand::rdx(), self.opsize)
                 }
             }
             OpCodeClass::Out => {
-                let operand = if opdesc.flags.contains(OpCodeFlags::IMM8) {
-                    Operand::Imm(Immediate::U8(self.immediate as u8))
+                if opdesc.flags.contains(OpCodeFlags::IMM8) {
+                    DecodedInsn::Out(
+                        Operand::Imm(Immediate::U8(self.immediate as u8)),
+                        self.opsize,
+                    )
                 } else {
-                    Operand::rdx()
-                };
-                match self.opsize {
-                    Bytes::One => DecodedInsn::Outb(operand),
-                    Bytes::Two => DecodedInsn::Outw(operand),
-                    Bytes::Four => DecodedInsn::Outl(operand),
-                    _ => return Err(InsnError::UnSupportedInsn),
+                    DecodedInsn::Out(Operand::rdx(), self.opsize)
                 }
             }
             OpCodeClass::Rdmsr => DecodedInsn::Rdmsr,
