@@ -52,6 +52,10 @@ pub struct CmdOptions {
     #[arg(long, default_value_t = false)]
     pub snp: bool,
 
+    /// Include TD Partitioning platform target
+    #[arg(long, default_value_t = false)]
+    pub tdp: bool,
+
     /// Include NATIVE platform target
     #[arg(long, default_value_t = false)]
     pub native: bool,

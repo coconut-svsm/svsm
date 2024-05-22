@@ -34,6 +34,7 @@ use crate::GpaMap;
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
+pub const TDP_COMPATIBILITY_MASK: u32 = 1u32 << 2;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 
 // Parameter area indices
@@ -65,6 +66,10 @@ impl IgvmBuilder {
         // Include the SEV-SNP platform if requested.
         if options.snp {
             COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
+        }
+        // Include the TDP platform if requested.
+        if options.tdp {
+            COMPATIBILITY_MASK.add(TDP_COMPATIBILITY_MASK);
         }
         // Include the NATIVE platform if requested.
         if options.native {
@@ -242,6 +247,17 @@ impl IgvmBuilder {
                     platform_type: IgvmPlatformType::SEV_SNP,
                     platform_version: 1,
                     shared_gpa_boundary: param_block.vtom,
+                },
+            ));
+        }
+        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+            self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
+                IGVM_VHS_SUPPORTED_PLATFORM {
+                    compatibility_mask: TDP_COMPATIBILITY_MASK,
+                    highest_vtl: 2,
+                    platform_type: IgvmPlatformType::TDX,
+                    platform_version: 1,
+                    shared_gpa_boundary: 0,
                 },
             ));
         }
