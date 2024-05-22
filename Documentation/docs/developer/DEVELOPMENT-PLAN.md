@@ -87,6 +87,8 @@ This sections lists proposed work items on the COCONUT-SVSM core parts.
 
 ### [FallibleAlloc] Convert to Fallible Allocators
 
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
+
 The current COCONUT kernel uses the standard Rust allocator interface. This
 comes with implicit panics on allocations failures and only supports one
 backend allocator. A panic on a memory allocation failure is not acceptable in a
@@ -98,6 +100,8 @@ gated by the nightly [`allocator_api`](https://github.com/rust-lang/rust/issues/
 feature.
 
 ### [SmartAllocPointers]
+
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
 
 Design and implement new smart pointer-like safe interfaces that make use of
 different memory pools other than the global memory allocator (e.g. per-cpu,
