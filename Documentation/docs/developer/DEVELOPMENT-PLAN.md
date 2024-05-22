@@ -93,9 +93,15 @@ backend allocator. A panic on a memory allocation failure is not acceptable in a
 kernel environment so a conversion to a better allocator interface is required.
 The interface needs to return an errors for allocation failures.
 
-Also the enhanced allocator interface needs to support multiple backends to
-handle allocation from the various virtual memory pools (Global shared,
-per-cpu, per-task).
+This is currently blocked by the Rust language, as fallible allocations are
+gated by the nightly [`allocator_api`](https://github.com/rust-lang/rust/issues/32838)
+feature.
+
+### [SmartAllocPointers]
+
+Design and implement new smart pointer-like safe interfaces that make use of
+different memory pools other than the global memory allocator (e.g. per-cpu,
+per-task, page-sized & physically contiguous, etc.).
 
 ### [PtSelfMap] Page Table Self Map
 
