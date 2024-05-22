@@ -546,9 +546,14 @@ to be fixed.
 
 ### [Fuzzing] Improve Fuzzing
 
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
+* Tracking issue: [#34](https://github.com/coconut-svsm/svsm/issues/34).
+
 The COCONUT-SVSM repository contains a good number of fuzzers already for parts
 of the code-base. Build on that and extended the fuzzers over time to cover
 more or most code of the COCONUT-SVSM platform.
+
+As part of this effort, identify security-critical interfaces to be fuzzed.
 
 ### [Stress] Adding Stress-Tests
 
