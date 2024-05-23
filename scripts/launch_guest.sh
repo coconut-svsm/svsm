@@ -103,7 +103,7 @@ $SUDO_CMD \
     -cpu EPYC-v4 \
     -machine $MACHINE \
     -object $MEMORY \
-    -object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=1,init-flags=1,igvm-file=$IGVM \
+    -object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=1,init-flags=5,igvm-file=$IGVM \
     -smp 4 \
     -no-reboot \
     -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
