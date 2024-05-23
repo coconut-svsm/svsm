@@ -87,15 +87,25 @@ This sections lists proposed work items on the COCONUT-SVSM core parts.
 
 ### [FallibleAlloc] Convert to Fallible Allocators
 
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
+
 The current COCONUT kernel uses the standard Rust allocator interface. This
 comes with implicit panics on allocations failures and only supports one
 backend allocator. A panic on a memory allocation failure is not acceptable in a
 kernel environment so a conversion to a better allocator interface is required.
 The interface needs to return an errors for allocation failures.
 
-Also the enhanced allocator interface needs to support multiple backends to
-handle allocation from the various virtual memory pools (Global shared,
-per-cpu, per-task).
+This is currently blocked by the Rust language, as fallible allocations are
+gated by the nightly [`allocator_api`](https://github.com/rust-lang/rust/issues/32838)
+feature.
+
+### [SmartAllocPointers]
+
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
+
+Design and implement new smart pointer-like safe interfaces that make use of
+different memory pools other than the global memory allocator (e.g. per-cpu,
+per-task, page-sized & physically contiguous, etc.).
 
 ### [PtSelfMap] Page Table Self Map
 
@@ -536,9 +546,14 @@ to be fixed.
 
 ### [Fuzzing] Improve Fuzzing
 
+* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
+* Tracking issue: [#34](https://github.com/coconut-svsm/svsm/issues/34).
+
 The COCONUT-SVSM repository contains a good number of fuzzers already for parts
 of the code-base. Build on that and extended the fuzzers over time to cover
 more or most code of the COCONUT-SVSM platform.
+
+As part of this effort, identify security-critical interfaces to be fuzzed.
 
 ### [Stress] Adding Stress-Tests
 
