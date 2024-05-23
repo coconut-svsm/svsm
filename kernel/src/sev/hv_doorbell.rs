@@ -3,6 +3,7 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::idt::svsm::common_isr_handler;
+use crate::cpu::percpu::this_cpu_unsafe;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::virt_to_phys;
@@ -74,6 +75,43 @@ impl HVDoorbell {
             }
             common_isr_handler(vector as usize);
         }
+    }
+
+    pub fn no_eoi_required(&self) -> bool {
+        // Check to see if the "no EOI required" flag is set to determine
+        // whether an explicit EOI can be avoided.
+        let mut no_eoi_required = self.no_eoi_required.load(Ordering::Relaxed);
+        loop {
+            // If the flag is not set, then an explicit EOI is required.
+            if (no_eoi_required & 1) == 0 {
+                return false;
+            }
+            // Attempt to atomically clear the flag.
+            match self.no_eoi_required.compare_exchange_weak(
+                no_eoi_required,
+                no_eoi_required & !1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(new) => no_eoi_required = new,
+            }
+        }
+
+        // If the flag was successfully cleared, then no explicit EOI is
+        // required.
+        true
+    }
+}
+
+pub fn current_hv_doorbell() -> &'static HVDoorbell {
+    unsafe {
+        let cpu_unsafe = &*this_cpu_unsafe();
+        let hv_doorbell_ptr = cpu_unsafe.hv_doorbell_unsafe();
+        if hv_doorbell_ptr.is_null() {
+            panic!("HV doorbell page dereferenced before allocating");
+        }
+        &*hv_doorbell_ptr
     }
 }
 
