@@ -327,7 +327,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(platform, li.vtom);
+    paging_init(platform, li.vtom).expect("Failed to initialize paging");
     init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
     // SAFETY: this PerCpu has just been allocated and no other CPUs have been
