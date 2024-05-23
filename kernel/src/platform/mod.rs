@@ -10,7 +10,6 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
-use crate::sev::PvalidateOp;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
@@ -71,12 +70,11 @@ pub trait SvsmPlatform {
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError>;
 
-    /// Marks a page as valid or invalid as a private page.
-    fn pvalidate_range(
-        &self,
-        region: MemoryRegion<VirtAddr>,
-        op: PvalidateOp,
-    ) -> Result<(), SvsmError>;
+    /// Marks a range of pages as valid for use as private pages.
+    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
+
+    /// Marks a range of pages as invalid for use as private pages.
+    fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
 
     /// Perform an EOI of the current interrupt.
     fn eoi(&self);

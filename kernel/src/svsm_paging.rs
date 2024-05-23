@@ -12,7 +12,6 @@ use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
 use crate::platform::SvsmPlatform;
-use crate::sev::PvalidateOp;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 use bootlib::kernel_launch::KernelLaunchInfo;
@@ -111,7 +110,7 @@ fn invalidate_boot_memory_region(
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        platform.pvalidate_range(MemoryRegion::new(vaddr, PAGE_SIZE), PvalidateOp::Invalid)?;
+        platform.invalidate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
     }
 
     if config.page_state_change_required() && !region.is_empty() {
