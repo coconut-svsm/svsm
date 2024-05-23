@@ -540,6 +540,12 @@ page validation backends.
 
 ### [CodePatterns] Fixing Unsound Code Patterns
 
+* Owners:
+    * Carlos López ([@00xc](https://www.github.com/00xc))
+    * Thomas Leroy ([@p4zuu](https://www.github.com/p4zuu))
+    * Tom Dohrmann ([@Freax13](https://github.com/Freax13))
+* Tracking issue: [#359](https://github.com/coconut-svsm/svsm/issues/359)
+
 The GitHub issues for the COCONUT-SVSM contains an issue which lists unsound
 code patterns. This list needs to be updated, evaluated and the patterns need
 to be fixed.
