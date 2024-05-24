@@ -9,11 +9,11 @@ use super::super::extable::handle_exception_table;
 use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
-use super::common::PF_ERROR_WRITE;
 use super::common::{
     idt_mut, user_mode, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR,
     DF_VECTOR, GP_VECTOR, HV_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR,
-    OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
+    OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR,
+    XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::percpu::this_cpu_unsafe;
