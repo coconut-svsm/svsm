@@ -60,7 +60,7 @@ pub struct GDT {
 
 impl GDT {
     pub const fn new() -> Self {
-        GDT {
+        Self {
             entries: [
                 GDTEntry::null(),
                 GDTEntry::code_64_kernel(),
@@ -74,20 +74,33 @@ impl GDT {
         }
     }
 
-    pub fn base_limit(&self) -> (u64, u32) {
-        let gdt_entries = GDT_SIZE as usize;
-        let base = (self as *const GDT) as u64;
-        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
-        (base, limit)
+    unsafe fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
+        let idx = (SVSM_TSS / 8) as usize;
+
+        let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
+
+        tss_entries.add(0).write_volatile(desc0);
+        tss_entries.add(1).write_volatile(desc1);
     }
 
-    fn descriptor(&self) -> GDTDesc {
-        GDTDesc {
-            size: (GDT_SIZE * 8) - 1,
-            addr: VirtAddr::from(self.entries.as_ptr()),
+    unsafe fn clear_tss_entry(&mut self) {
+        self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
+    }
+
+    pub fn load_tss(&mut self, tss: &X86Tss) {
+        let (desc0, desc1) = tss.to_gdt_entry();
+
+        unsafe {
+            self.set_tss_entry(desc0, desc1);
+            asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));
+            self.clear_tss_entry()
         }
     }
+}
 
+impl ReadLockGuard<'static, GDT> {
+    /// Load a GDT. Its lifetime must be static so that its entries are
+    /// always available to the CPU.
     pub fn load(&self) {
         let gdt_desc = self.descriptor();
         unsafe {
@@ -115,27 +128,18 @@ impl GDT {
         }
     }
 
-    unsafe fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
-        let idx = (SVSM_TSS / 8) as usize;
-
-        let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
-
-        tss_entries.add(0).write_volatile(desc0);
-        tss_entries.add(1).write_volatile(desc1);
-    }
-
-    unsafe fn clear_tss_entry(&mut self) {
-        self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
-    }
-
-    pub fn load_tss(&mut self, tss: &X86Tss) {
-        let (desc0, desc1) = tss.to_gdt_entry();
-
-        unsafe {
-            self.set_tss_entry(desc0, desc1);
-            asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));
-            self.clear_tss_entry()
+    fn descriptor(&self) -> GDTDesc {
+        GDTDesc {
+            size: (GDT_SIZE * 8) - 1,
+            addr: VirtAddr::from(self.entries.as_ptr()),
         }
+    }
+
+    pub fn base_limit(&self) -> (u64, u32) {
+        let gdt_entries = GDT_SIZE as usize;
+        let base: *const GDT = core::ptr::from_ref(self);
+        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
+        (base as u64, limit)
     }
 }
 
