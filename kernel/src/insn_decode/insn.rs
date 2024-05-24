@@ -4,9 +4,8 @@
 //
 // Author: Thomas Leroy <tleroy@suse.de>
 
-use crate::cpu::vc::VcError;
-use crate::cpu::vc::VcErrorType;
-use crate::error::SvsmError;
+use super::decode::DecodedInsnCtx;
+use super::{InsnError, InsnMachineCtx};
 
 /// An immediate value in an instruction
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,29 +77,6 @@ pub enum DecodedInsn {
     Rdtscp,
 }
 
-impl DecodedInsn {
-    pub const fn size(&self) -> usize {
-        match self {
-            Self::Cpuid => 2,
-            Self::Inb(Operand::Reg(..)) => 1,
-            Self::Inw(Operand::Reg(..)) => 2,
-            Self::Inl(Operand::Reg(..)) => 1,
-            Self::Outb(Operand::Reg(..)) => 1,
-            Self::Outw(Operand::Reg(..)) => 2,
-            Self::Outl(Operand::Reg(..)) => 1,
-            Self::Inb(Operand::Imm(..)) => 2,
-            Self::Inw(Operand::Imm(..)) => 3,
-            Self::Inl(Operand::Imm(..)) => 2,
-            Self::Outb(Operand::Imm(..)) => 2,
-            Self::Outw(Operand::Imm(..)) => 3,
-            Self::Outl(Operand::Imm(..)) => 2,
-            Self::Wrmsr | Self::Rdmsr => 2,
-            Self::Rdtsc => 2,
-            Self::Rdtscp => 3,
-        }
-    }
-}
-
 pub const MAX_INSN_SIZE: usize = 15;
 
 /// A view of an x86 instruction.
@@ -112,52 +88,46 @@ impl Instruction {
         Self(bytes)
     }
 
-    /// Decode the instruction.
-    /// At the moment, the decoding is very naive since we only need to decode CPUID,
-    /// IN and OUT (without strings and immediate usage) instructions. A complete decoding
-    /// of the full x86 instruction set is still TODO.
+    /// Decode the instruction with the given InsnMachineCtx.
     ///
     /// # Returns
     ///
-    /// A [`DecodedInsn`] if the instruction is supported, or an [`SvsmError`] otherwise.
-    pub fn decode(&self) -> Result<DecodedInsn, SvsmError> {
-        match self.0[0] {
-            0xE4 => return Ok(DecodedInsn::Inb(Operand::Imm(Immediate::U8(self.0[1])))),
-            0xE5 => return Ok(DecodedInsn::Inl(Operand::Imm(Immediate::U8(self.0[1])))),
-            0xE6 => return Ok(DecodedInsn::Outb(Operand::Imm(Immediate::U8(self.0[1])))),
-            0xE7 => return Ok(DecodedInsn::Outl(Operand::Imm(Immediate::U8(self.0[1])))),
-            0xEC => return Ok(DecodedInsn::Inb(Operand::rdx())),
-            0xED => return Ok(DecodedInsn::Inl(Operand::rdx())),
-            0xEE => return Ok(DecodedInsn::Outb(Operand::rdx())),
-            0xEF => return Ok(DecodedInsn::Outl(Operand::rdx())),
-            0x66 => match self.0[1] {
-                0xE5 => return Ok(DecodedInsn::Inw(Operand::Imm(Immediate::U8(self.0[2])))),
-                0xE7 => return Ok(DecodedInsn::Outw(Operand::Imm(Immediate::U8(self.0[2])))),
-                0xED => return Ok(DecodedInsn::Inw(Operand::rdx())),
-                0xEF => return Ok(DecodedInsn::Outw(Operand::rdx())),
-                _ => (),
-            },
-            0x0F => match self.0[1] {
-                0x01 => {
-                    if self.0[2] == 0xf9 {
-                        return Ok(DecodedInsn::Rdtscp);
-                    }
-                }
-                0x30 => return Ok(DecodedInsn::Wrmsr),
-                0x31 => return Ok(DecodedInsn::Rdtsc),
-                0x32 => return Ok(DecodedInsn::Rdmsr),
-                0xA2 => return Ok(DecodedInsn::Cpuid),
-                _ => (),
-            },
-            _ => (),
-        }
+    /// A [`DecodedInsnCtx`] if the instruction is supported, or an [`InsnError`] otherwise.
+    pub fn decode<I: InsnMachineCtx>(&self, mctx: &I) -> Result<DecodedInsnCtx, InsnError> {
+        DecodedInsnCtx::new(&self.0, mctx)
+    }
+}
 
-        Err(VcError {
-            rip: 0,
-            code: 0,
-            error_type: VcErrorType::DecodeFailed,
+/// A dummy struct to implement InsnMachineCtx for testing purposes.
+#[cfg(any(test, fuzzing))]
+#[derive(Copy, Clone, Debug)]
+pub struct TestCtx;
+
+#[cfg(any(test, fuzzing))]
+impl InsnMachineCtx for TestCtx {
+    fn read_efer(&self) -> u64 {
+        use crate::cpu::efer::EFERFlags;
+
+        EFERFlags::LMA.bits()
+    }
+
+    fn read_seg(&self, seg: SegRegister) -> u64 {
+        match seg {
+            SegRegister::CS => 0x00af9a000000ffffu64,
+            _ => 0x00cf92000000ffffu64,
         }
-        .into())
+    }
+
+    fn read_cr0(&self) -> u64 {
+        use crate::cpu::control_regs::CR0Flags;
+
+        CR0Flags::PE.bits()
+    }
+
+    fn read_cr4(&self) -> u64 {
+        use crate::cpu::control_regs::CR4Flags;
+
+        CR4Flags::LA57.bits()
     }
 }
 
@@ -173,8 +143,8 @@ mod tests {
         ];
 
         let insn = Instruction::new(raw_insn);
-        let decoded = insn.decode().unwrap();
-        assert_eq!(decoded, DecodedInsn::Inw(Operand::rdx()));
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Inw(Operand::rdx()));
         assert_eq!(decoded.size(), 2);
     }
 
@@ -186,8 +156,8 @@ mod tests {
         ];
 
         let insn = Instruction::new(raw_insn);
-        let decoded = insn.decode().unwrap();
-        assert_eq!(decoded, DecodedInsn::Outb(Operand::rdx()));
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Outb(Operand::rdx()));
         assert_eq!(decoded.size(), 1);
     }
 
@@ -199,8 +169,8 @@ mod tests {
         ];
 
         let insn = Instruction::new(raw_insn);
-        let decoded = insn.decode().unwrap();
-        assert_eq!(decoded, DecodedInsn::Outl(Operand::rdx()));
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Outl(Operand::rdx()));
         assert_eq!(decoded.size(), 1);
     }
 
@@ -212,20 +182,20 @@ mod tests {
         ];
 
         let insn = Instruction::new(raw_insn);
-        let decoded = insn.decode().unwrap();
-        assert_eq!(decoded, DecodedInsn::Cpuid);
+        let decoded = insn.decode(&TestCtx).unwrap();
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Cpuid);
         assert_eq!(decoded.size(), 2);
     }
 
     #[test]
     fn test_decode_failed() {
         let raw_insn: [u8; MAX_INSN_SIZE] = [
-            0x66, 0xEE, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x66, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
 
         let insn = Instruction::new(raw_insn);
-        let err = insn.decode();
+        let err = insn.decode(&TestCtx);
 
         assert!(err.is_err());
     }

@@ -39,8 +39,6 @@
 // https://github.com/projectacrn/acrn-hypervisor/blob/master/hypervisor/
 // arch/x86/guest/instr_emul.c
 
-#![allow(dead_code)]
-
 use super::insn::{DecodedInsn, Immediate, Operand, MAX_INSN_SIZE};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
@@ -378,7 +376,24 @@ pub struct DecodedInsnCtx {
 }
 
 impl DecodedInsnCtx {
-    fn new<I: InsnMachineCtx>(bytes: &[u8; MAX_INSN_SIZE], mctx: &I) -> Result<Self, InsnError> {
+    /// Constructs a new `DecodedInsnCtx` by decoding the given
+    /// instruction bytes using the provided machine context.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The raw bytes of the instruction to be decoded.
+    /// * `mctx` - A reference to an object implementing the
+    /// `InsnMachineCtx` trait to provide the necessary machine context
+    /// for decoding.
+    ///
+    ///  # Returns
+    ///
+    ///  A `DecodedInsnCtx` if decoding is successful or an `InsnError`
+    ///  otherwise.
+    pub(super) fn new<I: InsnMachineCtx>(
+        bytes: &[u8; MAX_INSN_SIZE],
+        mctx: &I,
+    ) -> Result<Self, InsnError> {
         let mut insn_ctx = Self {
             cpu_mode: get_cpu_mode(mctx),
             ..Default::default()

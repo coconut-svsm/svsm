@@ -8,7 +8,9 @@ mod decode;
 mod insn;
 mod opcode;
 
-pub use decode::InsnMachineCtx;
+pub use decode::{DecodedInsnCtx, InsnMachineCtx};
+#[cfg(any(test, fuzzing))]
+pub use insn::TestCtx;
 pub use insn::{
     DecodedInsn, Immediate, Instruction, Operand, Register, SegRegister, MAX_INSN_SIZE,
 };
@@ -38,4 +40,10 @@ pub enum InsnError {
     InvalidRegister,
     /// The decoded instruction is not supported.
     UnSupportedInsn,
+}
+
+impl From<InsnError> for crate::error::SvsmError {
+    fn from(e: InsnError) -> Self {
+        Self::Insn(e)
+    }
 }
