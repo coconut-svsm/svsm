@@ -41,8 +41,8 @@
 
 #![allow(dead_code)]
 
-use super::insn::MAX_INSN_SIZE;
-use super::opcode::{OpCodeDesc, OpCodeFlags};
+use super::insn::{DecodedInsn, Immediate, Operand, MAX_INSN_SIZE};
+use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
 use crate::cpu::control_regs::{CR0Flags, CR4Flags};
 use crate::cpu::efer::EFERFlags;
@@ -341,10 +341,12 @@ impl Sib {
 }
 
 /// Represents the context of a decoded instruction, which is used to
-/// interpret the instruction. It holds the decoded instruction length
-/// and various components that are decoded from the instruction bytes.
+/// interpret the instruction. It holds the decoded instruction, its
+/// length and various components that are decoded from the instruction
+/// bytes.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DecodedInsnCtx {
+    insn: Option<DecodedInsn>,
     insn_len: usize,
     cpu_mode: CpuMode,
 
@@ -383,6 +385,24 @@ impl DecodedInsnCtx {
         };
 
         insn_ctx.decode(bytes, mctx).map(|_| insn_ctx)
+    }
+
+    /// Retrieves the decoded instruction, if available.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<DecodedInsn>` containing the DecodedInsn.
+    pub fn insn(&self) -> Option<DecodedInsn> {
+        self.insn
+    }
+
+    /// Retrieves the length of the decoded instruction in bytes.
+    ///
+    /// # Returns
+    ///
+    /// The length of the decoded instruction as a `usize`.
+    pub fn size(&self) -> usize {
+        self.insn_len
     }
 
     fn decode<I: InsnMachineCtx>(
@@ -734,6 +754,45 @@ impl DecodedInsnCtx {
 
     fn complete_decode(&mut self, insn: DecodedBytes) -> Result<(), InsnError> {
         self.insn_len = insn.0.processed();
-        Ok(())
+        self.decoded_insn()
+            .map(|decoded_insn| self.insn = Some(decoded_insn))
+    }
+
+    fn decoded_insn(&self) -> Result<DecodedInsn, InsnError> {
+        let opdesc = self.get_opdesc()?;
+        Ok(match opdesc.class {
+            OpCodeClass::Cpuid => DecodedInsn::Cpuid,
+            OpCodeClass::In => {
+                let operand = if opdesc.flags.contains(OpCodeFlags::IMM8) {
+                    Operand::Imm(Immediate::U8(self.immediate as u8))
+                } else {
+                    Operand::rdx()
+                };
+                match self.opsize {
+                    Bytes::One => DecodedInsn::Inb(operand),
+                    Bytes::Two => DecodedInsn::Inw(operand),
+                    Bytes::Four => DecodedInsn::Inl(operand),
+                    _ => return Err(InsnError::UnSupportedInsn),
+                }
+            }
+            OpCodeClass::Out => {
+                let operand = if opdesc.flags.contains(OpCodeFlags::IMM8) {
+                    Operand::Imm(Immediate::U8(self.immediate as u8))
+                } else {
+                    Operand::rdx()
+                };
+                match self.opsize {
+                    Bytes::One => DecodedInsn::Outb(operand),
+                    Bytes::Two => DecodedInsn::Outw(operand),
+                    Bytes::Four => DecodedInsn::Outl(operand),
+                    _ => return Err(InsnError::UnSupportedInsn),
+                }
+            }
+            OpCodeClass::Rdmsr => DecodedInsn::Rdmsr,
+            OpCodeClass::Rdtsc => DecodedInsn::Rdtsc,
+            OpCodeClass::Rdtscp => DecodedInsn::Rdtscp,
+            OpCodeClass::Wrmsr => DecodedInsn::Wrmsr,
+            _ => return Err(InsnError::UnSupportedInsn),
+        })
     }
 }

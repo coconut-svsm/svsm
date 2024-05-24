@@ -35,4 +35,6 @@ pub enum InsnError {
     InsnPeek,
     /// Invalid RegCode for decoding Register.
     InvalidRegister,
+    /// The decoded instruction is not supported.
+    UnSupportedInsn,
 }

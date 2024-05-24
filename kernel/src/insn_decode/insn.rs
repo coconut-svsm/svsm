@@ -58,7 +58,7 @@ pub enum Operand {
 
 impl Operand {
     #[inline]
-    const fn rdx() -> Self {
+    pub const fn rdx() -> Self {
         Self::Reg(Register::Rdx)
     }
 }
