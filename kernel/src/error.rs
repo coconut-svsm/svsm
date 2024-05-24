@@ -47,6 +47,8 @@ pub enum SvsmError {
     MissingSecrets,
     /// Invalid address, usually provided by the guest
     InvalidAddress,
+    /// Error reported when convert a usize to Bytes
+    InvalidBytes,
     /// Errors related to firmware parsing
     Firmware,
     /// Errors related to firmware configuration contents

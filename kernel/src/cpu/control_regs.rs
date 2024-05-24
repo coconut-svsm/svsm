@@ -119,6 +119,7 @@ bitflags! {
         const OSFXSR        = 1 << 9;  // Operating System FXSAVE/FXRSTOR Support
         const OSXMMEXCPT    = 1 << 10; // Operating System Unmasked Exception Support
         const UMIP      = 1 << 11; // User Mode Instruction Prevention
+        const LA57      = 1 << 12; // 57-bit linear address
         const FSGSBASE      = 1 << 16; // Enable RDFSBASE, RDGSBASE, WRFSBASE, and
                            // WRGSBASE instructions
         const PCIDE     = 1 << 17; // Process Context Identifier Enable

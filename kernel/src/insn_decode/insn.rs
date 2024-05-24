@@ -20,11 +20,13 @@ pub enum Immediate {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Register {
     Rax,
-    Rbx,
     Rcx,
     Rdx,
+    Rbx,
     Rsp,
     Rbp,
+    Rsi,
+    Rdi,
     R8,
     R9,
     R10,
@@ -33,6 +35,18 @@ pub enum Register {
     R13,
     R14,
     R15,
+    Rip,
+}
+
+/// A Segment register in instruction
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SegRegister {
+    CS,
+    SS,
+    DS,
+    ES,
+    FS,
+    GS,
 }
 
 /// An operand in an instruction, which might be a register or an immediate.

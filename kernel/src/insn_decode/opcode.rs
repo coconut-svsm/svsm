@@ -4,8 +4,6 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-#![allow(dead_code)]
-
 use super::decode::OpCodeBytes;
 use bitflags::bitflags;
 
