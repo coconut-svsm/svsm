@@ -47,7 +47,7 @@ impl Stage2Stack {
         };
 
         let mut stage2_stack = self.stage2_stack;
-        stage2_stack.platform_type = platform.as_u32();
+        stage2_stack.platform_type = u32::from(platform);
 
         // The native platform does not record VTOM because there is no
         // encryption in native platforms.

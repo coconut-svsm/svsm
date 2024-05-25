@@ -12,18 +12,17 @@ pub enum SvsmPlatformType {
     Snp = 1,
 }
 
-impl SvsmPlatformType {
-    pub fn as_u32(&self) -> u32 {
-        match self {
-            Self::Native => 0,
-            Self::Snp => 1,
-        }
-    }
-
-    pub fn from_u32(value: u32) -> Self {
+impl From<u32> for SvsmPlatformType {
+    fn from(value: u32) -> Self {
         match value {
             1 => Self::Snp,
             _ => Self::Native,
         }
+    }
+}
+
+impl From<SvsmPlatformType> for u32 {
+    fn from(p: SvsmPlatformType) -> u32 {
+        p as u32
     }
 }
