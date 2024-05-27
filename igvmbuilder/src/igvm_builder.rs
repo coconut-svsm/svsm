@@ -347,6 +347,7 @@ impl IgvmBuilder {
                 self.gpa_map.vmsa.get_start(),
                 param_block.vtom,
                 SNP_COMPATIBILITY_MASK,
+                &self.options.sev_features,
             ));
         }
 

@@ -11,6 +11,7 @@ use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
 use zerocopy::FromZeroes;
 
+use crate::cmd_options::SevExtraFeatures;
 use crate::stage2_stack::Stage2Stack;
 
 pub fn construct_start_context() -> Box<IgvmNativeVpContextX64> {
@@ -49,6 +50,7 @@ pub fn construct_vmsa(
     gpa_start: u64,
     vtom: u64,
     compatibility_mask: u32,
+    extra_features: &Vec<SevExtraFeatures>,
 ) -> IgvmDirectiveHeader {
     let mut vmsa_box = SevVmsa::new_box_zeroed();
     let vmsa = vmsa_box.as_mut();
@@ -115,6 +117,17 @@ pub fn construct_vmsa(
         vmsa.virtual_tom = vtom;
         features.set_vtom(true);
     }
+
+    for extra_f in extra_features {
+        match extra_f {
+            SevExtraFeatures::ReflectVc => features.set_reflect_vc(true),
+            SevExtraFeatures::AlternateInjection => features.set_alternate_injection(true),
+            SevExtraFeatures::DebugSwap => features.set_debug_swap(true),
+            SevExtraFeatures::PreventHostIBS => features.set_prevent_host_ibs(true),
+            SevExtraFeatures::SNPBTBIsolation => features.set_snp_btb_isolation(true),
+        }
+    }
+
     vmsa.sev_features = features;
 
     IgvmDirectiveHeader::SnpVpContext {
