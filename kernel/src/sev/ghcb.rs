@@ -384,28 +384,24 @@ impl GHCB {
         Ok(())
     }
 
-    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
+    fn write_buffer<T>(&mut self, data: &T, offset: usize) -> Result<(), GhcbError>
     where
-        T: Sized,
+        T: Copy,
     {
-        let size: isize = mem::size_of::<T>() as isize;
+        offset
+            .checked_add(mem::size_of::<T>())
+            .filter(|end| *end <= GHCB_BUFFER_SIZE)
+            .ok_or(GhcbError::InvalidOffset)?;
 
-        if offset < 0 || offset + size > (GHCB_BUFFER_SIZE as isize) {
+        // SAFETY: we have verified that the offset is within bounds and does
+        // not overflow
+        let dst = unsafe { self.buffer.as_mut_ptr().add(offset) };
+        if dst.align_offset(mem::align_of::<T>()) != 0 {
             return Err(GhcbError::InvalidOffset);
         }
 
-        unsafe {
-            let dst = self
-                .buffer
-                .as_mut_ptr()
-                .cast::<u8>()
-                .offset(offset)
-                .cast::<T>();
-            let src = data as *const T;
-
-            ptr::copy_nonoverlapping(src, dst, 1);
-        }
-
+        // SAFETY: we have verified the pointer is aligned and within bounds.
+        unsafe { dst.cast::<T>().copy_from_nonoverlapping(data, 1) }
         Ok(())
     }
 
@@ -458,7 +454,7 @@ impl GHCB {
             };
             let pgsize = usize::from(size);
             let entry = self.psc_entry(paddr, op_mask, 0, size);
-            let offset: isize = (entries as isize) * 8 + 8;
+            let offset = usize::from(entries) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
             paddr = paddr + pgsize;
