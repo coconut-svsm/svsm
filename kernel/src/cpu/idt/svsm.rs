@@ -15,7 +15,7 @@ use super::common::{
     DF_VECTOR, GP_VECTOR, HV_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR,
     OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
-use crate::address::VirtAddr;
+use crate::address::{Address, VirtAddr};
 use crate::cpu::percpu::this_cpu_unsafe;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -109,7 +109,7 @@ pub fn idt_init() {
     // that uses the value is not type safe in any case, so enforcing type
     // safety on the pointer would offer no meaningful value.
     unsafe {
-        HV_DOORBELL_ADDR = (*this_cpu_unsafe()).hv_doorbell_addr();
+        HV_DOORBELL_ADDR = (*this_cpu_unsafe()).hv_doorbell_percpu_addr().bits();
     };
 }
 

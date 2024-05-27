@@ -12,10 +12,9 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
-use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
@@ -25,10 +24,10 @@ use crate::mm::{
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::SvsmPlatform;
-use crate::sev::ghcb::GHCB;
-use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::ghcb::{GhcbPage, GHCB};
+use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
-use crate::sev::vmsa::allocate_new_vmsa;
+use crate::sev::vmsa::VmsaPage;
 use crate::sev::RMPFlags;
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
@@ -93,31 +92,6 @@ impl PerCpuAreas {
         ptr.iter()
             .find(|info| info.apic_id == apic_id)
             .map(|info| info.cpu_shared)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct VmsaRef {
-    pub vaddr: VirtAddr,
-    pub paddr: PhysAddr,
-    pub guest_owned: bool,
-}
-
-impl VmsaRef {
-    const fn new(v: VirtAddr, p: PhysAddr, g: bool) -> Self {
-        VmsaRef {
-            vaddr: v,
-            paddr: p,
-            guest_owned: g,
-        }
-    }
-
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn vmsa(&mut self) -> &mut VMSA {
-        let ptr = self.vaddr.as_mut_ptr::<VMSA>();
-        // SAFETY: this function takes &mut self, so only one mutable
-        // reference to the underlying VMSA can exist.
-        unsafe { ptr.as_mut().unwrap() }
     }
 }
 
@@ -254,8 +228,8 @@ impl PerCpuShared {
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: RefCell<PerCpu>,
-    ghcb: *mut GHCB,
-    hv_doorbell: *mut HVDoorbell,
+    ghcb: Option<GhcbPage>,
+    hv_doorbell: Option<HVDoorbellPage>,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
 
@@ -265,12 +239,12 @@ pub struct PerCpuUnsafe {
 }
 
 impl PerCpuUnsafe {
-    pub fn new(apic_id: u32, cpu_unsafe_ptr: *const PerCpuUnsafe) -> Self {
+    pub fn new(apic_id: u32, cpu_unsafe_ptr: *mut PerCpuUnsafe) -> Self {
         Self {
             private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
             shared: PerCpuShared::new(),
-            ghcb: ptr::null_mut(),
-            hv_doorbell: ptr::null_mut(),
+            ghcb: None,
+            hv_doorbell: None,
             init_stack: None,
             ist: IstStacks::new(),
             current_stack: MemoryRegion::new(VirtAddr::null(), 0),
@@ -309,25 +283,26 @@ impl PerCpuUnsafe {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        self.ghcb = ghcb_page.as_mut_ptr();
+        self.ghcb = Some(GhcbPage::new()?);
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&self) -> *mut GHCB {
+    pub fn ghcb_unsafe(&self) -> *const GHCB {
         self.ghcb
+            .as_ref()
+            .map(|g| g.as_ptr())
+            .unwrap_or(ptr::null())
     }
 
-    pub fn hv_doorbell_unsafe(&self) -> *mut HVDoorbell {
+    pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+        self.hv_doorbell.as_deref()
+    }
+
+    pub fn hv_doorbell_percpu_addr(&self) -> VirtAddr {
         self.hv_doorbell
-    }
-
-    pub fn hv_doorbell_addr(&self) -> usize {
-        ptr::addr_of!(self.hv_doorbell) as usize
+            .as_ref()
+            .map(|hv| ptr::from_ref(hv).into())
+            .unwrap_or(VirtAddr::null())
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -345,11 +320,11 @@ impl PerCpuUnsafe {
 
 #[derive(Debug)]
 pub struct PerCpu {
-    cpu_unsafe: *const PerCpuUnsafe,
+    cpu_unsafe: *mut PerCpuUnsafe,
     apic_id: u32,
     pgtbl: SpinLock<PageTableRef>,
     tss: X86Tss,
-    svsm_vmsa: Option<VmsaRef>,
+    svsm_vmsa: Option<VmsaPage>,
     reset_ip: u64,
 
     /// PerCpu Virtual Memory Range
@@ -368,7 +343,7 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
-    fn new(apic_id: u32, cpu_unsafe: *const PerCpuUnsafe) -> Self {
+    fn new(apic_id: u32, cpu_unsafe: *mut PerCpuUnsafe) -> Self {
         PerCpu {
             cpu_unsafe,
             apic_id,
@@ -396,8 +371,7 @@ impl PerCpu {
     }
 
     fn shared(&self) -> &'static PerCpuShared {
-        let cpu_unsafe = unsafe { &*self.cpu_unsafe };
-        cpu_unsafe.shared()
+        unsafe { (*self.cpu_unsafe).shared() }
     }
 
     pub const fn get_apic_id(&self) -> u32 {
@@ -430,8 +404,7 @@ impl PerCpu {
     fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
         let init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
         unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).init_stack = init_stack;
+            (*self.cpu_unsafe).init_stack = init_stack;
         }
         Ok(())
     }
@@ -439,8 +412,7 @@ impl PerCpu {
     fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
         let double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
         unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).ist.double_fault_stack = double_fault_stack;
+            (*self.cpu_unsafe).ist.double_fault_stack = double_fault_stack;
         }
         Ok(())
     }
@@ -450,11 +422,7 @@ impl PerCpu {
     }
 
     pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            let cpu_unsafe_mut = &mut *cpu_unsafe_mut_ptr;
-            cpu_unsafe_mut.setup_ghcb()
-        }
+        unsafe { (*self.cpu_unsafe).setup_ghcb() }
     }
 
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
@@ -464,30 +432,22 @@ impl PerCpu {
         }
     }
 
-    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let paddr = allocate_zeroed_page()?;
-        let ghcb = &mut current_ghcb();
-        if let Err(e) = HVDoorbell::init(paddr, ghcb) {
-            free_page(paddr);
-            return Err(e);
-        }
-
+    pub fn setup_hv_doorbell(&mut self) -> Result<(), SvsmError> {
+        let ghcb = current_ghcb();
+        let page = HVDoorbellPage::new(ghcb)?;
         unsafe {
-            let cpu_unsafe = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe).hv_doorbell = paddr.as_mut_ptr::<HVDoorbell>();
+            (*self.cpu_unsafe).hv_doorbell = Some(page);
         }
-
         Ok(())
     }
 
-    pub fn configure_hv_doorbell(&self) -> Result<(), SvsmError> {
+    pub fn configure_hv_doorbell(&mut self) -> Result<(), SvsmError> {
         // #HV doorbell configuration is only required if this system will make
         // use of restricted injection.
         if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
-            self.setup_hv_doorbell()
-        } else {
-            Ok(())
+            self.setup_hv_doorbell()?;
         }
+        Ok(())
     }
 
     fn setup_tss(&mut self) {
@@ -607,33 +567,27 @@ impl PerCpu {
         self.reset_ip = reset_ip;
     }
 
-    pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
+    pub fn alloc_svsm_vmsa(&mut self) -> Result<&mut VmsaPage, SvsmError> {
         if self.svsm_vmsa.is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
-
-        self.svsm_vmsa = Some(VmsaRef::new(vaddr, paddr, false));
-
-        Ok(())
+        let vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        Ok(self.svsm_vmsa.insert(vmsa))
     }
 
-    pub fn get_svsm_vmsa(&mut self) -> &mut Option<VmsaRef> {
-        &mut self.svsm_vmsa
-    }
-
-    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
-        let mut vmsa = self.svsm_vmsa.unwrap();
-        let vmsa_ref = vmsa.vmsa();
-
-        vmsa_ref.tr = self.vmsa_tr_segment();
-        vmsa_ref.rip = start_rip;
+    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) -> Option<&mut VmsaPage> {
         let top_of_stack = unsafe { (*self.cpu_unsafe).get_top_of_stack() };
-        vmsa_ref.rsp = top_of_stack.into();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
+        let tr = self.vmsa_tr_segment();
+        let cr3 = self.get_pgtable().cr3_value();
+
+        let vmsa = self.svsm_vmsa.as_mut()?;
+        vmsa.tr = tr;
+        vmsa.rip = start_rip;
+        vmsa.rsp = top_of_stack.into();
+        vmsa.cr3 = cr3.into();
+        Some(vmsa)
     }
 
     pub fn unmap_guest_vmsa(&self) {
@@ -656,11 +610,13 @@ impl PerCpu {
     }
 
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
+        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let paddr = vmsa.paddr();
+        init_guest_vmsa(&mut vmsa, self.reset_ip);
 
-        let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip);
+        // Ensure the new VMSA does not get freed when we leave this
+        // function.
+        let _ = VmsaPage::leak(vmsa);
 
         self.shared().update_guest_vmsa(paddr);
 
@@ -736,8 +692,7 @@ impl PerCpu {
     pub fn schedule_init(&mut self) -> TaskPointer {
         let task = self.runqueue.lock_write().schedule_init();
         unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).current_stack = task.stack_bounds();
+            (*self.cpu_unsafe).current_stack = task.stack_bounds();
         }
         task
     }
@@ -746,8 +701,7 @@ impl PerCpu {
         let ret = self.runqueue.lock_write().schedule_prepare();
         if let Some((_, ref next)) = ret {
             unsafe {
-                let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-                (*cpu_unsafe_mut_ptr).current_stack = next.stack_bounds();
+                (*self.cpu_unsafe).current_stack = next.stack_bounds();
             }
         };
         ret

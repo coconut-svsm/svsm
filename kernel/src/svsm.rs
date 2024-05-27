@@ -397,7 +397,7 @@ pub extern "C" fn svsm_main() {
 
     init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
 
-    this_cpu()
+    this_cpu_mut()
         .configure_hv_doorbell()
         .expect("Failed to configure #HV doorbell");
 

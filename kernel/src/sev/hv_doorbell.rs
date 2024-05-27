@@ -1,16 +1,53 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0 Copyright (c) Microsoft Corporation
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::VirtAddr;
+use crate::cpu::ghcb::GHCBRef;
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu_unsafe;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
+use crate::mm::pagebox::PageBox;
 use crate::mm::virt_to_phys;
-use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
+use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, Ordering};
+
+#[derive(Debug)]
+pub struct HVDoorbellPage(PageBox<HVDoorbell>);
+
+impl HVDoorbellPage {
+    pub fn new(ghcb: GHCBRef) -> Result<Self, SvsmError> {
+        let page = PageBox::try_new_zeroed()?;
+        let vaddr = page.as_raw().vaddr();
+        let paddr = virt_to_phys(vaddr);
+
+        // The #HV doorbell page must be private before it can be used.
+        make_page_shared(vaddr)?;
+        // SAFETY: a zeroed `HVDoorbell` is valid
+        let boxed = unsafe { Self(page.assume_init()) };
+
+        // Register the #HV doorbell page using the GHCB protocol.
+        ghcb.register_hv_doorbell(paddr)?;
+        Ok(boxed)
+    }
+}
+
+impl Deref for HVDoorbellPage {
+    type Target = HVDoorbell;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl Drop for HVDoorbellPage {
+    fn drop(&mut self) {
+        let vaddr = self.0.as_raw().vaddr();
+        make_page_private(vaddr).expect("Failed to restore HV doorbell page visibility");
+    }
+}
 
 #[bitfield(u8)]
 pub struct HVDoorbellFlags {
@@ -31,21 +68,6 @@ pub struct HVDoorbell {
 }
 
 impl HVDoorbell {
-    pub fn init(vaddr: VirtAddr, ghcb: &mut GHCB) -> Result<(), SvsmError> {
-        // The #HV doorbell page must be private before it can be used.
-        make_page_shared(vaddr)?;
-
-        // Register the #HV doorbell page using the GHCB protocol.
-        let paddr = virt_to_phys(vaddr);
-        ghcb.register_hv_doorbell(paddr).map_err(|e| {
-            // Return the page to a private state.
-            make_page_private(vaddr).expect("Failed to restore page visibility");
-            e
-        })?;
-
-        Ok(())
-    }
-
     pub fn process_pending_events(&self) {
         // Clear the NoFurtherSignal bit before processing.  If any additional
         // signal comes in after processing has commenced, it may be missed by
@@ -105,14 +127,8 @@ impl HVDoorbell {
 }
 
 pub fn current_hv_doorbell() -> &'static HVDoorbell {
-    unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        let hv_doorbell_ptr = cpu_unsafe.hv_doorbell_unsafe();
-        if hv_doorbell_ptr.is_null() {
-            panic!("HV doorbell page dereferenced before allocating");
-        }
-        &*hv_doorbell_ptr
-    }
+    let hv_doorbell = unsafe { (*this_cpu_unsafe()).hv_doorbell() };
+    hv_doorbell.expect("HV doorbell page dereferenced before allocating")
 }
 
 /// # Safety
@@ -120,7 +136,7 @@ pub fn current_hv_doorbell() -> &'static HVDoorbell {
 /// called directly from assembly, and should not be invoked directly from
 /// Rust code.
 #[no_mangle]
-pub unsafe extern "C" fn process_hv_events(hv_doorbell: *mut HVDoorbell) {
+pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     unsafe {
         (*hv_doorbell).process_pending_events();
     }

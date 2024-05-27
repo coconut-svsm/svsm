@@ -6,7 +6,7 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut, this_cpu_shared, PerCpu};
+use crate::cpu::percpu::{this_cpu_mut, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
@@ -21,27 +21,28 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
     percpu
         .setup(platform)
         .expect("Failed to setup AP per-cpu area");
-    percpu
+    let vmsa = percpu
         .alloc_svsm_vmsa()
         .expect("Failed to allocate AP SVSM VMSA");
+    init_svsm_vmsa(vmsa, vtom);
 
-    let mut vmsa = percpu.get_svsm_vmsa().unwrap();
-    init_svsm_vmsa(vmsa.vmsa(), vtom);
-    percpu.prepare_svsm_vmsa(start_rip);
+    let vmsa = percpu
+        .prepare_svsm_vmsa(start_rip)
+        .expect("Per-CPU VMSA was not allocated");
+    let sev_features = vmsa.sev_features;
+    let vmsa_pa = vmsa.paddr();
+    vmsa.enable();
 
-    let sev_features = vmsa.vmsa().sev_features;
-    let vmsa_pa = vmsa.paddr;
-
-    let percpu_shared = unsafe { (*percpu.cpu_unsafe()).shared() };
+    let percpu_unsafe = percpu.cpu_unsafe();
 
     // Drop the reference to the target CPU so it does not observe a borrow
     // conflict when it starts running.
     drop(percpu);
 
-    vmsa.vmsa().enable();
     current_ghcb()
         .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
         .expect("Failed to launch secondary CPU");
+    let percpu_shared = unsafe { (*percpu_unsafe).shared() };
     loop {
         if percpu_shared.is_online() {
             break;
@@ -67,7 +68,7 @@ fn start_ap() {
         .expect("setup_on_cpu() failed");
 
     // Configure the #HV doorbell page as required.
-    this_cpu()
+    this_cpu_mut()
         .configure_hv_doorbell()
         .expect("configure_hv_doorbell() failed");
 

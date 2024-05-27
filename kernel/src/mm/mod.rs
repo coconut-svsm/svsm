@@ -10,6 +10,7 @@ pub mod guestmem;
 pub mod mappings;
 pub mod memory;
 pub mod page_visibility;
+pub mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
 pub mod stack;

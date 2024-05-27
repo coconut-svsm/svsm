@@ -7,31 +7,24 @@
 use crate::cpu::percpu::this_cpu_unsafe;
 use crate::sev::ghcb::GHCB;
 
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 
 #[derive(Debug)]
 pub struct GHCBRef {
-    ghcb: *mut GHCB,
+    ghcb: *const GHCB,
 }
 
 impl Deref for GHCBRef {
     type Target = GHCB;
-    fn deref(&self) -> &'static GHCB {
+    fn deref(&self) -> &GHCB {
         unsafe { &*self.ghcb }
-    }
-}
-
-impl DerefMut for GHCBRef {
-    fn deref_mut(&mut self) -> &'static mut GHCB {
-        unsafe { &mut *self.ghcb }
     }
 }
 
 pub fn current_ghcb() -> GHCBRef {
     // FIXME - Add borrow checking to GHCB references.
     unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        let ghcb = cpu_unsafe.ghcb_unsafe();
+        let ghcb = (*this_cpu_unsafe()).ghcb_unsafe();
         GHCBRef { ghcb }
     }
 }
