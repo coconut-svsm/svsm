@@ -221,4 +221,18 @@ where
     pub fn contains_region(&self, other: &Self) -> bool {
         self.start() <= other.start() && other.end() <= self.end()
     }
+
+    /// Returns a new memory region with the specified added length at the end.
+    ///
+    /// ```
+    /// # use svsm::address::VirtAddr;
+    /// # use svsm::types::PAGE_SIZE;
+    /// # use svsm::utils::MemoryRegion;
+    /// let region = MemoryRegion::new(VirtAddr::from(0xffffff1000u64), PAGE_SIZE);
+    /// let bigger = region.expand(PAGE_SIZE);
+    /// assert_eq!(bigger.len(), PAGE_SIZE * 2);
+    /// ```
+    pub fn expand(&self, len: usize) -> Self {
+        Self::new(self.start(), self.len() + len)
+    }
 }

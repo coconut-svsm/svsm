@@ -26,10 +26,13 @@ use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
 use crate::task::TaskError;
+use elf::ElfError;
 
 /// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
+    /// Errors during ELF parsing and loading.
+    Elf(ElfError),
     /// Errors related to GHCB
     Ghcb(GhcbError),
     /// Errors related to MSR protocol
@@ -64,4 +67,10 @@ pub enum SvsmError {
     Task(TaskError),
     /// Errors from #VC handler
     Vc(VcError),
+}
+
+impl From<ElfError> for SvsmError {
+    fn from(err: ElfError) -> Self {
+        Self::Elf(err)
+    }
 }
