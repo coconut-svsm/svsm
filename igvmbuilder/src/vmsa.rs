@@ -115,7 +115,6 @@ pub fn construct_vmsa(
         vmsa.virtual_tom = vtom;
         features.set_vtom(true);
     }
-    features.set_debug_swap(true);
     vmsa.sev_features = features;
 
     IgvmDirectiveHeader::SnpVpContext {
