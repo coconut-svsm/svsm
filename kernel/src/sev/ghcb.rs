@@ -23,6 +23,7 @@ use crate::types::{PageSize, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
 use core::arch::global_asm;
+use core::cell::Cell;
 use core::mem::{self, offset_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
@@ -56,7 +57,7 @@ macro_rules! ghcb_getter {
         #[allow(unused)]
         fn $name(&self) -> Result<$t, GhcbError> {
             self.is_valid(offset_of!(Self, $field))
-                .then_some(self.$field)
+                .then(|| self.$field.get())
                 .ok_or(GhcbError::VmgexitInvalid)
         }
     };
@@ -65,8 +66,8 @@ macro_rules! ghcb_getter {
 macro_rules! ghcb_setter {
     ($name:ident, $field:ident, $t:ty) => {
         #[allow(unused)]
-        fn $name(&mut self, val: $t) {
-            self.$field = val;
+        fn $name(&self, val: $t) {
+            self.$field.set(val);
             self.set_valid(offset_of!(Self, $field));
         }
     };
@@ -140,8 +141,8 @@ impl GhcbPage {
     }
 
     #[inline]
-    pub fn as_mut_ptr(&mut self) -> *mut GHCB {
-        ptr::from_mut(&mut self.0)
+    pub fn as_ptr(&self) -> *const GHCB {
+        ptr::from_ref(&self.0)
     }
 }
 
@@ -150,6 +151,24 @@ impl Drop for GhcbPage {
         self.deref_mut()
             .shutdown()
             .expect("Failed to shut down GHCB");
+    }
+}
+
+pub trait Nestable {
+    type Snapshot;
+    fn snapshot(&self) -> Self::Snapshot;
+    fn restore(&self, val: Self::Snapshot);
+}
+
+impl Nestable for GhcbPage {
+    type Snapshot = GHCB;
+
+    fn snapshot(&self) -> GHCB {
+        self.0.deref().clone()
+    }
+
+    fn restore(&self, val: Self::Snapshot) {
+        self.deref().restore(val)
     }
 }
 
@@ -166,36 +185,36 @@ impl DerefMut for GhcbPage {
     }
 }
 
-#[repr(C, packed)]
-#[derive(Debug)]
+#[repr(C)]
+#[derive(Debug, Clone)]
 pub struct GHCB {
-    reserved_1: [u8; 0xcb],
-    cpl: u8,
-    reserved_2: [u8; 0x74],
-    xss: u64,
-    reserved_3: [u8; 0x18],
-    dr7: u64,
-    reserved_4: [u8; 0x90],
-    rax: u64,
-    reserved_5: [u8; 0x100],
-    reserved_6: u64,
-    rcx: u64,
-    rdx: u64,
-    rbx: u64,
-    reserved_7: [u8; 0x70],
-    sw_exit_code: u64,
-    sw_exit_info_1: u64,
-    sw_exit_info_2: u64,
-    sw_scratch: u64,
-    reserved_8: [u8; 0x38],
-    xcr0: u64,
-    valid_bitmap: [u64; 2],
-    x87_state_gpa: u64,
-    reserved_9: [u8; 0x3f8],
-    buffer: [u8; GHCB_BUFFER_SIZE],
-    reserved_10: [u8; 0xa],
-    version: u16,
-    usage: u32,
+    reserved_1: Cell<[u8; 0xcb]>,
+    cpl: Cell<u8>,
+    reserved_2: Cell<[u8; 0x74]>,
+    xss: Cell<u64>,
+    reserved_3: Cell<[u8; 0x18]>,
+    dr7: Cell<u64>,
+    reserved_4: Cell<[u8; 0x90]>,
+    rax: Cell<u64>,
+    reserved_5: Cell<[u8; 0x100]>,
+    reserved_6: Cell<u64>,
+    rcx: Cell<u64>,
+    rdx: Cell<u64>,
+    rbx: Cell<u64>,
+    reserved_7: Cell<[u8; 0x70]>,
+    sw_exit_code: Cell<u64>,
+    sw_exit_info_1: Cell<u64>,
+    sw_exit_info_2: Cell<u64>,
+    sw_scratch: Cell<u64>,
+    reserved_8: Cell<[u8; 0x38]>,
+    xcr0: Cell<u64>,
+    valid_bitmap: Cell<[u64; 2]>,
+    x87_state_gpa: Cell<u64>,
+    reserved_9: Cell<[u8; 0x3f8]>,
+    buffer: Cell<[u8; GHCB_BUFFER_SIZE]>,
+    reserved_10: Cell<[u8; 0xa]>,
+    version: Cell<u16>,
+    usage: Cell<u32>,
 }
 
 impl GHCB {
@@ -244,7 +263,49 @@ impl GHCB {
     ghcb_getter!(get_usage_valid, usage, u32);
     ghcb_setter!(set_usage_valid, usage, u32);
 
-    pub fn rdtscp_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+    #[inline]
+    #[cfg(test)]
+    pub fn fill(&self, byte: u8) {
+        let mut other = mem::MaybeUninit::<Self>::uninit();
+        let other = unsafe {
+            other.as_mut_ptr().write_bytes(byte, 1);
+            other.assume_init()
+        };
+        self.restore(other);
+    }
+
+    #[inline]
+    fn restore(&self, other: Self) {
+        self.reserved_1.set(other.reserved_1.get());
+        self.cpl.set(other.cpl.get());
+        self.reserved_2.set(other.reserved_2.get());
+        self.xss.set(other.xss.get());
+        self.reserved_3.set(other.reserved_3.get());
+        self.dr7.set(other.dr7.get());
+        self.reserved_4.set(other.reserved_4.get());
+        self.rax.set(other.rax.get());
+        self.reserved_5.set(other.reserved_5.get());
+        self.reserved_6.set(other.reserved_6.get());
+        self.rcx.set(other.rcx.get());
+        self.rdx.set(other.rdx.get());
+        self.rbx.set(other.rbx.get());
+        self.reserved_7.set(other.reserved_7.get());
+        self.sw_exit_code.set(other.sw_exit_code.get());
+        self.sw_exit_info_1.set(other.sw_exit_info_1.get());
+        self.sw_exit_info_2.set(other.sw_exit_info_2.get());
+        self.sw_scratch.set(other.sw_scratch.get());
+        self.reserved_8.set(other.reserved_8.get());
+        self.xcr0.set(other.xcr0.get());
+        self.valid_bitmap.set(other.valid_bitmap.get());
+        self.x87_state_gpa.set(other.x87_state_gpa.get());
+        self.reserved_9.set(other.reserved_9.get());
+        self.buffer.set(other.buffer.get());
+        self.reserved_10.set(other.reserved_10.get());
+        self.version.set(other.version.get());
+        self.usage.set(other.usage.get());
+    }
+
+    pub fn rdtscp_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
         self.vmgexit(GHCBExitCode::RDTSCP, 0, 0)?;
         let rax = self.get_rax_valid()?;
@@ -256,7 +317,7 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn rdtsc_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+    pub fn rdtsc_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
         self.vmgexit(GHCBExitCode::RDTSC, 0, 0)?;
         let rax = self.get_rax_valid()?;
@@ -266,15 +327,15 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn wrmsr(&mut self, msr_index: u32, value: u64) -> Result<(), SvsmError> {
+    pub fn wrmsr(&self, msr_index: u32, value: u64) -> Result<(), SvsmError> {
         self.wrmsr_raw(msr_index as u64, value & 0xFFFF_FFFF, value >> 32)
     }
 
-    pub fn wrmsr_regs(&mut self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
+    pub fn wrmsr_regs(&self, regs: &X86GeneralRegs) -> Result<(), SvsmError> {
         self.wrmsr_raw(regs.rcx as u64, regs.rax as u64, regs.rdx as u64)
     }
 
-    pub fn wrmsr_raw(&mut self, rcx: u64, rax: u64, rdx: u64) -> Result<(), SvsmError> {
+    pub fn wrmsr_raw(&self, rcx: u64, rax: u64, rdx: u64) -> Result<(), SvsmError> {
         self.clear();
 
         self.set_rcx_valid(rcx);
@@ -285,7 +346,7 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn rdmsr_regs(&mut self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+    pub fn rdmsr_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
 
         self.set_rcx_valid(regs.rcx as u64);
@@ -306,8 +367,8 @@ impl GHCB {
         Ok(register_ghcb_gpa_msr(paddr)?)
     }
 
-    pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(ptr::from_mut(self));
+    pub fn shutdown(&self) -> Result<(), SvsmError> {
+        let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
@@ -331,9 +392,9 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn clear(&mut self) {
+    pub fn clear(&self) {
         // Clear valid bitmap
-        self.valid_bitmap = [0, 0];
+        self.valid_bitmap.set([0, 0]);
 
         // Mark valid_bitmap valid
         let off = offset_of!(Self, valid_bitmap);
@@ -341,12 +402,14 @@ impl GHCB {
         self.set_valid(off + mem::size_of::<u64>());
     }
 
-    fn set_valid(&mut self, offset: usize) {
+    fn set_valid(&self, offset: usize) {
         let bit: usize = (offset >> 3) & 0x3f;
         let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
-        self.valid_bitmap[index] |= mask;
+        let mut bitmap = self.valid_bitmap.get();
+        bitmap[index] |= mask;
+        self.valid_bitmap.set(bitmap);
     }
 
     fn is_valid(&self, offset: usize) -> bool {
@@ -354,15 +417,10 @@ impl GHCB {
         let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
-        (self.valid_bitmap[index] & mask) == mask
+        (self.valid_bitmap.get()[index] & mask) == mask
     }
 
-    fn vmgexit(
-        &mut self,
-        exit_code: u64,
-        exit_info_1: u64,
-        exit_info_2: u64,
-    ) -> Result<(), GhcbError> {
+    fn vmgexit(&self, exit_code: u64, exit_info_1: u64, exit_info_2: u64) -> Result<(), GhcbError> {
         // GHCB is version 2
         self.set_version_valid(2);
         // GHCB Follows standard format
@@ -378,13 +436,16 @@ impl GHCB {
 
         let sw_exit_info_1 = self.get_exit_info_1_valid()?;
         if sw_exit_info_1 != 0 {
-            return Err(GhcbError::VmgexitError(sw_exit_info_1, self.sw_exit_info_2));
+            return Err(GhcbError::VmgexitError(
+                sw_exit_info_1,
+                self.sw_exit_info_2.get(),
+            ));
         }
 
         Ok(())
     }
 
-    pub fn ioio_in(&mut self, port: u16, size: GHCBIOSize) -> Result<u64, SvsmError> {
+    pub fn ioio_in(&self, port: u16, size: GHCBIOSize) -> Result<u64, SvsmError> {
         self.clear();
 
         let mut info: u64 = 1; // IN instruction
@@ -402,7 +463,7 @@ impl GHCB {
         Ok(rax)
     }
 
-    pub fn ioio_out(&mut self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), SvsmError> {
+    pub fn ioio_out(&self, port: u16, size: GHCBIOSize, value: u64) -> Result<(), SvsmError> {
         self.clear();
 
         let mut info: u64 = 0; // OUT instruction
@@ -420,7 +481,7 @@ impl GHCB {
         Ok(())
     }
 
-    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
+    fn write_buffer<T>(&self, data: &T, offset: isize) -> Result<(), GhcbError>
     where
         T: Sized,
     {
@@ -431,12 +492,7 @@ impl GHCB {
         }
 
         unsafe {
-            let dst = self
-                .buffer
-                .as_mut_ptr()
-                .cast::<u8>()
-                .offset(offset)
-                .cast::<T>();
+            let dst = self.buffer.as_ptr().cast::<u8>().offset(offset).cast::<T>();
             let src = data as *const T;
 
             ptr::copy_nonoverlapping(src, dst, 1);
@@ -464,7 +520,7 @@ impl GHCB {
     }
 
     pub fn page_state_change(
-        &mut self,
+        &self,
         region: MemoryRegion<PhysAddr>,
         size: PageSize,
         op: PageStateChangeOp,
@@ -536,7 +592,7 @@ impl GHCB {
     }
 
     pub fn ap_create(
-        &mut self,
+        &self,
         vmsa_gpa: PhysAddr,
         apic_id: u64,
         vmpl: u64,
@@ -551,7 +607,7 @@ impl GHCB {
     }
 
     pub fn register_guest_vmsa(
-        &mut self,
+        &self,
         vmsa_gpa: PhysAddr,
         apic_id: u64,
         vmpl: u64,
@@ -565,17 +621,13 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn register_hv_doorbell(&mut self, paddr: PhysAddr) -> Result<(), SvsmError> {
+    pub fn register_hv_doorbell(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.clear();
         self.vmgexit(GHCBExitCode::HV_DOORBELL, 1, u64::from(paddr))?;
         Ok(())
     }
 
-    pub fn guest_request(
-        &mut self,
-        req_page: VirtAddr,
-        resp_page: VirtAddr,
-    ) -> Result<(), SvsmError> {
+    pub fn guest_request(&self, req_page: VirtAddr, resp_page: VirtAddr) -> Result<(), SvsmError> {
         self.clear();
 
         let info1: u64 = u64::from(virt_to_phys(req_page));
@@ -585,14 +637,14 @@ impl GHCB {
 
         let sw_exit_info_2 = self.get_exit_info_2_valid()?;
         if sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.sw_exit_info_1, sw_exit_info_2).into());
+            return Err(GhcbError::VmgexitError(self.sw_exit_info_1.get(), sw_exit_info_2).into());
         }
 
         Ok(())
     }
 
     pub fn guest_ext_request(
-        &mut self,
+        &self,
         req_page: VirtAddr,
         resp_page: VirtAddr,
         data_pages: VirtAddr,
@@ -615,7 +667,7 @@ impl GHCB {
         // For an extended request, if the buffer provided is too small, the hypervisor
         // will return in RBX the number of contiguous pages required
         if sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.rbx, sw_exit_info_2).into());
+            return Err(GhcbError::VmgexitError(self.rbx.get(), sw_exit_info_2).into());
         }
 
         Ok(())

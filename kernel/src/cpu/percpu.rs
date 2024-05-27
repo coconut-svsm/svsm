@@ -287,11 +287,11 @@ impl PerCpuUnsafe {
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&mut self) -> *mut GHCB {
+    pub fn ghcb_unsafe(&self) -> *const GHCB {
         self.ghcb
-            .as_mut()
-            .map(|g| g.as_mut_ptr())
-            .unwrap_or(ptr::null_mut())
+            .as_ref()
+            .map(|g| g.as_ptr())
+            .unwrap_or(ptr::null())
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
@@ -433,7 +433,7 @@ impl PerCpu {
     }
 
     pub fn setup_hv_doorbell(&mut self) -> Result<(), SvsmError> {
-        let ghcb = &mut current_ghcb();
+        let ghcb = current_ghcb();
         let page = HVDoorbellPage::new(ghcb)?;
         unsafe {
             (*self.cpu_unsafe).hv_doorbell = Some(page);

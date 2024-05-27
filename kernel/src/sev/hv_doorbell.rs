@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0 Copyright (c) Microsoft Corporation
 // Author: Jon Lange (jlange@microsoft.com)
 
+use crate::cpu::ghcb::GHCBRef;
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu_unsafe;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::pagebox::PageBox;
 use crate::mm::virt_to_phys;
-use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
 use core::ops::Deref;
@@ -17,7 +17,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 pub struct HVDoorbellPage(PageBox<HVDoorbell>);
 
 impl HVDoorbellPage {
-    pub fn new(ghcb: &mut GHCB) -> Result<Self, SvsmError> {
+    pub fn new(ghcb: GHCBRef) -> Result<Self, SvsmError> {
         let page = PageBox::try_new_zeroed()?;
         let vaddr = page.as_raw().vaddr();
         let paddr = virt_to_phys(vaddr);
