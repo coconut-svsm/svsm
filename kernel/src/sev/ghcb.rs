@@ -386,7 +386,7 @@ impl GHCB {
 
     fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
     where
-        T: Sized,
+        T: Sized + Copy,
     {
         let size: isize = mem::size_of::<T>() as isize;
 
@@ -401,9 +401,7 @@ impl GHCB {
                 .cast::<u8>()
                 .offset(offset)
                 .cast::<T>();
-            let src = data as *const T;
-
-            ptr::copy_nonoverlapping(src, dst, 1);
+            dst.write_volatile(*data);
         }
 
         Ok(())
