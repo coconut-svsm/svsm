@@ -446,13 +446,13 @@ impl GHCB {
 
         // SAFETY: we have verified that the offset is within bounds and does
         // not overflow
-        let dst = unsafe { self.buffer.as_ptr().cast::<u8>().add(offset) };
+        let dst = unsafe { self.buffer.as_ptr().cast::<u8>().add(offset).cast::<T>() };
         if dst.align_offset(mem::align_of::<T>()) != 0 {
             return Err(GhcbError::InvalidOffset);
         }
 
-        // SAFETY: we have verified the pointer is aligned and within bounds.
-        unsafe { dst.cast::<T>().copy_from_nonoverlapping(data, 1) }
+        unsafe { dst.write_volatile(*data) };
+
         Ok(())
     }
 
