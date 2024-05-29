@@ -120,7 +120,7 @@ pub fn current_hv_doorbell() -> &'static HVDoorbell {
 /// called directly from assembly, and should not be invoked directly from
 /// Rust code.
 #[no_mangle]
-pub unsafe extern "C" fn process_hv_events(hv_doorbell: *mut HVDoorbell) {
+pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     unsafe {
         (*hv_doorbell).process_pending_events();
     }

@@ -642,7 +642,7 @@ impl GHCB {
 }
 
 extern "C" {
-    pub fn switch_to_vmpl_unsafe(hv_doorbell: *mut HVDoorbell, vmpl: u32) -> bool;
+    pub fn switch_to_vmpl_unsafe(hv_doorbell: *const HVDoorbell, vmpl: u32) -> bool;
 }
 
 pub fn switch_to_vmpl(vmpl: u32) {

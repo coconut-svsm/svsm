@@ -255,7 +255,7 @@ pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: RefCell<PerCpu>,
     ghcb: *const GHCB,
-    hv_doorbell: *mut HVDoorbell,
+    hv_doorbell: *const HVDoorbell,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
 
@@ -270,7 +270,7 @@ impl PerCpuUnsafe {
             private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
             shared: PerCpuShared::new(),
             ghcb: ptr::null(),
-            hv_doorbell: ptr::null_mut(),
+            hv_doorbell: ptr::null(),
             init_stack: None,
             ist: IstStacks::new(),
             current_stack: MemoryRegion::new(VirtAddr::null(), 0),
@@ -322,7 +322,7 @@ impl PerCpuUnsafe {
         self.ghcb
     }
 
-    pub fn hv_doorbell_unsafe(&self) -> *mut HVDoorbell {
+    pub fn hv_doorbell_unsafe(&self) -> *const HVDoorbell {
         self.hv_doorbell
     }
 
