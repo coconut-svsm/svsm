@@ -369,6 +369,8 @@ partitioning support.
 
 ### [TdxParaV] TDX Paravisor Support
 
+* Owner: Chuanxiao Dong ([@cxdong](https://www.github.com/cxdong)).
+
 Depends on: **ParaV**, **UsrMode.VmmIf**
 
 Implement support for running un-enlightened guest operating systems in an
