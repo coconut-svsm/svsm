@@ -254,7 +254,7 @@ impl PerCpuShared {
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: RefCell<PerCpu>,
-    ghcb: *mut GHCB,
+    ghcb: *const GHCB,
     hv_doorbell: *mut HVDoorbell,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
@@ -269,7 +269,7 @@ impl PerCpuUnsafe {
         Self {
             private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
             shared: PerCpuShared::new(),
-            ghcb: ptr::null_mut(),
+            ghcb: ptr::null(),
             hv_doorbell: ptr::null_mut(),
             init_stack: None,
             ist: IstStacks::new(),
@@ -314,11 +314,11 @@ impl PerCpuUnsafe {
             free_page(ghcb_page);
             return Err(e);
         };
-        self.ghcb = ghcb_page.as_mut_ptr();
+        self.ghcb = ghcb_page.as_ptr();
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&self) -> *mut GHCB {
+    pub fn ghcb_unsafe(&self) -> *const GHCB {
         self.ghcb
     }
 
@@ -466,7 +466,7 @@ impl PerCpu {
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let paddr = allocate_zeroed_page()?;
-        let ghcb = &mut current_ghcb();
+        let ghcb = current_ghcb();
         if let Err(e) = HVDoorbell::init(paddr, ghcb) {
             free_page(paddr);
             return Err(e);
