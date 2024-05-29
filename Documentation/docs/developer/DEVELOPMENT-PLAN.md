@@ -393,6 +393,8 @@ states.
 
 ### [InstrDec] X86 Instruction Decoder
 
+* Owner: Chuanxiao Dong ([@cxdong](https://www.github.com/cxdong)).
+
 The SVSM needs an instruction decoder to handle events from the guest OS which
 were triggered by specific instructions. An incomplete lists of events:
 
