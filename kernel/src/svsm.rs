@@ -26,7 +26,7 @@ use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_shared, this_cpu_unsafe};
+use svsm::cpu::percpu::{this_cpu, this_cpu_shared};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
@@ -366,11 +366,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     boot_stack_info();
 
-    let bp = unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        cpu_unsafe.get_top_of_stack()
-    };
-
+    let bp = this_cpu().get_top_of_stack();
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
     SVSM_PLATFORM

@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::cpu::percpu::this_cpu_unsafe;
+use crate::cpu::percpu::this_cpu;
 use crate::sev::ghcb::GHCB;
 use core::ops::Deref;
 
@@ -21,10 +21,6 @@ impl Deref for GHCBRef {
 }
 
 pub fn current_ghcb() -> GHCBRef {
-    // FIXME - Add borrow checking to GHCB references.
-    unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        let ghcb = cpu_unsafe.ghcb_unsafe();
-        GHCBRef { ghcb }
-    }
+    let ghcb = this_cpu().ghcb_unsafe();
+    GHCBRef { ghcb }
 }

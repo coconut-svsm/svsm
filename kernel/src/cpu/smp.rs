@@ -31,7 +31,7 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
     let sev_features = vmsa.vmsa().sev_features;
     let vmsa_pa = vmsa.paddr;
 
-    let percpu_shared = unsafe { (*percpu.cpu_unsafe()).shared() };
+    let percpu_shared = percpu.shared();
 
     vmsa.vmsa().enable();
     current_ghcb()

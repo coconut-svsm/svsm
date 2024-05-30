@@ -6,7 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{write_msr, SEV_GHCB};
-use crate::cpu::percpu::this_cpu_unsafe;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::mm::pagetable::get_init_pgtable_locked;
@@ -649,10 +649,8 @@ pub fn switch_to_vmpl(vmpl: u32) {
     // The switch to a lower VMPL must be done with an assembly sequence in
     // order to ensure that any #HV that occurs during the sequence will
     // correctly block the VMPL switch so that events can be processed.
+    let hv_doorbell = this_cpu().hv_doorbell_unsafe();
     unsafe {
-        let cpu_unsafe = this_cpu_unsafe();
-        let hv_doorbell = (*cpu_unsafe).hv_doorbell_unsafe();
-
         // Process any pending #HV events before leaving the SVSM.  No event
         // can cancel the request to enter the guest VMPL, so proceed with
         // guest entry once events have been handled.

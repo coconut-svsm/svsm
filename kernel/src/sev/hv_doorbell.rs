@@ -4,7 +4,7 @@
 use crate::address::VirtAddr;
 use crate::cpu::ghcb::GHCBRef;
 use crate::cpu::idt::svsm::common_isr_handler;
-use crate::cpu::percpu::this_cpu_unsafe;
+use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::virt_to_phys;
@@ -105,14 +105,11 @@ impl HVDoorbell {
 }
 
 pub fn current_hv_doorbell() -> &'static HVDoorbell {
-    unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        let hv_doorbell_ptr = cpu_unsafe.hv_doorbell_unsafe();
-        if hv_doorbell_ptr.is_null() {
-            panic!("HV doorbell page dereferenced before allocating");
-        }
-        &*hv_doorbell_ptr
+    let hv_doorbell_ptr = this_cpu().hv_doorbell_unsafe();
+    if hv_doorbell_ptr.is_null() {
+        panic!("HV doorbell page dereferenced before allocating");
     }
+    unsafe { &*hv_doorbell_ptr }
 }
 
 /// # Safety
