@@ -250,6 +250,8 @@ impl PerCpuShared {
     }
 }
 
+const _: () = assert!(size_of::<PerCpuUnsafe>() + size_of::<PerCpu>() <= PAGE_SIZE);
+
 #[derive(Debug)]
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
@@ -265,8 +267,10 @@ pub struct PerCpuUnsafe {
 }
 
 impl PerCpuUnsafe {
-    pub fn new(apic_id: u32, cpu_unsafe_ptr: *const PerCpuUnsafe) -> Self {
+    fn new(apic_id: u32, cpu_unsafe_ptr: *const PerCpuUnsafe) -> Self {
         Self {
+            // Within each CPU state page, the first portion is the private
+            // mutable state and remainder is the shared state.
             private: PerCpu::new(apic_id, cpu_unsafe_ptr),
             shared: PerCpuShared::new(),
             ghcb: Cell::new(ptr::null()),
@@ -280,15 +284,7 @@ impl PerCpuUnsafe {
     pub fn alloc(apic_id: u32) -> Result<*const PerCpuUnsafe, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         unsafe {
-            // Within each CPU state page, the first portion is the private
-            // mutable state and remainder is the shared state.
-            let unsafe_size = size_of::<PerCpuUnsafe>();
-            let private_size = size_of::<PerCpu>();
-            if unsafe_size + private_size > PAGE_SIZE {
-                panic!("Per-CPU data is larger than one page!");
-            }
             let percpu_unsafe = vaddr.as_mut_ptr::<PerCpuUnsafe>();
-
             (*percpu_unsafe) = PerCpuUnsafe::new(apic_id, percpu_unsafe);
 
             PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &(*percpu_unsafe).shared));
