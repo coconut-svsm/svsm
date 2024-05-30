@@ -168,7 +168,7 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(cpu: &mut PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+    pub fn create(cpu: &PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -208,7 +208,7 @@ impl Task {
         }))
     }
 
-    pub fn create_user(cpu: &mut PerCpu, user_entry: usize) -> Result<TaskPointer, SvsmError> {
+    pub fn create_user(cpu: &PerCpu, user_entry: usize) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -326,7 +326,7 @@ impl Task {
     }
 
     fn allocate_ktask_stack(
-        cpu: &mut PerCpu,
+        cpu: &PerCpu,
         entry: extern "C" fn(),
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
@@ -351,7 +351,7 @@ impl Task {
     }
 
     fn allocate_utask_stack(
-        cpu: &mut PerCpu,
+        cpu: &PerCpu,
         user_entry: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;

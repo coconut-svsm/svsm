@@ -480,12 +480,12 @@ impl VMR {
 
 #[derive(Debug)]
 pub struct VMRMapping<'a> {
-    vmr: &'a mut VMR,
+    vmr: &'a VMR,
     va: VirtAddr,
 }
 
 impl<'a> VMRMapping<'a> {
-    pub fn new(vmr: &'a mut VMR, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+    pub fn new(vmr: &'a VMR, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
         let va = vmr.insert(mapping)?;
         Ok(Self { vmr, va })
     }

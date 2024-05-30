@@ -26,7 +26,7 @@ use svsm::cpu::gdt;
 use svsm::cpu::ghcb::current_ghcb;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_mut, this_cpu_shared, this_cpu_unsafe};
+use svsm::cpu::percpu::{this_cpu, this_cpu_shared, this_cpu_unsafe};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
@@ -172,7 +172,7 @@ fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
         this_cpu_shared().update_guest_caa(caa);
     }
 
-    this_cpu_mut().alloc_guest_vmsa()?;
+    this_cpu().alloc_guest_vmsa()?;
     update_mappings()?;
 
     Ok(())
@@ -334,7 +334,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     // brought up, thus it cannot be aliased and we can get a mutable
     // reference to it. We trust PerCpu::alloc() to return a valid and
     // aligned pointer.
-    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
+    let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup(platform)
@@ -348,8 +348,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     bsp_percpu
         .setup_idle_task(svsm_main)
         .expect("Failed to allocate idle task for BSP");
-
-    drop(bsp_percpu);
 
     idt_init();
 

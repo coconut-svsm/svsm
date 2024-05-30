@@ -6,7 +6,7 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut, this_cpu_shared, PerCpu};
+use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
@@ -16,16 +16,15 @@ use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
 fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
     let start_rip: u64 = (start_ap as *const u8) as u64;
-    let mut percpu = PerCpu::alloc(apic_id).expect("Failed to allocate AP per-cpu data");
+    let percpu = PerCpu::alloc(apic_id).expect("Failed to allocate AP per-cpu data");
 
     percpu
         .setup(platform)
         .expect("Failed to setup AP per-cpu area");
-    percpu
+    let mut vmsa = percpu
         .alloc_svsm_vmsa()
         .expect("Failed to allocate AP SVSM VMSA");
 
-    let mut vmsa = percpu.get_svsm_vmsa().unwrap();
     init_svsm_vmsa(vmsa.vmsa(), vtom);
     percpu.prepare_svsm_vmsa(start_rip);
 
@@ -33,10 +32,6 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
     let vmsa_pa = vmsa.paddr;
 
     let percpu_shared = unsafe { (*percpu.cpu_unsafe()).shared() };
-
-    // Drop the reference to the target CPU so it does not observe a borrow
-    // conflict when it starts running.
-    drop(percpu);
 
     vmsa.vmsa().enable();
     current_ghcb()
@@ -62,7 +57,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo], v
 
 #[no_mangle]
 fn start_ap() {
-    this_cpu_mut()
+    this_cpu()
         .setup_on_cpu(SVSM_PLATFORM.as_dyn_ref())
         .expect("setup_on_cpu() failed");
 
@@ -71,12 +66,12 @@ fn start_ap() {
         .configure_hv_doorbell()
         .expect("configure_hv_doorbell() failed");
 
-    this_cpu_mut()
+    this_cpu()
         .setup_idle_task(ap_request_loop)
         .expect("Failed to allocated idle task for AP");
 
     // Send a life-sign
-    log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());
+    log::info!("AP with APIC-ID {} is online", this_cpu().get_apic_id());
 
     // Set CPU online so that BSP can proceed
     this_cpu_shared().set_online();

@@ -48,16 +48,16 @@ pub trait SvsmPlatform {
     fn env_setup_late(&mut self);
 
     /// Completes initialization of a per-CPU object during construction.
-    fn setup_percpu(&self, cpu: &mut PerCpu) -> Result<(), SvsmError>;
+    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
     /// Completes initialization of a per-CPU object on the target CPU.
-    fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError>;
+    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
 
     /// Establishes state required for guest/host communication.
-    fn setup_guest_host_comm(&mut self, cpu: &mut PerCpu, is_bsp: bool);
+    fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool);
 
     /// Obtains a console I/O port reference.
     fn get_console_io_port(&self) -> &'static dyn IOPort;
