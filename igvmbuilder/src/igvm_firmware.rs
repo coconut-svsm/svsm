@@ -4,20 +4,35 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
 use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
-use igvm_defs::{IgvmPageDataType, PAGE_SIZE_4K};
+use igvm_defs::{
+    IgvmPageDataType, IgvmVariableHeaderType, IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT,
+    PAGE_SIZE_4K,
+};
 use zerocopy::AsBytes;
 
 use crate::firmware::Firmware;
 
+struct IgvmParameter {
+    pub parameter_type: IgvmVariableHeaderType,
+    pub offset: u32,
+}
+
+#[derive(Default)]
+struct IgvmParameterArea {
+    pub number_of_bytes: u64,
+    pub parameter_list: Vec<IgvmParameter>,
+    pub gpa: Option<u64>,
+}
+
 #[derive(Default)]
 pub struct IgvmFirmware {
-    num_param_index: u32,
     directives: Vec<IgvmDirectiveHeader>,
     fw_info: IgvmParamBlockFwInfo,
     start_rip: Option<u64>,
@@ -28,9 +43,8 @@ pub struct IgvmFirmware {
 }
 
 impl IgvmFirmware {
-    pub fn new(num_param_index: u32) -> Self {
+    pub fn new() -> Self {
         Self {
-            num_param_index,
             directives: Vec::new(),
             fw_info: IgvmParamBlockFwInfo::default(),
             start_rip: None,
@@ -47,20 +61,32 @@ impl IgvmFirmware {
         compatibility_mask: u32,
     ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
         // Read and parse Hyper-V firmware.
-        let mut igvm_fw = IgvmFirmware::new(parameter_count);
+        let mut igvm_fw = IgvmFirmware::new();
         let igvm_buffer = fs::read(filename).map_err(|e| {
             eprintln!("Failed to open firmware file {}", filename);
             e
         })?;
         let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
+        let mut parameters = IgvmParameterList::new();
 
         let directives: Result<Vec<IgvmDirectiveHeader>, Box<dyn Error>> = igvm
             .directives()
             .iter()
-            .filter_map(|directive| igvm_fw.translate_directive(directive, compatibility_mask))
+            .filter_map(|directive| {
+                igvm_fw.translate_directive(directive, compatibility_mask, &mut parameters)
+            })
             .collect();
 
         igvm_fw.directives = directives?;
+
+        // Add all of the parameters that were captured.  For each one that
+        // results in new directives, the parameter index is incremented.
+        let mut parameter_index = parameter_count;
+        for parameter in parameters.parameters.values() {
+            if igvm_fw.add_parameter_directives(parameter_index, parameter, compatibility_mask) {
+                parameter_index += 1;
+            }
+        }
 
         // The base of the firmware must be above 640K.
         igvm_fw.fw_info.start = igvm_fw.lowest_gpa.try_into()?;
@@ -128,45 +154,54 @@ impl IgvmFirmware {
         &mut self,
         directive: &IgvmDirectiveHeader,
         compatibility_mask: u32,
+        parameters: &mut IgvmParameterList,
     ) -> Option<Result<IgvmDirectiveHeader, Box<dyn Error>>> {
+        // When processing directives, parameter information is excluded from
+        // the list of directives that are passed through.  Instead, all
+        // parameter information is collected into a separate structure so that
+        // parameter information can be regenerated based on the parameter
+        // information that was actually seen.
         match directive {
             IgvmDirectiveHeader::ParameterArea {
                 number_of_bytes,
                 parameter_area_index,
-                initial_data,
-            } => Some(Ok(IgvmDirectiveHeader::ParameterArea {
-                number_of_bytes: *number_of_bytes,
-                parameter_area_index: parameter_area_index + self.num_param_index,
-                initial_data: initial_data.clone(),
-            })),
-            IgvmDirectiveHeader::ParameterInsert(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                self.update_gpa_range(param.gpa, param.gpa + PAGE_SIZE_4K);
-                Some(Ok(IgvmDirectiveHeader::ParameterInsert(param)))
+                ..
+            } => {
+                // When establishing a parameter area, the initial data is
+                // ignored, since it is not used for IGVM-based firmware.
+                if let Err(e) = parameters.parameter_area(number_of_bytes, parameter_area_index) {
+                    Some(Err(e))
+                } else {
+                    None
+                }
             }
-            IgvmDirectiveHeader::VpCount(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::VpCount(param)))
+            IgvmDirectiveHeader::ParameterInsert(param) => {
+                if (param.compatibility_mask & compatibility_mask) == 0 {
+                    None
+                } else if let Err(e) = parameters.parameter_insert(param) {
+                    Some(Err(e))
+                } else {
+                    None
+                }
             }
-            IgvmDirectiveHeader::MemoryMap(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::MemoryMap(param)))
+            IgvmDirectiveHeader::VpCount(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_VP_COUNT_PARAMETER, p)
             }
-            IgvmDirectiveHeader::EnvironmentInfo(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::EnvironmentInfo(param)))
+            IgvmDirectiveHeader::MemoryMap(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_MEMORY_MAP, p)
             }
-            IgvmDirectiveHeader::CommandLine(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::CommandLine(param)))
+            IgvmDirectiveHeader::EnvironmentInfo(p) => parameters.parameter_type(
+                IgvmVariableHeaderType::IGVM_VHT_ENVIRONMENT_INFO_PARAMETER,
+                p,
+            ),
+            IgvmDirectiveHeader::CommandLine(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_COMMAND_LINE, p)
             }
-            IgvmDirectiveHeader::Madt(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::Madt(param)))
+            IgvmDirectiveHeader::Madt(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_MADT, p)
             }
-            IgvmDirectiveHeader::Srat(mut param) => {
-                param.parameter_area_index += self.num_param_index;
-                Some(Ok(IgvmDirectiveHeader::Srat(param)))
+            IgvmDirectiveHeader::Srat(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_SRAT, p)
             }
             IgvmDirectiveHeader::PageData {
                 gpa,
@@ -253,6 +288,164 @@ impl IgvmFirmware {
             _ => Some(Err(
                 "IGVM firmware file contains unsupported directives".into()
             )),
+        }
+    }
+
+    fn add_parameter_directives(
+        &mut self,
+        parameter_index: u32,
+        parameter_area: &IgvmParameterArea,
+        compatibility_mask: u32,
+    ) -> bool {
+        // Ignore parameter areas that were never populated or which have no
+        // assigned GPA.
+        if let Some(gpa) = parameter_area.gpa {
+            if parameter_area.parameter_list.is_empty() {
+                false
+            } else {
+                // Insert a parameter area directive to describe this parameter
+                // area, using a new index value.
+                self.directives.push(IgvmDirectiveHeader::ParameterArea {
+                    number_of_bytes: parameter_area.number_of_bytes,
+                    parameter_area_index: parameter_index,
+                    initial_data: Vec::new(),
+                });
+
+                // Insert a parameter directive for each parameter associated
+                // with this parameter area.
+                for parameter_value in &parameter_area.parameter_list {
+                    let p = IGVM_VHS_PARAMETER {
+                        parameter_area_index: parameter_index,
+                        byte_offset: parameter_value.offset,
+                    };
+                    let parameter_directive = match parameter_value.parameter_type {
+                        IgvmVariableHeaderType::IGVM_VHT_VP_COUNT_PARAMETER => {
+                            IgvmDirectiveHeader::VpCount(p)
+                        }
+
+                        IgvmVariableHeaderType::IGVM_VHT_MEMORY_MAP => {
+                            IgvmDirectiveHeader::MemoryMap(p)
+                        }
+
+                        IgvmVariableHeaderType::IGVM_VHT_ENVIRONMENT_INFO_PARAMETER => {
+                            IgvmDirectiveHeader::EnvironmentInfo(p)
+                        }
+
+                        IgvmVariableHeaderType::IGVM_VHT_COMMAND_LINE => {
+                            IgvmDirectiveHeader::CommandLine(p)
+                        }
+                        IgvmVariableHeaderType::IGVM_VHT_MADT => IgvmDirectiveHeader::Madt(p),
+                        IgvmVariableHeaderType::IGVM_VHT_SRAT => IgvmDirectiveHeader::Srat(p),
+                        _ => {
+                            panic!(
+                                "Missing complete handling for parameter type {}",
+                                parameter_value.parameter_type.0
+                            );
+                        }
+                    };
+
+                    self.directives.push(parameter_directive);
+                }
+
+                // Insert a directive to insert this parameter area into the
+                // address space.
+                self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+                    IGVM_VHS_PARAMETER_INSERT {
+                        gpa,
+                        compatibility_mask,
+                        parameter_area_index: parameter_index,
+                    },
+                ));
+
+                // Since this parameter area was used, indicate that the
+                // parameter index must be incremented.
+                true
+            }
+        } else {
+            false
+        }
+    }
+}
+
+struct IgvmParameterList {
+    pub parameters: BTreeMap<u32, IgvmParameterArea>,
+}
+
+impl IgvmParameterList {
+    fn new() -> Self {
+        Self {
+            parameters: BTreeMap::new(),
+        }
+    }
+
+    pub fn parameter_area(
+        &mut self,
+        number_of_bytes: &u64,
+        parameter_area_index: &u32,
+    ) -> Result<(), Box<dyn Error>> {
+        // Construct an empty parameter area.  The initial data is unused.
+        let parameter = IgvmParameterArea {
+            number_of_bytes: *number_of_bytes,
+            parameter_list: Vec::new(),
+            gpa: None,
+        };
+
+        if self
+            .parameters
+            .insert(*parameter_area_index, parameter)
+            .is_some()
+        {
+            // This parameter area index must not already be present in the
+            // tree.
+            let e = format!(
+                "Parameter area {} exists more than once",
+                *parameter_area_index
+            );
+            Err(e.into())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn parameter_type(
+        &mut self,
+        parameter_type: IgvmVariableHeaderType,
+        parameter: &IGVM_VHS_PARAMETER,
+    ) -> Option<Result<IgvmDirectiveHeader, Box<dyn Error>>> {
+        // Bind this parameter to the corresponding parameter area.  Multiple
+        // parameters can exist within a single parameter area.
+        if let Some(parameter_area) = self.parameters.get_mut(&parameter.parameter_area_index) {
+            parameter_area.parameter_list.push(IgvmParameter {
+                parameter_type,
+                offset: parameter.byte_offset,
+            });
+            None
+        } else {
+            let e = format!(
+                "Parameter {} for non-existent area {}",
+                parameter_type.0, parameter.parameter_area_index
+            );
+            Some(Err(e.into()))
+        }
+    }
+
+    pub fn parameter_insert(
+        &mut self,
+        parameter: &IGVM_VHS_PARAMETER_INSERT,
+    ) -> Result<(), Box<dyn Error>> {
+        // Capture the GPA information for the parameter area.  The
+        // compatibility mask is ignored, since any supplied firmware file is
+        // assumed to be compatible with all platform types supported by the
+        // IGVM file being constructed.
+        if let Some(parameter_area) = self.parameters.get_mut(&parameter.parameter_area_index) {
+            parameter_area.gpa = Some(parameter.gpa);
+            Ok(())
+        } else {
+            let e = format!(
+                "Parameter insert for non-existent area {}",
+                parameter.parameter_area_index
+            );
+            Err(e.into())
         }
     }
 }
