@@ -34,7 +34,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_F
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::{Cell, RefCell, UnsafeCell};
+use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -256,7 +256,7 @@ pub struct PerCpu {
     shared: PerCpuShared,
 
     apic_id: u32,
-    pgtbl: SpinLock<PageTableRef>,
+    pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
     svsm_vmsa: Cell<Option<VmsaRef>>,
     reset_ip: Cell<u64>,
@@ -284,7 +284,7 @@ impl PerCpu {
     fn new(apic_id: u32) -> Self {
         Self {
             apic_id,
-            pgtbl: SpinLock::new(PageTableRef::unset()),
+            pgtbl: RefCell::new(PageTableRef::unset()),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: Cell::new(None),
             reset_ip: Cell::new(0xffff_fff0),
@@ -366,8 +366,7 @@ impl PerCpu {
     }
 
     pub fn set_pgtable(&self, pgtable: PageTableRef) {
-        let mut my_pgtable = self.get_pgtable();
-        *my_pgtable = pgtable;
+        *self.get_pgtable() = pgtable;
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -392,8 +391,8 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> LockGuard<'_, PageTableRef> {
-        self.pgtbl.lock()
+    pub fn get_pgtable(&self) -> RefMut<'_, PageTableRef> {
+        self.pgtbl.borrow_mut()
     }
 
     /// Registers an already set up GHCB page for this CPU.
