@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::ghcb::current_ghcb;
+use crate::cpu::percpu::current_ghcb;
 use crate::io::IOPort;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::request_termination_msr;

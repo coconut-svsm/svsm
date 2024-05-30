@@ -9,7 +9,6 @@ extern crate alloc;
 use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
@@ -272,7 +271,7 @@ pub struct PerCpu {
     /// WaitQueue for request processing
     request_waitqueue: RefCell<WaitQueue>,
 
-    ghcb: Cell<*const GHCB>,
+    ghcb: Cell<Option<&'static GHCB>>,
     hv_doorbell: Cell<*const HVDoorbell>,
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
@@ -296,7 +295,7 @@ impl PerCpu {
             request_waitqueue: RefCell::new(WaitQueue::new()),
 
             shared: PerCpuShared::new(),
-            ghcb: Cell::new(ptr::null()),
+            ghcb: Cell::new(None),
             hv_doorbell: Cell::new(ptr::null()),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -325,11 +324,12 @@ impl PerCpu {
             free_page(ghcb_page);
             return Err(e);
         };
-        self.ghcb.set(ghcb_page.as_ptr());
+        let ghcb = unsafe { &*ghcb_page.as_ptr() };
+        self.ghcb.set(Some(ghcb));
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&self) -> *const GHCB {
+    fn ghcb(&self) -> Option<&'static GHCB> {
         self.ghcb.get()
     }
 
@@ -396,8 +396,14 @@ impl PerCpu {
         self.pgtbl.lock()
     }
 
+    /// Registers an already set up GHCB page for this CPU.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the GHCB for this CPU has not been set up via
+    /// [`PerCpu::setup_ghcb()`].
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        unsafe { self.ghcb_unsafe().as_ref().unwrap().register() }
+        self.ghcb().unwrap().register()
     }
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
@@ -528,14 +534,10 @@ impl PerCpu {
     }
 
     pub fn shutdown(&self) -> Result<(), SvsmError> {
-        unsafe {
-            let ghcb = self.ghcb_unsafe();
-            if ghcb.is_null() {
-                return Ok(());
-            }
-
-            (*ghcb).shutdown()
+        if let Some(ghcb) = self.ghcb.get() {
+            ghcb.shutdown()?;
         }
+        Ok(())
     }
 
     pub fn set_reset_ip(&self, reset_ip: u64) {
@@ -702,6 +704,16 @@ pub fn this_cpu() -> &'static PerCpu {
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
     this_cpu().shared()
+}
+
+/// Gets the GHCB for this CPU.
+///
+/// # Panics
+///
+/// Panics if the GHCB for this CPU has not been set up via
+/// [`PerCpu::setup_ghcb()`].
+pub fn current_ghcb() -> &'static GHCB {
+    this_cpu().ghcb().unwrap()
 }
 
 #[derive(Debug, Clone, Copy)]

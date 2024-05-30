@@ -5,8 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
+use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;

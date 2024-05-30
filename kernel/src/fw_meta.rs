@@ -8,7 +8,7 @@ extern crate alloc;
 
 use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
-use crate::cpu::ghcb::current_ghcb;
+use crate::cpu::percpu::current_ghcb;
 use crate::error::SvsmError;
 use crate::kernel_region::new_kernel_region;
 use crate::mm::PerCPUPageMappingGuard;

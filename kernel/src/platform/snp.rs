@@ -6,8 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::cpuid_table;
-use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{current_ghcb, PerCpu};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};

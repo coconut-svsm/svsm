@@ -16,7 +16,7 @@ use core::{cell::OnceCell, mem::size_of};
 
 use crate::{
     address::VirtAddr,
-    cpu::ghcb::current_ghcb,
+    cpu::percpu::current_ghcb,
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,

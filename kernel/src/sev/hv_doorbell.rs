@@ -2,12 +2,12 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::VirtAddr;
-use crate::cpu::ghcb::GHCBRef;
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::virt_to_phys;
+use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -31,7 +31,7 @@ pub struct HVDoorbell {
 }
 
 impl HVDoorbell {
-    pub fn init(vaddr: VirtAddr, ghcb: GHCBRef) -> Result<(), SvsmError> {
+    pub fn init(vaddr: VirtAddr, ghcb: &GHCB) -> Result<(), SvsmError> {
         // The #HV doorbell page must be private before it can be used.
         make_page_shared(vaddr)?;
 

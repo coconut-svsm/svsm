@@ -10,7 +10,6 @@ pub mod efer;
 pub mod extable;
 pub mod features;
 pub mod gdt;
-pub mod ghcb;
 pub mod idt;
 pub mod msr;
 pub mod percpu;

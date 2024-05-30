@@ -8,7 +8,7 @@ use super::idt::common::X86ExceptionContext;
 use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
-use crate::cpu::ghcb::{current_ghcb, GHCBRef};
+use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -17,6 +17,7 @@ use crate::insn_decode::{
     DecodedInsn, DecodedInsnCtx, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE,
 };
 use crate::mm::GuestPtr;
+use crate::sev::ghcb::GHCB;
 use core::fmt;
 
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
@@ -172,7 +173,7 @@ fn handle_svsm_caa_rdmsr(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError>
 
 fn handle_msr(
     ctx: &mut X86ExceptionContext,
-    ghcb: GHCBRef,
+    ghcb: &GHCB,
     ins: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match ins {
@@ -240,7 +241,7 @@ fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
 
 fn handle_ioio(
     ctx: &mut X86ExceptionContext,
-    ghcb: GHCBRef,
+    ghcb: &GHCB,
     insn: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match insn {
@@ -321,7 +322,7 @@ mod tests {
 
     fn verify_ghcb_was_altered() {
         let ghcb = current_ghcb();
-        let ptr: *const GHCB = core::ptr::from_ref(&ghcb);
+        let ptr: *const GHCB = core::ptr::from_ref(ghcb);
         let ghcb_bytes =
             unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
         assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
