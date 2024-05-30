@@ -231,7 +231,7 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
+    cpu.runqueue().borrow_mut().handle_task(task.clone());
 
     schedule();
 
@@ -244,7 +244,7 @@ pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
+    cpu.runqueue().borrow_mut().handle_task(task.clone());
 
     Ok(task)
 }
@@ -255,7 +255,7 @@ pub fn current_task() -> TaskPointer {
 
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
-    match &this_cpu().runqueue().lock_read().current_task {
+    match &this_cpu().runqueue().borrow().current_task {
         Some(current_task) => current_task.get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
@@ -268,7 +268,7 @@ pub fn is_current_task(id: u32) -> bool {
 /// This function must only be called after scheduling is initialized, otherwise it will panic.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
-    let mut rq = cpu.runqueue().lock_write();
+    let mut rq = cpu.runqueue().borrow_mut();
     let task_node = rq
         .current_task
         .as_mut()
@@ -349,12 +349,12 @@ pub fn schedule() {
 
     // We're now in the context of the new task. If the previous task had terminated
     // then we can release it's reference here.
-    let _ = this_cpu().runqueue().lock_write().terminated_task.take();
+    let _ = this_cpu().runqueue().borrow_mut().terminated_task.take();
 }
 
 pub fn schedule_task(task: TaskPointer) {
     task.set_task_running();
-    this_cpu().runqueue().lock_write().handle_task(task);
+    this_cpu().runqueue().borrow_mut().handle_task(task);
     schedule();
 }
 

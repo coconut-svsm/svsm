@@ -267,7 +267,7 @@ pub struct PerCpu {
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: RefCell<VirtualRange>,
     /// Task list that has been assigned for scheduling on this CPU
-    runqueue: RWLock<RunQueue>,
+    runqueue: RefCell<RunQueue>,
     /// WaitQueue for request processing
     request_waitqueue: RefCell<WaitQueue>,
 
@@ -291,7 +291,7 @@ impl PerCpu {
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: RefCell::new(VirtualRange::new()),
             vrange_2m: RefCell::new(VirtualRange::new()),
-            runqueue: RWLock::new(RunQueue::new()),
+            runqueue: RefCell::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
 
             shared: PerCpuShared::new(),
@@ -508,7 +508,7 @@ impl PerCpu {
 
     pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, entry)?;
-        self.runqueue.lock_read().set_idle_task(idle_task);
+        self.runqueue.borrow().set_idle_task(idle_task);
         Ok(())
     }
 
@@ -669,25 +669,25 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
-        let task = self.runqueue.lock_write().schedule_init();
+        let task = self.runqueue.borrow_mut().schedule_init();
         self.current_stack.set(task.stack_bounds());
         task
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue.lock_write().schedule_prepare();
+        let ret = self.runqueue.borrow_mut().schedule_prepare();
         if let Some((_, ref next)) = ret {
             self.current_stack.set(next.stack_bounds());
         };
         ret
     }
 
-    pub fn runqueue(&self) -> &RWLock<RunQueue> {
+    pub fn runqueue(&self) -> &RefCell<RunQueue> {
         &self.runqueue
     }
 
     pub fn current_task(&self) -> TaskPointer {
-        self.runqueue.lock_read().current_task()
+        self.runqueue.borrow().current_task()
     }
 
     pub fn set_tss_rsp0(&self, addr: VirtAddr) {
@@ -823,5 +823,5 @@ pub fn process_requests() {
 }
 
 pub fn current_task() -> TaskPointer {
-    this_cpu().runqueue.lock_read().current_task()
+    this_cpu().runqueue.borrow().current_task()
 }
