@@ -28,6 +28,7 @@ struct IgvmParameter {
 struct IgvmParameterArea {
     pub number_of_bytes: u64,
     pub parameter_list: Vec<IgvmParameter>,
+    pub memory_map: bool,
     pub gpa: Option<u64>,
 }
 
@@ -83,7 +84,7 @@ impl IgvmFirmware {
         // results in new directives, the parameter index is incremented.
         let mut parameter_index = parameter_count;
         for parameter in parameters.parameters.values() {
-            if igvm_fw.add_parameter_directives(parameter_index, parameter, compatibility_mask) {
+            if igvm_fw.add_parameter_directives(parameter_index, parameter, compatibility_mask)? {
                 parameter_index += 1;
             }
         }
@@ -188,7 +189,12 @@ impl IgvmFirmware {
                 parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_VP_COUNT_PARAMETER, p)
             }
             IgvmDirectiveHeader::MemoryMap(p) => {
-                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_MEMORY_MAP, p)
+                // Identify the memory map as a special parameter type.
+                if let Err(e) = parameters.memory_map_parameter(p) {
+                    Some(Err(e))
+                } else {
+                    None
+                }
             }
             IgvmDirectiveHeader::EnvironmentInfo(p) => parameters.parameter_type(
                 IgvmVariableHeaderType::IGVM_VHT_ENVIRONMENT_INFO_PARAMETER,
@@ -296,12 +302,32 @@ impl IgvmFirmware {
         parameter_index: u32,
         parameter_area: &IgvmParameterArea,
         compatibility_mask: u32,
-    ) -> bool {
+    ) -> Result<bool, Box<dyn Error>> {
         // Ignore parameter areas that were never populated or which have no
         // assigned GPA.
         if let Some(gpa) = parameter_area.gpa {
-            if parameter_area.parameter_list.is_empty() {
-                false
+            if parameter_area.memory_map {
+                // Capture the memory map in the firmware information.
+                let memory_map_page = gpa / PAGE_SIZE_4K;
+                self.fw_info.memory_map_page = memory_map_page as u32;
+                if self.fw_info.memory_map_page as u64 != memory_map_page {
+                    let e = format!("Memory map address {:#018x} is larger than 32 bits", gpa);
+                    return Err(e.into());
+                }
+                let page_count = (parameter_area.number_of_bytes + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K;
+                // Truncate the page count if it is too large to fit into a
+                // 32-bit number.  It is acceptable for the SVSM to provide a
+                // smaller set of data than the firmware is capable of
+                // handling.
+                self.fw_info.memory_map_page_count = if page_count > 0xFFFF_FFFF {
+                    0xFFFF_FFFF
+                } else {
+                    page_count as u32
+                };
+
+                Ok(false)
+            } else if parameter_area.parameter_list.is_empty() {
+                Ok(false)
             } else {
                 // Insert a parameter area directive to describe this parameter
                 // area, using a new index value.
@@ -321,10 +347,6 @@ impl IgvmFirmware {
                     let parameter_directive = match parameter_value.parameter_type {
                         IgvmVariableHeaderType::IGVM_VHT_VP_COUNT_PARAMETER => {
                             IgvmDirectiveHeader::VpCount(p)
-                        }
-
-                        IgvmVariableHeaderType::IGVM_VHT_MEMORY_MAP => {
-                            IgvmDirectiveHeader::MemoryMap(p)
                         }
 
                         IgvmVariableHeaderType::IGVM_VHT_ENVIRONMENT_INFO_PARAMETER => {
@@ -359,10 +381,10 @@ impl IgvmFirmware {
 
                 // Since this parameter area was used, indicate that the
                 // parameter index must be incremented.
-                true
+                Ok(true)
             }
         } else {
-            false
+            Ok(false)
         }
     }
 }
@@ -386,6 +408,7 @@ impl IgvmParameterList {
         // Construct an empty parameter area.  The initial data is unused.
         let parameter = IgvmParameterArea {
             number_of_bytes: *number_of_bytes,
+            memory_map: false,
             parameter_list: Vec::new(),
             gpa: None,
         };
@@ -415,17 +438,49 @@ impl IgvmParameterList {
         // Bind this parameter to the corresponding parameter area.  Multiple
         // parameters can exist within a single parameter area.
         if let Some(parameter_area) = self.parameters.get_mut(&parameter.parameter_area_index) {
-            parameter_area.parameter_list.push(IgvmParameter {
-                parameter_type,
-                offset: parameter.byte_offset,
-            });
-            None
+            if parameter_area.memory_map {
+                Some(Err(
+                    "Memory map inhabits a parameter area with other parameters".into(),
+                ))
+            } else {
+                parameter_area.parameter_list.push(IgvmParameter {
+                    parameter_type,
+                    offset: parameter.byte_offset,
+                });
+                None
+            }
         } else {
             let e = format!(
                 "Parameter {} for non-existent area {}",
                 parameter_type.0, parameter.parameter_area_index
             );
             Some(Err(e.into()))
+        }
+    }
+
+    fn memory_map_parameter(
+        &mut self,
+        parameter: &IGVM_VHS_PARAMETER,
+    ) -> Result<(), Box<dyn Error>> {
+        if parameter.byte_offset != 0 {
+            Err("Memory map parameter specified with non-zero offset".into())
+        } else if let Some(parameter_area) =
+            self.parameters.get_mut(&parameter.parameter_area_index)
+        {
+            // The memory map cannot inhabit the same parameter area as any
+            // other parameter.
+            if !parameter_area.parameter_list.is_empty() || parameter_area.memory_map {
+                Err("Memory map inhabits a parameter area with other parameters".into())
+            } else {
+                parameter_area.memory_map = true;
+                Ok(())
+            }
+        } else {
+            let e = format!(
+                "Memory map parameter for non-existent area {}",
+                parameter.parameter_area_index
+            );
+            Err(e.into())
         }
     }
 
