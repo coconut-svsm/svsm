@@ -39,9 +39,20 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     }
 }
 
+/// Writes 1 byte at a virtual address.
+///
+/// # Safety
+///
+/// The caller must verify not to corrupt arbitrary memory, as this function
+/// doesn't make any checks in that regard.
+///
+/// # Returns
+///
+/// Returns an error if the specified address is not mapped or is not mapped
+/// with the appropriate write permissions.
 #[allow(dead_code)]
 #[inline]
-pub fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
+pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
     unsafe {
@@ -244,7 +255,10 @@ mod tests {
         let test_address = VirtAddr::from(test_buffer.as_mut_ptr());
         let data_to_write = 0x42;
 
-        write_u8(test_address, data_to_write).unwrap();
+        // SAFETY: test_address points to the virtual address of test_buffer.
+        unsafe {
+            write_u8(test_address, data_to_write).unwrap();
+        }
 
         assert_eq!(test_buffer[0], data_to_write);
     }
