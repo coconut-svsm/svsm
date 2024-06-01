@@ -451,6 +451,13 @@ pub extern "C" fn svsm_main() {
     #[cfg(all(feature = "mstpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
 
+    {
+        // Virtio drivers experiments
+        log::info!("Virtio test trace");
+        use svsm::virtio::test_mmio;
+        test_mmio();
+    }
+
     virt_log_usage();
 
     if config.should_launch_fw() {

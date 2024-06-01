@@ -43,6 +43,8 @@ pub mod utils;
 #[cfg(all(feature = "mstpm", not(test)))]
 pub mod vtpm;
 
+pub mod virtio;
+
 #[test]
 fn test_nop() {}
 
