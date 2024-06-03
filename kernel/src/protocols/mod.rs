@@ -8,20 +8,22 @@ pub mod core;
 pub mod errors;
 #[cfg(all(feature = "mstpm", not(test)))]
 pub mod vtpm;
+pub mod process;
 
 use cpuarch::vmsa::{GuestVMExit, VMSA};
 
 // SVSM protocols
 pub const SVSM_CORE_PROTOCOL: u32 = 0;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
+pub const SVSM_PROCESS_PROTOCOL: u32 = 10;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
     pub guest_exit_code: GuestVMExit,
-    sev_features: u64,
-    rcx: u64,
-    rdx: u64,
-    r8: u64,
+    pub sev_features: u64,
+    pub rcx: u64,
+    pub rdx: u64,
+    pub r8: u64,
 }
 
 impl RequestParams {

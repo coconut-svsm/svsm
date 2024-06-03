@@ -17,7 +17,7 @@ use crate::{
 use core::mem::size_of;
 
 const REPORT_REQUEST_SIZE: usize = size_of::<SnpReportRequest>();
-const REPORT_RESPONSE_SIZE: usize = size_of::<SnpReportResponse>();
+pub const REPORT_RESPONSE_SIZE: usize = size_of::<SnpReportResponse>();
 
 fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, SvsmReqError> {
     let request: &SnpReportRequest = SnpReportRequest::try_from_as_ref(buffer)?;

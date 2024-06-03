@@ -113,7 +113,7 @@ bin/stage2.bin: bin
 	objcopy -O binary ${STAGE2_ELF} $@
 
 bin/svsm-kernel.elf: bin
-	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin svsm
+	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} ${SVSM_ARGS} --bin svsm
 	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin

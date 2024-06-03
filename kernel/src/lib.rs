@@ -42,6 +42,9 @@ pub mod utils;
 #[cfg(all(feature = "mstpm", not(test)))]
 pub mod vtpm;
 
+pub mod attestation;
+pub mod process_manager;
+pub mod sp_pagetable;
 #[test]
 fn test_nop() {}
 

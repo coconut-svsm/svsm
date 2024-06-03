@@ -54,7 +54,7 @@ struct PValidateRequest {
     resv: u32,
 }
 
-fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
+pub fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
     if let Some(v) = vaddr {
         if let Err(err) = rmp_clear_guest_vmsa(v) {
             log::error!("Failed to restore page permissions: {:#?}", err);

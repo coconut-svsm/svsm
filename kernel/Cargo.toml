@@ -25,6 +25,13 @@ syscall.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 bitflags.workspace = true
+#getrandom.workspace = true
+#num-bigint = { path="../../num-bigint", version = "0.8.4", default-features = false, features = ["prime"], package = "num-bigint-dig"}
+#num-traits = { version = "0.2.19", default-features = false, features = [] }
+#getrandom = { version = "0.2.15", default-features = false, features = ["rdrand"]}
+#rsa = { version= "0.9.6", default-features = false, features = [] }
+#rsa = { path = "../../RSA", default-features = false, features = [] }
+#sha2 = { version="0.10.8", default_features = false, features = ["force-soft"]}
 gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }
 igvm_defs = { workspace = true, features = ["unstable"] }

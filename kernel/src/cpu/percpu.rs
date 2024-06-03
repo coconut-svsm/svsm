@@ -193,7 +193,7 @@ impl GuestVmsaRef {
 
 #[derive(Debug)]
 pub struct PerCpuShared {
-    guest_vmsa: SpinLock<GuestVmsaRef>,
+    pub guest_vmsa: SpinLock<GuestVmsaRef>,
     online: AtomicBool,
 }
 
@@ -245,7 +245,7 @@ impl PerCpuShared {
 pub struct PerCpuUnsafe {
     shared: PerCpuShared,
     private: RefCell<PerCpu>,
-    ghcb: *mut GHCB,
+    pub ghcb: *mut GHCB,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
 

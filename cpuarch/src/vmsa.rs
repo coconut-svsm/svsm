@@ -7,7 +7,7 @@
 // AE Exitcodes
 // Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
 #[repr(u64)]
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
 #[allow(dead_code, non_camel_case_types)]
 pub enum GuestVMExit {
     MC = 0x52,
@@ -44,7 +44,7 @@ pub enum GuestVMExit {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct VMSASegment {
     pub selector: u16,
     pub flags: u16,
@@ -53,7 +53,7 @@ pub struct VMSASegment {
 }
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct VMSA {
     pub es: VMSASegment,
     pub cs: VMSASegment,
@@ -279,6 +279,7 @@ impl Default for VMSA {
         }
     }
 }
+
 
 impl VMSA {
     pub fn enable(&mut self) {

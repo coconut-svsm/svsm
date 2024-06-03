@@ -26,6 +26,7 @@ svsm = { path = "kernel" }
 elf = { path = "elf" }
 libmstpm = { path = "libmstpm" }
 syscall = { path = "syscall" }
+monitorcrypto = { path = "monitorcrypto" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -45,6 +46,8 @@ uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.7.32", features = ["derive"] }
 
+#rsa = { version= "0.9.6", default-features = false, features = [] }
+#getrandom ={version="0.2.12", default-features = false, features = ["rdrand"]}
 # other repos
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 
