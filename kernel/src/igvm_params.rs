@@ -11,7 +11,9 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::fw_meta::SevFWMetaData;
-use crate::mm::PAGE_SIZE;
+use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
+use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
+use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
@@ -139,6 +141,87 @@ impl IgvmParams<'_> {
         }
 
         Ok(regions)
+    }
+
+    pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
+        // If the parameters do not include a guest memory map area, then no
+        // work is required.
+        let fw_info = &self.igvm_param_block.firmware;
+        if fw_info.memory_map_page_count == 0 {
+            return Ok(());
+        }
+
+        // Map the guest memory map area into the address space.
+        let mem_map_gpa = PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64);
+        let mem_map_region = MemoryRegion::<PhysAddr>::new(
+            mem_map_gpa,
+            fw_info.memory_map_page_count as usize * PAGE_SIZE,
+        );
+        log::info!(
+            "Filling guest IGVM memory map at {:#018x} size {:#018x}",
+            mem_map_region.start(),
+            mem_map_region.len(),
+        );
+
+        let mem_map_mapping =
+            PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
+        let mem_map_va = mem_map_mapping.virt_addr();
+
+        // The guest expects the pages in the memory map to be treated like
+        // host-provided IGVM parameters, which requires the pages to be
+        // validated.  Since the memory was not declared as part of the guest
+        // firmware image, the pages must be validated here.
+        let platform = SVSM_PLATFORM.as_dyn_ref();
+        if self.page_state_change_required() {
+            platform.page_state_change(
+                mem_map_region,
+                PageSize::Regular,
+                PageStateChangeOp::Private,
+            )?;
+        }
+
+        let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
+        platform.validate_page_range(mem_map_va_region)?;
+
+        // Calculate the maximum number of entries that can be inserted.
+        let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE
+            / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+
+        // Generate a guest pointer range to hold the memory map.
+        let mem_map = GuestPtr::new(mem_map_va);
+
+        for (i, entry) in map.iter().enumerate() {
+            // Return an error if an overflow occurs.
+            if i >= max_entries {
+                return Err(SvsmError::Firmware);
+            }
+
+            mem_map
+                .offset(i as isize)
+                .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                    starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
+                    number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
+                    entry_type: MemoryMapEntryType::default(),
+                    flags: 0,
+                    reserved: 0,
+                })?;
+        }
+
+        // Write a zero page count into the last entry to terminate the list.
+        let index = map.len();
+        if index < max_entries {
+            mem_map
+                .offset(index as isize)
+                .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                    starting_gpa_page_number: 0,
+                    number_of_pages: 0,
+                    entry_type: MemoryMapEntryType::default(),
+                    flags: 0,
+                    reserved: 0,
+                })?;
+        }
+
+        Ok(())
     }
 
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {

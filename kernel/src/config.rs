@@ -95,6 +95,12 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_memory_regions(),
         }
     }
+    pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => Ok(()),
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.write_guest_memory_map(map),
+        }
+    }
     pub fn reserved_kernel_area_size(&self) -> usize {
         match self {
             SvsmConfig::FirmwareConfig(_) => 0,

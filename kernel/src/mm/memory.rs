@@ -91,6 +91,11 @@ pub fn init_memory_map(
     Ok(())
 }
 
+pub fn write_guest_memory_map(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+    // Supply the memory map to the guest if required by the configuration.
+    config.write_guest_memory_map(&MEMORY_MAP.lock_read())
+}
+
 /// Returns `true` if the provided physical address `paddr` is valid, i.e.
 /// it is within the configured memory regions, otherwise returns `false`.
 pub fn valid_phys_address(paddr: PhysAddr) -> bool {
