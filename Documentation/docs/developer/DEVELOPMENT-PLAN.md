@@ -349,6 +349,8 @@ The first step to support the TDX platform in COCONUT-SVSM is to implement boot
 support via an IGVM platform file. This needs support in the COCONUT kernel as
 well as in the QEMU IGVM loader.
 
+* Owner: Peter Fang ([@peterfang](https://github.com/peterfang)).
+
 ### [PlatAbstr] Platform Abstractions
 
 The COCONUT kernel contains a lot of hard-coded SEV-SNP assumptions.  These
@@ -360,12 +362,16 @@ platforms.
 Booting multiple CPUs in a TD guest needs some modifications in the COCONUT
 kernel as on Intel the TD vCPUs start from a fixed address.
 
+* Owner: Peter Fang ([@peterfang](https://github.com/peterfang)).
+
 ### [Boot] TDX Boot support
 
 Depends on: **TdxPart.Igvm**, **TdxPart.PlatAbstr**, **IrqSec.Apic4Svsm**, **TdxPart.TdxSmp**
 
 Implement a platform API backend to boot COCONUT-SVSM in an Intel TD with
 partitioning support.
+
+* Owner: Peter Fang ([@peterfang](https://github.com/peterfang)).
 
 ### [TdxParaV] TDX Paravisor Support
 
