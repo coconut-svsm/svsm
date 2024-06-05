@@ -4,9 +4,31 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
-extern crate alloc;
+//! Round-Robin scheduler implementation for COCONUT-SVSM
+//!
+//! This module implements a round-robin scheduler for cooperative multi-tasking.
+//! It works by assigning a single owner for each struct [`Task`]. The owner
+//! depends on the state of the task:
+//!
+//! * [`RUNNING`] A task in running state is owned by the [`RunQueue`] and either
+//!    stored in the `run_list` (when the task is not actively running) or in
+//!    `current_task` when it is scheduled on the CPU.
+//! * [`BLOCKED`] A task in this state is waiting for an event to become runnable
+//!    again. It is owned by a wait object when in this state.
+//! * [`TERMINATED`] The task is about to be destroyed and owned by the [`RunQueue`].
+//!
+//! The scheduler is cooperative. A task runs until it voluntarily calls the
+//! [`schedule()`] function.
+//!
+//! Only when a task is in [`RUNNING`] or [`TERMINATED`] state it is assigned to a
+//! specific CPU. Tasks in the [`BLOCKED`] state have no CPU assigned and will run
+//! on the CPU where their event is triggered that makes them [`RUNNING`] again.
+//!
+//! [`RUNNING`]: super::tasks::TaskState::RUNNING
+//! [`BLOCKED`]: super::tasks::TaskState::BLOCKED
+//! [`TERMINATED`]: super::tasks::TaskState::TERMINATED
 
-use core::ptr::null_mut;
+extern crate alloc;
 
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
@@ -17,31 +39,11 @@ use crate::locking::SpinLock;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
+use core::ptr::null_mut;
 use intrusive_collections::LinkedList;
-
-/// Round-Robin scheduler implementation for COCONUT-SVSM
-///
-/// This file implements a round-robin scheduler for cooperative multi-tasking.
-/// It works by assigning a single owner for each struct [Task]. The owner
-/// depends on the state of the task:
-///
-/// * `RUNNING` A task in running state is owned by the [RunQueue] and either
-///    stored in the `run_list` (when the task is not actively running) or in
-///    `current+task` when it is scheduled on the CPU.
-/// * `BLOCKED` A task in this state is waiting for an event to become runnable
-///    again. It is owned by a wait object when in this state.
-/// * `TERMINATED` The task is about to be destroyed and owned by the RunQueue.
-///
-/// The scheduler is cooperative. A task runs until it voluntarily calls the
-/// [schedule] function.
-///
-/// Only when a task is in `RUNNING` or `TERMINATED` state it is assigned to a
-/// specific CPU. Tasks in the `BLOCKED` state have no CPU assigned and will run
-/// on the CPU where their event is triggered that makes them `RUNNING` again.
 
 /// A RunQueue implementation that uses an RBTree to efficiently sort the priority
 /// of tasks within the queue.
-
 #[derive(Debug, Default)]
 pub struct RunQueue {
     /// Linked list with runable tasks
@@ -310,7 +312,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 
 /// Initializes the [RunQueue] on the current CPU. It will switch to the idle
 /// task and initialize the current_task field of the RunQueue. After this
-/// function has ran it is safe to call [schedule()] on the current CPU.
+/// function has ran it is safe to call [`schedule()`] on the current CPU.
 pub fn schedule_init() {
     unsafe {
         let next = task_pointer(this_cpu_mut().schedule_init());
