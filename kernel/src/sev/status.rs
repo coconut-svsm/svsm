@@ -165,7 +165,6 @@ pub fn sev_status_verify() {
         | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION
-        | SEVStatusFlags::VMSA_REG_PROT
         | SEVStatusFlags::SMT_PROT;
 
     let status = sev_flags();
