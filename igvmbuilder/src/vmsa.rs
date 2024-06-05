@@ -125,6 +125,10 @@ pub fn construct_vmsa(
             SevExtraFeatures::DebugSwap => features.set_debug_swap(true),
             SevExtraFeatures::PreventHostIBS => features.set_prevent_host_ibs(true),
             SevExtraFeatures::SNPBTBIsolation => features.set_snp_btb_isolation(true),
+            SevExtraFeatures::VmplSSS => features.set_vmpl_supervisor_shadow_stack(true),
+            SevExtraFeatures::SecureTscEn => features.set_secure_tsc(true),
+            SevExtraFeatures::VmsaRegProt => features.set_vmsa_reg_protection(true),
+            SevExtraFeatures::SmtProtection => features.set_smt_protection(true),
         }
     }
 
