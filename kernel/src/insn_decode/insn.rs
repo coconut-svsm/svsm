@@ -68,6 +68,7 @@ pub enum DecodedInsn {
     Cpuid,
     In(Operand, Bytes),
     Out(Operand, Bytes),
+    Outs,
     Wrmsr,
     Rdmsr,
     Rdtsc,
@@ -125,6 +126,14 @@ impl InsnMachineCtx for TestCtx {
         use crate::cpu::control_regs::CR4Flags;
 
         CR4Flags::LA57.bits()
+    }
+
+    fn read_reg(&self, _reg: Register) -> usize {
+        0
+    }
+
+    fn read_cpl(&self) -> usize {
+        0
     }
 }
 
