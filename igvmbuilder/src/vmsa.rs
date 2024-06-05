@@ -94,9 +94,9 @@ pub fn construct_vmsa(
     vmsa.gs.base = context.gs_base;
 
     vmsa.idtr.base = context.idtr_base;
-    vmsa.idtr.limit = context.idtr_size as u32;
+    vmsa.idtr.limit = context.idtr_limit as u32;
     vmsa.gdtr.base = context.gdtr_base;
-    vmsa.gdtr.limit = context.gdtr_size as u32;
+    vmsa.gdtr.limit = context.gdtr_limit as u32;
 
     // Configure control registers.
     vmsa.cr0 = context.cr0;
