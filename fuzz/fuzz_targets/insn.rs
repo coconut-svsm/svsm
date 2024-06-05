@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::{fuzz_target, Corpus};
-use svsm::cpu::insn::{Instruction, MAX_INSN_SIZE};
+use svsm::insn_decode::{Instruction, TestCtx, MAX_INSN_SIZE};
 
 fuzz_target!(|input: &[u8]| -> Corpus {
     let Some(input) = input.get(..MAX_INSN_SIZE) else {
@@ -12,7 +12,7 @@ fuzz_target!(|input: &[u8]| -> Corpus {
     data.copy_from_slice(input);
 
     let insn = Instruction::new(data);
-    let _ = core::hint::black_box(insn.decode());
+    let _ = core::hint::black_box(insn.decode(&TestCtx));
 
     Corpus::Keep
 });

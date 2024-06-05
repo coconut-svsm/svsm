@@ -5,18 +5,19 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::idt::common::X86ExceptionContext;
-use super::insn::MAX_INSN_SIZE;
 use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::insn::{DecodedInsn, Immediate, Instruction, Operand, Register};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
+use crate::insn_decode::{
+    DecodedInsn, DecodedInsnCtx, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE,
+};
 use crate::mm::GuestPtr;
-use crate::sev::ghcb::{GHCBIOSize, GHCB};
+use crate::sev::ghcb::GHCB;
 use core::fmt;
 
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
@@ -85,14 +86,14 @@ impl fmt::Display for VcError {
 
 pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
-    let insn = vc_decode_insn(ctx)?;
+    let insn_ctx = vc_decode_insn(ctx)?;
 
     match err {
         SVM_EXIT_CPUID => handle_cpuid(ctx),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
-    vc_finish_insn(ctx, &insn);
+    vc_finish_insn(ctx, &insn_ctx);
     Ok(())
 }
 
@@ -106,9 +107,9 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     // handlers.
     let mut ghcb = current_ghcb();
 
-    let insn = vc_decode_insn(ctx)?;
+    let insn_ctx = vc_decode_insn(ctx)?;
 
-    match (err, insn) {
+    match (err, insn_ctx.and_then(|d| d.insn())) {
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
         (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
@@ -117,7 +118,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
-    vc_finish_insn(ctx, &insn);
+    vc_finish_insn(ctx, &insn_ctx);
     Ok(())
 }
 
@@ -131,9 +132,9 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
     // handlers.
     let mut ghcb = current_ghcb();
 
-    let insn = vc_decode_insn(ctx)?;
+    let insn_ctx = vc_decode_insn(ctx)?;
 
-    match (error_code, insn) {
+    match (error_code, insn_ctx.and_then(|d| d.insn())) {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
@@ -149,7 +150,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
-    vc_finish_insn(ctx, &insn);
+    vc_finish_insn(ctx, &insn_ctx);
     Ok(())
 }
 
@@ -223,8 +224,8 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn: &Option<DecodedInsn>) {
-    ctx.frame.rip += insn.as_ref().map(DecodedInsn::size).unwrap_or(0);
+fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
+    ctx.frame.rip += insn_ctx.map_or(0, |d| d.size())
 }
 
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
@@ -238,55 +239,27 @@ fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
     }
 }
 
-fn ioio_do_in(ghcb: &mut GHCB, port: u16, size: GHCBIOSize) -> Result<usize, SvsmError> {
-    let ret = ghcb.ioio_in(port, size)?;
-    Ok(match size {
-        GHCBIOSize::Size32 => (ret & u32::MAX as u64) as usize,
-        GHCBIOSize::Size16 => (ret & u16::MAX as u64) as usize,
-        GHCBIOSize::Size8 => (ret & u8::MAX as u64) as usize,
-    })
-}
-
 fn handle_ioio(
     ctx: &mut X86ExceptionContext,
     ghcb: &mut GHCB,
     insn: DecodedInsn,
 ) -> Result<(), SvsmError> {
-    let out_value = ctx.regs.rax as u64;
-
     match insn {
-        DecodedInsn::Inl(source) => {
+        DecodedInsn::In(source, in_len) => {
             let port = ioio_get_port(source, ctx);
-            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size32)?;
+            ctx.regs.rax = (ghcb.ioio_in(port, in_len.try_into()?)? & in_len.mask()) as usize;
             Ok(())
         }
-        DecodedInsn::Inw(source) => {
+        DecodedInsn::Out(source, out_len) => {
+            let out_value = ctx.regs.rax as u64;
             let port = ioio_get_port(source, ctx);
-            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size16)?;
-            Ok(())
-        }
-        DecodedInsn::Inb(source) => {
-            let port = ioio_get_port(source, ctx);
-            ctx.regs.rax = ioio_do_in(ghcb, port, GHCBIOSize::Size8)?;
-            Ok(())
-        }
-        DecodedInsn::Outl(source) => {
-            let port = ioio_get_port(source, ctx);
-            ghcb.ioio_out(port, GHCBIOSize::Size32, out_value)
-        }
-        DecodedInsn::Outw(source) => {
-            let port = ioio_get_port(source, ctx);
-            ghcb.ioio_out(port, GHCBIOSize::Size16, out_value)
-        }
-        DecodedInsn::Outb(source) => {
-            let port = ioio_get_port(source, ctx);
-            ghcb.ioio_out(port, GHCBIOSize::Size8, out_value)
+            ghcb.ioio_out(port, out_len.try_into()?, out_value)
         }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
 
-fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsn>, SvsmError> {
+fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, SvsmError> {
     if !vc_decoding_needed(ctx.error_code) {
         return Ok(None);
     }
@@ -302,7 +275,7 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsn>, Svsm
     let insn_raw = rip.read()?;
 
     let insn = Instruction::new(insn_raw);
-    insn.decode().map(Some)
+    Ok(Some(insn.decode(ctx)?))
 }
 
 fn vc_decoding_needed(error_code: usize) -> bool {

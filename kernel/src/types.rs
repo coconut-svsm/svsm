@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use crate::sev::vmsa::VMPL_MAX;
 
 pub const PAGE_SHIFT: usize = 12;
@@ -46,3 +47,41 @@ pub const GUEST_VMPL: usize = 2;
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);
 
 pub const MAX_CPUS: usize = 512;
+
+/// Length in byte which represents maximum 8 bytes(u64)
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum Bytes {
+    #[default]
+    Zero,
+    One,
+    Two,
+    Four = 4,
+    Eight = 8,
+}
+
+impl Bytes {
+    pub fn mask(&self) -> u64 {
+        match self {
+            Bytes::Zero => 0,
+            Bytes::One => (1 << 8) - 1,
+            Bytes::Two => (1 << 16) - 1,
+            Bytes::Four => (1 << 32) - 1,
+            Bytes::Eight => u64::MAX,
+        }
+    }
+}
+
+impl TryFrom<usize> for Bytes {
+    type Error = SvsmError;
+
+    fn try_from(val: usize) -> Result<Bytes, Self::Error> {
+        match val {
+            0 => Ok(Bytes::Zero),
+            1 => Ok(Bytes::One),
+            2 => Ok(Bytes::Two),
+            4 => Ok(Bytes::Four),
+            8 => Ok(Bytes::Eight),
+            _ => Err(SvsmError::InvalidBytes),
+        }
+    }
+}

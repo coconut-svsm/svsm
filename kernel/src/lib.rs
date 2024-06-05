@@ -23,6 +23,7 @@ pub mod fw_cfg;
 pub mod fw_meta;
 pub mod greq;
 pub mod igvm_params;
+pub mod insn_decode;
 pub mod io;
 pub mod kernel_region;
 pub mod locking;

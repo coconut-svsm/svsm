@@ -5,7 +5,11 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::efer::read_efer;
+use crate::cpu::gdt::gdt;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
+use crate::insn_decode::{InsnMachineCtx, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
@@ -44,6 +48,27 @@ pub struct X86ExceptionContext {
     pub regs: X86GeneralRegs,
     pub error_code: usize,
     pub frame: X86InterruptFrame,
+}
+
+impl InsnMachineCtx for X86ExceptionContext {
+    fn read_efer(&self) -> u64 {
+        read_efer().bits()
+    }
+
+    fn read_seg(&self, seg: SegRegister) -> u64 {
+        match seg {
+            SegRegister::CS => gdt().kernel_cs().to_raw(),
+            _ => gdt().kernel_ds().to_raw(),
+        }
+    }
+
+    fn read_cr0(&self) -> u64 {
+        read_cr0().bits()
+    }
+
+    fn read_cr4(&self) -> u64 {
+        read_cr4().bits()
+    }
 }
 
 pub fn user_mode(ctxt: &X86ExceptionContext) -> bool {

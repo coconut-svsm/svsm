@@ -18,7 +18,7 @@ use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{PageSize, PAGE_SIZE_2M};
+use crate::types::{Bytes, PageSize, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
 use core::arch::global_asm;
@@ -137,6 +137,19 @@ pub enum GHCBIOSize {
     Size8,
     Size16,
     Size32,
+}
+
+impl TryFrom<Bytes> for GHCBIOSize {
+    type Error = SvsmError;
+
+    fn try_from(size: Bytes) -> Result<GHCBIOSize, Self::Error> {
+        match size {
+            Bytes::One => Ok(GHCBIOSize::Size8),
+            Bytes::Two => Ok(GHCBIOSize::Size16),
+            Bytes::Four => Ok(GHCBIOSize::Size32),
+            _ => Err(SvsmError::InvalidBytes),
+        }
+    }
 }
 
 impl GHCB {
