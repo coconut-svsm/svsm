@@ -118,18 +118,19 @@ impl From<GhcbError> for SvsmError {
     }
 }
 
-enum GHCBExitCode {}
-
-impl GHCBExitCode {
-    pub const RDTSC: u64 = 0x6e;
-    pub const IOIO: u64 = 0x7b;
-    pub const MSR: u64 = 0x7c;
-    pub const RDTSCP: u64 = 0x87;
-    pub const SNP_PSC: u64 = 0x8000_0010;
-    pub const GUEST_REQUEST: u64 = 0x8000_0011;
-    pub const GUEST_EXT_REQUEST: u64 = 0x8000_0012;
-    pub const AP_CREATE: u64 = 0x80000013;
-    pub const HV_DOORBELL: u64 = 0x8000_0014;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u64)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+enum GHCBExitCode {
+    RDTSC = 0x6e,
+    IOIO = 0x7b,
+    MSR = 0x7c,
+    RDTSCP = 0x87,
+    SNP_PSC = 0x8000_0010,
+    GUEST_REQUEST = 0x8000_0011,
+    GUEST_EXT_REQUEST = 0x8000_0012,
+    AP_CREATE = 0x80000013,
+    HV_DOORBELL = 0x8000_0014,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -336,7 +337,7 @@ impl GHCB {
 
     fn vmgexit(
         &mut self,
-        exit_code: u64,
+        exit_code: GHCBExitCode,
         exit_info_1: u64,
         exit_info_2: u64,
     ) -> Result<(), GhcbError> {
@@ -344,7 +345,7 @@ impl GHCB {
         self.set_version_valid(2);
         // GHCB Follows standard format
         self.set_usage_valid(0);
-        self.set_exit_code_valid(exit_code);
+        self.set_exit_code_valid(exit_code as u64);
         self.set_exit_info_1_valid(exit_info_1);
         self.set_exit_info_2_valid(exit_info_2);
 
@@ -397,28 +398,24 @@ impl GHCB {
         Ok(())
     }
 
-    fn write_buffer<T>(&mut self, data: &T, offset: isize) -> Result<(), GhcbError>
+    fn write_buffer<T>(&mut self, data: &T, offset: usize) -> Result<(), GhcbError>
     where
-        T: Sized,
+        T: Copy,
     {
-        let size: isize = mem::size_of::<T>() as isize;
+        offset
+            .checked_add(mem::size_of::<T>())
+            .filter(|end| *end <= GHCB_BUFFER_SIZE)
+            .ok_or(GhcbError::InvalidOffset)?;
 
-        if offset < 0 || offset + size > (GHCB_BUFFER_SIZE as isize) {
+        // SAFETY: we have verified that the offset is within bounds and does
+        // not overflow
+        let dst = unsafe { self.buffer.as_mut_ptr().add(offset) };
+        if dst.align_offset(mem::align_of::<T>()) != 0 {
             return Err(GhcbError::InvalidOffset);
         }
 
-        unsafe {
-            let dst = self
-                .buffer
-                .as_mut_ptr()
-                .cast::<u8>()
-                .offset(offset)
-                .cast::<T>();
-            let src = data as *const T;
-
-            ptr::copy_nonoverlapping(src, dst, 1);
-        }
-
+        // SAFETY: we have verified the pointer is aligned and within bounds.
+        unsafe { dst.cast::<T>().copy_from_nonoverlapping(data, 1) }
         Ok(())
     }
 
@@ -471,7 +468,7 @@ impl GHCB {
             };
             let pgsize = usize::from(size);
             let entry = self.psc_entry(paddr, op_mask, 0, size);
-            let offset: isize = (entries as isize) * 8 + 8;
+            let offset = usize::from(entries) * 8 + 8;
             self.write_buffer(&entry, offset)?;
             entries += 1;
             paddr = paddr + pgsize;
