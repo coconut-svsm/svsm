@@ -375,6 +375,8 @@ partitioning support.
 
 ### [TdxParaV] TDX Paravisor Support
 
+* Owner: Chuanxiao Dong ([@cxdong](https://www.github.com/cxdong)).
+
 Depends on: **ParaV**, **UsrMode.VmmIf**
 
 Implement support for running un-enlightened guest operating systems in an
@@ -398,6 +400,8 @@ read and modify state of the guest OS. This includes CPU, memory, and IRQ
 states.
 
 ### [InstrDec] X86 Instruction Decoder
+
+* Owner: Chuanxiao Dong ([@cxdong](https://www.github.com/cxdong)).
 
 The SVSM needs an instruction decoder to handle events from the guest OS which
 were triggered by specific instructions. An incomplete lists of events:
