@@ -22,8 +22,10 @@ bitflags! {
         const DBGSWP        = 1 << 7;
         const PREV_HOST_IBS = 1 << 8;
         const BTB_ISOLATION = 1 << 9;
+        const VMPL_SSS      = 1 << 10;
         const SECURE_TSC    = 1 << 11;
         const VMSA_REG_PROT = 1 << 16;
+        const SMT_PROT      = 1 << 17;
     }
 }
 
@@ -163,7 +165,8 @@ pub fn sev_status_verify() {
         | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION
-        | SEVStatusFlags::VMSA_REG_PROT;
+        | SEVStatusFlags::VMSA_REG_PROT
+        | SEVStatusFlags::SMT_PROT;
 
     let status = sev_flags();
     let required_check = status & required;
