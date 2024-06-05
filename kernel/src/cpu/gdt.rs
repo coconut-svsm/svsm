@@ -60,7 +60,7 @@ pub struct GDT {
 
 impl GDT {
     pub const fn new() -> Self {
-        GDT {
+        Self {
             entries: [
                 GDTEntry::null(),
                 GDTEntry::code_64_kernel(),
@@ -71,47 +71,6 @@ impl GDT {
                 GDTEntry::null(),
                 GDTEntry::null(),
             ],
-        }
-    }
-
-    pub fn base_limit(&self) -> (u64, u32) {
-        let gdt_entries = GDT_SIZE as usize;
-        let base = (self as *const GDT) as u64;
-        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
-        (base, limit)
-    }
-
-    fn descriptor(&self) -> GDTDesc {
-        GDTDesc {
-            size: (GDT_SIZE * 8) - 1,
-            addr: VirtAddr::from(self.entries.as_ptr()),
-        }
-    }
-
-    pub fn load(&self) {
-        let gdt_desc = self.descriptor();
-        unsafe {
-            asm!(r#" /* Load GDT */
-                 lgdt   (%rax)
-
-                 /* Reload data segments */
-                 movw   %cx, %ds
-                 movw   %cx, %es
-                 movw   %cx, %fs
-                 movw   %cx, %gs
-                 movw   %cx, %ss
-
-                 /* Reload code segment */
-                 pushq  %rdx
-                 leaq   1f(%rip), %rax
-                 pushq  %rax
-                 lretq
-            1:
-                 "#,
-                in("rax") &gdt_desc,
-                in("rdx") SVSM_CS,
-                in("rcx") SVSM_DS,
-                options(att_syntax));
         }
     }
 
@@ -144,6 +103,51 @@ impl GDT {
 
     pub fn kernel_ds(&self) -> GDTEntry {
         self.entries[(SVSM_DS / 8) as usize]
+    }
+}
+
+impl ReadLockGuard<'static, GDT> {
+    /// Load a GDT. Its lifetime must be static so that its entries are
+    /// always available to the CPU.
+    pub fn load(&self) {
+        let gdt_desc = self.descriptor();
+        unsafe {
+            asm!(r#" /* Load GDT */
+                 lgdt   (%rax)
+
+                 /* Reload data segments */
+                 movw   %cx, %ds
+                 movw   %cx, %es
+                 movw   %cx, %fs
+                 movw   %cx, %gs
+                 movw   %cx, %ss
+
+                 /* Reload code segment */
+                 pushq  %rdx
+                 leaq   1f(%rip), %rax
+                 pushq  %rax
+                 lretq
+            1:
+                 "#,
+                in("rax") &gdt_desc,
+                in("rdx") SVSM_CS,
+                in("rcx") SVSM_DS,
+                options(att_syntax));
+        }
+    }
+
+    fn descriptor(&self) -> GDTDesc {
+        GDTDesc {
+            size: (GDT_SIZE * 8) - 1,
+            addr: VirtAddr::from(self.entries.as_ptr()),
+        }
+    }
+
+    pub fn base_limit(&self) -> (u64, u32) {
+        let gdt_entries = GDT_SIZE as usize;
+        let base: *const GDT = core::ptr::from_ref(self);
+        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
+        (base as u64, limit)
     }
 }
 

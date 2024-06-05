@@ -201,8 +201,18 @@ impl IDT {
 
         self
     }
+}
 
-    pub fn load(&self) -> &Self {
+impl Default for IDT {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WriteLockGuard<'static, IDT> {
+    /// Load an IDT. Its lifetime must be static so that its entries are
+    /// always available to the CPU.
+    pub fn load(&self) {
         let desc: IdtDesc = IdtDesc {
             size: (IDT_ENTRIES * 16) as u16,
             address: VirtAddr::from(self.entries.as_ptr()),
@@ -211,20 +221,14 @@ impl IDT {
         unsafe {
             asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
         }
-
-        self
-    }
-
-    pub fn base_limit(&self) -> (u64, u32) {
-        let base = (self as *const IDT) as u64;
-        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
-        (base, limit)
     }
 }
 
-impl Default for IDT {
-    fn default() -> Self {
-        Self::new()
+impl ReadLockGuard<'static, IDT> {
+    pub fn base_limit(&self) -> (u64, u32) {
+        let base: *const IDT = core::ptr::from_ref(self);
+        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
+        (base as u64, limit)
     }
 }
 

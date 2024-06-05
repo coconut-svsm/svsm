@@ -13,17 +13,17 @@ use core::ptr::addr_of;
 
 pub fn early_idt_init_no_ghcb() {
     unsafe {
-        idt_mut()
-            .init(addr_of!(stage2_idt_handler_array_no_ghcb), 32)
-            .load();
+        let mut idt = idt_mut();
+        idt.init(addr_of!(stage2_idt_handler_array_no_ghcb), 32);
+        idt.load();
     }
 }
 
 pub fn early_idt_init() {
     unsafe {
-        idt_mut()
-            .init(addr_of!(stage2_idt_handler_array), 32)
-            .load();
+        let mut idt = idt_mut();
+        idt.init(addr_of!(stage2_idt_handler_array), 32);
+        idt.load();
     }
 }
 
