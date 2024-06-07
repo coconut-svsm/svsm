@@ -9,7 +9,6 @@ extern crate alloc;
 use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::ghcb::current_ghcb;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::init_guest_vmsa;
 use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
@@ -35,7 +34,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_F
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::{Ref, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -123,13 +122,13 @@ impl VmsaRef {
 
 #[derive(Debug)]
 struct IstStacks {
-    double_fault_stack: Option<VirtAddr>,
+    double_fault_stack: Cell<Option<VirtAddr>>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
-            double_fault_stack: None,
+            double_fault_stack: Cell::new(None),
         }
     }
 }
@@ -250,49 +249,68 @@ impl PerCpuShared {
     }
 }
 
+const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
+
 #[derive(Debug)]
-pub struct PerCpuUnsafe {
+pub struct PerCpu {
     shared: PerCpuShared,
-    private: RefCell<PerCpu>,
-    ghcb: *mut GHCB,
-    hv_doorbell: *mut HVDoorbell,
-    init_stack: Option<VirtAddr>,
+
+    apic_id: u32,
+    pgtbl: RefCell<PageTableRef>,
+    tss: Cell<X86Tss>,
+    svsm_vmsa: Cell<Option<VmsaRef>>,
+    reset_ip: Cell<u64>,
+    /// PerCpu Virtual Memory Range
+    vm_range: VMR,
+    /// Address allocator for per-cpu 4k temporary mappings
+    pub vrange_4k: RefCell<VirtualRange>,
+    /// Address allocator for per-cpu 2m temporary mappings
+    pub vrange_2m: RefCell<VirtualRange>,
+    /// Task list that has been assigned for scheduling on this CPU
+    runqueue: RefCell<RunQueue>,
+    /// WaitQueue for request processing
+    request_waitqueue: RefCell<WaitQueue>,
+
+    ghcb: Cell<Option<&'static GHCB>>,
+    hv_doorbell: Cell<*const HVDoorbell>,
+    init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
 
-    /// Stack boundaries of the currently running task. This is stored in
-    /// [PerCpuUnsafe] because it needs lockless read access.
-    current_stack: MemoryRegion<VirtAddr>,
+    /// Stack boundaries of the currently running task.
+    current_stack: Cell<MemoryRegion<VirtAddr>>,
 }
 
-impl PerCpuUnsafe {
-    pub fn new(apic_id: u32, cpu_unsafe_ptr: *const PerCpuUnsafe) -> Self {
+impl PerCpu {
+    fn new(apic_id: u32) -> Self {
         Self {
-            private: RefCell::new(PerCpu::new(apic_id, cpu_unsafe_ptr)),
+            apic_id,
+            pgtbl: RefCell::new(PageTableRef::unset()),
+            tss: Cell::new(X86Tss::new()),
+            svsm_vmsa: Cell::new(None),
+            reset_ip: Cell::new(0xffff_fff0),
+            vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
+            vrange_4k: RefCell::new(VirtualRange::new()),
+            vrange_2m: RefCell::new(VirtualRange::new()),
+            runqueue: RefCell::new(RunQueue::new()),
+            request_waitqueue: RefCell::new(WaitQueue::new()),
+
             shared: PerCpuShared::new(),
-            ghcb: ptr::null_mut(),
-            hv_doorbell: ptr::null_mut(),
-            init_stack: None,
+            ghcb: Cell::new(None),
+            hv_doorbell: Cell::new(ptr::null()),
+            init_stack: Cell::new(None),
             ist: IstStacks::new(),
-            current_stack: MemoryRegion::new(VirtAddr::null(), 0),
+            current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
     }
 
-    pub fn alloc(apic_id: u32) -> Result<*mut PerCpuUnsafe, SvsmError> {
+    pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
+        let percpu_ptr = vaddr.as_mut_ptr::<Self>();
         unsafe {
-            // Within each CPU state page, the first portion is the private
-            // mutable state and remainder is the shared state.
-            let unsafe_size = size_of::<PerCpuUnsafe>();
-            let private_size = size_of::<PerCpu>();
-            if unsafe_size + private_size > PAGE_SIZE {
-                panic!("Per-CPU data is larger than one page!");
-            }
-            let percpu_unsafe = vaddr.as_mut_ptr::<PerCpuUnsafe>();
-
-            (*percpu_unsafe) = PerCpuUnsafe::new(apic_id, percpu_unsafe);
-
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &(*percpu_unsafe).shared));
-            Ok(percpu_unsafe)
+            (*percpu_ptr) = Self::new(apic_id);
+            let percpu = &*percpu_ptr;
+            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared));
+            Ok(percpu)
         }
     }
 
@@ -300,30 +318,23 @@ impl PerCpuUnsafe {
         &self.shared
     }
 
-    pub fn cpu(&self) -> Ref<'_, PerCpu> {
-        self.private.borrow()
-    }
-
-    pub fn cpu_mut(&self) -> RefMut<'_, PerCpu> {
-        self.private.borrow_mut()
-    }
-
-    pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page().expect("Failed to allocate GHCB page");
+    pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
+        let ghcb_page = allocate_zeroed_page()?;
         if let Err(e) = GHCB::init(ghcb_page) {
             free_page(ghcb_page);
             return Err(e);
         };
-        self.ghcb = ghcb_page.as_mut_ptr();
+        let ghcb = unsafe { &*ghcb_page.as_ptr() };
+        self.ghcb.set(Some(ghcb));
         Ok(())
     }
 
-    pub fn ghcb_unsafe(&self) -> *mut GHCB {
-        self.ghcb
+    fn ghcb(&self) -> Option<&'static GHCB> {
+        self.ghcb.get()
     }
 
-    pub fn hv_doorbell_unsafe(&self) -> *mut HVDoorbell {
-        self.hv_doorbell
+    pub fn hv_doorbell_unsafe(&self) -> *const HVDoorbell {
+        self.hv_doorbell.get()
     }
 
     pub fn hv_doorbell_addr(&self) -> usize {
@@ -331,73 +342,15 @@ impl PerCpuUnsafe {
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.unwrap()
+        self.init_stack.get().unwrap()
     }
 
     pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.unwrap()
+        self.ist.double_fault_stack.get().unwrap()
     }
 
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
-        self.current_stack
-    }
-}
-
-#[derive(Debug)]
-pub struct PerCpu {
-    cpu_unsafe: *const PerCpuUnsafe,
-    apic_id: u32,
-    pgtbl: SpinLock<PageTableRef>,
-    tss: X86Tss,
-    svsm_vmsa: Option<VmsaRef>,
-    reset_ip: u64,
-
-    /// PerCpu Virtual Memory Range
-    vm_range: VMR,
-
-    /// Address allocator for per-cpu 4k temporary mappings
-    pub vrange_4k: VirtualRange,
-    /// Address allocator for per-cpu 2m temporary mappings
-    pub vrange_2m: VirtualRange,
-
-    /// Task list that has been assigned for scheduling on this CPU
-    runqueue: RWLock<RunQueue>,
-
-    /// WaitQueue for request processing
-    request_waitqueue: WaitQueue,
-}
-
-impl PerCpu {
-    fn new(apic_id: u32, cpu_unsafe: *const PerCpuUnsafe) -> Self {
-        PerCpu {
-            cpu_unsafe,
-            apic_id,
-            pgtbl: SpinLock::<PageTableRef>::new(PageTableRef::unset()),
-            tss: X86Tss::new(),
-            svsm_vmsa: None,
-            reset_ip: 0xffff_fff0u64,
-            vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
-            vrange_4k: VirtualRange::new(),
-            vrange_2m: VirtualRange::new(),
-            runqueue: RWLock::new(RunQueue::new()),
-            request_waitqueue: WaitQueue::new(),
-        }
-    }
-
-    pub fn alloc(apic_id: u32) -> Result<RefMut<'static, PerCpu>, SvsmError> {
-        unsafe {
-            let percpu_unsafe = PerCpuUnsafe::alloc(apic_id)?;
-            Ok((*percpu_unsafe).cpu_mut())
-        }
-    }
-
-    pub fn cpu_unsafe(&self) -> *const PerCpuUnsafe {
-        self.cpu_unsafe
-    }
-
-    fn shared(&self) -> &'static PerCpuShared {
-        let cpu_unsafe = unsafe { &*self.cpu_unsafe };
-        cpu_unsafe.shared()
+        self.current_stack.get()
     }
 
     pub const fn get_apic_id(&self) -> u32 {
@@ -413,8 +366,7 @@ impl PerCpu {
     }
 
     pub fn set_pgtable(&self, pgtable: PageTableRef) {
-        let mut my_pgtable = self.get_pgtable();
-        *my_pgtable = pgtable;
+        *self.get_pgtable() = pgtable;
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -427,56 +379,41 @@ impl PerCpu {
         Ok(top_of_stack)
     }
 
-    fn allocate_init_stack(&mut self) -> Result<(), SvsmError> {
+    fn allocate_init_stack(&self) -> Result<(), SvsmError> {
         let init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
-        unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).init_stack = init_stack;
-        }
+        self.init_stack.set(init_stack);
         Ok(())
     }
 
-    fn allocate_ist_stacks(&mut self) -> Result<(), SvsmError> {
-        let double_fault_stack = Some(self.allocate_stack(SVSM_STACK_IST_DF_BASE)?);
-        unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).ist.double_fault_stack = double_fault_stack;
-        }
+    fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
+        let double_fault_stack = self.allocate_stack(SVSM_STACK_IST_DF_BASE)?;
+        self.ist.double_fault_stack.set(Some(double_fault_stack));
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> LockGuard<'_, PageTableRef> {
-        self.pgtbl.lock()
+    pub fn get_pgtable(&self) -> RefMut<'_, PageTableRef> {
+        self.pgtbl.borrow_mut()
     }
 
-    pub fn setup_ghcb(&mut self) -> Result<(), SvsmError> {
-        unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            let cpu_unsafe_mut = &mut *cpu_unsafe_mut_ptr;
-            cpu_unsafe_mut.setup_ghcb()
-        }
-    }
-
+    /// Registers an already set up GHCB page for this CPU.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the GHCB for this CPU has not been set up via
+    /// [`PerCpu::setup_ghcb()`].
     pub fn register_ghcb(&self) -> Result<(), SvsmError> {
-        unsafe {
-            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
-            ghcb.as_ref().unwrap().register()
-        }
+        self.ghcb().unwrap().register()
     }
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let paddr = allocate_zeroed_page()?;
-        let ghcb = &mut current_ghcb();
-        if let Err(e) = HVDoorbell::init(paddr, ghcb) {
-            free_page(paddr);
+        let vaddr = allocate_zeroed_page()?;
+        let ghcb = current_ghcb();
+        if let Err(e) = HVDoorbell::init(vaddr, ghcb) {
+            free_page(vaddr);
             return Err(e);
         }
 
-        unsafe {
-            let cpu_unsafe = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe).hv_doorbell = paddr.as_mut_ptr::<HVDoorbell>();
-        }
-
+        self.hv_doorbell.set(vaddr.as_mut_ptr());
         Ok(())
     }
 
@@ -484,32 +421,30 @@ impl PerCpu {
         // #HV doorbell configuration is only required if this system will make
         // use of restricted injection.
         if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
-            self.setup_hv_doorbell()
-        } else {
-            Ok(())
+            self.setup_hv_doorbell()?;
         }
+        Ok(())
     }
 
-    fn setup_tss(&mut self) {
-        let double_fault_stack = unsafe { (*self.cpu_unsafe).get_top_of_df_stack() };
-        self.tss.ist_stacks[IST_DF] = double_fault_stack;
+    fn setup_tss(&self) {
+        let double_fault_stack = self.get_top_of_df_stack();
+        let mut tss = self.tss.get();
+        tss.ist_stacks[IST_DF] = double_fault_stack;
+        self.tss.set(tss);
     }
 
     pub fn map_self_stage2(&self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self.cpu_unsafe);
+        let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
         let flags = PTEntryFlags::data();
-
         self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
     }
 
     pub fn map_self(&self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(self.cpu_unsafe);
+        let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
-
         let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
-
         Ok(())
     }
 
@@ -536,7 +471,7 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&mut self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+    pub fn setup(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         // Allocate page-table
         self.allocate_page_table()?;
 
@@ -567,13 +502,13 @@ impl PerCpu {
     }
 
     // Setup code which needs to run on the target CPU
-    pub fn setup_on_cpu(&mut self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+    pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
         platform.setup_percpu_current(self)
     }
 
-    pub fn setup_idle_task(&mut self, entry: extern "C" fn()) -> Result<(), SvsmError> {
+    pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, entry)?;
-        self.runqueue.lock_read().set_idle_task(idle_task);
+        self.runqueue.borrow().set_idle_task(idle_task);
         Ok(())
     }
 
@@ -581,34 +516,35 @@ impl PerCpu {
         self.get_pgtable().load();
     }
 
-    // Ensure this function does not have multiple concurrent callers.
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn load_tss(&mut self) {
-        gdt_mut().load_tss(&self.tss);
+    pub fn load_tss(&self) {
+        // SAFETY: this can only produce UB if someone else calls self.tss.set
+        // () while this new reference is alive, which cannot happen as this
+        // data is local to this CPU. We need to get a reference to the value
+        // inside the Cell because the address of the TSS will be used. If we
+        // did self.tss.get(), then the address of a temporary copy would be
+        // used.
+        let tss = unsafe { &*self.tss.as_ptr() };
+        gdt_mut().load_tss(tss);
     }
 
-    pub fn load(&mut self) {
+    pub fn load(&self) {
         self.load_pgtable();
         self.load_tss();
     }
 
-    pub fn shutdown(&mut self) -> Result<(), SvsmError> {
-        unsafe {
-            let ghcb = (*self.cpu_unsafe).ghcb_unsafe();
-            if ghcb.is_null() {
-                return Ok(());
-            }
-
-            (*ghcb).shutdown()
+    pub fn shutdown(&self) -> Result<(), SvsmError> {
+        if let Some(ghcb) = self.ghcb.get() {
+            ghcb.shutdown()?;
         }
+        Ok(())
     }
 
-    pub fn set_reset_ip(&mut self, reset_ip: u64) {
-        self.reset_ip = reset_ip;
+    pub fn set_reset_ip(&self, reset_ip: u64) {
+        self.reset_ip.set(reset_ip);
     }
 
-    pub fn alloc_svsm_vmsa(&mut self) -> Result<(), SvsmError> {
-        if self.svsm_vmsa.is_some() {
+    pub fn alloc_svsm_vmsa(&self) -> Result<VmsaRef, SvsmError> {
+        if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
         }
@@ -616,22 +552,19 @@ impl PerCpu {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
-        self.svsm_vmsa = Some(VmsaRef::new(vaddr, paddr, false));
+        let vmsa = VmsaRef::new(vaddr, paddr, false);
+        self.svsm_vmsa.set(Some(vmsa));
 
-        Ok(())
+        Ok(vmsa)
     }
 
-    pub fn get_svsm_vmsa(&mut self) -> &mut Option<VmsaRef> {
-        &mut self.svsm_vmsa
-    }
-
-    pub fn prepare_svsm_vmsa(&mut self, start_rip: u64) {
-        let mut vmsa = self.svsm_vmsa.unwrap();
+    pub fn prepare_svsm_vmsa(&self, start_rip: u64) {
+        let mut vmsa = self.svsm_vmsa.get().unwrap();
         let vmsa_ref = vmsa.vmsa();
 
         vmsa_ref.tr = self.vmsa_tr_segment();
         vmsa_ref.rip = start_rip;
-        let top_of_stack = unsafe { (*self.cpu_unsafe).get_top_of_stack() };
+        let top_of_stack = self.get_top_of_stack();
         vmsa_ref.rsp = top_of_stack.into();
         vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
@@ -660,7 +593,7 @@ impl PerCpu {
         let paddr = virt_to_phys(vaddr);
 
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip);
+        init_guest_vmsa(vmsa, self.reset_ip.get());
 
         self.shared().update_guest_vmsa(paddr);
 
@@ -690,17 +623,19 @@ impl PerCpu {
         }
     }
 
-    pub fn virt_range_init(&mut self) {
+    fn virt_range_init(&self) {
         // Initialize 4k range
         let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
         assert!(page_count <= VirtualRange::CAPACITY);
         self.vrange_4k
+            .borrow_mut()
             .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
 
         // Initialize 2M range
         let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
         assert!(page_count <= VirtualRange::CAPACITY);
         self.vrange_2m
+            .borrow_mut()
             .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
     }
 
@@ -716,8 +651,8 @@ impl PerCpu {
     /// the mapping which remains valid until the ['VRMapping'] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&mut self, mapping: Arc<Mapping>) -> Result<VMRMapping<'_>, SvsmError> {
-        VMRMapping::new(&mut self.vm_range, mapping)
+    pub fn new_mapping(&self, mapping: Arc<Mapping>) -> Result<VMRMapping<'_>, SvsmError> {
+        VMRMapping::new(&self.vm_range, mapping)
     }
 
     /// Add the PerCpu virtual range into the provided pagetable
@@ -733,55 +668,51 @@ impl PerCpu {
         self.vm_range.handle_page_fault(vaddr, write)
     }
 
-    pub fn schedule_init(&mut self) -> TaskPointer {
-        let task = self.runqueue.lock_write().schedule_init();
-        unsafe {
-            let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-            (*cpu_unsafe_mut_ptr).current_stack = task.stack_bounds();
-        }
+    pub fn schedule_init(&self) -> TaskPointer {
+        let task = self.runqueue.borrow_mut().schedule_init();
+        self.current_stack.set(task.stack_bounds());
         task
     }
 
-    pub fn schedule_prepare(&mut self) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue.lock_write().schedule_prepare();
+    pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
+        let ret = self.runqueue.borrow_mut().schedule_prepare();
         if let Some((_, ref next)) = ret {
-            unsafe {
-                let cpu_unsafe_mut_ptr = self.cpu_unsafe as *mut PerCpuUnsafe;
-                (*cpu_unsafe_mut_ptr).current_stack = next.stack_bounds();
-            }
+            self.current_stack.set(next.stack_bounds());
         };
         ret
     }
 
-    pub fn runqueue(&self) -> &RWLock<RunQueue> {
+    pub fn runqueue(&self) -> &RefCell<RunQueue> {
         &self.runqueue
     }
 
     pub fn current_task(&self) -> TaskPointer {
-        self.runqueue.lock_read().current_task()
+        self.runqueue.borrow().current_task()
     }
 
-    pub fn set_tss_rsp0(&mut self, addr: VirtAddr) {
-        self.tss.stacks[0] = addr;
+    pub fn set_tss_rsp0(&self, addr: VirtAddr) {
+        let mut tss = self.tss.get();
+        tss.stacks[0] = addr;
+        self.tss.set(tss);
     }
 }
 
-pub fn this_cpu_unsafe() -> *mut PerCpuUnsafe {
-    SVSM_PERCPU_BASE.as_mut_ptr::<PerCpuUnsafe>()
+pub fn this_cpu() -> &'static PerCpu {
+    unsafe { &*SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>() }
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
-    unsafe { (*this_cpu_unsafe()).shared() }
+    this_cpu().shared()
 }
 
-pub fn this_cpu() -> Ref<'static, PerCpu> {
-    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
-    cpu_unsafe.cpu()
-}
-
-pub fn this_cpu_mut() -> RefMut<'static, PerCpu> {
-    let cpu_unsafe = unsafe { &*this_cpu_unsafe() };
-    cpu_unsafe.cpu_mut()
+/// Gets the GHCB for this CPU.
+///
+/// # Panics
+///
+/// Panics if the GHCB for this CPU has not been set up via
+/// [`PerCpu::setup_ghcb()`].
+pub fn current_ghcb() -> &'static GHCB {
+    this_cpu().ghcb().unwrap()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -877,19 +808,20 @@ impl PerCpuVmsas {
 
 pub fn wait_for_requests() {
     let current_task = current_task();
-    this_cpu_mut()
+    this_cpu()
         .request_waitqueue
+        .borrow_mut()
         .wait_for_event(current_task);
     schedule();
 }
 
 pub fn process_requests() {
-    let maybe_task = this_cpu_mut().request_waitqueue.wakeup();
+    let maybe_task = this_cpu().request_waitqueue.borrow_mut().wakeup();
     if let Some(task) = maybe_task {
         schedule_task(task);
     }
 }
 
 pub fn current_task() -> TaskPointer {
-    this_cpu().runqueue.lock_read().current_task()
+    this_cpu().runqueue.borrow().current_task()
 }

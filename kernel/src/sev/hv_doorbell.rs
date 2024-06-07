@@ -3,7 +3,7 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::idt::svsm::common_isr_handler;
-use crate::cpu::percpu::this_cpu_unsafe;
+use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::virt_to_phys;
@@ -31,7 +31,7 @@ pub struct HVDoorbell {
 }
 
 impl HVDoorbell {
-    pub fn init(vaddr: VirtAddr, ghcb: &mut GHCB) -> Result<(), SvsmError> {
+    pub fn init(vaddr: VirtAddr, ghcb: &GHCB) -> Result<(), SvsmError> {
         // The #HV doorbell page must be private before it can be used.
         make_page_shared(vaddr)?;
 
@@ -105,14 +105,11 @@ impl HVDoorbell {
 }
 
 pub fn current_hv_doorbell() -> &'static HVDoorbell {
-    unsafe {
-        let cpu_unsafe = &*this_cpu_unsafe();
-        let hv_doorbell_ptr = cpu_unsafe.hv_doorbell_unsafe();
-        if hv_doorbell_ptr.is_null() {
-            panic!("HV doorbell page dereferenced before allocating");
-        }
-        &*hv_doorbell_ptr
+    let hv_doorbell_ptr = this_cpu().hv_doorbell_unsafe();
+    if hv_doorbell_ptr.is_null() {
+        panic!("HV doorbell page dereferenced before allocating");
     }
+    unsafe { &*hv_doorbell_ptr }
 }
 
 /// # Safety
@@ -120,7 +117,7 @@ pub fn current_hv_doorbell() -> &'static HVDoorbell {
 /// called directly from assembly, and should not be invoked directly from
 /// Rust code.
 #[no_mangle]
-pub unsafe extern "C" fn process_hv_events(hv_doorbell: *mut HVDoorbell) {
+pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     unsafe {
         (*hv_doorbell).process_pending_events();
     }

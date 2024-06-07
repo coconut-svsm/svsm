@@ -22,7 +22,7 @@ use svsm::console::{init_console, install_console_logger};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
-use svsm::cpu::percpu::{this_cpu_mut, PerCpu};
+use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -57,18 +57,18 @@ fn setup_stage2_allocator() {
 }
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) {
-    let mut bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
+    let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
     unsafe {
         bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
     }
     bsp_percpu
         .map_self_stage2()
         .expect("Failed to map per-cpu area");
-    platform.setup_guest_host_comm(&mut bsp_percpu, true);
+    platform.setup_guest_host_comm(bsp_percpu, true);
 }
 
 fn shutdown_percpu() {
-    this_cpu_mut()
+    this_cpu()
         .shutdown()
         .expect("Failed to shut down percpu data (including GHCB)");
 }

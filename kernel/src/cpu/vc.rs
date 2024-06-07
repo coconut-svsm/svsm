@@ -8,7 +8,7 @@ use super::idt::common::X86ExceptionContext;
 use crate::address::Address;
 use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
-use crate::cpu::ghcb::current_ghcb;
+use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
@@ -105,14 +105,14 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     // handling. This field is currently reset in the relevant GHCB methods
     // but it would be better to move the reset out of the different
     // handlers.
-    let mut ghcb = current_ghcb();
+    let ghcb = current_ghcb();
 
     let insn_ctx = vc_decode_insn(ctx)?;
 
     match (err, insn_ctx.and_then(|d| d.insn())) {
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
-        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
@@ -130,7 +130,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
     // handling. This field is currently reset in the relevant GHCB methods
     // but it would be better to move the reset out of the different
     // handlers.
-    let mut ghcb = current_ghcb();
+    let ghcb = current_ghcb();
 
     let insn_ctx = vc_decode_insn(ctx)?;
 
@@ -143,8 +143,8 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, &mut ghcb, ins),
-        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, &mut ghcb, ins),
+        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
@@ -173,7 +173,7 @@ fn handle_svsm_caa_rdmsr(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError>
 
 fn handle_msr(
     ctx: &mut X86ExceptionContext,
-    ghcb: &mut GHCB,
+    ghcb: &GHCB,
     ins: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match ins {
@@ -241,7 +241,7 @@ fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
 
 fn handle_ioio(
     ctx: &mut X86ExceptionContext,
-    ghcb: &mut GHCB,
+    ghcb: &GHCB,
     insn: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match insn {
@@ -284,8 +284,8 @@ fn vc_decoding_needed(error_code: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
-    use crate::cpu::percpu::this_cpu_unsafe;
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
     use core::arch::asm;
@@ -317,18 +317,14 @@ mod tests {
     const GHCB_FILL_TEST_VALUE: u8 = b'1';
 
     fn fill_ghcb_with_test_data() {
-        unsafe {
-            let ghcb = (*this_cpu_unsafe()).ghcb_unsafe();
-            // The count param is 1 to only write one ghcb's worth of data
-            core::ptr::write_bytes(ghcb, GHCB_FILL_TEST_VALUE, 1);
-        }
+        current_ghcb().fill(GHCB_FILL_TEST_VALUE);
     }
 
     fn verify_ghcb_was_altered() {
-        let ghcb_bytes = unsafe {
-            let ghcb = (*this_cpu_unsafe()).ghcb_unsafe();
-            core::slice::from_raw_parts(ghcb.cast::<u8>(), core::mem::size_of::<GHCB>())
-        };
+        let ghcb = current_ghcb();
+        let ptr: *const GHCB = core::ptr::from_ref(ghcb);
+        let ghcb_bytes =
+            unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
         assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
     }
 

@@ -5,7 +5,7 @@
 // Author: Roy Hopkins <rhopkins@suse.de>
 
 use crate::address::VirtAddr;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
@@ -75,8 +75,8 @@ pub fn virt_log_usage() {
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
         this_cpu().get_apic_id(),
-        this_cpu().vrange_4k.used_pages() - unused_cap_4k,
-        this_cpu().vrange_2m.used_pages() - unused_cap_2m
+        this_cpu().vrange_4k.borrow().used_pages() - unused_cap_4k,
+        this_cpu().vrange_2m.borrow().used_pages() - unused_cap_2m
     );
 }
 
@@ -89,13 +89,17 @@ pub fn virt_alloc_range_4k(
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT;
-    let addr = this_cpu_mut().vrange_4k.alloc(page_count, alignment)?;
+    let addr = this_cpu()
+        .vrange_4k
+        .borrow_mut()
+        .alloc(page_count, alignment)?;
     Ok(MemoryRegion::new(addr, size_bytes))
 }
 
 pub fn virt_free_range_4k(vregion: MemoryRegion<VirtAddr>) {
-    this_cpu_mut()
+    this_cpu()
         .vrange_4k
+        .borrow_mut()
         .free(vregion.start(), vregion.len() >> PAGE_SHIFT);
 }
 
@@ -108,13 +112,17 @@ pub fn virt_alloc_range_2m(
         return Err(SvsmError::Mem);
     }
     let page_count = size_bytes >> PAGE_SHIFT_2M;
-    let addr = this_cpu_mut().vrange_2m.alloc(page_count, alignment)?;
+    let addr = this_cpu()
+        .vrange_2m
+        .borrow_mut()
+        .alloc(page_count, alignment)?;
     Ok(MemoryRegion::new(addr, size_bytes))
 }
 
 pub fn virt_free_range_2m(vregion: MemoryRegion<VirtAddr>) {
-    this_cpu_mut()
+    this_cpu()
         .vrange_2m
+        .borrow_mut()
         .free(vregion.start(), vregion.len() >> PAGE_SHIFT_2M);
 }
 

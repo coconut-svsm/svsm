@@ -33,7 +33,7 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use alloc::sync::Arc;
@@ -226,13 +226,12 @@ impl TaskList {
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
 pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
-    let mut cpu = this_cpu_mut();
-    let task = Task::create(&mut cpu, entry)?;
+    let cpu = this_cpu();
+    let task = Task::create(cpu, entry)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
-    drop(cpu);
+    cpu.runqueue().borrow_mut().handle_task(task.clone());
 
     schedule();
 
@@ -240,13 +239,12 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
 }
 
 pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
-    let mut cpu = this_cpu_mut();
-    let task = Task::create_user(&mut cpu, user_entry)?;
+    let cpu = this_cpu();
+    let task = Task::create_user(cpu, user_entry)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
-    drop(cpu);
+    cpu.runqueue().borrow_mut().handle_task(task.clone());
 
     Ok(task)
 }
@@ -257,7 +255,7 @@ pub fn current_task() -> TaskPointer {
 
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
-    match &this_cpu().runqueue().lock_read().current_task {
+    match &this_cpu().runqueue().borrow().current_task {
         Some(current_task) => current_task.get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
@@ -270,7 +268,7 @@ pub fn is_current_task(id: u32) -> bool {
 /// This function must only be called after scheduling is initialized, otherwise it will panic.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
-    let mut rq = cpu.runqueue().lock_write();
+    let mut rq = cpu.runqueue().borrow_mut();
     let task_node = rq
         .current_task
         .as_mut()
@@ -315,7 +313,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 /// function has ran it is safe to call [`schedule()`] on the current CPU.
 pub fn schedule_init() {
     unsafe {
-        let next = task_pointer(this_cpu_mut().schedule_init());
+        let next = task_pointer(this_cpu().schedule_init());
         switch_to(null_mut(), next);
     }
 }
@@ -324,7 +322,7 @@ pub fn schedule_init() {
 /// run-list. In case the current task is terminated, it will be destroyed after
 /// the switch to the next task.
 pub fn schedule() {
-    let work = this_cpu_mut().schedule_prepare();
+    let work = this_cpu().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!
     if let Some((current, next)) = work {
@@ -337,7 +335,7 @@ pub fn schedule() {
             this_cpu().populate_page_table(&mut pt);
         }
 
-        this_cpu_mut().set_tss_rsp0(next.stack_bounds.end());
+        this_cpu().set_tss_rsp0(next.stack_bounds.end());
 
         // Get task-pointers, consuming the Arcs and release their reference
         unsafe {
@@ -351,16 +349,12 @@ pub fn schedule() {
 
     // We're now in the context of the new task. If the previous task had terminated
     // then we can release it's reference here.
-    let _ = this_cpu_mut()
-        .runqueue()
-        .lock_write()
-        .terminated_task
-        .take();
+    let _ = this_cpu().runqueue().borrow_mut().terminated_task.take();
 }
 
 pub fn schedule_task(task: TaskPointer) {
     task.set_task_running();
-    this_cpu().runqueue().lock_write().handle_task(task);
+    this_cpu().runqueue().borrow_mut().handle_task(task);
     schedule();
 }
 

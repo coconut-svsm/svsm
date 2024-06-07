@@ -1,7 +1,7 @@
 use log::info;
 use test::ShouldPanic;
 
-use crate::{cpu::ghcb::current_ghcb, sev::ghcb::GHCBIOSize};
+use crate::{cpu::percpu::current_ghcb, sev::ghcb::GHCBIOSize};
 
 pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
     info!("running {} tests", test_cases.len());

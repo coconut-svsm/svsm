@@ -6,7 +6,7 @@
 
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::percpu::this_cpu_mut;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_address_sync;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{
@@ -40,7 +40,7 @@ impl PerCPUPageMappingGuard {
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
         let raw_mapping = if huge {
             let region = virt_alloc_range_2m(size, 0)?;
-            if let Err(e) = this_cpu_mut()
+            if let Err(e) = this_cpu()
                 .get_pgtable()
                 .map_region_2m(region, paddr_start, flags)
             {
@@ -50,7 +50,7 @@ impl PerCPUPageMappingGuard {
             region
         } else {
             let region = virt_alloc_range_4k(size, 0)?;
-            if let Err(e) = this_cpu_mut()
+            if let Err(e) = this_cpu()
                 .get_pgtable()
                 .map_region_4k(region, paddr_start, flags)
             {
@@ -78,10 +78,10 @@ impl PerCPUPageMappingGuard {
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
         if self.huge {
-            this_cpu_mut().get_pgtable().unmap_region_2m(self.mapping);
+            this_cpu().get_pgtable().unmap_region_2m(self.mapping);
             virt_free_range_2m(self.mapping);
         } else {
-            this_cpu_mut().get_pgtable().unmap_region_4k(self.mapping);
+            this_cpu().get_pgtable().unmap_region_4k(self.mapping);
             virt_free_range_4k(self.mapping);
         }
         flush_address_sync(self.mapping.start());

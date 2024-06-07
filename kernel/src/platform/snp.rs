@@ -6,8 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::cpuid_table;
-use crate::cpu::ghcb::current_ghcb;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{current_ghcb, PerCpu};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
@@ -45,12 +44,12 @@ impl SvsmPlatform for SnpPlatform {
         sev_status_verify();
     }
 
-    fn setup_percpu(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         // Setup GHCB
         cpu.setup_ghcb()
     }
 
-    fn setup_percpu_current(&self, cpu: &mut PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         cpu.register_ghcb()?;
         Ok(())
     }
@@ -80,7 +79,7 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
-    fn setup_guest_host_comm(&mut self, cpu: &mut PerCpu, is_bsp: bool) {
+    fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool) {
         if is_bsp {
             verify_ghcb_version();
         }

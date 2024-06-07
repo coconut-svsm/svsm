@@ -6,7 +6,7 @@
 
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::{this_cpu, this_cpu_mut};
+use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -45,7 +45,7 @@ pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
 
 pub fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
-    this_cpu_mut().get_pgtable().set_encrypted_4k(vaddr)?;
+    this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
 
     let platform = SVSM_PLATFORM.as_dyn_ref();

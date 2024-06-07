@@ -34,11 +34,11 @@ impl SvsmPlatform for NativePlatform {
     fn env_setup(&mut self) {}
     fn env_setup_late(&mut self) {}
 
-    fn setup_percpu(&self, _cpu: &mut PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Ok(())
     }
 
-    fn setup_percpu_current(&self, _cpu: &mut PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Ok(())
     }
 
@@ -53,7 +53,7 @@ impl SvsmPlatform for NativePlatform {
         }
     }
 
-    fn setup_guest_host_comm(&mut self, _cpu: &mut PerCpu, _is_bsp: bool) {}
+    fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
 
     fn get_console_io_port(&self) -> &'static dyn IOPort {
         &CONSOLE_IO
