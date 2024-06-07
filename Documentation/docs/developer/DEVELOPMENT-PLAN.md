@@ -288,6 +288,11 @@ SVSM can send IPIs between VCPUs.
 
 ### [ApicEmul] vXAPIC and vX2APIC Emulation Support
 
+* Owners:
+    *  Jon Lange ([@msft-jlange](https://github.com/msft-jlange))
+    *  Vijay Dhanraj ([@vijaydhanraj](https://github.com/vijaydhanraj))
+* Tracking issue: [#328](https://github.com/coconut-svsm/svsm/issues/328)
+
 Depends on: **IrqSec.HvIrqSig**, **IrqSec.Apic4Svsm**, **UsrMode.IpcEvt**
 
 Add an emulation for vXAPIC and vX2APIC to the SVSM for use by the guest OS.
