@@ -9,7 +9,7 @@ use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::gdt;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
-use crate::insn_decode::{InsnMachineCtx, SegRegister};
+use crate::insn_decode::{InsnMachineCtx, Register, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::types::SVSM_CS;
 use core::arch::{asm, global_asm};
@@ -70,6 +70,58 @@ impl InsnMachineCtx for X86ExceptionContext {
 
     fn read_cr4(&self) -> u64 {
         read_cr4().bits()
+    }
+
+    fn read_reg(&self, reg: Register) -> usize {
+        match reg {
+            Register::Rax => self.regs.rax,
+            Register::Rdx => self.regs.rdx,
+            Register::Rcx => self.regs.rcx,
+            Register::Rbx => self.regs.rdx,
+            Register::Rsp => self.frame.rsp,
+            Register::Rbp => self.regs.rbp,
+            Register::Rdi => self.regs.rdi,
+            Register::Rsi => self.regs.rsi,
+            Register::R8 => self.regs.r8,
+            Register::R9 => self.regs.r9,
+            Register::R10 => self.regs.r10,
+            Register::R11 => self.regs.r11,
+            Register::R12 => self.regs.r12,
+            Register::R13 => self.regs.r13,
+            Register::R14 => self.regs.r14,
+            Register::R15 => self.regs.r15,
+            Register::Rip => self.frame.rip,
+        }
+    }
+
+    fn read_flags(&self) -> usize {
+        self.frame.flags
+    }
+
+    fn write_reg(&mut self, reg: Register, val: usize) {
+        match reg {
+            Register::Rax => self.regs.rax = val,
+            Register::Rdx => self.regs.rdx = val,
+            Register::Rcx => self.regs.rcx = val,
+            Register::Rbx => self.regs.rdx = val,
+            Register::Rsp => self.frame.rsp = val,
+            Register::Rbp => self.regs.rbp = val,
+            Register::Rdi => self.regs.rdi = val,
+            Register::Rsi => self.regs.rsi = val,
+            Register::R8 => self.regs.r8 = val,
+            Register::R9 => self.regs.r9 = val,
+            Register::R10 => self.regs.r10 = val,
+            Register::R11 => self.regs.r11 = val,
+            Register::R12 => self.regs.r12 = val,
+            Register::R13 => self.regs.r13 = val,
+            Register::R14 => self.regs.r14 = val,
+            Register::R15 => self.regs.r15 = val,
+            Register::Rip => self.frame.rip = val,
+        }
+    }
+
+    fn read_cpl(&self) -> usize {
+        self.frame.cs & 3
     }
 }
 
