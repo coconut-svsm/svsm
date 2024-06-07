@@ -311,8 +311,15 @@ impl PerCpuShared {
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
+/// CPU-local data.
+///
+/// This type is not [`Sync`], as its contents will only be accessed from the
+/// local CPU, much like thread-local data in an std environment. The only
+/// part of the struct that may be accessed from a different CPU is the
+/// `shared` field, a reference to which will be stored in [`PERCPU_AREAS`].
 #[derive(Debug)]
 pub struct PerCpu {
+    /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
 
     pgtbl: RefCell<PageTableRef>,
@@ -333,8 +340,12 @@ pub struct PerCpu {
     /// Local APIC state for APIC emulation
     apic: RefCell<LocalApic>,
 
+    /// GHCB page for this CPU.
     ghcb: Cell<Option<&'static GHCB>>,
+
+    /// `#HV` doorbell page for this CPU.
     hv_doorbell: OnceCell<&'static HVDoorbell>,
+
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
 
@@ -343,6 +354,7 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
+    /// Creates a new default [`PerCpu`] struct.
     fn new(apic_id: u32) -> Self {
         Self {
             pgtbl: RefCell::new(PageTableRef::unset()),
@@ -366,6 +378,8 @@ impl PerCpu {
         }
     }
 
+    /// Creates a new default [`PerCpu`] struct, allocates it via the page
+    /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         let percpu_ptr = vaddr.as_mut_ptr::<Self>();
@@ -381,6 +395,7 @@ impl PerCpu {
         &self.shared
     }
 
+    /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
         let ghcb_page = allocate_zeroed_page()?;
         if let Err(e) = GHCB::init(ghcb_page) {
