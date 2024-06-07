@@ -89,4 +89,8 @@ pub enum SevExtraFeatures {
     DebugSwap,
     PreventHostIBS,
     SNPBTBIsolation,
+    VmplSSS,
+    SecureTscEn,
+    VmsaRegProt,
+    SmtProtection,
 }

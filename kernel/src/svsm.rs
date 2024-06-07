@@ -45,7 +45,7 @@ use svsm::platform::{SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut, sev_status_init};
+use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
@@ -300,7 +300,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let platform = platform_cell.as_mut_dyn_ref();
 
     init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
-    dump_cpuid_table();
 
     let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
     secrets_page_mut().copy_from(secrets_page_virt);
@@ -309,7 +308,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     cr0_init();
     cr4_init();
     efer_init();
-    sev_status_init();
+    platform.env_setup();
 
     memory_init(&launch_info);
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
@@ -360,6 +359,9 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     install_console_logger("SVSM").expect("Console logger already initialized");
 
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
+
+    dump_cpuid_table();
+    platform.env_setup_late();
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
