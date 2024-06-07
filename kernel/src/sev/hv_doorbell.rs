@@ -134,12 +134,15 @@ impl HVDoorbell {
     }
 }
 
+/// Gets the HV doorbell page configured for this CPU.
+///
+/// # Panics
+///
+/// Panics if te HV doorbell page has not been set up beforehand.
 pub fn current_hv_doorbell() -> &'static HVDoorbell {
-    let hv_doorbell_ptr = this_cpu().hv_doorbell_unsafe();
-    if hv_doorbell_ptr.is_null() {
-        panic!("HV doorbell page dereferenced before allocating");
-    }
-    unsafe { &*hv_doorbell_ptr }
+    this_cpu()
+        .hv_doorbell()
+        .expect("HV doorbell page dereferenced before allocating")
 }
 
 /// # Safety

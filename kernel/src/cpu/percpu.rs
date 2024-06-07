@@ -37,7 +37,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_F
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, OnceCell, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
 use core::slice::Iter;
@@ -334,7 +334,7 @@ pub struct PerCpu {
     apic: RefCell<LocalApic>,
 
     ghcb: Cell<Option<&'static GHCB>>,
-    hv_doorbell: Cell<*const HVDoorbell>,
+    hv_doorbell: OnceCell<&'static HVDoorbell>,
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
 
@@ -359,7 +359,7 @@ impl PerCpu {
 
             shared: PerCpuShared::new(apic_id),
             ghcb: Cell::new(None),
-            hv_doorbell: Cell::new(ptr::null()),
+            hv_doorbell: OnceCell::new(),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
@@ -396,12 +396,18 @@ impl PerCpu {
         self.ghcb.get()
     }
 
-    pub fn hv_doorbell_unsafe(&self) -> *const HVDoorbell {
-        self.hv_doorbell.get()
+    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
+        self.hv_doorbell.get().copied()
     }
 
-    pub fn hv_doorbell_addr(&self) -> usize {
-        ptr::addr_of!(self.hv_doorbell) as usize
+    /// Gets a pointer to the location of the HV doorbell pointer in the
+    /// PerCpu structure. Pointers and references have the same layout, so
+    /// the return type is equivalent to `*const *const HVDoorbell`.
+    pub fn hv_doorbell_addr(&self) -> *const &'static HVDoorbell {
+        self.hv_doorbell
+            .get()
+            .map(ptr::from_ref)
+            .unwrap_or(ptr::null())
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -468,18 +474,30 @@ impl PerCpu {
         self.ghcb().unwrap().register()
     }
 
-    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
+    fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         let ghcb = current_ghcb();
         if let Err(e) = HVDoorbell::init(vaddr, ghcb) {
             free_page(vaddr);
             return Err(e);
         }
-
-        self.hv_doorbell.set(vaddr.as_mut_ptr());
+        // SAFETY: the page contents have been allocated on valid memory and
+        // initialized. The HVDoorbell type's alignment requirements are met
+        // by the fact that we allocated a whole page. Mutable references to
+        // the page are never created, so this cannot be mutably aliased.
+        let doorbell = unsafe { &*vaddr.as_mut_ptr::<HVDoorbell>() };
+        self.hv_doorbell
+            .set(doorbell)
+            .expect("Attempted to reinitialize the HV doorbell page");
         Ok(())
     }
 
+    /// Configures the HV doorbell page if restricted injection is enabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this function is called more than once for a given CPU and
+    /// restricted injection is enabled.
     pub fn configure_hv_doorbell(&self) -> Result<(), SvsmError> {
         // #HV doorbell configuration is only required if this system will make
         // use of restricted injection.

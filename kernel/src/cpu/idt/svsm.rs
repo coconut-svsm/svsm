@@ -110,7 +110,7 @@ pub fn idt_init() {
     // that uses the value is not type safe in any case, so enforcing type
     // safety on the pointer would offer no meaningful value.
     unsafe {
-        HV_DOORBELL_ADDR = this_cpu().hv_doorbell_addr();
+        HV_DOORBELL_ADDR = this_cpu().hv_doorbell_addr() as usize;
     };
 }
 
