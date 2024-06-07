@@ -44,6 +44,18 @@ pub const PF_ERROR_WRITE: usize = 2;
 
 pub const INT_INJ_VECTOR: usize = 0x50;
 
+bitflags::bitflags! {
+    /// Page fault error code flags.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct PageFaultError :u32 {
+        const P     = 1 << 0;
+        const W     = 1 << 1;
+        const U     = 1 << 2;
+        const R     = 1 << 3;
+        const I     = 1 << 4;
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
