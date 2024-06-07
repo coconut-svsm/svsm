@@ -6,7 +6,6 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
-use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
@@ -22,18 +21,15 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
         .setup(platform)
         .expect("Failed to setup AP per-cpu area");
     let mut vmsa = percpu
-        .alloc_svsm_vmsa()
+        .alloc_svsm_vmsa(vtom, start_rip)
         .expect("Failed to allocate AP SVSM VMSA");
-
-    init_svsm_vmsa(vmsa.vmsa(), vtom);
-    percpu.prepare_svsm_vmsa(start_rip);
 
     let sev_features = vmsa.vmsa().sev_features;
     let vmsa_pa = vmsa.paddr;
 
     let percpu_shared = percpu.shared();
 
-    vmsa.vmsa().enable();
+    vmsa.vmsa_mut().enable();
     current_ghcb()
         .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
         .expect("Failed to launch secondary CPU");

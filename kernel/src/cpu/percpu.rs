@@ -12,8 +12,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::apic::ApicError;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::init_guest_vmsa;
-use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
 use crate::cpu::LocalApic;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
@@ -124,8 +123,13 @@ impl VmsaRef {
         }
     }
 
+    pub fn vmsa(&self) -> &VMSA {
+        let ptr = self.vaddr.as_mut_ptr::<VMSA>();
+        unsafe { ptr.as_mut().unwrap() }
+    }
+
     #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn vmsa(&mut self) -> &mut VMSA {
+    pub fn vmsa_mut(&mut self) -> &mut VMSA {
         let ptr = self.vaddr.as_mut_ptr::<VMSA>();
         // SAFETY: this function takes &mut self, so only one mutable
         // reference to the underlying VMSA can exist.
@@ -522,19 +526,6 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
-        unsafe {
-            let hv_doorbell = self.hv_doorbell.get();
-            if hv_doorbell.is_null() {
-                None
-            } else {
-                // The HV doorbell page can only ever be borrowed shared, never
-                // mutable, and can safely have a static lifetime.
-                Some(&*hv_doorbell)
-            }
-        }
-    }
-
     fn setup_tss(&self) {
         let double_fault_stack = self.get_top_of_df_stack();
         let mut tss = self.tss.get();
@@ -652,7 +643,7 @@ impl PerCpu {
         self.reset_ip.set(reset_ip);
     }
 
-    pub fn alloc_svsm_vmsa(&self) -> Result<VmsaRef, SvsmError> {
+    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<VmsaRef, SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -661,21 +652,19 @@ impl PerCpu {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
-        let vmsa = VmsaRef::new(vaddr, paddr, false);
+        let mut vmsa = VmsaRef::new(vaddr, paddr, false);
+
+        // Initialize VMSA
+        let vmsa_ref = vmsa.vmsa_mut();
+        init_svsm_vmsa(vmsa_ref, vtom);
+        vmsa_ref.tr = self.vmsa_tr_segment();
+        vmsa_ref.rip = start_rip;
+        vmsa_ref.rsp = self.get_top_of_stack().into();
+        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
+
         self.svsm_vmsa.set(Some(vmsa));
 
         Ok(vmsa)
-    }
-
-    pub fn prepare_svsm_vmsa(&self, start_rip: u64) {
-        let mut vmsa = self.svsm_vmsa.get().unwrap();
-        let vmsa_ref = vmsa.vmsa();
-
-        vmsa_ref.tr = self.vmsa_tr_segment();
-        vmsa_ref.rip = start_rip;
-        let top_of_stack = self.get_top_of_stack();
-        vmsa_ref.rsp = top_of_stack.into();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
     }
 
     pub fn unmap_guest_vmsa(&self) {
