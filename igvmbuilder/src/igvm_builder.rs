@@ -272,12 +272,16 @@ impl IgvmBuilder {
 
     fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
         if let Some(policy) = &self.options.policy {
-            let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
-            self.initialization
-                .push(IgvmInitializationHeader::GuestPolicy {
-                    policy,
-                    compatibility_mask: COMPATIBILITY_MASK.get(),
-                })
+            if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+                let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
+                self.initialization
+                    .push(IgvmInitializationHeader::GuestPolicy {
+                        policy,
+                        compatibility_mask: SNP_COMPATIBILITY_MASK,
+                    })
+            } else {
+                return Err("Policy not supported by the specified platform(s)".into());
+            }
         }
         Ok(())
     }
