@@ -48,6 +48,10 @@ pub struct CmdOptions {
     #[arg(long)]
     pub policy: Option<String>,
 
+    /// Include SEV-SNP platform target
+    #[arg(long, default_value_t = false)]
+    pub snp: bool,
+
     /// Include NATIVE platform target
     #[arg(long, default_value_t = false)]
     pub native: bool,

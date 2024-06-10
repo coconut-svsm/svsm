@@ -62,14 +62,18 @@ impl IgvmBuilder {
         // revision.
         let mut use_igvm_v2 = false;
 
-        // SNP is always included in the compatibility mask regardless of the
-        // provided options.
-        COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
-
+        // Include the SEV-SNP platform if requested.
+        if options.snp {
+            COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
+        }
         // Include the NATIVE platform if requested.
         if options.native {
             COMPATIBILITY_MASK.add(NATIVE_COMPATIBILITY_MASK);
             use_igvm_v2 = true;
+        }
+
+        if COMPATIBILITY_MASK.get() == 0 {
+            return Err("No platform specified".into());
         }
 
         let firmware = match options.firmware {
