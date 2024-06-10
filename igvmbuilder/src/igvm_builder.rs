@@ -208,7 +208,7 @@ impl IgvmBuilder {
         };
 
         // Most of the parameter block can be initialised with constants.
-        let mut param_block = IgvmParamBlock {
+        Ok(IgvmParamBlock {
             param_area_size,
             param_page_offset,
             memory_map_offset,
@@ -226,23 +226,7 @@ impl IgvmBuilder {
                 false => 0,
             },
             ..Default::default()
-        };
-
-        // Calculate the kernel size and base.
-        match self.options.hypervisor {
-            Hypervisor::Qemu => {
-                // Place the kernel area at 512 GB with a size of 16 MB.
-                param_block.kernel_base = 0x0000008000000000;
-                param_block.kernel_size = 0x01000000;
-            }
-            Hypervisor::HyperV => {
-                // Place the kernel area at 64 MB with a size of 16 MB.
-                param_block.kernel_base = 0x04000000;
-                param_block.kernel_size = 0x01000000;
-            }
-        }
-
-        Ok(param_block)
+        })
     }
 
     fn build_platforms(&mut self, param_block: &IgvmParamBlock) {
