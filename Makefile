@@ -69,16 +69,16 @@ $(IGVMBUILDER):
 $(IGVMMEASURE):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmmeasure
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
-	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu --snp
+bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
+	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu --snp --tdp
 	$(IGVMMEASURE) --check-kvm $@ measure
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v --native --snp
+bin/coconut-hyperv.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v --native --snp --tdp
 	$(IGVMMEASURE) $@ measure
 
-bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu --snp
+bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu --snp --tdp
 	$(IGVMMEASURE) $@ measure
 
 test:
