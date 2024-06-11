@@ -120,8 +120,19 @@ fn check_requests() -> Result<bool, SvsmReqError> {
     let vmsa_ref = cpu.guest_vmsa_ref();
     if let Some(caa_addr) = vmsa_ref.caa_addr() {
         let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
-        let caa = calling_area.read()?;
-        calling_area.write(caa.serviced())?;
+        // SAFETY: guest vmsa and ca are always validated before beeing updated
+        // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
+        // they're safe to use.
+        let caa = unsafe { calling_area.read()? };
+
+        let caa_serviced = caa.serviced();
+
+        // SAFETY: guest vmsa is always validated before beeing updated
+        // (core_remap_ca() or core_create_vcpu()) so it's safe to use.
+        unsafe {
+            calling_area.write(caa_serviced)?;
+        }
+
         Ok(caa.call_pending != 0)
     } else {
         Ok(false)

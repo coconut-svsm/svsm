@@ -272,7 +272,10 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, S
     // rip and rip+15 addresses should belong to a mapped page.
     // To ensure this, we rely on GuestPtr::read() that uses the exception table
     // to handle faults while fetching.
-    let insn_raw = rip.read()?;
+    // SAFETY: we trust the CPU-provided register state to be valid. Thus, RIP
+    // will point to the instruction that caused #VC to be raised, so it can
+    // safely be read.
+    let insn_raw = unsafe { rip.read()? };
 
     let insn = Instruction::new(insn_raw);
     Ok(Some(insn.decode(ctx)?))

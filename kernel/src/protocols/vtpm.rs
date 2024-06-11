@@ -230,7 +230,9 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     //     IN: platform command
     //    OUT: platform command response size
 
-    let command = GuestPtr::<u32>::new(vaddr).read()?;
+    // SAFETY: vaddr comes from a new mapped region.
+    let command = unsafe { GuestPtr::<u32>::new(vaddr).read()? };
+
     let cmd = TpmPlatformCommand::try_from(command)?;
 
     if !is_vtpm_platform_command_supported(cmd) {
@@ -243,7 +245,15 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         TpmPlatformCommand::SendCommand => tpm_send_command_request(buffer)?,
     };
 
-    GuestPtr::<u32>::new(vaddr).write(response_size)?;
+    // SAFETY: vaddr points to a new mapped region.
+    // if paddr + sizeof::<u32>() goes to the folowing page, it should
+    // not be a problem since the end of the requested region is
+    // (paddr + PAGE_SIZE), which requests another page. So
+    // write(response_size) can only happen on valid memory, mapped
+    // by PerCPUPageMappingGuard::create().
+    unsafe {
+        GuestPtr::<u32>::new(vaddr).write(response_size)?;
+    }
 
     Ok(())
 }
