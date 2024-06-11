@@ -36,6 +36,8 @@ pub enum InsnError {
     ExceptionAC,
     /// Error due to general protection exception.
     ExceptionGP(u8),
+    /// Error due to page fault exception.
+    ExceptionPF(usize, u32),
     /// Error due to stack segment exception.
     ExceptionSS,
     /// Error while mapping linear addresses.

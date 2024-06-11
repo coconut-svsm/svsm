@@ -13,7 +13,7 @@ use crate::insn_decode::{InsnError, InsnMachineMem};
 use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
 };
-use crate::types::{Bytes, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{Bytes, PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 
 use crate::utils::MemoryRegion;
 
@@ -73,6 +73,49 @@ impl PerCPUPageMappingGuard {
 
     pub fn virt_addr(&self) -> VirtAddr {
         self.mapping.start()
+    }
+
+    /// Creates a virtual contigous mapping for the given 4k physical pages which
+    /// may not be contiguous in physical memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `pages`: A slice of tuple containing `PhysAddr` objects representing the
+    /// 4k page to map and its shareability.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that contains a `PerCPUPageMappingGuard`
+    /// object on success. The `PerCPUPageMappingGuard` object represents the page
+    /// mapping that was created. If an error occurs while creating the page
+    /// mapping, it returns a `SvsmError`.
+    pub fn create_4k_pages(pages: &[(PhysAddr, bool)]) -> Result<Self, SvsmError> {
+        let region = virt_alloc_range_4k(pages.len() * PAGE_SIZE, 0)?;
+        let flags = PTEntryFlags::data();
+
+        for (i, addr) in region.iter_pages(PageSize::Regular).enumerate() {
+            assert!(pages[i].0.is_aligned(PAGE_SIZE));
+
+            this_cpu()
+                .get_pgtable()
+                .map_4k(addr, pages[i].0, flags)
+                .and_then(|_| {
+                    if pages[i].1 {
+                        this_cpu().get_pgtable().set_shared_4k(addr)
+                    } else {
+                        Ok(())
+                    }
+                })
+                .map_err(|e| {
+                    virt_free_range_4k(region);
+                    e
+                })?;
+        }
+
+        Ok(PerCPUPageMappingGuard {
+            mapping: region,
+            huge: false,
+        })
     }
 }
 
