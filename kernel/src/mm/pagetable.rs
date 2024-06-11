@@ -16,7 +16,7 @@ use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::platform::SvsmPlatform;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
 use crate::BIT_MASK;
@@ -26,6 +26,7 @@ use core::{cmp, ptr};
 
 extern crate alloc;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 const ENTRY_COUNT: usize = 512;
 static PRIVATE_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
@@ -111,6 +112,15 @@ fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
 
 fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
+}
+
+fn shared_address(paddr: PhysAddr) -> bool {
+    if shared_pte_mask() | private_pte_mask() != 0 {
+        (paddr.bits() & shared_pte_mask()) == shared_pte_mask()
+    } else {
+        // No confidential bits in the physical address.
+        false
+    }
 }
 
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
@@ -277,6 +287,10 @@ impl PTEntry {
         };
 
         self.raw() & reserved_mask != 0
+    }
+
+    pub fn shared(&self) -> bool {
+        shared_address(self.0)
     }
 
     pub fn raw(&self) -> u64 {
@@ -790,6 +804,213 @@ impl PageTable {
             // made as C=1.
             entry.set(paddr, flags);
         }
+    }
+
+    fn translate_addr_lvl0(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<0>(vaddr)], mem_am, 0, pteflags)
+            .map(|(pte, leaf)| {
+                assert!(leaf);
+                (pte, PAGE_SIZE)
+            })
+    }
+
+    fn translate_addr_lvl1(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<1>(vaddr)], mem_am, 1, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    Ok((pte, PAGE_SIZE_2M))
+                } else {
+                    PageTable::translate_addr_lvl0(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    fn translate_addr_lvl2(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<2>(vaddr)], mem_am, 2, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    Ok((pte, PAGE_SIZE_1G))
+                } else {
+                    PageTable::translate_addr_lvl1(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    fn translate_addr_lvl3(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<3>(vaddr)], mem_am, 3, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    // 512G page size is not supported by 4 level paging
+                    Err(attr.default_pf_err(mem_am) | PageFaultError::R)
+                } else {
+                    PageTable::translate_addr_lvl2(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    /// Translates a virtual address to a physical address.
+    ///
+    /// This function is used to translate a given virtual address to its
+    /// corresponding physical address by walking the page table. The walked
+    /// PTEntry is validated against the corresponding page table attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr`: The virtual address to translate.
+    /// * `write`: Indicate if the translation is for a write access.
+    /// * `fetch`: Indicate if the translation is for an instruction fetch.
+    /// * `attr`: `PTWalkAttr` object that holds attributes for the page table
+    /// walk.
+    ///
+    /// # Returns
+    ///
+    /// This function returns an `Ok` that contains a tuple on success.
+    /// The tuple contains the physical address, shareable and the size of
+    /// the page frame. If the translation fails, it returns `Err` containing
+    /// the page fault error code.
+    pub fn translate_addr(
+        &self,
+        vaddr: VirtAddr,
+        write: bool,
+        fetch: bool,
+        attr: PTWalkAttr,
+    ) -> Result<(PhysAddr, bool, usize), PageFaultError> {
+        let mut mem_am = MemAccessMode::empty();
+        if write {
+            mem_am |= MemAccessMode::WRITE;
+        }
+
+        if fetch {
+            mem_am |= MemAccessMode::FETCH;
+        }
+        // By-default the pteflags is set with USER | WRITABLE to indicate user
+        // mode access, writable and executable, which will be adjusted by the
+        // real access rights during translating:
+        // 1) U/S flag is 0 in any paging-structure entry => remove USER to
+        // indicate supervisor mode address
+        // 2) R/W flag is 0 in any paging-structure entry => remove WRITABLE to
+        // indicate write is not permitted
+        // 3) XD flag is 1 in any paging-structure entry => add NX to indicate
+        // execute is not permitted
+        let mut pteflags = PTEntryFlags::USER | PTEntryFlags::WRITABLE;
+
+        PageTable::translate_addr_lvl3(&self.root, vaddr, mem_am, attr, &mut pteflags).map(
+            |(e, s)| {
+                (
+                    e.address() + (vaddr.bits() & s.checked_sub(1).unwrap()),
+                    e.shared(),
+                    s,
+                )
+            },
+        )
+    }
+
+    /// Translates a virtual address region to its corresponding physical
+    /// addresses.
+    ///
+    /// This function is used to translate a given virtual address region to
+    /// its corresponding 4K physical pages by walking the page table.
+    /// The walked PTEntry is validated against the corresponding page table
+    /// attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr`: The start address of the virtual address region to
+    /// translate.
+    /// * `len`: The length of the virtual address region.
+    /// * `write`: Indicate if the translation is for a write access.
+    /// * `fetch`: Indicate if the translation is for an instruction fetch.
+    /// * `attr`: `PTWalkAttr` object that holds attributes for the page
+    /// table walk.
+    ///
+    /// # Returns
+    ///
+    /// This function returns an `Ok` that contains a tuple vector of (4K page
+    /// physical addresses, sharable) on success. If the translation fails, it
+    /// returns `Err` containing the page fault error code.
+    pub fn translate_addr_region(
+        &self,
+        vaddr: VirtAddr,
+        len: usize,
+        write: bool,
+        fetch: bool,
+        attr: PTWalkAttr,
+    ) -> Result<Vec<(PhysAddr, bool)>, (VirtAddr, PageFaultError)> {
+        let region = MemoryRegion::from_addresses(
+            vaddr.page_align(),
+            vaddr
+                .checked_add(if len == 0 { 1 } else { len })
+                .unwrap()
+                .page_align_up(),
+        );
+        let mut trans: (PhysAddr, PhysAddr, bool) = (PhysAddr::null(), PhysAddr::null(), false);
+        let mut pages: Vec<(PhysAddr, bool)> = Vec::new();
+
+        for addr in region.iter_pages(PageSize::Regular) {
+            if trans.0 == trans.1 {
+                trans = self.translate_addr(addr, write, fetch, attr).map_or_else(
+                    |e| Err((addr, e)),
+                    |(start, shared, ps)| {
+                        assert!(start.is_page_aligned());
+                        assert!(PhysAddr::from(ps).is_page_aligned());
+
+                        let end = if start.is_aligned(ps) {
+                            start.checked_add(ps).unwrap()
+                        } else {
+                            start.align_up(ps)
+                        };
+                        Ok((start, end, shared))
+                    },
+                )?;
+            }
+
+            pages.push((trans.0, trans.2));
+            trans.0 = trans.0.checked_add(PAGE_SIZE).unwrap();
+        }
+
+        Ok(pages)
     }
 }
 
