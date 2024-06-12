@@ -16,7 +16,8 @@ use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::address_space::phys_to_virt;
 use crate::mm::pagetable::{PTWalkAttr, PageTable, PageTableRef};
 use crate::mm::{MemMappingGuard, PerCPUPageMappingGuard};
-use crate::types::SVSM_CS;
+use crate::platform::SVSM_PLATFORM;
+use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -176,6 +177,26 @@ impl InsnMachineCtx for X86ExceptionContext {
             |_| Err(InsnError::MapLinearAddr),
             |m| Ok(Box::new(m) as Box<dyn InsnMachineMem>),
         )
+    }
+
+    fn ioio_perm(&self, _port: u16, _size: Bytes, _io_read: bool) -> bool {
+        // Check if the IO port can be supported by user mode
+        todo!();
+    }
+
+    fn ioio_in(&self, port: u16, size: Bytes) -> Result<u64, InsnError> {
+        Ok(SVSM_PLATFORM
+            .as_dyn_ref()
+            .get_console_io_port()
+            .ioio_in(port, size))
+    }
+
+    fn ioio_out(&mut self, port: u16, size: Bytes, data: u64) -> Result<(), InsnError> {
+        SVSM_PLATFORM
+            .as_dyn_ref()
+            .get_console_io_port()
+            .ioio_out(port, size, data);
+        Ok(())
     }
 }
 
