@@ -419,7 +419,13 @@ mod tests {
 
     fn rep_outsw(port: u16, data: &[u16]) {
         unsafe {
-            asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), in("rcx") data.len(), options(att_syntax))
+            asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
+        }
+    }
+
+    fn rep_insw(port: u16, data: &mut [u16]) {
+        unsafe {
+            asm!("rep insw", in("dx") port, in("rdi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
     }
 
@@ -481,8 +487,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_string_16_get_last() {
         const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
         verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
@@ -490,6 +495,12 @@ mod tests {
             TEST_DATA.last().unwrap(),
             &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
         );
+
+        let mut test_data: [u16; 4] = [0; 4];
+        verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
+        for d in test_data.iter() {
+            assert_eq!(d, TEST_DATA.last().unwrap());
+        }
     }
 
     #[test]
