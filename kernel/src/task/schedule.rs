@@ -33,16 +33,17 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::{Address, VirtAddr};
+use crate::cpu::irq_state::raw_get_tpr;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
 use crate::cpu::shadow_stack::{is_cet_ss_supported, IS_CET_SUPPORTED, PL0_SSP};
-use crate::cpu::sse::sse_restore_context;
-use crate::cpu::sse::sse_save_context;
+use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::fs::Directory;
 use crate::locking::SpinLock;
 use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
+use crate::platform::SVSM_PLATFORM;
 use alloc::string::String;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
@@ -365,6 +366,7 @@ pub fn schedule_init() {
 
 fn preemption_checks() {
     assert!(irq_nesting_count() == 0);
+    assert!(raw_get_tpr() == 0 || !SVSM_PLATFORM.use_interrupts());
 }
 
 /// Perform a task switch and hand the CPU over to the next task on the
