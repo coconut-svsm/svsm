@@ -13,9 +13,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
-use crate::insn_decode::{
-    DecodedInsn, DecodedInsnCtx, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE,
-};
+use crate::insn_decode::{DecodedInsn, DecodedInsnCtx, Instruction, MAX_INSN_SIZE};
 use crate::mm::GuestPtr;
 use crate::sev::ghcb::GHCB;
 use core::fmt;
@@ -109,9 +107,13 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 
     let insn_ctx = vc_decode_insn(ctx)?;
 
-    match (err, insn_ctx.and_then(|d| d.insn())) {
+    match (err, insn_ctx.as_ref().and_then(|d| d.insn())) {
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_IOIO, Some(_)) => insn_ctx
+            .as_ref()
+            .unwrap()
+            .emulate(ctx)
+            .map_err(SvsmError::from),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
@@ -134,7 +136,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
 
     let insn_ctx = vc_decode_insn(ctx)?;
 
-    match (error_code, insn_ctx.and_then(|d| d.insn())) {
+    match (error_code, insn_ctx.as_ref().and_then(|d| d.insn())) {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
@@ -143,7 +145,11 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_IOIO, Some(_)) => insn_ctx
+            .as_ref()
+            .unwrap()
+            .emulate(ctx)
+            .map_err(SvsmError::from),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
@@ -225,38 +231,7 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
-    ctx.frame.rip += insn_ctx.map_or(0, |d| d.size())
-}
-
-fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
-    match source {
-        Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
-        Operand::Reg(..) => unreachable!("Port value is always in DX"),
-        Operand::Imm(imm) => match imm {
-            Immediate::U8(val) => val as u16,
-            _ => unreachable!("Port value in immediate is always 1 byte"),
-        },
-    }
-}
-
-fn handle_ioio(
-    ctx: &mut X86ExceptionContext,
-    ghcb: &GHCB,
-    insn: DecodedInsn,
-) -> Result<(), SvsmError> {
-    match insn {
-        DecodedInsn::In(source, in_len) => {
-            let port = ioio_get_port(source, ctx);
-            ctx.regs.rax = (ghcb.ioio_in(port, in_len.try_into()?)? & in_len.mask()) as usize;
-            Ok(())
-        }
-        DecodedInsn::Out(source, out_len) => {
-            let out_value = ctx.regs.rax as u64;
-            let port = ioio_get_port(source, ctx);
-            ghcb.ioio_out(port, out_len.try_into()?, out_value)
-        }
-        _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
-    }
+    ctx.frame.rip += insn_ctx.as_ref().map_or(0, |d| d.size())
 }
 
 fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, SvsmError> {
