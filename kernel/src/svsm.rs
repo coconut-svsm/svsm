@@ -37,7 +37,7 @@ use svsm::greq::driver::guest_request_driver_init;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::memory::init_memory_map;
+use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
@@ -435,6 +435,7 @@ pub extern "C" fn svsm_main() {
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {
         print_fw_meta(fw_meta);
+        write_guest_memory_map(&config).expect("Failed to write guest memory map");
         validate_fw_memory(&config, fw_meta, &LAUNCH_INFO).expect("Failed to validate memory");
         copy_tables_to_fw(fw_meta).expect("Failed to copy firmware tables");
         validate_fw(&config, &LAUNCH_INFO).expect("Failed to validate flash memory");
