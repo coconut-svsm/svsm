@@ -62,7 +62,6 @@ pub struct GpaMap {
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
     pub guest_context: GpaRange,
-    pub firmware: GpaRange,
     pub kernel: GpaRange,
     pub vmsa: GpaRange,
 }
@@ -172,7 +171,6 @@ impl GpaMap {
             general_params,
             memory_map,
             guest_context,
-            firmware: firmware_range,
             kernel,
             vmsa,
         };
