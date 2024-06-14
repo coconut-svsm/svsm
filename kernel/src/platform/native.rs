@@ -6,6 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::platform::{IOPort, PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
@@ -14,6 +15,8 @@ use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 
 static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
+
+const APIC_MSR_ICR: u32 = 0x830;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {}
@@ -75,6 +78,27 @@ impl SvsmPlatform for NativePlatform {
 
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    fn use_alternate_injection(&self) -> bool {
+        false
+    }
+
+    fn lock_unlock_apic_emulation(&self, _lock: bool) -> Result<(), SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
+    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
+    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
+        write_msr(APIC_MSR_ICR, icr);
         Ok(())
     }
 

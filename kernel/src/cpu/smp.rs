@@ -10,6 +10,7 @@ use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
+use crate::sev::vmsa::VMSAControl;
 use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 

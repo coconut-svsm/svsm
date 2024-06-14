@@ -11,21 +11,34 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::sev::hv_doorbell::current_hv_doorbell;
-use crate::sev::msr_protocol::verify_ghcb_version;
+use crate::sev::msr_protocol::{hypervisor_ghcb_features, verify_ghcb_version, GHCBHvFeatures};
 use crate::sev::status::vtom_enabled;
-use crate::sev::{pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp};
+use crate::sev::{
+    init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
+};
 use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 
+const APIC_EMULATION_DISABLED: u8 = 0;
+const APIC_EMULATION_ENABLED: u8 = 1;
+const APIC_EMULATION_LOCKED: u8 = 2;
+static APIC_EMULATION_STATE: AtomicU8 = AtomicU8::new(APIC_EMULATION_ENABLED);
+
 #[derive(Clone, Copy, Debug)]
-pub struct SnpPlatform {}
+pub struct SnpPlatform {
+    use_alternate_injection: bool,
+}
 
 impl SnpPlatform {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            use_alternate_injection: false,
+        }
     }
 }
 
@@ -42,6 +55,7 @@ impl SvsmPlatform for SnpPlatform {
 
     fn env_setup_late(&mut self) {
         sev_status_verify();
+        init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
@@ -115,6 +129,76 @@ impl SvsmPlatform for SnpPlatform {
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
         pvalidate_range(region, PvalidateOp::Invalid)
+    }
+
+    fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {
+        // If alternate injection was requested, then it must be supported by
+        // the hypervisor.
+        if alt_inj_requested
+            && !hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_EXT_INTERRUPTS)
+        {
+            return Err(SvsmError::NotSupported);
+        }
+
+        self.use_alternate_injection = alt_inj_requested;
+        Ok(())
+    }
+
+    fn use_alternate_injection(&self) -> bool {
+        self.use_alternate_injection
+    }
+
+    fn lock_unlock_apic_emulation(&self, lock: bool) -> Result<(), SvsmError> {
+        // The lock state can only be changed if APIC emulation has not already
+        // been disabled on any CPU.
+        let new_state = if lock {
+            APIC_EMULATION_LOCKED
+        } else {
+            APIC_EMULATION_ENABLED
+        };
+        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
+        loop {
+            if current == APIC_EMULATION_DISABLED {
+                return Err(SvsmError::Apic);
+            }
+            match APIC_EMULATION_STATE.compare_exchange_weak(
+                current,
+                new_state,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(val) => current = val,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
+        // APIC emulation can only be disabled if it is not locked.
+        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
+        loop {
+            if current == APIC_EMULATION_LOCKED {
+                return Err(SvsmError::Apic);
+            }
+            match APIC_EMULATION_STATE.compare_exchange_weak(
+                current,
+                APIC_EMULATION_DISABLED,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(val) => current = val,
+            }
+        }
+
+        Ok(())
+    }
+
+    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
+        current_ghcb().hv_ipi(icr)?;
+        Ok(())
     }
 
     fn eoi(&self) {

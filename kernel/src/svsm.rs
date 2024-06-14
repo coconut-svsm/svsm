@@ -45,7 +45,7 @@ use svsm::platform::{SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::serial::SerialPort;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::sev::{init_hypervisor_ghcb_features, secrets_page, secrets_page_mut};
+use svsm::sev::{secrets_page, secrets_page_mut};
 use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
@@ -371,6 +371,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let bp = this_cpu().get_top_of_stack();
     log::info!("BSP Runtime stack starts @ {:#018x}", bp);
 
+    platform
+        .configure_alternate_injection(launch_info.use_alternate_injection)
+        .expect("Alternate injection required but not available");
+
     SVSM_PLATFORM
         .init(&platform_cell)
         .expect("Failed to initialize SVSM platform object");
@@ -390,8 +394,6 @@ pub extern "C" fn svsm_main() {
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
-
-    init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
 
     this_cpu()
         .configure_hv_doorbell()

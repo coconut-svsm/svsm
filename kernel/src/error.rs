@@ -67,6 +67,10 @@ pub enum SvsmError {
     Task(TaskError),
     /// Errors from #VC handler
     Vc(VcError),
+    /// The operation is not supported.
+    NotSupported,
+    /// Generic errors related to APIC emulation.
+    Apic,
 }
 
 impl From<ElfError> for SvsmError {

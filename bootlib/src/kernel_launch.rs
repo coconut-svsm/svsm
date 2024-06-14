@@ -31,6 +31,7 @@ pub struct KernelLaunchInfo {
     pub igvm_params_virt_addr: u64,
     pub vtom: u64,
     pub debug_serial_port: u16,
+    pub use_alternate_injection: bool,
     pub platform_type: SvsmPlatformType,
 }
 
