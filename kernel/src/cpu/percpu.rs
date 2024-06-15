@@ -323,7 +323,12 @@ impl PerCpu {
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
-            vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
+            vm_range: {
+                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
+                vmr.set_per_cpu(true);
+                vmr
+            },
+
             vrange_4k: RefCell::new(VirtualRange::new()),
             vrange_2m: RefCell::new(VirtualRange::new()),
             runqueue: RefCell::new(RunQueue::new()),

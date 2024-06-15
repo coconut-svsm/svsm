@@ -5,6 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::control_regs::{read_cr4, write_cr4, CR4Flags};
+
 use core::arch::asm;
 
 const INVLPGB_VALID_VA: u64 = 1u64 << 0;
@@ -48,6 +50,21 @@ pub fn flush_tlb_global() {
 pub fn flush_tlb_global_sync() {
     flush_tlb_global();
     do_tlbsync();
+}
+
+pub fn flush_tlb_global_percpu() {
+    let cr4 = read_cr4();
+    write_cr4(cr4 ^ CR4Flags::PGE);
+    write_cr4(cr4);
+}
+
+pub fn flush_address_percpu(va: VirtAddr) {
+    let va: u64 = va.page_align().bits() as u64;
+    unsafe {
+        asm!("invlpg (%rax)",
+             in("rax") va,
+             options(att_syntax));
+    }
 }
 
 pub fn flush_address(va: VirtAddr) {

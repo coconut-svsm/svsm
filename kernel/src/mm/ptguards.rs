@@ -7,12 +7,12 @@
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::tlb::flush_address_sync;
+use crate::cpu::tlb::flush_address_percpu;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::{
     virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
 };
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 
 use crate::utils::MemoryRegion;
 
@@ -99,13 +99,19 @@ impl PerCPUPageMappingGuard {
 
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
-        if self.huge {
+        let size = if self.huge {
             this_cpu().get_pgtable().unmap_region_2m(self.mapping);
             virt_free_range_2m(self.mapping);
+            PageSize::Huge
         } else {
             this_cpu().get_pgtable().unmap_region_4k(self.mapping);
             virt_free_range_4k(self.mapping);
+            PageSize::Regular
+        };
+        // This iterative flush is acceptable for same-CPU mappings because no
+        // broadcast is involved for each iteration.
+        for page in self.mapping.iter_pages(size) {
+            flush_address_percpu(page);
         }
-        flush_address_sync(self.mapping.start());
     }
 }

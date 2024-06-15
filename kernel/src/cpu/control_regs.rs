@@ -34,6 +34,7 @@ pub fn cr4_init() {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CR0Flags: u64 {
         const PE = 1 << 0;  // Protection Enabled
         const MP = 1 << 1;  // Monitor Coprocessor
@@ -108,6 +109,7 @@ pub fn write_cr3(cr3: PhysAddr) {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CR4Flags: u64 {
         const VME       = 1 << 0;  // Virtual-8086 Mode Extensions
         const PVI       = 1 << 1;  // Protected-Mode Virtual Interrupts
