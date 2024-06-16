@@ -24,10 +24,12 @@ pub fn cr4_init() {
 
     cr4.insert(CR4Flags::PSE); // Enable Page Size Extensions
 
-    if cpu_has_pge() {
-        cr4.insert(CR4Flags::PGE); // Enable Global Pages
-    }
+    // All processors that are capable of virtualization will support global
+    // page table entries, so there is no reason to support any processor that
+    // does not enumerate PGE capability.
+    assert!(cpu_has_pge(), "CPU does not support PGE");
 
+    cr4.insert(CR4Flags::PGE); // Enable Global Pages
     write_cr4(cr4);
 }
 
