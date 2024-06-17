@@ -310,8 +310,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();
-    cr4_init();
-    efer_init();
+    cr4_init(platform);
+    efer_init(platform);
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port)

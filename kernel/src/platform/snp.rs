@@ -6,7 +6,7 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_console;
-use crate::cpu::cpuid::cpuid_table;
+use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
@@ -96,6 +96,10 @@ impl SvsmPlatform for SnpPlatform {
                 phys_addr_sizes: processor_capacity.eax,
             }
         }
+    }
+
+    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+        cpuid_table(eax)
     }
 
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool) {

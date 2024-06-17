@@ -72,6 +72,10 @@ impl SvsmPlatform for NativePlatform {
         }
     }
 
+    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+        Some(CpuidResult::get(eax, 0))
+    }
+
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
 
     fn get_io_port(&self) -> &'static dyn IOPort {
