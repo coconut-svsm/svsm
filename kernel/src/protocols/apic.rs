@@ -74,9 +74,6 @@ fn apic_write_register(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn apic_configure_vector(params: &RequestParams) -> Result<(), SvsmReqError> {
     let cpu = this_cpu();
-    if !cpu.use_apic_emulation() {
-        return Err(SvsmReqError::invalid_request());
-    }
     if params.rcx <= 0x1FF {
         let vector: u8 = (params.rcx & 0xFF) as u8;
         let allowed = (params.rcx & 0x100) != 0;
