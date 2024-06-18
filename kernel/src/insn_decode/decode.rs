@@ -630,6 +630,8 @@ impl DecodedInsnCtx {
         self.insn
             .ok_or(InsnError::UnSupportedInsn)
             .and_then(|insn| match insn {
+                DecodedInsn::In(port, opsize) => self.emulate_in_out(port, opsize, mctx, true),
+                DecodedInsn::Out(port, opsize) => self.emulate_in_out(port, opsize, mctx, false),
                 DecodedInsn::Ins => self.emulate_ins_outs(mctx, true),
                 DecodedInsn::Outs => self.emulate_ins_outs(mctx, false),
                 _ => Err(InsnError::UnSupportedInsn),
@@ -1271,6 +1273,43 @@ impl DecodedInsnCtx {
             // Update the count register with the left count which are not
             // emulated yet.
             write_reg(mctx, Register::Rcx, self.repeat - 1, self.addrsize);
+        }
+
+        Ok(())
+    }
+
+    fn emulate_in_out<I: InsnMachineCtx>(
+        &self,
+        port: Operand,
+        opsize: Bytes,
+        mctx: &mut I,
+        io_read: bool,
+    ) -> Result<(), InsnError> {
+        let port = match port {
+            Operand::Reg(Register::Rdx) => mctx.read_reg(Register::Rdx) as u16,
+            Operand::Reg(..) => unreachable!("Port value is always in DX"),
+            Operand::Imm(imm) => match imm {
+                Immediate::U8(val) => val as u16,
+                _ => unreachable!("Port value in immediate is always 1 byte"),
+            },
+        };
+
+        // Check the IO permission bit map
+        if !ioio_perm(mctx, port, opsize, io_read) {
+            return Err(InsnError::ExceptionGP(0));
+        }
+
+        if io_read {
+            // Read data from IO port and then write to AL/AX/EAX.
+            write_reg(
+                mctx,
+                Register::Rax,
+                mctx.ioio_in(port, opsize)? as usize,
+                opsize,
+            );
+        } else {
+            // Read data from AL/AX/EAX and then write to the IO port.
+            mctx.ioio_out(port, opsize, read_reg(mctx, Register::Rax, opsize) as u64)?;
         }
 
         Ok(())
