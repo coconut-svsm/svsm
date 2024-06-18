@@ -216,7 +216,7 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
         APIC_PROTOCOL => {
             // The APIC protocol is only supported if the calling CPU supports
             // alternate injection.
-            if this_cpu().use_apic_emulation() {
+            if this_cpu().apic().is_some() {
                 protocol_supported(
                     version,
                     APIC_PROTOCOL_VERSION_MIN,

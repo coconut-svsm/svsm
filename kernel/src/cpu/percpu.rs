@@ -37,7 +37,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_F
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
 use core::slice::Iter;
@@ -319,7 +319,6 @@ pub struct PerCpu {
     tss: Cell<X86Tss>,
     svsm_vmsa: Cell<Option<VmsaRef>>,
     reset_ip: Cell<u64>,
-    apic_emulation: Cell<bool>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
@@ -331,7 +330,7 @@ pub struct PerCpu {
     /// WaitQueue for request processing
     request_waitqueue: RefCell<WaitQueue>,
     /// Local APIC state for APIC emulation
-    apic: RefCell<LocalApic>,
+    apic: RefCell<Option<LocalApic>>,
 
     ghcb: Cell<Option<&'static GHCB>>,
     hv_doorbell: Cell<*const HVDoorbell>,
@@ -354,8 +353,7 @@ impl PerCpu {
             vrange_2m: RefCell::new(VirtualRange::new()),
             runqueue: RefCell::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
-            apic_emulation: Cell::new(false),
-            apic: RefCell::new(LocalApic::new()),
+            apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id),
             ghcb: Cell::new(None),
@@ -667,7 +665,7 @@ impl PerCpu {
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
         if SVSM_PLATFORM.as_dyn_ref().use_alternate_injection() {
-            self.apic_emulation.set(true);
+            *self.apic.borrow_mut() = Some(LocalApic::new());
 
             // Configure the interrupt injection vector.
             let ghcb = self.ghcb().unwrap();
@@ -678,11 +676,25 @@ impl PerCpu {
         let paddr = virt_to_phys(vaddr);
 
         let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip.get(), self.apic_emulation.get());
+        init_guest_vmsa(vmsa, self.reset_ip.get(), self.apic.borrow().is_some());
 
         self.shared().update_guest_vmsa(paddr);
 
         Ok(())
+    }
+
+    /// Returns a shared reference to the local APIC, or `None` if APIC
+    /// emulation is not enabled.
+    pub fn apic(&self) -> Option<Ref<'_, LocalApic>> {
+        let apic = self.apic.borrow();
+        Ref::filter_map(apic, Option::as_ref).ok()
+    }
+
+    /// Returns a mutable reference to the local APIC, or `None` if APIC
+    /// emulation is not enabled.
+    pub fn apic_mut(&self) -> Option<RefMut<'_, LocalApic>> {
+        let apic = self.apic.borrow_mut();
+        RefMut::filter_map(apic, Option::as_mut).ok()
     }
 
     pub fn unmap_caa(&self) {
@@ -700,66 +712,48 @@ impl PerCpu {
     }
 
     pub fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
-        if self.apic_emulation.get() {
+        if let Some(mut apic) = self.apic_mut() {
             // APIC emulation cannot be disabled if the platform has locked
             // the use of APIC emulation.
             SVSM_PLATFORM.as_dyn_ref().disable_apic_emulation()?;
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa_addr = vmsa_ref.caa_addr();
             let vmsa = vmsa_ref.vmsa();
-            self.apic
-                .borrow_mut()
-                .disable_apic_emulation(vmsa, caa_addr);
-            drop(vmsa_ref);
-
-            self.apic_emulation.set(false);
+            apic.disable_apic_emulation(vmsa, caa_addr);
         }
+        let _ = self.apic.borrow_mut().take();
         Ok(())
     }
 
     pub fn clear_pending_interrupts(&self) {
-        if self.apic_emulation.get() {
+        if let Some(mut apic) = self.apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa_addr = vmsa_ref.caa_addr();
             let vmsa = vmsa_ref.vmsa();
-            self.apic
-                .borrow_mut()
-                .check_delivered_interrupts(vmsa, caa_addr);
+            apic.check_delivered_interrupts(vmsa, caa_addr);
         }
     }
 
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa_addr: Option<VirtAddr>) {
-        if self.apic_emulation.get() {
-            self.apic
-                .borrow_mut()
-                .present_interrupts(self.shared(), vmsa, caa_addr);
+        if let Some(mut apic) = self.apic_mut() {
+            apic.present_interrupts(self.shared(), vmsa, caa_addr);
         }
     }
 
-    pub fn use_apic_emulation(&self) -> bool {
-        self.apic_emulation.get()
-    }
-
-    pub fn read_apic_register(&self, register: u64) -> Result<u64, ApicError> {
+    pub fn read_apic_register(&self, register: u64) -> Option<Result<u64, ApicError>> {
+        let mut apic = self.apic_mut()?;
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        self.apic
-            .borrow_mut()
-            .read_register(self.shared(), vmsa, caa_addr, register)
+        Some(apic.read_register(self.shared(), vmsa, caa_addr, register))
     }
 
-    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), ApicError> {
+    pub fn write_apic_register(&self, register: u64, value: u64) -> Option<Result<(), ApicError>> {
+        let mut apic = self.apic_mut()?;
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        self.apic
-            .borrow_mut()
-            .write_register(vmsa, caa_addr, register, value)
-    }
-
-    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) {
-        self.apic.borrow_mut().configure_vector(vector, allowed)
+        Some(apic.write_register(vmsa, caa_addr, register, value))
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
