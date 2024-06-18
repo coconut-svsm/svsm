@@ -220,10 +220,7 @@ impl IgvmBuilder {
             kernel_size: self.gpa_map.kernel.get_size() as u32,
             kernel_base: self.gpa_map.kernel.get_start(),
             vtom,
-            use_alternate_injection: match self.options.alt_injection {
-                true => 1,
-                false => 0,
-            },
+            use_alternate_injection: u8::from(self.options.alt_injection),
             ..Default::default()
         })
     }

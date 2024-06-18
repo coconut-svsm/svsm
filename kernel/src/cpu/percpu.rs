@@ -57,7 +57,7 @@ impl PerCpuInfo {
         }
     }
 
-    pub fn unwrap(&self) -> &'static PerCpuShared {
+    pub fn as_cpu_ref(&self) -> &'static PerCpuShared {
         self.cpu_shared
     }
 }
@@ -202,16 +202,7 @@ impl PerCpuShared {
             apic_id,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             online: AtomicBool::new(false),
-            ipi_irr: [
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-                AtomicU32::new(0),
-            ],
+            ipi_irr: core::array::from_fn(|_| AtomicU32::new(0)),
             ipi_pending: AtomicBool::new(false),
             nmi_pending: AtomicBool::new(false),
         }
