@@ -236,7 +236,16 @@ $ make test
 Unit tests can be run inside the SVSM by
 
 ```
-$ QEMU=/path/to/qemu OVMF=/path/to/firmware/ make test-in-svsm
+$ QEMU=/path/to/qemu make test-in-svsm
+```
+
+Note: to compile the test kernel used for unit tests, we use the nightly
+toolchain, so if the test kernel build fails, try installing the
+`x86_64-unknown-none` target for the nightly toolchain via your distro or
+using rustup:
+
+```
+$ rustup +nightly target add x86_64-unknown-none
 ```
 
 Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
