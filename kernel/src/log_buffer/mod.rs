@@ -47,7 +47,15 @@ impl LogBuffer {
     }
 }
 
+pub fn migrate_log_buffer(log_buf: &SpinLock<LogBuffer>) {
+    LB.lock().migrate(log_buf);
+}
+
 static LB: SpinLock<LogBuffer> = SpinLock::new(LogBuffer::new());
 pub fn log_buffer() -> LockGuard<'static, LogBuffer> {
     LB.lock()
+}
+
+pub fn get_lb() -> &'static SpinLock<LogBuffer> {
+    &LB
 }
