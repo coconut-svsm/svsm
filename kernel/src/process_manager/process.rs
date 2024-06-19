@@ -352,3 +352,4 @@ pub fn delete_trusted_process(params: &mut RequestParams) -> Result<(), SvsmReqE
 pub fn attest_trusted_process(_params: &mut RequestParams) -> Result<(), SvsmReqError> {
     todo!()
 }
+

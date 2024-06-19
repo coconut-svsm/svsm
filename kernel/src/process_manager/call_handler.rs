@@ -40,7 +40,6 @@ pub fn delete_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     super::process::delete_trusted_process(params)
 }
 
-
 pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         MONITOR_INIT => monitor_init(params),

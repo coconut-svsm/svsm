@@ -17,6 +17,8 @@ fn main() {
     println!("cargo:rustc-link-arg-bin=svsm=--no-relax");
     println!("cargo:rustc-link-arg-bin=svsm=-Tkernel/src/svsm.lds");
     println!("cargo:rustc-link-arg-bin=svsm=-no-pie");
+    println!("cargo:rustc-link-lib=static=my_rsa"); 
+    println!("cargo:rustc-link-search=/scratch/teofil/wallet-attest/Wallet-VMPL/svsm/libmy_rsa");
     if std::env::var("CARGO_FEATURE_MSTPM").is_ok()
         && std::env::var("CARGO_FEATURE_DEFAULT_TEST").is_err()
     {

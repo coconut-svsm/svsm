@@ -57,6 +57,9 @@ use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
+mod my_rsa_wrapper;
+use crate::my_rsa_wrapper::func;
+
 extern "C" {
     pub static bsp_stack_end: u8;
 }
@@ -276,6 +279,11 @@ fn init_cpuid_table(addr: VirtAddr) {
     register_cpuid_table(&CPUID_PAGE);
 }
 
+fn generate_key_pair() {
+    let n = unsafe{func(8)};
+    log::info!("Got {} from C", n);
+}
+
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
@@ -449,6 +457,9 @@ pub extern "C" fn svsm_main() {
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
+
+    //Generate private/public key pair
+    generate_key_pair();
 
     #[cfg(all(feature = "mstpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
