@@ -4,7 +4,7 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
-use hmac_sha512::sha384::Hash;
+use sha2::{Digest, Sha384};
 use zerocopy::AsBytes;
 
 #[repr(u8)]
@@ -35,9 +35,11 @@ pub struct PageInfo {
 
 impl PageInfo {
     pub fn new_normal_page(digest_cur: [u8; 48], gpa: u64, data: &Vec<u8>) -> Self {
+        let mut sha384 = Sha384::default();
+        sha384.update(data);
         Self {
             digest_cur,
-            contents: Hash::hash(data),
+            contents: sha384.finalize().into(),
             length: 0x70,
             page_type: PageType::Normal,
             imi_page: 0,
@@ -50,9 +52,11 @@ impl PageInfo {
     }
 
     pub fn new_vmsa_page(digest_cur: [u8; 48], gpa: u64, data: &Vec<u8>) -> Self {
+        let mut sha384 = Sha384::default();
+        sha384.update(data);
         Self {
             digest_cur,
-            contents: Hash::hash(data),
+            contents: sha384.finalize().into(),
             length: 0x70,
             page_type: PageType::Vmsa,
             imi_page: 0,
@@ -96,6 +100,8 @@ impl PageInfo {
     }
 
     pub fn update_hash(&self) -> [u8; 48] {
-        Hash::hash(self.as_bytes())
+        let mut sha384 = Sha384::default();
+        sha384.update(self.as_bytes());
+        sha384.finalize().into()
     }
 }
