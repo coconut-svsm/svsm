@@ -1,6 +1,11 @@
+#include "openssl/opensslv.h"
+#include "openssl/crypto.h"
+
 int func(int n)
 {
-	return 2*n;
+	//RSA* rsa = RSA_generate_key(2048, 65537, 0, 0);
+	//(void)rsa;
+	return SSLeay();
 }
 
 /*void _start()
