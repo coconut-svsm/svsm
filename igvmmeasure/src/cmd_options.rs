@@ -85,6 +85,10 @@ pub enum Commands {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
 pub enum Platform {
+    /// Calculate the launch measurement for SEV
+    Sev,
+    /// Calculate the launch measurement for SEV-ES
+    SevEs,
     /// Calculate the launch measurement for SEV-SNP
     SevSnp,
 }

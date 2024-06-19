@@ -8,7 +8,8 @@ use std::error::Error;
 
 use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
-use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
+use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, PAGE_SIZE_4K};
+use sha2::{Digest, Sha256};
 use zerocopy::AsBytes;
 
 use crate::page_info::PageInfo;
@@ -124,11 +125,26 @@ impl std::fmt::Display for SnpPageType {
 }
 
 #[derive(Debug)]
+struct IgvmMeasureContext {
+    digest_snp: [u8; 48],
+    digest_es: Sha256,
+}
+
+impl Default for IgvmMeasureContext {
+    fn default() -> Self {
+        Self {
+            digest_snp: [0u8; 48],
+            digest_es: Sha256::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct IgvmMeasure {
     show_progress: bool,
     check_kvm: bool,
     native_zero: bool,
-    digest: [u8; 48],
+    digest: Vec<u8>,
     last_page_type: SnpPageType,
     last_gpa: u64,
     last_next_gpa: u64,
@@ -136,6 +152,7 @@ pub struct IgvmMeasure {
     compatibility_mask: u32,
     vmsa_count: u32,
     id_block_ld: Option<[u8; 48]>,
+    platform: IgvmPlatformType,
 }
 
 const PAGE_SIZE_2M: u64 = 2 * 1024 * 1024;
@@ -146,13 +163,14 @@ impl IgvmMeasure {
         check_kvm: bool,
         native_zero: bool,
         compatibility_mask: u32,
+        platform: IgvmPlatformType,
         igvm: &IgvmFile,
     ) -> Result<Self, Box<dyn Error>> {
         let mut result = Self {
             show_progress,
             check_kvm,
             native_zero,
-            digest: [0u8; 48],
+            digest: vec![],
             last_page_type: SnpPageType::None,
             last_gpa: 0,
             last_next_gpa: 0,
@@ -160,6 +178,7 @@ impl IgvmMeasure {
             compatibility_mask,
             vmsa_count: 0,
             id_block_ld: None,
+            platform,
         };
         result.do_measure(igvm)?;
         Ok(result)
@@ -167,18 +186,22 @@ impl IgvmMeasure {
 
     pub fn check_id_block(&self) -> Result<(), IgvmMeasureError> {
         if let Some(expected_ld) = self.id_block_ld {
-            if expected_ld != self.digest {
+            let mut ld = [0u8; 48];
+            ld.copy_from_slice(self.digest());
+            if expected_ld != ld {
                 return Err(IgvmMeasureError::IDBlockMismatch(expected_ld));
             }
         }
         Ok(())
     }
 
-    pub fn digest(&self) -> [u8; 48] {
-        self.digest
+    pub fn digest(&self) -> &Vec<u8> {
+        &self.digest
     }
 
     fn do_measure(&mut self, igvm: &IgvmFile) -> Result<(), Box<dyn Error>> {
+        let mut ctx = IgvmMeasureContext::default();
+
         for directive in igvm.directives() {
             match directive {
                 IgvmDirectiveHeader::PageData {
@@ -189,7 +212,7 @@ impl IgvmMeasure {
                     data,
                 } => {
                     if (*compatibility_mask & self.compatibility_mask) != 0 {
-                        self.measure_page(*gpa, flags, *data_type, data)?;
+                        self.measure_page(&mut ctx, *gpa, flags, *data_type, data)?;
                     }
                 }
                 IgvmDirectiveHeader::ParameterInsert(param) => {
@@ -198,6 +221,7 @@ impl IgvmMeasure {
                             return Err(IgvmMeasureError::InvalidVmsaOrder.into());
                         }
                         self.measure_page(
+                            &mut ctx,
                             param.gpa,
                             &IgvmPageDataFlags::new().with_unmeasured(true),
                             IgvmPageDataType::NORMAL,
@@ -211,7 +235,7 @@ impl IgvmMeasure {
                     vp_index: _vp_index,
                     vmsa,
                 } => {
-                    self.measure_vmsa(*gpa, *compatibility_mask, vmsa)?;
+                    self.measure_vmsa(&mut ctx, *gpa, *compatibility_mask, vmsa)?;
                 }
                 IgvmDirectiveHeader::SnpIdBlock {
                     compatibility_mask,
@@ -226,6 +250,12 @@ impl IgvmMeasure {
             }
         }
         self.log_page(SnpPageType::None, 0, 0);
+
+        if (self.platform == IgvmPlatformType::SEV_ES) || (self.platform == IgvmPlatformType::SEV) {
+            self.digest = ctx.digest_es.finalize_reset().to_vec();
+        } else {
+            self.digest = ctx.digest_snp.to_vec();
+        }
         Ok(())
     }
 
@@ -251,6 +281,7 @@ impl IgvmMeasure {
 
     fn measure_page(
         &mut self,
+        ctx: &mut IgvmMeasureContext,
         gpa: u64,
         flags: &IgvmPageDataFlags,
         data_type: IgvmPageDataType,
@@ -265,11 +296,12 @@ impl IgvmMeasure {
 
         if data.is_empty() {
             for page_offset in (0..page_len).step_by(PAGE_SIZE_4K as usize) {
-                self.measure_page_4k(gpa + page_offset, flags, data_type, &vec![]);
+                self.measure_page_4k(ctx, gpa + page_offset, flags, data_type, &vec![]);
             }
         } else {
             for (index, page_data) in data.chunks(PAGE_SIZE_4K as usize).enumerate() {
                 self.measure_page_4k(
+                    ctx,
                     gpa + index as u64 * PAGE_SIZE_4K,
                     flags,
                     data_type,
@@ -282,49 +314,55 @@ impl IgvmMeasure {
 
     fn measure_page_4k(
         &mut self,
+        ctx: &mut IgvmMeasureContext,
         gpa: u64,
         flags: &IgvmPageDataFlags,
         data_type: IgvmPageDataType,
         data: &Vec<u8>,
     ) {
-        let page_info = match data_type {
-            IgvmPageDataType::NORMAL => {
-                if flags.unmeasured() {
-                    self.log_page(SnpPageType::Unmeasured, gpa, PAGE_SIZE_4K);
-                    Some(PageInfo::new_unmeasured_page(self.digest, gpa))
-                } else if data.is_empty() {
-                    if self.native_zero {
-                        self.log_page(SnpPageType::Zero, gpa, PAGE_SIZE_4K);
-                        Some(PageInfo::new_zero_page(self.digest, gpa))
+        if self.platform == IgvmPlatformType::SEV_SNP {
+            let page_info = match data_type {
+                IgvmPageDataType::NORMAL => {
+                    if flags.unmeasured() {
+                        self.log_page(SnpPageType::Unmeasured, gpa, PAGE_SIZE_4K);
+                        Some(PageInfo::new_unmeasured_page(ctx.digest_snp, gpa))
+                    } else if data.is_empty() {
+                        if self.native_zero {
+                            self.log_page(SnpPageType::Zero, gpa, PAGE_SIZE_4K);
+                            Some(PageInfo::new_zero_page(ctx.digest_snp, gpa))
+                        } else {
+                            self.log_page(SnpPageType::Normal, gpa, PAGE_SIZE_4K);
+                            Some(PageInfo::new_normal_page(
+                                ctx.digest_snp,
+                                gpa,
+                                &vec![0u8; PAGE_SIZE_4K as usize],
+                            ))
+                        }
                     } else {
-                        self.log_page(SnpPageType::Normal, gpa, PAGE_SIZE_4K);
-                        Some(PageInfo::new_normal_page(
-                            self.digest,
-                            gpa,
-                            &vec![0u8; PAGE_SIZE_4K as usize],
-                        ))
+                        self.log_page(SnpPageType::Normal, gpa, data.len() as u64);
+                        Some(PageInfo::new_normal_page(ctx.digest_snp, gpa, data))
                     }
-                } else {
-                    self.log_page(SnpPageType::Normal, gpa, data.len() as u64);
-                    Some(PageInfo::new_normal_page(self.digest, gpa, data))
                 }
+                IgvmPageDataType::SECRETS => {
+                    self.log_page(SnpPageType::Secrets, gpa, PAGE_SIZE_4K);
+                    Some(PageInfo::new_secrets_page(ctx.digest_snp, gpa))
+                }
+                IgvmPageDataType::CPUID_DATA => {
+                    self.log_page(SnpPageType::CpuId, gpa, PAGE_SIZE_4K);
+                    Some(PageInfo::new_cpuid_page(ctx.digest_snp, gpa))
+                }
+                IgvmPageDataType::CPUID_XF => {
+                    self.log_page(SnpPageType::CpuId, gpa, PAGE_SIZE_4K);
+                    Some(PageInfo::new_cpuid_page(ctx.digest_snp, gpa))
+                }
+                _ => None,
+            };
+            if let Some(page_info) = page_info {
+                ctx.digest_snp = page_info.update_hash();
             }
-            IgvmPageDataType::SECRETS => {
-                self.log_page(SnpPageType::Secrets, gpa, PAGE_SIZE_4K);
-                Some(PageInfo::new_secrets_page(self.digest, gpa))
-            }
-            IgvmPageDataType::CPUID_DATA => {
-                self.log_page(SnpPageType::CpuId, gpa, PAGE_SIZE_4K);
-                Some(PageInfo::new_cpuid_page(self.digest, gpa))
-            }
-            IgvmPageDataType::CPUID_XF => {
-                self.log_page(SnpPageType::CpuId, gpa, PAGE_SIZE_4K);
-                Some(PageInfo::new_cpuid_page(self.digest, gpa))
-            }
-            _ => None,
-        };
-        if let Some(page_info) = page_info {
-            self.digest = page_info.update_hash();
+        } else {
+            self.log_page(SnpPageType::Normal, gpa, PAGE_SIZE_4K);
+            ctx.digest_es.update(data);
         }
     }
 
@@ -348,6 +386,7 @@ impl IgvmMeasure {
 
     fn measure_vmsa(
         &mut self,
+        ctx: &mut IgvmMeasureContext,
         gpa: u64,
         _compatibility_mask: u32,
         vmsa: &SevVmsa,
@@ -357,8 +396,12 @@ impl IgvmMeasure {
         let mut vmsa_page = vmsa.as_bytes().to_vec();
         vmsa_page.resize(PAGE_SIZE_4K as usize, 0);
         self.log_page(SnpPageType::Vmsa, gpa, PAGE_SIZE_4K);
-        let page_info = PageInfo::new_vmsa_page(self.digest, gpa, &vmsa_page);
-        self.digest = page_info.update_hash();
+        if self.platform == IgvmPlatformType::SEV_SNP {
+            let page_info = PageInfo::new_vmsa_page(ctx.digest_snp, gpa, &vmsa_page);
+            ctx.digest_snp = page_info.update_hash();
+        } else {
+            ctx.digest_es.update(vmsa_page.as_bytes());
+        }
         self.vmsa_count += 1;
 
         Ok(())

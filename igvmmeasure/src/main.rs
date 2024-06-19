@@ -9,7 +9,7 @@ use std::fs::{self, File};
 use std::io::Write;
 
 use clap::Parser;
-use cmd_options::{CmdOptions, Commands};
+use cmd_options::{CmdOptions, Commands, Platform};
 use igvm::IgvmFile;
 use igvm_defs::IgvmPlatformType;
 use igvm_measure::IgvmMeasure;
@@ -32,15 +32,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         e
     })?;
     let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
-    let compatibility_mask = get_compatibility_mask(&igvm, IgvmPlatformType::SEV_SNP).ok_or(
-        String::from("IGVM file is not compatible with the specified platform."),
-    )?;
+    let platform = match options.platform {
+        Platform::Sev => IgvmPlatformType::SEV,
+        Platform::SevEs => IgvmPlatformType::SEV_ES,
+        Platform::SevSnp => IgvmPlatformType::SEV_SNP,
+    };
+    let compatibility_mask = get_compatibility_mask(&igvm, platform).ok_or(String::from(
+        "IGVM file is not compatible with the specified platform.",
+    ))?;
 
     let measure = IgvmMeasure::measure(
         options.verbose,
         options.check_kvm,
         options.native_zero,
         compatibility_mask,
+        platform,
         &igvm,
     )?;
 
@@ -53,7 +59,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             output,
             id_key,
             author_key,
-        } => sign_command(&output, &id_key, &author_key, &igvm, &measure)?,
+        } => {
+            if options.platform != Platform::SevSnp {
+                return Err("Signing is only supported for SEV-SNP".into());
+            }
+            sign_command(&output, &id_key, &author_key, &igvm, &measure)?;
+        }
     }
 
     Ok(())
@@ -84,7 +95,7 @@ fn measure_command(
         );
     }
 
-    if !ignore_idblock {
+    if (options.platform == Platform::SevSnp) && !ignore_idblock {
         measure.check_id_block()?;
     }
 
