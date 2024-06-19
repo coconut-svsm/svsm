@@ -1,6 +1,7 @@
 // TODO: Change the include path to the 1.1.1 headers
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
+#include <openssl/crypto.h>
 
 RSA* g_rsa;
 
@@ -34,6 +35,16 @@ int gen_RSA_keys(int bits)
     return 0;
 }
 
+int RSA_encrypt(int flen, const unsigned char* from, unsigned char *to)
+{
+	return RSA_public_encrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
+}
+
+int RSA_decrypt(int flen, const unsigned char* from, unsigned char *to)
+{
+	return RSA_private_decrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
+}
+
 /************************************************
  * Return number of bytes for RSA key
  * or 0 if the RSA keys have not been initialized 
@@ -45,4 +56,9 @@ int get_RSA_size()
 	}
 
 	return RSA_size(g_rsa);
+}
+
+int get_RSA_public_key() 
+{
+
 }

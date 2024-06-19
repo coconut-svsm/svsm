@@ -7,6 +7,8 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
+use my_rsa_wrapper::RSA_decrypt;
+use my_rsa_wrapper::RSA_encrypt;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
@@ -281,10 +283,22 @@ fn init_cpuid_table(addr: VirtAddr) {
 }
 
 fn generate_key_pair() {
-    let n = unsafe{gen_RSA_keys(2048)};
+    let mut n = unsafe{gen_RSA_keys(2048)};
     log::info!("Got {} from C", n);
     log::info!("RSA size: {}", unsafe{get_RSA_size()});
-    panic!();
+    let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
+    // TODO: Instead of 256 allocate to fit RSA_size
+    let mut to: [u8; 256] = [0; 256];
+    let mut decrypted: [u8; 256] = [0; 256];
+
+    log::info!("From: {:?}", from);
+    log::info!("To: {:?}", to);
+    log::info!("Encrypting...");
+    n = unsafe{RSA_encrypt(10, from.as_mut_ptr(), to.as_mut_ptr())};
+    log::info!("To: {:?}", to);
+    log::info!("Ecrypted stuff: {}", n);
+    n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
+    log::info!("Decrypted: {:?}", decrypted);
 }
 
 #[no_mangle]
