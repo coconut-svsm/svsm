@@ -57,10 +57,7 @@ extern "C" {
 }
 
 fn init_ist_vectors() {
-    idt_mut().set_entry(
-        DF_VECTOR,
-        IdtEntry::ist_entry(asm_entry_df, IST_DF.try_into().unwrap()),
-    );
+    idt_mut().set_entry(DF_VECTOR, IdtEntry::ist_entry(asm_entry_df, IST_DF.get()));
 }
 
 pub fn early_idt_init() {
