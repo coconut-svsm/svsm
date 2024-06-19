@@ -78,18 +78,30 @@ impl log::Log for BufferLogger {
                 line_buf
                     .write_fmt(format_args!("[{}] {}: {}\n", comp, lvl, rec_args))
                     .unwrap();
+                #[cfg(feature = "enable-console-log")]
+                {
+                    _print(format_args!("[{}] {}: {}\n", comp, lvl, rec_args));
+                }
             }
 
             log::Level::Info => {
                 line_buf
                     .write_fmt(format_args!("[{}] {}\n", comp, rec_args))
                     .unwrap();
+                #[cfg(feature = "enable-console-log")]
+                {
+                    _print(format_args!("[{}] {}\n", comp, rec_args));
+                }
             }
 
             log::Level::Debug | log::Level::Trace => {
                 line_buf
                     .write_fmt(format_args!("[{}/{}] {} {}\n", comp, target, lvl, rec_args))
                     .unwrap();
+                #[cfg(feature = "enable-console-log")]
+                {
+                    _print(format_args!("[{}/{}] {} {}\n", comp, target, lvl, rec_args));
+                }
             }
         }
     }
