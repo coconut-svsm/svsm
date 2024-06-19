@@ -58,7 +58,8 @@ use svsm::vtpm::vtpm_init;
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 mod my_rsa_wrapper;
-use crate::my_rsa_wrapper::func;
+use crate::my_rsa_wrapper::gen_RSA_keys;
+use crate::my_rsa_wrapper::get_RSA_size;
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -280,8 +281,10 @@ fn init_cpuid_table(addr: VirtAddr) {
 }
 
 fn generate_key_pair() {
-    let n = unsafe{func(8)};
+    let n = unsafe{gen_RSA_keys(2048)};
     log::info!("Got {} from C", n);
+    log::info!("RSA size: {}", unsafe{get_RSA_size()});
+    panic!();
 }
 
 #[no_mangle]
