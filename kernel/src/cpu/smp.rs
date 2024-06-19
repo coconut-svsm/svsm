@@ -10,7 +10,6 @@ use crate::error::SvsmError;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
-use crate::sev::vmsa::VMSAControl;
 use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
@@ -19,14 +18,9 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) -> Result<(),
     let percpu = PerCpu::alloc(apic_id)?;
 
     percpu.setup(platform)?;
-    let mut vmsa = percpu.alloc_svsm_vmsa(vtom, start_rip)?;
-
-    let sev_features = vmsa.vmsa().sev_features;
-    let vmsa_pa = vmsa.paddr;
-
+    let (vmsa_pa, sev_features) = percpu.alloc_svsm_vmsa(vtom, start_rip)?;
     let percpu_shared = percpu.shared();
 
-    vmsa.vmsa_mut().enable();
     current_ghcb().ap_create(vmsa_pa, apic_id.into(), 0, sev_features)?;
     while !percpu_shared.is_online() {}
     Ok(())

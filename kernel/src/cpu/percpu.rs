@@ -30,7 +30,7 @@ use crate::sev::ghcb::GHCB;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::allocate_new_vmsa;
+use crate::sev::vmsa::{allocate_new_vmsa, VMSAControl};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
@@ -104,36 +104,6 @@ impl PerCpuAreas {
         ptr.iter()
             .find(|info| info.apic_id == apic_id)
             .map(|info| info.cpu_shared)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct VmsaRef {
-    pub vaddr: VirtAddr,
-    pub paddr: PhysAddr,
-    pub guest_owned: bool,
-}
-
-impl VmsaRef {
-    const fn new(v: VirtAddr, p: PhysAddr, g: bool) -> Self {
-        VmsaRef {
-            vaddr: v,
-            paddr: p,
-            guest_owned: g,
-        }
-    }
-
-    pub fn vmsa(&self) -> &VMSA {
-        let ptr = self.vaddr.as_mut_ptr::<VMSA>();
-        unsafe { ptr.as_mut().unwrap() }
-    }
-
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn vmsa_mut(&mut self) -> &mut VMSA {
-        let ptr = self.vaddr.as_mut_ptr::<VMSA>();
-        // SAFETY: this function takes &mut self, so only one mutable
-        // reference to the underlying VMSA can exist.
-        unsafe { ptr.as_mut().unwrap() }
     }
 }
 
@@ -328,7 +298,7 @@ pub struct PerCpu {
 
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
-    svsm_vmsa: Cell<Option<VmsaRef>>,
+    svsm_vmsa: OnceCell<&'static VMSA>,
     reset_ip: Cell<u64>,
     apic_emulation: Cell<bool>,
     /// PerCpu Virtual Memory Range
@@ -363,7 +333,7 @@ impl PerCpu {
         Self {
             pgtbl: RefCell::new(PageTableRef::unset()),
             tss: Cell::new(X86Tss::new()),
-            svsm_vmsa: Cell::new(None),
+            svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: RefCell::new(VirtualRange::new()),
@@ -643,7 +613,10 @@ impl PerCpu {
         self.reset_ip.set(reset_ip);
     }
 
-    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<VmsaRef, SvsmError> {
+    /// Allocates and initializes a new VMSA for this CPU. Returns its
+    /// physical address and SEV features. Returns an error if allocation
+    /// fails of this CPU's VMSA was already initialized.
+    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -652,19 +625,25 @@ impl PerCpu {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
-        let mut vmsa = VmsaRef::new(vaddr, paddr, false);
+        // SAFETY: we have exclusive access to this memory, as we just
+        // allocated it. allocate_new_vmsa() takes care of allocating
+        // memory of the right size and alignment for a VMSA.
+        let vmsa = unsafe { &mut *vaddr.as_mut_ptr::<VMSA>() };
 
         // Initialize VMSA
-        let vmsa_ref = vmsa.vmsa_mut();
-        init_svsm_vmsa(vmsa_ref, vtom);
-        vmsa_ref.tr = self.vmsa_tr_segment();
-        vmsa_ref.rip = start_rip;
-        vmsa_ref.rsp = self.get_top_of_stack().into();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
+        init_svsm_vmsa(vmsa, vtom);
+        vmsa.tr = self.vmsa_tr_segment();
+        vmsa.rip = start_rip;
+        vmsa.rsp = self.get_top_of_stack().into();
+        vmsa.cr3 = self.get_pgtable().cr3_value().into();
+        vmsa.enable();
 
-        self.svsm_vmsa.set(Some(vmsa));
+        let sev_features = vmsa.sev_features;
 
-        Ok(vmsa)
+        // We already checked that the VMSA is unset
+        self.svsm_vmsa.set(vmsa).unwrap();
+
+        Ok((paddr, sev_features))
     }
 
     pub fn unmap_guest_vmsa(&self) {
