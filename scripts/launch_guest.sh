@@ -12,9 +12,10 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
-DEBUG_SERIAL=""
+DEBUG_SERIAL="-serial null"
 QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
+QEMU_TEST_SERIAL=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -40,6 +41,8 @@ while [[ $# -gt 0 ]]; do
     --unit-tests)
       QEMU_EXIT_DEVICE="-device isa-debug-exit,iobase=0xf4,iosize=0x04"
       QEMU_TEST_IO_DEVICE="-device pc-testdev"
+      QEMU_TEST_SERIAL="-chardev pipe,id=test,path=$2 -serial chardev:test"
+      shift
       shift
       ;;
     -*|--*)
@@ -113,6 +116,7 @@ $SUDO_CMD \
     -serial stdio \
     $DEBUG_SERIAL \
     $QEMU_EXIT_DEVICE \
-    $QEMU_TEST_IO_DEVICE
+    $QEMU_TEST_IO_DEVICE \
+    $QEMU_TEST_SERIAL
 
 stty intr ^C
