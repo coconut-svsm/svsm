@@ -15,7 +15,7 @@ C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v
-COM4_SERIAL="-serial null"  # unused
+COM4_SERIAL="-serial null"  # used by in-SVSM tests
 QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
 
@@ -43,6 +43,8 @@ while [[ $# -gt 0 ]]; do
     --unit-tests)
       QEMU_EXIT_DEVICE="-device isa-debug-exit,iobase=0xf4,iosize=0x04"
       QEMU_TEST_IO_DEVICE="-device pc-testdev"
+      COM4_SERIAL="-chardev pipe,id=test,path=$2 -serial chardev:test"
+      shift
       shift
       ;;
     -*|--*)
