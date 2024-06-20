@@ -7,8 +7,6 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-use my_rsa_wrapper::RSA_decrypt;
-use my_rsa_wrapper::RSA_encrypt;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
@@ -62,6 +60,11 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 mod my_rsa_wrapper;
 use crate::my_rsa_wrapper::gen_RSA_keys;
 use crate::my_rsa_wrapper::get_RSA_size;
+use crate::my_rsa_wrapper::RSA_encrypt;
+use crate::my_rsa_wrapper::RSA_decrypt;
+use crate::my_rsa_wrapper::get_RSA_public_key;
+use crate::my_rsa_wrapper::RSA_key;
+
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -286,19 +289,33 @@ fn generate_key_pair() {
     let mut n = unsafe{gen_RSA_keys(2048)};
     log::info!("Got {} from C", n);
     log::info!("RSA size: {}", unsafe{get_RSA_size()});
-    let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
-    // TODO: Instead of 256 allocate to fit RSA_size
-    let mut to: [u8; 256] = [0; 256];
-    let mut decrypted: [u8; 256] = [0; 256];
+    //let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
+    //// TODO: Instead of 256 allocate to fit RSA_size
+    //let mut to: [u8; 256] = [0; 256];
+    //let mut decrypted: [u8; 256] = [0; 256];
 
-    log::info!("From: {:?}", from);
-    log::info!("To: {:?}", to);
-    log::info!("Encrypting...");
-    n = unsafe{RSA_encrypt(10, from.as_mut_ptr(), to.as_mut_ptr())};
-    log::info!("To: {:?}", to);
-    log::info!("Ecrypted stuff: {}", n);
-    n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
-    log::info!("Decrypted: {:?}", decrypted);
+    //log::info!("From: {:?}", from);
+    //log::info!("To: {:?}", to);
+    //log::info!("Encrypting...");
+    //n = unsafe{RSA_encrypt(10, from.as_mut_ptr(), to.as_mut_ptr())};
+    //log::info!("To: {:?}", to);
+    //log::info!("Ecrypted stuff: {}", n);
+    //n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
+    //log::info!("Decrypted: {:?}", decrypted);
+
+    let pub_key: *mut RSA_key = unsafe{get_RSA_public_key()};
+    log::info!("Size from struct: {:?}", unsafe{(*pub_key).size});
+
+    let mut raw_key_slice: [u8; 500] = [0; 500];// = unsafe{slice::from_raw_parts((*pub_key).key, (*pub_key).size.try_into().unwrap())};
+    let mut i: usize = 0;
+    while i < unsafe{(*pub_key).size.try_into().unwrap()} {
+        raw_key_slice[i] = unsafe{  *((*pub_key).key.offset(i.try_into().unwrap()))  };
+        i = i + 1;
+    }
+
+    log::info!("Raw pub key bytes: {:?}", raw_key_slice);
+
+    panic!();
 }
 
 #[no_mangle]

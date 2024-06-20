@@ -2,16 +2,29 @@
 #include <openssl/rsa.h>
 #include <openssl/bn.h>
 #include <openssl/crypto.h>
+#include <openssl/bio.h>
+#include <openssl/pem.h>
 
 RSA* g_rsa;
+
+typedef struct _RSA_key {
+	char* key;
+	unsigned int size;
+} RSA_key;
+
+RSA_key* g_pub_key;
+
 
 int gen_RSA_keys(int bits)
 {
 	int i;
-	g_rsa = RSA_new();
+	g_rsa = RSA_new(); // FIXME: Free when shutting down
     BIGNUM *e = BN_new();
+	BIO* pub_key_bio = BIO_new(BIO_s_mem());
 
-    if (g_rsa == NULL || e == NULL)
+	g_pub_key = (RSA_key*)malloc(sizeof(RSA_key)); // FIXME: Free when shutting down
+
+    if (g_rsa == NULL || e == NULL || pub_key_bio == NULL || g_pub_key == NULL)
         goto err;
 
     /*
@@ -26,12 +39,20 @@ int gen_RSA_keys(int bits)
 	// TODO: Check the exponent
     if (RSA_generate_key_ex(g_rsa, bits, e, NULL)) {
         BN_free(e);
-        //return rsa;
-		return 1;
+
+		// get public key
+		PEM_write_bio_RSAPublicKey(pub_key_bio, g_rsa);
+		const int keylen = BIO_pending(pub_key_bio);
+		g_pub_key->key = (char*)malloc(keylen); // FIXME: Free when shutting down
+		g_pub_key->size = keylen;
+		BIO_read(pub_key_bio, (void*)g_pub_key->key, keylen); 
+		BIO_free(pub_key_bio);
+		return keylen;
 	}
  err:
     BN_free(e);
     RSA_free(g_rsa);
+	BIO_free(pub_key_bio);
     return 0;
 }
 
@@ -46,7 +67,7 @@ int RSA_decrypt(int flen, const unsigned char* from, unsigned char *to)
 }
 
 /************************************************
- * Return number of bytes for RSA key
+ * Return number of bytes for RSA chunk
  * or 0 if the RSA keys have not been initialized 
  * *********************************************/
 int get_RSA_size()
@@ -58,7 +79,8 @@ int get_RSA_size()
 	return RSA_size(g_rsa);
 }
 
-int get_RSA_public_key() 
-{
 
+RSA_key* get_RSA_public_key()
+{
+	return g_pub_key;
 }
