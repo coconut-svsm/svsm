@@ -41,6 +41,8 @@ static SERIAL_PORT: SpinLock<SerialPort<'_>> =
 #[derive(Clone, Copy, Debug)]
 pub enum IORequest {
     NOP = 0x00,
+    /// get SEV-SNP pre-calculated launch measurement (48 bytes) from the host
+    GetLaunchMeasurement = 0x01,
 }
 
 /// Return the serial port to communicate with the host for a given request
