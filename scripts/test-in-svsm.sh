@@ -15,6 +15,12 @@ test_io(){
     while true; do
         TEST=$(head -c 1 $PIPE_OUT | xxd -p)
         case $TEST in
+            # 0x01: return SEV-SNP pre-calculated launch measurement (48 bytes)
+            "01")
+                $SCRIPT_DIR/../bin/igvmmeasure \
+                    $SCRIPT_DIR/../bin/coconut-test-qemu.igvm measure -b \
+                    | xxd -r -p > $PIPE_IN
+                ;;
             "")
                 # skip EOF
                 ;;

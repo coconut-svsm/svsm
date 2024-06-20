@@ -104,3 +104,34 @@ pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmReqError> {
 pub fn get_extended_report(buffer: &mut [u8], certs: &mut [u8]) -> Result<usize, SvsmReqError> {
     get_report(buffer, Some(certs))
 }
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+
+    use super::*;
+    use crate::serial::{test::serial_port, Terminal};
+    use alloc::vec;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_snp_launch_measurement() {
+        let sp = serial_port();
+
+        // 0x01: return SEV-SNP pre-calculated launch measurement (48 bytes)
+        sp.put_byte(0x01);
+
+        let mut expected_measurement = [0u8; 48];
+        for byte in &mut expected_measurement {
+            *byte = sp.get_byte();
+        }
+
+        let mut buf = vec![0; size_of::<SnpReportResponse>()];
+        let size = get_regular_report(&mut buf).unwrap();
+        assert_eq!(size, buf.len());
+
+        let response = SnpReportResponse::try_from_as_ref(&buf).unwrap();
+        assert!(response.validate().is_ok());
+        assert_eq!(expected_measurement, *response.measurement());
+    }
+}
