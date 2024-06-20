@@ -315,7 +315,7 @@ fn generate_key_pair() {
 
     log::info!("Raw pub key bytes: {:?}", raw_key_slice);
 
-    panic!();
+    //panic!();
 }
 
 #[no_mangle]
