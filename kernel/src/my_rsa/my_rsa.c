@@ -4,6 +4,7 @@
 #include <openssl/crypto.h>
 #include <openssl/bio.h>
 #include <openssl/pem.h>
+#include <openssl/sha.h>
 
 RSA* g_rsa;
 
@@ -83,4 +84,28 @@ int get_RSA_size()
 RSA_key* get_RSA_public_key()
 {
 	return g_pub_key;
+}
+
+int my_SHA256(const char* buff, const unsigned int buff_len, char* hash)
+{
+	SHA256_CTX sha256_ctx;
+	if(SHA256_Init(&sha256_ctx) == 0)
+		return 0;
+	if(SHA256_Update(&sha256_ctx, buff, buff_len) == 0)
+		return 0;
+	if(SHA256_Final(hash, &sha256_ctx) == 0)
+		return 0;
+	return 1;
+}
+
+int my_SHA512(const char* buff, const unsigned int buff_len, char* hash)
+{
+	SHA512_CTX sha512_ctx;
+	if(SHA512_Init(&sha512_ctx) == 0)
+		return 0;
+	if(SHA512_Update(&sha512_ctx, buff, buff_len) == 0)
+		return 0;
+	if(SHA512_Final(hash, &sha512_ctx) == 0)
+		return 0;
+	return 1;
 }

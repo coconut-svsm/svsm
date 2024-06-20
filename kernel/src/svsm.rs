@@ -57,14 +57,17 @@ use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
-mod my_rsa_wrapper;
-use crate::my_rsa_wrapper::gen_RSA_keys;
-use crate::my_rsa_wrapper::get_RSA_size;
-use crate::my_rsa_wrapper::RSA_encrypt;
-use crate::my_rsa_wrapper::RSA_decrypt;
-use crate::my_rsa_wrapper::get_RSA_public_key;
-use crate::my_rsa_wrapper::RSA_key;
+use svsm::my_rsa_wrapper::gen_RSA_keys;
+use svsm::my_rsa_wrapper::get_RSA_size;
+use svsm::my_rsa_wrapper::RSA_encrypt;
+use svsm::my_rsa_wrapper::RSA_decrypt;
+use svsm::my_rsa_wrapper::get_RSA_public_key;
+use svsm::my_rsa_wrapper::RSA_key;
+use svsm::my_rsa_wrapper::my_SHA256;
+use svsm::my_rsa_wrapper::my_SHA512;
 
+extern crate alloc;
+use alloc::vec::Vec;
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -303,19 +306,33 @@ fn generate_key_pair() {
     //n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
     //log::info!("Decrypted: {:?}", decrypted);
 
-    let pub_key: *mut RSA_key = unsafe{get_RSA_public_key()};
-    log::info!("Size from struct: {:?}", unsafe{(*pub_key).size});
+    //let pub_key: *mut RSA_key = unsafe{get_RSA_public_key()};
+    //log::info!("Size from struct: {:?}", unsafe{(*pub_key).size});
 
-    let mut raw_key_slice: [u8; 500] = [0; 500];// = unsafe{slice::from_raw_parts((*pub_key).key, (*pub_key).size.try_into().unwrap())};
-    let mut i: usize = 0;
-    while i < unsafe{(*pub_key).size.try_into().unwrap()} {
-        raw_key_slice[i] = unsafe{  *((*pub_key).key.offset(i.try_into().unwrap()))  };
-        i = i + 1;
-    }
+    //let mut raw_key: Vec<u8> = Vec::new();
+    //let mut i: usize = 0;
+    //while i < unsafe{(*pub_key).size.try_into().unwrap()} {
+    //    raw_key.push( unsafe{  *((*pub_key).key.offset(i.try_into().unwrap()))  });
+    //    i = i + 1;
+    //}
 
-    log::info!("Raw pub key bytes: {:?}", raw_key_slice);
+    let mut hash: [u8; 64] = [0; 64];
+    let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
+    let mut from2: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'.'];
 
-    //panic!();
+    n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
+    log::info!("SHA returned: {} and a hash of {:?}", n, hash);
+
+    
+    n = unsafe{my_SHA512(from2.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
+    log::info!("SHA returned: {} and a hash of {:?}", n, hash);
+
+
+    n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
+    log::info!("SHA returned: {} and a hash of {:?}", n, hash);
+    //log::info!("Raw pub size: {} and key bytes: {:?}", raw_key.len(), raw_key);
+
+    panic!();
 }
 
 #[no_mangle]

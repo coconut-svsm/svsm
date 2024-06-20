@@ -59,3 +59,6 @@ extern crate self as svsm;
 // Include a module containing the test runner.
 #[cfg(all(test, test_in_svsm))]
 pub mod testing;
+
+
+pub mod my_rsa_wrapper;
