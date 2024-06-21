@@ -12,6 +12,8 @@ const DELETE_ZYGOTE: u32 = 5;
 const CREATE_TRUSTLET: u32 = 6;
 const DELETE_TRUSTLET: u32 = 7;
 
+const GET_PUBLIC_KEY: u32 = 30;
+
 pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     attestation::monitor::attest_monitor(params)
 }
@@ -40,6 +42,10 @@ pub fn delete_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     super::process::delete_trusted_process(params)
 }
 
+pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    attestation::monitor::get_public_key(params)
+}
+
 pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         MONITOR_INIT => monitor_init(params),
@@ -48,6 +54,7 @@ pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<
         DELETE_ZYGOTE => delete_zygote(params),
         CREATE_TRUSTLET => create_trustlet(params),
         DELETE_TRUSTLET => delete_trustlet(params),
+        GET_PUBLIC_KEY => get_public_key(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }

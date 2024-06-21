@@ -332,7 +332,7 @@ fn generate_key_pair() {
     log::info!("SHA returned: {} and a hash of {:?}", n, hash);
     //log::info!("Raw pub size: {} and key bytes: {:?}", raw_key.len(), raw_key);
 
-    panic!();
+//    panic!();
 }
 
 #[no_mangle]
