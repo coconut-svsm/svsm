@@ -82,14 +82,12 @@ pub trait SvsmPlatform {
     /// Configures the use of alternate injection as requested.
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError>;
 
-    /// Indicates whether this system should make use of alternate injection.
-    fn use_alternate_injection(&self) -> bool;
+    /// Changes the state of APIC registration on this system, returning either
+    /// the current registration state or an error.
+    fn change_apic_registration_state(&self, incr: bool) -> Result<bool, SvsmError>;
 
-    /// Locks or unlocks the use of APIC emulation on this system.
-    fn lock_unlock_apic_emulation(&self, lock: bool) -> Result<(), SvsmError>;
-
-    /// Determines whether APIC emulation can be disabled on this system.
-    fn disable_apic_emulation(&self) -> Result<(), SvsmError>;
+    /// Queries the state of APIC registration on this system.
+    fn query_apic_registration_state(&self) -> bool;
 
     /// Signal an IRQ on one or more CPUs.
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;

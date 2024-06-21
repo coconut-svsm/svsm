@@ -85,16 +85,12 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    fn use_alternate_injection(&self) -> bool {
+    fn change_apic_registration_state(&self, _incr: bool) -> Result<bool, SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
+    fn query_apic_registration_state(&self) -> bool {
         false
-    }
-
-    fn lock_unlock_apic_emulation(&self, _lock: bool) -> Result<(), SvsmError> {
-        Err(SvsmError::NotSupported)
-    }
-
-    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
-        Err(SvsmError::NotSupported)
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
