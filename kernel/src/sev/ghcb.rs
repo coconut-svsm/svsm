@@ -693,13 +693,7 @@ pub fn switch_to_vmpl(vmpl: u32) {
     // correctly block the VMPL switch so that events can be processed.
     let hv_doorbell = this_cpu().hv_doorbell();
     let ptr = match hv_doorbell {
-        Some(doorbell) => {
-            // Process any pending #HV events before leaving the SVSM.  No event
-            // can cancel the request to enter the guest VMPL, so proceed with
-            // guest entry once events have been handled.
-            doorbell.process_pending_events();
-            ptr::from_ref(doorbell)
-        }
+        Some(doorbell) => ptr::from_ref(doorbell),
         None => ptr::null(),
     };
     unsafe {
