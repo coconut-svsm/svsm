@@ -102,7 +102,10 @@ pub enum ApicError {
     ApicError,
 }
 
-#[derive(Default, Clone, Copy, Debug)]
+// This structure must never be copied because a silent copy will cause APIC
+// state to be lost.
+#[allow(missing_copy_implementations)]
+#[derive(Default, Debug)]
 pub struct LocalApic {
     irr: [u32; 8],
     allowed_irr: [u32; 8],
