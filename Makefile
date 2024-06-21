@@ -158,7 +158,7 @@ clippy:
 clean:
 	cargo clean
 	rm -f stage1/*.o stage1/*.bin stage1/*.elf
-	rm -f ${STAGE1_OBJS} utils/gen_meta utils/print-meta
+	rm -f utils/gen_meta utils/print-meta
 	rm -rf bin
 
 distclean: clean
