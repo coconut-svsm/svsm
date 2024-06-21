@@ -32,8 +32,8 @@ use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::{construct_start_context, construct_vmsa};
 use crate::GpaMap;
 
-pub const SNP_COMPATIBILITY_MASK: u32 = 1;
-pub const NATIVE_COMPATIBILITY_MASK: u32 = 2;
+pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
+pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 
 // Parameter area indices
