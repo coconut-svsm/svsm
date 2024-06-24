@@ -7,6 +7,7 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::my_rsa_wrapper::get_RSA_public_key;
 use crate::my_rsa_wrapper::RSA_key;
 use crate::my_rsa_wrapper::my_SHA512;
+use crate::my_rsa_wrapper::RSA_decrypt;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -97,5 +98,24 @@ pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
 pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     log::info!("[Monitor] Receiveing policy");
+    let target_address = PhysAddr::from(params.rcx);
+    let mapped_target_page = PerCPUPageMappingGuard::create_4k(target_address).unwrap();
+    let target = unsafe {mapped_target_page.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
+
+    let mut decrypted: [u8; 256] = [0; 256];
+
+    //log::info!("From: {:?}", from);
+    //log::info!("To: {:?}", to);
+    //log::info!("Encrypting...");
+    //n = unsafe{RSA_encrypt(10, from.as_mut_ptr(), to.as_mut_ptr())};
+    //log::info!("To: {:?}", to);
+    //log::info!("Ecrypted stuff: {}", n);
+    let n = unsafe{RSA_decrypt(256, target.as_mut_ptr(), decrypted.as_mut_ptr())};
+    log::info!("N: {}, Decrypted: {:?}", n, decrypted);
+    let n = unsafe{RSA_decrypt(256, target.as_mut_ptr().add(256), decrypted.as_mut_ptr())};
+    log::info!("N: {}, Decrypted: {:?}", n, decrypted);
+
+
+    
     Ok(())
 }
