@@ -41,7 +41,11 @@ pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
 
 
     log::info!("Requesting Monitor Attestation Report");
-    let rep_size = get_regular_report(&mut rep)?;
+    //let rep_size = get_regular_report(&mut rep)?;
+    let rep_size = match get_regular_report(&mut rep) {
+    Ok(e) => e,
+    Err(e) => {log::info!("Error from get report: {:?}", e); panic!(); }
+    };
 
     if params.rdx == 0 {
         /* Here we only query for the size of the report */
@@ -89,4 +93,9 @@ pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     target[key_size] = 0;
    
   Ok(())  
+}
+
+pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    log::info!("[Monitor] Receiveing policy");
+    Ok(())
 }
