@@ -499,7 +499,7 @@ impl PerCpu {
     fn setup_tss(&self) {
         let double_fault_stack = self.get_top_of_df_stack();
         let mut tss = self.tss.get();
-        tss.ist_stacks[IST_DF] = double_fault_stack;
+        tss.set_ist_stack(IST_DF, double_fault_stack);
         self.tss.set(tss);
     }
 
