@@ -19,7 +19,7 @@ use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, install_console_logger};
+use svsm::console::install_console_logger;
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
@@ -37,9 +37,7 @@ use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
 use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
-use svsm::serial::SerialPort;
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::immut_after_init::ImmutAfterInitCell;
 use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
@@ -74,8 +72,6 @@ fn shutdown_percpu() {
         .expect("Failed to shut down percpu data (including GHCB)");
 }
 
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
-
 fn setup_env(
     config: &SvsmConfig<'_>,
     platform: &mut dyn SvsmPlatform,
@@ -83,9 +79,13 @@ fn setup_env(
 ) {
     gdt().load();
     early_idt_init_no_ghcb();
-    platform.env_setup();
 
+    let debug_serial_port = config.debug_serial_port();
     install_console_logger("Stage2").expect("Console logger already initialized");
+    platform
+        .env_setup(debug_serial_port)
+        .expect("Early environment setup failed");
+
     init_kernel_mapping_info(
         VirtAddr::null(),
         VirtAddr::from(640 * 1024usize),
@@ -101,19 +101,14 @@ fn setup_env(
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
     early_idt_init();
 
-    CONSOLE_SERIAL
-        .init(&SerialPort::new(
-            platform.get_console_io_port(),
-            config.debug_serial_port(),
-        ))
-        .expect("console serial output already configured");
-    (*CONSOLE_SERIAL).init();
-    init_console(&*CONSOLE_SERIAL).expect("Console writer already initialized");
+    // Complete initializtion of the platform.  After that point, the console
+    // will be fully working and any unsupported configuration can be properly
+    // reported.
+    platform
+        .env_setup_late(debug_serial_port)
+        .expect("Late environment setup failed");
 
-    // Console is fully working now and any unsupported configuration can be
-    // properly reported.
     dump_cpuid_table();
-    platform.env_setup_late();
 }
 
 /// Map and validate the specified virtual memory region at the given physical
@@ -158,7 +153,7 @@ fn get_svsm_config(
 ) -> Result<SvsmConfig<'static>, SvsmError> {
     if launch_info.igvm_params == 0 {
         return Ok(SvsmConfig::FirmwareConfig(FwCfg::new(
-            platform.get_console_io_port(),
+            platform.get_io_port(),
         )));
     }
 
@@ -334,8 +329,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
 
     let config = get_svsm_config(launch_info, platform).expect("Failed to get SVSM configuration");
     setup_env(&config, platform, launch_info);
-
-    log::info!("COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader");
 
     // Get the available physical memory region for the kernel
     let kernel_region = config

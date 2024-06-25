@@ -5,16 +5,21 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::console::init_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
-use crate::platform::{IOPort, PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::io::IOPort;
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::serial::SerialPort;
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
 static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 const APIC_MSR_ICR: u32 = 0x830;
 
@@ -34,8 +39,19 @@ impl Default for NativePlatform {
 }
 
 impl SvsmPlatform for NativePlatform {
-    fn env_setup(&mut self) {}
-    fn env_setup_late(&mut self) {}
+    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+        // In the native platform, console output does not require the use of
+        // any platform services, so it can be initialized immediately.
+        CONSOLE_SERIAL
+            .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
+            .map_err(|_| SvsmError::Console)?;
+        (*CONSOLE_SERIAL).init();
+        init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
+    }
+
+    fn env_setup_late(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+        Ok(())
+    }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Ok(())
@@ -58,7 +74,7 @@ impl SvsmPlatform for NativePlatform {
 
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
 
-    fn get_console_io_port(&self) -> &'static dyn IOPort {
+    fn get_io_port(&self) -> &'static dyn IOPort {
         &CONSOLE_IO
     }
 

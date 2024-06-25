@@ -5,12 +5,14 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::console::init_console;
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::percpu::{current_ghcb, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::serial::SerialPort;
 use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, verify_ghcb_version, GHCBHvFeatures};
 use crate::sev::status::vtom_enabled;
@@ -19,11 +21,13 @@ use crate::sev::{
 };
 use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
@@ -43,13 +47,20 @@ impl Default for SnpPlatform {
 }
 
 impl SvsmPlatform for SnpPlatform {
-    fn env_setup(&mut self) {
+    fn env_setup(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
         sev_status_init();
+        Ok(())
     }
 
-    fn env_setup_late(&mut self) {
+    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+        CONSOLE_SERIAL
+            .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
+            .map_err(|_| SvsmError::Console)?;
+        (*CONSOLE_SERIAL).init();
+        init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)?;
         sev_status_verify();
-        init_hypervisor_ghcb_features().expect("Failed to obtain hypervisor GHCB features");
+        init_hypervisor_ghcb_features()?;
+        Ok(())
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
@@ -102,7 +113,7 @@ impl SvsmPlatform for SnpPlatform {
         cpu.register_ghcb().expect("Failed to register GHCB");
     }
 
-    fn get_console_io_port(&self) -> &'static dyn IOPort {
+    fn get_io_port(&self) -> &'static dyn IOPort {
         &CONSOLE_IO
     }
 

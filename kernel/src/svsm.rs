@@ -18,7 +18,7 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::{init_console, install_console_logger};
+use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::efer::efer_init;
@@ -43,10 +43,8 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
 use svsm::platform::{SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
-use svsm::serial::SerialPort;
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{secrets_page, secrets_page_mut};
-use svsm::svsm_console::SVSMIOPort;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
@@ -236,9 +234,6 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
-
 pub fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
     // static, but we're simply printing its address. We are not creating a
@@ -317,7 +312,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     cr0_init();
     cr4_init();
     efer_init();
-    platform.env_setup();
+    install_console_logger("SVSM").expect("Console logger already initialized");
+    platform
+        .env_setup(debug_serial_port)
+        .expect("Early environment setup failed");
 
     memory_init(&launch_info);
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
@@ -358,19 +356,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Failed to allocate idle task for BSP");
 
     idt_init();
-
-    CONSOLE_SERIAL
-        .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
-        .expect("console serial output already configured");
-    (*CONSOLE_SERIAL).init();
-
-    init_console(&*CONSOLE_SERIAL).expect("Console writer already initialized");
-    install_console_logger("SVSM").expect("Console logger already initialized");
-
-    log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
+    platform
+        .env_setup_late(debug_serial_port)
+        .expect("Late environment setup failed");
 
     dump_cpuid_table();
-    platform.env_setup_late();
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -417,7 +407,7 @@ pub extern "C" fn svsm_main() {
         }
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
-        SvsmConfig::FirmwareConfig(FwCfg::new(&CONSOLE_IO))
+        SvsmConfig::FirmwareConfig(FwCfg::new(SVSM_PLATFORM.as_dyn_ref().get_io_port()))
     };
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");

@@ -44,11 +44,11 @@ pub enum PageStateChangeOp {
 /// underlying architectures.
 pub trait SvsmPlatform {
     /// Performs basic early initialization of the runtime environment.
-    fn env_setup(&mut self);
+    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
 
     /// Performs initialization of the platform runtime environment after
-    /// console logging has been initialized.
-    fn env_setup_late(&mut self);
+    /// the core system environment has been initialized.
+    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
 
     /// Completes initialization of a per-CPU object during construction.
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
@@ -62,8 +62,9 @@ pub trait SvsmPlatform {
     /// Establishes state required for guest/host communication.
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool);
 
-    /// Obtains a console I/O port reference.
-    fn get_console_io_port(&self) -> &'static dyn IOPort;
+    /// Obtains a reference to an I/O port implemetation appropriate to the
+    /// platform.
+    fn get_io_port(&self) -> &'static dyn IOPort;
 
     /// Performs a page state change between private and shared states.
     fn page_state_change(
