@@ -32,6 +32,7 @@ startup_32:
 	andl	$~((1 << 30) | (1 << 29)), %eax
 	mov	%eax, %cr0
 
+#ifdef LOAD_STAGE2
 	/* Setup Stack */
 	movl	$STAGE1_STACK, %esp
 
@@ -40,7 +41,9 @@ startup_32:
 2:	popl	%ebp
 	leal	2b, %eax
 	subl	%eax, %ebp
+#endif
 
+#ifdef LOAD_STAGE2
 	leal	stage2_bin(%ebp), %esi
 	movl	$STAGE2_START, %edi
 	movl	stage2_size(%ebp), %ecx
@@ -73,11 +76,16 @@ startup_32:
 	pushl	%eax
 	pushl	%eax
 
+#else
+	/* Setup stack for stage 2 */
+	movl	$(STAGE2_START - 32), %esp
+#endif
 	/* Jump to stage 2 */
 	movl	$STAGE2_START, %eax
 	jmp	*%eax
 .data
 
+#ifdef LOAD_STAGE2
 	.align	4
 stage2_bin:
 	.incbin "bin/stage2.bin"
@@ -96,3 +104,4 @@ kernel_fs_bin_end:
 	.align 4
 stage2_size:
 	.long	stage2_bin_end - stage2_bin
+#endif

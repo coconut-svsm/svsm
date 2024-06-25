@@ -11,6 +11,7 @@ use igvm_defs::PAGE_SIZE_4K;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::firmware::Firmware;
+use crate::igvm_builder::{COMPATIBILITY_MASK, TDP_COMPATIBILITY_MASK};
 
 #[derive(Debug, Copy, Clone)]
 pub struct GpaRange {
@@ -50,6 +51,7 @@ impl GpaRange {
 
 #[derive(Debug)]
 pub struct GpaMap {
+    pub stage1_image: GpaRange,
     pub low_memory: GpaRange,
     pub stage2_stack: GpaRange,
     pub stage2_image: GpaRange,
@@ -81,7 +83,20 @@ impl GpaMap {
         //   0x1nnnnn-0x1nnnnn: filesystem
         //   0x1nnnnn-0x1nnnnn: IGVM parameter block
         //   0x1nnnnn-0x1nnnnn: general and memory map parameter pages
-        //   0xFFnn0000-0xFFFFFFFF: OVMF firmware (QEMU only, if specified)
+        //   0xFFnn0000-0xFFFFFFFF: [TDX stage 1 +] OVMF firmware (QEMU only, if specified)
+
+        let stage1_image = if let Some(stage1) = &options.tdx_stage1 {
+            if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+                // Obtain the length of the binary file
+                let stage1_len = Self::get_metadata(stage1)?.len();
+                // TDX stage1 must be located to end at 4GB
+                GpaRange::new((1u64 << 32) - stage1_len, stage1_len)?
+            } else {
+                return Err("TDP platform must be specified when using --tdx-stage1".into());
+            }
+        } else {
+            GpaRange::new(0, 0)?
+        };
 
         // Obtain the lengths of the binary files
         let stage2_len = Self::get_metadata(&options.stage2)?.len() as usize;
@@ -159,6 +174,7 @@ impl GpaMap {
         };
 
         let gpa_map = Self {
+            stage1_image,
             low_memory: GpaRange::new(0, 0xf000)?,
             stage2_stack: GpaRange::new_page(0xf000)?,
             stage2_image,

@@ -15,10 +15,12 @@ use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::{uuid, Uuid};
 
 use crate::firmware::Firmware;
+use crate::igvm_builder::{NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK};
 
 const OVMF_TABLE_FOOTER_GUID: Uuid = uuid!("96b582de-1fb2-45f7-baea-a366c55a082d");
 const OVMF_SEV_METADATA_GUID: Uuid = uuid!("dc886566-984a-4798-a75e-5585a7bf67cc");
 const SEV_INFO_BLOCK_GUID: Uuid = uuid!("00f771de-1a7e-4fcb-890e-68c77e2fb44e");
+const OVMF_RESET_VECTOR_GUID: Uuid = uuid!("813d7b2c-9558-4d88-8b31-1427a85abe69");
 
 const SEV_META_DESC_TYPE_MEM: u32 = 1;
 const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
@@ -174,6 +176,7 @@ fn parse_inner_table(
     current_offset: usize,
     data: &[u8],
     firmware: &mut IgvmParamBlockFwInfo,
+    compat_mask: &mut u32,
 ) -> Result<usize, Box<dyn Error>> {
     let table = read_table(current_offset, data)?;
 
@@ -184,12 +187,30 @@ fn parse_inner_table(
             &data[table.data_offset..table.data_offset + table.data_length as usize],
             firmware,
         )?;
+    } else if table.uuid == OVMF_RESET_VECTOR_GUID.to_bytes_le() {
+        assert_eq!(table.data_length, 8);
+        let reset_vector = u32::from_le_bytes(
+            data[table.data_offset..table.data_offset + 4]
+                .try_into()
+                .unwrap(),
+        );
+        let mask = u32::from_le_bytes(
+            data[table.data_offset + 4..table.data_offset + 8]
+                .try_into()
+                .unwrap(),
+        );
+        firmware.start = reset_vector - firmware.size + 16;
+        *compat_mask = mask;
     }
 
     Ok(table.data_offset)
 }
 
-pub fn parse_ovmf(data: &[u8], firmware: &mut IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
+pub fn parse_ovmf(
+    data: &[u8],
+    firmware: &mut IgvmParamBlockFwInfo,
+    compat_mask: &mut u32,
+) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
     let mut current_offset = data
         .len()
@@ -202,7 +223,7 @@ pub fn parse_ovmf(data: &[u8], firmware: &mut IgvmParamBlockFwInfo) -> Result<()
     current_offset = ovmf_table.data_offset + ovmf_table.data_length as usize;
 
     while current_offset > ovmf_table.data_offset {
-        current_offset = parse_inner_table(current_offset, data, firmware)?;
+        current_offset = parse_inner_table(current_offset, data, firmware, compat_mask)?;
     }
 
     Ok(())
@@ -231,12 +252,21 @@ impl OvmfFirmware {
         if in_file.read_to_end(&mut data)? != len {
             return Err("Failed to read OVMF file".into());
         }
-        let mut fw_info = IgvmParamBlockFwInfo::default();
-        parse_ovmf(&data, &mut fw_info)?;
+        let mut fw_info = IgvmParamBlockFwInfo {
+            // OVMF is located to end at 4GB by default.
+            start: (0xffffffff - len + 1) as u32,
+            size: len as u32,
+            ..Default::default()
+        };
+        // OVMF is not compatible with TDP by default
+        let mut fw_compat_mask =
+            compatibility_mask & (SNP_COMPATIBILITY_MASK | NATIVE_COMPATIBILITY_MASK);
 
-        // OVMF must be located to end at 4GB.
-        fw_info.start = (0xffffffff - len + 1) as u32;
-        fw_info.size = len as u32;
+        parse_ovmf(&data, &mut fw_info, &mut fw_compat_mask)?;
+
+        if (fw_compat_mask & compatibility_mask) == 0 {
+            return Err("OVMF file incompatible with the specified platform(s)".into());
+        }
 
         // Build page directives for the file contents.
         let mut gpa: u64 = fw_info.start.into();
@@ -244,7 +274,7 @@ impl OvmfFirmware {
         for page_data in data.chunks(PAGE_SIZE_4K as usize) {
             directives.push(IgvmDirectiveHeader::PageData {
                 gpa,
-                compatibility_mask,
+                compatibility_mask: fw_compat_mask,
                 flags: IgvmPageDataFlags::new(),
                 data_type: IgvmPageDataType::NORMAL,
                 data: page_data.to_vec(),

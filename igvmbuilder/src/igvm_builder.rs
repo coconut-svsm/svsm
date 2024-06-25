@@ -10,9 +10,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::mem::size_of;
 
-use bootlib::igvm_params::{
-    IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo, IgvmParamBlockFwMem,
-};
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo};
 use bootlib::platform::SvsmPlatformType;
 use clap::Parser;
 use igvm::{
@@ -32,8 +30,9 @@ use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::{construct_start_context, construct_vmsa};
 use crate::GpaMap;
 
-pub const SNP_COMPATIBILITY_MASK: u32 = 1;
-pub const NATIVE_COMPATIBILITY_MASK: u32 = 2;
+pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
+pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
+pub const TDP_COMPATIBILITY_MASK: u32 = 1u32 << 2;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
 
 // Parameter area indices
@@ -62,14 +61,22 @@ impl IgvmBuilder {
         // revision.
         let mut use_igvm_v2 = false;
 
-        // SNP is always included in the compatibility mask regardless of the
-        // provided options.
-        COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
-
+        // Include the SEV-SNP platform if requested.
+        if options.snp {
+            COMPATIBILITY_MASK.add(SNP_COMPATIBILITY_MASK);
+        }
+        // Include the TDP platform if requested.
+        if options.tdp {
+            COMPATIBILITY_MASK.add(TDP_COMPATIBILITY_MASK);
+        }
         // Include the NATIVE platform if requested.
         if options.native {
             COMPATIBILITY_MASK.add(NATIVE_COMPATIBILITY_MASK);
             use_igvm_v2 = true;
+        }
+
+        if COMPATIBILITY_MASK.get() == 0 {
+            return Err("No platform specified".into());
         }
 
         let firmware = match options.firmware {
@@ -185,17 +192,7 @@ impl IgvmBuilder {
         let (fw_info, vtom) = if let Some(firmware) = &self.firmware {
             (firmware.get_fw_info(), firmware.get_vtom())
         } else {
-            let fw_info = IgvmParamBlockFwInfo {
-                start: 0,
-                size: 0,
-                in_low_memory: 0,
-                secrets_page: 0,
-                caa_page: 0,
-                cpuid_page: 0,
-                prevalidated_count: 0,
-                prevalidated: [IgvmParamBlockFwMem { base: 0, size: 0 }; 8],
-                ..Default::default()
-            };
+            let fw_info = IgvmParamBlockFwInfo::default();
             let vtom = match self.options.hypervisor {
                 Hypervisor::Qemu => 0,
                 Hypervisor::HyperV => {
@@ -208,7 +205,7 @@ impl IgvmBuilder {
         };
 
         // Most of the parameter block can be initialised with constants.
-        let mut param_block = IgvmParamBlock {
+        Ok(IgvmParamBlock {
             param_area_size,
             param_page_offset,
             memory_map_offset,
@@ -217,6 +214,8 @@ impl IgvmBuilder {
             secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
+            stage1_size: self.gpa_map.stage1_image.get_size() as u32,
+            stage1_base: self.gpa_map.stage1_image.get_start(),
             kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
             kernel_size: self.gpa_map.kernel.get_size() as u32,
             kernel_base: self.gpa_map.kernel.get_start(),
@@ -226,23 +225,7 @@ impl IgvmBuilder {
                 false => 0,
             },
             ..Default::default()
-        };
-
-        // Calculate the kernel size and base.
-        match self.options.hypervisor {
-            Hypervisor::Qemu => {
-                // Place the kernel area at 512 GB with a size of 16 MB.
-                param_block.kernel_base = 0x0000008000000000;
-                param_block.kernel_size = 0x01000000;
-            }
-            Hypervisor::HyperV => {
-                // Place the kernel area at 64 MB with a size of 16 MB.
-                param_block.kernel_base = 0x04000000;
-                param_block.kernel_size = 0x01000000;
-            }
-        }
-
-        Ok(param_block)
+        })
     }
 
     fn build_platforms(&mut self, param_block: &IgvmParamBlock) {
@@ -254,6 +237,17 @@ impl IgvmBuilder {
                     platform_type: IgvmPlatformType::SEV_SNP,
                     platform_version: 1,
                     shared_gpa_boundary: param_block.vtom,
+                },
+            ));
+        }
+        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+            self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
+                IGVM_VHS_SUPPORTED_PLATFORM {
+                    compatibility_mask: TDP_COMPATIBILITY_MASK,
+                    highest_vtl: 2,
+                    platform_type: IgvmPlatformType::TDX,
+                    platform_version: 1,
+                    shared_gpa_boundary: 0,
                 },
             ));
         }
@@ -272,12 +266,16 @@ impl IgvmBuilder {
 
     fn build_initialization(&mut self) -> Result<(), Box<dyn Error>> {
         if let Some(policy) = &self.options.policy {
-            let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
-            self.initialization
-                .push(IgvmInitializationHeader::GuestPolicy {
-                    policy,
-                    compatibility_mask: COMPATIBILITY_MASK.get(),
-                })
+            if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+                let policy = u64::from_str_radix(policy.trim_start_matches("0x"), 16)?;
+                self.initialization
+                    .push(IgvmInitializationHeader::GuestPolicy {
+                        policy,
+                        compatibility_mask: SNP_COMPATIBILITY_MASK,
+                    })
+            } else {
+                return Err("Policy not supported by the specified platform(s)".into());
+            }
         }
         Ok(())
     }
@@ -370,13 +368,18 @@ impl IgvmBuilder {
 
         // Add optional filesystem image
         if let Some(fs) = &self.options.filesystem {
-            self.add_data_pages_from_file(&fs.clone(), self.gpa_map.kernel_fs.get_start())?;
+            self.add_data_pages_from_file(
+                &fs.clone(),
+                self.gpa_map.kernel_fs.get_start(),
+                COMPATIBILITY_MASK.get(),
+            )?;
         }
 
         // Add the kernel elf binary
         self.add_data_pages_from_file(
             &self.options.kernel.clone(),
             self.gpa_map.kernel_elf.get_start(),
+            COMPATIBILITY_MASK.get(),
         )?;
 
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
@@ -384,7 +387,7 @@ impl IgvmBuilder {
             let cpuid_page = SnpCpuidPage::new()?;
             cpuid_page.add_directive(
                 self.gpa_map.cpuid_page.get_start(),
-                COMPATIBILITY_MASK.get(),
+                SNP_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
 
@@ -392,7 +395,17 @@ impl IgvmBuilder {
             self.add_empty_pages(
                 self.gpa_map.secrets_page.get_start(),
                 self.gpa_map.secrets_page.get_size(),
+                SNP_COMPATIBILITY_MASK,
                 IgvmPageDataType::SECRETS,
+            )?;
+        }
+
+        // Add optional stage 1 binary.
+        if let Some(stage1) = &self.options.tdx_stage1 {
+            self.add_data_pages_from_file(
+                &stage1.clone(),
+                self.gpa_map.stage1_image.get_start(),
+                TDP_COMPATIBILITY_MASK,
             )?;
         }
 
@@ -400,6 +413,7 @@ impl IgvmBuilder {
         self.add_empty_pages(
             self.gpa_map.stage2_free.get_start(),
             self.gpa_map.stage2_free.get_size(),
+            COMPATIBILITY_MASK.get(),
             IgvmPageDataType::NORMAL,
         )?;
 
@@ -407,6 +421,7 @@ impl IgvmBuilder {
         self.add_data_pages_from_file(
             &self.options.stage2.clone(),
             self.gpa_map.stage2_image.get_start(),
+            COMPATIBILITY_MASK.get(),
         )?;
 
         // Populate the stage 2 stack.  This has different contents on each
@@ -416,6 +431,13 @@ impl IgvmBuilder {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
                 SvsmPlatformType::Snp,
+                &mut self.directives,
+            );
+        }
+        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+            stage2_stack.add_directive(
+                self.gpa_map.stage2_stack.get_start(),
+                SvsmPlatformType::Tdp,
                 &mut self.directives,
             );
         }
@@ -431,6 +453,7 @@ impl IgvmBuilder {
         self.add_empty_pages(
             self.gpa_map.low_memory.get_start(),
             self.gpa_map.low_memory.get_size(),
+            COMPATIBILITY_MASK.get(),
             IgvmPageDataType::NORMAL,
         )?;
 
@@ -451,6 +474,7 @@ impl IgvmBuilder {
         &mut self,
         path: &String,
         gpa_start: u64,
+        compatibility_mask: u32,
     ) -> Result<(), Box<dyn Error>> {
         let mut gpa = gpa_start;
         let mut in_file = File::open(path).map_err(|e| {
@@ -464,7 +488,7 @@ impl IgvmBuilder {
                 break;
             }
             self.directives
-                .push(Self::new_page_data(gpa, COMPATIBILITY_MASK.get(), buf));
+                .push(Self::new_page_data(gpa, compatibility_mask, buf));
             gpa += PAGE_SIZE_4K;
             buf = vec![0; 4096];
         }
@@ -501,12 +525,13 @@ impl IgvmBuilder {
         &mut self,
         gpa_start: u64,
         size: u64,
+        compatibility_mask: u32,
         data_type: IgvmPageDataType,
     ) -> Result<(), Box<dyn Error>> {
         for gpa in (gpa_start..(gpa_start + size)).step_by(PAGE_SIZE_4K as usize) {
             self.directives.push(IgvmDirectiveHeader::PageData {
                 gpa,
-                compatibility_mask: COMPATIBILITY_MASK.get(),
+                compatibility_mask,
                 flags: IgvmPageDataFlags::new(),
                 data_type,
                 data: vec![],

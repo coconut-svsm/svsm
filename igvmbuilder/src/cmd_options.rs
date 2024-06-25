@@ -8,6 +8,10 @@ use clap::{Parser, ValueEnum};
 
 #[derive(Parser, Debug)]
 pub struct CmdOptions {
+    /// Optional TDX stage 1 binary file
+    #[arg(long)]
+    pub tdx_stage1: Option<String>,
+
     /// Stage 2 binary file
     #[arg(short, long)]
     pub stage2: String,
@@ -47,6 +51,14 @@ pub struct CmdOptions {
     /// A hex value containing the guest policy to apply. For example: 0x30000
     #[arg(long)]
     pub policy: Option<String>,
+
+    /// Include SEV-SNP platform target
+    #[arg(long, default_value_t = false)]
+    pub snp: bool,
+
+    /// Include TD Partitioning platform target
+    #[arg(long, default_value_t = false)]
+    pub tdp: bool,
 
     /// Include NATIVE platform target
     #[arg(long, default_value_t = false)]

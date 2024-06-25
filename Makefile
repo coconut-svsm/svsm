@@ -40,6 +40,7 @@ C_BIT_POS ?= 51
 
 STAGE1_OBJS = stage1/stage1.o stage1/reset.o
 STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
+STAGE1_TRAMPOLINE_OBJS = stage1/stage1-trampoline.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
@@ -68,16 +69,16 @@ $(IGVMBUILDER):
 $(IGVMMEASURE):
 	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmmeasure
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
-	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu
+bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
+	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu --snp --tdp
 	$(IGVMMEASURE) --check-kvm $@ measure
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/svsm-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v --native
+bin/coconut-hyperv.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v --native --snp --tdp
 	$(IGVMMEASURE) $@ measure
 
-bin/coconut-test-qemu.igvm: $(IGVMBUILDER)  $(IGVMMEASURE) bin/test-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu
+bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
+	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu --snp --tdp
 	$(IGVMMEASURE) $@ measure
 
 test:
@@ -107,7 +108,7 @@ utils/print-meta: utils/print-meta.c
 utils/cbit: utils/cbit.c
 	cc -O3 -Wall -o $@ $<
 
-bin/meta.bin: utils/gen_meta utils/print-meta
+bin/meta.bin: utils/gen_meta utils/print-meta bin
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
@@ -130,13 +131,16 @@ endif
 
 stage1/stage1.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin
 	ln -sf svsm-kernel.elf bin/kernel.elf
-	cc -c -o $@ stage1/stage1.S
+	cc -c -DLOAD_STAGE2 -o $@ $<
 	rm -f bin/kernel.elf
 
 stage1/stage1-test.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin
 	ln -sf test-kernel.elf bin/kernel.elf
-	cc -c -o $@ stage1/stage1.S
+	cc -c -DLOAD_STAGE2 -o $@ $<
 	rm -f bin/kernel.elf
+
+stage1/stage1-trampoline.o: stage1/stage1.S
+	cc -c -o $@ $<
 
 stage1/reset.o:  stage1/reset.S bin/meta.bin
 
@@ -146,7 +150,13 @@ bin/stage1: ${STAGE1_OBJS}
 bin/stage1-test: ${STAGE1_TEST_OBJS}
 	$(CC) -o $@ $(STAGE1_TEST_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
 
+bin/stage1-trampoline: ${STAGE1_TRAMPOLINE_OBJS}
+	$(CC) -o $@ $(STAGE1_TRAMPOLINE_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
+
 bin/svsm.bin: bin/stage1
+	objcopy -O binary $< $@
+
+bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
 
 clippy:
@@ -158,7 +168,7 @@ clippy:
 clean:
 	cargo clean
 	rm -f stage1/*.o stage1/*.bin stage1/*.elf
-	rm -f ${STAGE1_OBJS} utils/gen_meta utils/print-meta
+	rm -f utils/gen_meta utils/print-meta
 	rm -rf bin
 
 distclean: clean
