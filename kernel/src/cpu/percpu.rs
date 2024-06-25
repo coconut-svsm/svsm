@@ -12,8 +12,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::apic::ApicError;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::init_guest_vmsa;
-use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
 use crate::cpu::LocalApic;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
@@ -31,13 +30,13 @@ use crate::sev::ghcb::GHCB;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::allocate_new_vmsa;
+use crate::sev::vmsa::{allocate_new_vmsa, VMSAControl};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use core::cell::{Cell, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, OnceCell, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
 use core::slice::Iter;
@@ -105,31 +104,6 @@ impl PerCpuAreas {
         ptr.iter()
             .find(|info| info.apic_id == apic_id)
             .map(|info| info.cpu_shared)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default)]
-pub struct VmsaRef {
-    pub vaddr: VirtAddr,
-    pub paddr: PhysAddr,
-    pub guest_owned: bool,
-}
-
-impl VmsaRef {
-    const fn new(v: VirtAddr, p: PhysAddr, g: bool) -> Self {
-        VmsaRef {
-            vaddr: v,
-            paddr: p,
-            guest_owned: g,
-        }
-    }
-
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub fn vmsa(&mut self) -> &mut VMSA {
-        let ptr = self.vaddr.as_mut_ptr::<VMSA>();
-        // SAFETY: this function takes &mut self, so only one mutable
-        // reference to the underlying VMSA can exist.
-        unsafe { ptr.as_mut().unwrap() }
     }
 }
 
@@ -311,13 +285,20 @@ impl PerCpuShared {
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
+/// CPU-local data.
+///
+/// This type is not [`Sync`], as its contents will only be accessed from the
+/// local CPU, much like thread-local data in an std environment. The only
+/// part of the struct that may be accessed from a different CPU is the
+/// `shared` field, a reference to which will be stored in [`PERCPU_AREAS`].
 #[derive(Debug)]
 pub struct PerCpu {
+    /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
 
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
-    svsm_vmsa: Cell<Option<VmsaRef>>,
+    svsm_vmsa: OnceCell<&'static VMSA>,
     reset_ip: Cell<u64>,
     apic_emulation: Cell<bool>,
     /// PerCpu Virtual Memory Range
@@ -333,8 +314,12 @@ pub struct PerCpu {
     /// Local APIC state for APIC emulation
     apic: RefCell<LocalApic>,
 
+    /// GHCB page for this CPU.
     ghcb: Cell<Option<&'static GHCB>>,
-    hv_doorbell: Cell<*const HVDoorbell>,
+
+    /// `#HV` doorbell page for this CPU.
+    hv_doorbell: OnceCell<&'static HVDoorbell>,
+
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
 
@@ -343,11 +328,12 @@ pub struct PerCpu {
 }
 
 impl PerCpu {
+    /// Creates a new default [`PerCpu`] struct.
     fn new(apic_id: u32) -> Self {
         Self {
             pgtbl: RefCell::new(PageTableRef::unset()),
             tss: Cell::new(X86Tss::new()),
-            svsm_vmsa: Cell::new(None),
+            svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
             vm_range: VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL),
             vrange_4k: RefCell::new(VirtualRange::new()),
@@ -359,13 +345,15 @@ impl PerCpu {
 
             shared: PerCpuShared::new(apic_id),
             ghcb: Cell::new(None),
-            hv_doorbell: Cell::new(ptr::null()),
+            hv_doorbell: OnceCell::new(),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
     }
 
+    /// Creates a new default [`PerCpu`] struct, allocates it via the page
+    /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         let percpu_ptr = vaddr.as_mut_ptr::<Self>();
@@ -381,6 +369,7 @@ impl PerCpu {
         &self.shared
     }
 
+    /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
         let ghcb_page = allocate_zeroed_page()?;
         if let Err(e) = GHCB::init(ghcb_page) {
@@ -396,12 +385,18 @@ impl PerCpu {
         self.ghcb.get()
     }
 
-    pub fn hv_doorbell_unsafe(&self) -> *const HVDoorbell {
-        self.hv_doorbell.get()
+    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
+        self.hv_doorbell.get().copied()
     }
 
-    pub fn hv_doorbell_addr(&self) -> usize {
-        ptr::addr_of!(self.hv_doorbell) as usize
+    /// Gets a pointer to the location of the HV doorbell pointer in the
+    /// PerCpu structure. Pointers and references have the same layout, so
+    /// the return type is equivalent to `*const *const HVDoorbell`.
+    pub fn hv_doorbell_addr(&self) -> *const &'static HVDoorbell {
+        self.hv_doorbell
+            .get()
+            .map(ptr::from_ref)
+            .unwrap_or(ptr::null())
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -468,18 +463,30 @@ impl PerCpu {
         self.ghcb().unwrap().register()
     }
 
-    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
+    fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let vaddr = allocate_zeroed_page()?;
         let ghcb = current_ghcb();
         if let Err(e) = HVDoorbell::init(vaddr, ghcb) {
             free_page(vaddr);
             return Err(e);
         }
-
-        self.hv_doorbell.set(vaddr.as_mut_ptr());
+        // SAFETY: the page contents have been allocated on valid memory and
+        // initialized. The HVDoorbell type's alignment requirements are met
+        // by the fact that we allocated a whole page. Mutable references to
+        // the page are never created, so this cannot be mutably aliased.
+        let doorbell = unsafe { &*vaddr.as_mut_ptr::<HVDoorbell>() };
+        self.hv_doorbell
+            .set(doorbell)
+            .expect("Attempted to reinitialize the HV doorbell page");
         Ok(())
     }
 
+    /// Configures the HV doorbell page if restricted injection is enabled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this function is called more than once for a given CPU and
+    /// restricted injection is enabled.
     pub fn configure_hv_doorbell(&self) -> Result<(), SvsmError> {
         // #HV doorbell configuration is only required if this system will make
         // use of restricted injection.
@@ -487,19 +494,6 @@ impl PerCpu {
             self.setup_hv_doorbell()?;
         }
         Ok(())
-    }
-
-    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
-        unsafe {
-            let hv_doorbell = self.hv_doorbell.get();
-            if hv_doorbell.is_null() {
-                None
-            } else {
-                // The HV doorbell page can only ever be borrowed shared, never
-                // mutable, and can safely have a static lifetime.
-                Some(&*hv_doorbell)
-            }
-        }
     }
 
     fn setup_tss(&self) {
@@ -619,7 +613,10 @@ impl PerCpu {
         self.reset_ip.set(reset_ip);
     }
 
-    pub fn alloc_svsm_vmsa(&self) -> Result<VmsaRef, SvsmError> {
+    /// Allocates and initializes a new VMSA for this CPU. Returns its
+    /// physical address and SEV features. Returns an error if allocation
+    /// fails of this CPU's VMSA was already initialized.
+    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -628,21 +625,25 @@ impl PerCpu {
         let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
         let paddr = virt_to_phys(vaddr);
 
-        let vmsa = VmsaRef::new(vaddr, paddr, false);
-        self.svsm_vmsa.set(Some(vmsa));
+        // SAFETY: we have exclusive access to this memory, as we just
+        // allocated it. allocate_new_vmsa() takes care of allocating
+        // memory of the right size and alignment for a VMSA.
+        let vmsa = unsafe { &mut *vaddr.as_mut_ptr::<VMSA>() };
 
-        Ok(vmsa)
-    }
+        // Initialize VMSA
+        init_svsm_vmsa(vmsa, vtom);
+        vmsa.tr = self.vmsa_tr_segment();
+        vmsa.rip = start_rip;
+        vmsa.rsp = self.get_top_of_stack().into();
+        vmsa.cr3 = self.get_pgtable().cr3_value().into();
+        vmsa.enable();
 
-    pub fn prepare_svsm_vmsa(&self, start_rip: u64) {
-        let mut vmsa = self.svsm_vmsa.get().unwrap();
-        let vmsa_ref = vmsa.vmsa();
+        let sev_features = vmsa.sev_features;
 
-        vmsa_ref.tr = self.vmsa_tr_segment();
-        vmsa_ref.rip = start_rip;
-        let top_of_stack = self.get_top_of_stack();
-        vmsa_ref.rsp = top_of_stack.into();
-        vmsa_ref.cr3 = self.get_pgtable().cr3_value().into();
+        // We already checked that the VMSA is unset
+        self.svsm_vmsa.set(vmsa).unwrap();
+
+        Ok((paddr, sev_features))
     }
 
     pub fn unmap_guest_vmsa(&self) {

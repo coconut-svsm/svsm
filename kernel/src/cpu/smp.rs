@@ -6,42 +6,24 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
-use crate::cpu::vmsa::init_svsm_vmsa;
+use crate::error::SvsmError;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
-use crate::sev::vmsa::VMSAControl;
 use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
-fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) {
+fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32, vtom: u64) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
-    let percpu = PerCpu::alloc(apic_id).expect("Failed to allocate AP per-cpu data");
+    let percpu = PerCpu::alloc(apic_id)?;
 
-    percpu
-        .setup(platform)
-        .expect("Failed to setup AP per-cpu area");
-    let mut vmsa = percpu
-        .alloc_svsm_vmsa()
-        .expect("Failed to allocate AP SVSM VMSA");
-
-    init_svsm_vmsa(vmsa.vmsa(), vtom);
-    percpu.prepare_svsm_vmsa(start_rip);
-
-    let sev_features = vmsa.vmsa().sev_features;
-    let vmsa_pa = vmsa.paddr;
-
+    percpu.setup(platform)?;
+    let (vmsa_pa, sev_features) = percpu.alloc_svsm_vmsa(vtom, start_rip)?;
     let percpu_shared = percpu.shared();
 
-    vmsa.vmsa().enable();
-    current_ghcb()
-        .ap_create(vmsa_pa, apic_id.into(), 0, sev_features)
-        .expect("Failed to launch secondary CPU");
-    loop {
-        if percpu_shared.is_online() {
-            break;
-        }
-    }
+    current_ghcb().ap_create(vmsa_pa, apic_id.into(), 0, sev_features)?;
+    while !percpu_shared.is_online() {}
+    Ok(())
 }
 
 pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo], vtom: u64) {
@@ -49,7 +31,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo], v
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
-        start_cpu(platform, c.apic_id, vtom);
+        start_cpu(platform, c.apic_id, vtom).expect("Failed to bring CPU online");
         count += 1;
     }
     log::info!("Brought {} AP(s) online", count);

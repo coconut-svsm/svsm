@@ -691,15 +691,19 @@ pub fn switch_to_vmpl(vmpl: u32) {
     // The switch to a lower VMPL must be done with an assembly sequence in
     // order to ensure that any #HV that occurs during the sequence will
     // correctly block the VMPL switch so that events can be processed.
-    let hv_doorbell = this_cpu().hv_doorbell_unsafe();
-    unsafe {
-        // Process any pending #HV events before leaving the SVSM.  No event
-        // can cancel the request to enter the guest VMPL, so proceed with
-        // guest entry once events have been handled.
-        if !hv_doorbell.is_null() {
-            (*hv_doorbell).process_pending_events();
+    let hv_doorbell = this_cpu().hv_doorbell();
+    let ptr = match hv_doorbell {
+        Some(doorbell) => {
+            // Process any pending #HV events before leaving the SVSM.  No event
+            // can cancel the request to enter the guest VMPL, so proceed with
+            // guest entry once events have been handled.
+            doorbell.process_pending_events();
+            ptr::from_ref(doorbell)
         }
-        if !switch_to_vmpl_unsafe(hv_doorbell, vmpl) {
+        None => ptr::null(),
+    };
+    unsafe {
+        if !switch_to_vmpl_unsafe(ptr, vmpl) {
             panic!("Failed to switch to VMPL {}", vmpl);
         }
     }
