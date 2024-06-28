@@ -102,7 +102,10 @@ pub enum ApicError {
     ApicError,
 }
 
-#[derive(Default, Clone, Copy, Debug)]
+// This structure must never be copied because a silent copy will cause APIC
+// state to be lost.
+#[allow(missing_copy_implementations)]
+#[derive(Default, Debug)]
 pub struct LocalApic {
     irr: [u32; 8],
     allowed_irr: [u32; 8],
@@ -318,52 +321,54 @@ impl LocalApic {
             // in service.  This check does not consider TPR, because an
             // interrupt lower in priority than TPR must be queued for delivery
             // as soon as TPR is lowered.
-            if (irq & 0xF0) > (current_priority & 0xF0) {
-                // Determine whether this interrupt can be injected
-                // immediately.  If not, queue it for delivery when possible.
-                let try_lazy_eoi = if self.deliver_interrupt_immediately(irq, cpu_state) {
-                    self.interrupt_delivered = true;
+            if (irq & 0xF0) <= (current_priority & 0xF0) {
+                return;
+            }
 
-                    // Use of lazy EOI can safely be attempted, because the
-                    // highest priority interrupt in service is unambiguous.
-                    true
-                } else {
-                    cpu_state.queue_interrupt(irq);
-                    self.interrupt_queued = true;
+            // Determine whether this interrupt can be injected
+            // immediately.  If not, queue it for delivery when possible.
+            let try_lazy_eoi = if self.deliver_interrupt_immediately(irq, cpu_state) {
+                self.interrupt_delivered = true;
 
-                    // A lazy EOI can only be attempted if there is no lower
-                    // priority interrupt in service.  If a lower priority
-                    // interrupt is in service, then the lazy EOI handler
-                    // won't know whether the lazy EOI is for the one that
-                    // is already in service or the one that is being queued
-                    // here.
-                    self.isr_stack_index == 0
-                };
+                // Use of lazy EOI can safely be attempted, because the
+                // highest priority interrupt in service is unambiguous.
+                true
+            } else {
+                cpu_state.queue_interrupt(irq);
+                self.interrupt_queued = true;
 
-                // Mark this interrupt in-service.  It will be recalled if
-                // the ISR is examined again before the interrupt is actually
-                // delivered.
-                Self::remove_vector_register(&mut self.irr, irq);
-                self.isr_stack[self.isr_stack_index] = irq;
-                self.isr_stack_index += 1;
+                // A lazy EOI can only be attempted if there is no lower
+                // priority interrupt in service.  If a lower priority
+                // interrupt is in service, then the lazy EOI handler
+                // won't know whether the lazy EOI is for the one that
+                // is already in service or the one that is being queued
+                // here.
+                self.isr_stack_index == 0
+            };
 
-                // Configure a lazy EOI if possible.  Lazy EOI is not possible
-                // for level-sensitive interrupts, because an explicit EOI
-                // is required to acknowledge the interrupt at the source.
-                if try_lazy_eoi && !Self::test_vector_register(&self.tmr, irq) {
-                    // A lazy EOI is possible only if there is no other
-                    // interrupt pending.  If another interrupt is pending,
-                    // then an explicit EOI will be required to prompt
-                    // delivery of the next interrupt.
-                    if self.scan_irr() == 0 {
-                        if let Some(calling_area) = guest_caa {
-                            if let Ok(caa) = calling_area.read() {
-                                if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
-                                    // Only track a pending lazy EOI if the
-                                    // calling area page could successfully be
-                                    // updated.
-                                    self.lazy_eoi_pending = true;
-                                }
+            // Mark this interrupt in-service.  It will be recalled if
+            // the ISR is examined again before the interrupt is actually
+            // delivered.
+            Self::remove_vector_register(&mut self.irr, irq);
+            self.isr_stack[self.isr_stack_index] = irq;
+            self.isr_stack_index += 1;
+
+            // Configure a lazy EOI if possible.  Lazy EOI is not possible
+            // for level-sensitive interrupts, because an explicit EOI
+            // is required to acknowledge the interrupt at the source.
+            if try_lazy_eoi && !Self::test_vector_register(&self.tmr, irq) {
+                // A lazy EOI is possible only if there is no other
+                // interrupt pending.  If another interrupt is pending,
+                // then an explicit EOI will be required to prompt
+                // delivery of the next interrupt.
+                if self.scan_irr() == 0 {
+                    if let Some(calling_area) = guest_caa {
+                        if let Ok(caa) = calling_area.read() {
+                            if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
+                                // Only track a pending lazy EOI if the
+                                // calling area page could successfully be
+                                // updated.
+                                self.lazy_eoi_pending = true;
                             }
                         }
                     }
@@ -380,24 +385,29 @@ impl LocalApic {
     }
 
     pub fn perform_eoi(&mut self) {
-        // Pop any in-service interrupt from the stack, and schedule the APIC
-        // for reevaluation.
-        if self.isr_stack_index != 0 {
-            self.isr_stack_index -= 1;
-            let vector = self.isr_stack[self.isr_stack_index];
-            if Self::test_vector_register(&self.tmr, vector) {
-                if Self::test_vector_register(&self.host_tmr, vector) {
-                    Self::perform_host_eoi(vector);
-                    Self::remove_vector_register(&mut self.host_tmr, vector);
-                } else {
-                    // FIXME: should do something with locally generated
-                    // level-sensitive interrupts.
-                }
-                Self::remove_vector_register(&mut self.tmr, vector);
-            }
-            self.update_required = true;
-            self.lazy_eoi_pending = false;
+        // Pop any in-service interrupt from the stack.  If there is no
+        // interrupt in service, then there is nothing to do.
+        if self.isr_stack_index == 0 {
+            return;
         }
+
+        self.isr_stack_index -= 1;
+        let vector = self.isr_stack[self.isr_stack_index];
+        if Self::test_vector_register(&self.tmr, vector) {
+            if Self::test_vector_register(&self.host_tmr, vector) {
+                Self::perform_host_eoi(vector);
+                Self::remove_vector_register(&mut self.host_tmr, vector);
+            } else {
+                // FIXME: should do something with locally generated
+                // level-sensitive interrupts.
+            }
+            Self::remove_vector_register(&mut self.tmr, vector);
+        }
+
+        // Schedule the APIC for reevaluation so any additional pending
+        // interrupt can be processed.
+        self.update_required = true;
+        self.lazy_eoi_pending = false;
     }
 
     fn get_isr(&self, index: usize) -> u32 {
@@ -451,7 +461,7 @@ impl LocalApic {
         // requested destination.  Skip the current CPU, since it was checked
         // above.
         for cpu_ref in PERCPU_AREAS.iter() {
-            let cpu = cpu_ref.unwrap();
+            let cpu = cpu_ref.as_cpu_ref();
             let this_apic_id = cpu.apic_id();
             if (this_apic_id != apic_id)
                 && Self::logical_destination_match(destination, this_apic_id)
@@ -521,7 +531,7 @@ impl LocalApic {
             // current CPU and indicate that an IPI has been requested.
             let apic_id = this_cpu().get_apic_id();
             for cpu_ref in PERCPU_AREAS.iter() {
-                let cpu = cpu_ref.unwrap();
+                let cpu = cpu_ref.as_cpu_ref();
                 if cpu.apic_id() != apic_id {
                     Self::post_ipi_one_target(cpu, icr);
                 }
@@ -625,11 +635,12 @@ impl LocalApic {
         match register {
             APIC_REGISTER_TPR => {
                 // TPR must be an 8-bit value.
-                if value > 0xFF {
-                    Err(ApicError::ApicError)
-                } else {
-                    cpu_state.set_tpr((value & 0xFF) as u8);
-                    Ok(())
+                match u8::try_from(value) {
+                    Ok(tpr) => {
+                        cpu_state.set_tpr(tpr);
+                        Ok(())
+                    }
+                    Err(_) => Err(ApicError::ApicError),
                 }
             }
             APIC_REGISTER_EOI => {
@@ -637,14 +648,13 @@ impl LocalApic {
                 Ok(())
             }
             APIC_REGISTER_ICR => self.handle_icr_write(value),
-            APIC_REGISTER_SELF_IPI => {
-                if value > 0xFF {
-                    Err(ApicError::ApicError)
-                } else {
-                    self.post_interrupt((value & 0xFF) as u8, false);
+            APIC_REGISTER_SELF_IPI => match u8::try_from(value) {
+                Ok(vector) => {
+                    self.post_interrupt(vector, false);
                     Ok(())
                 }
-            }
+                Err(_) => Err(ApicError::ApicError),
+            },
             _ => Err(ApicError::ApicError),
         }
     }
@@ -683,82 +693,84 @@ impl LocalApic {
         let hv_doorbell = this_cpu().hv_doorbell().unwrap();
         let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
         // Ignore events other than for the guest VMPL.
-        if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) != 0 {
-            let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
+        if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) == 0 {
+            return;
+        }
 
-            // First consume any level-sensitive vector that is present.
-            let mut flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
-            if flags.level_sensitive() {
-                let mut vector;
-                // Consume the correct vector atomically.
-                loop {
-                    let mut new_flags = flags;
-                    vector = flags.pending_vector();
-                    new_flags.set_pending_vector(0);
-                    new_flags.set_level_sensitive(false);
-                    if let Err(fail_flags) = descriptor.status.compare_exchange(
-                        flags.into(),
-                        new_flags.into(),
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    ) {
-                        flags = fail_flags.into();
-                    } else {
-                        flags = new_flags;
-                        break;
-                    }
-                }
+        let descriptor = &hv_doorbell.per_vmpl[GUEST_VMPL - 1];
 
-                if self.signal_one_host_interrupt(vector, true) {
-                    Self::insert_vector_register(&mut self.host_tmr, vector);
+        // First consume any level-sensitive vector that is present.
+        let mut flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
+        if flags.level_sensitive() {
+            let mut vector;
+            // Consume the correct vector atomically.
+            loop {
+                let mut new_flags = flags;
+                vector = flags.pending_vector();
+                new_flags.set_pending_vector(0);
+                new_flags.set_level_sensitive(false);
+                if let Err(fail_flags) = descriptor.status.compare_exchange(
+                    flags.into(),
+                    new_flags.into(),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    flags = fail_flags.into();
+                } else {
+                    flags = new_flags;
+                    break;
                 }
             }
 
-            // If a single vector is present, then signal it, otherwise
-            // process the entire IRR.
-            if flags.multiple_vectors() {
-                // Clear the multiple vectors flag first so that additional
-                // interrupts are presented via the 8-bit vector.  This must
-                // be done before the IRR is scanned so that if additional
-                // vectors are presented later, the multiple vectors flag
-                // will be set again.
-                let multiple_vectors_mask: u32 =
-                    HVExtIntStatus::new().with_multiple_vectors(true).into();
+            if self.signal_one_host_interrupt(vector, true) {
+                Self::insert_vector_register(&mut self.host_tmr, vector);
+            }
+        }
+
+        // If a single vector is present, then signal it, otherwise
+        // process the entire IRR.
+        if flags.multiple_vectors() {
+            // Clear the multiple vectors flag first so that additional
+            // interrupts are presented via the 8-bit vector.  This must
+            // be done before the IRR is scanned so that if additional
+            // vectors are presented later, the multiple vectors flag
+            // will be set again.
+            let multiple_vectors_mask: u32 =
+                HVExtIntStatus::new().with_multiple_vectors(true).into();
+            descriptor
+                .status
+                .fetch_and(!multiple_vectors_mask, Ordering::Relaxed);
+
+            // Handle the special case of vector 31.
+            if flags.vector_31() {
                 descriptor
                     .status
-                    .fetch_and(!multiple_vectors_mask, Ordering::Relaxed);
+                    .fetch_and(!(1u32 << 31), Ordering::Relaxed);
+                self.signal_one_host_interrupt(31, false);
+            }
 
-                // Handle the special case of vector 31.
-                if flags.vector_31() {
-                    descriptor
-                        .status
-                        .fetch_and(!(1u32 << 31), Ordering::Relaxed);
-                    self.signal_one_host_interrupt(31, false);
-                }
-
-                for i in 1..8 {
-                    let bits = descriptor.irr[i - 1].swap(0, Ordering::Relaxed);
-                    self.signal_several_interrupts(i, bits & self.allowed_irr[i]);
-                }
-            } else if flags.pending_vector() != 0 {
-                // Atomically consume this interrupt.  If it cannot be consumed
-                // atomically, then it must be because some other interrupt
-                // has been presented, and that can be consumed in another
-                // pass.
-                let mut new_flags = flags;
-                new_flags.set_pending_vector(0);
-                if descriptor
-                    .status
-                    .compare_exchange(
-                        flags.into(),
-                        new_flags.into(),
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    self.signal_one_host_interrupt(flags.pending_vector(), false);
-                }
+            for i in 1..8 {
+                let bits = descriptor.irr[i - 1].swap(0, Ordering::Relaxed);
+                self.signal_several_interrupts(i, bits & self.allowed_irr[i]);
+            }
+        } else if flags.pending_vector() != 0 {
+            // Atomically consume this interrupt.  If it cannot be consumed
+            // atomically, then it must be because some other interrupt
+            // has been presented, and that can be consumed in another
+            // pass.
+            let mut new_flags = flags;
+            new_flags.set_pending_vector(0);
+            if descriptor
+                .status
+                .compare_exchange(
+                    flags.into(),
+                    new_flags.into(),
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                self.signal_one_host_interrupt(flags.pending_vector(), false);
             }
         }
     }
