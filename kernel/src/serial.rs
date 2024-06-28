@@ -92,3 +92,29 @@ impl Terminal for SerialPort<'_> {
 }
 
 pub static DEFAULT_SERIAL_PORT: SerialPort<'_> = SerialPort::new(&DEFAULT_IO_DRIVER, SERIAL_PORT);
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+
+    use crate::locking::{LockGuard, SpinLock};
+    use crate::svsm_console::SVSMIOPort;
+    use core::sync::atomic::{AtomicBool, Ordering};
+
+    static SERIAL_INITIALIZED: AtomicBool = AtomicBool::new(false);
+    static IOPORT: SVSMIOPort = SVSMIOPort::new();
+    static SERIAL_PORT: SpinLock<SerialPort<'_>> =
+        SpinLock::new(SerialPort::new(&IOPORT, 0x3e8 /*COM3*/));
+
+    pub fn serial_port() -> LockGuard<'static, SerialPort<'static>> {
+        let sp = SERIAL_PORT.lock();
+        if SERIAL_INITIALIZED
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            sp.init();
+        }
+
+        sp
+    }
+}
