@@ -16,6 +16,12 @@ use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
+/// Makes a virtual page shared by revoking its validation, updating the
+/// page state, and modifying the page tables accordingly.
+///
+/// # Arguments
+///
+/// * `vaddr` - The virtual address of the page to be made shared.
 pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     let platform = SVSM_PLATFORM.as_dyn_ref();
 
@@ -43,6 +49,12 @@ pub fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
+/// Makes a virtual page private by updating the page tables, modifying the
+/// page state, and revalidating the page.
+///
+/// # Arguments
+///
+/// * `vaddr` - The virtual address of the page to be made private.
 pub fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
