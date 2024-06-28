@@ -13,6 +13,7 @@
 
 	.code16gcc
 	.section .init
+/* to_pm_mode must be at 0xfffffe00 */
 ENTRY(to_pm_mode)
 	xor	%ax, %ax
 	mov	%ax, %ds
@@ -27,7 +28,7 @@ ENTRY(to_pm_mode)
 	mov	%eax, %cr0
 
 	lgdtl	%cs:0xfe00 + gdt32_descr - to_pm_mode
-	ljmpl	$8, $0xfffffe00 + protected_mode - to_pm_mode
+	ljmpl	$8, $protected_mode
 
 	.code32
 protected_mode:
@@ -47,7 +48,7 @@ gdt32_end:
 
 gdt32_descr:
 	.word	gdt32_end - gdt32 - 1
-	.long	0xfffffe00 + gdt32 - to_pm_mode
+	.long	gdt32
 
 END(to_pm_mode)
 
