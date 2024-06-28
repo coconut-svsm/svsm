@@ -39,12 +39,14 @@ pub struct SevIdBlockBuilder {
 
 impl SevIdBlockBuilder {
     pub fn build(igvm: &IgvmFile, measure: &IgvmMeasure) -> Result<Self, Box<dyn Error>> {
-        let ld = measure.digest();
         let compatibility_mask = get_compatibility_mask(igvm, IgvmPlatformType::SEV_SNP).ok_or(
             String::from("IGVM file is not compatible with the specified platform."),
         )?;
         let policy = get_policy(igvm, compatibility_mask)
             .ok_or(String::from("IGVM file does not contain a guest policy."))?;
+
+        let mut ld = [0u8; 48];
+        ld.copy_from_slice(measure.digest());
 
         Ok(Self {
             compatibility_mask,
