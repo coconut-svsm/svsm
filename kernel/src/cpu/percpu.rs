@@ -11,6 +11,7 @@ use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::apic::ApicError;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
+use crate::cpu::line_buffer::LineBuffer;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
 use crate::cpu::LocalApic;
@@ -312,6 +313,7 @@ pub struct PerCpu {
 
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
+    ln_buf: RefCell<LineBuffer>,
 
     /// Stack boundaries of the currently running task.
     current_stack: Cell<MemoryRegion<VirtAddr>>,
@@ -337,6 +339,7 @@ impl PerCpu {
             hv_doorbell: OnceCell::new(),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
+            ln_buf: RefCell::new(LineBuffer::new()),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
     }
@@ -847,6 +850,10 @@ impl PerCpu {
         let mut tss = self.tss.get();
         tss.stacks[0] = addr;
         self.tss.set(tss);
+    }
+
+    pub fn get_line_buffer(&self) -> RefMut<'_, LineBuffer> {
+        self.ln_buf.borrow_mut()
     }
 }
 
