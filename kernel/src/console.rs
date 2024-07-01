@@ -9,7 +9,7 @@ use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Console {
     writer: &'static dyn Terminal,
 }
@@ -20,14 +20,6 @@ impl fmt::Write for Console {
             self.writer.put_byte(ch);
         }
         Ok(())
-    }
-}
-
-impl fmt::Debug for Console {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Console")
-            .field("writer", &format_args!("{:?}", self.writer as *const _,))
-            .finish()
     }
 }
 
