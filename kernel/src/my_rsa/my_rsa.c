@@ -15,6 +15,12 @@ typedef struct _RSA_key {
 
 RSA_key* g_pub_key;
 
+unsigned long get_cycles() 
+{
+    unsigned int lo,hi;
+    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+    return ((unsigned long)hi << 32) | lo;
+}
 
 int gen_RSA_keys(int bits)
 {
@@ -56,17 +62,6 @@ int gen_RSA_keys(int bits)
 	BIO_free(pub_key_bio);
     return 0;
 }
-
-int RSA_encrypt(int flen, const unsigned char* from, unsigned char *to)
-{
-	return RSA_public_encrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
-}
-
-int RSA_decrypt(int flen, const unsigned char* from, unsigned char *to)
-{
-	return RSA_private_decrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
-}
-
 /************************************************
  * Return number of bytes for RSA chunk
  * or 0 if the RSA keys have not been initialized 
@@ -80,6 +75,33 @@ int get_RSA_size()
 	return RSA_size(g_rsa);
 }
 
+int RSA_encrypt(int flen, const unsigned char* from, unsigned char *to)
+{
+	return RSA_public_encrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
+}
+
+int RSA_decrypt(int flen, const unsigned char* from, unsigned char *to)
+{
+	int rsa_size = get_RSA_size();
+	if (rsa_size == 0) {
+		return 0;
+	}
+	if (flen % rsa_size != 0) {
+		return 0;
+	}
+	int nb_chunks = flen / rsa_size;
+	int i = 0;
+	int pointer_position = 0;
+	for(i = 0 ; i < nb_chunks; i++) {
+		int res = RSA_private_decrypt(rsa_size, (void*)from + i * rsa_size, (void*)to + pointer_position, g_rsa, RSA_PKCS1_OAEP_PADDING);
+		if(res <= 0) {
+			return pointer_position;
+		}
+		pointer_position += res;
+	}
+	return pointer_position;
+	//return RSA_private_decrypt(flen, from, to, g_rsa, RSA_PKCS1_OAEP_PADDING);
+}
 
 RSA_key* get_RSA_public_key()
 {
