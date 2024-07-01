@@ -88,7 +88,9 @@ global_asm!(
         movl $0xc0000080, %ecx
         rdmsr
         bts $8, %eax
+        jc 2f
         wrmsr
+        2:
 
         /* Load the static page table root. */
         movl $pgtable, %eax
