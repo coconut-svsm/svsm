@@ -7,6 +7,7 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::cpuid_table;
 use crate::cpu::percpu::{current_ghcb, PerCpu};
+use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
@@ -145,9 +146,11 @@ impl SvsmPlatform for SnpPlatform {
                 // has not already dropped to zero, and only if the
                 // registration count will not wrap around.
                 if current == 0 {
-                    return Err(SvsmError::Apic);
+                    return Err(SvsmError::Apic(Registration));
                 }
-                current.checked_add(1).ok_or(SvsmError::Apic)?
+                current
+                    .checked_add(1)
+                    .ok_or(SvsmError::Apic(Registration))?
             } else {
                 // An attempt to decrement when the count is already zero is
                 // considered a benign race, which will not result in any

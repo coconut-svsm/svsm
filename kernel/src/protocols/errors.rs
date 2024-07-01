@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::ApicError;
 use crate::error::SvsmError;
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +38,8 @@ impl From<SvsmResultCode> for u64 {
         }
     }
 }
+
+const SVSM_ERR_APIC_CANNOT_REGISTER: u64 = 0;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SvsmReqError {
@@ -75,6 +78,10 @@ impl From<SvsmError> for SvsmReqError {
             // to the guest as protocol-specific errors.
             SvsmError::SevSnp(e) => Self::protocol(e.ret()),
             SvsmError::InvalidAddress => Self::invalid_address(),
+            SvsmError::Apic(e) => match e {
+                ApicError::Emulation => Self::invalid_parameter(),
+                ApicError::Registration => Self::protocol(SVSM_ERR_APIC_CANNOT_REGISTER),
+            },
             // Use a fatal error for now
             _ => Self::FatalError(err),
         }
