@@ -394,13 +394,22 @@ pub mod svsm_gdbstub {
             // mapping
 
             let Ok(phys) = this_cpu().get_pgtable().phys_addr(addr) else {
-                // The virtual address is not one that SVSM has mapped. Try safely
-                // writing it to the original virtual address
-                return write_u8(addr, value);
+                // The virtual address is not one that SVSM has mapped.
+                // Try safely writing it to the original virtual address
+                // SAFETY: it is up to the user to ensure that the address we
+                // are writing a breakpoint to is valid.
+                return unsafe { write_u8(addr, value) };
             };
 
             let guard = PerCPUPageMappingGuard::create_4k(phys.page_align())?;
-            write_u8(guard.virt_addr() + phys.page_offset(), value)
+            let dst = guard
+                .virt_addr()
+                .checked_add(phys.page_offset())
+                .ok_or(SvsmError::InvalidAddress)?;
+
+            // SAFETY: guard is a new mapped page, non controllable by user.
+            // We also checked that the destination address didn't overflow.
+            unsafe { write_u8(dst, value) }
         }
     }
 
@@ -532,9 +541,11 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             let start_addr = VirtAddr::from(start_addr);
             for (off, src) in data.iter().enumerate() {
-                if write_u8(start_addr + off, *src).is_err() {
-                    return Err(TargetError::NonFatal);
-                }
+                let dst = start_addr.checked_add(off).ok_or(TargetError::NonFatal)?;
+
+                // SAFETY: We trust the caller of this trait method to provide a valid address.
+                // We only cheked that start_adddr + off didn't overflow.
+                unsafe { write_u8(dst, *src).map_err(|_| TargetError::NonFatal)? }
             }
             Ok(())
         }

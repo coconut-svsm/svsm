@@ -138,7 +138,10 @@ fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), 
         u64::from(caa_addr),
     );
 
-    fw_secrets_page.copy_to(start);
+    // SAFETY: start points to a new allocated and zeroed page.
+    unsafe {
+        fw_secrets_page.copy_to(start);
+    }
 
     Ok(())
 }
@@ -302,7 +305,13 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
 
     let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
-    secrets_page_mut().copy_from(secrets_page_virt);
+
+    // SAFETY: the secrets page address directly comes from IGVM.
+    // We trust stage 2 to give the value provided by IGVM.
+    unsafe {
+        secrets_page_mut().copy_from(secrets_page_virt);
+    }
+
     zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();

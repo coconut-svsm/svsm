@@ -338,7 +338,9 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let start = guard.virt_addr();
 
     let guest_page = GuestPtr::<PValidateRequest>::new(start + offset);
-    let mut request = guest_page.read()?;
+    // SAFETY: start is a new mapped page address, thus valid.
+    // offset can't exceed a page size, so guest_page belongs to mapped memory.
+    let mut request = unsafe { guest_page.read()? };
 
     let entries = request.entries;
     let next = request.next;
@@ -356,7 +358,10 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let guest_entries = guest_page.offset(1).cast::<u64>();
     for i in next..entries {
         let index = i as isize;
-        let entry = match guest_entries.offset(index).read() {
+        // SAFETY: guest_entries comes from guest_page which is a new mapped
+        // page. index is between [next, entries) and both values have been
+        // validated.
+        let entry = match unsafe { guest_entries.offset(index).read() } {
             Ok(v) => v,
             Err(e) => {
                 loop_result = Err(e.into());
@@ -372,7 +377,11 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
         }
     }
 
-    if let Err(e) = guest_page.write_ref(&request) {
+    // SAFETY: guest_page is obtained from a guest-provided physical address
+    // (untrusted), so it needs to be valid (ie. belongs to the guest and only
+    // the guest). The physical address is validated by valid_phys_address()
+    // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
+    if let Err(e) = unsafe { guest_page.write_ref(&request) } {
         loop_result = Err(e.into());
     }
 
@@ -398,7 +407,8 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     let vaddr = mapping_guard.virt_addr() + offset;
 
     let pending = GuestPtr::<SvsmCaa>::new(vaddr);
-    pending.write(SvsmCaa::zeroed())?;
+    // SAFETY: pending points to a new allocated page
+    unsafe { pending.write(SvsmCaa::zeroed())? };
 
     // Clear any pending interrupt state before remapping the calling area to
     // ensure that any pending lazy EOI has been processed.

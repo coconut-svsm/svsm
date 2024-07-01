@@ -37,7 +37,7 @@ pub struct SecretsPage {
 
 impl SecretsPage {
     pub const fn new() -> Self {
-        SecretsPage {
+        Self {
             version: 0,
             gctxt: 0,
             fms: 0,
@@ -57,7 +57,13 @@ impl SecretsPage {
         }
     }
 
-    pub fn copy_from(&mut self, source: VirtAddr) {
+    /// Copy secrets page's content pointed by a [`VirtAddr`]
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `source` points to mapped memory whose
+    /// size is at least the size of the [`SecretsPage`] structure.
+    pub unsafe fn copy_from(&mut self, source: VirtAddr) {
         let from = source.as_ptr::<SecretsPage>();
 
         unsafe {
@@ -65,7 +71,16 @@ impl SecretsPage {
         }
     }
 
-    pub fn copy_to(&self, target: VirtAddr) {
+    /// Copy a secrets page's content to memory pointed by a [`VirtAddr`]
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `target` points to mapped memory whose
+    /// size is at least the size of the [`SecretsPage`] structure.
+    ///
+    /// The caller should verify not to corrupt arbitrary memory, as this function
+    /// doesn't make any checks in that regard.
+    pub unsafe fn copy_to(&self, target: VirtAddr) {
         let to = target.as_mut_ptr::<SecretsPage>();
 
         unsafe {

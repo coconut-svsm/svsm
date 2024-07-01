@@ -39,9 +39,20 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     }
 }
 
+/// Writes 1 byte at a virtual address.
+///
+/// # Safety
+///
+/// The caller must verify not to corrupt arbitrary memory, as this function
+/// doesn't make any checks in that regard.
+///
+/// # Returns
+///
+/// Returns an error if the specified address is not mapped or is not mapped
+/// with the appropriate write permissions.
 #[allow(dead_code)]
 #[inline]
-pub fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
+pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
     unsafe {
@@ -189,8 +200,16 @@ impl<T: Copy> GuestPtr<T> {
         Self { ptr: p }
     }
 
+    /// # Safety
+    ///
+    /// The caller must verify not to read arbitrary memory, as this function
+    /// doesn't make any checks in that regard.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error if the specified address is not mapped.
     #[inline]
-    pub fn read(&self) -> Result<T, SvsmError> {
+    pub unsafe fn read(&self) -> Result<T, SvsmError> {
         let mut buf = MaybeUninit::<T>::uninit();
 
         unsafe {
@@ -199,13 +218,31 @@ impl<T: Copy> GuestPtr<T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must verify not to corrupt arbitrary memory, as this function
+    /// doesn't make any checks in that regard.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error if the specified address is not mapped or is not mapped
+    /// with the appropriate write permissions.
     #[inline]
-    pub fn write(&self, buf: T) -> Result<(), SvsmError> {
+    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError> {
         unsafe { do_movsb(&buf, self.ptr) }
     }
 
+    /// # Safety
+    ///
+    /// The caller must verify not to corrupt arbitrary memory, as this function
+    /// doesn't make any checks in that regard.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error if the specified address is not mapped or is not mapped
+    /// with the appropriate write permissions.
     #[inline]
-    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
+    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
         unsafe { do_movsb(buf, self.ptr) }
     }
 
@@ -244,7 +281,10 @@ mod tests {
         let test_address = VirtAddr::from(test_buffer.as_mut_ptr());
         let data_to_write = 0x42;
 
-        write_u8(test_address, data_to_write).unwrap();
+        // SAFETY: test_address points to the virtual address of test_buffer.
+        unsafe {
+            write_u8(test_address, data_to_write).unwrap();
+        }
 
         assert_eq!(test_buffer[0], data_to_write);
     }
@@ -255,7 +295,8 @@ mod tests {
         let test_buffer = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let test_addr = VirtAddr::from(test_buffer.as_ptr());
         let ptr: GuestPtr<[u8; 15]> = GuestPtr::new(test_addr);
-        let result = ptr.read().unwrap();
+        // SAFETY: ptr points to test_buffer's virtual address
+        let result = unsafe { ptr.read().unwrap() };
 
         assert_eq!(result, test_buffer);
     }
@@ -265,8 +306,9 @@ mod tests {
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_read_invalid_address() {
         let ptr: GuestPtr<u8> = GuestPtr::new(VirtAddr::new(0xDEAD_BEEF));
-
-        let err = ptr.read();
+        // SAFETY: ptr points to an invalid virtual address (0xDEADBEEF is
+        // unmapped). ptr.read() will return an error but this is expected.
+        let err = unsafe { ptr.read() };
         assert!(err.is_err());
     }
 }
