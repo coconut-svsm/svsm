@@ -51,20 +51,13 @@ pub fn _print(args: fmt::Arguments<'_>) {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ConsoleLoggerComponent {
+struct ConsoleLogger {
     name: &'static str,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct ConsoleLogger {
-    component: ConsoleLoggerComponent,
-}
-
 impl ConsoleLogger {
-    fn new(component: &'static str) -> ConsoleLogger {
-        ConsoleLogger {
-            component: ConsoleLoggerComponent { name: component },
-        }
+    const fn new(name: &'static str) -> Self {
+        Self { name }
     }
 }
 
@@ -80,26 +73,25 @@ impl log::Log for ConsoleLogger {
 
         // The logger being uninitialized is impossible, as that would mean it
         // wouldn't have been registered with the log library.
-        let component = self.component.name;
         // Log format/detail depends on the level.
         match record.metadata().level() {
             log::Level::Error | log::Level::Warn => {
                 _print(format_args!(
                     "[{}] {}: {}\n",
-                    component,
+                    self.name,
                     record.metadata().level().as_str(),
                     record.args()
                 ));
             }
 
             log::Level::Info => {
-                _print(format_args!("[{}] {}\n", component, record.args()));
+                _print(format_args!("[{}] {}\n", self.name, record.args()));
             }
 
             log::Level::Debug | log::Level::Trace => {
                 _print(format_args!(
                     "[{}/{}] {} {}\n",
-                    component,
+                    self.name,
                     record.metadata().target(),
                     record.metadata().level().as_str(),
                     record.args()
