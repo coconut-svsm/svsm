@@ -20,25 +20,18 @@ use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 
-const APIC_EMULATION_DISABLED: u8 = 0;
-const APIC_EMULATION_ENABLED: u8 = 1;
-const APIC_EMULATION_LOCKED: u8 = 2;
-static APIC_EMULATION_STATE: AtomicU8 = AtomicU8::new(APIC_EMULATION_ENABLED);
+static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy, Debug)]
-pub struct SnpPlatform {
-    use_alternate_injection: bool,
-}
+pub struct SnpPlatform {}
 
 impl SnpPlatform {
     pub fn new() -> Self {
-        Self {
-            use_alternate_injection: false,
-        }
+        Self {}
     }
 }
 
@@ -140,60 +133,47 @@ impl SvsmPlatform for SnpPlatform {
             return Err(SvsmError::NotSupported);
         }
 
-        self.use_alternate_injection = alt_inj_requested;
+        APIC_EMULATION_REG_COUNT.store(1, Ordering::Relaxed);
         Ok(())
     }
 
-    fn use_alternate_injection(&self) -> bool {
-        self.use_alternate_injection
-    }
-
-    fn lock_unlock_apic_emulation(&self, lock: bool) -> Result<(), SvsmError> {
-        // The lock state can only be changed if APIC emulation has not already
-        // been disabled on any CPU.
-        let new_state = if lock {
-            APIC_EMULATION_LOCKED
-        } else {
-            APIC_EMULATION_ENABLED
-        };
-        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
+    fn change_apic_registration_state(&self, incr: bool) -> Result<bool, SvsmError> {
+        let mut current = APIC_EMULATION_REG_COUNT.load(Ordering::Relaxed);
         loop {
-            if current == APIC_EMULATION_DISABLED {
-                return Err(SvsmError::Apic);
-            }
-            match APIC_EMULATION_STATE.compare_exchange_weak(
+            let new = if incr {
+                // Incrementing is only possible if the registration count
+                // has not already dropped to zero, and only if the
+                // registration count will not wrap around.
+                if current == 0 {
+                    return Err(SvsmError::Apic);
+                }
+                current.checked_add(1).ok_or(SvsmError::Apic)?
+            } else {
+                // An attempt to decrement when the count is already zero is
+                // considered a benign race, which will not result in any
+                // actual change but will indicate that emulation is being
+                // disabled for the guest.
+                if current == 0 {
+                    return Ok(false);
+                }
+                current - 1
+            };
+            match APIC_EMULATION_REG_COUNT.compare_exchange_weak(
                 current,
-                new_state,
+                new,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             ) {
-                Ok(_) => break,
+                Ok(_) => {
+                    return Ok(new > 0);
+                }
                 Err(val) => current = val,
             }
         }
-
-        Ok(())
     }
 
-    fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
-        // APIC emulation can only be disabled if it is not locked.
-        let mut current = APIC_EMULATION_STATE.load(Ordering::Relaxed);
-        loop {
-            if current == APIC_EMULATION_LOCKED {
-                return Err(SvsmError::Apic);
-            }
-            match APIC_EMULATION_STATE.compare_exchange_weak(
-                current,
-                APIC_EMULATION_DISABLED,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => break,
-                Err(val) => current = val,
-            }
-        }
-
-        Ok(())
+    fn query_apic_registration_state(&self) -> bool {
+        APIC_EMULATION_REG_COUNT.load(Ordering::Relaxed) > 0
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {

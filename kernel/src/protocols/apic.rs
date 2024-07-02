@@ -15,16 +15,11 @@ const SVSM_REQ_APIC_READ_REGISTER: u32 = 2;
 const SVSM_REQ_APIC_WRITE_REGISTER: u32 = 3;
 const SVSM_REQ_APIC_CONFIGURE_VECTOR: u32 = 4;
 
-const SVSM_APIC_CONFIGURE_DISABLED: u64 = 0;
-const SVSM_APIC_CONFIGURE_ENABLED: u64 = 1;
-const SVSM_APIC_CONFIGURE_LOCKED: u64 = 2;
-
 pub const APIC_PROTOCOL: u32 = 3;
 pub const APIC_PROTOCOL_VERSION_MIN: u32 = 1;
 pub const APIC_PROTOCOL_VERSION_MAX: u32 = 1;
 
-const SVSM_ERR_APIC_CANNOT_DISABLE: u64 = 0;
-const SVSM_ERR_APIC_CANNOT_LOCK: u64 = 1;
+const SVSM_ERR_APIC_CANNOT_REGISTER: u64 = 0;
 
 fn apic_query_features(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     // No features are supported beyond the base feature set.
@@ -33,22 +28,40 @@ fn apic_query_features(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn apic_configure(params: &RequestParams) -> Result<(), SvsmReqError> {
-    match params.rcx {
-        SVSM_APIC_CONFIGURE_DISABLED => this_cpu()
-            .disable_apic_emulation()
-            .map_err(|_| SvsmReqError::protocol(SVSM_ERR_APIC_CANNOT_DISABLE)),
-        SVSM_APIC_CONFIGURE_ENABLED => {
-            // If this fails, the platform is known not to be in the locked
-            // state, so any error can be ignored in that case.
-            let _ = SVSM_PLATFORM.as_dyn_ref().lock_unlock_apic_emulation(false);
-            Ok(())
+    let platform = SVSM_PLATFORM.as_dyn_ref();
+    let enabled = match params.rcx {
+        0b00 => {
+            // Query the current registration state of APIC emulation to
+            // determine whether it should be disabled on the current CPU.
+            platform.query_apic_registration_state()
         }
-        SVSM_APIC_CONFIGURE_LOCKED => SVSM_PLATFORM
-            .as_dyn_ref()
-            .lock_unlock_apic_emulation(false)
-            .map_err(|_| SvsmReqError::protocol(SVSM_ERR_APIC_CANNOT_LOCK)),
-        _ => Err(SvsmReqError::invalid_parameter()),
+
+        0b01 => {
+            // Deregister APIC emulation if possible, noting whether it is now
+            // disabled for the platform.  This cannot fail.
+            platform.change_apic_registration_state(false).unwrap()
+        }
+
+        0b10 => {
+            // Increment the APIC emulation registration count.  If successful,
+            // this will not cause any change to the state of the current CPU.
+            return match platform.change_apic_registration_state(true) {
+                Ok(_) => Ok(()),
+                Err(_) => Err(SvsmReqError::protocol(SVSM_ERR_APIC_CANNOT_REGISTER)),
+            };
+        }
+
+        _ => {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+    };
+
+    // Disable APIC emulation on the current CPU if required.
+    if !enabled {
+        this_cpu().disable_apic_emulation();
     }
+
+    Ok(())
 }
 
 fn apic_read_register(params: &mut RequestParams) -> Result<(), SvsmReqError> {

@@ -656,7 +656,7 @@ impl PerCpu {
 
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
-        let use_alternate_injection = SVSM_PLATFORM.as_dyn_ref().use_alternate_injection();
+        let use_alternate_injection = SVSM_PLATFORM.as_dyn_ref().query_apic_registration_state();
         if use_alternate_injection {
             self.apic.replace(Some(LocalApic::new()));
 
@@ -704,20 +704,13 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn disable_apic_emulation(&self) -> Result<(), SvsmError> {
-        let mut apic_cell = self.apic_mut();
-        if apic_cell.is_some() {
-            // APIC emulation cannot be disabled if the platform has locked
-            // the use of APIC emulation.
-            SVSM_PLATFORM.as_dyn_ref().disable_apic_emulation()?;
+    pub fn disable_apic_emulation(&self) {
+        if let Some(mut apic) = self.apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa_addr = vmsa_ref.caa_addr();
             let vmsa = vmsa_ref.vmsa();
-            let mut apic = apic_cell.take().unwrap();
             apic.disable_apic_emulation(vmsa, caa_addr);
-            drop(vmsa_ref);
         }
-        Ok(())
     }
 
     pub fn clear_pending_interrupts(&self) {
