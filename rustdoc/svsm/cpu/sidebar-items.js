@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["apic","control_regs","cpuid","efer","extable","features","gdt","idt","msr","percpu","registers","smp","tlb","tss","vc","vmsa"]};

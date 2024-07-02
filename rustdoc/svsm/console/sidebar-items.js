@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["init_console","install_console_logger"],"static":["CONSOLE_INITIALIZED","CONSOLE_LOGGER","WRITER"],"struct":["Console","ConsoleLogger","ConsoleLoggerComponent"]};

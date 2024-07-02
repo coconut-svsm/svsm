@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BMP_QWORDS","MAX_STACKS"],"fn":["allocate_stack","allocate_stack_addr","free_stack","stack_base_pointer"],"static":["STACK_ALLOC"],"struct":["StackRange"]};

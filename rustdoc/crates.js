@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["stage2","svsm"];

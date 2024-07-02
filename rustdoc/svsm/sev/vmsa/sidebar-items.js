@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VMPL_MAX"],"fn":["allocate_new_vmsa","free_vmsa"],"trait":["VMSAControl"]};
