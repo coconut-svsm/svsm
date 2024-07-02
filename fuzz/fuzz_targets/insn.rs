@@ -12,7 +12,7 @@ fuzz_target!(|input: &[u8]| -> Corpus {
     data.copy_from_slice(input);
 
     let insn = Instruction::new(data);
-    let _ = core::hint::black_box(insn.decode(&TestCtx));
+    let _ = core::hint::black_box(insn.decode(&TestCtx::default()));
 
     Corpus::Keep
 });

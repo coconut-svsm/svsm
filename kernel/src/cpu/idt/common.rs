@@ -4,14 +4,21 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::address::{Address, VirtAddr};
-use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::gdt;
-use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
-use crate::insn_decode::{InsnMachineCtx, SegRegister};
+use crate::cpu::registers::{RFlags, X86GeneralRegs, X86InterruptFrame};
+use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
-use crate::types::SVSM_CS;
+use crate::mm::address_space::phys_to_virt;
+use crate::mm::pagetable::{PTWalkAttr, PageTable, PageTableRef};
+use crate::mm::{MemMappingGuard, PerCPUPageMappingGuard};
+use crate::platform::SVSM_PLATFORM;
+use crate::types::{Bytes, SVSM_CS};
+use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::mem;
 use core::ptr::addr_of;
@@ -44,6 +51,18 @@ pub const PF_ERROR_WRITE: usize = 2;
 
 pub const INT_INJ_VECTOR: usize = 0x50;
 
+bitflags::bitflags! {
+    /// Page fault error code flags.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub struct PageFaultError :u32 {
+        const P     = 1 << 0;
+        const W     = 1 << 1;
+        const U     = 1 << 2;
+        const R     = 1 << 3;
+        const I     = 1 << 4;
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
@@ -70,6 +89,114 @@ impl InsnMachineCtx for X86ExceptionContext {
 
     fn read_cr4(&self) -> u64 {
         read_cr4().bits()
+    }
+
+    fn read_reg(&self, reg: Register) -> usize {
+        match reg {
+            Register::Rax => self.regs.rax,
+            Register::Rdx => self.regs.rdx,
+            Register::Rcx => self.regs.rcx,
+            Register::Rbx => self.regs.rdx,
+            Register::Rsp => self.frame.rsp,
+            Register::Rbp => self.regs.rbp,
+            Register::Rdi => self.regs.rdi,
+            Register::Rsi => self.regs.rsi,
+            Register::R8 => self.regs.r8,
+            Register::R9 => self.regs.r9,
+            Register::R10 => self.regs.r10,
+            Register::R11 => self.regs.r11,
+            Register::R12 => self.regs.r12,
+            Register::R13 => self.regs.r13,
+            Register::R14 => self.regs.r14,
+            Register::R15 => self.regs.r15,
+            Register::Rip => self.frame.rip,
+        }
+    }
+
+    fn read_flags(&self) -> usize {
+        self.frame.flags
+    }
+
+    fn write_reg(&mut self, reg: Register, val: usize) {
+        match reg {
+            Register::Rax => self.regs.rax = val,
+            Register::Rdx => self.regs.rdx = val,
+            Register::Rcx => self.regs.rcx = val,
+            Register::Rbx => self.regs.rdx = val,
+            Register::Rsp => self.frame.rsp = val,
+            Register::Rbp => self.regs.rbp = val,
+            Register::Rdi => self.regs.rdi = val,
+            Register::Rsi => self.regs.rsi = val,
+            Register::R8 => self.regs.r8 = val,
+            Register::R9 => self.regs.r9 = val,
+            Register::R10 => self.regs.r10 = val,
+            Register::R11 => self.regs.r11 = val,
+            Register::R12 => self.regs.r12 = val,
+            Register::R13 => self.regs.r13 = val,
+            Register::R14 => self.regs.r14 = val,
+            Register::R15 => self.regs.r15 = val,
+            Register::Rip => self.frame.rip = val,
+        }
+    }
+
+    fn read_cpl(&self) -> usize {
+        self.frame.cs & 3
+    }
+
+    fn map_linear_addr(
+        &self,
+        la: usize,
+        len: usize,
+        write: bool,
+        fetch: bool,
+    ) -> Result<Box<dyn InsnMachineMem>, InsnError> {
+        let vaddr = VirtAddr::from(la);
+        let pages =
+            PageTableRef::shared(phys_to_virt(read_cr3().page_align()).as_mut_ptr::<PageTable>())
+                .translate_addr_region(
+                    vaddr,
+                    len,
+                    write,
+                    fetch,
+                    PTWalkAttr::new(
+                        read_cr0(),
+                        read_cr4(),
+                        read_efer(),
+                        RFlags::from_bits_truncate(self.frame.flags),
+                        user_mode(self),
+                    ),
+                )
+                .map_err(|(addr, e)| InsnError::ExceptionPF(addr.into(), e.bits()))?;
+
+        MemMappingGuard::new(
+            PerCPUPageMappingGuard::create_4k_pages(pages.as_slice())
+                .map_err(|_| InsnError::MapLinearAddr)?,
+            vaddr.page_offset(),
+        )
+        .map_or_else(
+            |_| Err(InsnError::MapLinearAddr),
+            |m| Ok(Box::new(m) as Box<dyn InsnMachineMem>),
+        )
+    }
+
+    fn ioio_perm(&self, _port: u16, _size: Bytes, _io_read: bool) -> bool {
+        // Check if the IO port can be supported by user mode
+        todo!();
+    }
+
+    fn ioio_in(&self, port: u16, size: Bytes) -> Result<u64, InsnError> {
+        Ok(SVSM_PLATFORM
+            .as_dyn_ref()
+            .get_console_io_port()
+            .ioio_in(port, size))
+    }
+
+    fn ioio_out(&mut self, port: u16, size: Bytes, data: u64) -> Result<(), InsnError> {
+        SVSM_PLATFORM
+            .as_dyn_ref()
+            .get_console_io_port()
+            .ioio_out(port, size, data);
+        Ok(())
     }
 }
 

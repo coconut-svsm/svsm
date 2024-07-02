@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::types::Bytes;
 use core::arch::asm;
 use core::fmt::Debug;
 
@@ -29,6 +30,36 @@ pub trait IOPort: Sync + Debug {
             let ret: u16;
             asm!("inw %dx, %ax", in("dx") port, out("ax") ret, options(att_syntax));
             ret
+        }
+    }
+
+    fn outl(&self, port: u16, value: u32) {
+        unsafe { asm!("outl %eax, %dx", in("eax") value, in("dx") port, options(att_syntax)) }
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        unsafe {
+            let ret: u32;
+            asm!("inl %dx, %eax", in("dx") port, out("eax") ret, options(att_syntax));
+            ret
+        }
+    }
+
+    fn ioio_out(&self, port: u16, size: Bytes, data: u64) {
+        match size {
+            Bytes::One => self.outb(port, data as u8),
+            Bytes::Two => self.outw(port, data as u16),
+            Bytes::Four => self.outl(port, data as u32),
+            _ => panic!("Invalid output IO port size"),
+        }
+    }
+
+    fn ioio_in(&self, port: u16, size: Bytes) -> u64 {
+        match size {
+            Bytes::One => self.inb(port) as u64,
+            Bytes::Two => self.inw(port) as u64,
+            Bytes::Four => self.inl(port) as u64,
+            _ => panic!("Invalid input IO port size"),
         }
     }
 }

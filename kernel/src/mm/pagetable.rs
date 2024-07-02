@@ -5,28 +5,34 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::control_regs::write_cr3;
+use crate::cpu::control_regs::{write_cr3, CR0Flags, CR4Flags};
+use crate::cpu::efer::EFERFlags;
 use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::idt::common::PageFaultError;
+use crate::cpu::registers::RFlags;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::platform::SvsmPlatform;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
+use crate::BIT_MASK;
 use bitflags::bitflags;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::{cmp, ptr};
 
 extern crate alloc;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 const ENTRY_COUNT: usize = 512;
 static PRIVATE_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static SHARED_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::new(0);
 static MAX_PHYS_ADDR: ImmutAfterInitCell<u64> = ImmutAfterInitCell::uninit();
+static PHYS_ADDR_SIZE: ImmutAfterInitCell<u32> = ImmutAfterInitCell::uninit();
 pub const LAUNCH_VMSA_ADDR: PhysAddr = PhysAddr::new(0xFFFFFFFFF000);
 static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
@@ -70,6 +76,10 @@ fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) -> ImmutAfterInit
         guest_phys_addr_size
     };
 
+    PHYS_ADDR_SIZE
+        .reinit(&phys_addr_size)
+        .expect("could not reinitialize MAX_PHYS_ADDR");
+
     // If the C-bit is a physical address bit however, the guest physical
     // address space is effectively reduced by 1 bit.
     // - APM2, 15.34.6 Page Table Support
@@ -102,6 +112,15 @@ fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
 
 fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
+}
+
+fn shared_address(paddr: PhysAddr) -> bool {
+    if shared_pte_mask() | private_pte_mask() != 0 {
+        (paddr.bits() & shared_pte_mask()) == shared_pte_mask()
+    } else {
+        // No confidential bits in the physical address.
+        false
+    }
 }
 
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
@@ -163,6 +182,115 @@ impl PTEntry {
 
     pub fn present(&self) -> bool {
         self.flags().contains(PTEntryFlags::PRESENT)
+    }
+
+    pub fn huge(&self) -> bool {
+        self.flags().contains(PTEntryFlags::HUGE)
+    }
+
+    pub fn writable(&self) -> bool {
+        self.flags().contains(PTEntryFlags::WRITABLE)
+    }
+
+    pub fn nx(&self) -> bool {
+        self.flags().contains(PTEntryFlags::NX)
+    }
+
+    pub fn user(&self) -> bool {
+        self.flags().contains(PTEntryFlags::USER)
+    }
+
+    pub fn has_reserved_bits(&self, pm: PagingMode, level: usize) -> bool {
+        let reserved_mask = match pm {
+            PagingMode::NoPaging => unreachable!("NoPaging does not have page table"),
+            PagingMode::NonPAE => {
+                match level {
+                    // No reserved bits in 4k PTE.
+                    0 => 0,
+                    1 => {
+                        if self.huge() {
+                            // Bit21 is reserved in 4M PDE.
+                            BIT_MASK!(21, 21)
+                        } else {
+                            // No reserved bits in PDE.
+                            0
+                        }
+                    }
+                    _ => unreachable!("Invalid NonPAE page table level"),
+                }
+            }
+            PagingMode::PAE => {
+                // Bit62 ~ MAXPHYSADDR are reserved for each
+                // level in PAE page table.
+                BIT_MASK!(62, *PHYS_ADDR_SIZE)
+                    | match level {
+                        // No additional reserved bits in 4k PTE.
+                        0 => 0,
+                        1 => {
+                            if self.huge() {
+                                // Bit20 ~ Bit13 are reserved in 2M PDE.
+                                BIT_MASK!(20, 13)
+                            } else {
+                                // No additional reserved bits in PDE.
+                                0
+                            }
+                        }
+                        // Bit63 and Bit8 ~ Bit5 are reserved in PDPTE.
+                        2 => BIT_MASK!(63, 63) | BIT_MASK!(8, 5),
+                        _ => unreachable!("Invalid PAE page table level"),
+                    }
+            }
+            PagingMode::PML4 | PagingMode::PML5 => {
+                // Bit51 ~ MAXPHYSADDR are reserved for each level
+                // in PML4 and PML5 page table.
+                let common = if *PHYS_ADDR_SIZE > 51 {
+                    0
+                } else {
+                    BIT_MASK!(51, *PHYS_ADDR_SIZE)
+                };
+
+                common
+                    | match level {
+                        // No additional reserved bits in 4k PTE.
+                        0 => 0,
+                        1 => {
+                            if self.huge() {
+                                // Bit20 ~ Bit13 are reserved in 2M PDE.
+                                BIT_MASK!(20, 13)
+                            } else {
+                                // No additional reserved bits in PDE.
+                                0
+                            }
+                        }
+                        2 => {
+                            if self.huge() {
+                                // Bit29 ~ Bit13 are reserved in 1G PDPTE.
+                                BIT_MASK!(29, 13)
+                            } else {
+                                // No additional reserved bits in PDPTE.
+                                0
+                            }
+                        }
+                        // Bit8 ~ Bit7 are reserved in PML4E.
+                        3 => BIT_MASK!(8, 7),
+                        4 => {
+                            if pm == PagingMode::PML4 {
+                                unreachable!("Invalid PML4 page table level");
+                            } else {
+                                // Bit8 ~ Bit7 are reserved in PML5E.
+                                BIT_MASK!(8, 7)
+                            }
+                        }
+                        _ => unreachable!("Invalid PML4/PML5 page table level"),
+                    }
+            }
+        };
+
+        self.raw() & reserved_mask != 0
+    }
+
+    pub fn shared(&self) -> bool {
+        shared_address(self.0)
     }
 
     pub fn raw(&self) -> u64 {
@@ -677,6 +805,213 @@ impl PageTable {
             entry.set(paddr, flags);
         }
     }
+
+    fn translate_addr_lvl0(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<0>(vaddr)], mem_am, 0, pteflags)
+            .map(|(pte, leaf)| {
+                assert!(leaf);
+                (pte, PAGE_SIZE)
+            })
+    }
+
+    fn translate_addr_lvl1(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<1>(vaddr)], mem_am, 1, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    Ok((pte, PAGE_SIZE_2M))
+                } else {
+                    PageTable::translate_addr_lvl0(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    fn translate_addr_lvl2(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<2>(vaddr)], mem_am, 2, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    Ok((pte, PAGE_SIZE_1G))
+                } else {
+                    PageTable::translate_addr_lvl1(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    fn translate_addr_lvl3(
+        page: &PTPage,
+        vaddr: VirtAddr,
+        mem_am: MemAccessMode,
+        attr: PTWalkAttr,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, usize), PageFaultError> {
+        attr.check_access_rights(page[PageTable::index::<3>(vaddr)], mem_am, 3, pteflags)
+            .and_then(|(pte, leaf)| {
+                if leaf {
+                    // 512G page size is not supported by 4 level paging
+                    Err(attr.default_pf_err(mem_am) | PageFaultError::R)
+                } else {
+                    PageTable::translate_addr_lvl2(
+                        PageTable::entry_to_pagetable(pte).unwrap(),
+                        vaddr,
+                        mem_am,
+                        attr,
+                        pteflags,
+                    )
+                }
+            })
+    }
+
+    /// Translates a virtual address to a physical address.
+    ///
+    /// This function is used to translate a given virtual address to its
+    /// corresponding physical address by walking the page table. The walked
+    /// PTEntry is validated against the corresponding page table attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr`: The virtual address to translate.
+    /// * `write`: Indicate if the translation is for a write access.
+    /// * `fetch`: Indicate if the translation is for an instruction fetch.
+    /// * `attr`: `PTWalkAttr` object that holds attributes for the page table
+    /// walk.
+    ///
+    /// # Returns
+    ///
+    /// This function returns an `Ok` that contains a tuple on success.
+    /// The tuple contains the physical address, shareable and the size of
+    /// the page frame. If the translation fails, it returns `Err` containing
+    /// the page fault error code.
+    pub fn translate_addr(
+        &self,
+        vaddr: VirtAddr,
+        write: bool,
+        fetch: bool,
+        attr: PTWalkAttr,
+    ) -> Result<(PhysAddr, bool, usize), PageFaultError> {
+        let mut mem_am = MemAccessMode::empty();
+        if write {
+            mem_am |= MemAccessMode::WRITE;
+        }
+
+        if fetch {
+            mem_am |= MemAccessMode::FETCH;
+        }
+        // By-default the pteflags is set with USER | WRITABLE to indicate user
+        // mode access, writable and executable, which will be adjusted by the
+        // real access rights during translating:
+        // 1) U/S flag is 0 in any paging-structure entry => remove USER to
+        // indicate supervisor mode address
+        // 2) R/W flag is 0 in any paging-structure entry => remove WRITABLE to
+        // indicate write is not permitted
+        // 3) XD flag is 1 in any paging-structure entry => add NX to indicate
+        // execute is not permitted
+        let mut pteflags = PTEntryFlags::USER | PTEntryFlags::WRITABLE;
+
+        PageTable::translate_addr_lvl3(&self.root, vaddr, mem_am, attr, &mut pteflags).map(
+            |(e, s)| {
+                (
+                    e.address() + (vaddr.bits() & s.checked_sub(1).unwrap()),
+                    e.shared(),
+                    s,
+                )
+            },
+        )
+    }
+
+    /// Translates a virtual address region to its corresponding physical
+    /// addresses.
+    ///
+    /// This function is used to translate a given virtual address region to
+    /// its corresponding 4K physical pages by walking the page table.
+    /// The walked PTEntry is validated against the corresponding page table
+    /// attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `vaddr`: The start address of the virtual address region to
+    /// translate.
+    /// * `len`: The length of the virtual address region.
+    /// * `write`: Indicate if the translation is for a write access.
+    /// * `fetch`: Indicate if the translation is for an instruction fetch.
+    /// * `attr`: `PTWalkAttr` object that holds attributes for the page
+    /// table walk.
+    ///
+    /// # Returns
+    ///
+    /// This function returns an `Ok` that contains a tuple vector of (4K page
+    /// physical addresses, sharable) on success. If the translation fails, it
+    /// returns `Err` containing the page fault error code.
+    pub fn translate_addr_region(
+        &self,
+        vaddr: VirtAddr,
+        len: usize,
+        write: bool,
+        fetch: bool,
+        attr: PTWalkAttr,
+    ) -> Result<Vec<(PhysAddr, bool)>, (VirtAddr, PageFaultError)> {
+        let region = MemoryRegion::from_addresses(
+            vaddr.page_align(),
+            vaddr
+                .checked_add(if len == 0 { 1 } else { len })
+                .unwrap()
+                .page_align_up(),
+        );
+        let mut trans: (PhysAddr, PhysAddr, bool) = (PhysAddr::null(), PhysAddr::null(), false);
+        let mut pages: Vec<(PhysAddr, bool)> = Vec::new();
+
+        for addr in region.iter_pages(PageSize::Regular) {
+            if trans.0 == trans.1 {
+                trans = self.translate_addr(addr, write, fetch, attr).map_or_else(
+                    |e| Err((addr, e)),
+                    |(start, shared, ps)| {
+                        assert!(start.is_page_aligned());
+                        assert!(PhysAddr::from(ps).is_page_aligned());
+
+                        let end = if start.is_aligned(ps) {
+                            start.checked_add(ps).unwrap()
+                        } else {
+                            start.align_up(ps)
+                        };
+                        Ok((start, end, shared))
+                    },
+                )?;
+            }
+
+            pages.push((trans.0, trans.2));
+            trans.0 = trans.0.checked_add(PAGE_SIZE).unwrap();
+        }
+
+        Ok(pages)
+    }
 }
 
 static INIT_PGTABLE: SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
@@ -1079,5 +1414,264 @@ impl PageTablePart {
         assert!(PageTable::index::<3>(vaddr) == self.idx);
 
         self.get_mut().and_then(|r| r.unmap_2m(vaddr))
+    }
+}
+
+/// Represents paging mode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PagingMode {
+    // Paging mode is disabled
+    NoPaging,
+    // 32bit legacy paging mode
+    NonPAE,
+    // 32bit PAE paging mode
+    PAE,
+    // 4 level paging mode
+    PML4,
+    // 5 level paging mode
+    PML5,
+}
+
+bitflags! {
+    /// Flags to represent how memory is accessed, e.g. write data to the
+    /// memory or fetch code from the memory.
+    #[derive(Clone, Copy, Debug)]
+    pub struct MemAccessMode: u32 {
+        const WRITE     = 1 << 0;
+        const FETCH     = 1 << 1;
+    }
+}
+
+/// Attributes to determin Whether a memory access (write/fetch) is permitted
+/// by a translation which includes the paging-mode modifiers in CR0, CR4 and
+/// EFER; EFLAGS.AC; and the supervisor/user mode access.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct PTWalkAttr {
+    cr0: CR0Flags,
+    cr4: CR4Flags,
+    efer: EFERFlags,
+    flags: RFlags,
+    user_mode_access: bool,
+}
+
+impl PTWalkAttr {
+    /// Creates a new `PTWalkAttr` instance with the specified attributes.
+    ///
+    /// # Arguments
+    ///
+    /// * `cr0`, `cr4`, and `efer` - Represent the control register
+    /// flags for CR0, CR4, and EFER respectively.
+    /// * `flags` - Represents the CPU Flags.
+    /// * `user_mode_access` - Indicates whether the access is in user mode.
+    ///
+    /// Returns a new `PTWalkAttr` instance.
+    pub fn new(
+        cr0: CR0Flags,
+        cr4: CR4Flags,
+        efer: EFERFlags,
+        flags: RFlags,
+        user_mode_access: bool,
+    ) -> Self {
+        Self {
+            cr0,
+            cr4,
+            efer,
+            flags,
+            user_mode_access,
+        }
+    }
+
+    /// Checks the access rights for a page table entry.
+    ///
+    /// # Arguments
+    ///
+    /// * `entry` - The page table entry to check.
+    /// * `mem_am` - Indicates how to access the memory.
+    /// * `last_level` - Indicates whether the entry is at the last level
+    /// of the page table.
+    /// * `pteflags` - The PTE flags to indicate if the corresponding page
+    /// table entry allows the access rights.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok((entry, leaf))` if the access rights are valid, where
+    /// `entry` is the modified page table entry and `leaf` is a boolean
+    /// indicating whether the entry is a leaf node, or `Err(PageFaultError)`
+    /// to indicate the page fault error code if the access rights are invalid.
+    pub fn check_access_rights(
+        &self,
+        entry: PTEntry,
+        mem_am: MemAccessMode,
+        level: usize,
+        pteflags: &mut PTEntryFlags,
+    ) -> Result<(PTEntry, bool), PageFaultError> {
+        let pf_err = self.default_pf_err(mem_am) | PageFaultError::P;
+
+        if !entry.present() {
+            // Entry is not present.
+            return Err(pf_err & !PageFaultError::P);
+        }
+
+        if entry.has_reserved_bits(self.paging_mode(), level) {
+            // Reserved bits have been set.
+            return Err(pf_err | PageFaultError::R);
+        }
+
+        // SDM 4.6.1 Determination of Access Rights:
+        // If the U/S flag (bit 2) is 0 in at least one of the
+        // paging-structure entries, the address is a supervisor-mode
+        // address. Otherwise, the address is a user-mode address.
+        // So by-default assume the address is user mode address.
+        if !entry.user() {
+            *pteflags &= !PTEntryFlags::USER;
+        }
+
+        // SDM 4.6.1 Determination of Access Rights:
+        // R/W flag (bit 1) is 1 in every paging-structure entry controlling
+        // the translation and with a protection key for which write access is
+        // permitted; data may not be written to any supervisor-mode
+        // address with a translation for which the R/W flag is 0 in any
+        // paging-structure entry controlling the translation.
+        // The same for user mode address
+        if !entry.writable() {
+            *pteflags &= !PTEntryFlags::WRITABLE;
+        }
+
+        // SDM 4.6.1 Determination of Access Rights:
+        // For non 32-bit paging modes with IA32_EFER.NXE = 1, instructions
+        // may be fetched from any supervisormode address with a translation
+        // for which the XD flag (bit 63) is 0 in every paging-structure entry
+        // controlling the translation; instructions may not be fetched from
+        // any supervisor-mode address with a translation for which the XD flag
+        // is 1 in any paging-structure entry controlling the translation
+        if self.efer.contains(EFERFlags::NXE) && entry.nx() {
+            *pteflags |= PTEntryFlags::NX;
+        } else if !self.efer.contains(EFERFlags::NXE) && entry.nx() {
+            // XD bit must be 0 if efer.NXE = 0
+            return Err(pf_err | PageFaultError::R);
+        }
+
+        let leaf = if level == 0 || entry.huge() {
+            // User mode cannot access any supervisor mode addresses
+            if self.user_mode_access && !pteflags.contains(PTEntryFlags::USER) {
+                return Err(pf_err);
+            }
+
+            // Always check for reading. For the case of supervisor mode read user
+            // mode addresses, do special checking. For other cases, read is allowed.
+            if !self.user_mode_access && pteflags.contains(PTEntryFlags::USER) {
+                // Read not allowed with SMAP = 1 && flags.ac = 0
+                if self.cr4.contains(CR4Flags::SMAP) && !self.flags.contains(RFlags::AC) {
+                    return Err(pf_err);
+                }
+            }
+
+            if mem_am.contains(MemAccessMode::WRITE) {
+                if !self.user_mode_access && pteflags.contains(PTEntryFlags::USER) {
+                    // Check supervisor mode write user mode addresses
+                    if !self.cr0.contains(CR0Flags::WP) {
+                        // Check write with CR0.WP = 0
+                        if self.cr4.contains(CR4Flags::SMAP) && !self.flags.contains(RFlags::AC) {
+                            // Write not allowed with SMAP = 1 && flags.ac = 0
+                            return Err(pf_err);
+                        }
+                    } else {
+                        // Check write with CR0.WP = 1
+                        if !self.cr4.contains(CR4Flags::SMAP) {
+                            // SMAP = 0
+                            if !pteflags.contains(PTEntryFlags::WRITABLE) {
+                                // Write not allowed R/W = 0
+                                return Err(pf_err);
+                            }
+                        } else {
+                            // SMAP = 1
+                            if !self.flags.contains(RFlags::AC)
+                                || !pteflags.contains(PTEntryFlags::WRITABLE)
+                            {
+                                // Write not allowed with flags.AC = 0 || R/W = 0
+                                return Err(pf_err);
+                            }
+                        }
+                    }
+                } else if !self.user_mode_access && !pteflags.contains(PTEntryFlags::USER) {
+                    // Check supervisor mode write supervisor mode addresses
+                    if self.cr0.contains(CR0Flags::WP) && !pteflags.contains(PTEntryFlags::WRITABLE)
+                    {
+                        // Write not allowed with CR0.WP = 1 && R/W = 0
+                        return Err(pf_err);
+                    }
+                } else if self.user_mode_access && pteflags.contains(PTEntryFlags::USER) {
+                    // Check user mode write user mode addresses
+                    if !pteflags.contains(PTEntryFlags::WRITABLE) {
+                        // Write not allowed R/W = 0
+                        return Err(pf_err);
+                    }
+                }
+                // User mode write supervisor mode addresses is checked already
+            }
+
+            if mem_am.contains(MemAccessMode::FETCH) {
+                // For instruction fetch, the rule is the same except for the case of
+                // supervisor mode fetch user mode addresses
+                if !self.user_mode_access && pteflags.contains(PTEntryFlags::USER) {
+                    // Fetch not allowed with SMEP = 1
+                    if self.cr4.contains(CR4Flags::SMEP) {
+                        return Err(pf_err);
+                    }
+                }
+
+                // For non-32bit paging mode, fetch not allowed with efer.NXE = 1 && XD = 1
+                if self.cr4.contains(CR4Flags::PAE)
+                    && self.efer.contains(EFERFlags::NXE)
+                    && pteflags.contains(PTEntryFlags::NX)
+                {
+                    return Err(pf_err);
+                }
+            }
+            true
+        } else {
+            false
+        };
+
+        Ok((entry, leaf))
+    }
+
+    fn default_pf_err(&self, mem_am: MemAccessMode) -> PageFaultError {
+        let mut err = PageFaultError::empty();
+
+        if mem_am.contains(MemAccessMode::WRITE) {
+            err |= PageFaultError::W;
+        }
+
+        if mem_am.contains(MemAccessMode::FETCH) {
+            err |= PageFaultError::I;
+        }
+
+        if self.user_mode_access {
+            err |= PageFaultError::U;
+        }
+
+        err
+    }
+
+    fn paging_mode(&self) -> PagingMode {
+        if !self.cr0.contains(CR0Flags::PG) {
+            // Paging is disabled
+            PagingMode::NoPaging
+        } else if self.efer.contains(EFERFlags::LMA) {
+            // Long mode is activated
+            if self.cr4.contains(CR4Flags::LA57) {
+                PagingMode::PML5
+            } else {
+                PagingMode::PML4
+            }
+        } else if self.cr4.contains(CR4Flags::PAE) {
+            // PAE mode
+            PagingMode::PAE
+        } else {
+            // Non PAE mode
+            PagingMode::NonPAE
+        }
     }
 }
