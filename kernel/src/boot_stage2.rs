@@ -170,7 +170,7 @@ global_asm!(
         jmp .Lfound_entry
 
     .Lwrong_entry:
-        /* 
+        /*
          * The current entry doesn't contain the correct input
          * parameters. Try the next one.
          */
@@ -216,6 +216,14 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
+        test %esi, %esi
+        jz .Lbsp_main
+
+    .Lcheck_command:
+        /* TODO */
+        jmp .Lcheck_command
+
+    .Lbsp_main:
         /* Clear out .bss and transfer control to the main stage2 code. */
         xorq %rax, %rax
         leaq _bss(%rip), %rdi
