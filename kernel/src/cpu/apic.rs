@@ -7,6 +7,8 @@
 use crate::address::VirtAddr;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
+use crate::error::ApicError::Emulation;
+use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::platform::SVSM_PLATFORM;
@@ -95,11 +97,6 @@ struct ApicIcr {
     #[bits(12)]
     rsvd_31_20: u64,
     pub destination: u32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ApicError {
-    ApicError,
 }
 
 // This structure must never be copied because a silent copy will cause APIC
@@ -582,7 +579,7 @@ impl LocalApic {
         cpu_state: &mut T,
         caa_addr: Option<VirtAddr>,
         register: u64,
-    ) -> Result<u64, ApicError> {
+    ) -> Result<u64, SvsmError> {
         // Rewind any undelivered interrupt so it is reflected in any register
         // read.
         self.check_delivered_interrupts(cpu_state, caa_addr);
@@ -605,11 +602,11 @@ impl LocalApic {
             }
             APIC_REGISTER_TPR => Ok(cpu_state.get_tpr() as u64),
             APIC_REGISTER_PPR => Ok(self.get_ppr(cpu_state) as u64),
-            _ => Err(ApicError::ApicError),
+            _ => Err(SvsmError::Apic(Emulation)),
         }
     }
 
-    fn handle_icr_write(&mut self, value: u64) -> Result<(), ApicError> {
+    fn handle_icr_write(&mut self, value: u64) -> Result<(), SvsmError> {
         let icr = ApicIcr::from(value);
 
         // Verify that this message type is supported.
@@ -623,7 +620,7 @@ impl LocalApic {
         };
 
         if !valid_type {
-            return Err(ApicError::ApicError);
+            return Err(SvsmError::Apic(Emulation));
         }
 
         self.send_ipi(icr);
@@ -637,7 +634,7 @@ impl LocalApic {
         caa_addr: Option<VirtAddr>,
         register: u64,
         value: u64,
-    ) -> Result<(), ApicError> {
+    ) -> Result<(), SvsmError> {
         // Rewind any undelivered interrupt so it is correctly processed by
         // any register write.
         self.check_delivered_interrupts(cpu_state, caa_addr);
@@ -650,7 +647,7 @@ impl LocalApic {
                         cpu_state.set_tpr(tpr);
                         Ok(())
                     }
-                    Err(_) => Err(ApicError::ApicError),
+                    Err(_) => Err(SvsmError::Apic(Emulation)),
                 }
             }
             APIC_REGISTER_EOI => {
@@ -663,9 +660,9 @@ impl LocalApic {
                     self.post_interrupt(vector, false);
                     Ok(())
                 }
-                Err(_) => Err(ApicError::ApicError),
+                Err(_) => Err(SvsmError::Apic(Emulation)),
             },
-            _ => Err(ApicError::ApicError),
+            _ => Err(SvsmError::Apic(Emulation)),
         }
     }
 

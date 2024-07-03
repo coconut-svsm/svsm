@@ -9,7 +9,6 @@ extern crate alloc;
 use super::gdt_mut;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::apic::ApicError;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
@@ -732,7 +731,7 @@ impl PerCpu {
         self.apic().is_some()
     }
 
-    pub fn read_apic_register(&self, register: u64) -> Result<u64, ApicError> {
+    pub fn read_apic_register(&self, register: u64) -> Result<u64, SvsmError> {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
@@ -743,7 +742,7 @@ impl PerCpu {
             .read_register(self.shared(), vmsa, caa_addr, register)
     }
 
-    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), ApicError> {
+    pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), SvsmError> {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();

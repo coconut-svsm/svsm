@@ -28,6 +28,17 @@ use crate::sev::SevSnpError;
 use crate::task::TaskError;
 use elf::ElfError;
 
+/// Errors related to APIC handling.  These may originate from multiple
+/// layers in the system.
+#[derive(Clone, Copy, Debug)]
+pub enum ApicError {
+    /// An error related to APIC emulation.
+    Emulation,
+
+    /// An error related to APIC registration.
+    Registration,
+}
+
 /// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
@@ -72,11 +83,17 @@ pub enum SvsmError {
     /// The operation is not supported.
     NotSupported,
     /// Generic errors related to APIC emulation.
-    Apic,
+    Apic(ApicError),
 }
 
 impl From<ElfError> for SvsmError {
     fn from(err: ElfError) -> Self {
         Self::Elf(err)
+    }
+}
+
+impl From<ApicError> for SvsmError {
+    fn from(err: ApicError) -> Self {
+        Self::Apic(err)
     }
 }
