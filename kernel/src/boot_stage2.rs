@@ -35,6 +35,12 @@ global_asm!(
         ljmpl $0x8, $.Lon_svsm32_cs
 
     .Lon_svsm32_cs:
+        /*
+         * SEV: %esi is always 0, only BSP running
+         * TDX: %esi is the TD CPU index
+         */
+        test %esi, %esi
+        jnz .Lskip_paging_setup
 
         /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
@@ -75,6 +81,19 @@ global_asm!(
         decl %ecx
         jnz 1b
 
+        /* Signal APs */
+        movl $setup_flag, %edi
+        movl $1, (%edi)
+        jmp 2f
+
+.Lskip_paging_setup:
+        movl $setup_flag, %edi
+.Lap_wait:
+        movl (%edi), %eax
+        test %eax, %eax
+        jz .Lap_wait
+
+2:
         /* Enable 64bit PTEs, CR4.PAE. */
         movl %cr4, %eax
         bts $5, %eax
@@ -209,6 +228,10 @@ global_asm!(
         jmp stage2_main
 
         .data
+
+        .align 4
+    setup_flag:
+        .long 0
 
     idt32:
         .rept 32
