@@ -16,8 +16,8 @@ global_asm!(
         .globl startup_32
         startup_32:
 
-        /* Save pointer to startup structure in ESI */
-        movl %esp, %esi
+        /* Save pointer to startup structure in EBP */
+        movl %esp, %ebp
         /*
          * Load a GDT. Despite the naming, it contains valid
          * entries for both, "legacy" 32bit and long mode each.
@@ -113,7 +113,7 @@ global_asm!(
         /*
          * Check if this is an SNP platform.  If not, there is no C bit.
          */
-        cmpl $1, 8(%esi)
+        cmpl $1, 8(%ebp)
         jnz .Lvtom
 
         /*
@@ -215,7 +215,7 @@ global_asm!(
         shrq $3, %rcx
         rep stosq
 
-        movq %rsi, %rdi
+        movl %ebp, %edi
         jmp stage2_main
 
         .data
