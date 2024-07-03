@@ -32,13 +32,9 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
-        pushl $0x8
-        movl $.Lon_svsm32_cs, %eax
-        pushl %eax
-        lret
+        ljmpl $0x8, $.Lon_svsm32_cs
 
     .Lon_svsm32_cs:
-        push    %edi
 
         /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
@@ -101,13 +97,7 @@ global_asm!(
         bts $31, %eax
         movl %eax, %cr0
 
-        popl    %edi
-
-        pushl $0x18
-        movl $startup_64, %eax
-        pushl %eax
-
-        lret
+        ljmpl $0x18, $startup_64
 
     get_pte_c_bit:
         /*
