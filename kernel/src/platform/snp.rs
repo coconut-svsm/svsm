@@ -126,11 +126,13 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {
+        if !alt_inj_requested {
+            return Ok(());
+        }
+
         // If alternate injection was requested, then it must be supported by
         // the hypervisor.
-        if alt_inj_requested
-            && !hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_EXT_INTERRUPTS)
-        {
+        if !hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_EXT_INTERRUPTS) {
             return Err(SvsmError::NotSupported);
         }
 
