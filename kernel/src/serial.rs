@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::io::{IOPort, DEFAULT_IO_DRIVER};
+use core::fmt::Debug;
 
 pub const SERIAL_PORT: u16 = 0x3f8;
 const BAUD: u32 = 9600;
@@ -25,7 +26,7 @@ pub const DLH: u16 = 1; // Divisor Latch High
 pub const RCVRDY: u8 = 0x01;
 pub const XMTRDY: u8 = 0x20;
 
-pub trait Terminal: Sync {
+pub trait Terminal: Sync + Debug {
     fn put_byte(&self, _ch: u8) {}
     fn get_byte(&self) -> u8 {
         0
