@@ -103,7 +103,7 @@ $(LIBTPM): $(MSTPM_MAKEFILE) $(LIBCRYPTO)
 $(LIBPLATFORM): $(MSTPM_MAKEFILE) $(LIBCRYPTO)
 	$(MAKE) -C $(MSTPM_DIR) $(LIBPLATFORM_A)
 
-MSTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse
+MSTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
 MSTPM_CFLAGS += -DSIMULATION=NO -DFILE_BACKED_NV=NO
 MSTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 MSTPM_CFLAGS += -I$(OPENSSL_DIR)/include
