@@ -62,9 +62,6 @@ fn apic_configure(params: &RequestParams) -> Result<(), SvsmReqError> {
 
 fn apic_read_register(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let cpu = this_cpu();
-    if !cpu.use_apic_emulation() {
-        return Err(SvsmReqError::invalid_request());
-    }
     let value = cpu.read_apic_register(params.rcx)?;
     params.rdx = value;
     Ok(())
@@ -72,19 +69,19 @@ fn apic_read_register(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
 fn apic_write_register(params: &RequestParams) -> Result<(), SvsmReqError> {
     let cpu = this_cpu();
-    if !cpu.use_apic_emulation() {
-        return Err(SvsmReqError::invalid_request());
-    }
     cpu.write_apic_register(params.rcx, params.rdx)?;
     Ok(())
 }
 
 fn apic_configure_vector(params: &RequestParams) -> Result<(), SvsmReqError> {
     let cpu = this_cpu();
+    if !cpu.use_apic_emulation() {
+        return Err(SvsmReqError::invalid_request());
+    }
     if params.rcx <= 0x1FF {
         let vector: u8 = (params.rcx & 0xFF) as u8;
         let allowed = (params.rcx & 0x100) != 0;
-        cpu.configure_apic_vector(vector, allowed);
+        cpu.configure_apic_vector(vector, allowed)?;
         Ok(())
     } else {
         Err(SvsmReqError::invalid_parameter())
