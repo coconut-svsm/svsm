@@ -1,0 +1,15 @@
+[package]
+name = "dm"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dm"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+syscall = { path = "../syscall" }
+
+[lints]
+workspace = true

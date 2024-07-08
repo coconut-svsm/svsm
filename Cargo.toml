@@ -16,6 +16,8 @@ members = [
     "syscall",
     # init process
     "init",
+    # device model application
+    "dm",
 ]
 
 
