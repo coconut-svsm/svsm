@@ -45,6 +45,7 @@ IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
 INITELF = "target/x86_64-unknown-none/${TARGET_PATH}/init"
+DMELF = "target/x86_64-unknown-none/${TARGET_PATH}/dm"
 
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
@@ -140,7 +141,11 @@ bin/init: bin
 	cargo build --manifest-path init/Cargo.toml ${CARGO_ARGS} --bin init
 	objcopy -O elf64-x86-64 --strip-unneeded ${INITELF} $@
 
-user: bin/init
+bin/dm: bin
+	cargo build --manifest-path dm/Cargo.toml ${CARGO_ARGS} --bin dm
+	objcopy -O elf64-x86-64 --strip-unneeded ${DMELF} $@
+
+user: bin/init bin/dm
 
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
@@ -183,7 +188,7 @@ bin/svsm-test.bin: bin/stage1-test
 
 clippy:
 	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
-	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --exclude init --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --exclude init --exclude dm --target=x86_64-unknown-linux-gnu -- -D warnings
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
