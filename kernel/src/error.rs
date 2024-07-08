@@ -32,6 +32,9 @@ use elf::ElfError;
 /// layers in the system.
 #[derive(Clone, Copy, Debug)]
 pub enum ApicError {
+    /// An error arising because APIC emulation is disabled.
+    Disabled,
+
     /// An error related to APIC emulation.
     Emulation,
 

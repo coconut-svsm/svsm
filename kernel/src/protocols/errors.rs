@@ -79,6 +79,7 @@ impl From<SvsmError> for SvsmReqError {
             SvsmError::SevSnp(e) => Self::protocol(e.ret()),
             SvsmError::InvalidAddress => Self::invalid_address(),
             SvsmError::Apic(e) => match e {
+                ApicError::Disabled => Self::unsupported_protocol(),
                 ApicError::Emulation => Self::invalid_parameter(),
                 ApicError::Registration => Self::protocol(SVSM_ERR_APIC_CANNOT_REGISTER),
             },

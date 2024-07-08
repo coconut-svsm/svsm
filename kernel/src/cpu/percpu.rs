@@ -13,7 +13,7 @@ use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
 use crate::cpu::LocalApic;
-use crate::error::SvsmError;
+use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
@@ -735,10 +735,8 @@ impl PerCpu {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        // This function should never be called if APIC emulation is not
-        // enabled, so the unwrap below is appropriate.
         self.apic_mut()
-            .unwrap()
+            .ok_or(SvsmError::Apic(ApicError::Disabled))?
             .read_register(self.shared(), vmsa, caa_addr, register)
     }
 
@@ -746,17 +744,16 @@ impl PerCpu {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        // This function should never be called if APIC emulation is not
-        // enabled, so the unwrap below is appropriate.
         self.apic_mut()
-            .unwrap()
+            .ok_or(SvsmError::Apic(ApicError::Disabled))?
             .write_register(vmsa, caa_addr, register, value)
     }
 
-    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) {
-        // This function should never be called if APIC emulation is not
-        // enabled, so the unwrap below is appropriate.
-        self.apic_mut().unwrap().configure_vector(vector, allowed)
+    pub fn configure_apic_vector(&self, vector: u8, allowed: bool) -> Result<(), SvsmError> {
+        self.apic_mut()
+            .ok_or(SvsmError::Apic(ApicError::Disabled))?
+            .configure_vector(vector, allowed);
+        Ok(())
     }
 
     fn vmsa_tr_segment(&self) -> VMSASegment {
