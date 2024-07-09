@@ -25,7 +25,7 @@ use crate::mm::{
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
-use crate::sev::ghcb::GHCB;
+use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
@@ -304,7 +304,7 @@ pub struct PerCpu {
     apic: RefCell<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
-    ghcb: Cell<Option<&'static GHCB>>,
+    ghcb: OnceCell<GhcbPage>,
 
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: OnceCell<&'static HVDoorbell>,
@@ -332,7 +332,7 @@ impl PerCpu {
             apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id),
-            ghcb: Cell::new(None),
+            ghcb: OnceCell::new(),
             hv_doorbell: OnceCell::new(),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -359,17 +359,14 @@ impl PerCpu {
 
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page()?;
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        let ghcb = unsafe { &*ghcb_page.as_ptr() };
-        self.ghcb.set(Some(ghcb));
+        let page = GhcbPage::new()?;
+        self.ghcb
+            .set(page)
+            .expect("Attempted to reinitialize the GHCB");
         Ok(())
     }
 
-    fn ghcb(&self) -> Option<&'static GHCB> {
+    fn ghcb(&self) -> Option<&GhcbPage> {
         self.ghcb.get()
     }
 
