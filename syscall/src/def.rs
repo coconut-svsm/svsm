@@ -6,7 +6,6 @@
 
 // SYSCALL numbers are not stable yet and just used for CPL-3 bringup
 
-pub const SYS_HELLO: u64 = 0;
 pub const SYS_EXIT: u64 = 1;
 
 ///Maximum length of path name including null character in bytes
