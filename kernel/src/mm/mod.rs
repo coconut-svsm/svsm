@@ -10,6 +10,7 @@ pub mod guestmem;
 pub mod mappings;
 pub mod memory;
 pub mod page_visibility;
+mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
 pub mod stack;
@@ -21,6 +22,7 @@ pub use address_space::*;
 pub use guestmem::GuestPtr;
 pub use memory::{valid_phys_address, writable_phys_addr};
 pub use ptguards::*;
+pub use pagebox::*;
 
 pub use pagetable::PageTablePart;
 

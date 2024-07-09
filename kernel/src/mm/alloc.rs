@@ -1741,6 +1741,7 @@ impl Drop for TestRootMem<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
+    extern crate alloc;
 
     /// Tests the setup of the root memory
     #[test]
@@ -2010,6 +2011,52 @@ mod test {
 
         for p in allocs {
             unsafe { ALLOCATOR.dealloc(p, layout) };
+        }
+    }
+
+    #[test]
+    fn test_drop_pagebox() {
+        use crate::mm::PageBox;
+        use alloc::boxed::Box;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        // Check that the inner contents of the [`PageBox`] are only dropped
+        // once.
+        static DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+        struct Thing(Box<u32>);
+
+        impl Drop for Thing {
+            fn drop(&mut self) {
+                DROPPED.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+
+        let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let page = PageBox::try_new(Thing(Box::new(44))).unwrap();
+        assert_eq!(*page.0, 44);
+
+        let vaddr = page.vaddr();
+
+        // Check that the page is allocated
+        {
+            let mem = ROOT_MEM.lock();
+            let pfn = mem.get_pfn(vaddr).unwrap();
+            let info = mem.read_page_info(pfn);
+            assert!(matches!(info, PageInfo::Allocated(..)));
+        }
+
+        drop(page);
+
+        assert_eq!(DROPPED.load(Ordering::Relaxed), 1);
+
+        // Check that the page is now freed
+        {
+            let mem = ROOT_MEM.lock();
+            let pfn = mem.get_pfn(vaddr).unwrap();
+            let info = mem.read_page_info(pfn);
+            assert!(matches!(info, PageInfo::Free { .. }));
         }
     }
 }
