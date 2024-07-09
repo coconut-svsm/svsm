@@ -15,12 +15,11 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::LocalApic;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
-    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
+    virt_to_phys, PageBox, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
@@ -343,14 +342,10 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
-        let percpu_ptr = vaddr.as_mut_ptr::<Self>();
-        unsafe {
-            (*percpu_ptr) = Self::new(apic_id);
-            let percpu = &*percpu_ptr;
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared));
-            Ok(percpu)
-        }
+        let page = PageBox::try_new(Self::new(apic_id))?;
+        let percpu = PageBox::leak(page);
+        unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
+        Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
