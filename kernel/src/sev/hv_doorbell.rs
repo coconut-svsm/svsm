@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0 Copyright (c) Microsoft Corporation
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::VirtAddr;
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
-use crate::mm::virt_to_phys;
+use crate::mm::{virt_to_phys, PageBox};
 use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
+use core::mem::ManuallyDrop;
+use core::ops::Deref;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 #[bitfield(u8)]
@@ -46,6 +47,53 @@ pub struct HVExtIntInfo {
     pub isr: [AtomicU32; 8],
 }
 
+/// An allocation containing the `#HV` doorbell page.
+#[derive(Debug)]
+pub struct HVDoorbellPage(PageBox<HVDoorbell>);
+
+impl HVDoorbellPage {
+    /// Allocates a new HV doorbell page and registers it on the hypervisor
+    /// using the given GHCB.
+    pub fn new(ghcb: &GHCB) -> Result<Self, SvsmError> {
+        // SAFETY: all zeroes is a valid representation for `HVDoorbell`.
+        let page = PageBox::try_new_zeroed()?;
+        let paddr = virt_to_phys(page.vaddr());
+
+        // The #HV doorbell page must be shared before it can be used.
+        make_page_shared(page.vaddr())?;
+
+        // Now Drop will have correct behavior, so construct the new type.
+        // SAFETY: all zeros is a valid representation of the HV doorbell page.
+        let page = unsafe { Self(page.assume_init()) };
+        ghcb.register_hv_doorbell(paddr)?;
+        Ok(page)
+    }
+
+    /// Leaks the page allocation, ensuring it will never be freed.
+    pub fn leak(self) -> &'static HVDoorbell {
+        let mut doorbell = ManuallyDrop::new(self);
+        let ptr = core::ptr::from_mut(&mut doorbell);
+        // SAFETY: this pointer will never be freed because of ManuallyDrop,
+        // so we can create a static mutable reference. We go through a raw
+        // pointer to promote the lifetime to static.
+        unsafe { &mut *ptr }
+    }
+}
+
+impl Deref for HVDoorbellPage {
+    type Target = HVDoorbell;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl Drop for HVDoorbellPage {
+    fn drop(&mut self) {
+        make_page_private(self.0.vaddr()).expect("Failed to restore HV doorbell page visibility");
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct HVDoorbell {
@@ -58,21 +106,6 @@ pub struct HVDoorbell {
 }
 
 impl HVDoorbell {
-    pub fn init(vaddr: VirtAddr, ghcb: &GHCB) -> Result<(), SvsmError> {
-        // The #HV doorbell page must be private before it can be used.
-        make_page_shared(vaddr)?;
-
-        // Register the #HV doorbell page using the GHCB protocol.
-        let paddr = virt_to_phys(vaddr);
-        ghcb.register_hv_doorbell(paddr).map_err(|e| {
-            // Return the page to a private state.
-            make_page_private(vaddr).expect("Failed to restore page visibility");
-            e
-        })?;
-
-        Ok(())
-    }
-
     pub fn process_pending_events(&self) {
         // Clear the NoFurtherSignal bit before processing.  If any additional
         // signal comes in after processing has commenced, it may be missed by

@@ -15,7 +15,7 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::LocalApic;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
+use crate::mm::alloc::allocate_zeroed_page;
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
@@ -26,7 +26,7 @@ use crate::mm::{
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
-use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
@@ -449,17 +449,8 @@ impl PerCpu {
     }
 
     fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
-        let ghcb = current_ghcb();
-        if let Err(e) = HVDoorbell::init(vaddr, ghcb) {
-            free_page(vaddr);
-            return Err(e);
-        }
-        // SAFETY: the page contents have been allocated on valid memory and
-        // initialized. The HVDoorbell type's alignment requirements are met
-        // by the fact that we allocated a whole page. Mutable references to
-        // the page are never created, so this cannot be mutably aliased.
-        let doorbell = unsafe { &*vaddr.as_mut_ptr::<HVDoorbell>() };
+        let page = HVDoorbellPage::new(current_ghcb())?;
+        let doorbell = HVDoorbellPage::leak(page);
         self.hv_doorbell
             .set(doorbell)
             .expect("Attempted to reinitialize the HV doorbell page");
