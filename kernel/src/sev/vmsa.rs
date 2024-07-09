@@ -5,45 +5,99 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::utils::{rmp_adjust, RMPFlags};
-use crate::address::{Address, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
-use crate::mm::alloc::{allocate_pages, free_page};
+use crate::mm::{virt_to_phys, PageBox};
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::sev::status::SEVStatusFlags;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::zero_mem_region;
+use crate::types::{PageSize, PAGE_SIZE_2M};
+use core::mem::{size_of, ManuallyDrop};
+use core::ops::{Deref, DerefMut};
+use core::ptr;
 
 use cpuarch::vmsa::{VmsaEventInject, VmsaEventType, VMSA};
 
 pub const VMPL_MAX: usize = 4;
 
-pub fn allocate_new_vmsa(vmpl: RMPFlags) -> Result<VirtAddr, SvsmError> {
-    assert!(vmpl.bits() < (VMPL_MAX as u64));
-
-    // Make sure the VMSA page is not 2M aligned. Some hardware generations
-    // can't handle this properly.
-    let mut vmsa_page = allocate_pages(0)?;
-    if vmsa_page.is_aligned(PAGE_SIZE_2M) {
-        free_page(vmsa_page);
-        vmsa_page = allocate_pages(1)?;
-        if vmsa_page.is_aligned(PAGE_SIZE_2M) {
-            vmsa_page = vmsa_page + PAGE_SIZE;
-        }
-    }
-
-    zero_mem_region(vmsa_page, vmsa_page + PAGE_SIZE);
-
-    if let Err(e) = rmp_adjust(vmsa_page, RMPFlags::VMSA | vmpl, PageSize::Regular) {
-        free_page(vmsa_page);
-        return Err(e);
-    }
-    Ok(vmsa_page)
+/// An allocated page containing a VMSA structure.
+#[derive(Debug)]
+pub struct VmsaPage {
+    page: PageBox<[VMSA; 2]>,
+    idx: usize,
 }
 
-pub fn free_vmsa(vaddr: VirtAddr) {
-    rmp_adjust(vaddr, RMPFlags::RWX | RMPFlags::VMPL0, PageSize::Regular)
-        .expect("Failed to free VMSA page");
-    free_page(vaddr);
+impl VmsaPage {
+    /// Allocates a new VMSA for the given VPML.
+    pub fn new(vmpl: RMPFlags) -> Result<Self, SvsmError> {
+        assert!(vmpl.bits() < (VMPL_MAX as u64));
+
+        let page = PageBox::try_new_zeroed()?;
+        // Make sure the VMSA page is not 2M-aligned, as some hardware
+        // generations can't handle this properly. To ensure this property, we
+        // allocate 2 VMSAs and choose whichever is not 2M-aligned.
+        let idx = if page.vaddr().is_aligned(PAGE_SIZE_2M) {
+            1
+        } else {
+            0
+        };
+
+        let vaddr = page.vaddr() + idx * size_of::<VMSA>();
+        rmp_adjust(vaddr, RMPFlags::VMSA | vmpl, PageSize::Regular)?;
+        // SAFETY: all zeros is a valid representation for the VMSA.
+        let page = unsafe { page.assume_init() };
+        Ok(Self { page, idx })
+    }
+
+    /// Returns the virtual address fro this VMSA.
+    #[inline]
+    fn vaddr(&self) -> VirtAddr {
+        let ptr: *const VMSA = ptr::from_ref(&self.page[self.idx]);
+        VirtAddr::from(ptr)
+    }
+
+    /// Returns the physical address for this VMSA.
+    #[inline]
+    pub fn paddr(&self) -> PhysAddr {
+        virt_to_phys(self.vaddr())
+    }
+
+    /// Leaks the allocation for this VMSA, ensuring it never gets freed.
+    pub fn leak(self) -> &'static mut VMSA {
+        let mut vmsa = ManuallyDrop::new(self);
+        // SAFETY: `self.idx` is either 0 or 1, so this will never overflow
+        let ptr = unsafe { ptr::from_mut(&mut vmsa).add(vmsa.idx) };
+        // SAFETY: this pointer will never be freed because of ManuallyDrop,
+        // so we can create a static mutable reference. We go through a raw
+        // pointer to promote the lifetime to static.
+        unsafe { &mut *ptr }
+    }
+}
+
+impl Drop for VmsaPage {
+    fn drop(&mut self) {
+        rmp_adjust(
+            self.vaddr(),
+            RMPFlags::RWX | RMPFlags::VMPL0,
+            PageSize::Regular,
+        )
+        .expect("Failed to RMPADJUST VMSA page");
+    }
+}
+
+impl Deref for VmsaPage {
+    type Target = VMSA;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.page[self.idx]
+    }
+}
+
+impl DerefMut for VmsaPage {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.page[self.idx]
+    }
 }
 
 pub trait VMSAControl {

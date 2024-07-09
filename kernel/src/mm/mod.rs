@@ -21,8 +21,8 @@ pub mod vm;
 pub use address_space::*;
 pub use guestmem::GuestPtr;
 pub use memory::{valid_phys_address, writable_phys_addr};
-pub use ptguards::*;
 pub use pagebox::*;
+pub use ptguards::*;
 
 pub use pagetable::PageTablePart;
 

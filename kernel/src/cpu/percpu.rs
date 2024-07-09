@@ -11,7 +11,7 @@ use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::LocalApic;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, RWLock, SpinLock};
@@ -29,7 +29,7 @@ use crate::sev::ghcb::GHCB;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::{allocate_new_vmsa, VMSAControl};
+use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
@@ -288,7 +288,7 @@ pub struct PerCpu {
 
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
-    svsm_vmsa: OnceCell<&'static VMSA>,
+    svsm_vmsa: OnceCell<VmsaPage>,
     reset_ip: Cell<u64>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
@@ -610,16 +610,11 @@ impl PerCpu {
             return Err(SvsmError::Mem);
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
-
-        // SAFETY: we have exclusive access to this memory, as we just
-        // allocated it. allocate_new_vmsa() takes care of allocating
-        // memory of the right size and alignment for a VMSA.
-        let vmsa = unsafe { &mut *vaddr.as_mut_ptr::<VMSA>() };
+        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let paddr = vmsa.paddr();
 
         // Initialize VMSA
-        init_svsm_vmsa(vmsa, vtom);
+        init_svsm_vmsa(&mut vmsa, vtom);
         vmsa.tr = self.vmsa_tr_segment();
         vmsa.rip = start_rip;
         vmsa.rsp = self.get_top_of_stack().into();
@@ -664,13 +659,13 @@ impl PerCpu {
             ghcb.configure_interrupt_injection(INT_INJ_VECTOR)?;
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
+        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let paddr = vmsa.paddr();
 
-        let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip.get(), use_alternate_injection);
+        init_guest_vmsa(&mut vmsa, self.reset_ip.get(), use_alternate_injection);
 
         self.shared().update_guest_vmsa(paddr);
+        let _ = VmsaPage::leak(vmsa);
 
         Ok(())
     }
