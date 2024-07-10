@@ -210,8 +210,13 @@ fn handle_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 
 fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let mut leaf = CpuidLeaf::new(ctx.regs.rax as u32, ctx.regs.rcx as u32);
+    let xcr0_in = if leaf.cpuid_fn == 0xD && (leaf.cpuid_subfn == 1 || leaf.cpuid_subfn == 0) {
+        1
+    } else {
+        0
+    };
 
-    let Some(ret) = cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, 0, 0) else {
+    let Some(ret) = cpuid_table_raw(leaf.cpuid_fn, leaf.cpuid_subfn, xcr0_in, 0) else {
         return Err(VcError::new(ctx, VcErrorType::UnknownCpuidLeaf).into());
     };
 
