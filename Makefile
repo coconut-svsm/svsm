@@ -1,6 +1,3 @@
-FEATURES ?= "default"
-SVSM_ARGS = --features ${FEATURES}
-
 SVSM_ARGS_TEST = --no-default-features
 ifdef FEATURES_TEST
 	SVSM_ARGS_TEST += --features ${FEATURES_TEST}
@@ -8,9 +5,15 @@ endif
 
 ifdef RELEASE
 TARGET_PATH=release
+FEATURES ?= "default"
+SVSM_ARGS = --features ${FEATURES}
 CARGO_ARGS += --release
+STAGE2_ARGS =
 else
 TARGET_PATH=debug
+FEATURES ?= "default-debug"
+SVSM_ARGS = --features ${FEATURES}
+STAGE2_ARGS = --features  "enable-console-log"
 endif
 
 ifdef OFFLINE
@@ -112,7 +115,7 @@ bin/meta.bin: utils/gen_meta utils/print-meta bin
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
-	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} --no-default-features --bin stage2
+	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} ${STAGE2_ARGS} --no-default-features --bin stage2
 	objcopy -O binary ${STAGE2_ELF} $@
 
 bin/svsm-kernel.elf: bin

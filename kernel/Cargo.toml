@@ -39,8 +39,10 @@ test.workspace = true
 
 [features]
 default = ["mstpm"]
+default-debug = ["enable-console-log", "mstpm"]
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 mstpm = ["dep:libmstpm"]
+enable-console-log = []
 
 [dev-dependencies]
 
