@@ -34,6 +34,34 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
     write_cr4(cr4);
 }
 
+pub fn cr0_sse_enable() {
+    let mut cr0 = read_cr0();
+
+    cr0.insert(CR0Flags::MP);
+    cr0.remove(CR0Flags::EM);
+
+    // No Lazy context switching
+    cr0.remove(CR0Flags::TS);
+
+    write_cr0(cr0);
+}
+
+pub fn cr4_osfxsr_enable() {
+    let mut cr4 = read_cr4();
+
+    cr4.insert(CR4Flags::OSFXSR);
+
+    write_cr4(cr4);
+}
+
+pub fn cr4_xsave_enable() {
+    let mut cr4 = read_cr4();
+
+    cr4.insert(CR4Flags::OSXSAVE);
+
+    write_cr4(cr4);
+}
+
 bitflags! {
     #[derive(Debug, Clone, Copy)]
     pub struct CR0Flags: u64 {

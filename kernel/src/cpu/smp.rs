@@ -6,6 +6,7 @@
 
 use crate::acpi::tables::ACPICPUInfo;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
+use crate::cpu::sse::sse_init;
 use crate::error::SvsmError;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
@@ -55,6 +56,7 @@ fn start_ap() {
     // Set CPU online so that BSP can proceed
     this_cpu_shared().set_online();
 
+    sse_init();
     schedule_init();
 }
 
