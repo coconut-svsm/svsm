@@ -73,6 +73,8 @@ pub enum SvsmError {
     InvalidBytes,
     /// Errors related to firmware parsing
     Firmware,
+    /// Errors related to console operation
+    Console,
     /// Errors related to firmware configuration contents
     FwCfg(FwCfgError),
     /// Errors related to ACPI parsing.

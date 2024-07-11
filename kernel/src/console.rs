@@ -30,7 +30,9 @@ static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(f
 
 pub fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
     WRITER.lock().writer = writer;
-    CONSOLE_INITIALIZED.reinit(&true)
+    CONSOLE_INITIALIZED.reinit(&true)?;
+    log::info!("COCONUT Secure Virtual Machine Service Module");
+    Ok(())
 }
 
 #[doc(hidden)]
