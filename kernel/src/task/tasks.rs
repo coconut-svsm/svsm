@@ -21,11 +21,12 @@ use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, XSaveArea, VMR};
 use crate::mm::PageBox;
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, SVSM_PERTASK_XSAVE_AREA_BASE,
+    USER_MEM_END, USER_MEM_START,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
@@ -117,6 +118,9 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
+    /// XSave area address for the task
+    pub xsa_addr: u64,
+
     pub stack_bounds: MemoryRegion<VirtAddr>,
 
     /// Page table that is loaded when the task is scheduled
@@ -183,6 +187,9 @@ impl Task {
         let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
+        let xsa = Self::allocate_xsave_area()?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
+
         vm_kernel_range.populate(&mut pgtable);
 
         // Remap at the per-task offset
@@ -197,6 +204,7 @@ impl Task {
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
+            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -224,6 +232,9 @@ impl Task {
         let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
+        let xsa = Self::allocate_xsave_area()?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
+
         vm_kernel_range.populate(&mut pgtable);
 
         let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
@@ -241,6 +252,7 @@ impl Task {
                 .checked_sub(stack_offset)
                 .expect("Invalid stack offset from task::allocate_utask_stack()")
                 .bits() as u64,
+            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -407,6 +419,12 @@ impl Task {
         }
 
         Ok((mapping, bounds, stack_offset))
+    }
+
+    fn allocate_xsave_area() -> Result<Arc<Mapping>, SvsmError> {
+        let xsa = XSaveArea::new()?;
+        let mapping = Arc::new(Mapping::new(xsa));
+        Ok(mapping)
     }
 
     pub fn mmap_common(

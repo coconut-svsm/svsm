@@ -11,6 +11,7 @@ pub mod phys_mem;
 pub mod rawalloc;
 pub mod reserved;
 pub mod vmalloc;
+pub mod xsave_area;
 
 pub use api::{Mapping, VMMAdapter, VMPageFaultResolution, VirtualMapping, VMM};
 pub use file_mapping::{VMFileMapping, VMFileMappingFlags};
@@ -19,3 +20,4 @@ pub use phys_mem::VMPhysMem;
 pub use rawalloc::RawAllocMapping;
 pub use reserved::VMReserved;
 pub use vmalloc::VMalloc;
+pub use xsave_area::XSaveArea;
