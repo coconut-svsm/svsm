@@ -18,11 +18,12 @@ use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, XSaveArea, VMR};
 use crate::mm::{
     virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    SVSM_XSAVE_AREA_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::GHCB;
@@ -441,6 +442,14 @@ impl PerCpu {
         self.pgtbl.borrow_mut()
     }
 
+    pub fn allocate_xsave_area(&self) -> Result<(), SvsmError> {
+        let xsa = XSaveArea::new()?;
+        let mapping = Arc::new(Mapping::new(xsa));
+
+        self.vm_range.insert_at(SVSM_XSAVE_AREA_BASE, mapping)?;
+        Ok(())
+    }
+
     /// Registers an already set up GHCB page for this CPU.
     ///
     /// # Panics
@@ -544,6 +553,9 @@ impl PerCpu {
 
         // Allocate IST stacks
         self.allocate_ist_stacks()?;
+
+        // Allocate xsave area
+        self.allocate_xsave_area()?;
 
         // Setup TSS
         self.setup_tss();
