@@ -620,3 +620,120 @@ extern "C" fn task_exit() {
     }
     schedule();
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::task::create_kernel_task;
+    use core::arch::asm;
+    use core::arch::global_asm;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_media_and_x87_instructions() {
+        let ret: u64;
+        unsafe {
+            asm!("call test_fpu", out("rax") ret, options(att_syntax));
+        }
+
+        assert_eq!(ret, 0);
+    }
+
+    global_asm!(
+        r#"
+    .text
+    test_fpu:
+        movq $0x3ff, %rax
+        shl $52, %rax
+        // rax contains 1 in Double Precison FP representation
+        movd %rax, %xmm1
+        movapd %xmm1, %xmm3
+
+        movq $0x400, %rax
+        shl $52, %rax
+        // rax contains 2 in Double Precison FP representation
+        movd %rax, %xmm2
+
+        divsd %xmm2, %xmm3
+        movq $0, %rax
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    global_asm!(
+        r#"
+    .text
+    check_fpu:
+        movq $1, %rax
+        movq $0x3ff, %rbx
+        shl $52, %rbx
+        // rbx contains 1 in Double Precison FP representation
+        movd %rbx, %xmm4
+        movapd %xmm4, %xmm6
+        comisd %xmm4, %xmm1
+        jnz 1f
+
+        movq $0x400, %rbx
+        shl $52, %rbx
+        // rbx contains 2 in Double Precison FP representation
+        movd %rbx, %xmm5
+        comisd %xmm5, %xmm2
+        jnz 1f
+
+        divsd %xmm5, %xmm6
+        comisd %xmm6, %xmm3
+        jnz 1f
+        movq $0, %rax
+    1:
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    global_asm!(
+        r#"
+    .text
+    alter_fpu:
+        movq $0x400, %rax
+        shl $52, %rax
+        // rax contains 2 in Double Precison FP representation
+        movd %rax, %xmm1
+        movapd %xmm1, %xmm3
+
+        movq $0x3ff, %rax
+        shl $52, %rax
+        // rax contains 1 in Double Precison FP representation
+        movd %rax, %xmm2
+        divsd %xmm3, %xmm2
+        movq $0, %rax
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_fpu_context_switch() {
+        create_kernel_task(task1).expect("Failed to launch request processing task");
+    }
+
+    extern "C" fn task1() {
+        let ret: u64;
+        unsafe {
+            asm!("call test_fpu", options(att_syntax));
+        }
+
+        create_kernel_task(task2).expect("Failed to launch request processing task");
+
+        unsafe {
+            asm!("call check_fpu", out("rax") ret, options(att_syntax));
+        }
+        assert_eq!(ret, 0);
+    }
+
+    extern "C" fn task2() {
+        unsafe {
+            asm!("call alter_fpu", options(att_syntax));
+        }
+    }
+}
