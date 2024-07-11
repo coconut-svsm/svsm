@@ -12,7 +12,10 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
-DEBUG_SERIAL=""
+COM1_SERIAL="-serial stdio" # console
+COM2_SERIAL="-serial null"  # debug
+COM3_SERIAL="-serial null"  # used by hyper-v
+COM4_SERIAL="-serial null"  # unused
 QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
 
@@ -34,7 +37,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -d|--debugserial)
-      DEBUG_SERIAL="-serial pty"
+      COM2_SERIAL="-serial pty"
       shift
       ;;
     --unit-tests)
@@ -110,8 +113,10 @@ $SUDO_CMD \
     $IMAGE_DISK \
     -nographic \
     -monitor none \
-    -serial stdio \
-    $DEBUG_SERIAL \
+    $COM1_SERIAL \
+    $COM2_SERIAL \
+    $COM3_SERIAL \
+    $COM4_SERIAL \
     $QEMU_EXIT_DEVICE \
     $QEMU_TEST_IO_DEVICE
 
