@@ -306,7 +306,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         "#,
         in("rsi") prev as u64,
         in("rdi") next as u64,
-        in("rdx") cr3,
+        in("rcx") cr3,
         options(att_syntax));
 }
 
@@ -400,17 +400,32 @@ global_asm!(
         // Save the current stack pointer
         testq   %rsi, %rsi
         jz      1f
+
+        //set bits in edx:eax that correspond to SSE/FPU context
+        movq    $0x7, %rax
+        xorq    %rdx, %rdx
+        //rsi + 8 contains xsave area address
+        movq    8(%rsi), %rbx
+        xsaveopt (%rbx)
+
         movq    %rsp, {TASK_RSP_OFFSET}(%rsi)
 
     1:
         // Switch to the new task state
-        mov     %rdx, %cr3
+        mov     %rcx, %cr3
 
         // Switch to the new task stack
         movq    {TASK_RSP_OFFSET}(%rdi), %rsp
 
         // We've already restored rsp
         addq        $8, %rsp
+
+        //set bits in edx:eax that correspond to SSE/FPU context
+        movq    $0x7, %rax
+        xorq    %rdx, %rdx
+        //rdi + 8 contains xsave area address
+        movq    8(%rdi), %rbx
+        xrstor  (%rbx)
 
         // Restore the task context
         popq        %r15
