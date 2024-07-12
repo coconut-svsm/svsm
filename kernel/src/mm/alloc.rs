@@ -52,11 +52,12 @@ pub const MAX_ORDER: usize = 6;
 /// # Returns
 ///
 /// The calculated order.
-pub fn get_order(size: usize) -> usize {
-    (size
-        .checked_next_power_of_two()
-        .map_or(usize::BITS, usize::ilog2) as usize)
-        .saturating_sub(PAGE_SHIFT)
+pub const fn get_order(size: usize) -> usize {
+    match size.checked_next_power_of_two() {
+        Some(v) => v.ilog2() as usize,
+        None => usize::BITS as usize,
+    }
+    .saturating_sub(PAGE_SHIFT)
 }
 
 /// Enum representing the type of a memory page.
