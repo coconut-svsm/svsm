@@ -222,8 +222,22 @@ pub struct VMSA {
     pub fpreg_x87: [u8; 80],
     pub fpreg_xmm: [u8; 256],
     pub fpreg_ymm: [u8; 256],
-    pub reserved_670: [u8; 2448],
+    pub lbr_stack: [u8; 256],
+    pub lbr_select: u64,
+    pub ibs_fetch_ctl: u64,
+    pub ibs_fetch_linaddr: u64,
+    pub ibs_op_ctl: u64,
+    pub ibs_op_rip: u64,
+    pub ibs_op_data: u64,
+    pub ibs_op_data2: u64,
+    pub ibs_op_data3: u64,
+    pub ibs_dc_linaddr: u64,
+    pub bp_ibstgt_rip: u64,
+    pub ic_ibs_extd_ctl: u64,
+    pub reserved_7c8: [u8; 2104],
 }
+
+const _: () = assert!(core::mem::size_of::<VMSA>() == 0x1000);
 
 impl Default for VMSA {
     fn default() -> Self {
@@ -335,7 +349,19 @@ impl Default for VMSA {
             fpreg_x87: [0u8; 80],
             fpreg_xmm: [0u8; 256],
             fpreg_ymm: [0u8; 256],
-            reserved_670: [0u8; 2448],
+            lbr_stack: [0; 256],
+            lbr_select: Default::default(),
+            ibs_fetch_ctl: Default::default(),
+            ibs_fetch_linaddr: Default::default(),
+            ibs_op_ctl: Default::default(),
+            ibs_op_rip: Default::default(),
+            ibs_op_data: Default::default(),
+            ibs_op_data2: Default::default(),
+            ibs_op_data3: Default::default(),
+            ibs_dc_linaddr: Default::default(),
+            bp_ibstgt_rip: Default::default(),
+            ic_ibs_extd_ctl: Default::default(),
+            reserved_7c8: [0u8; 2104],
         }
     }
 }
