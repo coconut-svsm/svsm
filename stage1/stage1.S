@@ -41,9 +41,7 @@ startup_32:
 2:	popl	%ebp
 	leal	2b, %eax
 	subl	%eax, %ebp
-#endif
 
-#ifdef LOAD_STAGE2
 	leal	stage2_bin(%ebp), %esi
 	movl	$STAGE2_START, %edi
 	movl	stage2_size(%ebp), %ecx
@@ -54,7 +52,7 @@ startup_32:
 	movl	$STAGE2_START, %esp
 
 	/* Write startup information to stage2 stack */
-	xorl 	%eax, %eax
+	xorl	%eax, %eax
 	pushl	%eax
 
 	leal	kernel_fs_bin_end(%ebp), %edi
@@ -75,14 +73,45 @@ startup_32:
 	/* Reserve space for VTOM */
 	pushl	%eax
 	pushl	%eax
-
 #else
-	/* Setup stack for stage 2 */
+	/*
+	 * Stage 2 launch info has been prepared
+	 * Make sure platform type is TDP
+	 */
+	movl	$(STAGE2_START - 24), %eax
+	movl	(%eax), %eax
+	cmpl	$2, %eax
+	je	.Lsetup_td
+	ud2
+
+.Lsetup_td:
+	/* %esi is initialized with TD CPU index */
+	test	%esi, %esi
+	jz	.Lsetup_bsp_stack
+
+	/* Set up invalid stack for APs since they must run stacklessly */
+	movl	$0x7ffff000, %esp
+	jmp	.Lenter_stage2
+
+.Lsetup_bsp_stack:
+	/* Set up BSP stack for stage 2 */
 	movl	$(STAGE2_START - 32), %esp
+	/* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
+	mov	%esp, %eax
+	/* GPAW must be either 48 or 52 */
+	xorl	%ecx, %ecx
+	movl	%ecx, (%eax)
+	addl	$4, %eax
+	subl	$33, %ebx
+	bts	%ebx, %ecx
+	movl	%ecx, (%eax)
+.Lenter_stage2:
 #endif
+
 	/* Jump to stage 2 */
 	movl	$STAGE2_START, %eax
 	jmp	*%eax
+
 .data
 
 #ifdef LOAD_STAGE2
