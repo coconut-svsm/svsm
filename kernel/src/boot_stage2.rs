@@ -16,8 +16,8 @@ global_asm!(
         .globl startup_32
         startup_32:
 
-        /* Save pointer to startup structure in ESI */
-        movl %esp, %esi
+        /* Save pointer to startup structure in EBP */
+        movl %esp, %ebp
         /*
          * Load a GDT. Despite the naming, it contains valid
          * entries for both, "legacy" 32bit and long mode each.
@@ -32,13 +32,15 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
-        pushl $0x8
-        movl $.Lon_svsm32_cs, %eax
-        pushl %eax
-        lret
+        ljmpl $0x8, $.Lon_svsm32_cs
 
     .Lon_svsm32_cs:
-        push    %edi
+        /*
+         * SEV: %esi is always 0, only BSP running
+         * TDX: %esi is the TD CPU index
+         */
+        test %esi, %esi
+        jnz .Lskip_paging_setup
 
         /* Clear out the static page table pages. */
         movl $pgtable_end, %ecx
@@ -79,6 +81,19 @@ global_asm!(
         decl %ecx
         jnz 1b
 
+        /* Signal APs */
+        movl $setup_flag, %edi
+        movl $1, (%edi)
+        jmp 2f
+
+.Lskip_paging_setup:
+        movl $setup_flag, %edi
+.Lap_wait:
+        movl (%edi), %eax
+        test %eax, %eax
+        jz .Lap_wait
+
+2:
         /* Enable 64bit PTEs, CR4.PAE. */
         movl %cr4, %eax
         bts $5, %eax
@@ -101,19 +116,13 @@ global_asm!(
         bts $31, %eax
         movl %eax, %cr0
 
-        popl    %edi
-
-        pushl $0x18
-        movl $startup_64, %eax
-        pushl %eax
-
-        lret
+        ljmpl $0x18, $startup_64
 
     get_pte_c_bit:
         /*
          * Check if this is an SNP platform.  If not, there is no C bit.
          */
-        cmpl $1, 8(%esi)
+        cmpl $1, 8(%ebp)
         jnz .Lvtom
 
         /*
@@ -161,7 +170,7 @@ global_asm!(
         jmp .Lfound_entry
 
     .Lwrong_entry:
-        /* 
+        /*
          * The current entry doesn't contain the correct input
          * parameters. Try the next one.
          */
@@ -207,6 +216,14 @@ global_asm!(
         movw %ax, %gs
         movw %ax, %ss
 
+        test %esi, %esi
+        jz .Lbsp_main
+
+    .Lcheck_command:
+        /* TODO */
+        jmp .Lcheck_command
+
+    .Lbsp_main:
         /* Clear out .bss and transfer control to the main stage2 code. */
         xorq %rax, %rax
         leaq _bss(%rip), %rdi
@@ -215,10 +232,14 @@ global_asm!(
         shrq $3, %rcx
         rep stosq
 
-        movq %rsi, %rdi
+        movl %ebp, %edi
         jmp stage2_main
 
         .data
+
+        .align 4
+    setup_flag:
+        .long 0
 
     idt32:
         .rept 32
