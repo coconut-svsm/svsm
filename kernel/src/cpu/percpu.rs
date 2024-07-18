@@ -11,25 +11,24 @@ use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
-use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa, vmsa_mut_ref_from_vaddr};
+use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::LocalApic;
 use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, SpinLock};
-use crate::mm::alloc::{allocate_zeroed_page, free_page};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
-    virt_to_phys, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
+    virt_to_phys, PageBox, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
-use crate::sev::ghcb::GHCB;
-use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::ghcb::{GhcbPage, GHCB};
+use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
-use crate::sev::vmsa::{allocate_new_vmsa, VMSAControl};
+use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
 use crate::utils::MemoryRegion;
@@ -288,7 +287,7 @@ pub struct PerCpu {
 
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
-    svsm_vmsa: OnceCell<&'static VMSA>,
+    svsm_vmsa: OnceCell<VmsaPage>,
     reset_ip: Cell<u64>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
@@ -304,7 +303,7 @@ pub struct PerCpu {
     apic: RefCell<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
-    ghcb: Cell<Option<&'static GHCB>>,
+    ghcb: OnceCell<GhcbPage>,
 
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: OnceCell<&'static HVDoorbell>,
@@ -332,7 +331,7 @@ impl PerCpu {
             apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id),
-            ghcb: Cell::new(None),
+            ghcb: OnceCell::new(),
             hv_doorbell: OnceCell::new(),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -343,14 +342,10 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
-        let percpu_ptr = vaddr.as_mut_ptr::<Self>();
-        unsafe {
-            (*percpu_ptr) = Self::new(apic_id);
-            let percpu = &*percpu_ptr;
-            PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared));
-            Ok(percpu)
-        }
+        let page = PageBox::try_new(Self::new(apic_id))?;
+        let percpu = PageBox::leak(page);
+        unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
+        Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
@@ -359,17 +354,14 @@ impl PerCpu {
 
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        let ghcb_page = allocate_zeroed_page()?;
-        if let Err(e) = GHCB::init(ghcb_page) {
-            free_page(ghcb_page);
-            return Err(e);
-        };
-        let ghcb = unsafe { &*ghcb_page.as_ptr() };
-        self.ghcb.set(Some(ghcb));
+        let page = GhcbPage::new()?;
+        self.ghcb
+            .set(page)
+            .expect("Attempted to reinitialize the GHCB");
         Ok(())
     }
 
-    fn ghcb(&self) -> Option<&'static GHCB> {
+    fn ghcb(&self) -> Option<&GhcbPage> {
         self.ghcb.get()
     }
 
@@ -452,17 +444,8 @@ impl PerCpu {
     }
 
     fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let vaddr = allocate_zeroed_page()?;
-        let ghcb = current_ghcb();
-        if let Err(e) = HVDoorbell::init(vaddr, ghcb) {
-            free_page(vaddr);
-            return Err(e);
-        }
-        // SAFETY: the page contents have been allocated on valid memory and
-        // initialized. The HVDoorbell type's alignment requirements are met
-        // by the fact that we allocated a whole page. Mutable references to
-        // the page are never created, so this cannot be mutably aliased.
-        let doorbell = unsafe { &*vaddr.as_mut_ptr::<HVDoorbell>() };
+        let page = HVDoorbellPage::new(current_ghcb())?;
+        let doorbell = HVDoorbellPage::leak(page);
         self.hv_doorbell
             .set(doorbell)
             .expect("Attempted to reinitialize the HV doorbell page");
@@ -610,16 +593,11 @@ impl PerCpu {
             return Err(SvsmError::Mem);
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
-
-        // SAFETY: we have exclusive access to this memory, as we just
-        // allocated it. allocate_new_vmsa() takes care of allocating
-        // memory of the right size and alignment for a VMSA.
-        let vmsa = unsafe { &mut *vaddr.as_mut_ptr::<VMSA>() };
+        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let paddr = vmsa.paddr();
 
         // Initialize VMSA
-        init_svsm_vmsa(vmsa, vtom);
+        init_svsm_vmsa(&mut vmsa, vtom);
         vmsa.tr = self.vmsa_tr_segment();
         vmsa.rip = start_rip;
         vmsa.rsp = self.get_top_of_stack().into();
@@ -664,13 +642,13 @@ impl PerCpu {
             ghcb.configure_interrupt_injection(INT_INJ_VECTOR)?;
         }
 
-        let vaddr = allocate_new_vmsa(RMPFlags::GUEST_VMPL)?;
-        let paddr = virt_to_phys(vaddr);
+        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let paddr = vmsa.paddr();
 
-        let vmsa = vmsa_mut_ref_from_vaddr(vaddr);
-        init_guest_vmsa(vmsa, self.reset_ip.get(), use_alternate_injection);
+        init_guest_vmsa(&mut vmsa, self.reset_ip.get(), use_alternate_injection);
 
         self.shared().update_guest_vmsa(paddr);
+        let _ = VmsaPage::leak(vmsa);
 
         Ok(())
     }

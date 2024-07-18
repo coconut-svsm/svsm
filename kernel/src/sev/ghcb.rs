@@ -21,9 +21,11 @@ use crate::sev::utils::raw_vmgexit;
 use crate::types::{Bytes, PageSize, GUEST_VMPL, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
+use crate::mm::PageBox;
 use core::arch::global_asm;
 use core::cell::Cell;
 use core::mem::{self, offset_of};
+use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
@@ -126,6 +128,56 @@ impl TryFrom<Bytes> for GHCBIOSize {
     }
 }
 
+#[derive(Debug)]
+pub struct GhcbPage(PageBox<GHCB>);
+
+impl GhcbPage {
+    pub fn new() -> Result<Self, SvsmError> {
+        let page = PageBox::try_new_zeroed()?;
+        let vaddr = page.vaddr();
+        let paddr = virt_to_phys(vaddr);
+
+        if sev_snp_enabled() {
+            // Make page invalid
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
+
+            // Let the Hypervisor take the page back
+            invalidate_page_msr(paddr)?;
+
+            // Needs guarding for Stage2 GHCB
+            if valid_bitmap_valid_addr(paddr) {
+                valid_bitmap_clear_valid_4k(paddr);
+            }
+        }
+
+        // Map page unencrypted
+        get_init_pgtable_locked().set_shared_4k(vaddr)?;
+        flush_tlb_global_sync();
+
+        // SAFETY: all zeros is a valid representation for the GHCB.
+        unsafe { Ok(Self(page.assume_init())) }
+    }
+}
+
+impl Drop for GhcbPage {
+    fn drop(&mut self) {
+        self.0.shutdown().expect("Could not shut down GHCB");
+    }
+}
+
+impl Deref for GhcbPage {
+    type Target = GHCB;
+    fn deref(&self) -> &Self::Target {
+        self.0.deref()
+    }
+}
+
+impl DerefMut for GhcbPage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.deref_mut()
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct GHCB {
@@ -203,30 +255,6 @@ impl GHCB {
 
     ghcb_getter!(get_usage_valid, usage, u32);
     ghcb_setter!(set_usage_valid, usage, u32);
-
-    pub fn init(vaddr: VirtAddr) -> Result<(), SvsmError> {
-        let paddr = virt_to_phys(vaddr);
-
-        if sev_snp_enabled() {
-            // Make page invalid
-            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
-
-            // Let the Hypervisor take the page back
-            invalidate_page_msr(paddr)?;
-
-            // Needs guarding for Stage2 GHCB
-            if valid_bitmap_valid_addr(paddr) {
-                valid_bitmap_clear_valid_4k(paddr);
-            }
-        }
-
-        // Map page unencrypted
-        get_init_pgtable_locked().set_shared_4k(vaddr)?;
-
-        flush_tlb_global_sync();
-
-        Ok(())
-    }
 
     pub fn rdtscp_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
