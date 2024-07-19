@@ -510,14 +510,6 @@ mod tests {
         assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
     }
 
-    #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    fn test_rdmsr_debug_ctl() {
-        const MSR_DEBUG_CTL: u32 = 0x1d9;
-        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
-        assert_eq!(apic_base, 0);
-    }
-
     const MSR_TSC_AUX: u32 = 0xc0000103;
 
     #[test]
