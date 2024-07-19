@@ -120,4 +120,8 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn eoi(&self) {}
+
+    fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
+        todo!();
+    }
 }

@@ -218,4 +218,11 @@ impl SvsmPlatform for SnpPlatform {
             let _ = current_ghcb().wrmsr(0x80B, 0);
         }
     }
+
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+        cpu.setup(self)?;
+        let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
+
+        current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
+    }
 }

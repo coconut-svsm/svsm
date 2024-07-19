@@ -103,6 +103,9 @@ pub trait SvsmPlatform {
 
     /// Perform an EOI of the current interrupt.
     fn eoi(&self);
+
+    /// Start an additional processor.
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

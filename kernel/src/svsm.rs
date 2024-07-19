@@ -432,7 +432,7 @@ pub extern "C" fn svsm_main() {
 
     log::info!("{} CPU(s) present", nr_cpus);
 
-    start_secondary_cpus(platform, &cpus, launch_info.vtom);
+    start_secondary_cpus(platform, &cpus);
 
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {

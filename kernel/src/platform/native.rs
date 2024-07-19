@@ -125,4 +125,8 @@ impl SvsmPlatform for NativePlatform {
     fn eoi(&self) {
         todo!();
     }
+
+    fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
+        todo!();
+    }
 }
