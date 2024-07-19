@@ -16,6 +16,6 @@ extern "C" {
     pub fn RSA_decrypt(flen: u32, from: *mut u8, to: *mut u8) -> i32;
     pub fn get_RSA_public_key() -> *mut RSA_key;
     pub fn my_SHA256(buff: *const u8, buff_len: u32, hash: *mut u8) -> i32;
-    pub fn my_SHA512(buff: *const u8, buff_len: u32, hash: *mut u8) -> i32;
+    pub fn my_SHA512_old(buff: *const u8, buff_len: u32, hash: *mut u8) -> i32;
     pub fn get_cycles() -> u64;
 }
