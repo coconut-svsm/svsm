@@ -50,6 +50,10 @@ impl SvsmPlatform for TdpPlatform {
         init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
     }
 
+    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }

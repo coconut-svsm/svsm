@@ -394,9 +394,10 @@ pub extern "C" fn svsm_main() {
     // a remote GDB connection
     //debug_break();
 
-    this_cpu()
-        .configure_hv_doorbell()
-        .expect("Failed to configure #HV doorbell");
+    SVSM_PLATFORM
+        .as_dyn_ref()
+        .env_setup_svsm()
+        .expect("SVSM platform environment setup failed");
 
     let launch_info = &*LAUNCH_INFO;
     let config = if launch_info.igvm_params_virt_addr != 0 {

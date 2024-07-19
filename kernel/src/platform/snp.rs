@@ -7,7 +7,7 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
-use crate::cpu::percpu::{current_ghcb, PerCpu};
+use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::io::IOPort;
@@ -61,6 +61,10 @@ impl SvsmPlatform for SnpPlatform {
         sev_status_verify();
         init_hypervisor_ghcb_features()?;
         Ok(())
+    }
+
+    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        this_cpu().configure_hv_doorbell()
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {

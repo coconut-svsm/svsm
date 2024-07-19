@@ -51,6 +51,10 @@ pub trait SvsmPlatform {
     /// the core system environment has been initialized.
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
 
+    /// Performs initialiation of the environment specfic to the SVSM kernel
+    /// (for services not used by stage2).
+    fn env_setup_svsm(&self) -> Result<(), SvsmError>;
+
     /// Completes initialization of a per-CPU object during construction.
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
