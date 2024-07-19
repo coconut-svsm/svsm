@@ -39,7 +39,7 @@ impl Default for NativePlatform {
 }
 
 impl SvsmPlatform for NativePlatform {
-    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+    fn env_setup(&mut self, debug_serial_port: u16, _vtom: usize) -> Result<(), SvsmError> {
         // In the native platform, console output does not require the use of
         // any platform services, so it can be initialized immediately.
         CONSOLE_SERIAL
@@ -65,7 +65,7 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    fn get_page_encryption_masks(&self, _vtom: usize) -> PageEncryptionMasks {
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let res = CpuidResult::get(0x80000008, 0);
         PageEncryptionMasks {

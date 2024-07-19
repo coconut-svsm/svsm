@@ -45,7 +45,7 @@ pub enum PageStateChangeOp {
 /// underlying architectures.
 pub trait SvsmPlatform {
     /// Performs basic early initialization of the runtime environment.
-    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
+    fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
 
     /// Performs initialization of the platform runtime environment after
     /// the core system environment has been initialized.
@@ -62,7 +62,7 @@ pub trait SvsmPlatform {
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
     /// Determines the paging encryption masks for the current architecture.
-    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
 
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(&self, eax: u32) -> Option<CpuidResult>;

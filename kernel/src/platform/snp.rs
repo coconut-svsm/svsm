@@ -29,6 +29,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
+static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
+
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy, Debug)]
@@ -47,8 +49,9 @@ impl Default for SnpPlatform {
 }
 
 impl SvsmPlatform for SnpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
         Ok(())
     }
 
@@ -77,11 +80,12 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
-    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let processor_capacity =
             cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
         if vtom_enabled() {
+            let vtom = *VTOM;
             PageEncryptionMasks {
                 private_pte_mask: 0,
                 shared_pte_mask: vtom,

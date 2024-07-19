@@ -83,7 +83,7 @@ fn setup_env(
     let debug_serial_port = config.debug_serial_port();
     install_console_logger("Stage2").expect("Console logger already initialized");
     platform
-        .env_setup(debug_serial_port)
+        .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
     init_kernel_mapping_info(
@@ -92,7 +92,7 @@ fn setup_env(
         PhysAddr::null(),
     );
     register_cpuid_table(unsafe { &CPUID_PAGE });
-    paging_init_early(platform, launch_info.vtom).expect("Failed to initialize early paging");
+    paging_init_early(platform).expect("Failed to initialize early paging");
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
     setup_stage2_allocator();

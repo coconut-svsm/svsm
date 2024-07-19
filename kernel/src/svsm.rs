@@ -314,7 +314,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     efer_init(platform);
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
-        .env_setup(debug_serial_port)
+        .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
     memory_init(&launch_info);
@@ -333,7 +333,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(platform, li.vtom).expect("Failed to initialize paging");
+    paging_init(platform).expect("Failed to initialize paging");
     init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
     // SAFETY: this PerCpu has just been allocated and no other CPUs have been

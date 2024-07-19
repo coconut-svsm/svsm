@@ -43,8 +43,8 @@ static FEATURE_MASK: ImmutAfterInitCell<PTEntryFlags> =
     ImmutAfterInitCell::new(PTEntryFlags::empty());
 
 /// Re-initializes early paging settings.
-pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterInitResult<()> {
-    init_encrypt_mask(platform, vtom.try_into().unwrap())?;
+pub fn paging_init_early(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
+    init_encrypt_mask(platform)?;
 
     let mut feature_mask = PTEntryFlags::all();
     feature_mask.remove(PTEntryFlags::NX);
@@ -53,16 +53,16 @@ pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterIn
 }
 
 /// Initializes paging settings.
-pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterInitResult<()> {
-    init_encrypt_mask(platform, vtom.try_into().unwrap())?;
+pub fn paging_init(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
+    init_encrypt_mask(platform)?;
 
     let feature_mask = PTEntryFlags::all();
     FEATURE_MASK.reinit(&feature_mask)
 }
 
 /// Initializes the encrypt mask.
-fn init_encrypt_mask(platform: &dyn SvsmPlatform, vtom: usize) -> ImmutAfterInitResult<()> {
-    let masks = platform.get_page_encryption_masks(vtom);
+fn init_encrypt_mask(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
+    let masks = platform.get_page_encryption_masks();
 
     PRIVATE_PTE_MASK.reinit(&masks.private_pte_mask)?;
     SHARED_PTE_MASK.reinit(&masks.shared_pte_mask)?;
