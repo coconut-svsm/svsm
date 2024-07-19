@@ -1,5 +1,6 @@
 FEATURES ?= "default"
-SVSM_ARGS = --features ${FEATURES}
+#SVSM_ARGS = --features ${FEATURES}
+SVSM_ARGS = --no-default-features 
 
 FEATURES_TEST ?= "default-test"
 SVSM_ARGS_TEST = --no-default-features --features ${FEATURES_TEST}
