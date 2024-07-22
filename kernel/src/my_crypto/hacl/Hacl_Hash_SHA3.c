@@ -200,8 +200,9 @@ static uint32_t block_len(Spec_Hash_Definitions_hash_alg a)
       }
     default:
       {
-        KRML_HOST_EPRINTF("KaRaMeL incomplete match at %s:%d\n", __FILE__, __LINE__);
-        KRML_HOST_EXIT(253U);
+		// FIXME: [Teo]: Create wrapper
+        //KRML_HOST_EPRINTF("KaRaMeL incomplete match at %s:%d\n", __FILE__, __LINE__);
+        //KRML_HOST_EXIT(253U);
       }
   }
 }
@@ -228,8 +229,9 @@ static uint32_t hash_len(Spec_Hash_Definitions_hash_alg a)
       }
     default:
       {
-        KRML_HOST_EPRINTF("KaRaMeL incomplete match at %s:%d\n", __FILE__, __LINE__);
-        KRML_HOST_EXIT(253U);
+		// FIXME: [Teo]: Add wrappers
+        //KRML_HOST_EPRINTF("KaRaMeL incomplete match at %s:%d\n", __FILE__, __LINE__);
+        //KRML_HOST_EXIT(253U);
       }
   }
 }
