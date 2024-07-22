@@ -13,7 +13,6 @@ pub mod page_visibility;
 mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
-pub mod stack;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;
