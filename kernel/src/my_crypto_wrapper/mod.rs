@@ -7,10 +7,21 @@ pub struct key_pair
 	pub private_key: [u8; 32],
 }
 
+impl key_pair {
+    pub const fn new() -> key_pair {
+        key_pair {
+            public_key: [0;32],
+            private_key: [0;32]
+        }
+    }
+}
+
+//pub static mut ENCRYPTION_KEYS: key_pair = key_pair::new();
 
 extern "C" {
-    pub fn gen_keys(keys: *mut key_pair) -> bool;
+    pub fn gen_keys() -> *mut key_pair;
     pub fn get_key_size() -> u32;
+    pub fn get_keys() -> *mut key_pair;
     pub fn encrypt
         (
             dst: *mut u8,

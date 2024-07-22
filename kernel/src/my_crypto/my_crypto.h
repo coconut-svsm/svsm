@@ -10,7 +10,8 @@ typedef struct _key_pair
 	uint8_t private_key[32];
 } key_pair;
 
-bool gen_keys(key_pair* keys);
+key_pair* get_keys();
+key_pair* gen_keys();
 unsigned int get_key_size();
 
 /**

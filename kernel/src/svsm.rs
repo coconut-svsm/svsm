@@ -72,7 +72,7 @@ use svsm::my_crypto_wrapper::encrypt;
 use svsm::my_crypto_wrapper::decrypt;
 use svsm::my_crypto_wrapper::my_SHA512;
 use svsm::my_crypto_wrapper::get_key_size;
-
+//use svsm::my_crypto_wrapper::ENCRYPTION_KEYS;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -296,12 +296,15 @@ fn init_cpuid_table(addr: VirtAddr) {
     register_cpuid_table(&CPUID_PAGE);
 }
 
+//static keys: ImmutAfterInitCell<key_pair> = ImmutAfterInitCell::new(Default::default());
+#[allow(non_snake_case)]
 fn generate_key_pair() {
     //let mut n = unsafe{gen_RSA_keys(2048)};
     //log::info!("Got {} from C", n);
-    let mut keys: key_pair = Default::default();
-    let b: bool = unsafe{gen_keys(&mut keys as *mut key_pair)};
-    log::info!("Hacl basic test returned {}, private key {:?}, public key {:?}", b, keys.private_key, keys.public_key);
+    //let mut keys: key_pair = Default::default();
+    //let mut ENCRYPTION_KEYS: key_pair = key_pair::new();
+    let mut ENCRYPTION_KEYS: key_pair = unsafe{*gen_keys()};
+    unsafe{log::info!("Hacl basic test, private key {:?}, public key {:?}", ENCRYPTION_KEYS.private_key, ENCRYPTION_KEYS.public_key)};
 
     let key_size: u32 = unsafe{get_key_size()};
     log::info!("Key size: {}", key_size);
@@ -314,9 +317,12 @@ fn generate_key_pair() {
     log::info!("To: {:?}", to);
     log::info!("Encrypting...");
     // FIXME: For now sender and receier have the same key
-    let mut n = unsafe{encrypt(to.as_mut_ptr(), from.as_mut_ptr(), 10, nonce.as_mut_ptr(), keys.public_key.as_mut_ptr(), keys.private_key.as_mut_ptr())};
+    let mut n = unsafe{encrypt(to.as_mut_ptr(), from.as_mut_ptr(), 10, nonce.as_mut_ptr(), ENCRYPTION_KEYS.public_key.as_mut_ptr(), ENCRYPTION_KEYS.private_key.as_mut_ptr())};
     log::info!("To: {:?}", to);
     log::info!("Ecrypted stuff: {}", n);
+    n = unsafe{decrypt(decrypted.as_mut_ptr(), to.as_mut_ptr(), 26, nonce.as_mut_ptr(), ENCRYPTION_KEYS.public_key.as_mut_ptr(), ENCRYPTION_KEYS.private_key.as_mut_ptr())};
+    log::info!("Decrypted: {:?}", decrypted);
+    log::info!("Testing");
     //n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
     //log::info!("Decrypted: {:?}", decrypted);
 
@@ -336,18 +342,15 @@ fn generate_key_pair() {
 
    // n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
    // log::info!("SHA returned: {} and a hash of {:?}", n, hash);
-
     
   //  n = unsafe{my_SHA512(from2.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
    // log::info!("SHA returned: {} and a hash of {:?}", n, hash);
-
 
  //   n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
 //    log::info!("SHA returned: {} and a hash of {:?}", n, hash);
     //log::info!("Raw pub size: {} and key bytes: {:?}", raw_key.len(), raw_key);
 
-
-          panic!();
+    //panic!();
 }
 
 #[no_mangle]
@@ -524,7 +527,6 @@ pub extern "C" fn svsm_main() {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
 
-    generate_key_pair();
 
     #[cfg(all(feature = "mstpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
@@ -537,6 +539,7 @@ pub extern "C" fn svsm_main() {
         }
     }
 
+    generate_key_pair();
     create_kernel_task(request_processing_main).expect("Failed to launch request processing task");
 
     #[cfg(test)]
