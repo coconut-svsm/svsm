@@ -10,6 +10,9 @@ use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::request_termination_msr;
 
 use core::arch::asm;
+use tdx_tdcall::tdx::{
+    tdvmcall_io_read_16, tdvmcall_io_read_8, tdvmcall_io_write_16, tdvmcall_io_write_8,
+};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SVSMIOPort {}
@@ -49,6 +52,33 @@ impl IOPort for SVSMIOPort {
             Ok(v) => (v & 0xffff) as u16,
             Err(_e) => request_termination_msr(),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SvsmTdIOPort {}
+
+impl SvsmTdIOPort {
+    pub const fn new() -> Self {
+        SvsmTdIOPort {}
+    }
+}
+
+impl IOPort for SvsmTdIOPort {
+    fn outb(&self, port: u16, value: u8) {
+        tdvmcall_io_write_8(port, value);
+    }
+
+    fn inb(&self, port: u16) -> u8 {
+        tdvmcall_io_read_8(port)
+    }
+
+    fn outw(&self, port: u16, value: u16) {
+        tdvmcall_io_write_16(port, value);
+    }
+
+    fn inw(&self, port: u16) -> u16 {
+        tdvmcall_io_read_16(port)
     }
 }
 
