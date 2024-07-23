@@ -83,7 +83,11 @@ impl SvsmPlatform for TdpPlatform {
         Err(SvsmError::Tdx)
     }
 
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_page_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _paddr: PhysAddr,
+    ) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }
 

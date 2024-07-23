@@ -134,7 +134,7 @@ fn map_and_validate(
             PageStateChangeOp::Private,
         )?;
     }
-    platform.validate_page_range(vregion)?;
+    platform.validate_page_range(vregion, paddr)?;
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
     Ok(())
 }

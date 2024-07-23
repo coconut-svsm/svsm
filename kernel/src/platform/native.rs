@@ -88,7 +88,11 @@ impl SvsmPlatform for NativePlatform {
     }
 
     /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_page_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _paddr: PhysAddr,
+    ) -> Result<(), SvsmError> {
         Ok(())
     }
 
