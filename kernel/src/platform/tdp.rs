@@ -16,6 +16,7 @@ use crate::svsm_console::SvsmTdIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use tdx_tdcall::tdx::td_accept_memory;
 
 static CONSOLE_IO: SvsmTdIOPort = SvsmTdIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
@@ -85,10 +86,11 @@ impl SvsmPlatform for TdpPlatform {
 
     fn validate_page_range(
         &self,
-        _region: MemoryRegion<VirtAddr>,
-        _paddr: PhysAddr,
+        region: MemoryRegion<VirtAddr>,
+        paddr: PhysAddr,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        td_accept_memory(paddr.into(), region.len().try_into().unwrap());
+        Ok(())
     }
 
     fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
