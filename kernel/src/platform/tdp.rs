@@ -12,14 +12,12 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::serial::SerialPort;
-use crate::svsm_console::SVSMIOPort;
+use crate::svsm_console::SvsmTdIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
-// FIXME - SVSMIOPort doesn't work on TDP, but the platform does not yet have
-// an alternative available.
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static CONSOLE_IO: SvsmTdIOPort = SvsmTdIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
@@ -38,16 +36,17 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
-        Ok(())
-    }
-
-    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+        // Serial console device can be initialized immediately
         CONSOLE_SERIAL
             .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
             .map_err(|_| SvsmError::Console)?;
         (*CONSOLE_SERIAL).init();
         init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
+    }
+
+    fn env_setup_late(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+        Ok(())
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {

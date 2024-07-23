@@ -423,6 +423,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     // Shut down the GHCB
     shutdown_percpu();
 
+    log::info!("Starting SVSM kernel...");
+
     unsafe {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
