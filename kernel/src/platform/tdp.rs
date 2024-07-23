@@ -68,7 +68,7 @@ impl SvsmPlatform for TdpPlatform {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
-            phys_addr_sizes: res.eax & 0xff,
+            phys_addr_sizes: res.eax,
         }
     }
 
