@@ -1740,8 +1740,11 @@ impl Drop for TestRootMem<'_> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     extern crate alloc;
+    use super::*;
+    use crate::mm::PageBox;
+    use alloc::boxed::Box;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
     /// Tests the setup of the root memory
     #[test]
@@ -2014,12 +2017,26 @@ mod test {
         }
     }
 
+    /// Helper to assert that a `PageBox` is properly dropped.
+    fn check_drop_page<T: ?Sized>(page: PageBox<T>) {
+        let vaddr = page.vaddr();
+        {
+            let mem = ROOT_MEM.lock();
+            let pfn = mem.get_pfn(vaddr).unwrap();
+            let info = mem.read_page_info(pfn);
+            assert!(matches!(info, PageInfo::Allocated(..)));
+        }
+        drop(page);
+        {
+            let mem = ROOT_MEM.lock();
+            let pfn = mem.get_pfn(vaddr).unwrap();
+            let info = mem.read_page_info(pfn);
+            assert!(matches!(info, PageInfo::Free { .. }));
+        }
+    }
+
     #[test]
     fn test_drop_pagebox() {
-        use crate::mm::PageBox;
-        use alloc::boxed::Box;
-        use core::sync::atomic::{AtomicUsize, Ordering};
-
         // Check that the inner contents of the [`PageBox`] are only dropped
         // once.
         static DROPPED: AtomicUsize = AtomicUsize::new(0);
@@ -2037,26 +2054,39 @@ mod test {
         let page = PageBox::try_new(Thing(Box::new(44))).unwrap();
         assert_eq!(*page.0, 44);
 
-        let vaddr = page.vaddr();
-
-        // Check that the page is allocated
-        {
-            let mem = ROOT_MEM.lock();
-            let pfn = mem.get_pfn(vaddr).unwrap();
-            let info = mem.read_page_info(pfn);
-            assert!(matches!(info, PageInfo::Allocated(..)));
-        }
-
-        drop(page);
-
+        check_drop_page(page);
         assert_eq!(DROPPED.load(Ordering::Relaxed), 1);
+    }
 
-        // Check that the page is now freed
-        {
-            let mem = ROOT_MEM.lock();
-            let pfn = mem.get_pfn(vaddr).unwrap();
-            let info = mem.read_page_info(pfn);
-            assert!(matches!(info, PageInfo::Free { .. }));
+    #[test]
+    fn test_drop_pagebox_slice() {
+        use core::num::NonZeroUsize;
+
+        const NUM_ITEMS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8192) };
+        static DROPPED: AtomicUsize = AtomicUsize::new(0);
+
+        #[derive(Clone)]
+        struct Thing(Box<u32>);
+
+        impl Drop for Thing {
+            fn drop(&mut self) {
+                DROPPED.fetch_add(1, Ordering::Relaxed);
+            }
         }
+
+        let _mem_lock = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
+
+        let slice = PageBox::try_new_slice(Thing(Box::new(43)), NUM_ITEMS).unwrap();
+
+        // Check that contents match
+        for item in slice.iter() {
+            assert_eq!(*item.0, 43);
+        }
+        assert_eq!(slice.len(), NUM_ITEMS.get());
+
+        check_drop_page(slice);
+        // All the items in the slice must have dropped, plus the original
+        // value that items were cloned out of.
+        assert_eq!(DROPPED.load(Ordering::Relaxed), NUM_ITEMS.get() + 1);
     }
 }
