@@ -86,7 +86,7 @@ fn setup_env(
     // Validate the first 640 KB of memory so it can be used if necessary.
     let region = MemoryRegion::<VirtAddr>::new(VirtAddr::from(0u64), 640 * 1024);
     platform
-        .validate_page_range(region)
+        .validate_page_range(region, PhysAddr::from(0u64))
         .expect("failed to validate low 640 KB");
 
     // Supply the heap bounds as the kernel range, since the only virtual-to
@@ -149,7 +149,7 @@ fn map_and_validate(
             PageStateChangeOp::Private,
         )?;
     }
-    platform.validate_page_range(vregion)?;
+    platform.validate_page_range(vregion, paddr)?;
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
     Ok(())
 }

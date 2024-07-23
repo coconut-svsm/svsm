@@ -139,7 +139,11 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_page_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        _paddr: PhysAddr,
+    ) -> Result<(), SvsmError> {
         pvalidate_range(region, PvalidateOp::Valid)
     }
 
