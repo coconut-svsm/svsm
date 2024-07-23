@@ -19,14 +19,14 @@ use crate::sev::status::vtom_enabled;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
-use crate::svsm_console::SVSMIOPort;
+use crate::svsm_console::SvsmSevIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static CONSOLE_IO: SvsmSevIOPort = SvsmSevIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);

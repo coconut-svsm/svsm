@@ -21,7 +21,7 @@ pub mod svsm_gdbstub {
     use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
     use crate::serial::{SerialPort, Terminal};
-    use crate::svsm_console::SVSMIOPort;
+    use crate::svsm_console::SvsmSevIOPort;
     use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
     use core::fmt;
@@ -173,7 +173,7 @@ pub mod svsm_gdbstub {
 
     static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
     static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
-    static GDB_IO: SVSMIOPort = SVSMIOPort::new();
+    static GDB_IO: SvsmSevIOPort = SvsmSevIOPort::new();
     static mut GDB_SERIAL: SerialPort<'_> = SerialPort::new(&GDB_IO, 0x2f8);
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.

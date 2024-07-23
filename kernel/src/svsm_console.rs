@@ -15,15 +15,15 @@ use tdx_tdcall::tdx::{
 };
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SVSMIOPort {}
+pub struct SvsmSevIOPort {}
 
-impl SVSMIOPort {
+impl SvsmSevIOPort {
     pub const fn new() -> Self {
-        SVSMIOPort {}
+        SvsmSevIOPort {}
     }
 }
 
-impl IOPort for SVSMIOPort {
+impl IOPort for SvsmSevIOPort {
     fn outb(&self, port: u16, value: u8) {
         let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size8, value as u64);
         if ret.is_err() {
