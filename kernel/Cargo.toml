@@ -33,6 +33,7 @@ igvm_defs = { workspace = true, features = ["unstable"] }
 intrusive-collections.workspace = true
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
+tdx-tdcall.workspace = true
 libmstpm = { workspace = true, optional = true }
 zerocopy.workspace = true
 
