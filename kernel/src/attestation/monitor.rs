@@ -1,4 +1,4 @@
-use crate::{address::PhysAddr, greq::services::{get_regular_report, REPORT_RESPONSE_SIZE}, my_crypto_wrapper::key_pair};
+use crate::{address::PhysAddr, greq::services::{get_regular_report, REPORT_RESPONSE_SIZE}, my_crypto_wrapper::{decrypt, key_pair}};
 use crate::greq::pld_report::SnpReportResponse;
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
@@ -92,10 +92,6 @@ pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let mapped_target_page = PerCPUPageMappingGuard::create_4k(target_address).unwrap();
     let target = unsafe {mapped_target_page.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
 
-    let target_address = PhysAddr::from(params.rcx);
-    let mapped_target_page = PerCPUPageMappingGuard::create_4k(target_address).unwrap();
-    let target = unsafe {mapped_target_page.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
-
     let mut i: usize = 0;
     while i < 32 {
         target[i] = ENCRYPTION_KEYS.public_key[i];
@@ -107,14 +103,23 @@ pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
-    //log::info!("[Monitor] Receiveing policy");
-    let target_address = PhysAddr::from(params.rcx);
-    let mapped_target_page = PerCPUPageMappingGuard::create_4k(target_address).unwrap();
-    let target = unsafe {mapped_target_page.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
+    log::info!("[Monitor] Receiveing policy");
+    let encrypted_data_address = PhysAddr::from(params.r8);
+    let mapped_enc_data_page = PerCPUPageMappingGuard::create_4k(encrypted_data_address).unwrap();
+    let encrypted_data = unsafe {mapped_enc_data_page.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
 
-    let mut decrypted: [u8; 256] = [0; 256];
+    let sender_pub_key_address = PhysAddr::from(params.rcx);
+    let mapped_sender_pub_key_page = PerCPUPageMappingGuard::create_4k(sender_pub_key_address).unwrap();
+    let sender_pub_key = unsafe {mapped_sender_pub_key_page.virt_addr().as_mut_ptr::<[u8;32]>().as_mut().unwrap()};
 
-    //let n: i32 = unsafe{RSA_decrypt(256, target.as_mut_ptr(), decrypted.as_mut_ptr())};
-    
+    let encrypted_data_size: u32 = params.rdx.try_into().unwrap();
+    let mut decrypted: [u8; 4096] = [0; 4096];
+
+    let mut nonce: [u8; 24] = [0; 24];
+    let n: u32 = unsafe{decrypt(decrypted.as_mut_ptr(), encrypted_data.as_mut_ptr(), encrypted_data_size , nonce.as_mut_ptr(), sender_pub_key.as_mut_ptr(), (*get_keys()).private_key.as_mut_ptr())};
+    log::info!("Sender pub key: {:?}", sender_pub_key);
+    //log::info!("Encrypted data: {:?}", encrypted_data);
+    log::info!("Decryption:{} Bytes: {:?}", n, decrypted);
+
     Ok(())
 }
