@@ -67,6 +67,12 @@ startup_32:
 	leal	kernel_elf(%ebp), %edi
 	pushl	%edi
 
+	/* Push the location of the secrets page.  It is always at 9E000 */
+	pushl	$0x9E000
+
+	/* Push the location of the CPUID page.  It is always at 9F000 */
+	pushl	$0x9F000
+
 	/* Push the value 1 to indicate SNP */
 	pushl	$1
 
@@ -81,7 +87,7 @@ startup_32:
 	 * Stage 2 launch info has been prepared
 	 * Make sure platform type is TDP
 	 */
-	movl	$(STAGE2_START - 24), %eax
+	movl	$(STAGE1_STACK - 32), %eax
 	movl	(%eax), %eax
 	cmpl	$2, %eax
 	je	.Lsetup_td
@@ -98,7 +104,7 @@ startup_32:
 
 .Lsetup_bsp_stack:
 	/* Set up BSP stack for stage 2 */
-	movl	$(STAGE2_START - 32), %esp
+	movl	$(STAGE1_STACK - 40), %esp
 	/* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
 	mov	%esp, %eax
 	/* GPAW must be either 48 or 52 */

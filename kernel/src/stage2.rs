@@ -44,7 +44,6 @@ extern "C" {
     pub static heap_start: u8;
     pub static heap_end: u8;
     pub static mut pgtable: PageTable;
-    pub static CPUID_PAGE: SnpCpuidTable;
 }
 
 fn setup_stage2_allocator() {
@@ -91,7 +90,10 @@ fn setup_env(
         VirtAddr::from(640 * 1024usize),
         PhysAddr::null(),
     );
-    register_cpuid_table(unsafe { &CPUID_PAGE });
+
+    let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
+
+    register_cpuid_table(cpuid_page);
     paging_init_early(platform, launch_info.vtom).expect("Failed to initialize early paging");
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
@@ -391,8 +393,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         kernel_elf_stage2_virt_end: u64::from(launch_info.kernel_elf_end),
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
-        cpuid_page: config.get_cpuid_page_address(),
-        secrets_page: config.get_secrets_page_address(),
+        cpuid_page: launch_info.cpuid_page as u64,
+        secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_pregion.len() as u64,
         igvm_params_phys_addr: u64::from(igvm_pregion.start()),

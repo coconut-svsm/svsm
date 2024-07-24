@@ -33,6 +33,8 @@ impl Stage2Stack {
             igvm_params: gpa_map.igvm_param_block.get_start() as u32,
             vtom,
             platform_type: 0,
+            cpuid_page: gpa_map.cpuid_page.get_start() as u32,
+            secrets_page: gpa_map.secrets_page.get_start() as u32,
         };
         Self { stage2_stack }
     }

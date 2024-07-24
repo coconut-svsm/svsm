@@ -142,10 +142,13 @@ global_asm!(
 
         /* Determine the PTE C-bit position from the CPUID page. */
 
+        /* Locate the table.  The pointer to the CPUID page is 12 bytes into
+         * the stage2 startup structure. */
+        movl 12(%ebp), %ecx
         /* Read the number of entries. */
-        mov CPUID_PAGE, %eax
+        movl (%ecx), %eax
         /* Create a pointer to the first entry. */
-        leal CPUID_PAGE + 16, %ecx
+        leal 16(%ecx), %ecx
 
     .Lcheck_entry:
         /* Check that there is another entry. */

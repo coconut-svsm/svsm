@@ -210,8 +210,6 @@ impl IgvmBuilder {
             param_page_offset,
             memory_map_offset,
             guest_context_offset,
-            cpuid_page: self.gpa_map.cpuid_page.get_start() as u32,
-            secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
             stage1_size: self.gpa_map.stage1_image.get_size() as u32,

@@ -53,6 +53,12 @@ pub struct Stage2LaunchInfo {
     // platform_type must be the second field.
     pub platform_type: u32,
 
+    // cpuid_page must be the third field.
+    pub cpuid_page: u32,
+
+    // secrets_page must be the fourth field.
+    pub secrets_page: u32,
+
     pub kernel_elf_start: u32,
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
