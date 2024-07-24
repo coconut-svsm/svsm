@@ -40,6 +40,8 @@ use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{halt, is_aligned, MemoryRegion};
 
+const HEAP_AREA_END: u64 = 0x8A0000;
+
 extern "C" {
     pub static heap_start: u8;
     pub static mut pgtable: PageTable;
@@ -84,10 +86,16 @@ fn setup_env(
         .env_setup(debug_serial_port)
         .expect("Early environment setup failed");
 
+    // Validate the first 640 KB of memory so it can be used if necessary.
+    let region = MemoryRegion::<VirtAddr>::new(VirtAddr::from(0u64), 640 * 1024);
+    platform
+        .validate_page_range(region)
+        .expect("failed to validate low 640 KB");
+
     init_kernel_mapping_info(
-        VirtAddr::null(),
-        VirtAddr::from(640 * 1024usize),
-        PhysAddr::null(),
+        VirtAddr::from(0x808000u64),
+        VirtAddr::from(HEAP_AREA_END),
+        PhysAddr::from(0x808000u64),
     );
 
     let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
@@ -97,8 +105,8 @@ fn setup_env(
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
 
-    // The end of the heap is the base of the secrets page.
-    setup_stage2_allocator(0x9e000);
+    // The end of the heap is the base of the kernel image.
+    setup_stage2_allocator(HEAP_AREA_END);
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
@@ -394,6 +402,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         kernel_elf_stage2_virt_end: u64::from(launch_info.kernel_elf_end),
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
+        stage2_start: 0x800000u64,
+        stage2_end: HEAP_AREA_END,
         cpuid_page: launch_info.cpuid_page as u64,
         secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),

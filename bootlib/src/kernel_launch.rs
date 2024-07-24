@@ -23,6 +23,8 @@ pub struct KernelLaunchInfo {
     pub kernel_elf_stage2_virt_end: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
+    pub stage2_start: u64,
+    pub stage2_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
     pub stage2_igvm_params_phys_addr: u64,

@@ -4,17 +4,14 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
-use std::mem::size_of;
-
 use igvm::snp_defs::{SevFeatures, SevVmsa};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
 use zerocopy::FromZeroes;
 
 use crate::cmd_options::SevExtraFeatures;
-use crate::stage2_stack::Stage2Stack;
 
-pub fn construct_start_context() -> Box<IgvmNativeVpContextX64> {
+pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Box<IgvmNativeVpContextX64> {
     let mut context_box = IgvmNativeVpContextX64::new_box_zeroed();
     let context = context_box.as_mut();
 
@@ -35,8 +32,8 @@ pub fn construct_start_context() -> Box<IgvmNativeVpContextX64> {
     context.cr4 = 0x40;
 
     context.rflags = 2;
-    context.rip = 0x10000;
-    context.rsp = context.rip - size_of::<Stage2Stack>() as u64;
+    context.rip = start_rip;
+    context.rsp = start_rsp;
 
     context_box
 }

@@ -130,9 +130,14 @@ pub fn invalidate_early_boot_memory(
     // invalidate stage 2 memory, unless firmware is loaded into low memory.
     // Also invalidate the boot data if required.
     if !config.fw_in_low_memory() {
-        let stage2_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
-        invalidate_boot_memory_region(platform, config, stage2_region)?;
+        let lowmem_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
+        invalidate_boot_memory_region(platform, config, lowmem_region)?;
     }
+
+    let stage2_base = usize::try_from(launch_info.stage2_start).unwrap();
+    let stage2_len = usize::try_from(launch_info.stage2_end).unwrap() - stage2_base;
+    let stage2_region = MemoryRegion::new(PhysAddr::new(stage2_base), stage2_len);
+    invalidate_boot_memory_region(platform, config, stage2_region)?;
 
     if config.invalidate_boot_data() {
         let kernel_elf_size =
