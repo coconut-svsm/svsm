@@ -79,7 +79,7 @@ impl SnpCpuidPage {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let mut cpuid_page = SnpCpuidPage::default();
         cpuid_page.add(SnpCpuidLeaf::new1(0x8000001f))?;
-        cpuid_page.add(SnpCpuidLeaf::new2(1, 1))?;
+        cpuid_page.add(SnpCpuidLeaf::new1(1))?;
         cpuid_page.add(SnpCpuidLeaf::new1(2))?;
         cpuid_page.add(SnpCpuidLeaf::new1(4))?;
         cpuid_page.add(SnpCpuidLeaf::new2(4, 1))?;
