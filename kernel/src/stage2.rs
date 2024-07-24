@@ -84,10 +84,16 @@ fn setup_env(
         .env_setup(debug_serial_port)
         .expect("Early environment setup failed");
 
+    // Validate the first 640 KB of memory so it can be used if necessary.
+    let region = MemoryRegion::<VirtAddr>::new(VirtAddr::from(0u64), 640 * 1024);
+    platform
+        .validate_page_range(region)
+        .expect("failed to validate low 640 KB");
+
     init_kernel_mapping_info(
-        VirtAddr::null(),
-        VirtAddr::from(640 * 1024usize),
-        PhysAddr::null(),
+        VirtAddr::from(0x808000u64),
+        VirtAddr::from(0x8A0000u64),
+        PhysAddr::from(0x808000u64),
     );
 
     let cpuid_page = unsafe {
@@ -100,8 +106,8 @@ fn setup_env(
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
 
-    // The end of the heap is the base of the secrets page.
-    setup_stage2_allocator(0x9e000);
+    // The end of the heap is the base of the kernel image.
+    setup_stage2_allocator(launch_info.kernel_elf_start as u64);
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
