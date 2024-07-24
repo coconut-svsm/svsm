@@ -40,7 +40,7 @@ SECTIONS
 	heap_end = .;
 	SECRETS_PAGE = .;
 	. = 636k;
-	CPUID_PAGE = .;
+	_reserved_for_cpuid_page = .;
 }
 
 ENTRY(startup_32)

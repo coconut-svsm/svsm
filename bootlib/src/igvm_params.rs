@@ -106,12 +106,6 @@ pub struct IgvmParamBlock {
     /// context is present.
     pub guest_context_offset: u32,
 
-    /// The guest physical address of the CPUID page.
-    pub cpuid_page: u32,
-
-    /// The guest physical address of the SVSM secrets page.
-    pub secrets_page: u32,
-
     /// The port number of the serial port to use for debugging.
     pub debug_serial_port: u16,
 

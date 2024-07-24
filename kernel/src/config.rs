@@ -71,18 +71,6 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.find_kernel_region(),
         }
     }
-    pub fn get_cpuid_page_address(&self) -> u64 {
-        match self {
-            SvsmConfig::FirmwareConfig(_) => 0x9f000,
-            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_cpuid_page_address(),
-        }
-    }
-    pub fn get_secrets_page_address(&self) -> u64 {
-        match self {
-            SvsmConfig::FirmwareConfig(_) => 0x9e000,
-            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.get_secrets_page_address(),
-        }
-    }
     pub fn page_state_change_required(&self) -> bool {
         match self {
             SvsmConfig::FirmwareConfig(_) => true,

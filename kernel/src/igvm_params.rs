@@ -93,14 +93,6 @@ impl IgvmParams<'_> {
         environment_info.memory_is_shared()
     }
 
-    pub fn get_cpuid_page_address(&self) -> u64 {
-        self.igvm_param_block.cpuid_page as u64
-    }
-
-    pub fn get_secrets_page_address(&self) -> u64 {
-        self.igvm_param_block.secrets_page as u64
-    }
-
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
         // Count the number of memory entries present.  They must be
         // non-overlapping and strictly increasing.
