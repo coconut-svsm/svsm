@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart, PageTableRef};
@@ -59,6 +59,10 @@ pub struct VMR {
     /// [`PTEntryFlags`] global to all mappings in this region. This is a
     /// combination of [`PTEntryFlags::GLOBAL`] and [`PTEntryFlags::USER`].
     pt_flags: PTEntryFlags,
+
+    /// Indicates that this [`struct VMR`] is visible only on a single CPU
+    /// and therefore TLB flushes do not require broadcast.
+    per_cpu: bool,
 }
 
 impl VMR {
@@ -82,7 +86,14 @@ impl VMR {
             tree: RWLock::new(RBTree::new(VMMAdapter::new())),
             pgtbl_parts: RWLock::new(Vec::new()),
             pt_flags: flags,
+            per_cpu: false,
         }
+    }
+
+    /// Marks a [`struct VMR`] as being associated with only a single CPU
+    /// so that TLB flushes do not require broadcast.
+    pub fn set_per_cpu(&mut self, per_cpu: bool) {
+        self.per_cpu = per_cpu;
     }
 
     /// Allocated all [`PageTablePart`]s needed to map this region
@@ -425,7 +436,11 @@ impl VMR {
         let mut cursor = tree.find_mut(&addr);
         if let Some(node) = cursor.get() {
             self.unmap_vmm(node);
-            flush_tlb_global_sync();
+            if self.per_cpu {
+                flush_tlb_global_percpu();
+            } else {
+                flush_tlb_global_sync();
+            }
         }
         cursor.remove().ok_or(SvsmError::Mem)
     }

@@ -6,7 +6,6 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
-use crate::cpu::features::{cpu_has_nx, cpu_has_pge};
 use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
 use crate::locking::{LockGuard, SpinLock};
@@ -57,13 +56,7 @@ pub fn paging_init_early(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterIn
 pub fn paging_init(platform: &dyn SvsmPlatform, vtom: u64) -> ImmutAfterInitResult<()> {
     init_encrypt_mask(platform, vtom.try_into().unwrap())?;
 
-    let mut feature_mask = PTEntryFlags::all();
-    if !cpu_has_nx() {
-        feature_mask.remove(PTEntryFlags::NX);
-    }
-    if !cpu_has_pge() {
-        feature_mask.remove(PTEntryFlags::GLOBAL);
-    }
+    let feature_mask = PTEntryFlags::all();
     FEATURE_MASK.reinit(&feature_mask)
 }
 

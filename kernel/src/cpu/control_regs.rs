@@ -24,14 +24,17 @@ pub fn cr4_init() {
 
     cr4.insert(CR4Flags::PSE); // Enable Page Size Extensions
 
-    if cpu_has_pge() {
-        cr4.insert(CR4Flags::PGE); // Enable Global Pages
-    }
+    // All processors that are capable of virtualization will support global
+    // page table entries, so there is no reason to support any processor that
+    // does not enumerate PGE capability.
+    assert!(cpu_has_pge(), "CPU does not support PGE");
 
+    cr4.insert(CR4Flags::PGE); // Enable Global Pages
     write_cr4(cr4);
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CR0Flags: u64 {
         const PE = 1 << 0;  // Protection Enabled
         const MP = 1 << 1;  // Monitor Coprocessor
@@ -106,6 +109,7 @@ pub fn write_cr3(cr3: PhysAddr) {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CR4Flags: u64 {
         const VME       = 1 << 0;  // Virtual-8086 Mode Extensions
         const PVI       = 1 << 1;  // Protected-Mode Virtual Interrupts
