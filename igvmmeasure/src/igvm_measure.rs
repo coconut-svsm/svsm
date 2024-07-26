@@ -366,7 +366,7 @@ impl IgvmMeasure {
         }
     }
 
-    fn check_vmsa(&mut self, gpa: u64, vmsa: &SevVmsa) -> Result<(), IgvmMeasureError> {
+    fn check_vmsa(&self, gpa: u64, vmsa: &SevVmsa) -> Result<(), IgvmMeasureError> {
         if self.check_kvm {
             if self.vmsa_count > 0 {
                 return Err(IgvmMeasureError::InvalidVmsaCount);
