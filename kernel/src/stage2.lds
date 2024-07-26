@@ -37,7 +37,6 @@ SECTIONS
 	heap_start = .;
 
 	. = 632k;
-	heap_end = .;
 	SECRETS_PAGE = .;
 	. = 636k;
 	_reserved_for_cpuid_page = .;

@@ -42,13 +42,12 @@ use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
     pub static heap_start: u8;
-    pub static heap_end: u8;
     pub static mut pgtable: PageTable;
 }
 
-fn setup_stage2_allocator() {
+fn setup_stage2_allocator(heap_end: u64) {
     let vstart = unsafe { VirtAddr::from(addr_of!(heap_start)).page_align_up() };
-    let vend = unsafe { VirtAddr::from(addr_of!(heap_end)).page_align() };
+    let vend = VirtAddr::from(heap_end);
     let pstart = PhysAddr::from(vstart.bits()); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
@@ -97,7 +96,9 @@ fn setup_env(
     paging_init_early(platform, launch_info.vtom).expect("Failed to initialize early paging");
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
-    setup_stage2_allocator();
+
+    // The end of the heap is the base of the secrets page.
+    setup_stage2_allocator(0x9e000);
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
