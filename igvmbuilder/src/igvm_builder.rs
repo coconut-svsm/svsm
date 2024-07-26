@@ -436,6 +436,14 @@ impl IgvmBuilder {
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
             )?;
+
+            // Insert a zero page in place of the secrets page
+            self.add_empty_pages(
+                self.gpa_map.secrets_page.get_start(),
+                self.gpa_map.secrets_page.get_size(),
+                TDP_COMPATIBILITY_MASK,
+                IgvmPageDataType::NORMAL,
+            )?;
         }
 
         // Add optional stage 1 binary.
