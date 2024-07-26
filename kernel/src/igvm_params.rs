@@ -196,34 +196,36 @@ impl IgvmParams<'_> {
                 return Err(SvsmError::Firmware);
             }
 
-            mem_map.offset(i as isize);
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
             // address is defined in the IGVM config.
             unsafe {
-                mem_map.write(IGVM_VHS_MEMORY_MAP_ENTRY {
-                    starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
-                    number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
-                    entry_type: MemoryMapEntryType::default(),
-                    flags: 0,
-                    reserved: 0,
-                })?;
+                mem_map
+                    .offset(i as isize)
+                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                        starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
+                        number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
+                        entry_type: MemoryMapEntryType::default(),
+                        flags: 0,
+                        reserved: 0,
+                    })?;
             }
         }
 
         // Write a zero page count into the last entry to terminate the list.
         let index = map.len();
         if index < max_entries {
-            mem_map.offset(index as isize);
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
             // address is defined in the IGVM config.
             unsafe {
-                mem_map.write(IGVM_VHS_MEMORY_MAP_ENTRY {
-                    starting_gpa_page_number: 0,
-                    number_of_pages: 0,
-                    entry_type: MemoryMapEntryType::default(),
-                    flags: 0,
-                    reserved: 0,
-                })?;
+                mem_map
+                    .offset(index as isize)
+                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
+                        starting_gpa_page_number: 0,
+                        number_of_pages: 0,
+                        entry_type: MemoryMapEntryType::default(),
+                        flags: 0,
+                        reserved: 0,
+                    })?;
             }
         }
 
