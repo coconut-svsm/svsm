@@ -199,14 +199,9 @@ impl OpCodeDesc {
 
     /// Decodes an opcode from the given `OpCodeBytes`.
     ///
-    /// # Arguments
-    ///
-    /// * `insn` - A mutable reference to the `OpCodeBytes` representing
-    /// the bytes of the opcode to be decoded.
-    ///
     /// # Returns
     ///
-    /// A Some(OpCodeDesc) if the opcode is supported or None otherwise
+    /// A `Some(OpCodeDesc)` if the opcode is supported, or `None` otherwise.
     pub fn decode(insn: &mut OpCodeBytes) -> Option<OpCodeDesc> {
         let mut opdesc = Self::one_byte(insn);
 

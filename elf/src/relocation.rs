@@ -128,9 +128,9 @@ pub trait Elf64RelocProcessor {
     ///
     /// # Returns
     ///
-    /// - [`Result<Elf64RelocOp, ElfError>`]: A [`Result`] containing the
-    /// relocation operation ([`Elf64RelocOp`]) if successful, or an [`ElfError`] if
-    /// there was an issue applying the relocation.
+    /// A [`Result`] containing the relocation operation ([`Elf64RelocOp`]) if
+    /// successful, or an [`ElfError`] if there was an issue applying the
+    /// relocation.
     fn apply_relocation(
         &self,
         rela: &Elf64Rela,
@@ -180,9 +180,9 @@ impl Elf64RelocProcessor for Elf64X86RelocProcessor {
     ///
     /// # Returns
     ///
-    /// - [`Result<Elf64RelocOp, ElfError>`]: A [`Result`] containing the relocation
-    /// operation ([`Elf64RelocOp`]) if successful, or an [`ElfError`] if there was an
-    /// issue applying the relocation.
+    /// A [`Result`] containing the relocation operation ([`Elf64RelocOp`]) if
+    /// successful, or an [`ElfError`] if there was an issue applying the
+    /// relocation.
     fn apply_relocation(
         &self,
         rela: &Elf64Rela,

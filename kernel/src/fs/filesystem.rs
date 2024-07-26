@@ -83,74 +83,54 @@ impl FileHandle {
         }
     }
 
-    /// Used to read contents from the file handle.
-    ///
-    /// # Arguments
-    ///
-    /// - `buf`: buffer to read the file contents to
+    /// Reads the contents of the file into the specified slice.
     ///
     /// # Returns
     ///
-    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
-    /// bytes read if successful, or an [`SvsmError`] if there was a problem
-    /// during the read operation.
+    /// A [`Result`] containing the number of bytes read if successful, or an
+    /// [`SvsmError`] if there was a problem during the read operation.
     pub fn read(&self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         self.handle.lock().read(buf)
     }
 
-    /// Used to write contents to the file handle
-    ///
-    /// # Arguments
-    ///
-    /// - `buf`: buffer which holds the contents to be written to the file.
+    /// Writes the contents of the specified slice into the file.
     ///
     /// # Returns
     ///
-    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
-    /// bytes written if successful, or an [`SvsmError`] if there was a problem
-    /// during the write operation.
+    /// A [`Result`] containing the number of bytes written if successful, or
+    /// an [`SvsmError`] if there was a problem during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
         self.handle.lock().write(buf)
     }
 
-    /// Used to truncate the file to the specified size.
+    /// Truncates the file to the specified size in bytes.
     ///
-    ///  # Arguments
+    /// # Returns
     ///
-    ///  - `offset`: specifies the size in bytes to which the file
-    ///  is to be truncated.
-    ///
-    ///  # Returns
-    ///
-    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the size of the
-    /// file after truncation if successful, or an [`SvsmError`] if there was
-    /// a problem during the truncate operation.
+    /// A [`Result`] containing the size of the file after truncation if
+    /// successful, or an [`SvsmError`] if there was a problem during the
+    /// truncate operation.
     pub fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
         self.handle.lock().truncate(offset)
     }
 
-    /// Used to change the current file offset.
-    ///
-    /// # Arguments
-    ///
-    /// - `pos`: intended new file offset value.
+    /// Changes the current file offset to the given value.
     pub fn seek(&self, pos: usize) {
         self.handle.lock().seek(pos);
     }
 
-    /// Used to get the size of the file.
-    ///
-    /// # Returns
-    ///
-    /// Size of the file in bytes.
+    /// Returns the size of the file in bytes.
     pub fn size(&self) -> usize {
         self.handle.lock().size()
     }
 
+    /// Gets the current position in the file.
     pub fn position(&self) -> usize {
         self.handle.lock().current
     }
 
+    /// Returns a reference to the page backing the specified file offset, or
+    /// `None` if the offset is not backed by a page.
     pub fn mapping(&self, offset: usize) -> Option<PageRef> {
         self.handle.lock().mapping(offset)
     }
@@ -167,12 +147,7 @@ impl SvsmFs {
         SvsmFs { root: None }
     }
 
-    /// Used to set the root directory of the SVSM filesystem.
-    ///
-    /// # Arguments
-    ///
-    /// - `root`: represents directory which is to be set
-    /// as the root of the filesystem.
+    /// Sets the root of the filesystem to the specified directory.
     fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());

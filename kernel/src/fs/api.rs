@@ -93,12 +93,7 @@ pub trait File: Debug + Send + Sync {
     /// during the write operation.
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError>;
 
-    /// Used to truncate the file to the specified size.
-    ///
-    ///  # Arguments
-    ///
-    ///  - `size`: specifies the size in bytes to which the file
-    ///  is to be truncated.
+    /// Truncates the file to the specified size in bytes.
     ///
     ///  # Returns
     ///
@@ -107,22 +102,10 @@ pub trait File: Debug + Send + Sync {
     /// a problem during the truncate operation.
     fn truncate(&self, size: usize) -> Result<usize, SvsmError>;
 
-    /// Used to get the size of the file.
-    ///
-    /// # Returns
-    ///
-    /// size of the file in bytes.
+    /// Returns the size of the file in bytes.
     fn size(&self) -> usize;
 
-    /// Get reference to backing pages of the file
-    ///
-    /// # Arguments
-    ///
-    /// - `offset`: offset to the requested page in bytes
-    ///
-    /// # Returns
-    ///
-    /// [`Option<PageRef>`]: An [`Option`] with the requested page reference.
+    /// Returns a reference to the page backing the specified file offset, or
     /// `None` if the offset is not backed by a page.
     fn mapping(&self, _offset: usize) -> Option<PageRef> {
         None
@@ -175,16 +158,12 @@ pub trait Directory: Debug + Send + Sync {
     /// of the subdirectory created on success, or an [`SvsmError`] on failure
     fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError>;
 
-    /// Used to remove an entry from the directory.
-    ///
-    /// # Arguments
-    ///
-    /// - `name`: name of the entry to be removed from the directory.
+    /// Used to remove an entry with the given name from the directory.
     ///
     /// # Returns
     ///
-    /// [`Result<(), SvsmError>`]: A [`Result`] containing the empty
-    /// value on success, or an [`SvsmError`] on failure
+    /// A [`Result`] containing the empty value on success, or an
+    /// [`SvsmError`] on failure.
     fn unlink(&self, name: FileName) -> Result<(), SvsmError>;
 }
 
