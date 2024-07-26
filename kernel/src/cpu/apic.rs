@@ -249,11 +249,7 @@ impl LocalApic {
         Some(calling_area)
     }
 
-    fn deliver_interrupt_immediately<T: GuestCpuState>(
-        &mut self,
-        irq: u8,
-        cpu_state: &mut T,
-    ) -> bool {
+    fn deliver_interrupt_immediately<T: GuestCpuState>(&self, irq: u8, cpu_state: &mut T) -> bool {
         if !cpu_state.interrupts_enabled() || cpu_state.in_intr_shadow() {
             false
         } else {
