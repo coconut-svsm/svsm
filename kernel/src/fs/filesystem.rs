@@ -118,7 +118,7 @@ impl FileHandle {
     ///  # Arguments
     ///
     ///  - `offset`: specifies the size in bytes to which the file
-    ///  is to be truncated.
+    ///     git  is to be truncated.
     ///
     ///  # Returns
     ///
@@ -172,7 +172,7 @@ impl SvsmFs {
     /// # Arguments
     ///
     /// - `root`: represents directory which is to be set
-    /// as the root of the filesystem.
+    ///   as the root of the filesystem.
     fn initialize(&mut self, root: &Arc<RamDirectory>) {
         assert!(!self.initialized());
         self.root = Some(root.clone());

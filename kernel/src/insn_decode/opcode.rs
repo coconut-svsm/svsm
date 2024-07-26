@@ -202,7 +202,7 @@ impl OpCodeDesc {
     /// # Arguments
     ///
     /// * `insn` - A mutable reference to the `OpCodeBytes` representing
-    /// the bytes of the opcode to be decoded.
+    ///   the bytes of the opcode to be decoded.
     ///
     /// # Returns
     ///

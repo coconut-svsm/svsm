@@ -383,8 +383,8 @@ impl DecodedInsnCtx {
     ///
     /// * `bytes` - The raw bytes of the instruction to be decoded.
     /// * `mctx` - A reference to an object implementing the
-    /// `InsnMachineCtx` trait to provide the necessary machine context
-    /// for decoding.
+    ///   `InsnMachineCtx` trait to provide the necessary machine context
+    ///   for decoding.
     ///
     ///  # Returns
     ///

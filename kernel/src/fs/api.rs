@@ -98,7 +98,7 @@ pub trait File: Debug + Send + Sync {
     ///  # Arguments
     ///
     ///  - `size`: specifies the size in bytes to which the file
-    ///  is to be truncated.
+    ///    is to be truncated.
     ///
     ///  # Returns
     ///
