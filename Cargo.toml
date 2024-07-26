@@ -50,12 +50,12 @@ zerocopy = { version = "0.7.32", features = ["derive"] }
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 
 [workspace.lints.rust]
-future_incompatible = "deny"
-nonstandard_style = "deny"
-rust_2018_idioms = "deny"
-missing_debug_implementations = "deny"
-single_use_lifetimes = "warn"
-trivial-numeric-casts = "deny"
+future_incompatible = { level = "deny", priority = 127 }
+nonstandard_style = { level = "deny", priority = 126 }
+rust_2018_idioms = { level = "deny", priority = 1 }
+missing_debug_implementations = { level = "deny", priority = 50 }
+single_use_lifetimes = { level = "warn", priority = 125 }
+trivial-numeric-casts = { level = "deny", priority = 10 }
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"
