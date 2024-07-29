@@ -4,14 +4,20 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::address::{Address, VirtAddr};
-use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::control_regs::{read_cr0, read_cr3, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::gdt;
-use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
-use crate::insn_decode::{InsnMachineCtx, Register, SegRegister};
+use crate::cpu::registers::{RFlags, X86GeneralRegs, X86InterruptFrame};
+use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
+use crate::mm::address_space::phys_to_virt;
+use crate::mm::pagetable::{PTWalkAttr, PageTable, PageTableRef};
+use crate::mm::{MemMappingGuard, PerCPUPageMappingGuard};
 use crate::types::SVSM_CS;
+use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::mem;
 use core::ptr::addr_of;
@@ -134,6 +140,40 @@ impl InsnMachineCtx for X86ExceptionContext {
 
     fn read_cpl(&self) -> usize {
         self.frame.cs & 3
+    }
+
+    fn map_linear_addr<T: Copy + Default + 'static>(
+        &self,
+        la: usize,
+        write: bool,
+        fetch: bool,
+    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+        let vaddr = VirtAddr::from(la);
+        let pages =
+            PageTableRef::shared(phys_to_virt(read_cr3().page_align()).as_mut_ptr::<PageTable>())
+                .translate_addr_region(
+                    vaddr,
+                    core::mem::size_of::<T>(),
+                    write,
+                    fetch,
+                    PTWalkAttr::new(
+                        read_cr0(),
+                        read_cr4(),
+                        read_efer(),
+                        RFlags::from_bits_truncate(self.frame.flags),
+                        user_mode(self),
+                    ),
+                )
+                .map_err(|(addr, e)| InsnError::ExceptionPF(addr.into(), e.bits()))?;
+
+        let mapping: MemMappingGuard<T> = MemMappingGuard::new(
+            PerCPUPageMappingGuard::create_4k_pages(pages.as_slice())
+                .map_err(|_| InsnError::MapLinearAddr)?,
+            vaddr.page_offset(),
+        )
+        .map_err(|_| InsnError::MapLinearAddr)?;
+
+        Ok(Box::new(mapping))
     }
 }
 
