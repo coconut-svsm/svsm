@@ -42,12 +42,16 @@ pub enum InsnError {
     MapLinearAddr,
     /// Error while reading from memory.
     MemRead,
+    /// Error while writing to memory.
+    MemWrite,
     /// No OpCodeDesc generated while decoding.
     NoOpCodeDesc,
     /// Error while peeking an instruction byte.
     InsnPeek,
     /// Invalid RegCode for decoding Register.
     InvalidRegister,
+    /// Error while handling input IO operation.
+    IoIoIn,
     /// Error while handling output IO operation.
     IoIoOut,
     /// The decoded instruction is not supported.

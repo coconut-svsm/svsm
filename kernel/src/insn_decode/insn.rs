@@ -67,6 +67,7 @@ impl Operand {
 pub enum DecodedInsn {
     Cpuid,
     In(Operand, Bytes),
+    Ins,
     Out(Operand, Bytes),
     Outs,
     Wrmsr,
