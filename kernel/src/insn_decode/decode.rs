@@ -204,6 +204,21 @@ pub trait InsnMachineCtx: core::fmt::Debug {
         unimplemented!("Checking IO permission bitmap is not implemented");
     }
 
+    /// Handle an I/O in operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - The I/O port to read from.
+    /// * `size` - The size of the data to read.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the read data if success or an `InsnError` if
+    /// the operation fails.
+    fn ioio_in(&self, _port: u16, _size: Bytes) -> Result<u64, InsnError> {
+        Err(InsnError::IoIoIn)
+    }
+
     /// Handle an I/O out operation.
     ///
     /// # Arguments
@@ -232,6 +247,19 @@ pub trait InsnMachineMem {
     /// operation fails.
     fn mem_read(&self) -> Result<Self::Item, InsnError> {
         Err(InsnError::MemRead)
+    }
+
+    /// Write data to the memory at the specified offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The reference of the data to write to the memory.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok`on success, or an `InsnError` if the write operation fails.
+    fn mem_write(&mut self, _data: &Self::Item) -> Result<(), InsnError> {
+        Err(InsnError::MemWrite)
     }
 }
 
@@ -592,6 +620,7 @@ impl DecodedInsnCtx {
         self.insn
             .ok_or(InsnError::UnSupportedInsn)
             .and_then(|insn| match insn {
+                DecodedInsn::Ins => self.emulate_ins_outs(mctx, true),
                 DecodedInsn::Outs => self.emulate_ins_outs(mctx, false),
                 _ => Err(InsnError::UnSupportedInsn),
             })
@@ -978,7 +1007,7 @@ impl DecodedInsnCtx {
                     DecodedInsn::Out(Operand::rdx(), self.opsize)
                 }
             }
-            OpCodeClass::Outs => {
+            OpCodeClass::Ins | OpCodeClass::Outs => {
                 if self.prefix.contains(PrefixFlags::REPZ_P) {
                     // The prefix REPZ(F3h) actually represents REP for ins/outs.
                     // The count register is depending on the address size of the
@@ -986,7 +1015,11 @@ impl DecodedInsnCtx {
                     self.repeat = read_reg(mctx, Register::Rcx, self.addrsize);
                 };
 
-                DecodedInsn::Outs
+                if opdesc.class == OpCodeClass::Ins {
+                    DecodedInsn::Ins
+                } else {
+                    DecodedInsn::Outs
+                }
             }
             OpCodeClass::Rdmsr => DecodedInsn::Rdmsr,
             OpCodeClass::Rdtsc => DecodedInsn::Rdtsc,
@@ -1139,7 +1172,10 @@ impl DecodedInsnCtx {
         }
 
         let (seg, reg) = if io_read {
-            todo!();
+            // Input byte from I/O port specified in DX into
+            // memory location specified with ES:(E)DI or
+            // RDI.
+            (SegRegister::ES, Register::Rdi)
         } else {
             // Output byte/word/doubleword from memory location specified in
             // DS:(E)SI (The DS segment may be overridden with a segment
@@ -1156,7 +1192,20 @@ impl DecodedInsnCtx {
         let linear_addr =
             self.get_linear_addr(mctx, seg, read_reg(mctx, reg, self.addrsize), io_read)?;
         if io_read {
-            todo!();
+            // Read data from IO port and then write to the memory location.
+            let data = mctx.ioio_in(port, self.opsize)?;
+            match self.opsize {
+                Bytes::One => mctx
+                    .map_linear_addr::<u8>(linear_addr, io_read, false)?
+                    .mem_write(&(data as u8))?,
+                Bytes::Two => mctx
+                    .map_linear_addr::<u16>(linear_addr, io_read, false)?
+                    .mem_write(&(data as u16))?,
+                Bytes::Four => mctx
+                    .map_linear_addr::<u32>(linear_addr, io_read, false)?
+                    .mem_write(&(data as u32))?,
+                _ => return Err(InsnError::IoIoIn),
+            };
         } else {
             // Read data from memory location and then write to the IO port
             let data = match self.opsize {
