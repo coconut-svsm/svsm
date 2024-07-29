@@ -6,6 +6,13 @@
 
 key_pair monitor_keys;
 
+unsigned long get_cycles() 
+{
+    unsigned int lo,hi;
+    __asm__ __volatile__ ("rdtsc" : "=a" (lo), "=d" (hi));
+    return ((unsigned long)hi << 32) | lo;
+}
+
 key_pair* get_keys()
 {
 	return &monitor_keys;
@@ -14,10 +21,6 @@ key_pair* get_keys()
 key_pair* gen_keys() 
 {
 	// Generate private key
-	// FIXME: Hardcode for now, generate later
-//	int private_key[32] = {0x69, 0xC8, 0xAA, 0x3E, 0x1E, 0x2D, 0x40, 0xF4, 0x1D, 0xE9, 0x30, 0xB8, 0x39, 0x34, 
-//			0x4B, 0xDE, 0x1A, 0xC9, 0xFA, 0xA6, 0x00, 0xC7, 0xE7, 0x76, 0x17, 0xA2, 0xD4, 0xC0, 0x48, 0xEF, 0xFB, 0xD1};
-
 	for(int i = 0; i < 32; i += 4)
 	{
 		__builtin_ia32_rdrand64_step((unsigned long long*)(monitor_keys.private_key + i));
@@ -57,7 +60,7 @@ uint32_t decrypt(
 	return Hacl_NaCl_crypto_box_open_easy(dst, src, len, nonce, pub_key_sender, priv_key_recipient);
 }
 
-void my_SHA512(char* buff, const unsigned int buff_len, char* hash)
+void my_SHA512(uint8_t* buff, const unsigned int buff_len, uint8_t* hash)
 {
 	Hacl_Hash_SHA3_sha3_512(hash, buff, buff_len);
 }

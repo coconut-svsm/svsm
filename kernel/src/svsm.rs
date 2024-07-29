@@ -57,22 +57,12 @@ use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
-//use svsm::my_rsa_wrapper::gen_RSA_keys;
-//use svsm::my_rsa_wrapper::get_RSA_size;
-//use svsm::my_rsa_wrapper::RSA_encrypt;
-//use svsm::my_rsa_wrapper::RSA_decrypt;
-//use svsm::my_rsa_wrapper::get_RSA_public_key;
-//use svsm::my_rsa_wrapper::RSA_key;
-//use svsm::my_rsa_wrapper::my_SHA256;
-//use svsm::my_rsa_wrapper::my_SHA512;
-
 use svsm::my_crypto_wrapper::key_pair;
 use svsm::my_crypto_wrapper::gen_keys;
 use svsm::my_crypto_wrapper::encrypt;
 use svsm::my_crypto_wrapper::decrypt;
 use svsm::my_crypto_wrapper::my_SHA512;
 use svsm::my_crypto_wrapper::get_key_size;
-//use svsm::my_crypto_wrapper::ENCRYPTION_KEYS;
 
 extern crate alloc;
 use alloc::vec::Vec;
@@ -296,61 +286,10 @@ fn init_cpuid_table(addr: VirtAddr) {
     register_cpuid_table(&CPUID_PAGE);
 }
 
-//static keys: ImmutAfterInitCell<key_pair> = ImmutAfterInitCell::new(Default::default());
 #[allow(non_snake_case)]
 fn generate_key_pair() {
-    //let mut n = unsafe{gen_RSA_keys(2048)};
-    //log::info!("Got {} from C", n);
-    //let mut keys: key_pair = Default::default();
-    //let mut ENCRYPTION_KEYS: key_pair = key_pair::new();
-    let mut ENCRYPTION_KEYS: key_pair = unsafe{*gen_keys()};
-    unsafe{log::info!("Hacl basic test, private key {:?}, public key {:?}", ENCRYPTION_KEYS.private_key, ENCRYPTION_KEYS.public_key)};
-
-    let key_size: u32 = unsafe{get_key_size()};
-    log::info!("Key size: {}", key_size);
-    let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
-    let mut to: [u8; 26] = [0; 26];
-    let mut decrypted: [u8; 10] = [0; 10];
-    let mut nonce: [u8; 24] = [0; 24];
-
-    log::info!("From: {:?}", from);
-    log::info!("To: {:?}", to);
-    log::info!("Encrypting...");
-    // FIXME: For now sender and receier have the same key
-    let mut n = unsafe{encrypt(to.as_mut_ptr(), from.as_mut_ptr(), 10, nonce.as_mut_ptr(), ENCRYPTION_KEYS.public_key.as_mut_ptr(), ENCRYPTION_KEYS.private_key.as_mut_ptr())};
-    log::info!("To: {:?}", to);
-    log::info!("Ecrypted stuff: {}", n);
-    n = unsafe{decrypt(decrypted.as_mut_ptr(), to.as_mut_ptr(), 26, nonce.as_mut_ptr(), ENCRYPTION_KEYS.public_key.as_mut_ptr(), ENCRYPTION_KEYS.private_key.as_mut_ptr())};
-    log::info!("Decrypted: {:?}", decrypted);
-    log::info!("Testing");
-    //n = unsafe{RSA_decrypt(256, to.as_mut_ptr(), decrypted.as_mut_ptr())};
-    //log::info!("Decrypted: {:?}", decrypted);
-
-    //let pub_key: *mut RSA_key = unsafe{get_RSA_public_key()};
-    //log::info!("Size from struct: {:?}", unsafe{(*pub_key).size});
-
-    //let mut raw_key: Vec<u8> = Vec::new();
-    //let mut i: usize = 0;
-    //while i < unsafe{(*pub_key).size.try_into().unwrap()} {
-    //    raw_key.push( unsafe{  *((*pub_key).key.offset(i.try_into().unwrap()))  });
-    //    i = i + 1;
-    //}
-
-  //  let mut hash: [u8; 64] = [0; 64];
-  //  let mut from: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'!'];
-   // let mut from2: [u8; 10] = [b'G', b'u', b't', b'e', b'n', b' ', b'T', b'a', b'g', b'.'];
-
-   // n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
-   // log::info!("SHA returned: {} and a hash of {:?}", n, hash);
-    
-  //  n = unsafe{my_SHA512(from2.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
-   // log::info!("SHA returned: {} and a hash of {:?}", n, hash);
-
- //   n = unsafe{my_SHA512(from.as_mut_ptr(), 10, hash.as_mut_ptr()).try_into().unwrap()};
-//    log::info!("SHA returned: {} and a hash of {:?}", n, hash);
-    //log::info!("Raw pub size: {} and key bytes: {:?}", raw_key.len(), raw_key);
-
-    //panic!();
+    let mut encryption_keys: key_pair = unsafe{*gen_keys()};
+    unsafe{log::info!("Monitor generated keys: private key {:?}, public key {:?}", encryption_keys.private_key, encryption_keys.public_key)};
 }
 
 #[no_mangle]

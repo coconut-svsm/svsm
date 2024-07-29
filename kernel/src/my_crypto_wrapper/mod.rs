@@ -16,8 +16,6 @@ impl key_pair {
     }
 }
 
-//pub static mut ENCRYPTION_KEYS: key_pair = key_pair::new();
-
 extern "C" {
     pub fn gen_keys() -> *mut key_pair;
     pub fn get_key_size() -> u32;
@@ -42,5 +40,6 @@ extern "C" {
         ) -> u32;
 
     pub fn my_SHA512(buff: *mut u8, buff_len: u32, hash: *mut u8) -> i32;
+    pub fn get_cycles() -> u64;
 
 }

@@ -10,6 +10,7 @@ typedef struct _key_pair
 	uint8_t private_key[32];
 } key_pair;
 
+unsigned long get_cycles();
 key_pair* get_keys();
 key_pair* gen_keys();
 unsigned int get_key_size();
@@ -29,7 +30,7 @@ uint32_t encrypt
 (
   uint8_t* dst,
   uint8_t* src,
-  uint32_t len,
+  uint32_t src_len,
   uint8_t* nonce,
   uint8_t* pub_key_recipient,
   uint8_t* priv_key_sender
@@ -48,7 +49,7 @@ Verify and decrypt a ciphertext produced by `crypto_box_easy`.
 uint32_t decrypt(
   uint8_t* dst,
   uint8_t* src,
-  uint32_t len,
+  uint32_t src_len,
   uint8_t* nonce,
   uint8_t* pub_key_sender,
   uint8_t* priv_key_recipient
