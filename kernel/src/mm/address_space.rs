@@ -7,48 +7,97 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
-struct KernelMapping {
+pub struct FixedAddressMappingRange {
     virt_start: VirtAddr,
     virt_end: VirtAddr,
     phys_start: PhysAddr,
 }
 
-static KERNEL_MAPPING: ImmutAfterInitCell<KernelMapping> = ImmutAfterInitCell::uninit();
+impl FixedAddressMappingRange {
+    pub fn new(virt_start: VirtAddr, virt_end: VirtAddr, phys_start: PhysAddr) -> Self {
+        Self {
+            virt_start,
+            virt_end,
+            phys_start,
+        }
+    }
+}
 
-pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAddr) {
-    let km = KernelMapping {
-        virt_start: vstart,
-        virt_end: vend,
-        phys_start: pstart,
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(not(target_os = "none"), allow(dead_code))]
+pub struct FixedAddressMapping {
+    kernel_mapping: FixedAddressMappingRange,
+    heap_mapping: Option<FixedAddressMappingRange>,
+}
+
+static FIXED_MAPPING: ImmutAfterInitCell<FixedAddressMapping> = ImmutAfterInitCell::uninit();
+
+pub fn init_kernel_mapping_info(
+    kernel_mapping: FixedAddressMappingRange,
+    heap_mapping: Option<FixedAddressMappingRange>,
+) {
+    let mapping = FixedAddressMapping {
+        kernel_mapping,
+        heap_mapping,
     };
-    KERNEL_MAPPING
-        .init(&km)
-        .expect("Already initialized kernel mapping info");
+    FIXED_MAPPING
+        .init(&mapping)
+        .expect("Already initialized fixed mapping info");
+}
+
+#[cfg(target_os = "none")]
+fn virt_to_phys_mapping(vaddr: VirtAddr, mapping: &FixedAddressMappingRange) -> Option<PhysAddr> {
+    if (vaddr < mapping.virt_start) || (vaddr >= mapping.virt_end) {
+        None
+    } else {
+        let offset: usize = vaddr - mapping.virt_start;
+        Some(mapping.phys_start + offset)
+    }
 }
 
 #[cfg(target_os = "none")]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    if vaddr < KERNEL_MAPPING.virt_start || vaddr >= KERNEL_MAPPING.virt_end {
-        panic!("Invalid physical address {:#018x}", vaddr);
+    if let Some(addr) = virt_to_phys_mapping(vaddr, &FIXED_MAPPING.kernel_mapping) {
+        return addr;
+    }
+    if let Some(ref mapping) = &FIXED_MAPPING.heap_mapping {
+        if let Some(addr) = virt_to_phys_mapping(vaddr, mapping) {
+            return addr;
+        }
     }
 
-    let offset: usize = vaddr - KERNEL_MAPPING.virt_start;
+    panic!("Invalid physical address {:#018x}", vaddr);
+}
 
-    KERNEL_MAPPING.phys_start + offset
+#[cfg(target_os = "none")]
+fn phys_to_virt_mapping(paddr: PhysAddr, mapping: &FixedAddressMappingRange) -> Option<VirtAddr> {
+    if paddr < mapping.phys_start {
+        None
+    } else {
+        let size: usize = mapping.virt_end - mapping.virt_start;
+        if paddr >= mapping.phys_start + size {
+            None
+        } else {
+            let offset: usize = paddr - mapping.phys_start;
+            Some(mapping.virt_start + offset)
+        }
+    }
 }
 
 #[cfg(target_os = "none")]
 pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
-    let size: usize = KERNEL_MAPPING.virt_end - KERNEL_MAPPING.virt_start;
-    if paddr < KERNEL_MAPPING.phys_start || paddr >= KERNEL_MAPPING.phys_start + size {
-        panic!("Invalid physical address {:#018x}", paddr);
+    if let Some(addr) = phys_to_virt_mapping(paddr, &FIXED_MAPPING.kernel_mapping) {
+        return addr;
+    }
+    if let Some(ref mapping) = &FIXED_MAPPING.heap_mapping {
+        if let Some(addr) = phys_to_virt_mapping(paddr, mapping) {
+            return addr;
+        }
     }
 
-    let offset: usize = paddr - KERNEL_MAPPING.phys_start;
-
-    KERNEL_MAPPING.virt_start + offset
+    panic!("Invalid physical address {:#018x}", paddr);
 }
 
 #[cfg(not(target_os = "none"))]
@@ -169,7 +218,8 @@ mod tests {
     use super::*;
     use crate::locking::SpinLock;
 
-    static KERNEL_MAPPING_TEST: ImmutAfterInitCell<KernelMapping> = ImmutAfterInitCell::uninit();
+    static KERNEL_MAPPING_TEST: ImmutAfterInitCell<FixedAddressMapping> =
+        ImmutAfterInitCell::uninit();
     static INITIALIZED: SpinLock<bool> = SpinLock::new(false);
 
     #[test]
@@ -179,13 +229,16 @@ mod tests {
         if *initialized {
             return;
         }
-        KERNEL_MAPPING_TEST
-            .init(&KernelMapping {
-                virt_start: VirtAddr::new(0x1000),
-                virt_end: VirtAddr::new(0x2000),
-                phys_start: PhysAddr::new(0x3000),
-            })
-            .unwrap();
+        let kernel_mapping = FixedAddressMappingRange::new(
+            VirtAddr::new(0x1000),
+            VirtAddr::new(0x2000),
+            PhysAddr::new(0x3000),
+        );
+        let mapping = FixedAddressMapping {
+            kernel_mapping,
+            heap_mapping: None,
+        };
+        KERNEL_MAPPING_TEST.init(&mapping).unwrap();
         *initialized = true;
     }
 
@@ -196,9 +249,9 @@ mod tests {
 
         let km = &KERNEL_MAPPING_TEST;
 
-        assert_eq!(km.virt_start, VirtAddr::new(0x1000));
-        assert_eq!(km.virt_end, VirtAddr::new(0x2000));
-        assert_eq!(km.phys_start, PhysAddr::new(0x3000));
+        assert_eq!(km.kernel_mapping.virt_start, VirtAddr::new(0x1000));
+        assert_eq!(km.kernel_mapping.virt_end, VirtAddr::new(0x2000));
+        assert_eq!(km.kernel_mapping.phys_start, PhysAddr::new(0x3000));
     }
 
     #[test]
