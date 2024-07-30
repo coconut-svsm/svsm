@@ -419,14 +419,6 @@ impl IgvmBuilder {
             IgvmPageDataType::NORMAL,
         )?;
 
-        // Populate the empty region above the stage 2 binary.
-        self.add_empty_pages(
-            self.gpa_map.stage2_free.get_start(),
-            self.gpa_map.stage2_free.get_size(),
-            COMPATIBILITY_MASK.get(),
-            IgvmPageDataType::NORMAL,
-        )?;
-
         // Populate the stage 2 binary.
         self.add_data_pages_from_file(
             &self.options.stage2.clone(),

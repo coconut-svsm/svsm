@@ -55,7 +55,6 @@ pub struct GpaMap {
     pub stage1_image: GpaRange,
     pub stage2_stack: GpaRange,
     pub stage2_image: GpaRange,
-    pub stage2_free: GpaRange,
     pub secrets_page: GpaRange,
     pub cpuid_page: GpaRange,
     pub kernel_elf: GpaRange,
@@ -108,9 +107,9 @@ impl GpaMap {
 
         let stage2_image = GpaRange::new(0x808000, stage2_len as u64)?;
 
-        // The kernel image is loaded beyond the end of the stage2 heap,
-        // at 0x8A0000.
-        let kernel_address = 0x8A0000;
+        // The kernel image is loaded beyond the end of the stage2 image,
+        // rounded up to a 4 KB boundary.
+        let kernel_address = stage2_image.get_end().next_multiple_of(0x1000);
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
         let kernel_fs = GpaRange::new(kernel_elf.get_end(), kernel_fs_len as u64)?;
 
@@ -153,7 +152,6 @@ impl GpaMap {
             stage1_image,
             stage2_stack: GpaRange::new_page(0x805000)?,
             stage2_image,
-            stage2_free: GpaRange::new(stage2_image.get_end(), 0x8a0000 - &stage2_image.get_end())?,
             secrets_page: GpaRange::new_page(0x806000)?,
             cpuid_page: GpaRange::new_page(0x807000)?,
             kernel_elf,

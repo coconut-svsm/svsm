@@ -134,9 +134,9 @@ pub fn invalidate_early_boot_memory(
         invalidate_boot_memory_region(platform, config, lowmem_region)?;
     }
 
-    let stage2_base = usize::try_from(launch_info.stage2_start).unwrap();
-    let stage2_len = usize::try_from(launch_info.stage2_end).unwrap() - stage2_base;
-    let stage2_region = MemoryRegion::new(PhysAddr::new(stage2_base), stage2_len);
+    let stage2_base = PhysAddr::from(launch_info.stage2_start);
+    let stage2_end = PhysAddr::from(launch_info.stage2_end);
+    let stage2_region = MemoryRegion::from_addresses(stage2_base, stage2_end);
     invalidate_boot_memory_region(platform, config, stage2_region)?;
 
     if config.invalidate_boot_data() {

@@ -50,6 +50,7 @@ startup_32:
 	/* Write startup information to stage2 stack */
 	xorl	%eax, %eax
 	pushl	%eax
+	pushl	%eax
 
 	leal	kernel_fs_bin_end(%ebp), %edi
 	pushl	%edi
@@ -62,6 +63,9 @@ startup_32:
 
 	leal	kernel_elf(%ebp), %edi
 	pushl	%edi
+
+	/* The stage2 area ends at 0x8A0000. */
+	pushl	$0x8A0000
 
 	/* Push the location of the secrets page.  It is at 8 MB plus 56 KB */
 	pushl	$0x806000

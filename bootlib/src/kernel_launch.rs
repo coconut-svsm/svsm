@@ -61,9 +61,11 @@ pub struct Stage2LaunchInfo {
     // secrets_page must be the fourth field.
     pub secrets_page: u32,
 
+    pub stage2_end: u32,
     pub kernel_elf_start: u32,
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
     pub igvm_params: u32,
+    pub _reserved: u32,
 }

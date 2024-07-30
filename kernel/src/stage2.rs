@@ -13,7 +13,7 @@ use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
-use core::ptr::{addr_of, addr_of_mut};
+use core::ptr::addr_of_mut;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
@@ -28,7 +28,6 @@ use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::pagetable::{
     get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
     PageTableRef,
@@ -36,19 +35,17 @@ use svsm::mm::pagetable::{
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{halt, is_aligned, MemoryRegion};
 
-const HEAP_AREA_END: u64 = 0x8A0000;
-
 extern "C" {
-    pub static heap_start: u8;
     pub static mut pgtable: PageTable;
 }
 
-fn setup_stage2_allocator(heap_end: u64) {
-    let vstart = unsafe { VirtAddr::from(addr_of!(heap_start)).page_align_up() };
+fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
+    let vstart = VirtAddr::from(heap_start);
     let vend = VirtAddr::from(heap_end);
     let pstart = PhysAddr::from(vstart.bits()); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
@@ -92,11 +89,16 @@ fn setup_env(
         .validate_page_range(region)
         .expect("failed to validate low 640 KB");
 
-    init_kernel_mapping_info(
+    // Supply the heap bounds as the kernel range, since the only virtual-to
+    // physical translations required will be on heap memory.
+    let kernel_mapping = FixedAddressMappingRange::new(
         VirtAddr::from(0x808000u64),
-        VirtAddr::from(HEAP_AREA_END),
+        VirtAddr::from(launch_info.stage2_end as u64),
         PhysAddr::from(0x808000u64),
     );
+    let heap_mapping =
+        FixedAddressMappingRange::new(region.start(), region.end(), PhysAddr::from(0u64));
+    init_kernel_mapping_info(kernel_mapping, Some(heap_mapping));
 
     let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
 
@@ -105,8 +107,9 @@ fn setup_env(
 
     set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
 
-    // The end of the heap is the base of the kernel image.
-    setup_stage2_allocator(HEAP_AREA_END);
+    // Configure the heap to exist from 64 KB to 640 KB.
+    setup_stage2_allocator(0x10000, 0xA0000);
+
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
@@ -403,7 +406,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
-        stage2_end: HEAP_AREA_END,
+        stage2_end: launch_info.stage2_end as u64,
         cpuid_page: launch_info.cpuid_page as u64,
         secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
