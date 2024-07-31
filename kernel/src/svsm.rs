@@ -277,11 +277,12 @@ fn init_cpuid_table(addr: VirtAddr) {
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
-    let vb_ptr = VirtAddr::new(vb_addr).as_mut_ptr::<u64>();
+    let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
 
     mapping_info_init(&launch_info);
 
-    init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr);
+    // SAFETY: we trust the previous stage to pass a valid pointer
+    unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
     gdt().load();
     early_idt_init();
