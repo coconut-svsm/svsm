@@ -19,10 +19,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install latest stable
+      - name: Install specified rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: stable
+            toolchain: '1.80.0'
             target: x86_64-unknown-none
             profile: minimal
             override: true
