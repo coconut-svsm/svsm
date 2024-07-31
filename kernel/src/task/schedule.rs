@@ -388,6 +388,9 @@ global_asm!(
         movq    %rsp, (%rsi)
 
     1:
+        // Disable interrupt
+        cli
+
         // Switch to the new task state
         mov     %rdx, %cr3
 
