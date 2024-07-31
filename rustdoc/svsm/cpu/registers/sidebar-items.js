@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["SegDescAttrFlags","X86GeneralRegs","X86InterruptFrame","X86SegmentRegs"]};

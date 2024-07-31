@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["current_hv_doorbell","process_hv_events"],"struct":["HVDoorbell","HVDoorbellFlags","HVDoorbellPage","HVExtIntInfo","HVExtIntStatus"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ImmutAfterInitError"],"fn":["immut_after_init_set_multithreaded"],"static":["MULTI_THREADED"],"struct":["ImmutAfterInitCell","ImmutAfterInitRef"],"type":["ImmutAfterInitResult"]};

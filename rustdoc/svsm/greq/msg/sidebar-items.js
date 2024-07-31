@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HDR_VERSION","MSG_HDR_SIZE","MSG_PAYLOAD_SIZE","MSG_VERSION","SNP_GUEST_REQ_MAX_DATA_SIZE"],"enum":["SnpGuestRequestAead","SnpGuestRequestMsgType"],"fn":["build_iv","set_encrypted_region_4k","set_shared_region_4k"],"struct":["SnpGuestRequestExtData","SnpGuestRequestMsg","SnpGuestRequestMsgHdr"]};

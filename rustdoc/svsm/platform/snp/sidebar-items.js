@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["APIC_EMULATION_REG_COUNT","CONSOLE_IO","CONSOLE_SERIAL"],"struct":["SnpPlatform"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INVLPGB_VALID_ASID","INVLPGB_VALID_GLOBAL","INVLPGB_VALID_VA"],"fn":["do_invlpgb","do_tlbsync","flush_address","flush_address_percpu","flush_address_sync","flush_tlb","flush_tlb_global","flush_tlb_global_percpu","flush_tlb_global_sync","flush_tlb_sync"]};
