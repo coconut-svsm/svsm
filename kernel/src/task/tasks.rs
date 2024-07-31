@@ -21,10 +21,11 @@ use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, XSaveArea, VMR};
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, SVSM_PERTASK_XSAVE_AREA_BASE,
+    USER_MEM_END, USER_MEM_START,
 };
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::MemoryRegion;
@@ -112,9 +113,14 @@ impl TaskSchedState {
     }
 }
 
+// Layout of this struct is important. Offset of the members
+// have to be kept the same. Add members to the end if necessary.
 #[repr(C)]
 pub struct Task {
     pub rsp: u64,
+
+    /// XSave area address for the task
+    pub xsa_addr: u64,
 
     pub stack_bounds: MemoryRegion<VirtAddr>,
 
@@ -179,6 +185,9 @@ impl Task {
         let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
+        let xsa = Self::allocate_xsave_area()?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
+
         vm_kernel_range.populate(&mut pgtable);
 
         // Remap at the per-task offset
@@ -193,6 +202,7 @@ impl Task {
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
+            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -219,6 +229,9 @@ impl Task {
         let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
+        let xsa = Self::allocate_xsave_area()?;
+        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
+
         vm_kernel_range.populate(&mut pgtable);
 
         let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
@@ -236,6 +249,7 @@ impl Task {
                 .checked_sub(stack_offset)
                 .expect("Invalid stack offset from task::allocate_utask_stack()")
                 .bits() as u64,
+            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -395,6 +409,12 @@ impl Task {
         Ok((mapping, bounds, stack_offset))
     }
 
+    fn allocate_xsave_area() -> Result<Arc<Mapping>, SvsmError> {
+        let xsa = XSaveArea::new()?;
+        let mapping = Arc::new(Mapping::new(xsa));
+        Ok(mapping)
+    }
+
     pub fn mmap_common(
         vmr: &VMR,
         addr: VirtAddr,
@@ -481,4 +501,121 @@ extern "C" fn task_exit() {
         current_task_terminated();
     }
     schedule();
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::task::create_kernel_task;
+    use core::arch::asm;
+    use core::arch::global_asm;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_media_and_x87_instructions() {
+        let ret: u64;
+        unsafe {
+            asm!("call test_fpu", out("rax") ret, options(att_syntax));
+        }
+
+        assert_eq!(ret, 0);
+    }
+
+    global_asm!(
+        r#"
+    .text
+    test_fpu:
+        movq $1023, %rax
+        shl $52, %rax
+        // rax contains 1 in Double Precison FP representation
+        movd %rax, %xmm1
+        movapd %xmm1, %xmm3
+
+        movq $1024, %rax
+        shl $52, %rax
+        // rax contains 2 in Double Precison FP representation
+        movd %rax, %xmm2
+
+        divsd %xmm2, %xmm3
+        movq $0, %rax
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    global_asm!(
+        r#"
+    .text
+    check_fpu:
+        movq $1, %rax
+        movq $1023, %rbx
+        shl $52, %rbx
+        // rbx contains 1 in Double Precison FP representation
+        movd %rbx, %xmm4
+        movapd %xmm4, %xmm6
+        comiss %xmm4, %xmm1
+        jnz 1f
+
+        movq $1024, %rbx
+        shl $52, %rbx
+        // rbx contains 2 in Double Precison FP representation
+        movd %rbx, %xmm5
+        comiss %xmm5, %xmm2
+        jnz 1f
+
+        divsd %xmm5, %xmm6
+        comiss %xmm6, %xmm3
+        jnz 1f
+        movq $0, %rax
+    1:
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    global_asm!(
+        r#"
+    .text
+    alter_fpu:
+        movq $1025, %rax
+        shl $52, %rax
+        // rax contains 3 in Double Precison FP representation
+        movd %rax, %xmm1
+        movapd %xmm1, %xmm3
+
+        movq $1026, %rax
+        shl $52, %rax
+        // rax contains 4 in Double Precison FP representation
+        movd %rax, %xmm2
+        divsd %xmm3, %xmm2
+        movq $0, %rax
+        ret
+        "#,
+        options(att_syntax)
+    );
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_fpu_context_switch() {
+        create_kernel_task(task1).expect("Failed to launch request processing task");
+    }
+
+    extern "C" fn task1() {
+        let ret: u64;
+        unsafe {
+            asm!("call test_fpu", options(att_syntax));
+        }
+
+        create_kernel_task(task2).expect("Failed to launch request processing task");
+
+        unsafe {
+            asm!("call check_fpu", out("rax") ret, options(att_syntax));
+        }
+        assert_eq!(ret, 0);
+    }
+
+    extern "C" fn task2() {
+        unsafe {
+            asm!("call alter_fpu", options(att_syntax));
+        }
+    }
 }
