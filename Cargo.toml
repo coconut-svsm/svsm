@@ -22,7 +22,7 @@ members = [
 bootlib = { path = "bootlib" }
 cpuarch = { path = "cpuarch" }
 test = { path = "test" }
-svsm = { path = "kernel" }
+svsm = { path = "kernel", default-features = false }
 elf = { path = "elf" }
 libmstpm = { path = "libmstpm" }
 syscall = { path = "syscall" }
