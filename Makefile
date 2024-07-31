@@ -159,6 +159,9 @@ bin/svsm.bin: bin/stage1
 bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
 
+bin/svsm-test.bin: bin/stage1-test
+	objcopy -O binary $< $@
+
 clippy:
 	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
 	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
