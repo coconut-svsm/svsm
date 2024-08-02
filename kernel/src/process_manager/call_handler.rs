@@ -14,16 +14,17 @@ const DELETE_TRUSTLET: u32 = 7;
 
 const GET_PUBLIC_KEY: u32 = 30;
 const SEND_POLICY: u32 = 31;
+const EXEC_ELF: u32 = 32;
 
 pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     attestation::monitor::attest_monitor(params)
 }
 pub fn monitor_init(_params: &mut RequestParams) -> Result<(), SvsmReqError>{
 
-    log::info!("Initilization Monitor");
+    //log::info!("Initilization Monitor");
     super::process::PROCESS_STORE.init(10);
     crate::sp_pagetable::set_ecryption_mask_address_size();
-    log::info!("Initilization Done");
+    //log::info!("Initilization Done");
     Ok(())
 }
 
@@ -51,6 +52,10 @@ pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     attestation::monitor::send_policy(params)
 }
 
+pub fn exec_elf(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    attestation::monitor::exec_elf(params)
+}
+
 pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         MONITOR_INIT => monitor_init(params),
@@ -61,6 +66,7 @@ pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<
         DELETE_TRUSTLET => delete_trustlet(params),
         GET_PUBLIC_KEY => get_public_key(params),
         SEND_POLICY => send_policy(params),
+        EXEC_ELF => exec_elf(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }

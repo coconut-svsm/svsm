@@ -3,7 +3,7 @@ use crate::greq::pld_report::SnpReportResponse;
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::mm::PerCPUPageMappingGuard;
-
+use core::slice;
 extern crate alloc;
 use alloc::vec::Vec;
 
@@ -83,6 +83,46 @@ pub fn get_public_key(params: &mut RequestParams) -> Result<(), SvsmReqError> {
   Ok(())  
 }
 
+pub fn exec_elf(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    //TODO: Get the PA of the 2 pages, copy contents 2 contiguous array.
+    // Use the ELF read functions on the array and inspect the results
+    // See how to execute the ELF. Modify a register and read it from monitor to verify program
+    // execution
+    // Create a nicer API for transfering ELF files to monitor.
+    log::info!("Monitor received elf");
+    let page1_address = PhysAddr::from(params.r8);
+    let page1 = PerCPUPageMappingGuard::create_4k(page1_address).unwrap();
+    let page1_data = unsafe {page1.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
+
+    let page2_address = PhysAddr::from(params.rcx);
+    let page2 = PerCPUPageMappingGuard::create_4k(page2_address).unwrap();
+    let page2_data = unsafe {page2.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
+
+    let elf_size : u32 = params.rdx.try_into().unwrap();
+
+    log::info!("[Monitor] Elf size: {}", elf_size);
+
+    //copy elf in contiguous array
+    let mut elf_raw_data : [u8; 4096 * 2] = [0; 4096 * 2];
+
+    let mut i = 0;
+    while i < 4096 {
+        elf_raw_data[i] = page1_data[i];
+        elf_raw_data[i + 4096] = page2_data[i];
+        i = i + 1;
+    }
+
+    let elf_buf = unsafe { slice::from_raw_parts(elf_raw_data.as_ptr(), elf_size.try_into().unwrap()) };
+    let elf = match elf::Elf64File::read(elf_buf) {
+        Ok(elf) => elf,
+        Err(e) => panic!("error reading ELF: {}", e),
+    };
+
+    log::info!("Elf file: {:?}", elf);
+
+    Ok(())
+}
+
 // TODO: For now monitor just receives the policy here and decrypts it. Probablly want to do more with it!
 pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     log::info!("[Monitor] Receiveing policy");
@@ -102,9 +142,9 @@ pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let n: u32 = unsafe{decrypt(decrypted.as_mut_ptr(), encrypted_data.as_mut_ptr(), encrypted_data_size , nonce.as_mut_ptr(), sender_pub_key.as_mut_ptr(), (*get_keys()).private_key.as_mut_ptr())};
  //   let final_time = unsafe{get_cycles()};
     //log::info!("Total cycles for decryption: {}", final_time - initial_time);
-    log::info!("Sender pub key: {:?}", sender_pub_key);
+    //log::info!("Sender pub key: {:?}", sender_pub_key);
     //log::info!("Encrypted data: {:?}", encrypted_data);
-    log::info!("Decryption:{} Bytes: {:?}", n, decrypted);
+    //log::info!("Decryption:{} Bytes: {:?}", n, decrypted);
 
     Ok(())
 }
