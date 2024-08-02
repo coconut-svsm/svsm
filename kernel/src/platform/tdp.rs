@@ -22,6 +22,8 @@ use crate::utils::MemoryRegion;
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
+static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
+
 #[derive(Clone, Copy, Debug)]
 pub struct TdpPlatform {}
 
@@ -38,8 +40,8 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
-        Ok(())
+    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)
     }
 
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
@@ -50,6 +52,10 @@ impl SvsmPlatform for TdpPlatform {
         init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
     }
 
+    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }
@@ -58,15 +64,20 @@ impl SvsmPlatform for TdpPlatform {
         Err(SvsmError::Tdx)
     }
 
-    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let res = CpuidResult::get(0x80000008, 0);
+        let vtom = *VTOM;
         PageEncryptionMasks {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
             phys_addr_sizes: res.eax & 0xff,
         }
+    }
+
+    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+        Some(CpuidResult::get(eax, 0))
     }
 
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
@@ -109,4 +120,8 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn eoi(&self) {}
+
+    fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
+        todo!();
+    }
 }

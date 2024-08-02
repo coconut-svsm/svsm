@@ -6,6 +6,7 @@
 
 use super::features::cpu_has_pge;
 use crate::address::{Address, PhysAddr};
+use crate::platform::SvsmPlatform;
 use bitflags::bitflags;
 use core::arch::asm;
 
@@ -19,7 +20,7 @@ pub fn cr0_init() {
     write_cr0(cr0);
 }
 
-pub fn cr4_init() {
+pub fn cr4_init(platform: &dyn SvsmPlatform) {
     let mut cr4 = read_cr4();
 
     cr4.insert(CR4Flags::PSE); // Enable Page Size Extensions
@@ -27,7 +28,7 @@ pub fn cr4_init() {
     // All processors that are capable of virtualization will support global
     // page table entries, so there is no reason to support any processor that
     // does not enumerate PGE capability.
-    assert!(cpu_has_pge(), "CPU does not support PGE");
+    assert!(cpu_has_pge(platform), "CPU does not support PGE");
 
     cr4.insert(CR4Flags::PGE); // Enable Global Pages
     write_cr4(cr4);

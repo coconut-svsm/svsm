@@ -6,8 +6,8 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_console;
-use crate::cpu::cpuid::cpuid_table;
-use crate::cpu::percpu::{current_ghcb, PerCpu};
+use crate::cpu::cpuid::{cpuid_table, CpuidResult};
+use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::io::IOPort;
@@ -29,6 +29,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
+static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
+
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy, Debug)]
@@ -47,8 +49,9 @@ impl Default for SnpPlatform {
 }
 
 impl SvsmPlatform for SnpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
         Ok(())
     }
 
@@ -63,6 +66,10 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
+    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        this_cpu().configure_hv_doorbell()
+    }
+
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         // Setup GHCB
         cpu.setup_ghcb()
@@ -73,11 +80,12 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
-    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks {
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let processor_capacity =
             cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
         if vtom_enabled() {
+            let vtom = *VTOM;
             PageEncryptionMasks {
                 private_pte_mask: 0,
                 shared_pte_mask: vtom,
@@ -96,6 +104,10 @@ impl SvsmPlatform for SnpPlatform {
                 phys_addr_sizes: processor_capacity.eax,
             }
         }
+    }
+
+    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+        cpuid_table(eax)
     }
 
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool) {
@@ -205,5 +217,12 @@ impl SvsmPlatform for SnpPlatform {
             // panic.
             let _ = current_ghcb().wrmsr(0x80B, 0);
         }
+    }
+
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+        cpu.setup(self)?;
+        let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
+
+        current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
     }
 }
