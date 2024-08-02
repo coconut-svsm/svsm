@@ -55,5 +55,5 @@ uint32_t decrypt(
   uint8_t* priv_key_recipient
 );
 
-void my_SHA512(char* buff, const unsigned int buff_len, char* hash);
+void my_SHA512(uint8_t* buff, const unsigned int buff_len, uint8_t* hash);
 #endif
