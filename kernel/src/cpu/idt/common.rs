@@ -215,7 +215,7 @@ impl WriteLockGuard<'static, IDT> {
     /// Load an IDT. Its lifetime must be static so that its entries are
     /// always available to the CPU.
     pub fn load(&self) {
-        let desc: IdtDesc = IdtDesc {
+        let desc = IdtDesc {
             size: (IDT_ENTRIES * 16) as u16,
             address: VirtAddr::from(self.entries.as_ptr()),
         };

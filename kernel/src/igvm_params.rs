@@ -181,7 +181,7 @@ impl IgvmParams<'_> {
         }
 
         let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
-        platform.validate_page_range(mem_map_va_region)?;
+        platform.validate_page_range(mem_map_va_region, mem_map_region.start())?;
 
         // Calculate the maximum number of entries that can be inserted.
         let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE

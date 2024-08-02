@@ -75,7 +75,11 @@ pub trait SvsmPlatform {
     ) -> Result<(), SvsmError>;
 
     /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
+    fn validate_page_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        paddr: PhysAddr,
+    ) -> Result<(), SvsmError>;
 
     /// Marks a range of pages as invalid for use as private pages.
     fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
