@@ -13,9 +13,7 @@ use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET
 use crate::cpu::sse::sse_init;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
-use crate::platform::SvsmPlatform;
-use crate::platform::SVSM_PLATFORM;
-use crate::requests::{request_loop, request_processing_main};
+use crate::platform::{request_loop, request_processing_main, SvsmPlatform, SVSM_PLATFORM};
 use crate::task::{schedule_init, start_kernel_task};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 

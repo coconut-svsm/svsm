@@ -11,6 +11,7 @@ use crate::mm::GuestPtr;
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
+use crate::sev::caa::SvsmCaa;
 use crate::sev::ghcb::switch_to_vmpl;
 
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -20,49 +21,6 @@ use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
 use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
-
-/// The SVSM Calling Area (CAA)
-#[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
-pub struct SvsmCaa {
-    call_pending: u8,
-    mem_available: u8,
-    pub no_eoi_required: u8,
-    _rsvd: [u8; 5],
-}
-
-impl SvsmCaa {
-    /// Returns a copy of the this CAA with the `call_pending` field cleared.
-    #[inline]
-    const fn serviced(self) -> Self {
-        Self {
-            call_pending: 0,
-            ..self
-        }
-    }
-
-    /// Returns a copy of the this CAA with the `no_eoi_required` flag updated
-    #[inline]
-    pub const fn update_no_eoi_required(self, no_eoi_required: u8) -> Self {
-        Self {
-            no_eoi_required,
-            ..self
-        }
-    }
-
-    /// A CAA with all of its fields set to zero.
-    #[inline]
-    pub const fn zeroed() -> Self {
-        Self {
-            call_pending: 0,
-            mem_available: 0,
-            no_eoi_required: 0,
-            _rsvd: [0; 5],
-        }
-    }
-}
-
-const _: () = assert!(core::mem::size_of::<SvsmCaa>() == 8);
 
 /// Returns true if there is a valid VMSA mapping
 pub fn update_mappings() -> Result<(), SvsmError> {

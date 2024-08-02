@@ -16,7 +16,7 @@ use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::apic::{APIC_PROTOCOL, APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
-use crate::requests::SvsmCaa;
+use crate::sev::caa::SvsmCaa;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
     rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,

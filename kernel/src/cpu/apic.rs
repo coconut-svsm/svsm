@@ -12,7 +12,7 @@ use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::platform::SVSM_PLATFORM;
-use crate::requests::SvsmCaa;
+use crate::sev::caa::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
 

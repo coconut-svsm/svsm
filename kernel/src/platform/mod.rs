@@ -10,7 +10,9 @@ pub mod snp;
 pub mod tdp;
 
 mod snp_fw;
+mod snp_requests;
 pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
+pub use snp_requests::{request_loop, request_processing_main};
 
 use native::NativePlatform;
 use snp::SnpPlatform;

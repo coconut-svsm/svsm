@@ -40,8 +40,9 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
-use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::{request_loop, request_processing_main};
+use svsm::platform::{
+    init_platform_type, request_loop, request_processing_main, SvsmPlatformCell, SVSM_PLATFORM,
+};
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
