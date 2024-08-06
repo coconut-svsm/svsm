@@ -88,7 +88,7 @@ global_asm!(
 
         .align 4096
     bsp_stack:
-        .fill 4*4096, 1, 0
+        .fill 5*4096, 1, 0
     bsp_stack_end:
         "#,
     options(att_syntax)
