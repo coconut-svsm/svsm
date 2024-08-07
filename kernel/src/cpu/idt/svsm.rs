@@ -235,7 +235,7 @@ extern "C" fn ex_handler_system_call(ctxt: &mut X86ExceptionContext) {
     };
 
     ctxt.regs.rax = match input {
-        SYS_EXIT => sys_exit(),
+        SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
         _ => !0,
     };
 }
