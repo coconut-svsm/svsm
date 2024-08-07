@@ -28,6 +28,7 @@ use crate::sev::SevSnpError;
 use crate::syscall::ObjError;
 use crate::task::TaskError;
 use elf::ElfError;
+use syscall::SysCallError;
 
 /// Errors related to APIC handling.  These may originate from multiple
 /// layers in the system.
@@ -111,5 +112,28 @@ impl From<ApicError> for SvsmError {
 impl From<ObjError> for SvsmError {
     fn from(err: ObjError) -> Self {
         Self::Obj(err)
+    }
+}
+
+impl From<SvsmError> for SysCallError {
+    fn from(err: SvsmError) -> Self {
+        match err {
+            SvsmError::Alloc(AllocError::OutOfMemory) => SysCallError::ENOMEM,
+            SvsmError::FileSystem(FsError::FileExists) => SysCallError::EEXIST,
+
+            SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
+                SysCallError::ENOTFOUND
+            }
+
+            SvsmError::NotSupported => SysCallError::ENOTSUPP,
+
+            SvsmError::FileSystem(FsError::Inval)
+            | SvsmError::Obj(ObjError::InvalidHandle)
+            | SvsmError::Mem
+            | SvsmError::InvalidAddress
+            | SvsmError::InvalidBytes => SysCallError::EINVAL,
+
+            _ => SysCallError::UNKNOWN,
+        }
     }
 }
