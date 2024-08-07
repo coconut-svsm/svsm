@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 #![no_std]
 
+mod call;
 mod def;
 mod obj;
 
