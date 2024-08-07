@@ -6,8 +6,8 @@
 
 use crate::task::{current_task_terminated, schedule};
 
-pub fn sys_exit() -> ! {
-    log::info!("Terminating current task");
+pub fn sys_exit(exit_code: u32) -> ! {
+    log::info!("Terminating current task, exit_code {exit_code}");
     unsafe {
         current_task_terminated();
     }

@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-// SYSCALL numbers are not stable yet and just used for CPL-3 bringup
+// Syscall classes
+const CLASS0: u64 = 0;
 
-pub const SYS_EXIT: u64 = 1;
+// Syscall number in class0
+pub const SYS_EXIT: u64 = CLASS0;
