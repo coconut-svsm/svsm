@@ -9,5 +9,6 @@ mod call;
 mod def;
 mod obj;
 
+pub use call::SysCallError;
 pub use def::*;
 pub use obj::*;
