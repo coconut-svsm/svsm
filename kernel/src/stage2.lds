@@ -10,7 +10,8 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	. = 64k;
+	/* Base address is 8 MB + 32 KB */
+	. = 8224k;
 	.stext = .;
 	.text : {
 		*(.startup.*)
@@ -33,14 +34,6 @@ SECTIONS
 		. = ALIGN(16);
 		_ebss = .;
 	}
-	. = ALIGN(4096);
-	heap_start = .;
-
-	. = 632k;
-	heap_end = .;
-	SECRETS_PAGE = .;
-	. = 636k;
-	CPUID_PAGE = .;
 }
 
 ENTRY(startup_32)

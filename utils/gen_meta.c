@@ -194,15 +194,15 @@ void init_sev_meta(struct svsm_meta_data *svsm_meta)
 	svsm_meta->version  = 1;
 	svsm_meta->num_desc = NUM_DESCS;
 
-	svsm_meta->descs[0].base = 0;
-	svsm_meta->descs[0].len  = 632 * 1024;
+	svsm_meta->descs[0].base = 8192 * 1024;
+	svsm_meta->descs[0].len  = 8832 * 1024;
 	svsm_meta->descs[0].type = SEV_DESC_TYPE_SNP_SEC_MEM;
 
-	svsm_meta->descs[1].base = 632 * 1024;
+	svsm_meta->descs[1].base = 8200 * 1024;
 	svsm_meta->descs[1].len  = 4096;
 	svsm_meta->descs[1].type = SEV_DESC_TYPE_SNP_SECRETS;
 
-	svsm_meta->descs[2].base = 636 * 1024;
+	svsm_meta->descs[2].base = 8204 * 1024;
 	svsm_meta->descs[2].len  = 4096;
 	svsm_meta->descs[2].type = SEV_DESC_TYPE_CPUID;
 }
@@ -231,16 +231,6 @@ void fill_buffer(struct meta_buffer *meta)
 	secret.base = 0xdeadbeef;
 	secret.size = 0;
 	add_table(meta, SEV_SECRET_GUID, (char *)&secret, sizeof(secret));
-
-#if 0
-	boot_block.pre_validated_start = 0;
-	boot_block.pre_validated_end   = 636 * 1024;
-	boot_block.secrets_addr        = 636 * 1024;
-	boot_block.secrets_len         = 4096;
-	boot_block.cpuid_addr          = 632 * 1024;
-	boot_block.cpuid_len           = 4096;
-	add_table(meta, SEV_SNP_BOOT_BLOCK_GUID, (char *)&boot_block, sizeof(boot_block));
-#endif
 
 	svsm_info.launch_offset = 0;
 	add_table(meta, SVSM_INFO_GUID, (char *)&svsm_info, sizeof(svsm_info));
