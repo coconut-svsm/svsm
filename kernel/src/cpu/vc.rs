@@ -134,7 +134,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
 
     let insn_ctx = vc_decode_insn(ctx)?;
 
-    match (error_code, insn_ctx.and_then(|d| d.insn())) {
+    match (error_code, insn_ctx.as_ref().and_then(|d| d.insn())) {
         // If the gdb stub is enabled then debugging operations such as single stepping
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
@@ -143,7 +143,11 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_IOIO, Some(_)) => insn_ctx
+            .as_ref()
+            .unwrap()
+            .emulate(ctx)
+            .map_err(SvsmError::from),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
@@ -225,7 +229,7 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
-    ctx.frame.rip += insn_ctx.map_or(0, |d| d.size())
+    ctx.frame.rip += insn_ctx.as_ref().map_or(0, |d| d.size())
 }
 
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
@@ -415,7 +419,13 @@ mod tests {
 
     fn rep_outsw(port: u16, data: &[u16]) {
         unsafe {
-            asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), in("rcx") data.len(), options(att_syntax))
+            asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
+        }
+    }
+
+    fn rep_insw(port: u16, data: &mut [u16]) {
+        unsafe {
+            asm!("rep insw", in("dx") port, in("rdi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
     }
 
@@ -477,8 +487,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_string_16_get_last() {
         const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
         verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
@@ -486,6 +495,12 @@ mod tests {
             TEST_DATA.last().unwrap(),
             &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
         );
+
+        let mut test_data: [u16; 4] = [0; 4];
+        verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
+        for d in test_data.iter() {
+            assert_eq!(d, TEST_DATA.last().unwrap());
+        }
     }
 
     #[test]

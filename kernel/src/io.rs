@@ -31,6 +31,18 @@ pub trait IOPort: Sync + Debug {
             ret
         }
     }
+
+    fn outl(&self, port: u16, value: u32) {
+        unsafe { asm!("outl %eax, %dx", in("eax") value, in("dx") port, options(att_syntax)) }
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        unsafe {
+            let ret: u32;
+            asm!("inl %dx, %eax", in("dx") port, out("eax") ret, options(att_syntax));
+            ret
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy)]

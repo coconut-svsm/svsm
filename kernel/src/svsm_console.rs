@@ -50,6 +50,21 @@ impl IOPort for SVSMIOPort {
             Err(_e) => request_termination_msr(),
         }
     }
+
+    fn outl(&self, port: u16, value: u32) {
+        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size32, value as u64);
+        if ret.is_err() {
+            request_termination_msr();
+        }
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size32);
+        match ret {
+            Ok(v) => (v & 0xffffffff) as u32,
+            Err(_e) => request_termination_msr(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
