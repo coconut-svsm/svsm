@@ -257,12 +257,14 @@ pub fn triple_fault() {
 }
 
 extern "C" {
-    static generic_idt_handler_return: u8;
+    static entry_code_start: u8;
+    static entry_code_end: u8;
 }
 
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
-    let addr = unsafe { VirtAddr::from(addr_of!(generic_idt_handler_return)) };
-    addr == rip
+    let start = VirtAddr::from(unsafe { addr_of!(entry_code_start) });
+    let end = VirtAddr::from(unsafe { addr_of!(entry_code_end) });
+    (start..end).contains(&rip)
 }
 
 global_asm!(
