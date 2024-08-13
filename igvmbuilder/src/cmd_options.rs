@@ -96,6 +96,9 @@ pub enum Hypervisor {
 
     /// Build an IGVM file compatible with Hyper-V
     HyperV,
+
+    /// Build an IGVM file compatible with Google's Vanadium
+    Vanadium,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]

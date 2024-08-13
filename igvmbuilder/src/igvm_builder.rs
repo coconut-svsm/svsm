@@ -200,6 +200,7 @@ impl IgvmBuilder {
                     // C-bit position.
                     0x0000400000000000
                 }
+                Hypervisor::Vanadium => 0,
             };
             (fw_info, vtom)
         };
