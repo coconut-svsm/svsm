@@ -4,8 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+pub mod common;
 pub mod rwlock;
 pub mod spinlock;
 
+pub use common::{IrqLocking, IrqSafeLocking, IrqUnsafeLocking};
 pub use rwlock::{RWLock, ReadLockGuard, WriteLockGuard};
 pub use spinlock::{LockGuard, SpinLock};
