@@ -73,6 +73,9 @@ startup_32:
 	/* Reserve space for VTOM */
 	pushl	%eax
 	pushl	%eax
+
+	/* Clear ESI to inform stage 2 that this is the BSP */
+	xorl	%esi, %esi
 #else
 	/*
 	 * Stage 2 launch info has been prepared
