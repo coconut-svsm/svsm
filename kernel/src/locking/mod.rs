@@ -10,4 +10,4 @@ pub mod spinlock;
 
 pub use common::{IrqLocking, IrqSafeLocking, IrqUnsafeLocking};
 pub use rwlock::{RWLock, ReadLockGuard, WriteLockGuard};
-pub use spinlock::{LockGuard, SpinLock};
+pub use spinlock::{LockGuard, LockGuardIrqSafe, RawLockGuard, SpinLock, SpinLockIrqSafe};
