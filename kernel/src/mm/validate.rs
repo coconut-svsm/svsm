@@ -4,49 +4,53 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::mm::alloc::{allocate_pages, get_order};
-use crate::mm::virt_to_phys;
+use crate::mm::{virt_to_phys, PageBox};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
-use core::ptr;
+use core::mem::MaybeUninit;
+use core::num::NonZeroUsize;
+use core::ptr::NonNull;
 
 static VALID_BITMAP: SpinLock<Option<ValidBitmap>> = SpinLock::new(None);
 
-#[inline(always)]
-fn bitmap_alloc_order(region: MemoryRegion<PhysAddr>) -> usize {
-    let mem_size = region.len() / (PAGE_SIZE * 8);
-    get_order(mem_size)
+fn bitmap_elems(region: MemoryRegion<PhysAddr>) -> NonZeroUsize {
+    NonZeroUsize::new(
+        region
+            .len()
+            .div_ceil(PAGE_SIZE)
+            .div_ceil(u64::BITS as usize),
+    )
+    .unwrap()
 }
 
-pub fn init_valid_bitmap_ptr(region: MemoryRegion<PhysAddr>, bitmap: *mut u64) {
-    let bitmap = ValidBitmap::new(region, bitmap);
-    *VALID_BITMAP.lock() = Some(bitmap);
+/// # Safety
+///
+/// The caller must ensure that the given bitmap pointer is valid.
+pub unsafe fn init_valid_bitmap_ptr(region: MemoryRegion<PhysAddr>, raw: NonNull<u64>) {
+    let len = bitmap_elems(region);
+    let ptr = NonNull::slice_from_raw_parts(raw, len.get());
+    let bitmap = unsafe { PageBox::from_raw(ptr) };
+    *VALID_BITMAP.lock() = Some(ValidBitmap::new(region, bitmap));
 }
 
 pub fn init_valid_bitmap_alloc(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
-    let order: usize = bitmap_alloc_order(region);
-    let bitmap_addr = allocate_pages(order)?.as_mut_ptr();
-
-    let mut bitmap = ValidBitmap::new(region, bitmap_addr);
-    bitmap.clear_all();
-    *VALID_BITMAP.lock() = Some(bitmap);
+    let len = bitmap_elems(region);
+    let bitmap = PageBox::try_new_slice(0u64, len)?;
+    *VALID_BITMAP.lock() = Some(ValidBitmap::new(region, bitmap));
 
     Ok(())
 }
 
 pub fn migrate_valid_bitmap() -> Result<(), SvsmError> {
-    let order: usize = VALID_BITMAP.lock().as_ref().unwrap().alloc_order();
-    let bitmap_addr = allocate_pages(order)?;
+    let region = VALID_BITMAP.lock().as_ref().unwrap().region;
+    let len = bitmap_elems(region);
+    let bitmap = PageBox::try_new_uninit_slice(len)?;
 
     // lock again here because allocator path also takes VALID_BITMAP.lock()
-    VALID_BITMAP
-        .lock()
-        .as_mut()
-        .unwrap()
-        .migrate(bitmap_addr.as_mut_ptr());
+    VALID_BITMAP.lock().as_mut().unwrap().migrate(bitmap);
     Ok(())
 }
 
@@ -109,11 +113,11 @@ pub fn valid_bitmap_valid_addr(paddr: PhysAddr) -> bool {
 #[derive(Debug)]
 struct ValidBitmap {
     region: MemoryRegion<PhysAddr>,
-    bitmap: *mut u64,
+    bitmap: PageBox<[u64]>,
 }
 
 impl ValidBitmap {
-    const fn new(region: MemoryRegion<PhysAddr>, bitmap: *mut u64) -> Self {
+    const fn new(region: MemoryRegion<PhysAddr>, bitmap: PageBox<[u64]>) -> Self {
         Self { region, bitmap }
     }
 
@@ -122,7 +126,7 @@ impl ValidBitmap {
     }
 
     fn bitmap_addr(&self) -> PhysAddr {
-        virt_to_phys(VirtAddr::from(self.bitmap))
+        virt_to_phys(self.bitmap.vaddr())
     }
 
     #[inline(always)]
@@ -134,29 +138,15 @@ impl ValidBitmap {
         (index, bit)
     }
 
-    fn clear_all(&mut self) {
-        let len = self.bitmap_len();
-        unsafe {
-            ptr::write_bytes(self.bitmap, 0, len);
+    fn migrate(&mut self, mut new: PageBox<[MaybeUninit<u64>]>) {
+        for (dst, src) in new
+            .iter_mut()
+            .zip(self.bitmap.iter().copied().chain(core::iter::repeat(0)))
+        {
+            dst.write(src);
         }
-    }
-
-    fn alloc_order(&self) -> usize {
-        bitmap_alloc_order(self.region)
-    }
-
-    /// The number of u64's in the bitmap
-    fn bitmap_len(&self) -> usize {
-        let num_pages = self.region.len() / PAGE_SIZE;
-        num_pages.div_ceil(u64::BITS as usize)
-    }
-
-    fn migrate(&mut self, new_bitmap: *mut u64) {
-        let count = self.bitmap_len();
-        unsafe {
-            ptr::copy_nonoverlapping(self.bitmap, new_bitmap, count);
-        }
-        self.bitmap = new_bitmap;
+        // SAFETY: we initialized the contents of the whole slice
+        self.bitmap = unsafe { new.assume_init_slice() };
     }
 
     fn set_valid_4k(&mut self, paddr: PhysAddr) {
@@ -165,11 +155,7 @@ impl ValidBitmap {
         assert!(paddr.is_page_aligned());
         assert!(self.check_addr(paddr));
 
-        unsafe {
-            let mut val: u64 = ptr::read(self.bitmap.add(index));
-            val |= 1u64 << bit;
-            ptr::write(self.bitmap.add(index), val);
-        }
+        self.bitmap[index] |= 1u64 << bit;
     }
 
     fn clear_valid_4k(&mut self, paddr: PhysAddr) {
@@ -178,11 +164,7 @@ impl ValidBitmap {
         assert!(paddr.is_page_aligned());
         assert!(self.check_addr(paddr));
 
-        unsafe {
-            let mut val: u64 = ptr::read(self.bitmap.add(index));
-            val &= !(1u64 << bit);
-            ptr::write(self.bitmap.add(index), val);
-        }
+        self.bitmap[index] &= !(1u64 << bit);
     }
 
     fn set_2m(&mut self, paddr: PhysAddr, val: u64) {
@@ -192,11 +174,7 @@ impl ValidBitmap {
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
         assert!(self.check_addr(paddr));
 
-        for i in 0..NR_INDEX {
-            unsafe {
-                ptr::write(self.bitmap.add(index + i), val);
-            }
-        }
+        self.bitmap[index..index + NR_INDEX].fill(val);
     }
 
     fn set_valid_2m(&mut self, paddr: PhysAddr) {
@@ -208,9 +186,8 @@ impl ValidBitmap {
     }
 
     fn modify_bitmap_word(&mut self, index: usize, mask: u64, new_val: u64) {
-        let val = unsafe { ptr::read(self.bitmap.add(index)) };
-        let val = (val & !mask) | (new_val & mask);
-        unsafe { ptr::write(self.bitmap.add(index), val) };
+        let val = &mut self.bitmap[index];
+        *val = (*val & !mask) | (new_val & mask);
     }
 
     fn set_range(&mut self, paddr_begin: PhysAddr, paddr_end: PhysAddr, new_val: bool) {
@@ -225,9 +202,7 @@ impl ValidBitmap {
             let mask_head = mask >> bit_head_begin << bit_head_begin;
             self.modify_bitmap_word(index_head, mask_head, new_val);
 
-            for index in (index_head + 1)..index_tail {
-                unsafe { ptr::write(self.bitmap.add(index), new_val) };
-            }
+            self.bitmap[index_head + 1..index_tail].fill(new_val);
 
             if bit_tail_end != 0 {
                 let mask_tail = mask << (64 - bit_tail_end) >> (64 - bit_tail_end);
@@ -253,13 +228,7 @@ impl ValidBitmap {
 
         assert!(self.check_addr(paddr));
 
-        unsafe {
-            let mask: u64 = 1u64 << bit;
-            let val: u64 = ptr::read(self.bitmap.add(index));
-
-            (val & mask) == mask
-        }
+        let mask: u64 = 1u64 << bit;
+        self.bitmap[index] & mask == mask
     }
 }
-
-unsafe impl Send for ValidBitmap {}
