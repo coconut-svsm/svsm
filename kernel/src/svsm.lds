@@ -8,6 +8,10 @@ SECTIONS
 		*(.text)
 		*(.text.*)
 		. = ALIGN(16);
+		entry_code_start = .;
+		*(.entry.text)
+		entry_code_end = .;
+		. = ALIGN(16);
 		exception_table_start = .;
 		KEEP(*(__exception_table))
 		exception_table_end = .;

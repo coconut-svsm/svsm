@@ -11,7 +11,7 @@
 HV_DOORBELL_ADDR:
 	.quad 0
 
-.section .text
+.pushsection .entry.text, "ax"
 
 .macro push_regs
         pushq   %rax
@@ -345,3 +345,5 @@ default_entry_no_ist	name=int80	handler=system_call		error_code=0	vector=0x80
 
 // Interrupt injection vector
 irq_entry	name=int_inj	vector=0x50
+
+.popsection

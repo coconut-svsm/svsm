@@ -73,9 +73,13 @@ impl StackUnwinder {
         rip: VirtAddr,
         stacks: &StacksBounds,
     ) -> UnwoundStackFrame {
-        // The next frame's rsp should live on some valid stack, otherwise mark
-        // the unwound frame as invalid.
-        let Some(stack) = stacks.iter().find(|stack| stack.contains(rsp)) else {
+        // The next frame's rsp or rbp should live on some valid stack,
+        // otherwise mark the unwound frame as invalid.
+        let Some(stack) = stacks
+            .iter()
+            .find(|stack| stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
+        else {
+            log::info!("check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack");
             return UnwoundStackFrame::Invalid;
         };
 

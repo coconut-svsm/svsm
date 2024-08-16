@@ -204,6 +204,23 @@ where
         self.start() <= addr && addr < self.end()
     }
 
+    /// Check whether an address is within this region, treating `end` as part
+    /// of the region.
+    ///
+    /// ```rust
+    /// # use svsm::address::VirtAddr;
+    /// # use svsm::types::{PAGE_SIZE, PageSize};
+    /// # use svsm::utils::MemoryRegion;
+    /// let region = MemoryRegion::new(VirtAddr::from(0xffffff0000u64), PAGE_SIZE);
+    /// assert!(region.contains_inclusive(VirtAddr::from(0xffffff0000u64)));
+    /// assert!(region.contains_inclusive(VirtAddr::from(0xffffff0fffu64)));
+    /// assert!(region.contains_inclusive(VirtAddr::from(0xffffff1000u64)));
+    /// assert!(!region.contains_inclusive(VirtAddr::from(0xffffff1001u64)));
+    /// ```
+    pub fn contains_inclusive(&self, addr: A) -> bool {
+        (self.start()..=self.end()).contains(&addr)
+    }
+
     /// Check whether this region fully contains a different region.
     ///
     /// ```rust
