@@ -3,13 +3,14 @@
 // Copyright (C) 2024 SUSE
 //
 // Author: Carlos López <carlos.lopez@suse.com>
-use super::alloc::{allocate_pages, free_page, get_order, MAX_ORDER};
+use super::alloc::{allocate_pages, free_page, get_order, AllocError, MAX_ORDER};
 use super::PAGE_SIZE;
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use core::borrow;
 use core::marker::PhantomData;
 use core::mem::{self, ManuallyDrop, MaybeUninit};
+use core::num::NonZeroUsize;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
@@ -39,7 +40,7 @@ use core::ptr::NonNull;
 /// ```
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct PageBox<T> {
+pub struct PageBox<T: ?Sized> {
     ptr: NonNull<T>,
     _phantom: PhantomData<T>,
 }
@@ -68,12 +69,7 @@ impl<T> PageBox<T> {
     /// checks that the size and alignment requirements of the type can be
     /// serviced.
     const fn get_order() -> usize {
-        // We cannot guarantee a better alignment than a page in the general
-        // case and we do not handle zero-sized types, or types that are larger
-        // than the maximum order page size. We can check all of this at compile
-        // time because we do not suppport unsized types.
-        assert!(mem::size_of::<T>() > 0);
-        assert!(mem::align_of::<T>() <= PAGE_SIZE);
+        check_size_requirements::<T>();
         let order = get_order(mem::size_of::<T>());
         assert!(order < MAX_ORDER);
         order
@@ -85,7 +81,9 @@ impl<T> PageBox<T> {
         let addr = NonNull::new(allocate_pages(order)?.as_mut_ptr()).unwrap();
         unsafe { Ok(PageBox::from_raw(addr)) }
     }
+}
 
+impl<T: ?Sized> PageBox<T> {
     /// Create a [`PageBox`] from a previous allocation of the same type.
     ///
     /// # Safety
@@ -110,7 +108,7 @@ impl<T> PageBox<T> {
     /// Returns the virtual address of this allocation.
     #[inline]
     pub fn vaddr(&self) -> VirtAddr {
-        VirtAddr::from(self.ptr.as_ptr())
+        VirtAddr::from(self.ptr.as_ptr().cast::<u8>())
     }
 }
 
@@ -127,7 +125,56 @@ impl<T> PageBox<MaybeUninit<T>> {
     }
 }
 
-impl<T> Deref for PageBox<T> {
+impl<T: Clone> PageBox<[T]> {
+    /// Allocates a dynamically-sized slice of `len` items of type `T`, and
+    /// populates it with the given value. The slice cannot be resized.
+    pub fn try_new_slice(val: T, len: NonZeroUsize) -> Result<Self, SvsmError> {
+        // Create and init slice
+        let mut slice = Self::try_new_uninit_slice(len)?;
+        for item in slice.iter_mut() {
+            item.write(val.clone());
+        }
+        // SAFETY: we initialized the contents
+        unsafe { Ok(slice.assume_init_slice()) }
+    }
+
+    /// Allocates a dynamically-sized slice of `len` uninitialized items of
+    /// type `T`. The slice cannot be resized.
+    pub fn try_new_uninit_slice(len: NonZeroUsize) -> Result<PageBox<[MaybeUninit<T>]>, SvsmError> {
+        const { check_size_requirements::<MaybeUninit<T>>() };
+        let order = len
+            .get()
+            .checked_mul(mem::size_of::<MaybeUninit<T>>())
+            .map(get_order)
+            .filter(|order| *order < MAX_ORDER)
+            .ok_or(AllocError::OutOfMemory)?;
+        let raw = NonNull::new(allocate_pages(order)?.as_mut_ptr()).unwrap();
+        let ptr = NonNull::slice_from_raw_parts(raw, len.get());
+        Ok(PageBox {
+            ptr,
+            _phantom: PhantomData,
+        })
+    }
+}
+
+impl<T> PageBox<[MaybeUninit<T>]> {
+    /// Transforms a [`PageBox<[MaybeUninit<T>]>`] into a [`PageBox<[T]>`].
+    ///
+    /// # Safety
+    ///
+    /// See the safety requirements for [`MaybeUninit::assume_init()`].
+    pub unsafe fn assume_init_slice(self) -> PageBox<[T]> {
+        // Leak the slice so we can transmute its type. Then transform
+        // `NonNull<[MaybeUninit<T>]>` into `NonNull<[T]>`.
+        let leaked = NonNull::from(PageBox::leak(self));
+        let inited = NonNull::slice_from_raw_parts(leaked.cast(), leaked.len());
+        // We obtained this pointer from a previously leaked allocation, so
+        // this is safe.
+        PageBox::from_raw(inited)
+    }
+}
+
+impl<T: ?Sized> Deref for PageBox<T> {
     type Target = T;
 
     #[inline]
@@ -138,7 +185,7 @@ impl<T> Deref for PageBox<T> {
     }
 }
 
-impl<T> DerefMut for PageBox<T> {
+impl<T: ?Sized> DerefMut for PageBox<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         // SAFETY: this is part of the invariants of this type, as it must
@@ -147,7 +194,7 @@ impl<T> DerefMut for PageBox<T> {
     }
 }
 
-impl<T> borrow::Borrow<T> for PageBox<T> {
+impl<T: ?Sized> borrow::Borrow<T> for PageBox<T> {
     #[inline]
     fn borrow(&self) -> &T {
         // SAFETY: this is part of the invariants of this type, as it must
@@ -156,7 +203,7 @@ impl<T> borrow::Borrow<T> for PageBox<T> {
     }
 }
 
-impl<T> borrow::BorrowMut<T> for PageBox<T> {
+impl<T: ?Sized> borrow::BorrowMut<T> for PageBox<T> {
     #[inline]
     fn borrow_mut(&mut self) -> &mut T {
         // SAFETY: this is part of the invariants of this type, as it must
@@ -165,7 +212,7 @@ impl<T> borrow::BorrowMut<T> for PageBox<T> {
     }
 }
 
-impl<T> AsRef<T> for PageBox<T> {
+impl<T: ?Sized> AsRef<T> for PageBox<T> {
     #[inline]
     fn as_ref(&self) -> &T {
         // SAFETY: this is part of the invariants of this type, as it must
@@ -174,7 +221,7 @@ impl<T> AsRef<T> for PageBox<T> {
     }
 }
 
-impl<T> AsMut<T> for PageBox<T> {
+impl<T: ?Sized> AsMut<T> for PageBox<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
         // SAFETY: this is part of the invariants of this type, as it must
@@ -183,18 +230,26 @@ impl<T> AsMut<T> for PageBox<T> {
     }
 }
 
-impl<T> Drop for PageBox<T> {
+impl<T: ?Sized> Drop for PageBox<T> {
     fn drop(&mut self) {
         let ptr = self.ptr.as_ptr();
         unsafe { ptr.drop_in_place() };
-        free_page(VirtAddr::from(ptr));
+        free_page(self.vaddr());
     }
 }
 
 /// `TryBox` is `Send` if `T` is `Send` because the data it
 /// references via its internal pointer is unaliased.
-unsafe impl<T: Send> Send for PageBox<T> {}
+unsafe impl<T: Send + ?Sized> Send for PageBox<T> {}
 
 /// `TryBox` is `Sync` if `T` is `Sync` because the data it
 /// references via its internal pointer is unaliased.
-unsafe impl<T: Sync> Sync for PageBox<T> {}
+unsafe impl<T: Sync + ?Sized> Sync for PageBox<T> {}
+
+/// Check the size requrements for a type to be allocated through `PageBox`.
+const fn check_size_requirements<T>() {
+    // We cannot guarantee a better alignment than a page in the general case
+    // and we do not handle zero-sized types.
+    assert!(mem::size_of::<T>() > 0);
+    assert!(mem::align_of::<T>() <= PAGE_SIZE);
+}
