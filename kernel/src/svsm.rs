@@ -40,7 +40,7 @@ use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, PerCPUPageMappingGuard};
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PerCPUPageMappingGuard};
 use svsm::platform::{SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
@@ -243,11 +243,12 @@ pub fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
-    init_kernel_mapping_info(
+    let kernel_mapping = FixedAddressMappingRange::new(
         VirtAddr::from(launch_info.heap_area_virt_start),
         VirtAddr::from(launch_info.heap_area_virt_end()),
         PhysAddr::from(launch_info.heap_area_phys_start),
     );
+    init_kernel_mapping_info(kernel_mapping, None);
 }
 
 /// # Panics

@@ -8,14 +8,10 @@
 
 #include "types.h"
 
-/* Use first 640kb of memory for stage2 loader */
-#define STAGE2_RANGE_START	0
-#define STAGE2_RANGE_PAGES	158
+/* Stage2 is loaded at 8 MB + 16 KB */
+#define STAGE2_START		0x808000
 
-/* Stage2 is loaded at 64kb */
-#define STAGE2_START		0x10000
-
-#define STAGE1_STACK		0x10000
+#define STAGE1_STACK		0x806000
 
 .text
 	.section ".startup.text","ax"
@@ -49,10 +45,11 @@ startup_32:
 	rep movsl
 
 	/* Setup stack for stage 2*/
-	movl	$STAGE2_START, %esp
+	movl	$STAGE1_STACK, %esp
 
 	/* Write startup information to stage2 stack */
 	xorl	%eax, %eax
+	pushl	%eax
 	pushl	%eax
 
 	leal	kernel_fs_bin_end(%ebp), %edi
@@ -66,6 +63,15 @@ startup_32:
 
 	leal	kernel_elf(%ebp), %edi
 	pushl	%edi
+
+	/* The stage2 area ends at 0x8A0000. */
+	pushl	$0x8A0000
+
+	/* Push the location of the secrets page.  It is at 8 MB plus 56 KB */
+	pushl	$0x806000
+
+	/* Push the location of the CPUID page.  It is at 8 MB plus 60 KB */
+	pushl	$0x807000
 
 	/* Push the value 1 to indicate SNP */
 	pushl	$1
@@ -81,7 +87,7 @@ startup_32:
 	 * Stage 2 launch info has been prepared
 	 * Make sure platform type is TDP
 	 */
-	movl	$(STAGE2_START - 24), %eax
+	movl	$(STAGE1_STACK - 32), %eax
 	movl	(%eax), %eax
 	cmpl	$2, %eax
 	je	.Lsetup_td
@@ -98,7 +104,7 @@ startup_32:
 
 .Lsetup_bsp_stack:
 	/* Set up BSP stack for stage 2 */
-	movl	$(STAGE2_START - 32), %esp
+	movl	$(STAGE1_STACK - 40), %esp
 	/* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
 	mov	%esp, %eax
 	/* GPAW must be either 48 or 52 */

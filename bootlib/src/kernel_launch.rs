@@ -23,6 +23,8 @@ pub struct KernelLaunchInfo {
     pub kernel_elf_stage2_virt_end: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
+    pub stage2_start: u64,
+    pub stage2_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
     pub stage2_igvm_params_phys_addr: u64,
@@ -53,9 +55,17 @@ pub struct Stage2LaunchInfo {
     // platform_type must be the second field.
     pub platform_type: u32,
 
+    // cpuid_page must be the third field.
+    pub cpuid_page: u32,
+
+    // secrets_page must be the fourth field.
+    pub secrets_page: u32,
+
+    pub stage2_end: u32,
     pub kernel_elf_start: u32,
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
     pub igvm_params: u32,
+    pub _reserved: u32,
 }

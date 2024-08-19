@@ -17,8 +17,8 @@ use igvm::{
     Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
 use igvm_defs::{
-    IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
-    IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
+    IgvmNativeVpContextX64, IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType,
+    IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
 };
 use zerocopy::AsBytes;
 
@@ -118,7 +118,13 @@ impl IgvmBuilder {
 
     pub fn build(mut self) -> Result<(), Box<dyn Error>> {
         let param_block = self.create_param_block()?;
-        self.build_directives(&param_block)?;
+
+        // Construct a native context object to capture the start context.
+        let start_rip = self.gpa_map.stage2_image.get_start();
+        let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
+        let start_context = construct_start_context(start_rip, start_rsp);
+
+        self.build_directives(&param_block, start_context)?;
         self.build_initialization()?;
         self.build_platforms(&param_block);
 
@@ -210,8 +216,6 @@ impl IgvmBuilder {
             param_page_offset,
             memory_map_offset,
             guest_context_offset,
-            cpuid_page: self.gpa_map.cpuid_page.get_start() as u32,
-            secrets_page: self.gpa_map.secrets_page.get_start() as u32,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
             stage1_size: self.gpa_map.stage1_image.get_size() as u32,
@@ -277,7 +281,11 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn build_directives(&mut self, param_block: &IgvmParamBlock) -> Result<(), Box<dyn Error>> {
+    fn build_directives(
+        &mut self,
+        param_block: &IgvmParamBlock,
+        start_context: Box<IgvmNativeVpContextX64>,
+    ) -> Result<(), Box<dyn Error>> {
         // Populate firmware directives.
         if let Some(firmware) = &self.firmware {
             self.directives.extend_from_slice(firmware.directives());
@@ -335,9 +343,6 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             },
         ));
-
-        // Construct a native context object to capture the start context.
-        let start_context = construct_start_context();
 
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             // Add the VMSA.
@@ -406,10 +411,10 @@ impl IgvmBuilder {
             )?;
         }
 
-        // Populate the empty region above the stage 2 binary.
+        // Populate the empty region below the stage2 stack.
         self.add_empty_pages(
-            self.gpa_map.stage2_free.get_start(),
-            self.gpa_map.stage2_free.get_size(),
+            self.gpa_map.base_addr,
+            self.gpa_map.stage2_stack.get_start() - self.gpa_map.base_addr,
             COMPATIBILITY_MASK.get(),
             IgvmPageDataType::NORMAL,
         )?;
@@ -445,14 +450,6 @@ impl IgvmBuilder {
                 &mut self.directives,
             );
         }
-
-        // Populate the empty region at the bottom of RAM.
-        self.add_empty_pages(
-            self.gpa_map.low_memory.get_start(),
-            self.gpa_map.low_memory.get_size(),
-            COMPATIBILITY_MASK.get(),
-            IgvmPageDataType::NORMAL,
-        )?;
 
         Ok(())
     }

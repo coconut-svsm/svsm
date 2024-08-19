@@ -10,6 +10,7 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
+	. = 0x800000;
 	.stext = ALIGN(.sdata  - SIZEOF(.text) - 4095, 4096);
 	. = .stext;
 	.text : { *(.startup.*) *(.text) *(.text.*) }

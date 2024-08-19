@@ -10,7 +10,8 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	. = 64k;
+	/* Base address is 8 MB + 32 KB */
+	. = 8m + 32k;
 	.stext = .;
 	.text : {
 		*(.startup.*)
@@ -23,24 +24,20 @@ SECTIONS
 	}
 	. = ALIGN(16);
 	.data : { *(.data) }
-	. = ALIGN(16);
-	.rodata : { *(.rodata) }
 	edata = .;
-	. = ALIGN(4096);
+	. = ALIGN(16);
 	.bss : {
 		_bss = .;
 		*(.bss) *(.bss.[0-9a-zA-Z_]*)
 		. = ALIGN(16);
 		_ebss = .;
 	}
-	. = ALIGN(4096);
-	heap_start = .;
-
-	. = 632k;
-	heap_end = .;
-	SECRETS_PAGE = .;
-	. = 636k;
-	CPUID_PAGE = .;
+	/* Move rodata to follow bss so that the in-memory image has the same
+	 * length as the ELF image.  This is required so that the IGVM
+	 * builder does not have to parse the ELF file to know how much space
+	 * to reserve for BSS. */
+	. = ALIGN(16);
+	.rodata : { *(.rodata) }
 }
 
 ENTRY(startup_32)
