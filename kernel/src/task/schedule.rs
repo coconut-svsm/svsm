@@ -34,6 +34,7 @@ use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
+use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use alloc::sync::Arc;
@@ -313,8 +314,10 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 /// function has ran it is safe to call [`schedule()`] on the current CPU.
 pub fn schedule_init() {
     unsafe {
+        let guard = IrqGuard::new();
         let next = task_pointer(this_cpu().schedule_init());
         switch_to(null_mut(), next);
+        drop(guard);
     }
 }
 
@@ -328,6 +331,8 @@ fn preemption_checks() {
 pub fn schedule() {
     // check if preemption is safe
     preemption_checks();
+
+    let guard = IrqGuard::new();
 
     let work = this_cpu().schedule_prepare();
 
@@ -353,6 +358,8 @@ pub fn schedule() {
             switch_to(a, b);
         }
     }
+
+    drop(guard);
 
     // We're now in the context of the new task. If the previous task had terminated
     // then we can release it's reference here.

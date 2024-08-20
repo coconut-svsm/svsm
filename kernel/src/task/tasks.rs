@@ -16,7 +16,7 @@ use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86ExceptionContext;
-use crate::cpu::X86GeneralRegs;
+use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
@@ -485,7 +485,21 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
 #[no_mangle]
-fn setup_new_task() {}
+fn setup_new_task() {
+    // Re-enable IRQs here, as they are still disabled from the
+    // schedule()/sched_init() functions. After the context switch the IrqGuard
+    // from the previous task is not dropped, which causes IRQs to stay
+    // disabled in the new task.
+    // This only needs to be done for the first time a task runs. Any
+    // subsequent task switches will go through schedule() and there the guard
+    // is dropped, re-enabling IRQs.
+
+    // SAFETY: Safe because this matches the IrqGuard drop in
+    // schedule()/schedule_init(). See description above.
+    unsafe {
+        irqs_enable();
+    }
+}
 
 extern "C" fn run_kernel_task(entry: extern "C" fn()) {
     setup_new_task();
