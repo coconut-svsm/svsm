@@ -12,7 +12,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
-use crate::cpu::LocalApic;
+use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, SpinLock};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
@@ -285,6 +285,9 @@ pub struct PerCpu {
     /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
 
+    /// PerCpu IRQ state tracking
+    irq_state: IrqState,
+
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
     svsm_vmsa: OnceCell<VmsaPage>,
@@ -320,6 +323,7 @@ impl PerCpu {
     fn new(apic_id: u32) -> Self {
         Self {
             pgtbl: RefCell::new(PageTableRef::unset()),
+            irq_state: IrqState::new(),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
@@ -355,6 +359,30 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         &self.shared
+    }
+
+    /// Disables IRQs on the current CPU. Keeps track of the nesting level and
+    /// the original IRQ state.
+    ///
+    /// # Safety
+    ///
+    /// Caller needs to make sure to match every `disable()` call with an
+    /// `enable()` call.
+    #[inline(always)]
+    pub unsafe fn irqs_disable(&self) {
+        self.irq_state.disable();
+    }
+
+    /// Reduces IRQ-disable nesting level on the current CPU and restores the
+    /// original IRQ state when the level reaches 0.
+    ///
+    /// # Safety
+    ///
+    /// Caller needs to make sure to match every `disable()` call with an
+    /// `enable()` call.
+    #[inline(always)]
+    pub unsafe fn irqs_enable(&self) {
+        self.irq_state.enable();
     }
 
     /// Sets up the CPU-local GHCB page.
@@ -828,6 +856,30 @@ pub fn this_cpu() -> &'static PerCpu {
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
     this_cpu().shared()
+}
+
+/// Disables IRQs on the current CPU. Keeps track of the nesting level and
+/// the original IRQ state.
+///
+/// # Safety
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub unsafe fn irqs_disable() {
+    this_cpu().irqs_disable();
+}
+
+/// Reduces IRQ-disable nesting level on the current CPU and restores the
+/// original IRQ state when the level reaches 0.
+///
+/// # Safety
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub unsafe fn irqs_enable() {
+    this_cpu().irqs_enable();
 }
 
 /// Gets the GHCB for this CPU.
