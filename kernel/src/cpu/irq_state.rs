@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::cpu::{irqs_disable, irqs_enable};
 use core::arch::asm;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -146,6 +147,48 @@ impl Drop for IrqState {
     }
 }
 
+/// And IRQ guard which saves the current IRQ state and disabled interrupts
+/// upon creation. When the guard goes out of scope the previous IRQ state is
+/// restored.
+///
+/// The struct implements the `Default` and `Drop` traits for easy use.
+#[derive(Debug)]
+#[must_use = "if unused previous IRQ state will be immediatly restored"]
+pub struct IrqGuard {
+    /// Make the type !Send + !Sync
+    phantom: PhantomData<*const ()>,
+}
+
+impl IrqGuard {
+    pub fn new() -> Self {
+        // SAFETY: Safe because the struct implements `Drop`, which
+        // restores the IRQ state saved here.
+        unsafe {
+            irqs_disable();
+        }
+
+        Self {
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl Default for IrqGuard {
+    fn default() -> Self {
+        IrqGuard::new()
+    }
+}
+
+impl Drop for IrqGuard {
+    fn drop(&mut self) {
+        // SAFETY: Safe because the irqs_enabled() call matches the
+        // irqs_disabled() call during struct creation.
+        unsafe {
+            irqs_enable();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +218,21 @@ mod tests {
             state.enable();
             assert!(irqs_disabled());
             state.enable();
+            assert!(irqs_enabled());
+            raw_irqs_disable();
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn irq_guard_test() {
+        assert!(irqs_disabled());
+        unsafe {
+            raw_irqs_enable();
+            assert!(irqs_enabled());
+            let g1 = IrqGuard::new();
+            assert!(irqs_disabled());
+            drop(g1);
             assert!(irqs_enabled());
             raw_irqs_disable();
         }
