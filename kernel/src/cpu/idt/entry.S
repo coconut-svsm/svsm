@@ -213,6 +213,11 @@ handle_as_hv:
 	call 	process_hv_events
 	// fall through to default_return
 
+.globl return_new_task
+return_new_task:
+	call setup_new_task
+	jmp default_return
+
 .globl default_return
 default_return:
 	// Ensure that interrupts are disabled before attempting any return.
