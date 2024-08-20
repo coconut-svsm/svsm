@@ -385,6 +385,15 @@ impl PerCpu {
         self.irq_state.enable();
     }
 
+    /// Get IRQ-disable nesting count on the current CPU
+    ///
+    /// # Returns
+    ///
+    /// Current nesting depth of irq_disable() calls.
+    pub fn irq_nesting_count(&self) -> isize {
+        self.irq_state.count()
+    }
+
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
         let page = GhcbPage::new()?;
@@ -880,6 +889,15 @@ pub unsafe fn irqs_disable() {
 #[inline(always)]
 pub unsafe fn irqs_enable() {
     this_cpu().irqs_enable();
+}
+
+/// Get IRQ-disable nesting count on the current CPU
+///
+/// # Returns
+///
+/// Current nesting depth of irq_disable() calls.
+pub fn irq_nesting_count() -> isize {
+    this_cpu().irq_nesting_count()
 }
 
 /// Gets the GHCB for this CPU.

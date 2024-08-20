@@ -33,7 +33,7 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{irq_nesting_count, this_cpu};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use alloc::sync::Arc;
@@ -318,10 +318,17 @@ pub fn schedule_init() {
     }
 }
 
+fn preemption_checks() {
+    assert!(irq_nesting_count() == 0);
+}
+
 /// Perform a task switch and hand the CPU over to the next task on the
 /// run-list. In case the current task is terminated, it will be destroyed after
 /// the switch to the next task.
 pub fn schedule() {
+    // check if preemption is safe
+    preemption_checks();
+
     let work = this_cpu().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!

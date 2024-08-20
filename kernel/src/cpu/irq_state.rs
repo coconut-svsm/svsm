@@ -136,6 +136,15 @@ impl IrqState {
             }
         }
     }
+
+    /// Returns the current nesting count
+    ///
+    /// # Returns
+    ///
+    /// Levels of IRQ-disable nesting currently active
+    pub fn count(&self) -> isize {
+        self.count.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for IrqState {
