@@ -54,7 +54,7 @@ use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "mstpm", not(test)))]
 use svsm::vtpm::vtpm_init;
-
+use core::arch::asm;    
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 extern "C" {
@@ -98,7 +98,7 @@ global_asm!(
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
-
+static FIXEDSIZE: [u8;2147483648] = [0;2147483648];
 const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
 
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
@@ -364,7 +364,9 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     WRITER.lock().set(&*CONSOLE_SERIAL);
     init_console();
     install_console_logger("SVSM");
-
+    //let port: u16 = 0xF4;
+    //let value: u8 = 240;
+    //unsafe {asm!(".att_syntax outb %al, %dx", in("dx") port, in("al") value)}
     log::info!("COCONUT Secure Virtual Machine Service Module (SVSM)");
 
     let mem_info = memory_info();

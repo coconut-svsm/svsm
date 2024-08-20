@@ -20,6 +20,15 @@ use super::pagetable::LAUNCH_VMSA_ADDR;
 /// Global memory map containing various memory regions.
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
+pub fn get_memory_region_from_map(idx: usize) -> MemoryRegion<PhysAddr> {
+    let regions = MEMORY_MAP.lock_read();
+    regions[idx]
+}
+
+pub fn get_memory_map_len() -> usize {
+    MEMORY_MAP.lock_read().len()
+}
+
 /// Initializes the global memory map based on the provided configuration
 /// and kernel launch information.
 ///
@@ -42,6 +51,7 @@ pub fn init_memory_map(
     let kernel_start = PhysAddr::from(launch_info.kernel_region_phys_start);
     let kernel_end = PhysAddr::from(launch_info.kernel_region_phys_end);
     let kernel_region = MemoryRegion::from_addresses(kernel_start, kernel_end);
+    log::info!("regions: {:?}",regions);
 
     // Remove SVSM memory from guest memory map
     let mut i = 0;
@@ -50,6 +60,7 @@ pub fn init_memory_map(
         let region = regions[i];
         if !region.overlap(&kernel_region) {
             // Check the next region.
+
             i += 1;
             continue;
         }
@@ -79,12 +90,38 @@ pub fn init_memory_map(
             i += 1;
         }
     }
-
-    log::info!("Guest Memory Regions:");
-    for r in regions.iter() {
-        log::info!("  {:018x}-{:018x}", r.start(), r.end());
+    //At this point we can be sure that regions does not contain any kernel memory
+   /* let mut total_size = 0;
+    i = 0;
+    while i < regions.len() {
+        let region = regions[i];
+        total_size += region.end() - region.start();
+        i+=1;
+    }*/
+    //let memory_limit = 1 * 1024 * 1024 * 1024;
+    //if total_size <= memory_limit {
+    //    panic!("Not enough memory given to CVM");
+    //}
+    /*i = 0;
+    let mut current_size = 0;
+    while i < regions.len() {
+        let region = regions[i];
+        let start = region.start();
+        let end = region.end();
+        if (end-start) - current_size > 0 {
+doom emacs change file
     }
+    }*/
+    //regions.remove(2);
+   
+    //log::info!("Sum Region Size: {}", total_size);
 
+   // log::info!("Guest Memory Regions:");
+    for r in regions.iter() {
+    log::info!("{:018x}-{:018x}", r.start(), r.end()); }
+
+    log::info!("regions:{:?}",regions);
+    //panic!();
     let mut map = MEMORY_MAP.lock_write();
     *map = regions;
 

@@ -248,6 +248,7 @@ pub struct PerCpuUnsafe {
     pub ghcb: *mut GHCB,
     init_stack: Option<VirtAddr>,
     ist: IstStacks,
+    trustlet_vmsa: VirtAddr,
 
     /// Stack boundaries of the currently running task. This is stored in
     /// [PerCpuUnsafe] because it needs lockless read access.
@@ -262,9 +263,21 @@ impl PerCpuUnsafe {
             ghcb: ptr::null_mut(),
             init_stack: None,
             ist: IstStacks::new(),
+            trustlet_vmsa: VirtAddr::null(),
             current_stack: MemoryRegion::new(VirtAddr::null(), 0),
         }
     }
+
+    pub fn set_trustlet_vmsa(&mut self, vmsa: VirtAddr) {
+        self.trustlet_vmsa = vmsa;
+    }
+    pub fn get_trustlet_vmsa(&self) -> VirtAddr {
+        self.trustlet_vmsa
+    }
+    pub fn is_trustlet_vmsa(&self) -> bool{
+        self.trustlet_vmsa != VirtAddr::from(0u64)
+    }
+
 
     pub fn alloc(apic_id: u32) -> Result<*mut PerCpuUnsafe, SvsmError> {
         let vaddr = allocate_zeroed_page()?;

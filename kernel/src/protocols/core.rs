@@ -44,7 +44,7 @@ const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
 //
 // The PValidate path will take the lock for read, the create_vcpu path takes
 // the lock for write.
-static PVALIDATE_LOCK: RWLock<()> = RWLock::new(());
+pub static PVALIDATE_LOCK: RWLock<()> = RWLock::new(());
 
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
@@ -231,7 +231,7 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
-fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
+pub fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
         1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, PageSize::Huge),
