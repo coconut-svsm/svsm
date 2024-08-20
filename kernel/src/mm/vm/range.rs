@@ -8,7 +8,7 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
-use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart, PageTableRef};
+use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
 use crate::types::{PageSize, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_down, align_up};
 
@@ -122,8 +122,8 @@ impl VMR {
     ///
     /// # Arguments
     ///
-    /// * `pgtbl` - A [`PageTableRef`] pointing to the target page-table
-    pub fn populate(&self, pgtbl: &mut PageTableRef) {
+    /// * `pgtbl` - A [`PageTable`] pointing to the target page-table
+    pub fn populate(&self, pgtbl: &mut PageTable) {
         let parts = self.pgtbl_parts.lock_read();
 
         for part in parts.iter() {
@@ -131,7 +131,7 @@ impl VMR {
         }
     }
 
-    pub fn populate_addr(&self, pgtbl: &mut PageTableRef, vaddr: VirtAddr) {
+    pub fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
         let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
         assert!(vaddr >= start && vaddr < end);
