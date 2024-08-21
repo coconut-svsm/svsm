@@ -20,8 +20,9 @@ use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
-use crate::mm::pagetable::{PTEntryFlags, PageTableRef};
+use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
+use crate::mm::PageBox;
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
     SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
@@ -119,7 +120,7 @@ pub struct Task {
     pub stack_bounds: MemoryRegion<VirtAddr>,
 
     /// Page table that is loaded when the task is scheduled
-    pub page_table: SpinLock<PageTableRef>,
+    pub page_table: SpinLock<PageBox<PageTable>>,
 
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,

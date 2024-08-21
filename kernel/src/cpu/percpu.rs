@@ -440,7 +440,7 @@ impl PerCpu {
     fn allocate_page_table(&self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.set_pgtable(pgtable_ref.leak());
+        self.set_pgtable(PageBox::leak(pgtable_ref));
 
         Ok(())
     }

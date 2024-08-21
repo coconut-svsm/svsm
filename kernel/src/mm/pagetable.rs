@@ -305,8 +305,8 @@ impl PageTable {
     ///
     /// # Errors
     /// Returns [`SvsmError`] if the page cannot be allocated.
-    pub fn clone_shared(&self) -> Result<PageTableRef, SvsmError> {
-        let mut pgtable = PageTableRef::alloc()?;
+    pub fn clone_shared(&self) -> Result<PageBox<PageTable>, SvsmError> {
+        let mut pgtable = PageBox::try_new(PageTable::default())?;
         pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
         Ok(pgtable)
     }
