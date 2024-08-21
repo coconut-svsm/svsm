@@ -977,8 +977,8 @@ struct RawPageTablePart {
 impl RawPageTablePart {
     /// Frees a level 1 page table.
     fn free_lvl1(page: &PTPage) {
-        for entry in page.entries {
-            if let Some(page) = PTPage::from_entry(entry) {
+        for entry in page.entries.iter() {
+            if let Some(page) = PTPage::from_entry(*entry) {
                 // SAFETY: the page comes from an entry in the page table,
                 // which we allocated using `PTPage::alloc()`, so this is
                 // safe.
@@ -989,8 +989,8 @@ impl RawPageTablePart {
 
     /// Frees a level 2 page table, including all level 1 tables beneath it.
     fn free_lvl2(page: &PTPage) {
-        for entry in page.entries {
-            if let Some(l1_page) = PTPage::from_entry(entry) {
+        for entry in page.entries.iter() {
+            if let Some(l1_page) = PTPage::from_entry(*entry) {
                 Self::free_lvl1(l1_page);
                 // SAFETY: the page comes from an entry in the page table,
                 // which we allocated using `PTPage::alloc()`, so this is
