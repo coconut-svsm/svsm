@@ -15,7 +15,7 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable, PageTableRef};
+use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -288,7 +288,7 @@ pub struct PerCpu {
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: RefCell<PageTableRef>,
+    pgtbl: RefCell<Option<&'static mut PageTable>>,
     tss: Cell<X86Tss>,
     svsm_vmsa: OnceCell<VmsaPage>,
     reset_ip: Cell<u64>,
@@ -322,7 +322,7 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(apic_id: u32) -> Self {
         Self {
-            pgtbl: RefCell::new(PageTableRef::unset()),
+            pgtbl: RefCell::new(None),
             irq_state: IrqState::new(),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: OnceCell::new(),
@@ -440,13 +440,13 @@ impl PerCpu {
     fn allocate_page_table(&self) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
         let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.set_pgtable(pgtable_ref);
+        self.set_pgtable(pgtable_ref.leak());
 
         Ok(())
     }
 
-    pub fn set_pgtable(&self, pgtable: PageTableRef) {
-        *self.get_pgtable() = pgtable;
+    pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
+        *self.pgtbl.borrow_mut() = Some(pgtable);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -471,8 +471,10 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> RefMut<'_, PageTableRef> {
-        self.pgtbl.borrow_mut()
+    pub fn get_pgtable(&self) -> RefMut<'_, PageTable> {
+        RefMut::map(self.pgtbl.borrow_mut(), |pgtbl| {
+            &mut **pgtbl.as_mut().unwrap()
+        })
     }
 
     /// Registers an already set up GHCB page for this CPU.

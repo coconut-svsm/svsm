@@ -55,9 +55,12 @@ fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     let bsp_percpu = PerCpu::alloc(0)?;
-    unsafe {
-        bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
-    }
+    let init_pgtable = unsafe {
+        // SAFETY: pgtable is a static mut and this is the only place where we
+        // get a reference to it.
+        &mut *addr_of_mut!(pgtable)
+    };
+    bsp_percpu.set_pgtable(init_pgtable);
     bsp_percpu.map_self_stage2()?;
     platform.setup_guest_host_comm(bsp_percpu, true);
     Ok(())

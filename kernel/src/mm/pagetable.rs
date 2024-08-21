@@ -939,6 +939,13 @@ impl PageTableRef {
             Self::Shared(p) => !p.is_null(),
         }
     }
+
+    pub fn leak(self) -> &'static mut PageTable {
+        match self {
+            PageTableRef::Owned(p) => PageBox::leak(p),
+            PageTableRef::Shared(p) => unsafe { &mut *p },
+        }
+    }
 }
 
 impl Deref for PageTableRef {
