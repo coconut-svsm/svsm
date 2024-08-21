@@ -12,9 +12,9 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
-use crate::cpu::LocalApic;
+use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
-use crate::locking::{LockGuard, RWLock, SpinLock};
+use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
@@ -285,6 +285,9 @@ pub struct PerCpu {
     /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
 
+    /// PerCpu IRQ state tracking
+    irq_state: IrqState,
+
     pgtbl: RefCell<PageTableRef>,
     tss: Cell<X86Tss>,
     svsm_vmsa: OnceCell<VmsaPage>,
@@ -296,7 +299,7 @@ pub struct PerCpu {
     /// Address allocator for per-cpu 2m temporary mappings
     pub vrange_2m: RefCell<VirtualRange>,
     /// Task list that has been assigned for scheduling on this CPU
-    runqueue: RefCell<RunQueue>,
+    runqueue: RWLockIrqSafe<RunQueue>,
     /// WaitQueue for request processing
     request_waitqueue: RefCell<WaitQueue>,
     /// Local APIC state for APIC emulation if enabled
@@ -320,6 +323,7 @@ impl PerCpu {
     fn new(apic_id: u32) -> Self {
         Self {
             pgtbl: RefCell::new(PageTableRef::unset()),
+            irq_state: IrqState::new(),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
@@ -331,7 +335,7 @@ impl PerCpu {
 
             vrange_4k: RefCell::new(VirtualRange::new()),
             vrange_2m: RefCell::new(VirtualRange::new()),
-            runqueue: RefCell::new(RunQueue::new()),
+            runqueue: RWLockIrqSafe::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
             apic: RefCell::new(None),
 
@@ -355,6 +359,39 @@ impl PerCpu {
 
     pub fn shared(&self) -> &PerCpuShared {
         &self.shared
+    }
+
+    /// Disables IRQs on the current CPU. Keeps track of the nesting level and
+    /// the original IRQ state.
+    ///
+    /// # Safety
+    ///
+    /// Caller needs to make sure to match every `disable()` call with an
+    /// `enable()` call.
+    #[inline(always)]
+    pub unsafe fn irqs_disable(&self) {
+        self.irq_state.disable();
+    }
+
+    /// Reduces IRQ-disable nesting level on the current CPU and restores the
+    /// original IRQ state when the level reaches 0.
+    ///
+    /// # Safety
+    ///
+    /// Caller needs to make sure to match every `disable()` call with an
+    /// `enable()` call.
+    #[inline(always)]
+    pub unsafe fn irqs_enable(&self) {
+        self.irq_state.enable();
+    }
+
+    /// Get IRQ-disable nesting count on the current CPU
+    ///
+    /// # Returns
+    ///
+    /// Current nesting depth of irq_disable() calls.
+    pub fn irq_nesting_count(&self) -> isize {
+        self.irq_state.count()
     }
 
     /// Sets up the CPU-local GHCB page.
@@ -554,7 +591,7 @@ impl PerCpu {
 
     pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, entry)?;
-        self.runqueue.borrow().set_idle_task(idle_task);
+        self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }
 
@@ -794,25 +831,25 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
-        let task = self.runqueue.borrow_mut().schedule_init();
+        let task = self.runqueue.lock_write().schedule_init();
         self.current_stack.set(task.stack_bounds());
         task
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue.borrow_mut().schedule_prepare();
+        let ret = self.runqueue.lock_write().schedule_prepare();
         if let Some((_, ref next)) = ret {
             self.current_stack.set(next.stack_bounds());
         };
         ret
     }
 
-    pub fn runqueue(&self) -> &RefCell<RunQueue> {
+    pub fn runqueue(&self) -> &RWLockIrqSafe<RunQueue> {
         &self.runqueue
     }
 
     pub fn current_task(&self) -> TaskPointer {
-        self.runqueue.borrow().current_task()
+        self.runqueue.lock_read().current_task()
     }
 
     pub fn set_tss_rsp0(&self, addr: VirtAddr) {
@@ -828,6 +865,39 @@ pub fn this_cpu() -> &'static PerCpu {
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
     this_cpu().shared()
+}
+
+/// Disables IRQs on the current CPU. Keeps track of the nesting level and
+/// the original IRQ state.
+///
+/// # Safety
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub unsafe fn irqs_disable() {
+    this_cpu().irqs_disable();
+}
+
+/// Reduces IRQ-disable nesting level on the current CPU and restores the
+/// original IRQ state when the level reaches 0.
+///
+/// # Safety
+///
+/// Caller needs to make sure to match every `irqs_disable()` call with an
+/// `irqs_enable()` call.
+#[inline(always)]
+pub unsafe fn irqs_enable() {
+    this_cpu().irqs_enable();
+}
+
+/// Get IRQ-disable nesting count on the current CPU
+///
+/// # Returns
+///
+/// Current nesting depth of irq_disable() calls.
+pub fn irq_nesting_count() -> isize {
+    this_cpu().irq_nesting_count()
 }
 
 /// Gets the GHCB for this CPU.
@@ -948,5 +1018,5 @@ pub fn process_requests() {
 }
 
 pub fn current_task() -> TaskPointer {
-    this_cpu().runqueue.borrow().current_task()
+    this_cpu().runqueue.lock_read().current_task()
 }

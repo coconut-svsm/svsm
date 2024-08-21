@@ -33,7 +33,8 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{irq_nesting_count, this_cpu};
+use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use alloc::sync::Arc;
@@ -231,7 +232,7 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().borrow_mut().handle_task(task.clone());
+    cpu.runqueue().lock_write().handle_task(task.clone());
 
     schedule();
 
@@ -244,7 +245,7 @@ pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().borrow_mut().handle_task(task.clone());
+    cpu.runqueue().lock_write().handle_task(task.clone());
 
     Ok(task)
 }
@@ -255,7 +256,7 @@ pub fn current_task() -> TaskPointer {
 
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
-    match &this_cpu().runqueue().borrow().current_task {
+    match &this_cpu().runqueue().lock_read().current_task {
         Some(current_task) => current_task.get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
@@ -268,7 +269,7 @@ pub fn is_current_task(id: u32) -> bool {
 /// This function must only be called after scheduling is initialized, otherwise it will panic.
 pub unsafe fn current_task_terminated() {
     let cpu = this_cpu();
-    let mut rq = cpu.runqueue().borrow_mut();
+    let mut rq = cpu.runqueue().lock_write();
     let task_node = rq
         .current_task
         .as_mut()
@@ -313,15 +314,26 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 /// function has ran it is safe to call [`schedule()`] on the current CPU.
 pub fn schedule_init() {
     unsafe {
+        let guard = IrqGuard::new();
         let next = task_pointer(this_cpu().schedule_init());
         switch_to(null_mut(), next);
+        drop(guard);
     }
+}
+
+fn preemption_checks() {
+    assert!(irq_nesting_count() == 0);
 }
 
 /// Perform a task switch and hand the CPU over to the next task on the
 /// run-list. In case the current task is terminated, it will be destroyed after
 /// the switch to the next task.
 pub fn schedule() {
+    // check if preemption is safe
+    preemption_checks();
+
+    let guard = IrqGuard::new();
+
     let work = this_cpu().schedule_prepare();
 
     // !!! Runqueue lock must be release here !!!
@@ -347,14 +359,16 @@ pub fn schedule() {
         }
     }
 
+    drop(guard);
+
     // We're now in the context of the new task. If the previous task had terminated
     // then we can release it's reference here.
-    let _ = this_cpu().runqueue().borrow_mut().terminated_task.take();
+    let _ = this_cpu().runqueue().lock_write().terminated_task.take();
 }
 
 pub fn schedule_task(task: TaskPointer) {
     task.set_task_running();
-    this_cpu().runqueue().borrow_mut().handle_task(task);
+    this_cpu().runqueue().lock_write().handle_task(task);
     schedule();
 }
 

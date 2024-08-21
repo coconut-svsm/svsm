@@ -12,11 +12,11 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::idt::svsm::default_return;
+use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86ExceptionContext;
-use crate::cpu::X86GeneralRegs;
+use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
@@ -339,10 +339,15 @@ impl Task {
 
         // 'Push' the task frame onto the stack
         unsafe {
+            let tc_offset: isize = ((size_of::<TaskContext>() / size_of::<u64>()) + 1)
+                .try_into()
+                .unwrap();
+            let task_context = stack_ptr.offset(-tc_offset).cast::<TaskContext>();
             // flags
-            stack_ptr.offset(-3).write(read_flags());
+            (*task_context).flags = read_flags();
             // ret_addr
-            stack_ptr.offset(-2).write(entry as *const () as u64);
+            (*task_context).regs.rdi = entry as *const () as usize;
+            (*task_context).ret_addr = run_kernel_task as *const () as u64;
             // Task termination handler for when entry point returns
             stack_ptr.offset(-1).write(task_exit as *const () as u64);
         }
@@ -382,7 +387,7 @@ impl Task {
             stack_offset += size_of::<TaskContext>();
 
             let task_context = TaskContext {
-                ret_addr: VirtAddr::from(default_return as *const ())
+                ret_addr: VirtAddr::from(return_new_task as *const ())
                     .bits()
                     .try_into()
                     .unwrap(),
@@ -474,6 +479,31 @@ impl Task {
 pub fn is_task_fault(vaddr: VirtAddr) -> bool {
     (vaddr >= USER_MEM_START && vaddr < USER_MEM_END)
         || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
+}
+
+/// Runs the first time a new task is scheduled, in the context of the new
+/// task. Any first-time initialization and setup work for a new task that
+/// needs to happen in its context must be done here.
+#[no_mangle]
+fn setup_new_task() {
+    // Re-enable IRQs here, as they are still disabled from the
+    // schedule()/sched_init() functions. After the context switch the IrqGuard
+    // from the previous task is not dropped, which causes IRQs to stay
+    // disabled in the new task.
+    // This only needs to be done for the first time a task runs. Any
+    // subsequent task switches will go through schedule() and there the guard
+    // is dropped, re-enabling IRQs.
+
+    // SAFETY: Safe because this matches the IrqGuard drop in
+    // schedule()/schedule_init(). See description above.
+    unsafe {
+        irqs_enable();
+    }
+}
+
+extern "C" fn run_kernel_task(entry: extern "C" fn()) {
+    setup_new_task();
+    entry();
 }
 
 extern "C" fn task_exit() {
