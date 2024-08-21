@@ -9,7 +9,6 @@ use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, X86GeneralRegs};
 use crate::error::SvsmError;
-use crate::mm::pagetable::get_init_pgtable_locked;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
@@ -151,7 +150,7 @@ impl GhcbPage {
         }
 
         // Map page unencrypted
-        get_init_pgtable_locked().set_shared_4k(vaddr)?;
+        this_cpu().get_pgtable().set_shared_4k(vaddr)?;
         flush_tlb_global_sync();
 
         // SAFETY: all zeros is a valid representation for the GHCB.
@@ -323,7 +322,7 @@ impl GHCB {
         let paddr = virt_to_phys(vaddr);
 
         // Re-encrypt page
-        get_init_pgtable_locked().set_encrypted_4k(vaddr)?;
+        this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
 
         // Unregister GHCB PA
         register_ghcb_gpa_msr(PhysAddr::null())?;

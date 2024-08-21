@@ -344,6 +344,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let init_pgtable = get_init_pgtable_locked()
         .clone_shared()
         .expect("Failed to allocate page tables for BSP");
+    init_pgtable.load();
     bsp_percpu
         .setup(platform, init_pgtable)
         .expect("Failed to setup BSP per-cpu area");

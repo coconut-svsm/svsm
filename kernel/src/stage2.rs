@@ -142,7 +142,7 @@ fn map_and_validate(
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
 
-    let mut pgtbl = get_init_pgtable_locked();
+    let mut pgtbl = this_cpu().get_pgtable();
     pgtbl.map_region(vregion, paddr, flags)?;
 
     if config.page_state_change_required() {
