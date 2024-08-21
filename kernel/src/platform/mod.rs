@@ -5,6 +5,7 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
@@ -44,11 +45,15 @@ pub enum PageStateChangeOp {
 /// underlying architectures.
 pub trait SvsmPlatform {
     /// Performs basic early initialization of the runtime environment.
-    fn env_setup(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
+    fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
 
     /// Performs initialization of the platform runtime environment after
     /// the core system environment has been initialized.
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
+
+    /// Performs initialiation of the environment specfic to the SVSM kernel
+    /// (for services not used by stage2).
+    fn env_setup_svsm(&self) -> Result<(), SvsmError>;
 
     /// Completes initialization of a per-CPU object during construction.
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
@@ -57,7 +62,10 @@ pub trait SvsmPlatform {
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
     /// Determines the paging encryption masks for the current architecture.
-    fn get_page_encryption_masks(&self, vtom: usize) -> PageEncryptionMasks;
+    fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
+
+    /// Obtain CPUID using platform-specific tables.
+    fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
 
     /// Establishes state required for guest/host communication.
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool);
@@ -95,6 +103,9 @@ pub trait SvsmPlatform {
 
     /// Perform an EOI of the current interrupt.
     fn eoi(&self);
+
+    /// Start an additional processor.
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

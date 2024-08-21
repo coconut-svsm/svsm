@@ -45,6 +45,8 @@ pub enum ApicError {
 /// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
+    /// Errors related to platform initialization.
+    PlatformInit,
     /// Errors during ELF parsing and loading.
     Elf(ElfError),
     /// Errors related to GHCB

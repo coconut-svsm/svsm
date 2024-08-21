@@ -312,11 +312,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();
-    cr4_init();
-    efer_init();
+    cr4_init(platform);
+    efer_init(platform);
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
-        .env_setup(debug_serial_port)
+        .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
     memory_init(&launch_info);
@@ -335,7 +335,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(platform, li.vtom).expect("Failed to initialize paging");
+    paging_init(platform).expect("Failed to initialize paging");
     init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
     // SAFETY: this PerCpu has just been allocated and no other CPUs have been
@@ -396,9 +396,10 @@ pub extern "C" fn svsm_main() {
     // a remote GDB connection
     //debug_break();
 
-    this_cpu()
-        .configure_hv_doorbell()
-        .expect("Failed to configure #HV doorbell");
+    SVSM_PLATFORM
+        .as_dyn_ref()
+        .env_setup_svsm()
+        .expect("SVSM platform environment setup failed");
 
     let launch_info = &*LAUNCH_INFO;
     let config = if launch_info.igvm_params_virt_addr != 0 {
@@ -433,7 +434,7 @@ pub extern "C" fn svsm_main() {
 
     log::info!("{} CPU(s) present", nr_cpus);
 
-    start_secondary_cpus(platform, &cpus, launch_info.vtom);
+    start_secondary_cpus(platform, &cpus);
 
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {

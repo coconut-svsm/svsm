@@ -6,6 +6,7 @@
 
 use super::features::cpu_has_nx;
 use super::msr::{read_msr, write_msr, EFER};
+use crate::platform::SvsmPlatform;
 use bitflags::bitflags;
 
 bitflags! {
@@ -33,13 +34,13 @@ pub fn write_efer(efer: EFERFlags) {
     write_msr(EFER, val);
 }
 
-pub fn efer_init() {
+pub fn efer_init(platform: &dyn SvsmPlatform) {
     let mut efer = read_efer();
 
     // All processors that are capable of virtualization will support
     // no-execute table entries, so there is no reason to support any processor
     // that does not enumerate NX capability.
-    assert!(cpu_has_nx(), "CPU does not support NX");
+    assert!(cpu_has_nx(platform), "CPU does not support NX");
 
     efer.insert(EFERFlags::NXE);
     write_efer(efer);
