@@ -15,9 +15,9 @@ use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
 use bitflags::bitflags;
-use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::cmp;
+use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
-use core::{cmp, ptr};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -879,76 +879,6 @@ impl PageTable {
         }
     }
 }
-
-/// A reference wrapper for a [`PageTable`].
-#[derive(Debug)]
-pub enum PageTableRef {
-    Owned(PageBox<PageTable>),
-    Shared(*mut PageTable),
-}
-
-impl PageTableRef {
-    /// Creates a new shared [`PageTableRef`] from a raw pointer.
-    #[inline]
-    pub const fn shared(ptr: *mut PageTable) -> Self {
-        Self::Shared(ptr)
-    }
-
-    /// Allocates an empty owned [`PageTableRef`].
-    pub fn alloc() -> Result<Self, SvsmError> {
-        let table = PageBox::try_new(PageTable::default())?;
-        Ok(Self::Owned(table))
-    }
-
-    /// Creates a new shared and unset (i.e. NULL) [`PageTableRef`].
-    #[inline]
-    pub const fn unset() -> Self {
-        Self::shared(ptr::null_mut())
-    }
-
-    /// Checks if the [`PageTableRef`] is set, i.e. not NULL.
-    #[inline]
-    fn is_set(&self) -> bool {
-        match self {
-            Self::Owned(..) => true,
-            Self::Shared(p) => !p.is_null(),
-        }
-    }
-
-    pub fn leak(self) -> &'static mut PageTable {
-        match self {
-            PageTableRef::Owned(p) => PageBox::leak(p),
-            PageTableRef::Shared(p) => unsafe { &mut *p },
-        }
-    }
-}
-
-impl Deref for PageTableRef {
-    type Target = PageTable;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Owned(p) => p,
-            // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
-            Self::Shared(p) => unsafe { p.as_ref().unwrap() },
-        }
-    }
-}
-
-impl DerefMut for PageTableRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            Self::Owned(p) => p,
-            // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
-            Self::Shared(p) => unsafe { p.as_mut().unwrap() },
-        }
-    }
-}
-
-/// SAFETY: `PageTableRef` is more or less equivalent to a mutable reference to
-///         a PageTable and so if `&mut PageTable` implements `Send` so does
-///         `PageTableRef`.
-unsafe impl Send for PageTableRef where &'static mut PageTable: Send {}
 
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
 #[derive(Default, Debug)]
