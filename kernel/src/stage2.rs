@@ -28,10 +28,7 @@ use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::pagetable::{
-    get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
-    PageTableRef,
-};
+use svsm::mm::pagetable::{paging_init_early, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
@@ -41,7 +38,7 @@ use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
-    pub static mut pgtable: PageTable;
+    static mut pgtable: PageTable;
 }
 
 fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
@@ -108,8 +105,6 @@ fn setup_env(
 
     register_cpuid_table(cpuid_page);
     paging_init_early(platform).expect("Failed to initialize early paging");
-
-    set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
 
     // Configure the heap to exist from 64 KB to 640 KB.
     setup_stage2_allocator(0x10000, 0xA0000);

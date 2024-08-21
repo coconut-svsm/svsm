@@ -11,7 +11,6 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
-use core::mem::size_of;
 use core::panic::PanicInfo;
 use core::ptr;
 use core::slice;
@@ -38,7 +37,6 @@ use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
-use svsm::mm::pagetable::get_init_pgtable_locked;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PerCPUPageMappingGuard};
@@ -337,14 +335,12 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     };
 
     paging_init(platform).expect("Failed to initialize paging");
-    init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
+    let init_pgtable =
+        init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
+    init_pgtable.load();
 
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
-    let init_pgtable = get_init_pgtable_locked()
-        .clone_shared()
-        .expect("Failed to allocate page tables for BSP");
-    init_pgtable.load();
     bsp_percpu
         .setup(platform, init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
