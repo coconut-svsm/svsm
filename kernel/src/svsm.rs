@@ -338,10 +338,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     paging_init(platform).expect("Failed to initialize paging");
     init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
 
-    // SAFETY: this PerCpu has just been allocated and no other CPUs have been
-    // brought up, thus it cannot be aliased and we can get a mutable
-    // reference to it. We trust PerCpu::alloc() to return a valid and
-    // aligned pointer.
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
