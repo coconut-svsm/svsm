@@ -38,6 +38,7 @@ use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
+use svsm::mm::pagetable::get_init_pgtable_locked;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PerCPUPageMappingGuard};
@@ -340,8 +341,11 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
+    let init_pgtable = get_init_pgtable_locked()
+        .clone_shared()
+        .expect("Failed to allocate page tables for BSP");
     bsp_percpu
-        .setup(platform)
+        .setup(platform, init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     bsp_percpu
         .setup_on_cpu(platform)

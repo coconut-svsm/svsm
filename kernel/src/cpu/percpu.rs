@@ -15,7 +15,7 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTable};
+use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -437,10 +437,9 @@ impl PerCpu {
         self.shared().apic_id()
     }
 
-    fn allocate_page_table(&self) -> Result<(), SvsmError> {
+    pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
-        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.set_pgtable(PageBox::leak(pgtable_ref));
+        self.set_pgtable(PageBox::leak(pgtable));
 
         Ok(())
     }
@@ -556,9 +555,12 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
-        // Allocate page-table
-        self.allocate_page_table()?;
+    pub fn setup(
+        &self,
+        platform: &dyn SvsmPlatform,
+        pgtable: PageBox<PageTable>,
+    ) -> Result<(), SvsmError> {
+        self.init_page_table(pgtable)?;
 
         // Map PerCpu data in own page-table
         self.map_self()?;
