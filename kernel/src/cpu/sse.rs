@@ -6,6 +6,7 @@
 
 use crate::cpu::control_regs::{cr0_sse_enable, cr4_osfxsr_enable, cr4_xsave_enable};
 use crate::cpu::cpuid::CpuidResult;
+use core::arch::asm;
 use core::arch::x86_64::{_xgetbv, _xsetbv};
 
 const CPUID_EDX_SSE1: u32 = 25;
@@ -68,4 +69,36 @@ fn extended_sse_enable() {
 pub fn sse_init() {
     legacy_sse_enable();
     extended_sse_enable();
+}
+
+/// # Safety
+/// inline assembly here is used to save the SSE/FPU
+/// context. This context store is specific to a task and
+/// no other part of the code is accessing this memory at the same time.
+pub unsafe fn sse_save_context(addr: u64) {
+    let save_bits = XCR0_X87_ENABLE | XCR0_SSE_ENABLE | XCR0_YMM_ENABLE;
+    asm!(
+        r#"
+        xsaveopt (%rsi)
+        "#,
+        in("rsi") addr,
+        in("rax") save_bits,
+        in("rdx") 0,
+        options(att_syntax));
+}
+
+/// # Safety
+/// inline assembly here is used to restore the SSE/FPU
+/// context. This context store is specific to a task and
+/// no other part of the code is accessing this memory at the same time.
+pub unsafe fn sse_restore_context(addr: u64) {
+    let save_bits = XCR0_X87_ENABLE | XCR0_SSE_ENABLE | XCR0_YMM_ENABLE;
+    asm!(
+        r#"
+        xrstor (%rsi)
+        "#,
+        in("rsi") addr,
+        in("rax") save_bits,
+        in("rdx") 0,
+        options(att_syntax));
 }

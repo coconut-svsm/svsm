@@ -34,6 +34,8 @@ use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
+use crate::cpu::sse::sse_restore_context;
+use crate::cpu::sse::sse_save_context;
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
@@ -305,7 +307,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         "#,
         in("rsi") prev as u64,
         in("rdi") next as u64,
-        in("rcx") cr3,
+        in("rdx") cr3,
         options(att_syntax));
 }
 
@@ -353,16 +355,20 @@ pub fn schedule() {
         unsafe {
             let a = task_pointer(current);
             let b = task_pointer(next);
+            sse_save_context(u64::from((*a).xsa.vaddr()));
 
             // Switch tasks
             switch_to(a, b);
+
+            // We're now in the context of the new task.
+            sse_restore_context(u64::from((*a).xsa.vaddr()));
         }
     }
 
     drop(guard);
 
-    // We're now in the context of the new task. If the previous task had terminated
-    // then we can release it's reference here.
+    // If the previous task had terminated then we can release
+    // it's reference here.
     let _ = this_cpu().runqueue().lock_write().terminated_task.take();
 }
 
@@ -399,32 +405,17 @@ global_asm!(
         // Save the current stack pointer
         testq   %rsi, %rsi
         jz      1f
-
-        //set bits in edx:eax that correspond to SSE/FPU context
-        movq    $0x7, %rax
-        xorq    %rdx, %rdx
-        //rsi + 8 contains xsave area address
-        movq    8(%rsi), %rbx
-        xsaveopt (%rbx)
-
         movq    %rsp, (%rsi)
 
     1:
         // Switch to the new task state
-        mov     %rcx, %cr3
+        mov     %rdx, %cr3
 
         // Switch to the new task stack
         movq    (%rdi), %rsp
 
         // We've already restored rsp
         addq        $8, %rsp
-
-        //set bits in edx:eax that correspond to SSE/FPU context
-        movq    $0x7, %rax
-        xorq    %rdx, %rdx
-        //rdi + 8 contains xsave area address
-        movq    8(%rdi), %rbx
-        xrstor  (%rbx)
 
         // Restore the task context
         popq        %r15
