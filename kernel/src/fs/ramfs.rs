@@ -100,7 +100,7 @@ impl RawRamFile {
     /// # Assert
     ///
     /// Assert that write operation doesn't extend beyond a page.
-    fn write_to_page(&mut self, buf: &[u8], offset: usize) {
+    fn write_to_page(&self, buf: &[u8], offset: usize) {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
         self.pages[index].write(page_index, buf);
@@ -207,7 +207,7 @@ impl RawRamFile {
 
         // Clear pages and remove them from the file
         while self.pages.len() > new_pages {
-            let mut page_ref = self.pages.pop().unwrap();
+            let page_ref = self.pages.pop().unwrap();
             page_ref.fill(0, 0);
         }
 
@@ -216,7 +216,7 @@ impl RawRamFile {
 
         if offset > 0 {
             // Clear the last page after new EOF
-            let page_ref = self.pages.last_mut().unwrap();
+            let page_ref = self.pages.last().unwrap();
             page_ref.fill(offset, 0);
         }
 

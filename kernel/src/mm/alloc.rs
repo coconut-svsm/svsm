@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::mem::{copy_bytes, write_bytes};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
@@ -932,47 +933,53 @@ impl PageRef {
 
     pub fn try_copy_page(&self) -> Result<Self, SvsmError> {
         let virt_addr = allocate_file_page()?;
+
+        let src = self.virt_addr.bits();
+        let dst = virt_addr.bits();
+        let size = PAGE_SIZE;
         unsafe {
-            let src = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
-            let dst = virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
-            ptr::copy_nonoverlapping(src, dst, 1);
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
         }
+
         Ok(PageRef {
             virt_addr,
             phys_addr: virt_to_phys(virt_addr),
         })
     }
 
-    pub fn write(&mut self, offset: usize, buf: &[u8]) {
+    pub fn write(&self, offset: usize, buf: &[u8]) {
         assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
 
-        self.as_mut()[offset..][..buf.len()].copy_from_slice(buf);
+        let src = buf.as_ptr() as usize;
+        let dst = self.virt_addr.bits() + offset;
+        let size = buf.len();
+        unsafe {
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
+        }
     }
 
     pub fn read(&self, offset: usize, buf: &mut [u8]) {
         assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
 
-        buf.copy_from_slice(&self.as_ref()[offset..][..buf.len()]);
+        let src = self.virt_addr.bits() + offset;
+        let dst = buf.as_mut_ptr() as usize;
+        let size = buf.len();
+        unsafe {
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
+        }
     }
 
-    pub fn fill(&mut self, offset: usize, value: u8) {
-        self.as_mut()[offset..].fill(value);
-    }
-}
+    pub fn fill(&self, offset: usize, value: u8) {
+        let dst = self.virt_addr.bits() + offset;
+        let size = PAGE_SIZE.checked_sub(offset).unwrap();
 
-impl AsRef<[u8; PAGE_SIZE]> for PageRef {
-    /// Returns a reference to the underlying array representing the memory page.
-    fn as_ref(&self) -> &[u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
-        unsafe { ptr.as_ref().unwrap() }
-    }
-}
-
-impl AsMut<[u8; PAGE_SIZE]> for PageRef {
-    /// Returns a mutable reference to the underlying array representing the memory page.
-    fn as_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
-        unsafe { ptr.as_mut().unwrap() }
+        unsafe {
+            // SAFETY: `dst` is valid.
+            write_bytes(dst, size, value);
+        }
     }
 }
 
