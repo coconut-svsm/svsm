@@ -909,17 +909,15 @@ pub struct PageRef {
 }
 
 impl PageRef {
-    /// Creates a new [`PageRef`] instance with the given virtual and physical addresses.
-    ///
-    /// # Arguments
-    ///
-    /// * `virt_addr` - Virtual address of the memory page.
-    /// * `phys_addr` - Physical address of the memory page.
-    pub const fn new(virt_addr: VirtAddr, phys_addr: PhysAddr) -> Self {
-        Self {
+    /// Allocate a reference-counted file page.
+    pub fn new() -> Result<Self, SvsmError> {
+        let virt_addr = allocate_file_page()?;
+        let phys_addr = virt_to_phys(virt_addr);
+
+        Ok(Self {
             virt_addr,
             phys_addr,
-        }
+        })
     }
 
     /// Returns the virtual address of the memory page.
@@ -1081,10 +1079,7 @@ pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
 /// Result containing a page reference to the virtual address of the
 /// allocated file page or an `SvsmError` if allocation fails.
 pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
-    let v = allocate_file_page()?;
-    let p = virt_to_phys(v);
-
-    Ok(PageRef::new(v, p))
+    PageRef::new()
 }
 
 fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
