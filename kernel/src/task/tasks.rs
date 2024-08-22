@@ -10,23 +10,24 @@ use alloc::collections::btree_map::BTreeMap;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, XSaveArea, VMR};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::PageBox;
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, SVSM_PERTASK_XSAVE_AREA_BASE,
-    USER_MEM_END, USER_MEM_START,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
@@ -118,8 +119,8 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
-    /// XSave area address for the task
-    pub xsa_addr: u64,
+    /// XSave area
+    pub xsa: PageBox<[u8]>,
 
     pub stack_bounds: MemoryRegion<VirtAddr>,
 
@@ -184,11 +185,10 @@ impl Task {
         let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
-        let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry)?;
+        let xsa = Self::allocate_xsave_area();
+        let xsa_addr = u64::from(xsa.vaddr()) as usize;
+        let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry, xsa_addr)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
-
-        let xsa = Self::allocate_xsave_area()?;
-        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
 
         vm_kernel_range.populate(&mut pgtable);
 
@@ -204,7 +204,7 @@ impl Task {
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
-            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
+            xsa,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -229,11 +229,11 @@ impl Task {
         let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
         vm_kernel_range.initialize()?;
 
-        let (stack, raw_bounds, stack_offset) = Self::allocate_utask_stack(cpu, user_entry)?;
+        let xsa = Self::allocate_xsave_area();
+        let xsa_addr = u64::from(xsa.vaddr()) as usize;
+        let (stack, raw_bounds, stack_offset) =
+            Self::allocate_utask_stack(cpu, user_entry, xsa_addr)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
-
-        let xsa = Self::allocate_xsave_area()?;
-        vm_kernel_range.insert_at(SVSM_PERTASK_XSAVE_AREA_BASE, xsa)?;
 
         vm_kernel_range.populate(&mut pgtable);
 
@@ -252,7 +252,7 @@ impl Task {
                 .checked_sub(stack_offset)
                 .expect("Invalid stack offset from task::allocate_utask_stack()")
                 .bits() as u64,
-            xsa_addr: SVSM_PERTASK_XSAVE_AREA_BASE.bits() as u64,
+            xsa,
             stack_bounds: bounds,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
@@ -346,6 +346,7 @@ impl Task {
     fn allocate_ktask_stack(
         cpu: &PerCpu,
         entry: extern "C" fn(),
+        xsa_addr: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
@@ -368,6 +369,8 @@ impl Task {
             (*task_context).flags = 2;
             // ret_addr
             (*task_context).regs.rdi = entry as *const () as usize;
+            // xsave area addr
+            (*task_context).regs.rsi = xsa_addr;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
             // Task termination handler for when entry point returns
             stack_ptr.offset(-1).write(task_exit as *const () as u64);
@@ -379,6 +382,7 @@ impl Task {
     fn allocate_utask_stack(
         cpu: &PerCpu,
         user_entry: usize,
+        xsa_addr: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
@@ -407,13 +411,16 @@ impl Task {
 
             stack_offset += size_of::<TaskContext>();
 
-            let task_context = TaskContext {
+            let mut task_context = TaskContext {
                 ret_addr: VirtAddr::from(return_new_task as *const ())
                     .bits()
                     .try_into()
                     .unwrap(),
                 ..Default::default()
             };
+
+            // xsave area addr
+            task_context.regs.rdi = xsa_addr;
             let stack_task_context = stack_ptr.sub(stack_offset).cast::<TaskContext>();
             *stack_task_context = task_context;
         }
@@ -421,10 +428,13 @@ impl Task {
         Ok((mapping, bounds, stack_offset))
     }
 
-    fn allocate_xsave_area() -> Result<Arc<Mapping>, SvsmError> {
-        let xsa = XSaveArea::new()?;
-        let mapping = Arc::new(Mapping::new(xsa));
-        Ok(mapping)
+    fn allocate_xsave_area() -> PageBox<[u8]> {
+        let len = get_xsave_area_size() as usize;
+        let xsa = PageBox::<[u8]>::try_new_slice(0u8, NonZeroUsize::new(len).unwrap());
+        if xsa.is_err() {
+            panic!("Error while allocating xsave area");
+        }
+        xsa.unwrap()
     }
 
     pub fn mmap_common(
@@ -593,7 +603,7 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
 #[no_mangle]
-fn setup_new_task() {
+fn setup_new_task(xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -606,11 +616,12 @@ fn setup_new_task() {
     // schedule()/schedule_init(). See description above.
     unsafe {
         irqs_enable();
+        sse_restore_context(xsa_addr);
     }
 }
 
-extern "C" fn run_kernel_task(entry: extern "C" fn()) {
-    setup_new_task();
+extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
+    setup_new_task(xsa_addr);
     entry();
 }
 
