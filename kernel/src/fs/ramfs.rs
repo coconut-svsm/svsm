@@ -8,7 +8,7 @@ use super::*;
 
 use crate::error::SvsmError;
 use crate::locking::RWLock;
-use crate::mm::{allocate_file_page_ref, PageRef};
+use crate::mm::PageRef;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{page_align_up, page_offset, zero_mem_region};
 
@@ -47,7 +47,7 @@ impl RawRamFile {
     /// [`Result<(), SvsmError>`]: A [`Result`] containing empty
     /// value if successful, SvsvError otherwise.
     fn increase_capacity(&mut self) -> Result<(), SvsmError> {
-        let page_ref = allocate_file_page_ref()?;
+        let page_ref = PageRef::new()?;
         self.pages.push(page_ref);
         self.capacity += PAGE_SIZE;
         Ok(())

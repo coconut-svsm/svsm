@@ -1072,16 +1072,6 @@ pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
     Ok(vaddr)
 }
 
-/// Allocate a reference-counted file page.
-///
-/// # Returns
-///
-/// Result containing a page reference to the virtual address of the
-/// allocated file page or an `SvsmError` if allocation fails.
-pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
-    PageRef::new()
-}
-
 fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
     Ok(ROOT_MEM.lock().get_file_page(vaddr)?)
 }

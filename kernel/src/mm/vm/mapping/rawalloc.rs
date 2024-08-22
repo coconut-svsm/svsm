@@ -8,7 +8,7 @@ use core::iter;
 
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
-use crate::mm::alloc::{allocate_file_page_ref, PageRef};
+use crate::mm::alloc::PageRef;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::align_up;
 
@@ -56,7 +56,7 @@ impl RawAllocMapping {
         let index = offset >> PAGE_SHIFT;
         if index < self.count {
             let entry = self.pages.get_mut(index).ok_or(SvsmError::Mem)?;
-            entry.get_or_insert(allocate_file_page_ref()?);
+            entry.get_or_insert(PageRef::new()?);
         }
         Ok(())
     }
