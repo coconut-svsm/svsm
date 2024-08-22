@@ -942,6 +942,22 @@ impl PageRef {
             phys_addr: virt_to_phys(virt_addr),
         })
     }
+
+    pub fn write(&mut self, offset: usize, buf: &[u8]) {
+        assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
+
+        self.as_mut()[offset..][..buf.len()].copy_from_slice(buf);
+    }
+
+    pub fn read(&self, offset: usize, buf: &mut [u8]) {
+        assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
+
+        buf.copy_from_slice(&self.as_ref()[offset..][..buf.len()]);
+    }
+
+    pub fn fill(&mut self, offset: usize, value: u8) {
+        self.as_mut()[offset..].fill(value);
+    }
 }
 
 impl AsRef<[u8; PAGE_SIZE]> for PageRef {
