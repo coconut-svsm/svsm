@@ -27,7 +27,7 @@ check_file_header() {
 
 RET=0
 
-for file in `git diff --name-only --staged`; do
+for file in `git diff --diff-filter=d --name-only --staged`; do
     ext=${file##*.}
     if [ "$ext" == "rs" ]; then
         rustfmt --check --edition 2021 $file > /dev/null 2>&1
