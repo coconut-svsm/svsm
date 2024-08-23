@@ -8,7 +8,6 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::write_cr3;
 use crate::cpu::flush_tlb_global_sync;
 use crate::error::SvsmError;
-use crate::locking::{LockGuard, SpinLock};
 use crate::mm::PageBox;
 use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
 use crate::platform::SvsmPlatform;
@@ -16,9 +15,9 @@ use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
 use bitflags::bitflags;
-use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::cmp;
+use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
-use core::{cmp, ptr};
 
 extern crate alloc;
 use alloc::boxed::Box;
@@ -305,8 +304,8 @@ impl PageTable {
     ///
     /// # Errors
     /// Returns [`SvsmError`] if the page cannot be allocated.
-    pub fn clone_shared(&self) -> Result<PageTableRef, SvsmError> {
-        let mut pgtable = PageTableRef::alloc()?;
+    pub fn clone_shared(&self) -> Result<PageBox<PageTable>, SvsmError> {
+        let mut pgtable = PageBox::try_new(PageTable::default())?;
         pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
         Ok(pgtable)
     }
@@ -880,93 +879,6 @@ impl PageTable {
         }
     }
 }
-
-static INIT_PGTABLE: SpinLock<PageTableRef> = SpinLock::new(PageTableRef::unset());
-
-/// Sets the initial page table unless it is already set.
-///
-/// # Parameters
-/// - `pgtable`: The page table reference to set as the initial page table.
-///
-/// # Panics
-/// Panics if the initial page table is already set.
-pub fn set_init_pgtable(pgtable: PageTableRef) {
-    let mut init_pgtable = INIT_PGTABLE.lock();
-    assert!(!init_pgtable.is_set());
-    *init_pgtable = pgtable;
-}
-
-/// Acquires a lock and returns a guard for the initial page table, which
-/// is locked for the duration of the guard's scope.
-///
-/// # Returns
-/// A `LockGuard` for the initial page table.
-pub fn get_init_pgtable_locked<'a>() -> LockGuard<'a, PageTableRef> {
-    INIT_PGTABLE.lock()
-}
-
-/// A reference wrapper for a [`PageTable`].
-#[derive(Debug)]
-pub enum PageTableRef {
-    Owned(PageBox<PageTable>),
-    Shared(*mut PageTable),
-}
-
-impl PageTableRef {
-    /// Creates a new shared [`PageTableRef`] from a raw pointer.
-    #[inline]
-    pub const fn shared(ptr: *mut PageTable) -> Self {
-        Self::Shared(ptr)
-    }
-
-    /// Allocates an empty owned [`PageTableRef`].
-    pub fn alloc() -> Result<Self, SvsmError> {
-        let table = PageBox::try_new(PageTable::default())?;
-        Ok(Self::Owned(table))
-    }
-
-    /// Creates a new shared and unset (i.e. NULL) [`PageTableRef`].
-    #[inline]
-    pub const fn unset() -> Self {
-        Self::shared(ptr::null_mut())
-    }
-
-    /// Checks if the [`PageTableRef`] is set, i.e. not NULL.
-    #[inline]
-    fn is_set(&self) -> bool {
-        match self {
-            Self::Owned(..) => true,
-            Self::Shared(p) => !p.is_null(),
-        }
-    }
-}
-
-impl Deref for PageTableRef {
-    type Target = PageTable;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Owned(p) => p,
-            // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
-            Self::Shared(p) => unsafe { p.as_ref().unwrap() },
-        }
-    }
-}
-
-impl DerefMut for PageTableRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match self {
-            Self::Owned(p) => p,
-            // SAFETY: nobody else has access to `ptr` so it cannot be aliased.
-            Self::Shared(p) => unsafe { p.as_mut().unwrap() },
-        }
-    }
-}
-
-/// SAFETY: `PageTableRef` is more or less equivalent to a mutable reference to
-///         a PageTable and so if `&mut PageTable` implements `Send` so does
-///         `PageTableRef`.
-unsafe impl Send for PageTableRef where &'static mut PageTable: Send {}
 
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
 #[derive(Default, Debug)]

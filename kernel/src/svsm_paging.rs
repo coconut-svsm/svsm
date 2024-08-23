@@ -8,8 +8,8 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
-use crate::mm::pagetable::{set_init_pgtable, PTEntryFlags, PageTableRef};
-use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::pagetable::{PTEntryFlags, PageTable};
+use crate::mm::{PageBox, PerCPUPageMappingGuard};
 use crate::platform::PageStateChangeOp;
 use crate::platform::SvsmPlatform;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -24,8 +24,8 @@ struct IgvmParamInfo<'a> {
 pub fn init_page_table(
     launch_info: &KernelLaunchInfo,
     kernel_elf: &elf::Elf64File<'_>,
-) -> Result<(), SvsmError> {
-    let mut pgtable = PageTableRef::alloc()?;
+) -> Result<PageBox<PageTable>, SvsmError> {
+    let mut pgtable = PageBox::try_new(PageTable::default())?;
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
         let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
         IgvmParamInfo {
@@ -91,8 +91,7 @@ pub fn init_page_table(
 
     pgtable.load();
 
-    set_init_pgtable(pgtable);
-    Ok(())
+    Ok(pgtable)
 }
 
 fn invalidate_boot_memory_region(

@@ -15,7 +15,7 @@ use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
-use crate::mm::pagetable::{get_init_pgtable_locked, PTEntryFlags, PageTableRef};
+use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
@@ -288,7 +288,7 @@ pub struct PerCpu {
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: RefCell<PageTableRef>,
+    pgtbl: RefCell<Option<&'static mut PageTable>>,
     tss: Cell<X86Tss>,
     svsm_vmsa: OnceCell<VmsaPage>,
     reset_ip: Cell<u64>,
@@ -322,7 +322,7 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(apic_id: u32) -> Self {
         Self {
-            pgtbl: RefCell::new(PageTableRef::unset()),
+            pgtbl: RefCell::new(None),
             irq_state: IrqState::new(),
             tss: Cell::new(X86Tss::new()),
             svsm_vmsa: OnceCell::new(),
@@ -437,16 +437,15 @@ impl PerCpu {
         self.shared().apic_id()
     }
 
-    fn allocate_page_table(&self) -> Result<(), SvsmError> {
+    pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
         self.vm_range.initialize()?;
-        let pgtable_ref = get_init_pgtable_locked().clone_shared()?;
-        self.set_pgtable(pgtable_ref);
+        self.set_pgtable(PageBox::leak(pgtable));
 
         Ok(())
     }
 
-    pub fn set_pgtable(&self, pgtable: PageTableRef) {
-        *self.get_pgtable() = pgtable;
+    pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
+        *self.pgtbl.borrow_mut() = Some(pgtable);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -471,8 +470,10 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> RefMut<'_, PageTableRef> {
-        self.pgtbl.borrow_mut()
+    pub fn get_pgtable(&self) -> RefMut<'_, PageTable> {
+        RefMut::map(self.pgtbl.borrow_mut(), |pgtbl| {
+            &mut **pgtbl.as_mut().unwrap()
+        })
     }
 
     /// Registers an already set up GHCB page for this CPU.
@@ -554,9 +555,12 @@ impl PerCpu {
         self.vm_range.dump_ranges();
     }
 
-    pub fn setup(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
-        // Allocate page-table
-        self.allocate_page_table()?;
+    pub fn setup(
+        &self,
+        platform: &dyn SvsmPlatform,
+        pgtable: PageBox<PageTable>,
+    ) -> Result<(), SvsmError> {
+        self.init_page_table(pgtable)?;
 
         // Map PerCpu data in own page-table
         self.map_self()?;
@@ -822,7 +826,7 @@ impl PerCpu {
     /// # Arguments
     ///
     /// * `pt` - The page table to populate the the PerCpu range into
-    pub fn populate_page_table(&self, pt: &mut PageTableRef) {
+    pub fn populate_page_table(&self, pt: &mut PageTable) {
         self.vm_range.populate(pt);
     }
 

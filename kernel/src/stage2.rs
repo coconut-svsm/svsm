@@ -28,10 +28,7 @@ use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::pagetable::{
-    get_init_pgtable_locked, paging_init_early, set_init_pgtable, PTEntryFlags, PageTable,
-    PageTableRef,
-};
+use svsm::mm::pagetable::{paging_init_early, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
@@ -41,7 +38,7 @@ use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{halt, is_aligned, MemoryRegion};
 
 extern "C" {
-    pub static mut pgtable: PageTable;
+    static mut pgtable: PageTable;
 }
 
 fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
@@ -55,9 +52,12 @@ fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     let bsp_percpu = PerCpu::alloc(0)?;
-    unsafe {
-        bsp_percpu.set_pgtable(PageTableRef::shared(addr_of_mut!(pgtable)));
-    }
+    let init_pgtable = unsafe {
+        // SAFETY: pgtable is a static mut and this is the only place where we
+        // get a reference to it.
+        &mut *addr_of_mut!(pgtable)
+    };
+    bsp_percpu.set_pgtable(init_pgtable);
     bsp_percpu.map_self_stage2()?;
     platform.setup_guest_host_comm(bsp_percpu, true);
     Ok(())
@@ -106,8 +106,6 @@ fn setup_env(
     register_cpuid_table(cpuid_page);
     paging_init_early(platform).expect("Failed to initialize early paging");
 
-    set_init_pgtable(PageTableRef::shared(unsafe { addr_of_mut!(pgtable) }));
-
     // Configure the heap to exist from 64 KB to 640 KB.
     setup_stage2_allocator(0x10000, 0xA0000);
 
@@ -139,7 +137,7 @@ fn map_and_validate(
         | PTEntryFlags::ACCESSED
         | PTEntryFlags::DIRTY;
 
-    let mut pgtbl = get_init_pgtable_locked();
+    let mut pgtbl = this_cpu().get_pgtable();
     pgtbl.map_region(vregion, paddr, flags)?;
 
     if config.page_state_change_required() {
