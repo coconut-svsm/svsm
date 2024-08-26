@@ -14,7 +14,8 @@ use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::GuestPtr;
-use crate::types::SVSM_CS;
+use crate::platform::SVSM_PLATFORM;
+use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::mem;
@@ -151,6 +152,33 @@ impl InsnMachineCtx for X86ExceptionContext {
         } else {
             Ok(Box::new(GuestPtr::<T>::new(VirtAddr::from(la))))
         }
+    }
+
+    fn ioio_perm(&self, _port: u16, _size: Bytes, _io_read: bool) -> bool {
+        // Check if the IO port can be supported by user mode
+        todo!();
+    }
+
+    fn ioio_in(&self, port: u16, size: Bytes) -> Result<u64, InsnError> {
+        let io_port = SVSM_PLATFORM.as_dyn_ref().get_io_port();
+        let data = match size {
+            Bytes::One => io_port.inb(port) as u64,
+            Bytes::Two => io_port.inw(port) as u64,
+            Bytes::Four => io_port.inl(port) as u64,
+            _ => return Err(InsnError::IoIoIn),
+        };
+        Ok(data)
+    }
+
+    fn ioio_out(&mut self, port: u16, size: Bytes, data: u64) -> Result<(), InsnError> {
+        let io_port = SVSM_PLATFORM.as_dyn_ref().get_io_port();
+        match size {
+            Bytes::One => io_port.outb(port, data as u8),
+            Bytes::Two => io_port.outw(port, data as u16),
+            Bytes::Four => io_port.outl(port, data as u32),
+            _ => return Err(InsnError::IoIoOut),
+        }
+        Ok(())
     }
 }
 
