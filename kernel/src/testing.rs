@@ -11,6 +11,25 @@ use crate::{
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[macro_export]
+macro_rules! assert_eq_warn {
+    ($left:expr, $right:expr) => {
+        {
+            let left = $left;
+            let right = $right;
+            if left != right {
+                log::warn!(
+                    "Assertion warning failed at {}:{}:{}:\nassertion `left == right` failed\n left: {left:?}\n right: {right:?}",
+                    file!(),
+                    line!(),
+                    column!(),
+                );
+            }
+        }
+    };
+}
+pub use assert_eq_warn;
+
 static SERIAL_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static IOPORT: SVSMIOPort = SVSMIOPort::new();
 static SERIAL_PORT: SpinLock<SerialPort<'_>> =
