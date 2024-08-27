@@ -467,8 +467,9 @@ pub extern "C" fn svsm_main() {
     #[cfg(test)]
     crate::test_main();
 
-    if exec_user("/init").is_err() {
-        log::info!("Failed to launch /init");
+    match exec_user("/init") {
+        Ok(_) => (),
+        Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
     request_loop();

@@ -37,12 +37,12 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
 /// # Returns
 ///
 /// `()` on success, [`SvsmError`] on failure.
-pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
+pub fn exec_user(binary: &str) -> Result<u32, SvsmError> {
     let fh = open(binary)?;
     let file_size = fh.size();
 
-    let task = current_task();
-    let vstart = task.mmap_kernel_guard(
+    let current_task = current_task();
+    let vstart = current_task.mmap_kernel_guard(
         VirtAddr::new(0),
         Some(&fh),
         0,
@@ -56,7 +56,7 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
     let virt_base = alloc_info.range.vaddr_begin;
     let entry = elf_bin.get_entry(virt_base);
 
-    let task = create_user_task(entry.try_into().unwrap())?;
+    let new_task = create_user_task(entry.try_into().unwrap())?;
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);
@@ -75,16 +75,16 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
             let start_aligned = virt_start.page_align();
             let offset = file_offset - virt_start.page_offset();
             let size = file_size + virt_start.page_offset();
-            task.mmap_user(start_aligned, Some(&fh), offset, size, flags)?;
+            new_task.mmap_user(start_aligned, Some(&fh), offset, size, flags)?;
 
             let size_aligned = align_up(size, PAGE_SIZE);
             if size_aligned < len {
                 let start_anon = start_aligned.const_add(size_aligned);
                 let remaining_len = len - size_aligned;
-                task.mmap_user(start_anon, None, 0, remaining_len, flags)?;
+                new_task.mmap_user(start_anon, None, 0, remaining_len, flags)?;
             }
         } else {
-            task.mmap_user(virt_start, None, 0, len, flags)?;
+            new_task.mmap_user(virt_start, None, 0, len, flags)?;
         }
     }
 
@@ -95,10 +95,10 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
     let user_stack_size: usize = 64 * 1024;
     let stack_flags: VMFileMappingFlags = VMFileMappingFlags::Fixed | VMFileMappingFlags::Write;
     let stack_addr = USER_MEM_END - user_stack_size;
-    task.mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
+    new_task.mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
 
-    finish_user_task(task);
+    finish_user_task(new_task.clone());
     schedule();
 
-    Ok(())
+    Ok(new_task.get_task_id())
 }
