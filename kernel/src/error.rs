@@ -123,9 +123,9 @@ impl From<SvsmError> for SysCallError {
             SvsmError::Alloc(AllocError::OutOfMemory) => SysCallError::ENOMEM,
             SvsmError::FileSystem(FsError::FileExists) => SysCallError::EEXIST,
 
-            SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
-                SysCallError::ENOTFOUND
-            }
+            SvsmError::FileSystem(FsError::FileNotFound)
+            | SvsmError::Obj(ObjError::NotFound)
+            | SvsmError::Task(TaskError::Terminated) => SysCallError::ENOTFOUND,
 
             SvsmError::NotSupported => SysCallError::ENOTSUPP,
 

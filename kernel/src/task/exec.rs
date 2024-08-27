@@ -9,7 +9,7 @@ use crate::error::SvsmError;
 use crate::fs::open;
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::USER_MEM_END;
-use crate::task::{create_user_task, current_task, schedule};
+use crate::task::{create_user_task, current_task, schedule, TaskError};
 use crate::types::PAGE_SIZE;
 use elf::{Elf64File, Elf64PhdrFlags};
 
@@ -27,7 +27,7 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     vm_flags
 }
 
-pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
+pub fn exec_user(binary: &str) -> Result<u32, SvsmError> {
     let fh = open(binary)?;
     let file_size = fh.size();
 
@@ -77,5 +77,9 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
 
     schedule();
 
-    Ok(())
+    if task.is_terminated() {
+        Err(SvsmError::Task(TaskError::Terminated))
+    } else {
+        Ok(task.get_task_id())
+    }
 }

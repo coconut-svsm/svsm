@@ -48,6 +48,8 @@ pub enum TaskState {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TaskError {
+    // Task is already terminated
+    Terminated,
     // Attempt to close a non-terminated task
     NotTerminated,
     // A closed task could not be removed from the task list
