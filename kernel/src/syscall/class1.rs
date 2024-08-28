@@ -9,8 +9,9 @@ extern crate alloc;
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
-use crate::fs::{opendir, DirEntry, FileNameArray, FsError, FsObj};
+use crate::fs::{find_dir, DirEntry, FileNameArray, FsError, FsObj};
 use crate::mm::guestmem::UserPtr;
+use crate::task::current_task;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ffi::c_char;
@@ -23,7 +24,7 @@ pub fn sys_opendir(path: usize) -> Result<u64, i32> {
         let path = user_path_ptr
             .read_c_string(&mut path_buffer)
             .map_err(|_| EINVAL)?;
-        let dir = opendir(path).map_err(|e| match e {
+        let dir = find_dir(current_task().get_rootdir(), path).map_err(|e| match e {
             SvsmError::FileSystem(FsError::FileNotFound) => ENOTFOUND,
             _ => EINVAL,
         })?;
