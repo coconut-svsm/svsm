@@ -29,7 +29,7 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
-use svsm::fs::{initialize_fs, populate_ram_fs};
+use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
@@ -461,7 +461,7 @@ pub extern "C" fn svsm_main() {
     #[cfg(test)]
     crate::test_main();
 
-    match exec_user("/init") {
+    match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
         Ok(_) | Err(SvsmError::Task(TaskError::Terminated)) => (),
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }

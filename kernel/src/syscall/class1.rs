@@ -8,8 +8,9 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
-use crate::fs::{opendir, DirEntry, FileNameArray, FsObj};
+use crate::fs::{find_dir, DirEntry, FileNameArray, FsObj};
 use crate::mm::guestmem::UserPtr;
+use crate::task::current_task;
 use alloc::sync::Arc;
 use core::ffi::c_char;
 use syscall::SysCallError::*;
@@ -18,8 +19,7 @@ use syscall::{DirEnt, FileType, SysCallError};
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
     let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
     let user_path = user_path_ptr.read_c_string()?;
-
-    let dir = opendir(&user_path)?;
+    let dir = find_dir(current_task().rootdir(), &user_path)?;
     let id = obj_add(Arc::new(FsObj::new_dir(&dir)))?;
 
     Ok(u32::from(id).into())
