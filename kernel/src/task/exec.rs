@@ -43,6 +43,9 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmErro
         VMFileMappingFlags::Read,
     )?;
     let buf = unsafe { vstart.to_slice::<u8>(file_size) };
+    // TODO: Due to a bug in the ELF parser, this function returns an error when p_vaddr is not
+    // aligned. But since spec doesn't guarantee that p_vaddr must be aligned, our ELF parser
+    // needs to be fixed. Current WA is to use a custom linker script to align p_vaddr.
     let elf_bin = Elf64File::read(buf).map_err(|_| SvsmError::Mem)?;
 
     let alloc_info = elf_bin.image_load_vaddr_alloc_info();
