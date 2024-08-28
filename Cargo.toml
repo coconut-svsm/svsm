@@ -14,6 +14,8 @@ members = [
     "libmstpm",
     # syscall interface definitions
     "syscall",
+    # init process
+    "init",
 ]
 
 
@@ -46,6 +48,7 @@ tdx-tdcall = "0.2.1"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
+buddy_system_allocator = "0.10.0"
 
 # other repos
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
