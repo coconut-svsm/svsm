@@ -4,14 +4,17 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::fs::open;
+use crate::fs::{open, Directory};
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::USER_MEM_END;
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;
+use alloc::sync::Arc;
 use elf::{Elf64File, Elf64PhdrFlags};
 
 fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
@@ -37,7 +40,7 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
 /// # Returns
 ///
 /// `()` on success, [`SvsmError`] on failure.
-pub fn exec_user(binary: &str) -> Result<u32, SvsmError> {
+pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmError> {
     let fh = open(binary)?;
     let file_size = fh.size();
 
@@ -56,7 +59,7 @@ pub fn exec_user(binary: &str) -> Result<u32, SvsmError> {
     let virt_base = alloc_info.range.vaddr_begin;
     let entry = elf_bin.get_entry(virt_base);
 
-    let new_task = create_user_task(entry.try_into().unwrap())?;
+    let new_task = create_user_task(entry.try_into().unwrap(), root)?;
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);

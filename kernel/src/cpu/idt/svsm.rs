@@ -295,6 +295,7 @@ extern "C" fn ex_handler_system_call(
 
     ctxt.regs.rax = match input {
         SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
+        SYS_EXEC => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
         SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
         SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
