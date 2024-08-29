@@ -14,8 +14,8 @@ use alloc::{
 };
 use core::{
     mem::{offset_of, size_of},
-    ptr::{self, addr_of_mut},
-    slice::{from_raw_parts, from_raw_parts_mut},
+    ptr::addr_of_mut,
+    slice::from_raw_parts_mut,
 };
 
 use crate::{
@@ -27,6 +27,8 @@ use crate::{
     types::{PageSize, PAGE_SIZE},
     utils::MemoryRegion,
 };
+
+use zerocopy::AsBytes;
 
 /// Version of the message header
 const HDR_VERSION: u8 = 1;
@@ -74,7 +76,7 @@ pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
 /// `SNP_GUEST_REQUEST` message header format (AMD SEV-SNP spec. table 98)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, AsBytes)]
 pub struct SnpGuestRequestMsgHdr {
     /// Message authentication tag
     authtag: [u8; 32],
@@ -150,14 +152,7 @@ impl SnpGuestRequestMsgHdr {
     /// Get a slice of the header fields used as additional authenticated data (AAD)
     fn get_aad_slice(&self) -> &[u8] {
         let algo_offset = offset_of!(Self, algo);
-
-        let ptr = ptr::from_ref(self).cast::<u8>();
-        // SAFETY: we are simply reinterpreting Self as a slice of bytes. This
-        // is safe because &[u8] as no alignment requirements and no invalid
-        // representations, and Self is composed of simple integer types. We
-        // make sure the resulting byte slice has the same size as Self.
-        let slice = unsafe { from_raw_parts(ptr, size_of::<Self>()) };
-        &slice[algo_offset..]
+        &self.as_bytes()[algo_offset..]
     }
 
     /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
