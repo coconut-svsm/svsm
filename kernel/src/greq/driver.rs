@@ -11,11 +11,10 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::ptr::addr_of_mut;
 use core::{cell::OnceCell, mem::size_of};
 
+use crate::mm::page_visibility::SharedBox;
 use crate::{
-    address::VirtAddr,
     cpu::percpu::current_ghcb,
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
@@ -48,14 +47,14 @@ enum SnpGuestRequestClass {
 #[derive(Debug)]
 struct SnpGuestRequestDriver {
     /// Shared page used for the `SNP_GUEST_REQUEST` request
-    request: Box<SnpGuestRequestMsg>,
+    request: SharedBox<SnpGuestRequestMsg>,
     /// Shared page used for the `SNP_GUEST_REQUEST` response
-    response: Box<SnpGuestRequestMsg>,
+    response: SharedBox<SnpGuestRequestMsg>,
     /// Encrypted page where we perform crypto operations
     staging: Box<SnpGuestRequestMsg>,
     /// Extended data buffer that will be provided to the hypervisor
     /// to store the SEV-SNP certificates
-    ext_data: Box<SnpGuestRequestExtData>,
+    ext_data: SharedBox<SnpGuestRequestExtData>,
     /// Extended data size (`certs` size) provided by the user in [`super::services::get_extended_report`].
     /// It will be provided to the hypervisor.
     user_extdata_size: usize,
@@ -77,54 +76,22 @@ struct SnpGuestRequestDriver {
     vmpck0_seqno: u64,
 }
 
-impl Drop for SnpGuestRequestDriver {
-    fn drop(&mut self) {
-        if self.request.set_encrypted().is_err() {
-            let new_req =
-                SnpGuestRequestMsg::boxed_new().expect("GREQ: failed to allocate request");
-            let old_req = core::mem::replace(&mut self.request, new_req);
-            log::error!("GREQ: request: failed to set page to encrypted. Memory leak!");
-            Box::leak(old_req);
-        }
-        if self.response.set_encrypted().is_err() {
-            let new_resp =
-                SnpGuestRequestMsg::boxed_new().expect("GREQ: failed to allocate response");
-            let old_resp = core::mem::replace(&mut self.response, new_resp);
-            log::error!("GREQ: response: failed to set page to encrypted. Memory leak!");
-            Box::leak(old_resp);
-        }
-        if self.ext_data.set_encrypted().is_err() {
-            let new_data =
-                SnpGuestRequestExtData::boxed_new().expect("GREQ: failed to allocate ext_data");
-            let old_data = core::mem::replace(&mut self.ext_data, new_data);
-            log::error!("GREQ: ext_data: failed to set pages to encrypted. Memory leak!");
-            Box::leak(old_data);
-        }
-    }
-}
-
 impl SnpGuestRequestDriver {
     /// Create a new [`SnpGuestRequestDriver`]
     pub fn new() -> Result<Self, SvsmReqError> {
-        let request = SnpGuestRequestMsg::boxed_new()?;
-        let response = SnpGuestRequestMsg::boxed_new()?;
+        let request = SharedBox::try_new_zeroed()?;
+        let response = SharedBox::try_new_zeroed()?;
         let staging = SnpGuestRequestMsg::boxed_new()?;
-        let ext_data = SnpGuestRequestExtData::boxed_new()?;
+        let ext_data = SharedBox::try_new_zeroed()?;
 
-        let mut driver = Self {
+        Ok(Self {
             request,
             response,
             staging,
             ext_data,
             user_extdata_size: size_of::<SnpGuestRequestExtData>(),
             vmpck0_seqno: 0,
-        };
-
-        driver.request.set_shared()?;
-        driver.response.set_shared()?;
-        driver.ext_data.set_shared()?;
-
-        Ok(driver)
+        })
     }
 
     /// Get the last VMPCK0 sequence number accounted
@@ -154,11 +121,9 @@ impl SnpGuestRequestDriver {
     /// Call the GHCB layer to send the encrypted SNP_GUEST_REQUEST message
     /// to the PSP.
     fn send(&mut self, req_class: SnpGuestRequestClass) -> Result<(), SvsmReqError> {
-        self.response.clear();
-
-        let req_page = VirtAddr::from(addr_of_mut!(*self.request));
-        let resp_page = VirtAddr::from(addr_of_mut!(*self.response));
-        let data_pages = VirtAddr::from(addr_of_mut!(*self.ext_data));
+        let req_page = self.request.addr();
+        let resp_page = self.response.addr();
+        let data_pages = self.ext_data.addr();
         let ghcb = current_ghcb();
 
         if req_class == SnpGuestRequestClass::Extended {
@@ -192,7 +157,7 @@ impl SnpGuestRequestDriver {
         // and then copy the result to shared memory (request)
         self.staging
             .encrypt_set(msg_type, msg_seqno, &vmpck0, inbuf)?;
-        *self.request = *self.staging;
+        self.request.write_from(&self.staging);
         Ok(())
     }
 
@@ -206,7 +171,7 @@ impl SnpGuestRequestDriver {
         let vmpck0: [u8; VMPCK_SIZE] = secrets_page().get_vmpck(0);
 
         // For security reasons, decrypt the message in protected memory (staging)
-        *self.staging = *self.response;
+        self.response.read_into(&mut self.staging);
         let result = self
             .staging
             .decrypt_get(msg_type, msg_seqno, &vmpck0, buffer);

@@ -61,7 +61,9 @@ impl HVDoorbellPage {
         let paddr = virt_to_phys(page.vaddr());
 
         // The #HV doorbell page must be shared before it can be used.
-        make_page_shared(page.vaddr())?;
+        unsafe {
+            make_page_shared(page.vaddr())?;
+        }
 
         // Now Drop will have correct behavior, so construct the new type.
         // SAFETY: all zeros is a valid representation of the HV doorbell page.
@@ -91,7 +93,10 @@ impl Deref for HVDoorbellPage {
 
 impl Drop for HVDoorbellPage {
     fn drop(&mut self) {
-        make_page_private(self.0.vaddr()).expect("Failed to restore HV doorbell page visibility");
+        unsafe {
+            make_page_private(self.0.vaddr())
+                .expect("Failed to restore HV doorbell page visibility");
+        }
     }
 }
 
