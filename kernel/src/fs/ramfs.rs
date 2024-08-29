@@ -206,8 +206,7 @@ impl RawRamFile {
         };
 
         // Clear pages and remove them from the file
-        while self.pages.len() > new_pages {
-            let page_ref = self.pages.pop().unwrap();
+        for page_ref in self.pages.drain(new_pages..) {
             page_ref.fill(0, 0);
         }
 
