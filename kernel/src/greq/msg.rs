@@ -6,16 +6,9 @@
 
 //! Message that carries an encrypted `SNP_GUEST_REQUEST` command in the payload
 
-extern crate alloc;
-
-use alloc::{
-    alloc::{alloc_zeroed, Layout},
-    boxed::Box,
-};
 use core::mem::{offset_of, size_of};
 
 use crate::{
-    address::{Address, VirtAddr},
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
     protocols::errors::SvsmReqError,
     sev::secrets_page::VMPCK_SIZE,
@@ -184,28 +177,6 @@ pub struct SnpGuestRequestMsg {
 const _: () = assert!(size_of::<SnpGuestRequestMsg>() <= PAGE_SIZE);
 
 impl SnpGuestRequestMsg {
-    /// Allocate the object in the heap without going through stack as
-    /// this is a large object
-    ///
-    /// # Panics
-    ///
-    /// Panics if the new allocation is not page aligned.
-    pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
-        let layout = Layout::new::<Self>();
-
-        unsafe {
-            let addr = alloc_zeroed(layout);
-            if addr.is_null() {
-                return Err(SvsmReqError::invalid_request());
-            }
-
-            assert!(VirtAddr::from(addr).is_page_aligned());
-
-            let ptr = addr.cast::<Self>();
-            Ok(Box::from_raw(ptr))
-        }
-    }
-
     /// Encrypt the provided `SNP_GUEST_REQUEST` command and store the result in the actual message payload
     ///
     /// The command will be encrypted using AES-256 GCM and part of the message header will be
@@ -344,7 +315,6 @@ pub type SnpGuestRequestExtData = [u8; SNP_GUEST_REQ_MAX_DATA_SIZE];
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
 
     #[test]
     fn test_snp_guest_request_hdr_offsets() {
@@ -366,14 +336,6 @@ mod tests {
     fn test_snp_guest_request_msg_offsets() {
         assert_eq!(offset_of!(SnpGuestRequestMsg, hdr), 0);
         assert_eq!(offset_of!(SnpGuestRequestMsg, pld), 0x60);
-    }
-
-    #[test]
-    fn test_requestmsg_boxed_new() {
-        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        let data = SnpGuestRequestMsg::boxed_new().unwrap();
-        assert!(data.hdr.as_bytes().iter().all(|c| *c == 0));
-        assert!(data.pld.iter().all(|c| *c == 0));
     }
 
     #[test]
