@@ -22,16 +22,18 @@ use crate::utils::MemoryRegion;
 
 use crate::mm::PageBox;
 use core::arch::global_asm;
-use core::cell::Cell;
 use core::mem::{self, offset_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
+use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
+use zerocopy::AsBytes;
+
 #[repr(C, packed)]
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, AsBytes)]
 pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
@@ -56,7 +58,7 @@ macro_rules! ghcb_getter {
         #[allow(unused)]
         fn $name(&self) -> Result<$t, GhcbError> {
             self.is_valid(offset_of!(Self, $field))
-                .then(|| self.$field.get())
+                .then(|| self.$field.load(Ordering::Relaxed))
                 .ok_or(GhcbError::VmgexitInvalid)
         }
     };
@@ -66,7 +68,7 @@ macro_rules! ghcb_setter {
     ($name:ident, $field:ident, $t:ty) => {
         #[allow(unused)]
         fn $name(&self, val: $t) {
-            self.$field.set(val);
+            self.$field.store(val, Ordering::Relaxed);
             self.set_valid(offset_of!(Self, $field));
         }
     };
@@ -178,35 +180,35 @@ impl DerefMut for GhcbPage {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GHCB {
-    reserved_1: Cell<[u8; 0xcb]>,
-    cpl: Cell<u8>,
-    reserved_2: Cell<[u8; 0x74]>,
-    xss: Cell<u64>,
-    reserved_3: Cell<[u8; 0x18]>,
-    dr7: Cell<u64>,
-    reserved_4: Cell<[u8; 0x90]>,
-    rax: Cell<u64>,
-    reserved_5: Cell<[u8; 0x100]>,
-    reserved_6: Cell<u64>,
-    rcx: Cell<u64>,
-    rdx: Cell<u64>,
-    rbx: Cell<u64>,
-    reserved_7: Cell<[u8; 0x70]>,
-    sw_exit_code: Cell<u64>,
-    sw_exit_info_1: Cell<u64>,
-    sw_exit_info_2: Cell<u64>,
-    sw_scratch: Cell<u64>,
-    reserved_8: Cell<[u8; 0x38]>,
-    xcr0: Cell<u64>,
-    valid_bitmap: Cell<[u64; 2]>,
-    x87_state_gpa: Cell<u64>,
-    reserved_9: Cell<[u8; 0x3f8]>,
-    buffer: Cell<[u8; GHCB_BUFFER_SIZE]>,
-    reserved_10: Cell<[u8; 0xa]>,
-    version: Cell<u16>,
-    usage: Cell<u32>,
+    reserved_1: [AtomicU8; 0xcb],
+    cpl: AtomicU8,
+    reserved_2: [AtomicU8; 0x74],
+    xss: AtomicU64,
+    reserved_3: [AtomicU8; 0x18],
+    dr7: AtomicU64,
+    reserved_4: [AtomicU8; 0x90],
+    rax: AtomicU64,
+    reserved_5: [AtomicU8; 0x100],
+    reserved_6: AtomicU64,
+    rcx: AtomicU64,
+    rdx: AtomicU64,
+    rbx: AtomicU64,
+    reserved_7: [AtomicU8; 0x70],
+    sw_exit_code: AtomicU64,
+    sw_exit_info_1: AtomicU64,
+    sw_exit_info_2: AtomicU64,
+    sw_scratch: AtomicU64,
+    reserved_8: [AtomicU8; 0x38],
+    xcr0: AtomicU64,
+    valid_bitmap: [AtomicU64; 2],
+    x87_state_gpa: AtomicU64,
+    reserved_9: [AtomicU8; 0x3f8],
+    buffer: [AtomicU8; GHCB_BUFFER_SIZE],
+    reserved_10: [AtomicU8; 0xa],
+    version: AtomicU16,
+    usage: AtomicU32,
 }
 
 impl GHCB {
@@ -343,7 +345,8 @@ impl GHCB {
 
     pub fn clear(&self) {
         // Clear valid bitmap
-        self.valid_bitmap.set([0, 0]);
+        self.valid_bitmap[0].store(0, Ordering::Relaxed);
+        self.valid_bitmap[1].store(0, Ordering::Relaxed);
 
         // Mark valid_bitmap valid
         let off = offset_of!(Self, valid_bitmap);
@@ -356,9 +359,7 @@ impl GHCB {
         let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
-        let mut bitmap = self.valid_bitmap.get();
-        bitmap[index] |= mask;
-        self.valid_bitmap.set(bitmap);
+        self.valid_bitmap[index].fetch_or(mask, Ordering::Relaxed);
     }
 
     fn is_valid(&self, offset: usize) -> bool {
@@ -366,7 +367,7 @@ impl GHCB {
         let index: usize = (offset >> 9) & 0x1;
         let mask: u64 = 1 << bit;
 
-        (self.valid_bitmap.get()[index] & mask) == mask
+        (self.valid_bitmap[index].load(Ordering::Relaxed) & mask) == mask
     }
 
     fn vmgexit(
@@ -392,7 +393,7 @@ impl GHCB {
         if sw_exit_info_1 != 0 {
             return Err(GhcbError::VmgexitError(
                 sw_exit_info_1,
-                self.sw_exit_info_2.get(),
+                self.sw_exit_info_2.load(Ordering::Relaxed),
             ));
         }
 
@@ -437,22 +438,18 @@ impl GHCB {
 
     fn write_buffer<T>(&self, data: &T, offset: usize) -> Result<(), GhcbError>
     where
-        T: Copy,
+        T: AsBytes,
     {
-        offset
-            .checked_add(mem::size_of::<T>())
-            .filter(|end| *end <= GHCB_BUFFER_SIZE)
+        let src = data.as_bytes();
+        let dst = &self
+            .buffer
+            .get(offset..)
+            .ok_or(GhcbError::InvalidOffset)?
+            .get(..src.len())
             .ok_or(GhcbError::InvalidOffset)?;
-
-        // SAFETY: we have verified that the offset is within bounds and does
-        // not overflow
-        let dst = unsafe { self.buffer.as_ptr().cast::<u8>().add(offset) };
-        if dst.align_offset(mem::align_of::<T>()) != 0 {
-            return Err(GhcbError::InvalidOffset);
+        for (dst, src) in dst.iter().zip(src.iter().copied()) {
+            dst.store(src, Ordering::Relaxed);
         }
-
-        // SAFETY: we have verified the pointer is aligned and within bounds.
-        unsafe { dst.cast::<T>().copy_from_nonoverlapping(data, 1) }
         Ok(())
     }
 
@@ -592,7 +589,11 @@ impl GHCB {
 
         let sw_exit_info_2 = self.get_exit_info_2_valid()?;
         if sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.sw_exit_info_1.get(), sw_exit_info_2).into());
+            return Err(GhcbError::VmgexitError(
+                self.sw_exit_info_1.load(Ordering::Relaxed),
+                sw_exit_info_2,
+            )
+            .into());
         }
 
         Ok(())
@@ -622,7 +623,9 @@ impl GHCB {
         // For an extended request, if the buffer provided is too small, the hypervisor
         // will return in RBX the number of contiguous pages required
         if sw_exit_info_2 != 0 {
-            return Err(GhcbError::VmgexitError(self.rbx.get(), sw_exit_info_2).into());
+            return Err(
+                GhcbError::VmgexitError(self.rbx.load(Ordering::Relaxed), sw_exit_info_2).into(),
+            );
         }
 
         Ok(())
@@ -668,45 +671,15 @@ impl GHCB {
 
     #[inline]
     #[cfg(test)]
-    pub fn fill(&self, byte: u8) {
-        let mut other = mem::MaybeUninit::<Self>::uninit();
-        let other = unsafe {
-            other.as_mut_ptr().write_bytes(byte, 1);
-            other.assume_init()
+    pub fn fill(&self, val: u8) {
+        let bytes = unsafe {
+            // SAFETY: All bytes in `Self` are part of an atomic integer type.
+            // This allows us to cast `Self` to a slice of `AtomicU8`s.
+            core::slice::from_raw_parts(self as *const _ as *const AtomicU8, size_of::<Self>())
         };
-        self.copy_from(&other);
-    }
-
-    #[inline]
-    #[cfg(test)]
-    fn copy_from(&self, other: &Self) {
-        self.reserved_1.set(other.reserved_1.get());
-        self.cpl.set(other.cpl.get());
-        self.reserved_2.set(other.reserved_2.get());
-        self.xss.set(other.xss.get());
-        self.reserved_3.set(other.reserved_3.get());
-        self.dr7.set(other.dr7.get());
-        self.reserved_4.set(other.reserved_4.get());
-        self.rax.set(other.rax.get());
-        self.reserved_5.set(other.reserved_5.get());
-        self.reserved_6.set(other.reserved_6.get());
-        self.rcx.set(other.rcx.get());
-        self.rdx.set(other.rdx.get());
-        self.rbx.set(other.rbx.get());
-        self.reserved_7.set(other.reserved_7.get());
-        self.sw_exit_code.set(other.sw_exit_code.get());
-        self.sw_exit_info_1.set(other.sw_exit_info_1.get());
-        self.sw_exit_info_2.set(other.sw_exit_info_2.get());
-        self.sw_scratch.set(other.sw_scratch.get());
-        self.reserved_8.set(other.reserved_8.get());
-        self.xcr0.set(other.xcr0.get());
-        self.valid_bitmap.set(other.valid_bitmap.get());
-        self.x87_state_gpa.set(other.x87_state_gpa.get());
-        self.reserved_9.set(other.reserved_9.get());
-        self.buffer.set(other.buffer.get());
-        self.reserved_10.set(other.reserved_10.get());
-        self.version.set(other.version.get());
-        self.usage.set(other.usage.get());
+        for byte in bytes {
+            byte.store(val, Ordering::Relaxed);
+        }
     }
 }
 
