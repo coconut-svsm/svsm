@@ -9,6 +9,7 @@ use crate::mm::{virt_to_phys, PageBox};
 use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
+use core::cell::UnsafeCell;
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
@@ -101,7 +102,7 @@ pub struct HVDoorbell {
     pub flags: AtomicU8,
     pub no_eoi_required: AtomicU8,
     pub per_vmpl_events: AtomicU8,
-    reserved_63_4: [u8; 60],
+    reserved_63_4: UnsafeCell<[u8; 60]>,
     pub per_vmpl: [HVExtIntInfo; 3],
 }
 
