@@ -197,10 +197,17 @@ impl PTEntry {
     }
 }
 
+impl From<PhysAddr> for PTEntry {
+    fn from(paddr: PhysAddr) -> Self {
+        PTEntry(paddr)
+    }
+}
+
+
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct PTPage {
-    entries: [PTEntry; ENTRY_COUNT],
+    pub entries: [PTEntry; ENTRY_COUNT],
 }
 
 impl Default for PTPage {
@@ -235,10 +242,15 @@ pub enum Mapping<'a> {
 #[repr(C)]
 #[derive(Default, Debug)]
 pub struct PageTable {
-    root: PTPage,
+    pub root: PTPage,
 }
 
 impl PageTable {
+
+    pub fn get_root(&mut self) -> &mut PTPage {
+        &mut self.root
+    }
+
     pub fn load(&self) {
         write_cr3(self.cr3_value());
     }
@@ -268,7 +280,7 @@ impl PageTable {
         //vaddr.bits() >> (12 + L * 9) & 0x1ff
     }
 
-    fn entry_to_pagetable(entry: PTEntry) -> Option<&'static mut PTPage> {
+    pub fn entry_to_pagetable(entry: PTEntry) -> Option<&'static mut PTPage> {
         let flags = entry.flags();
         if !flags.contains(PTEntryFlags::PRESENT) || flags.contains(PTEntryFlags::HUGE) {
             return None;
@@ -653,6 +665,7 @@ impl PageTable {
         Ok(())
     }
 
+
     pub fn unmap_region(&mut self, vregion: MemoryRegion<VirtAddr>) {
         let mut vaddr = vregion.start();
         let end = vregion.end();
@@ -728,6 +741,9 @@ impl PageTableRef {
     #[inline]
     fn is_set(&self) -> bool {
         !self.ptr.is_null()
+    }
+    pub fn get_ptr(&self) -> *mut PageTable {
+        self.ptr
     }
 }
 

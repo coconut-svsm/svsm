@@ -119,7 +119,6 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     }
 
     let changed = cf == 0;
-
     match ret {
         0 if changed => Ok(()),
         0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(0x10).into()),
