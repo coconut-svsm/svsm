@@ -35,7 +35,7 @@ use zerocopy::{FromBytes, FromZeroes};
 /// Converting the memory at `vaddr` must be safe within Rust's memory model.
 /// Notably any objects at `vaddr` must tolerate unsynchronized writes of any
 /// bit pattern.
-pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
+unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     let platform = SVSM_PLATFORM.as_dyn_ref();
 
     // Revoke page validation before changing page state.
@@ -68,7 +68,7 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
 /// # Arguments
 ///
 /// * `vaddr` - The virtual address of the page to be made private.
-pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
+unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
@@ -147,6 +147,13 @@ impl<T> SharedBox<T> {
                 size_of::<T>(),
             );
         }
+    }
+
+    /// Leak the memory.
+    pub fn leak(self) -> NonNull<T> {
+        let ptr = self.ptr;
+        core::mem::forget(self);
+        ptr
     }
 }
 

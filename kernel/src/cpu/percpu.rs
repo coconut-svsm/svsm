@@ -25,7 +25,7 @@ use crate::mm::{
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
-use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
+use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
@@ -487,8 +487,7 @@ impl PerCpu {
     }
 
     fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let page = HVDoorbellPage::new(current_ghcb())?;
-        let doorbell = HVDoorbellPage::leak(page);
+        let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
         self.hv_doorbell
             .set(doorbell)
             .expect("Attempted to reinitialize the HV doorbell page");
