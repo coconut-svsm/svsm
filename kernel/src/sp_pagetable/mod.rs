@@ -340,6 +340,9 @@ impl PageTableReference {
 
 
     fn get_free_pages(&mut self) -> PhysAddr {
+        let vaddr = allocate_zeroed_page().unwrap();
+        return virt_to_phys(vaddr);
+        /*
         for i in 0..self.free_pages.len() {
             if self.free_pages[i] {
                 self.free_pages[i] = false;
@@ -347,7 +350,7 @@ impl PageTableReference {
                 return self.pages[i];
             }
         }
-        return PhysAddr::from(0u64);
+        return PhysAddr::from(0u64);*/
     }
 
     pub fn page_walk_pub(&self, addr: VirtAddr) -> PhysAddr {

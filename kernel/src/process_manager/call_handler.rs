@@ -38,7 +38,7 @@ const DELETE_TRUSTLET: u32 = 7;
 const INVOKE_TRUSTLET: u32 = 8; 
 const ADD_MONITOR_MEMORY: u32 = 10;
 const ALLOC_MEMORY: u32 = 20;
-
+const FROM_HOST: u32 = 30;
 
 pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     attestation::monitor::attest_monitor(params)
@@ -146,6 +146,12 @@ pub fn add_monitor_memory(params: &mut RequestParams) -> Result<(), SvsmReqError
     super::process_memory::add_monitor_memory(params)
 } */
 
+pub fn from_host(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    super::process::from_host(params)
+}
+
+
+
 pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     log::info!("request: {}",request);
     match request {
@@ -158,6 +164,7 @@ pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<
         INVOKE_TRUSTLET => invoke_trustlet(params),
         //ALLOC_MEMORY => allocate_memory(params),
         //ADD_MONITOR_MEMORY => add_monitor_memory(params),
+        FROM_HOST => from_host(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }

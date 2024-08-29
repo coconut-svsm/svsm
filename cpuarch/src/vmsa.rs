@@ -16,6 +16,7 @@ pub enum GuestVMExit {
     SMI = 0x62,
     INIT = 0x63,
     VINTR = 0x64,
+    VC_REFLECT = 0x72,
     PAUSE = 0x77,
     HLT = 0x78,
     SHUTDOWN = 0x7F,

@@ -518,6 +518,51 @@ pub fn attest_trusted_process(_params: &mut RequestParams) -> Result<(), SvsmReq
     todo!()
 }
 
+pub fn from_host(params: &mut RequestParams) -> Result<(), SvsmReqError>{
+    let page_table_paddr = params.rcx;
+    let guard = PerCPUPageMappingGuard::create_4k(PhysAddr::from(page_table_paddr))?;
+    let vaddr: VirtAddr = guard.virt_addr();
+    let entry: &mut [u64; 512] = unsafe {&mut *vaddr.as_mut_ptr::<[u64;512]>() };
+    log::info!("Process Table:  {:?}", entry);
+    //Copy table (for now only executable and stack)
+    let page_table_ref_vaddr = allocate_zeroed_page().unwrap();
+    let page_table_vaddr = allocate_zeroed_page().unwrap();
+    let page_table_ref: &mut PageTableReference = unsafe { page_table_ref_vaddr.as_mut_ptr::<PageTableReference>().as_mut().unwrap() };
+    page_table_ref.init(virt_to_phys(page_table_vaddr), page_table_vaddr, &[], &[]);
+    //let res = page_table_ref.page_walk_pub(VirtAddr::from(0x400000u64));
+
+    //page_table_ref.dump();
+    let paddr = entry[0] & !(PAGE_SIZE as u64 - 1);
+    log::info!("Address: {:#x}",paddr);
+    let guard2 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
+    let vaddr: VirtAddr = guard2.virt_addr();
+    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
+    log::info!("Table2: {:?}", entry);
+
+    let paddr = entry[0] &  !(PAGE_SIZE as u64 - 1);
+    log::info!("Address: {:#x}",paddr);
+    let guard3 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
+    let vaddr: VirtAddr = guard3.virt_addr();
+    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
+    log::info!("Table3: {:?}", entry);
+
+    let paddr = entry[2] &  !(PAGE_SIZE as u64 - 1);
+    log::info!("Address: {:#x}",paddr);
+    let guard4 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
+    let vaddr: VirtAddr = guard4.virt_addr();
+    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
+    log::info!("Table4: {:?}", entry);
+    //log::info!("Res: {:?}",res);
+    //page_table_ref.map_4k_page(target, addr, flags)
+    let paddr = entry[4] & !(PAGE_SIZE as u64 - 1);
+    log::info!("Address: {:#x}", paddr);
+    let guard5 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
+    let vaddr: VirtAddr = guard5.virt_addr();
+    log::info!("Test");
+    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
+    log::info!("Data: {:?}", entry);
+    Ok(())
+}
 
 
 
