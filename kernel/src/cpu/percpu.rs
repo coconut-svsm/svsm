@@ -618,13 +618,6 @@ impl PerCpu {
         self.load_tss();
     }
 
-    pub fn shutdown(&self) -> Result<(), SvsmError> {
-        if let Some(ghcb) = self.ghcb.get() {
-            ghcb.shutdown()?;
-        }
-        Ok(())
-    }
-
     pub fn set_reset_ip(&self, reset_ip: u64) {
         self.reset_ip.set(reset_ip);
     }
@@ -863,7 +856,7 @@ impl PerCpu {
 }
 
 pub fn this_cpu() -> &'static PerCpu {
-    unsafe { &*SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>() }
+    unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
