@@ -23,7 +23,7 @@ use crate::utils::MemoryRegion;
 use crate::mm::PageBox;
 use core::arch::global_asm;
 use core::mem::{self, offset_of};
-use core::ops::{Deref, DerefMut};
+use core::ops::Deref;
 use core::ptr;
 use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 
@@ -170,12 +170,6 @@ impl Deref for GhcbPage {
     type Target = GHCB;
     fn deref(&self) -> &Self::Target {
         self.0.deref()
-    }
-}
-
-impl DerefMut for GhcbPage {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.deref_mut()
     }
 }
 
