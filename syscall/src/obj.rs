@@ -18,7 +18,6 @@ use super::SYS_CLOSE;
 pub struct ObjHandle(u32);
 
 impl ObjHandle {
-    #[expect(dead_code)]
     pub(crate) fn new(id: u32) -> Self {
         Self(id)
     }
