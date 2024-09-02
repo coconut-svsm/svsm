@@ -393,6 +393,13 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     }
 }
 
+pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
+    // Skip checking empty path since opendir walks the path from root, and even
+    // if path were empty the root directory will be returned.
+    let items = split_path_allow_empty(path);
+    walk_path_from_root(items)
+}
+
 /// Used to create a file with the given path.
 ///
 /// # Argument
@@ -484,8 +491,7 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
 /// [`Result<(), SvsmError>`]: [`Result`] containing the [`Vec`]
 /// of directory entries if successful,  [`SvsmError`] otherwise.
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
-    let items = split_path_allow_empty(path);
-    let dir = walk_path_from_root(items)?;
+    let dir = opendir(path)?;
     Ok(dir.list())
 }
 
