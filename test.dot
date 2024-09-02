@@ -1,0 +1,465 @@
+digraph {
+
+    0 [ label =  "igvmbuilder 1411"  shape = box]
+
+    1 [ label =  "bootlib 139"  shape = box]
+
+    2 [ label =  "igvmmeasure 725"  shape = box]
+
+    3 [ label =  "svsm 17594"  shape = box]
+
+    4 [ label =  "cpuarch 314"  shape = box]
+
+    5 [ label =  "elf 1577"  shape = box]
+
+    6 [ label =  "libmstpm 1429870"  shape = box]
+
+    7 [ label =  "syscall 5"  shape = box]
+
+    8 [ label =  "test 35"  shape = box]
+
+    9 [ label =  "svsm-fuzz 685"  shape = box]
+
+    10 [ label =  "clap_builder-4.5.9 15697"  ]
+
+    11 [ label =  "igvm-0.1.9 6090"  ]
+
+    12 [ label =  "igvm_defs-0.1.9 437"  ]
+
+    13 [ label =  "uuid-1.7.0 3481"  ]
+
+    14 [ label =  "zerocopy-0.7.32 5870"  ]
+
+    15 [ label =  "hmac-sha512-1.1.5 710"  ]
+
+    16 [ label =  "p384-0.13.0 30614"  ]
+
+    17 [ label =  "aes-gcm-0.10.3 6334"  ]
+
+    18 [ label =  "bitflags-2.4.2 3423"  ]
+
+    19 [ label =  "intrusive-collections-0.9.6 7914"  ]
+
+    20 [ label =  "log-0.4.20 2948"  ]
+
+    21 [ label =  "packit 606"  ]
+
+    22 [ label =  "derive_arbitrary-1.3.2 491"  ]
+
+    23 [ label =  "libfuzzer-sys-0.4.7 220"  ]
+
+    24 [ label =  "clap_builder-4.5.9 15697"  ]
+
+    25 [ label =  "crc32fast-1.3.2 1237"  ]
+
+    26 [ label =  "hex-0.4.3 529"  ]
+
+    27 [ label =  "open-enum-0.4.1 54"  ]
+
+    28 [ label =  "range_map_vec-0.1.0 384"  ]
+
+    29 [ label =  "thiserror-impl-1.0.62 1560"  ]
+
+    30 [ label =  "tracing-attributes-0.1.27 3134"  ]
+
+    31 [ label =  "static_assertions-1.1.0 243"  ]
+
+    32 [ label =  "byteorder-1.5.0 2965"  ]
+
+    33 [ label =  "ecdsa-0.16.9 2362"  style = dashed]
+
+    34 [ label =  "elliptic-curve-0.13.8 4571"  ]
+
+    35 [ label =  "primeorder-0.13.6 1880"  ]
+
+    36 [ label =  "sha2-0.10.8 1799"  style = dashed]
+
+    37 [ label =  "aead-0.5.2 795"  ]
+
+    38 [ label =  "aes-0.8.3 5021"  style = dashed]
+
+    39 [ label =  "cipher-0.4.4 1578"  ]
+
+    40 [ label =  "ctr-0.9.2 894"  ]
+
+    41 [ label =  "ghash-0.5.0 118"  ]
+
+    42 [ label =  "subtle-2.4.1 688"  ]
+
+    43 [ label =  "memoffset-0.9.0 579"  ]
+
+    44 [ label =  "zerocopy-0.6.6 2726"  ]
+
+    45 [ label =  "once_cell-1.19.0 2152"  ]
+
+    46 [ label =  "anstream-0.6.11 2070"  style = dashed]
+
+    47 [ label =  "anstyle-1.0.5 1127"  ]
+
+    48 [ label =  "clap_lex-0.7.1 326"  ]
+
+    49 [ label =  "strsim-0.11.1 1108"  style = dashed]
+
+    50 [ label =  "cfg-if-1.0.0 131"  ]
+
+    51 [ label =  "pin-project-lite-0.2.13 4340"  ]
+
+    52 [ label =  "tracing-core-0.1.32 3375"  ]
+
+    53 [ label =  "clap_builder-4.5.9 15697"  style = dashed]
+
+    54 [ label =  "digest-0.10.7 1646"  style = dashed]
+
+    55 [ label =  "rfc6979-0.4.0 155"  style = dashed]
+
+    56 [ label =  "signature-2.2.0 284"  style = dashed]
+
+    57 [ label =  "spki-0.7.3 722"  style = dashed]
+
+    58 [ label =  "base16ct-0.2.0 418"  ]
+
+    59 [ label =  "crypto-bigint-0.5.5 9174"  ]
+
+    60 [ label =  "block-buffer-0.10.4 487"  style = dashed]
+
+    61 [ label =  "generic-array-0.14.7 1421"  ]
+
+    62 [ label =  "group-0.13.0 779"  style = dashed]
+
+    63 [ label =  "hkdf-0.12.4 630"  style = dashed]
+
+    64 [ label =  "pem-rfc7468-0.7.0 686"  style = dashed]
+
+    65 [ label =  "pkcs8-0.10.2 895"  style = dashed]
+
+    66 [ label =  "rand_core-0.6.4 831"  ]
+
+    67 [ label =  "sec1-0.7.3 1017"  style = dashed]
+
+    68 [ label =  "zeroize-1.7.0 892"  ]
+
+    69 [ label =  "crypto-common-0.1.6 188"  ]
+
+    70 [ label =  "inout-0.1.3 574"  ]
+
+    71 [ label =  "opaque-debug-0.3.0 25"  ]
+
+    72 [ label =  "polyval-0.6.1 891"  ]
+
+    73 [ label =  "anstyle-parse-0.2.3 1132"  style = dashed]
+
+    74 [ label =  "anstyle-query-1.0.2 154"  style = dashed]
+
+    75 [ label =  "colorchoice-1.0.1 91"  style = dashed]
+
+    76 [ label =  "utf8parse-0.2.2 186"  style = dashed]
+
+    77 [ label =  "const-oid-0.9.6 5054"  style = dashed]
+
+    78 [ label =  "block-buffer-0.10.4 487"  style = dashed]
+
+    79 [ label =  "hmac-0.12.1 462"  style = dashed]
+
+    80 [ label =  "base64ct-1.6.0 1985"  style = dashed]
+
+    81 [ label =  "typenum-1.17.0 5672"  ]
+
+    82 [ label =  "getrandom-0.2.15 1166"  style = dashed]
+
+    83 [ label =  "universal-hash-0.5.1 115"  ]
+
+    0 -> 1 [ ]
+
+    0 -> 10 [ ]
+
+    0 -> 11 [ ]
+
+    0 -> 12 [ ]
+
+    0 -> 13 [ ]
+
+    0 -> 14 [ ]
+
+    1 -> 14 [ ]
+
+    2 -> 10 [ ]
+
+    2 -> 15 [ ]
+
+    2 -> 11 [ ]
+
+    2 -> 12 [ ]
+
+    2 -> 16 [ ]
+
+    2 -> 14 [ ]
+
+    3 -> 17 [ ]
+
+    3 -> 18 [ ]
+
+    3 -> 1 [ ]
+
+    3 -> 4 [ ]
+
+    3 -> 5 [ ]
+
+    3 -> 12 [ ]
+
+    3 -> 19 [ ]
+
+    3 -> 6 [ style = dotted]
+
+    3 -> 20 [ ]
+
+    3 -> 21 [ ]
+
+    3 -> 7 [ ]
+
+    5 -> 18 [ ]
+
+    9 -> 22 [ ]
+
+    9 -> 23 [ ]
+
+    9 -> 3 [ ]
+
+    10 -> 24 [ ]
+
+    11 -> 25 [ ]
+
+    11 -> 26 [ ]
+
+    11 -> 12 [ ]
+
+    11 -> 27 [ ]
+
+    11 -> 28 [ ]
+
+    11 -> 29 [ ]
+
+    11 -> 30 [ ]
+
+    11 -> 14 [ ]
+
+    12 -> 27 [ ]
+
+    12 -> 31 [ ]
+
+    12 -> 14 [ ]
+
+    14 -> 32 [ style = dotted]
+
+    16 -> 33 [ style = dotted]
+
+    16 -> 34 [ ]
+
+    16 -> 35 [ ]
+
+    16 -> 36 [ style = dotted]
+
+    17 -> 37 [ ]
+
+    17 -> 38 [ style = dotted]
+
+    17 -> 39 [ ]
+
+    17 -> 40 [ ]
+
+    17 -> 41 [ ]
+
+    17 -> 42 [ ]
+
+    19 -> 43 [ ]
+
+    21 -> 44 [ ]
+
+    23 -> 22 [ ]
+
+    23 -> 45 [ ]
+
+    24 -> 46 [ style = dotted]
+
+    24 -> 47 [ ]
+
+    24 -> 48 [ ]
+
+    24 -> 49 [ style = dotted]
+
+    25 -> 50 [ ]
+
+    30 -> 51 [ ]
+
+    30 -> 52 [ ]
+
+    33 -> 53 [ style = dotted]
+
+    33 -> 54 [ style = dotted]
+
+    33 -> 34 [ style = dashed]
+
+    33 -> 55 [ style = dotted]
+
+    33 -> 56 [ style = dashed]
+
+    33 -> 57 [ style = dotted]
+
+    34 -> 58 [ ]
+
+    34 -> 59 [ ]
+
+    34 -> 54 [ style = dotted]
+
+    34 -> 60 [ style = dotted]
+
+    34 -> 61 [ ]
+
+    34 -> 62 [ style = dotted]
+
+    34 -> 63 [ style = dotted]
+
+    34 -> 64 [ style = dotted]
+
+    34 -> 65 [ style = dotted]
+
+    34 -> 66 [ ]
+
+    34 -> 67 [ style = dotted]
+
+    34 -> 42 [ ]
+
+    34 -> 68 [ ]
+
+    35 -> 34 [ ]
+
+    36 -> 50 [ style = dashed]
+
+    36 -> 54 [ style = dashed]
+
+    37 -> 69 [ ]
+
+    37 -> 61 [ ]
+
+    38 -> 50 [ style = dashed]
+
+    38 -> 39 [ style = dashed]
+
+    39 -> 69 [ ]
+
+    39 -> 70 [ ]
+
+    40 -> 39 [ ]
+
+    41 -> 71 [ ]
+
+    41 -> 72 [ ]
+
+    44 -> 32 [ ]
+
+    46 -> 47 [ style = dashed]
+
+    46 -> 73 [ style = dashed]
+
+    46 -> 74 [ style = dotted]
+
+    46 -> 75 [ style = dashed]
+
+    46 -> 76 [ style = dashed]
+
+    52 -> 45 [ style = dotted]
+
+    53 -> 77 [ style = dotted]
+
+    53 -> 64 [ style = dotted]
+
+    53 -> 68 [ style = dotted]
+
+    54 -> 78 [ style = dotted]
+
+    54 -> 77 [ style = dotted]
+
+    54 -> 69 [ style = dashed]
+
+    54 -> 42 [ style = dotted]
+
+    55 -> 79 [ style = dashed]
+
+    55 -> 42 [ style = dashed]
+
+    56 -> 54 [ style = dotted]
+
+    56 -> 66 [ style = dotted]
+
+    57 -> 80 [ style = dotted]
+
+    57 -> 53 [ style = dashed]
+
+    59 -> 61 [ style = dotted]
+
+    59 -> 66 [ style = dotted]
+
+    59 -> 42 [ ]
+
+    59 -> 68 [ style = dotted]
+
+    60 -> 66 [ style = dashed]
+
+    60 -> 42 [ style = dashed]
+
+    61 -> 81 [ ]
+
+    61 -> 68 [ style = dotted]
+
+    62 -> 60 [ style = dashed]
+
+    62 -> 66 [ style = dashed]
+
+    62 -> 42 [ style = dashed]
+
+    63 -> 79 [ style = dashed]
+
+    64 -> 80 [ style = dashed]
+
+    65 -> 53 [ style = dashed]
+
+    65 -> 57 [ style = dashed]
+
+    66 -> 82 [ style = dotted]
+
+    67 -> 58 [ style = dotted]
+
+    67 -> 53 [ style = dotted]
+
+    67 -> 61 [ style = dotted]
+
+    67 -> 65 [ style = dotted]
+
+    67 -> 42 [ style = dotted]
+
+    67 -> 68 [ style = dotted]
+
+    69 -> 61 [ ]
+
+    69 -> 81 [ ]
+
+    70 -> 61 [ ]
+
+    72 -> 50 [ ]
+
+    72 -> 71 [ ]
+
+    72 -> 83 [ ]
+
+    73 -> 76 [ style = dotted]
+
+    78 -> 61 [ style = dashed]
+
+    79 -> 54 [ style = dashed]
+
+    82 -> 50 [ style = dashed]
+
+    83 -> 69 [ ]
+
+    83 -> 42 [ ]
+
+}

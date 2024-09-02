@@ -94,13 +94,15 @@ fn request_loop_once(
         return Ok(false);
     }
 
-    match protocol {
+    let m = match protocol {
         SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
         #[cfg(all(feature = "mstpm", not(test)))]
         SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
         SVSM_PROCESS_PROTOCOL => process_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
-    }
+    };
+    log::info!("RETURN of protocol {:?}", m);
+    m
 }
 
 fn check_requests() -> Result<bool, SvsmReqError> {
@@ -191,9 +193,6 @@ pub fn request_loop() {
 
 #[no_mangle]
 pub extern "C" fn request_processing_main() {
-    let apic_id = this_cpu().get_apic_id();
-
-    log::info!("Launching request-processing task on CPU {}", apic_id);
 
     loop {
         wait_for_requests();
@@ -244,7 +243,8 @@ pub extern "C" fn request_processing_main() {
                 break;
             }
         };
-
+        request_info.params.r8 = rax;
+        log::info!("{:?}",request_info.params);
         // Write back results
         {
             let cpu = this_cpu();

@@ -311,6 +311,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let heap_area_virt_start = loaded_kernel_virt_end;
     let heap_area_size =
         kernel_region_phys_end - heap_area_phys_start - config.reserved_kernel_area_size();
+    log::info!("HEAP SIZE {} {} {}",kernel_region_phys_end,heap_area_phys_start, config.reserved_kernel_area_size());
+    //panic!();
     let heap_area_virt_region = MemoryRegion::new(heap_area_virt_start, heap_area_size);
     map_and_validate(
         platform,

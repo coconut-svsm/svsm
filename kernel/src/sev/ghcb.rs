@@ -440,7 +440,7 @@ impl GHCB {
             PageStateChangeOp::PscPsmash => PSC_OP_PSMASH,
             PageStateChangeOp::PscUnsmash => PSC_OP_UNSMASH,
         };
-
+        //log::info!("TEST STATE CHANGE");
         self.clear();
 
         while paddr < end {

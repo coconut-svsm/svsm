@@ -67,7 +67,7 @@ fn strip_c_bit(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !get_ecryption_mask())
 }
 
-fn set_c_bit_in_address(addr: PhysAddr) -> PhysAddr {
+pub fn set_c_bit_in_address(addr: PhysAddr) -> PhysAddr {
     return PhysAddr::from(addr.bits() | get_ecryption_mask());
 }
 
@@ -181,10 +181,12 @@ impl PageTable {
 pub struct PageTableReference {
     pub table: *mut PageTable,
     pub table_phy: PhysAddr,
+    pub table_virt: VirtAddr,
     pub table_entry: TemporaryPageMapping,
     pub mounted: bool,
-    pub pages: [PhysAddr; 256],
-    pub free_pages: [bool; 256],
+    pub pages: [PhysAddr; 8],
+    pub pages_virt: [VirtAddr; 8],
+    pub free_pages: [bool; 8],
 }
 #[derive(Clone, Copy, Debug)]
 pub enum SchalError {
@@ -205,7 +207,7 @@ pub enum TableLevelMapping<'a> {
 */
 impl PageTableReference {
 
-    pub fn init(&mut self, addr: PhysAddr, mem: &[PhysAddr]){
+    pub fn init(&mut self, addr: PhysAddr, vaddr: VirtAddr, mem: &[PhysAddr], mem_virt: &[VirtAddr]){
         for i in self.pages.iter_mut() {
             *i = PhysAddr::from(0u64);
         }
@@ -215,11 +217,15 @@ impl PageTableReference {
 
         for i in 0..mem.len() {
             self.pages[i] = mem[i];
+            self.pages_virt[i] = mem_virt[i];
             self.free_pages[i] = true;
         }
         self.mounted = false;
         self.table_phy = addr;
+        self.table_virt = vaddr;
     }
+
+
 
     pub fn mount(&mut self) {
         if self.mounted {
@@ -229,6 +235,7 @@ impl PageTableReference {
         self.table =  self.table_entry.virt_addr().as_mut_ptr::<PageTable>();
         self.mounted = true;
     }
+    
     pub fn unmount(&mut self) {
         if !self.mounted {
             return;
@@ -333,6 +340,9 @@ impl PageTableReference {
 
 
     fn get_free_pages(&mut self) -> PhysAddr {
+        let vaddr = allocate_zeroed_page().unwrap();
+        return virt_to_phys(vaddr);
+        /*
         for i in 0..self.free_pages.len() {
             if self.free_pages[i] {
                 self.free_pages[i] = false;
@@ -340,7 +350,7 @@ impl PageTableReference {
                 return self.pages[i];
             }
         }
-        return PhysAddr::from(0u64);
+        return PhysAddr::from(0u64);*/
     }
 
     pub fn page_walk_pub(&self, addr: VirtAddr) -> PhysAddr {
@@ -430,6 +440,12 @@ impl PageTableReference {
         } else {
             Err(SchalError::Allocation)
         }
+
+    }
+
+    pub fn free(&mut self){
+
+
 
     }
 
