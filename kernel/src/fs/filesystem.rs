@@ -281,7 +281,7 @@ fn split_path(path: &str) -> Result<impl DoubleEndedIterator<Item = &str>, SvsmE
 }
 
 /// Used to perform a walk over the items in a path while checking
-/// each item is a directory.
+/// each item is a directory, starting at the given directory.
 ///
 /// # Argument
 ///
@@ -292,13 +292,11 @@ fn split_path(path: &str) -> Result<impl DoubleEndedIterator<Item = &str>, SvsmE
 /// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
 /// directory corresponding to the path if successful, or [`SvsmError`]
 /// if there is an error.
-fn walk_path<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+fn walk_path<'a, I>(dir: Arc<dyn Directory>, path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
 where
     I: Iterator<Item = &'a str>,
 {
-    let fs_root = FS_ROOT.lock_read();
-    let mut current_dir = fs_root.root_dir();
-    drop(fs_root);
+    let mut current_dir = dir;
 
     for item in path_items {
         let dir_name = FileName::from(item);
@@ -310,6 +308,29 @@ where
     }
 
     Ok(current_dir)
+}
+
+/// Used to perform a walk over the items in a path while checking
+/// each item is a directory, starting at the root directory.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
+fn walk_path_from_root<'a, I>(path_items: I) -> Result<Arc<dyn Directory>, SvsmError>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let fs_root = FS_ROOT.lock_read();
+    let root = fs_root.root_dir();
+    drop(fs_root);
+
+    walk_path(root, path_items)
 }
 
 /// Used to perform a walk over the items in a path while checking
@@ -362,7 +383,7 @@ where
 pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path(path_items)?;
+    let current_dir = walk_path_from_root(path_items)?;
 
     let dir_entry = current_dir.lookup_entry(file_name)?;
 
@@ -370,6 +391,24 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
         DirEntry::File(f) => Ok(FileHandle::new(&f)),
     }
+}
+
+/// Used to open a directory object.
+///
+/// # Argument
+///
+/// `path_items`: contains items in a path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the path if successful, or [`SvsmError`]
+/// if there is an error.
+pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
+    // Skip checking empty path since opendir walks the path from root, and even
+    // if path were empty the root directory will be returned.
+    let items = split_path_allow_empty(path);
+    walk_path_from_root(items)
 }
 
 /// Used to create a file with the given path.
@@ -385,7 +424,7 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
     let mut path_items = split_path(path)?;
     let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path(path_items)?;
+    let current_dir = walk_path_from_root(path_items)?;
     let file = current_dir.create_file(file_name)?;
 
     Ok(FileHandle::new(&file))
@@ -428,7 +467,7 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let dir_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path(path_items)?;
+    let current_dir = walk_path_from_root(path_items)?;
 
     current_dir.create_directory(dir_name)?;
 
@@ -448,7 +487,7 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
 pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let entry_name = FileName::from(path_items.next_back().unwrap());
-    let dir = walk_path(path_items)?;
+    let dir = walk_path_from_root(path_items)?;
 
     dir.unlink(entry_name)
 }
@@ -463,8 +502,7 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
 /// [`Result<(), SvsmError>`]: [`Result`] containing the [`Vec`]
 /// of directory entries if successful,  [`SvsmError`] otherwise.
 pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
-    let items = split_path_allow_empty(path);
-    let dir = walk_path(items)?;
+    let dir = opendir(path)?;
     Ok(dir.list())
 }
 
