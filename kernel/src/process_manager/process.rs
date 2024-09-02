@@ -353,3 +353,29 @@ pub fn attest_trusted_process(_params: &mut RequestParams) -> Result<(), SvsmReq
     todo!()
 }
 
+use core::slice;
+
+pub fn load_elf(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    let page1_address = PhysAddr::from(params.r8);
+    let page1 = PerCPUPageMappingGuard::create_4k(page1_address).unwrap();
+    let page1_data = unsafe { page1.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap() };
+    let page2_address = PhysAddr::from(params.rcx);
+    let page2 = PerCPUPageMappingGuard::create_4k(page2_address).unwrap();
+    let page2_data = unsafe {page2.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
+    let elf_size : u32 = params.rdx.try_into().unwrap();
+    log::info!("[Monitor] Elf size: {}", elf_size);
+    let mut elf_raw_data : [u8; 4096 * 2] = [0; 4096 * 2];
+    let mut i = 0;
+    while i < 4096 {
+        elf_raw_data[i] = page1_data[i];
+        elf_raw_data[i + 4096] = page2_data[i];
+        i = i + 1;
+    }
+    let elf_buf = unsafe { slice::from_raw_parts(elf_raw_data.as_ptr(), elf_size.try_into().unwrap()) };
+    let elf = match elf::Elf64File::read(elf_buf) {
+        Ok(elf) => elf,
+        Err(e) => panic!("error reading ELF: {}", e),
+    };
+    log::info!("Elf file: {:?}", elf);
+    Ok(())
+}

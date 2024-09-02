@@ -53,7 +53,7 @@ pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 pub fn exec_elf(params: &mut RequestParams) -> Result<(), SvsmReqError> {
-    attestation::monitor::exec_elf(params)
+    super::process::load_elf(params)
 }
 
 pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
