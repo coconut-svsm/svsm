@@ -68,6 +68,7 @@ pub enum DecodedInsn {
     Cpuid,
     In(Operand, Bytes),
     Ins,
+    Mov,
     Out(Operand, Bytes),
     Outs,
     Wrmsr,

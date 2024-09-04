@@ -1037,6 +1037,7 @@ impl DecodedInsnCtx {
             OpCodeClass::Rdtsc => DecodedInsn::Rdtsc,
             OpCodeClass::Rdtscp => DecodedInsn::Rdtscp,
             OpCodeClass::Wrmsr => DecodedInsn::Wrmsr,
+            OpCodeClass::Mov => DecodedInsn::Mov,
             _ => return Err(InsnError::UnSupportedInsn),
         })
     }
