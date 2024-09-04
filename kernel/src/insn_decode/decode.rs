@@ -233,6 +233,66 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     fn ioio_out(&mut self, _port: u16, _size: Bytes, _data: u64) -> Result<(), InsnError> {
         Err(InsnError::IoIoOut)
     }
+
+    /// Translate the given linear address to a physical address.
+    ///
+    /// # Arguments
+    ///
+    /// * `la` - The linear address to translate.
+    /// * `write` - Whether the translation is for a write operation.
+    /// * `fetch` - Whether the translation is for a fetch operation.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the translated physical address and a boolean
+    /// indicating whether the physical address is shared or an `InsnError` if
+    /// the translation fails.
+    fn translate_linear_addr(
+        &self,
+        _la: usize,
+        _write: bool,
+        _fetch: bool,
+    ) -> Result<(usize, bool), InsnError> {
+        Err(InsnError::TranslateLinearAddr)
+    }
+
+    /// Handle a memory-mapped I/O read operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `pa` - The MMIO physical address to read from.
+    /// * `shared` - Whether the MMIO address is shared.
+    /// * `size` - The size of the data to read.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the read data if success or an `InsnError` if
+    /// the operation fails.
+    fn handle_mmio_read(&self, _pa: usize, _shared: bool, _size: Bytes) -> Result<u64, InsnError> {
+        Err(InsnError::HandleMmioRead)
+    }
+
+    /// Handle a memory-mapped I/O write operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `pa` - The MMIO physical address to write to.
+    /// * `shared` - Whether the MMIO address is shared.
+    /// * `size` - The size of the data to write.
+    /// * `data` - The data to write to the MMIO.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an `InsnError` if the operation fails.
+    fn handle_mmio_write(
+        &mut self,
+        _pa: usize,
+        _shared: bool,
+        _size: Bytes,
+        _data: u64,
+    ) -> Result<(), InsnError> {
+        Err(InsnError::HandleMmioWrite)
+    }
 }
 
 /// Trait representing a machine memory for instruction decoding.
@@ -523,6 +583,28 @@ fn ioio_perm<I: InsnMachineCtx>(mctx: &I, port: u16, size: Bytes, io_read: bool)
     }
 }
 
+#[inline]
+fn read_bytereg<I: InsnMachineCtx>(mctx: &I, reg: Register, lhbr: bool) -> u8 {
+    let data = mctx.read_reg(reg);
+    // To obtain the value of a legacy high byte register shift the
+    // base register right by 8 bits (%ah = %rax >> 8).
+    (if lhbr { data >> 8 } else { data }) as u8
+}
+
+#[inline]
+fn write_bytereg<I: InsnMachineCtx>(mctx: &mut I, reg: Register, lhbr: bool, data: u8) {
+    let old = mctx.read_reg(reg);
+    let mask = (Bytes::One).mask() as usize;
+
+    let new = if lhbr {
+        (data as usize) << 8 | (old & !(mask << 8))
+    } else {
+        (data as usize) | (old & !mask)
+    };
+
+    mctx.write_reg(reg, new);
+}
+
 /// Represents the context of a decoded instruction, which is used to
 /// interpret the instruction. It holds the decoded instruction, its
 /// length and various components that are decoded from the instruction
@@ -544,7 +626,6 @@ pub struct DecodedInsnCtx {
 
     // ModR/M byte
     modrm: ModRM,
-    reg: u8,
     modrm_reg: Option<Register>,
 
     // SIB byte
@@ -634,6 +715,7 @@ impl DecodedInsnCtx {
                 DecodedInsn::Out(port, opsize) => self.emulate_in_out(port, opsize, mctx, false),
                 DecodedInsn::Ins => self.emulate_ins_outs(mctx, true),
                 DecodedInsn::Outs => self.emulate_ins_outs(mctx, false),
+                DecodedInsn::Mov => self.emulate_mov(mctx),
                 _ => Err(InsnError::UnSupportedInsn),
             })
     }
@@ -800,8 +882,8 @@ impl DecodedInsnCtx {
         }
 
         let r#mod = self.modrm.get_mod();
-        self.reg = self.modrm.get_reg() | ((self.prefix.contains(PrefixFlags::REX_R) as u8) << 3);
-        self.modrm_reg = Some(Register::try_from(RegCode(self.reg))?);
+        let reg = self.modrm.get_reg() | ((self.prefix.contains(PrefixFlags::REX_R) as u8) << 3);
+        self.modrm_reg = Some(Register::try_from(RegCode(reg))?);
 
         // As the modrm decoding is majorly for MMIO instructions which requires
         // a memory access, a direct addressing mode makes no sense in the context.
@@ -1040,6 +1122,32 @@ impl DecodedInsnCtx {
             OpCodeClass::Mov => DecodedInsn::Mov,
             _ => return Err(InsnError::UnSupportedInsn),
         })
+    }
+
+    #[inline]
+    fn get_modrm_reg(&self) -> Result<Register, InsnError> {
+        self.modrm_reg.ok_or(InsnError::InvalidDecode)
+    }
+
+    fn cal_modrm_bytereg(&self) -> Result<(Register, bool), InsnError> {
+        let reg = self.get_modrm_reg()?;
+        // 64-bit mode imposes limitations on accessing legacy high byte
+        // registers (lhbr).
+        //
+        // The legacy high-byte registers cannot be addressed if the REX
+        // prefix is present. In this case the values 4, 5, 6 and 7 of the
+        // 'ModRM:reg' field address %spl, %bpl, %sil and %dil respectively.
+        //
+        // If the REX prefix is not present then the values 4, 5, 6 and 7
+        // of the 'ModRM:reg' field address the legacy high-byte registers,
+        // %ah, %ch, %dh and %bh respectively.
+        Ok(
+            if !self.prefix.contains(PrefixFlags::REX_P) && (reg as u8 & 0x4) != 0 {
+                (Register::try_from(RegCode(reg as u8 & 0x3))?, true)
+            } else {
+                (reg, false)
+            },
+        )
     }
 
     fn canonical_check(&self, la: usize) -> Option<usize> {
@@ -1311,6 +1419,135 @@ impl DecodedInsnCtx {
         } else {
             // Read data from AL/AX/EAX and then write to the IO port.
             mctx.ioio_out(port, opsize, read_reg(mctx, Register::Rax, opsize) as u64)?;
+        }
+
+        Ok(())
+    }
+
+    fn cal_effective_addr<I: InsnMachineCtx>(&self, mctx: &I) -> Result<usize, InsnError> {
+        let base = if let Some(reg) = self.base_reg {
+            match reg {
+                Register::Rip => {
+                    // RIP relative addressing is used in 64bit mode and
+                    // starts from the following instruction
+                    mctx.read_reg(reg) + self.insn_len
+                }
+                _ => mctx.read_reg(reg),
+            }
+        } else {
+            0
+        };
+
+        let index = if let Some(reg) = self.index_reg {
+            mctx.read_reg(reg)
+        } else {
+            0
+        };
+
+        Ok(base
+            .checked_add(index << (self.scale as usize))
+            .and_then(|v| v.checked_add(self.displacement as usize))
+            .ok_or(InsnError::InvalidDecode)?
+            & self.addrsize.mask() as usize)
+    }
+
+    #[inline]
+    fn emulate_mmio_read<I: InsnMachineCtx>(
+        &self,
+        mctx: &I,
+        seg: SegRegister,
+        ea: usize,
+    ) -> Result<u64, InsnError> {
+        mctx.translate_linear_addr(self.get_linear_addr(mctx, seg, ea, false)?, false, false)
+            .and_then(|(addr, shared)| mctx.handle_mmio_read(addr, shared, self.opsize))
+    }
+
+    #[inline]
+    fn emulate_mmio_write<I: InsnMachineCtx>(
+        &self,
+        mctx: &mut I,
+        seg: SegRegister,
+        ea: usize,
+        data: u64,
+    ) -> Result<(), InsnError> {
+        mctx.translate_linear_addr(self.get_linear_addr(mctx, seg, ea, true)?, true, false)
+            .and_then(|(addr, shared)| mctx.handle_mmio_write(addr, shared, self.opsize, data))
+    }
+
+    fn emulate_mov<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
+        if self.prefix.contains(PrefixFlags::REPZ_P) {
+            return Err(InsnError::UnSupportedInsn);
+        }
+
+        let seg = if let Some(s) = self.override_seg {
+            s
+        } else if self.base_reg == Some(Register::Rsp) || self.base_reg == Some(Register::Rbp) {
+            SegRegister::SS
+        } else {
+            SegRegister::DS
+        };
+        let ea = self.cal_effective_addr(mctx)?;
+
+        match self.get_opdesc()?.code {
+            0x88 => {
+                // Mov byte from reg (ModRM:reg) to mem (ModRM:r/m)
+                // 88/r:	mov r/m8, r8
+                // REX + 88/r:	mov r/m8, r8 (%ah, %ch, %dh, %bh not available)
+                let (reg, lhbr) = self.cal_modrm_bytereg()?;
+                let data = read_bytereg(mctx, reg, lhbr);
+                self.emulate_mmio_write(mctx, seg, ea, data as u64)?;
+            }
+            0x89 => {
+                // MOV from reg (ModRM:reg) to mem (ModRM:r/m)
+                // 89/r:	mov r/m16, r16
+                // 89/r:	mov r/m32, r32
+                // REX.W + 89/r	mov r/m64, r64
+                let data = read_reg(mctx, self.get_modrm_reg()?, self.opsize);
+                self.emulate_mmio_write(mctx, seg, ea, data as u64)?;
+            }
+            0x8A => {
+                // MOV byte from mem (ModRM:r/m) to reg (ModRM:reg)
+                // 8A/r:	mov r8, r/m8
+                // REX + 8A/r:	mov r8, r/m8
+                let data = self.emulate_mmio_read(mctx, seg, ea)?;
+                let (reg, lhbr) = self.cal_modrm_bytereg()?;
+                write_bytereg(mctx, reg, lhbr, data as u8);
+            }
+            0x8B => {
+                // MOV from mem (ModRM:r/m) to reg (ModRM:reg)
+                // 8B/r:	mov r16, r/m16
+                // 8B/r:	mov r32, r/m32
+                // REX.W 8B/r:	mov r64, r/m64
+                let data = self.emulate_mmio_read(mctx, seg, ea)?;
+                write_reg(mctx, self.get_modrm_reg()?, data as usize, self.opsize);
+            }
+            0xA1 => {
+                // MOV from seg:moffset to AX/EAX/RAX
+                // A1:		mov AX, moffs16
+                // A1:		mov EAX, moffs32
+                // REX.W + A1:	mov RAX, moffs64
+                let data = self.emulate_mmio_read(mctx, seg, ea)?;
+                write_reg(mctx, Register::Rax, data as usize, self.opsize);
+            }
+            0xA3 => {
+                // MOV from AX/EAX/RAX to seg:moffset
+                // A3:		mov moffs16, AX
+                // A3:		mov moffs32, EAX
+                // REX.W + A3:	mov moffs64, RAX
+                let data = read_reg(mctx, Register::Rax, self.opsize);
+                self.emulate_mmio_write(mctx, seg, ea, data as u64)?;
+            }
+            0xC6 | 0xC7 => {
+                // MOV from imm8 to mem (ModRM:r/m)
+                // C6/0		mov r/m8, imm8
+                // REX + C6/0	mov r/m8, imm8
+                // MOV from imm16/imm32 to mem (ModRM:r/m)
+                // C7/0		mov r/m16, imm16
+                // C7/0		mov r/m32, imm32
+                // REX.W + C7/0	mov r/m64, imm32 (sign-extended to 64-bits)
+                self.emulate_mmio_write(mctx, seg, ea, self.immediate as u64 & self.opsize.mask())?;
+            }
+            _ => return Err(InsnError::UnSupportedInsn),
         }
 
         Ok(())
