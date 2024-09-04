@@ -139,6 +139,8 @@ pub mod test_utils {
 
         pub ioport: u16,
         pub iodata: u64,
+
+        pub mmio_reg: u64,
     }
 
     impl Default for TestCtx {
@@ -167,6 +169,7 @@ pub mod test_utils {
                 flags: 0,
                 ioport: TEST_PORT,
                 iodata: u64::MAX,
+                mmio_reg: 0,
             }
         }
     }
@@ -274,6 +277,55 @@ pub mod test_utils {
                 _ => return Err(InsnError::IoIoOut),
             }
 
+            Ok(())
+        }
+
+        fn translate_linear_addr(
+            &self,
+            la: usize,
+            _write: bool,
+            _fetch: bool,
+        ) -> Result<(usize, bool), InsnError> {
+            Ok((la, false))
+        }
+
+        fn handle_mmio_read(
+            &self,
+            pa: usize,
+            _shared: bool,
+            size: Bytes,
+        ) -> Result<u64, InsnError> {
+            if pa != core::ptr::addr_of!(self.mmio_reg) as usize {
+                return Ok(0);
+            }
+
+            match size {
+                Bytes::One => Ok(unsafe { *(pa as *const u8) } as u64),
+                Bytes::Two => Ok(unsafe { *(pa as *const u16) } as u64),
+                Bytes::Four => Ok(unsafe { *(pa as *const u32) } as u64),
+                Bytes::Eight => Ok(unsafe { *(pa as *const u64) }),
+                _ => Err(InsnError::HandleMmioRead),
+            }
+        }
+
+        fn handle_mmio_write(
+            &mut self,
+            pa: usize,
+            _shared: bool,
+            size: Bytes,
+            data: u64,
+        ) -> Result<(), InsnError> {
+            if pa != core::ptr::addr_of!(self.mmio_reg) as usize {
+                return Ok(());
+            }
+
+            match size {
+                Bytes::One => unsafe { *(pa as *mut u8) = data as u8 },
+                Bytes::Two => unsafe { *(pa as *mut u16) = data as u16 },
+                Bytes::Four => unsafe { *(pa as *mut u32) = data as u32 },
+                Bytes::Eight => unsafe { *(pa as *mut u64) = data },
+                _ => return Err(InsnError::HandleMmioWrite),
+            }
             Ok(())
         }
     }
@@ -1138,6 +1190,165 @@ mod tests {
             }
             break;
         }
+    }
+
+    #[test]
+    fn test_decode_mov_reg_to_rm() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x88, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            rax: 0xab,
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 2);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x48, 0x89, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            rax: 0x1234567890abcdef,
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 3);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+    }
+
+    #[test]
+    fn test_decode_mov_rm_to_reg() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x8A, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            mmio_reg: 0xab,
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 2);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x48, 0x8B, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            mmio_reg: 0x1234567890abcdef,
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 3);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+    }
+
+    #[test]
+    fn test_decode_mov_moffset_to_reg() {
+        let mut raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xA1, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            mmio_reg: 0x12345678,
+            ..Default::default()
+        };
+        let addr = (core::ptr::addr_of!(testctx.mmio_reg) as usize).to_le_bytes();
+        raw_insn[1..9].copy_from_slice(&addr);
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 9);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+    }
+
+    #[test]
+    fn test_decode_mov_reg_to_moffset() {
+        let mut raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xA3, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            rax: 0x12345678,
+            ..Default::default()
+        };
+        let addr = (core::ptr::addr_of!(testctx.mmio_reg) as usize).to_le_bytes();
+        raw_insn[1..9].copy_from_slice(&addr);
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 9);
+        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+    }
+
+    #[test]
+    fn test_decode_mov_imm_to_reg() {
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0xC6, 0x07, 0xab, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 3);
+        assert_eq!(testctx.mmio_reg, 0xab);
+
+        let raw_insn: [u8; MAX_INSN_SIZE] = [
+            0x48, 0xC7, 0x07, 0x78, 0x56, 0x34, 0x12, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
+            0x41,
+        ];
+
+        let mut testctx = TestCtx {
+            ..Default::default()
+        };
+        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+
+        let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
+        decoded.emulate(&mut testctx).unwrap();
+
+        assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
+        assert_eq!(decoded.size(), 7);
+        assert_eq!(testctx.mmio_reg, 0x12345678);
     }
 
     #[test]
