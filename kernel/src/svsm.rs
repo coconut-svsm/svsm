@@ -347,6 +347,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
 
+    initialize_fs();
+
     // Idle task must be allocated after PerCPU data is mapped
     bsp_percpu
         .setup_idle_task(svsm_main)
@@ -410,8 +412,6 @@ pub extern "C" fn svsm_main() {
     };
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
-
-    initialize_fs();
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
