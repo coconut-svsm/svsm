@@ -12,7 +12,7 @@ use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::fw_meta::SevFWMetaData;
 use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
-use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
+use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
@@ -173,7 +173,7 @@ impl IgvmParams<'_> {
         }
 
         let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
-        platform.validate_page_range(mem_map_va_region)?;
+        platform.validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
 
         // Calculate the maximum number of entries that can be inserted.
         let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE

@@ -41,6 +41,12 @@ pub enum PageStateChangeOp {
     Unsmash,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PageValidateOp {
+    Validate,
+    Invalidate,
+}
+
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform {
@@ -82,11 +88,22 @@ pub trait SvsmPlatform {
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError>;
 
-    /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
+    /// Marks a physical range of pages as valid or invalid for use as private
+    /// pages.  Not usable in stage2.
+    fn validate_physical_page_range(
+        &self,
+        region: MemoryRegion<PhysAddr>,
+        op: PageValidateOp,
+    ) -> Result<(), SvsmError>;
 
-    /// Marks a range of pages as invalid for use as private pages.
-    fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError>;
+    /// Marks a virtual range of pages as valid or invalid for use as private
+    /// pages.  Provided primarily for use in stage2 where validation by
+    /// physical address cannot e supported.
+    fn validate_virtual_page_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        op: PageValidateOp,
+    ) -> Result<(), SvsmError>;
 
     /// Configures the use of alternate injection as requested.
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError>;

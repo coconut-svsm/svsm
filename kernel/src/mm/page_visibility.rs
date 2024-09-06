@@ -16,7 +16,7 @@ use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
 use crate::mm::{virt_to_phys, PageBox};
-use crate::platform::{PageStateChangeOp, SVSM_PLATFORM};
+use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::protocols::errors::SvsmReqError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
@@ -39,7 +39,10 @@ unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     let platform = SVSM_PLATFORM.as_dyn_ref();
 
     // Revoke page validation before changing page state.
-    platform.invalidate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
+    platform.validate_virtual_page_range(
+        MemoryRegion::new(vaddr, PAGE_SIZE),
+        PageValidateOp::Invalidate,
+    )?;
     let paddr = virt_to_phys(vaddr);
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_clear_valid_4k(paddr);
@@ -83,8 +86,11 @@ unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
         PageStateChangeOp::Private,
     )?;
 
-    // Revoke page validation before changing page state.
-    platform.validate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
+    // Validate the page now that it is private again.
+    platform.validate_virtual_page_range(
+        MemoryRegion::new(vaddr, PAGE_SIZE),
+        PageValidateOp::Validate,
+    )?;
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_set_valid_4k(paddr);
     }

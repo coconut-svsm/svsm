@@ -9,10 +9,9 @@ use crate::config::SvsmConfig;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::{PageBox, PerCPUPageMappingGuard};
-use crate::platform::PageStateChangeOp;
-use crate::platform::SvsmPlatform;
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::mm::PageBox;
+use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
+use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use bootlib::kernel_launch::KernelLaunchInfo;
 
@@ -105,15 +104,12 @@ fn invalidate_boot_memory_region(
         region.end()
     );
 
-    for paddr in region.iter_pages(PageSize::Regular) {
-        let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-        let vaddr = guard.virt_addr();
+    if !region.is_empty() {
+        platform.validate_physical_page_range(region, PageValidateOp::Invalidate)?;
 
-        platform.invalidate_page_range(MemoryRegion::new(vaddr, PAGE_SIZE))?;
-    }
-
-    if config.page_state_change_required() && !region.is_empty() {
-        platform.page_state_change(region, PageSize::Regular, PageStateChangeOp::Shared)?;
+        if config.page_state_change_required() {
+            platform.page_state_change(region, PageSize::Regular, PageStateChangeOp::Shared)?;
+        }
     }
 
     Ok(())

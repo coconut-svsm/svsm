@@ -11,7 +11,7 @@ use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::serial::SerialPort;
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
@@ -95,13 +95,19 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_physical_page_range(
+        &self,
+        _region: MemoryRegion<PhysAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
         Ok(())
     }
 
-    /// Marks a range of pages as invalid for use as private pages.
-    fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_virtual_page_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
         Ok(())
     }
 
