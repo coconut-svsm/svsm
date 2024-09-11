@@ -82,7 +82,7 @@ bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.
 test:
 	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --target=x86_64-unknown-linux-gnu
 
-test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm
+test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
 	./scripts/test-in-svsm.sh
 
 doc:
