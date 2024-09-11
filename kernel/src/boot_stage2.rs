@@ -81,6 +81,16 @@ global_asm!(
         decl %ecx
         jnz 1b
 
+        /* Insert a self-map entry */
+        movl $pgtable, %edi
+        movl %edi, %eax
+        orl $0x63, %eax
+        /* The value 0xF68 is equivalent to 8 * PGTABLE_LVL3_IDX_PTE_SELFMAP */
+        movl %eax, 0xF68(%edi)
+        movl $0x80000000, %eax
+        orl %edx, %eax
+        movl %eax, 0xF6C(%edi)
+
         /* Signal APs */
         movl $setup_flag, %edi
         movl $1, (%edi)

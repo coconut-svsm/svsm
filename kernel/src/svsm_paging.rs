@@ -24,7 +24,8 @@ pub fn init_page_table(
     launch_info: &KernelLaunchInfo,
     kernel_elf: &elf::Elf64File<'_>,
 ) -> Result<PageBox<PageTable>, SvsmError> {
-    let mut pgtable = PageBox::try_new(PageTable::default())?;
+    let mut pgtable = PageTable::allocate_new()?;
+
     let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
         let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
         IgvmParamInfo {
