@@ -41,7 +41,9 @@ pub enum OpCodeClass {
     Group7,
     Group7Rm7,
     In,
+    Ins,
     Out,
+    Outs,
     Rdmsr,
     Rdtsc,
     Rdtscp,
@@ -90,6 +92,18 @@ static ONE_BYTE_TABLE: [Option<OpCodeDesc>; 256] = {
     let mut table: [Option<OpCodeDesc>; 256] = [None; 256];
 
     table[0x0F] = opcode!(OpCodeClass::TwoByte);
+    table[0x6C] = opcode!(
+        0x6C,
+        OpCodeClass::Ins,
+        OpCodeFlags::BYTE_OP.bits() | OpCodeFlags::NO_MODRM.bits()
+    );
+    table[0x6D] = opcode!(0x6D, OpCodeClass::Ins, OpCodeFlags::NO_MODRM.bits());
+    table[0x6E] = opcode!(
+        0x6E,
+        OpCodeClass::Outs,
+        OpCodeFlags::BYTE_OP.bits() | OpCodeFlags::NO_MODRM.bits()
+    );
+    table[0x6F] = opcode!(0x6F, OpCodeClass::Outs, OpCodeFlags::NO_MODRM.bits());
     table[0xE4] = opcode!(
         0xE4,
         OpCodeClass::In,

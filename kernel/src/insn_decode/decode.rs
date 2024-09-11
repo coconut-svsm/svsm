@@ -39,13 +39,16 @@
 // https://github.com/projectacrn/acrn-hypervisor/blob/master/hypervisor/
 // arch/x86/guest/instr_emul.c
 
+extern crate alloc;
+
 use super::insn::{DecodedInsn, Immediate, Operand, MAX_INSN_SIZE};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
 use crate::cpu::control_regs::{CR0Flags, CR4Flags};
 use crate::cpu::efer::EFERFlags;
-use crate::cpu::registers::SegDescAttrFlags;
+use crate::cpu::registers::{RFlags, SegDescAttrFlags};
 use crate::types::Bytes;
+use alloc::boxed::Box;
 use bitflags::bitflags;
 
 /// Represents the raw bytes of an instruction and
@@ -143,6 +146,131 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     fn read_cr0(&self) -> u64;
     /// Read CR4 register
     fn read_cr4(&self) -> u64;
+
+    /// Read a register
+    fn read_reg(&self, _reg: Register) -> usize {
+        unimplemented!("Reading register is not implemented");
+    }
+
+    /// Read rflags register
+    fn read_flags(&self) -> usize {
+        unimplemented!("Reading flags is not implemented");
+    }
+
+    /// Write a register
+    fn write_reg(&mut self, _reg: Register, _val: usize) {
+        unimplemented!("Writing register is not implemented");
+    }
+
+    /// Read the current privilege level
+    fn read_cpl(&self) -> usize {
+        unimplemented!("Reading CPL is not implemented");
+    }
+
+    /// Map the given linear address region to a machine memory object
+    /// which provides access to the memory of this linear address region.
+    ///
+    /// # Arguments
+    ///
+    /// * `la` - The linear address of the region to map.
+    /// * `write` - Whether write access is allowed to the mapped region.
+    /// * `fetch` - Whether fetch access is allowed to the mapped region.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a boxed trait object representing the mapped
+    /// memory, or an `InsnError` if mapping fails.
+    fn map_linear_addr<T: Copy + 'static>(
+        &self,
+        _la: usize,
+        _write: bool,
+        _fetch: bool,
+    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+        Err(InsnError::MapLinearAddr)
+    }
+
+    /// Check IO permission bitmap.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - The I/O port to check.
+    /// * `size` - The size of the I/O operation.
+    /// * `io_read` - Whether the I/O operation is a read operation.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing true if the port is permitted otherwise false.
+    fn ioio_perm(&self, _port: u16, _size: Bytes, _io_read: bool) -> bool {
+        unimplemented!("Checking IO permission bitmap is not implemented");
+    }
+
+    /// Handle an I/O in operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - The I/O port to read from.
+    /// * `size` - The size of the data to read.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the read data if success or an `InsnError` if
+    /// the operation fails.
+    fn ioio_in(&self, _port: u16, _size: Bytes) -> Result<u64, InsnError> {
+        Err(InsnError::IoIoIn)
+    }
+
+    /// Handle an I/O out operation.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - The I/O port to write to.
+    /// * `size` - The size of the data to write.
+    /// * `data` - The data to write to the I/O port.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or an `InsnError` if the operation fails.
+    fn ioio_out(&mut self, _port: u16, _size: Bytes, _data: u64) -> Result<(), InsnError> {
+        Err(InsnError::IoIoOut)
+    }
+}
+
+/// Trait representing a machine memory for instruction decoding.
+pub trait InsnMachineMem {
+    type Item;
+
+    /// Read data from the memory at the specified offset.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify not to read data from arbitrary memory. The object implements this
+    /// trait should guarantee the memory region is readable.
+    ///
+    /// # Returns
+    ///
+    /// Returns the read data on success, or an `InsnError` if the read
+    /// operation fails.
+    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+        Err(InsnError::MemRead)
+    }
+
+    /// Write data to the memory at the specified offset.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify not to write data to corrupt arbitrary memory. The object implements
+    /// this trait should guarantee the memory region is writable.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The data to write to the memory.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok`on success, or an `InsnError` if the write operation fails.
+    unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
+        Err(InsnError::MemWrite)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -338,6 +466,63 @@ impl Sib {
     }
 }
 
+#[inline]
+fn read_reg<I: InsnMachineCtx>(mctx: &I, reg: Register, size: Bytes) -> usize {
+    mctx.read_reg(reg) & size.mask() as usize
+}
+
+#[inline]
+fn write_reg<I: InsnMachineCtx>(mctx: &mut I, reg: Register, data: usize, size: Bytes) {
+    mctx.write_reg(
+        reg,
+        match size {
+            Bytes::Zero => return,
+            // Writing 8bit or 16bit register will not affect the upper bits.
+            Bytes::One | Bytes::Two => {
+                let old = mctx.read_reg(reg);
+                (data & size.mask() as usize) | (old & !size.mask() as usize)
+            }
+            // Writing 32bit register will zero out the upper bits.
+            Bytes::Four => data & size.mask() as usize,
+            Bytes::Eight => data,
+        },
+    );
+}
+
+#[inline]
+fn segment_base(segment: u64) -> u32 {
+    // Segment base bits 0 ~ 23: raw value bits 16 ~ 39
+    // Segment base bits 24 ~ 31: raw value bits 56 ~ 63
+    (((segment >> 16) & 0xffffff) | ((segment >> 56) << 24)) as u32
+}
+
+#[inline]
+fn segment_limit(segment: u64) -> u32 {
+    // Segment limit bits 0 ~ 15: raw value bits 0 ~ 15
+    // Segment limit bits 16 ~ 19: raw value bits 48 ~ 51
+    let limit = ((segment & 0xffff) | ((segment >> 32) & 0xf0000)) as u32;
+
+    if SegDescAttrFlags::from_bits_truncate(segment).contains(SegDescAttrFlags::G) {
+        (limit << 12) | 0xfff
+    } else {
+        limit
+    }
+}
+
+fn ioio_perm<I: InsnMachineCtx>(mctx: &I, port: u16, size: Bytes, io_read: bool) -> bool {
+    if mctx.read_cr0() & CR0Flags::PE.bits() != 0
+        && (mctx.read_cpl() > ((mctx.read_flags() >> 12) & 3)
+            || mctx.read_cr4() & CR4Flags::VME.bits() != 0)
+    {
+        // In protected mode with CPL > IOPL or virtual-8086 mode, if
+        // any I/O Permission Bit for I/O port being accessed = 1, the I/O
+        // operation is not allowed.
+        mctx.ioio_perm(port, size, io_read)
+    } else {
+        true
+    }
+}
+
 /// Represents the context of a decoded instruction, which is used to
 /// interpret the instruction. It holds the decoded instruction, its
 /// length and various components that are decoded from the instruction
@@ -373,6 +558,9 @@ pub struct DecodedInsnCtx {
 
     // Optional immediate operand
     immediate: i64,
+
+    // Instruction repeat count
+    repeat: usize,
 }
 
 impl DecodedInsnCtx {
@@ -415,9 +603,39 @@ impl DecodedInsnCtx {
     ///
     /// # Returns
     ///
-    /// The length of the decoded instruction as a `usize`.
+    /// The length of the decoded instruction as a `usize`. If the
+    /// repeat count is greater than 1, then return 0 to indicate not to
+    /// skip this instruction. If the repeat count is less than 1, then
+    /// return instruction len to indicate this instruction can be skipped.
     pub fn size(&self) -> usize {
-        self.insn_len
+        if self.repeat > 1 {
+            0
+        } else {
+            self.insn_len
+        }
+    }
+
+    /// Emulates the decoded instruction using the provided machine context.
+    ///
+    /// # Arguments
+    ///
+    /// * `mctx` - A mutable reference to an object implementing the
+    ///   `InsnMachineCtx` trait to provide the necessary machine context
+    ///   for emulation.
+    ///
+    /// # Returns
+    ///
+    /// An `Ok(())` if emulation is successful or an `InsnError` otherwise.
+    pub fn emulate<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
+        self.insn
+            .ok_or(InsnError::UnSupportedInsn)
+            .and_then(|insn| match insn {
+                DecodedInsn::In(port, opsize) => self.emulate_in_out(port, opsize, mctx, true),
+                DecodedInsn::Out(port, opsize) => self.emulate_in_out(port, opsize, mctx, false),
+                DecodedInsn::Ins => self.emulate_ins_outs(mctx, true),
+                DecodedInsn::Outs => self.emulate_ins_outs(mctx, false),
+                _ => Err(InsnError::UnSupportedInsn),
+            })
     }
 
     fn decode<I: InsnMachineCtx>(
@@ -431,7 +649,7 @@ impl DecodedInsnCtx {
             .and_then(|(insn, disp_bytes)| self.decode_displacement(insn, disp_bytes))
             .and_then(|insn| self.decode_immediate(insn))
             .and_then(|insn| self.decode_moffset(insn))
-            .and_then(|insn| self.complete_decode(insn))
+            .and_then(|insn| self.complete_decode(insn, mctx))
     }
 
     #[inline]
@@ -767,13 +985,17 @@ impl DecodedInsnCtx {
         }
     }
 
-    fn complete_decode(&mut self, insn: DecodedBytes) -> Result<(), InsnError> {
+    fn complete_decode<I: InsnMachineCtx>(
+        &mut self,
+        insn: DecodedBytes,
+        mctx: &I,
+    ) -> Result<(), InsnError> {
         self.insn_len = insn.0.processed();
-        self.decoded_insn()
+        self.decoded_insn(mctx)
             .map(|decoded_insn| self.insn = Some(decoded_insn))
     }
 
-    fn decoded_insn(&self) -> Result<DecodedInsn, InsnError> {
+    fn decoded_insn<I: InsnMachineCtx>(&mut self, mctx: &I) -> Result<DecodedInsn, InsnError> {
         let opdesc = self.get_opdesc()?;
         Ok(match opdesc.class {
             OpCodeClass::Cpuid => DecodedInsn::Cpuid,
@@ -797,11 +1019,299 @@ impl DecodedInsnCtx {
                     DecodedInsn::Out(Operand::rdx(), self.opsize)
                 }
             }
+            OpCodeClass::Ins | OpCodeClass::Outs => {
+                if self.prefix.contains(PrefixFlags::REPZ_P) {
+                    // The prefix REPZ(F3h) actually represents REP for ins/outs.
+                    // The count register is depending on the address size of the
+                    // instruction.
+                    self.repeat = read_reg(mctx, Register::Rcx, self.addrsize);
+                };
+
+                if opdesc.class == OpCodeClass::Ins {
+                    DecodedInsn::Ins
+                } else {
+                    DecodedInsn::Outs
+                }
+            }
             OpCodeClass::Rdmsr => DecodedInsn::Rdmsr,
             OpCodeClass::Rdtsc => DecodedInsn::Rdtsc,
             OpCodeClass::Rdtscp => DecodedInsn::Rdtscp,
             OpCodeClass::Wrmsr => DecodedInsn::Wrmsr,
             _ => return Err(InsnError::UnSupportedInsn),
         })
+    }
+
+    fn canonical_check(&self, la: usize) -> Option<usize> {
+        if match self.cpu_mode {
+            CpuMode::Bit64(level) => {
+                let virtaddr_bits = if level == PagingLevel::Level4 { 48 } else { 57 };
+                let mask = !((1 << virtaddr_bits) - 1);
+                if la & (1 << (virtaddr_bits - 1)) != 0 {
+                    la & mask == mask
+                } else {
+                    la & mask == 0
+                }
+            }
+            _ => true,
+        } {
+            Some(la)
+        } else {
+            None
+        }
+    }
+
+    fn alignment_check(&self, la: usize, size: Bytes) -> Option<usize> {
+        match size {
+            // Zero size is not allowed
+            Bytes::Zero => None,
+            // One byte is always aligned
+            Bytes::One => Some(la),
+            // Two/Four/Eight bytes must be aligned on a boundary
+            _ => {
+                if la & (size as usize - 1) != 0 {
+                    None
+                } else {
+                    Some(la)
+                }
+            }
+        }
+    }
+
+    fn cal_linear_addr<I: InsnMachineCtx>(
+        &self,
+        mctx: &I,
+        seg: SegRegister,
+        ea: usize,
+        writable: bool,
+    ) -> Option<usize> {
+        let segment = mctx.read_seg(seg);
+
+        let addrsize = if self.cpu_mode.is_bit64() {
+            Bytes::Eight
+        } else {
+            let attr = SegDescAttrFlags::from_bits_truncate(segment);
+            // Invalid if is system segment
+            if !attr.contains(SegDescAttrFlags::S) {
+                return None;
+            }
+
+            if writable {
+                // Writing to a code segment, or writing to a read-only
+                // data segment is not allowed.
+                if attr.contains(SegDescAttrFlags::C_D) || !attr.contains(SegDescAttrFlags::R_W) {
+                    return None;
+                }
+            } else {
+                // Data segment is always read-able, but code segment
+                // may be execute only. Invalid if read an execute only
+                // code segment.
+                if attr.contains(SegDescAttrFlags::C_D) && !attr.contains(SegDescAttrFlags::R_W) {
+                    return None;
+                }
+            }
+
+            let mut limit = segment_limit(segment) as usize;
+
+            if !attr.contains(SegDescAttrFlags::C_D) && attr.contains(SegDescAttrFlags::C_E) {
+                // Expand-down segment, check low limit
+                if ea <= limit {
+                    return None;
+                }
+
+                limit = if attr.contains(SegDescAttrFlags::DB) {
+                    u32::MAX as usize
+                } else {
+                    u16::MAX as usize
+                }
+            }
+
+            // Check high limit for each byte
+            for i in 0..self.opsize as usize {
+                if ea + i > limit {
+                    return None;
+                }
+            }
+
+            Bytes::Four
+        };
+
+        self.canonical_check(
+            if self.cpu_mode.is_bit64() && seg != SegRegister::FS && seg != SegRegister::GS {
+                ea & (addrsize.mask() as usize)
+            } else {
+                (segment_base(segment) as usize + ea) & addrsize.mask() as usize
+            },
+        )
+    }
+
+    fn get_linear_addr<I: InsnMachineCtx>(
+        &self,
+        mctx: &I,
+        seg: SegRegister,
+        ea: usize,
+        writable: bool,
+    ) -> Result<usize, InsnError> {
+        self.cal_linear_addr(mctx, seg, ea, writable)
+            .ok_or(if seg == SegRegister::SS {
+                InsnError::ExceptionSS
+            } else {
+                InsnError::ExceptionGP(0)
+            })
+            .and_then(|la| {
+                if (mctx.read_cpl() == 3)
+                    && (mctx.read_cr0() & CR0Flags::AM.bits()) != 0
+                    && (mctx.read_flags() & RFlags::AC.bits()) != 0
+                {
+                    self.alignment_check(la, self.opsize)
+                        .ok_or(InsnError::ExceptionAC)
+                } else {
+                    Ok(la)
+                }
+            })
+    }
+
+    fn emulate_ins_outs<I: InsnMachineCtx>(
+        &self,
+        mctx: &mut I,
+        io_read: bool,
+    ) -> Result<(), InsnError> {
+        // I/O port number is stored in DX.
+        let port = mctx.read_reg(Register::Rdx) as u16;
+
+        // Check the IO permission bit map.
+        if !ioio_perm(mctx, port, self.opsize, io_read) {
+            return Err(InsnError::ExceptionGP(0));
+        }
+
+        let (seg, reg) = if io_read {
+            // Input byte from I/O port specified in DX into
+            // memory location specified with ES:(E)DI or
+            // RDI.
+            (SegRegister::ES, Register::Rdi)
+        } else {
+            // Output byte/word/doubleword from memory location specified in
+            // DS:(E)SI (The DS segment may be overridden with a segment
+            // override prefix.) or RSI to I/O port specified in DX.
+            (
+                self.override_seg.map_or(SegRegister::DS, |s| s),
+                Register::Rsi,
+            )
+        };
+
+        // Decoed the linear addresses and map as a memory object
+        // which allows accessing to the memory represented by the
+        // linear addresses.
+        let linear_addr =
+            self.get_linear_addr(mctx, seg, read_reg(mctx, reg, self.addrsize), io_read)?;
+        if io_read {
+            // Read data from IO port and then write to the memory location.
+            let data = mctx.ioio_in(port, self.opsize)?;
+            // Safety: The linear address is decoded from the instruction and checked. It can be
+            // remapped to a memory object with the write permission successfully, and the remapped
+            // memory size matches the operand size of the instruction.
+            unsafe {
+                match self.opsize {
+                    Bytes::One => mctx
+                        .map_linear_addr::<u8>(linear_addr, io_read, false)?
+                        .mem_write(data as u8)?,
+                    Bytes::Two => mctx
+                        .map_linear_addr::<u16>(linear_addr, io_read, false)?
+                        .mem_write(data as u16)?,
+                    Bytes::Four => mctx
+                        .map_linear_addr::<u32>(linear_addr, io_read, false)?
+                        .mem_write(data as u32)?,
+                    _ => return Err(InsnError::IoIoIn),
+                };
+            }
+        } else {
+            // Read data from memory location and then write to the IO port
+            //
+            // Safety: The linear address is decoded from the instruction and checked. It can be
+            // remapped to a memory object with the read permission successfully, and the remapped
+            // memory size matches the operand size of the instruction.
+            let data = unsafe {
+                match self.opsize {
+                    Bytes::One => mctx
+                        .map_linear_addr::<u8>(linear_addr, io_read, false)?
+                        .mem_read()? as u64,
+                    Bytes::Two => mctx
+                        .map_linear_addr::<u16>(linear_addr, io_read, false)?
+                        .mem_read()? as u64,
+                    Bytes::Four => mctx
+                        .map_linear_addr::<u32>(linear_addr, io_read, false)?
+                        .mem_read()? as u64,
+                    _ => return Err(InsnError::IoIoOut),
+                }
+            };
+            mctx.ioio_out(port, self.opsize, data)?;
+        }
+
+        let rflags = RFlags::from_bits_truncate(mctx.read_flags());
+        if rflags.contains(RFlags::DF) {
+            // The DF flag is 1, the (E)SI/DI register is decremented.
+            write_reg(
+                mctx,
+                reg,
+                read_reg(mctx, reg, self.addrsize)
+                    .checked_sub(self.opsize as usize)
+                    .ok_or(InsnError::IoIoOut)?,
+                self.addrsize,
+            );
+        } else {
+            // The DF flag is 0, the (E)SI/DI register is incremented.
+            write_reg(
+                mctx,
+                reg,
+                read_reg(mctx, reg, self.addrsize)
+                    .checked_add(self.opsize as usize)
+                    .ok_or(InsnError::IoIoOut)?,
+                self.addrsize,
+            );
+        }
+
+        if self.repeat != 0 {
+            // Update the count register with the left count which are not
+            // emulated yet.
+            write_reg(mctx, Register::Rcx, self.repeat - 1, self.addrsize);
+        }
+
+        Ok(())
+    }
+
+    fn emulate_in_out<I: InsnMachineCtx>(
+        &self,
+        port: Operand,
+        opsize: Bytes,
+        mctx: &mut I,
+        io_read: bool,
+    ) -> Result<(), InsnError> {
+        let port = match port {
+            Operand::Reg(Register::Rdx) => mctx.read_reg(Register::Rdx) as u16,
+            Operand::Reg(..) => unreachable!("Port value is always in DX"),
+            Operand::Imm(imm) => match imm {
+                Immediate::U8(val) => val as u16,
+                _ => unreachable!("Port value in immediate is always 1 byte"),
+            },
+        };
+
+        // Check the IO permission bit map
+        if !ioio_perm(mctx, port, opsize, io_read) {
+            return Err(InsnError::ExceptionGP(0));
+        }
+
+        if io_read {
+            // Read data from IO port and then write to AL/AX/EAX.
+            write_reg(
+                mctx,
+                Register::Rax,
+                mctx.ioio_in(port, opsize)? as usize,
+                opsize,
+            );
+        } else {
+            // Read data from AL/AX/EAX and then write to the IO port.
+            mctx.ioio_out(port, opsize, read_reg(mctx, Register::Rax, opsize) as u64)?;
+        }
+
+        Ok(())
     }
 }

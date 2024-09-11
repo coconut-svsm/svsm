@@ -8,9 +8,9 @@ mod decode;
 mod insn;
 mod opcode;
 
-pub use decode::{DecodedInsnCtx, InsnMachineCtx};
+pub use decode::{DecodedInsnCtx, InsnMachineCtx, InsnMachineMem};
 #[cfg(any(test, fuzzing))]
-pub use insn::TestCtx;
+pub use insn::test_utils::TestCtx;
 pub use insn::{
     DecodedInsn, Immediate, Instruction, Operand, Register, SegRegister, MAX_INSN_SIZE,
 };
@@ -32,12 +32,28 @@ pub enum InsnError {
     DecodePrefix,
     /// Error while decoding the SIB byte.
     DecodeSib,
+    /// Error due to alignment check exception.
+    ExceptionAC,
+    /// Error due to general protection exception.
+    ExceptionGP(u8),
+    /// Error due to stack segment exception.
+    ExceptionSS,
+    /// Error while mapping linear addresses.
+    MapLinearAddr,
+    /// Error while reading from memory.
+    MemRead,
+    /// Error while writing to memory.
+    MemWrite,
     /// No OpCodeDesc generated while decoding.
     NoOpCodeDesc,
     /// Error while peeking an instruction byte.
     InsnPeek,
     /// Invalid RegCode for decoding Register.
     InvalidRegister,
+    /// Error while handling input IO operation.
+    IoIoIn,
+    /// Error while handling output IO operation.
+    IoIoOut,
     /// The decoded instruction is not supported.
     UnSupportedInsn,
 }

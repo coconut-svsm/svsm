@@ -70,6 +70,18 @@ macro_rules! BIT {
     };
 }
 
+/// Obtain bit mask for the given positions
+#[macro_export]
+macro_rules! BIT_MASK {
+    ($e: expr, $s: expr) => {{
+        assert!(
+            $s <= 63 && $e <= 63 && $s <= $e,
+            "Start bit position must be less than or equal to end bit position"
+        );
+        (((1u64 << ($e - $s + 1)) - 1) << $s)
+    }};
+}
+
 #[cfg(test)]
 mod tests {
 
