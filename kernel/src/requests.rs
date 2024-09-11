@@ -174,14 +174,14 @@ pub fn request_loop() {
 
             switch_to_vmpl(GUEST_VMPL as u32);
         } else {
-            loop {
-                log::debug!("No VMSA or CAA! Halting");
-                halt();
+            log::debug!("No VMSA or CAA! Halting");
+            halt();
+        }
 
-                if update_mappings().is_ok() {
-                    break;
-                }
-            }
+        // Update mappings again on return from the guest VMPL or halt. If this
+        // is an AP it may have been created from the context of another CPU.
+        if update_mappings().is_err() {
+            continue;
         }
 
         // Obtain a reference to the VMSA just long enough to extract the
