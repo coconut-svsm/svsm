@@ -123,6 +123,10 @@ impl GpaMap {
                 // Place the kernel area at 64 MB with a size of 16 MB.
                 GpaRange::new(0x04000000, 0x01000000)?
             }
+            Hypervisor::Vanadium => {
+                // Place the kernel area at 8TiB-2GiB with a size of 16 MB.
+                GpaRange::new(0x7ff80000000, 0x01000000)?
+            }
         };
 
         let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
@@ -140,7 +144,7 @@ impl GpaMap {
         };
 
         let vmsa = match options.hypervisor {
-            Hypervisor::Qemu => {
+            Hypervisor::Qemu | Hypervisor::Vanadium => {
                 // VMSA address is currently hardcoded in kvm
                 GpaRange::new_page(0xFFFFFFFFF000)?
             }

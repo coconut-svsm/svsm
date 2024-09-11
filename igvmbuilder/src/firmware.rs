@@ -33,6 +33,9 @@ pub fn parse_firmware(
             crate::cmd_options::Hypervisor::HyperV => {
                 IgvmFirmware::parse(filename, parameter_count, compatibility_mask)
             }
+            crate::cmd_options::Hypervisor::Vanadium => {
+                OvmfFirmware::parse(filename, parameter_count, compatibility_mask)
+            }
         }
     } else {
         Err("No firmware filename specified".into())
