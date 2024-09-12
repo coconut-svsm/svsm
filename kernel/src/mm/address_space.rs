@@ -161,8 +161,12 @@ pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LE
 /// Stack address of the per-cpu init task
 pub const SVSM_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
 
+/// Shadow stack address of the per-cpu init task
+pub const SVSM_SHADOW_STACKS_INIT_TASK: VirtAddr =
+    SVSM_STACKS_INIT_TASK.const_add(STACK_TOTAL_SIZE);
+
 ///  IST Stacks base address
-pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_STACKS_INIT_TASK.const_add(STACK_TOTAL_SIZE);
+pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_SHADOW_STACKS_INIT_TASK.const_add(PAGE_SIZE);
 
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
