@@ -39,7 +39,7 @@ use crate::cpu::shadow_stack::PL0_SSP;
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK};
+use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
@@ -379,6 +379,13 @@ pub fn schedule_task(task: TaskPointer) {
 }
 
 global_asm!(
+    // Make the value of the `shadow-stacks` feature usable in assembly.
+    ".set const_false, 0",
+    ".set const_true, 1",
+    concat!(
+        ".set CFG_SHADOW_STACKS, const_",
+        cfg!(feature = "shadow-stacks")
+    ),
     r#"
         .text
 
@@ -402,17 +409,41 @@ global_asm!(
         pushq   %r15
         pushq   %rsp
 
-        // Save the current stack pointer
+        // If `prev` is not null...
         testq   %rsi, %rsi
         jz      1f
+
+        // Save the current stack pointer
         movq    %rsp, (%rsi)
 
         // Switch to a stack pointer that's valid in both the old and new page tables.
         mov {CONTEXT_SWITCH_STACK}(%rip), %rsp
 
+        .if CFG_SHADOW_STACKS
+        // Save the current shadow stack pointer
+        rdssp   %rax
+        sub $8, %rax
+        movq    %rax, 8(%rsi)
+        // Switch to a shadow stack that's valid in both page tables and move
+        // the "shadow stack restore token" to the old shadow stack.
+        mov {CONTEXT_SWITCH_RESTORE_TOKEN}(%rip), %rax
+        rstorssp (%rax)
+        saveprevssp
+        .endif
+
     1:
         // Switch to the new task state
+
+        // Switch to the new task page tables
         mov     %rdx, %cr3
+
+        .if CFG_SHADOW_STACKS
+        // Switch to the new task shadow stack and move the "shadow stack
+        // restore token" back.
+        mov     8(%rdi), %rdx
+        rstorssp (%rdx)
+        saveprevssp
+        .endif
 
         // Switch to the new task stack
         movq    (%rdi), %rsp
@@ -440,8 +471,9 @@ global_asm!(
 
         ret
     "#,
-    // TODO: Replace this with a `const` operand once we upgrade the MSRV to 1.82.
+    // TODO: Replace these with `const` operands once we upgrade the MSRV to 1.82.
     CONTEXT_SWITCH_STACK = sym CONTEXT_SWITCH_STACK,
+    CONTEXT_SWITCH_RESTORE_TOKEN = sym CONTEXT_SWITCH_RESTORE_TOKEN,
     options(att_syntax)
 );
 
@@ -454,3 +486,44 @@ global_asm!(
 /// into both the old and the new set of page tables. That way we always have a
 /// valid stack to handle exceptions on.
 static CONTEXT_SWITCH_STACK: VirtAddr = SVSM_CONTEXT_SWITCH_STACK.const_add(STACK_TOTAL_SIZE);
+
+/// The location of a cpu-local shadow stack restore token that's mapped into
+/// every set of page tables for use during context switches.
+///
+/// One interesting difference between the normal stack pointer and the shadow
+/// stack pointer is how they can be switched: For the normal stack pointer we
+/// can just move a new value into the RSP register. This doesn't work for the
+/// SSP register (the shadow stack pointer) because there's no way to directly
+/// move a value into it. Instead we have to use the `rstorssp` instruction.
+/// The key difference between this instruction and a regular `mov` is that
+/// `rstorssp` expects a "shadow stack restore token" to be at the top of the
+/// new shadow stack (this is just a special value that marks the top of a
+/// inactive shadow stack). After switching to a new shadow stack, the previous
+/// shadow stack is now inactive, and so the `saveprevssp` instruction can be
+/// used to transfer the shadow stack restore token from the new shadow stack
+/// to the previous one: `saveprevssp` atomically pops the stack token of the
+/// new shadow stack and pushes it on the previous shadow stack. This means
+/// that we have to execute both `rstorssp` and `saveprevssp` every time we
+/// want to switch the shadow stacks.
+///
+/// There's one major problem though: `saveprevssp` needs to access both the
+/// previous and the new shadow stack, but we only map each shadow stack into a
+/// single task's page tables. If each set of page tables only has access to
+/// either the previous or the new shadow stack, but not both, we can't execute
+/// `saveprevssp` and so we we can't move the shadow stack restore token to the
+/// previous shadow stack. If there's no shadow stack restore token on the
+/// previous shadow stack that means we can't restore this shadow stack at a
+/// later point. To work around this, we map another shadow stack into each
+/// CPU's set of pagetables. This allows us to do the following:
+///
+/// 1. Switch to the context-switch shadow stack using `rstorssp`.
+/// 2. Transfer the shadow stack restore token from the context switch shadow
+///    stack to the previous shadow stack by executing `saveprevssp`.
+/// 3. Switch the page tables. This doesn't lead to problems with the context
+///    switch shadow stack because it's mapped into both page tables.
+/// 4. Switch to the new shadow stack using `rstorssp`.
+/// 5. Transfer the shadow stack restore token from the new shadow stack back
+///    to the context switch shadow stacks by executing `saveprevssp`.
+///
+/// We just switched between two shadow stack tables in different page tables :)
+static CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(0xff8);
