@@ -171,6 +171,10 @@ pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_SHADOW_STACKS_INIT_TASK.const_ad
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
 
+/// DoubleFault ISST shadow stack base address
+pub const SVSM_SHADOW_STACK_ISST_DF_BASE: VirtAddr =
+    SVSM_STACKS_IST_BASE.const_add(STACK_TOTAL_SIZE);
+
 /// Base Address for temporary mappings - used by page-table guards
 pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
 

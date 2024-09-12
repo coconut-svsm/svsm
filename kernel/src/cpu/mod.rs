@@ -13,6 +13,7 @@ pub mod features;
 pub mod gdt;
 pub mod idt;
 pub mod irq_state;
+pub mod isst;
 pub mod mem;
 pub mod msr;
 pub mod percpu;
