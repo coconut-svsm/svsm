@@ -7,6 +7,9 @@
 extern crate alloc;
 
 use super::gdt_mut;
+use super::isst::Isst;
+use super::msr::write_msr;
+use super::shadow_stack::ISST_ADDR;
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
@@ -25,7 +28,7 @@ use crate::mm::{
     virt_to_phys, PageBox, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_SHADOW_STACKS_INIT_TASK,
-    SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
@@ -112,12 +115,14 @@ impl PerCpuAreas {
 #[derive(Debug)]
 struct IstStacks {
     double_fault_stack: Cell<Option<VirtAddr>>,
+    double_fault_shadow_stack: Cell<Option<VirtAddr>>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
             double_fault_stack: Cell::new(None),
+            double_fault_shadow_stack: Cell::new(None),
         }
     }
 }
@@ -293,6 +298,7 @@ pub struct PerCpu {
 
     pgtbl: RefCell<Option<&'static mut PageTable>>,
     tss: Cell<X86Tss>,
+    isst: Cell<Isst>,
     svsm_vmsa: OnceCell<VmsaPage>,
     reset_ip: Cell<u64>,
     /// PerCpu Virtual Memory Range
@@ -329,6 +335,7 @@ impl PerCpu {
             pgtbl: RefCell::new(None),
             irq_state: IrqState::new(),
             tss: Cell::new(X86Tss::new()),
+            isst: Cell::new(Isst::default()),
             svsm_vmsa: OnceCell::new(),
             reset_ip: Cell::new(0xffff_fff0),
             vm_range: {
@@ -435,6 +442,10 @@ impl PerCpu {
         self.ist.double_fault_stack.get().unwrap()
     }
 
+    pub fn get_top_of_df_shadow_stack(&self) -> VirtAddr {
+        self.ist.double_fault_shadow_stack.get().unwrap()
+    }
+
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
         self.current_stack.get()
     }
@@ -491,6 +502,17 @@ impl PerCpu {
     fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
         let double_fault_stack = self.allocate_stack(SVSM_STACK_IST_DF_BASE)?;
         self.ist.double_fault_stack.set(Some(double_fault_stack));
+
+        Ok(())
+    }
+
+    fn allocate_isst_shadow_stacks(&self) -> Result<(), SvsmError> {
+        let double_fault_shadow_stack =
+            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)?;
+        self.ist
+            .double_fault_shadow_stack
+            .set(Some(double_fault_shadow_stack));
+
         Ok(())
     }
 
@@ -540,6 +562,13 @@ impl PerCpu {
         let mut tss = self.tss.get();
         tss.set_ist_stack(IST_DF, double_fault_stack);
         self.tss.set(tss);
+    }
+
+    fn setup_isst(&self) {
+        let double_fault_shadow_stack = self.get_top_of_df_shadow_stack();
+        let mut isst = self.isst.get();
+        isst.set(IST_DF, double_fault_shadow_stack);
+        self.isst.set(isst);
     }
 
     pub fn map_self_stage2(&self) -> Result<(), SvsmError> {
@@ -606,6 +635,14 @@ impl PerCpu {
         // Setup TSS
         self.setup_tss();
 
+        if cfg!(feature = "shadow-stacks") {
+            // Allocate ISST shadow stacks
+            self.allocate_isst_shadow_stacks()?;
+
+            // Setup ISST
+            self.setup_isst();
+        }
+
         // Initialize allocator for temporary mappings
         self.virt_range_init();
 
@@ -643,9 +680,17 @@ impl PerCpu {
         gdt_mut().load_tss(tss);
     }
 
+    pub fn load_isst(&self) {
+        let isst = self.isst.as_ptr();
+        write_msr(ISST_ADDR, isst as u64);
+    }
+
     pub fn load(&self) {
         self.load_pgtable();
         self.load_tss();
+        if cfg!(feature = "shadow-stacks") {
+            self.load_isst();
+        }
     }
 
     pub fn set_reset_ip(&self, reset_ip: u64) {
