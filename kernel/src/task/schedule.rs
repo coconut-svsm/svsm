@@ -33,7 +33,9 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::Address;
+use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
+use crate::cpu::shadow_stack::PL0_SSP;
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
@@ -348,6 +350,9 @@ pub fn schedule() {
         }
 
         this_cpu().set_tss_rsp0(next.stack_bounds.end());
+        if cfg!(feature = "shadow-stacks") {
+            write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
+        }
 
         // Get task-pointers, consuming the Arcs and release their reference
         unsafe {

@@ -200,6 +200,14 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
 
+/// Kernel shadow stack for normal execution of a task
+pub const SVSM_PERTASK_SHADOW_STACK_BASE: VirtAddr =
+    SVSM_PERTASK_STACK_BASE.const_add(STACK_TOTAL_SIZE);
+
+/// Kernel shadow stack for exception handling
+pub const SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE: VirtAddr =
+    SVSM_PERTASK_SHADOW_STACK_BASE.const_add(PAGE_SIZE);
+
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
 
