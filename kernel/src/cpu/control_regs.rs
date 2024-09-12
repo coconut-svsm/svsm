@@ -6,6 +6,7 @@
 
 use super::features::cpu_has_pge;
 use crate::address::{Address, PhysAddr};
+use crate::cpu::features::cpu_has_smep;
 use crate::platform::SvsmPlatform;
 use bitflags::bitflags;
 use core::arch::asm;
@@ -31,6 +32,12 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
     assert!(cpu_has_pge(platform), "CPU does not support PGE");
 
     cr4.insert(CR4Flags::PGE); // Enable Global Pages
+
+    if !cfg!(feature = "nosmep") {
+        assert!(cpu_has_smep(platform), "CPU does not support SMEP");
+        cr4.insert(CR4Flags::SMEP);
+    }
+
     write_cr4(cr4);
 }
 

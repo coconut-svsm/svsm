@@ -42,6 +42,7 @@ test.workspace = true
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 mstpm = ["dep:libmstpm"]
+nosmep = []
 
 [dev-dependencies]
 
