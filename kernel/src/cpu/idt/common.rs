@@ -71,6 +71,25 @@ pub struct X86ExceptionContext {
     pub frame: X86InterruptFrame,
 }
 
+impl X86ExceptionContext {
+    pub fn set_rip(&mut self, new_rip: usize) {
+        self.frame.rip = new_rip;
+
+        if cfg!(feature = "shadow-stacks") {
+            // Update the instruction pointer on the shadow stack.
+            let return_on_stack = (self.ssp + 8) as *const usize;
+            let return_on_stack_val = new_rip;
+            unsafe {
+                asm!(
+                    "wrssq [{}], {}",
+                    in(reg) return_on_stack,
+                    in(reg) return_on_stack_val
+                );
+            }
+        }
+    }
+}
+
 impl InsnMachineCtx for X86ExceptionContext {
     fn read_efer(&self) -> u64 {
         read_efer().bits()
