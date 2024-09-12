@@ -363,7 +363,11 @@ default_entry_no_ist	name=xf		handler=panic			error_code=0	vector=19
 // Vector 20 not defined
 
 // #CP Control-Protection Exception (Vector 21)
+.if CFG_SHADOW_STACKS
+default_entry_no_ist	name=cp		handler=control_protection			error_code=1	vector=21
+.else
 default_entry_no_ist	name=cp		handler=panic			error_code=1	vector=21
+.endif
 
 // Vectors 22-27 not defined
 
