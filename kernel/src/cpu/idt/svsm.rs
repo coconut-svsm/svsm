@@ -262,4 +262,15 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
     SVSM_PLATFORM.as_dyn_ref().eoi();
 }
 
-global_asm!(include_str!("entry.S"), options(att_syntax));
+global_asm!(
+    // Make the value of the `shadow-stacks` feature usable in assembly.
+    ".set const_false, 0",
+    ".set const_true, 1",
+    concat!(
+        ".set CFG_SHADOW_STACKS, const_",
+        cfg!(feature = "shadow-stacks")
+    ),
+    // Include the assembly.
+    include_str!("entry.S"),
+    options(att_syntax)
+);

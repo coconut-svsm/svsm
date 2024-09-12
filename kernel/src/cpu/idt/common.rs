@@ -64,6 +64,8 @@ bitflags::bitflags! {
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
+    pub ssp: u64,
+    _padding: [u8; 8],
     pub regs: X86GeneralRegs,
     pub error_code: usize,
     pub frame: X86InterruptFrame,
