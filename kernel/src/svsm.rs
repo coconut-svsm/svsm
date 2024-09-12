@@ -7,6 +7,7 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
+use svsm::enable_shadow_stacks;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
@@ -345,6 +346,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .setup_on_cpu(platform)
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
+
+    if cfg!(feature = "shadow-stacks") {
+        enable_shadow_stacks!(bsp_percpu);
+    }
 
     // Idle task must be allocated after PerCPU data is mapped
     bsp_percpu
