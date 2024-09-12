@@ -17,7 +17,10 @@ use crate::error::{ApicError, SvsmError};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
+use crate::mm::vm::{
+    Mapping, ShadowStackInit, VMKernelShadowStack, VMKernelStack, VMPhysMem, VMRMapping,
+    VMReserved, VMR,
+};
 use crate::mm::{
     virt_to_phys, PageBox, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
     SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
@@ -456,6 +459,17 @@ impl PerCpu {
         self.vm_range.insert_at(base, mapping)?;
 
         Ok(top_of_stack)
+    }
+
+    fn allocate_shadow_stack(
+        &self,
+        base: VirtAddr,
+        init: ShadowStackInit,
+    ) -> Result<VirtAddr, SvsmError> {
+        let (shadow_stack, ssp) = VMKernelShadowStack::new(base, init)?;
+        self.vm_range
+            .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
+        Ok(ssp)
     }
 
     fn allocate_init_stack(&self) -> Result<(), SvsmError> {
