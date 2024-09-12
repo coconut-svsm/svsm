@@ -29,6 +29,12 @@ HV_DOORBELL_ADDR:
         pushq   %r13
         pushq   %r14
         pushq   %r15
+	pushq   $0
+	# rdsspq is a nop when shadow stacks are not supported. Make sure that
+	# rax is 0 if that's the case.
+	xorl	%eax, %eax
+	rdsspq  %rax
+	pushq	%rax
 .endm
 
 .macro default_entry_no_ist name: req handler:req error_code:req vector:req
@@ -141,7 +147,7 @@ hv_not_vmpl_switch:
 	// required.  This could not be performed before the RIP check because
 	// the previous RIP determines where to find the previous EFLAGS.IF
 	// value on the stack.
-	testl	${IF}, 18*8(%rcx)
+	testl	${IF}, 20*8(%rcx)
 	jz	postpone_hv
 	// Switch to the stack pointer from the previous exception, which
 	// points to the register save area, and continue with #HV
@@ -206,6 +212,12 @@ continue_hv:
         pushq   %r13
         pushq   %r14
         pushq   %r15
+	pushq   $0
+        # rdsspq is a nop when shadow stacks are not supported. Make sure that
+	# rdx is 0 if that's the case.
+	xorl	%edx, %edx
+	rdsspq  %rdx
+        pushq	%rdx
 handle_as_hv:
 	// Load the address of the #HV doorbell page.  The global address
 	// might not yet be configured, and the per-CPU page might also not
@@ -225,13 +237,13 @@ handle_as_hv_with_doorbell:
 default_return:
 	// Ensure that interrupts are disabled before attempting any return.
 	cli
-	testb	$3, 17*8(%rsp) // Check CS in exception frame
+	testb	$3, 19*8(%rsp) // Check CS in exception frame
 	jnz 	return_user
 return_all_paths:
 	// If interrupts were previously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
-	testl 	${IF}, 18*8(%rsp) // check EFLAGS.IF in exception frame
+	testl 	${IF}, 20*8(%rsp) // check EFLAGS.IF in exception frame
 	jz 	begin_iret_return
 	movq 	HV_DOORBELL_ADDR(%rip), %rdi
 	test 	%rdi, %rdi
@@ -251,23 +263,23 @@ iret_return_window:
 begin_iret_return:
 	// Reload registers without modifying the stack pointer so that if #HV
 	// occurs within this window, the saved registers are still intact.
-	movq 	0*8(%rsp), %r15
-	movq 	1*8(%rsp), %r14
-	movq 	2*8(%rsp), %r13
-	movq 	3*8(%rsp), %r12
-	movq 	4*8(%rsp), %r11
-	movq 	5*8(%rsp), %r10
-	movq 	6*8(%rsp), %r9
-	movq 	7*8(%rsp), %r8
-	movq 	8*8(%rsp), %rbp
-	movq 	9*8(%rsp), %rdi
-	movq 	10*8(%rsp), %rsi
-	movq 	11*8(%rsp), %rdx
-	movq 	12*8(%rsp), %rcx
-	movq 	13*8(%rsp), %rbx
-	movq 	14*8(%rsp), %rax
+	movq 	2*8(%rsp), %r15
+	movq 	3*8(%rsp), %r14
+	movq 	4*8(%rsp), %r13
+	movq 	5*8(%rsp), %r12
+	movq 	6*8(%rsp), %r11
+	movq 	7*8(%rsp), %r10
+	movq 	8*8(%rsp), %r9
+	movq 	9*8(%rsp), %r8
+	movq 	10*8(%rsp), %rbp
+	movq 	11*8(%rsp), %rdi
+	movq 	12*8(%rsp), %rsi
+	movq 	13*8(%rsp), %rdx
+	movq 	14*8(%rsp), %rcx
+	movq 	15*8(%rsp), %rbx
+	movq 	16*8(%rsp), %rax
 
-	addq 	$16*8, %rsp
+	addq 	$18*8, %rsp
 
 default_iret:
 	iretq
