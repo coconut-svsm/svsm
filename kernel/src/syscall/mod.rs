@@ -5,5 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 mod handlers;
+mod obj;
 
 pub use handlers::*;
+pub use obj::{Obj, ObjHandle};
