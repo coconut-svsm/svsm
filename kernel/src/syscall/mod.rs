@@ -8,4 +8,4 @@ mod handlers;
 mod obj;
 
 pub use handlers::*;
-pub use obj::{Obj, ObjHandle};
+pub use obj::{Obj, ObjError, ObjHandle};
