@@ -4,6 +4,9 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
+use super::call::syscall1;
+use super::SYS_CLOSE;
+
 /// The object is exposed to the user mode via the object-opening related
 /// syscalls, which returns the id of the object created by the COCONUT-SVSM
 /// kernel. The user mode can make use this id to access the corresponding
@@ -30,4 +33,12 @@ impl From<&ObjHandle> for u32 {
 
 pub trait Obj {
     fn id(&self) -> u32;
+}
+
+impl Drop for ObjHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = syscall1(SYS_CLOSE, self.0.into());
+        }
+    }
 }
