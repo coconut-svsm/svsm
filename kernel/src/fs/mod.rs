@@ -7,8 +7,10 @@
 mod api;
 mod filesystem;
 mod init;
+mod obj;
 mod ramfs;
 
 pub use api::*;
 pub use filesystem::*;
 pub use init::populate_ram_fs;
+pub use obj::FsObj;
