@@ -8,6 +8,7 @@ extern crate alloc;
 
 use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
+use crate::fs::FsObj;
 use alloc::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
@@ -22,7 +23,11 @@ pub enum ObjError {
 /// the common functionalities of the objects. With the trait bounds of Send
 /// and Sync, the objects implementing Obj trait could be sent to another
 /// thread and shared between threads safely.
-pub trait Obj: Send + Sync + core::fmt::Debug {}
+pub trait Obj: Send + Sync + core::fmt::Debug {
+    fn as_fs(&self) -> Option<&FsObj> {
+        None
+    }
+}
 
 /// ObjHandle is a unique identifier for an object in the current process.
 /// An ObjHandle can be converted to a u32 id which can be used by the user
