@@ -5,8 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 #![no_std]
 
-mod numbers;
+mod def;
 mod obj;
 
-pub use numbers::*;
+pub use def::*;
 pub use obj::*;
