@@ -11,9 +11,10 @@ use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeSet;
 use svsm::address::VirtAddr;
 use svsm::mm::alloc::{
-    allocate_file_page, allocate_file_page_ref, allocate_page, allocate_pages, allocate_slab_page,
-    allocate_zeroed_page, free_page, get_order, TestRootMem,
+    allocate_file_page, allocate_page, allocate_pages, allocate_slab_page, allocate_zeroed_page,
+    free_page, get_order, TestRootMem,
 };
+use svsm::mm::PageRef;
 use svsm::types::PAGE_SIZE;
 
 const WRITE_BYTE: u8 = 0x66;
@@ -131,7 +132,7 @@ fuzz_target!(|inp: FuzzInput| {
                 }
             }
             Action::AllocateFilePageRef => {
-                if let Ok(pageref) = allocate_file_page_ref() {
+                if let Ok(pageref) = PageRef::new() {
                     pagerefs.push(pageref);
                 }
             }

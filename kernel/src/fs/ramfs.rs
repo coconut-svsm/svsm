@@ -8,9 +8,9 @@ use super::*;
 
 use crate::error::SvsmError;
 use crate::locking::RWLock;
-use crate::mm::{allocate_file_page_ref, PageRef};
+use crate::mm::PageRef;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
-use crate::utils::{page_align_up, page_offset, zero_mem_region};
+use crate::utils::{page_align_up, page_offset};
 
 extern crate alloc;
 use alloc::sync::Arc;
@@ -47,7 +47,7 @@ impl RawRamFile {
     /// [`Result<(), SvsmError>`]: A [`Result`] containing empty
     /// value if successful, SvsvError otherwise.
     fn increase_capacity(&mut self) -> Result<(), SvsmError> {
-        let page_ref = allocate_file_page_ref()?;
+        let page_ref = PageRef::new()?;
         self.pages.push(page_ref);
         self.capacity += PAGE_SIZE;
         Ok(())
@@ -87,13 +87,7 @@ impl RawRamFile {
     fn read_from_page(&self, buf: &mut [u8], offset: usize) {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
-        let len = buf.len();
-        let page_end = page_index + len;
-
-        assert!(page_end <= PAGE_SIZE);
-
-        let page_buf = self.pages[index].as_ref();
-        buf.copy_from_slice(&page_buf[page_index..page_end]);
+        self.pages[index].read(page_index, buf);
     }
 
     /// Used to write contents to a page corresponding to
@@ -106,16 +100,10 @@ impl RawRamFile {
     /// # Assert
     ///
     /// Assert that write operation doesn't extend beyond a page.
-    fn write_to_page(&mut self, buf: &[u8], offset: usize) {
+    fn write_to_page(&self, buf: &[u8], offset: usize) {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
-        let len = buf.len();
-        let page_end = page_index + len;
-
-        assert!(page_end <= PAGE_SIZE);
-
-        let page_buf = self.pages[index].as_mut();
-        page_buf[page_index..page_end].copy_from_slice(buf);
+        self.pages[index].write(page_index, buf);
     }
 
     /// Used to read the file from a particular offset.
@@ -218,10 +206,8 @@ impl RawRamFile {
         };
 
         // Clear pages and remove them from the file
-        while self.pages.len() > new_pages {
-            let page_ref = self.pages.pop().unwrap();
-            let vaddr = page_ref.virt_addr();
-            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        for page_ref in self.pages.drain(new_pages..) {
+            page_ref.fill(0, 0);
         }
 
         self.capacity = new_pages * PAGE_SIZE;
@@ -230,8 +216,7 @@ impl RawRamFile {
         if offset > 0 {
             // Clear the last page after new EOF
             let page_ref = self.pages.last().unwrap();
-            let vaddr = page_ref.virt_addr();
-            zero_mem_region(vaddr + offset, vaddr + PAGE_SIZE);
+            page_ref.fill(offset, 0);
         }
 
         Ok(size)

@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::mem::{copy_bytes, write_bytes};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
@@ -909,17 +910,15 @@ pub struct PageRef {
 }
 
 impl PageRef {
-    /// Creates a new [`PageRef`] instance with the given virtual and physical addresses.
-    ///
-    /// # Arguments
-    ///
-    /// * `virt_addr` - Virtual address of the memory page.
-    /// * `phys_addr` - Physical address of the memory page.
-    pub const fn new(virt_addr: VirtAddr, phys_addr: PhysAddr) -> Self {
-        Self {
+    /// Allocate a reference-counted file page.
+    pub fn new() -> Result<Self, SvsmError> {
+        let virt_addr = allocate_file_page()?;
+        let phys_addr = virt_to_phys(virt_addr);
+
+        Ok(Self {
             virt_addr,
             phys_addr,
-        }
+        })
     }
 
     /// Returns the virtual address of the memory page.
@@ -934,31 +933,53 @@ impl PageRef {
 
     pub fn try_copy_page(&self) -> Result<Self, SvsmError> {
         let virt_addr = allocate_file_page()?;
+
+        let src = self.virt_addr.bits();
+        let dst = virt_addr.bits();
+        let size = PAGE_SIZE;
         unsafe {
-            let src = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
-            let dst = virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
-            ptr::copy_nonoverlapping(src, dst, 1);
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
         }
+
         Ok(PageRef {
             virt_addr,
             phys_addr: virt_to_phys(virt_addr),
         })
     }
-}
 
-impl AsRef<[u8; PAGE_SIZE]> for PageRef {
-    /// Returns a reference to the underlying array representing the memory page.
-    fn as_ref(&self) -> &[u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_ptr::<[u8; PAGE_SIZE]>();
-        unsafe { ptr.as_ref().unwrap() }
+    pub fn write(&self, offset: usize, buf: &[u8]) {
+        assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
+
+        let src = buf.as_ptr() as usize;
+        let dst = self.virt_addr.bits() + offset;
+        let size = buf.len();
+        unsafe {
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
+        }
     }
-}
 
-impl AsMut<[u8; PAGE_SIZE]> for PageRef {
-    /// Returns a mutable reference to the underlying array representing the memory page.
-    fn as_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
-        let ptr = self.virt_addr.as_mut_ptr::<[u8; PAGE_SIZE]>();
-        unsafe { ptr.as_mut().unwrap() }
+    pub fn read(&self, offset: usize, buf: &mut [u8]) {
+        assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
+
+        let src = self.virt_addr.bits() + offset;
+        let dst = buf.as_mut_ptr() as usize;
+        let size = buf.len();
+        unsafe {
+            // SAFETY: `src` and `dst` are both valid.
+            copy_bytes(src, dst, size);
+        }
+    }
+
+    pub fn fill(&self, offset: usize, value: u8) {
+        let dst = self.virt_addr.bits() + offset;
+        let size = PAGE_SIZE.checked_sub(offset).unwrap();
+
+        unsafe {
+            // SAFETY: `dst` is valid.
+            write_bytes(dst, size, value);
+        }
     }
 }
 
@@ -1072,19 +1093,6 @@ pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
     let vaddr = ROOT_MEM.lock().allocate_file_page()?;
     zero_mem_region(vaddr, vaddr + PAGE_SIZE);
     Ok(vaddr)
-}
-
-/// Allocate a reference-counted file page.
-///
-/// # Returns
-///
-/// Result containing a page reference to the virtual address of the
-/// allocated file page or an `SvsmError` if allocation fails.
-pub fn allocate_file_page_ref() -> Result<PageRef, SvsmError> {
-    let v = allocate_file_page()?;
-    let p = virt_to_phys(v);
-
-    Ok(PageRef::new(v, p))
 }
 
 fn get_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
