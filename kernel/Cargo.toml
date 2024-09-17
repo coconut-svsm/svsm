@@ -43,6 +43,7 @@ default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 mstpm = ["dep:libmstpm"]
 nosmep = []
+nosmap = []
 
 [dev-dependencies]
 

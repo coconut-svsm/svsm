@@ -20,7 +20,6 @@ use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
-
 use core::arch::global_asm;
 
 use crate::syscall::*;
@@ -265,4 +264,13 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
     SVSM_PLATFORM.as_dyn_ref().eoi();
 }
 
-global_asm!(include_str!("entry.S"), options(att_syntax));
+global_asm!(
+    r#"
+        .set const_false, 0
+        .set const_true, 1
+    "#,
+    concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
+    include_str!("../x86/smap.S"),
+    include_str!("entry.S"),
+    options(att_syntax)
+);
