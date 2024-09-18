@@ -4,8 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-mod handlers;
+mod class0;
 mod obj;
 
-pub use handlers::*;
+pub use class0::*;
 pub use obj::{Obj, ObjError, ObjHandle};
