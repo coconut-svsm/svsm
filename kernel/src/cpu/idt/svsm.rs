@@ -16,6 +16,7 @@ use super::common::{
     VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::mm::GuestPtr;
@@ -318,5 +319,6 @@ global_asm!(
     ),
     // Include the assembly.
     include_str!("entry.S"),
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     options(att_syntax)
 );

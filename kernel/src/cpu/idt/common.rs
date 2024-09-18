@@ -11,6 +11,7 @@ use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::gdt;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
+use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::GuestPtr;
@@ -75,7 +76,7 @@ impl X86ExceptionContext {
     pub fn set_rip(&mut self, new_rip: usize) {
         self.frame.rip = new_rip;
 
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             // Update the instruction pointer on the shadow stack.
             let return_on_stack = (self.ssp + 8) as *const usize;
             let return_on_stack_val = new_rip;

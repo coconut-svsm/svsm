@@ -35,7 +35,7 @@ use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
-use crate::cpu::shadow_stack::PL0_SSP;
+use crate::cpu::shadow_stack::{is_cet_ss_supported, IS_CET_SUPPORTED, PL0_SSP};
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
@@ -351,7 +351,7 @@ pub fn schedule() {
         }
 
         this_cpu().set_tss_rsp0(next.stack_bounds.end());
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
         }
 
@@ -420,6 +420,8 @@ global_asm!(
         mov {CONTEXT_SWITCH_STACK}(%rip), %rsp
 
         .if CFG_SHADOW_STACKS
+	cmpb $0, {IS_CET_SUPPORTED}(%rip)
+        je 1f
         // Save the current shadow stack pointer
         rdssp   %rax
         sub $8, %rax
@@ -438,11 +440,14 @@ global_asm!(
         mov     %rdx, %cr3
 
         .if CFG_SHADOW_STACKS
+	cmpb $0, {IS_CET_SUPPORTED}(%rip)
+        je 2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
         mov     8(%rdi), %rdx
         rstorssp (%rdx)
         saveprevssp
+    2:
         .endif
 
         // Switch to the new task stack
@@ -471,6 +476,7 @@ global_asm!(
 
         ret
     "#,
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     // TODO: Replace these with `const` operands once we upgrade the MSRV to 1.82.
     CONTEXT_SWITCH_STACK = sym CONTEXT_SWITCH_STACK,
     CONTEXT_SWITCH_RESTORE_TOKEN = sym CONTEXT_SWITCH_RESTORE_TOKEN,

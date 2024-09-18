@@ -108,8 +108,11 @@ asm_entry_hv:
 	movq	%rbx, 0x20(%rsp)
 	.if CFG_SHADOW_STACKS
 	// Update RIP on the shadow stack to the cancel point.
+	cmpb    $0, {IS_CET_SUPPORTED}(%rip)
+        je 2f
 	rdsspq  %rax
         wrssq	%rbx, 8(%rax)
+    2:
 	.endif
 	// Defer any further processing until interrupts can be processed.
 	jmp	postpone_hv
@@ -151,10 +154,15 @@ hv_not_vmpl_switch:
 	// points to the register save area, and continue with #HV
 	// processing.
 	movq	%rcx, %rsp
+        .if CFG_SHADOW_STACKS
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
+	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+        je	2f
 	movl	$3, %eax
 	incsspq	%rax
+    2:
+	.endif
 	jmp	handle_as_hv
 
 postpone_hv:
@@ -200,8 +208,11 @@ restart_hv:
         .if CFG_SHADOW_STACKS
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
+	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+        je	2f
 	movl	$3, %eax
-        incsspq	%rax
+	incsspq	%rax
+    2:
 	.endif
 	
 continue_hv:

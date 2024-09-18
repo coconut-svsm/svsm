@@ -16,6 +16,7 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
@@ -190,7 +191,7 @@ impl Task {
 
         let mut shadow_stack_offset = VirtAddr::null();
         let mut exception_shadow_stack = VirtAddr::null();
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             let shadow_stack;
             (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
                 SVSM_PERTASK_SHADOW_STACK_BASE,
@@ -259,7 +260,7 @@ impl Task {
 
         let mut shadow_stack_offset = VirtAddr::null();
         let mut exception_shadow_stack = VirtAddr::null();
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             let shadow_stack;
             (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
                 SVSM_PERTASK_SHADOW_STACK_BASE,

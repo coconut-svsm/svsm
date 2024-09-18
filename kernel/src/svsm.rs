@@ -7,6 +7,7 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
+use svsm::cpu::shadow_stack::{determine_cet_support, is_cet_ss_supported};
 use svsm::enable_shadow_stacks;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
@@ -311,6 +312,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     cr0_init();
     cr4_init(platform);
+    determine_cet_support();
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
@@ -347,7 +349,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
 
-    if cfg!(feature = "shadow-stacks") {
+    if is_cet_ss_supported() {
         enable_shadow_stacks!(bsp_percpu);
     }
 
