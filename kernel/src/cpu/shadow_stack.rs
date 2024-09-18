@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+use core::{
+    arch::asm,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
 use bitflags::bitflags;
 
 use super::msr::read_msr;
@@ -10,6 +15,44 @@ pub const ISST_ADDR: u32 = 0x6a8;
 
 pub const MODE_64BIT: usize = 1;
 
+pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
+
+// Try to enable the CET feature in CR4 and set `IS_CET_SUPPORTED` if successful.
+pub fn determine_cet_support() {
+    // Don't try to determine support if the shadow-stacks feature is not enabled.
+    if !cfg!(feature = "shadow-stacks") {
+        return;
+    }
+
+    let rcx: u64;
+    unsafe {
+        asm!(// Try to enable CET in CR4.
+             "   mov %cr4, %rax",
+             "   or $1<<23, %rax",
+             "1: mov %rax, %cr4",
+             "   xorq %rcx, %rcx",
+             "2:",
+             ".pushsection \"__exception_table\",\"a\"",
+             ".balign 16",
+             ".quad (1b)",
+             ".quad (2b)",
+             ".popsection",
+             out("rax") _,
+             out("rcx") rcx,
+             options(att_syntax, nostack, nomem, pure, preserves_flags));
+    }
+
+    IS_CET_SUPPORTED.store(rcx == 0, Ordering::Relaxed);
+}
+
+/// Returns whether shadow stacks are supported by the CPU and the kernel.
+#[inline(always)]
+pub fn is_cet_ss_supported() -> bool {
+    // In theory CPUs can have support for CET, but not CET_SS, but in practice
+    // no such CPUs exist. Treat CET being supported as CET_SS being supported.
+    cfg!(feature = "shadow-stacks") && IS_CET_SUPPORTED.load(Ordering::Relaxed)
+}
+
 /// Enable shadow stacks.
 ///
 /// This code is placed in a macro instead of a function so that we don't have
@@ -18,18 +61,10 @@ pub const MODE_64BIT: usize = 1;
 macro_rules! enable_shadow_stacks {
     ($bsp_percpu:ident) => {{
         use core::arch::asm;
-        use core::assert;
         use svsm::address::Address;
-        use svsm::cpu::control_regs::{read_cr4, write_cr4, CR4Flags};
         use svsm::cpu::shadow_stack::{SCetFlags, MODE_64BIT, S_CET};
 
         let token_addr = $bsp_percpu.get_top_of_shadow_stack();
-
-        // Enable CET in CR4.
-        let mut cr4 = read_cr4();
-        assert!(!cr4.contains(CR4Flags::CET), "CET is already enabled");
-        cr4 |= CR4Flags::CET;
-        write_cr4(cr4);
 
         unsafe {
             asm!(

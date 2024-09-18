@@ -35,7 +35,7 @@ use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
-use crate::cpu::shadow_stack::PL0_SSP;
+use crate::cpu::shadow_stack::{is_cet_ss_supported, IS_CET_SUPPORTED, PL0_SSP};
 use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::sse_save_context;
 use crate::cpu::IrqGuard;
@@ -354,7 +354,7 @@ pub fn schedule() {
         }
 
         this_cpu().set_tss_rsp0(next.stack_bounds.end());
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
         }
 
@@ -428,6 +428,8 @@ global_asm!(
         mov ${CONTEXT_SWITCH_STACK}, %rsp
 
         .if CFG_SHADOW_STACKS
+	cmpb $0, {IS_CET_SUPPORTED}(%rip)
+        je 1f
         // Save the current shadow stack pointer
         rdssp   %rax
         sub $8, %rax
@@ -446,11 +448,14 @@ global_asm!(
         mov     %rdx, %cr3
 
         .if CFG_SHADOW_STACKS
+	cmpb $0, {IS_CET_SUPPORTED}(%rip)
+        je 2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
         mov     {TASK_SSP_OFFSET}(%rdi), %rdx
         rstorssp (%rdx)
         saveprevssp
+    2:
         .endif
 
         // Switch to the new task stack
@@ -481,6 +486,7 @@ global_asm!(
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     CONTEXT_SWITCH_STACK = const CONTEXT_SWITCH_STACK.as_usize(),
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)

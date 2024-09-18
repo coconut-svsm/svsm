@@ -13,7 +13,7 @@ use super::control_regs::{read_cr0, read_cr3, read_cr4};
 use super::efer::read_efer;
 use super::gdt;
 use super::idt::common::idt;
-use super::shadow_stack::read_s_cet;
+use super::shadow_stack::{is_cet_ss_supported, read_s_cet};
 
 fn svsm_code_segment() -> VMSASegment {
     VMSASegment {
@@ -67,7 +67,7 @@ pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64) {
     vmsa.cr3 = read_cr3().bits() as u64;
     vmsa.cr4 = read_cr4().bits();
     vmsa.efer = read_efer().bits();
-    if cfg!(feature = "shadow-stacks") {
+    if is_cet_ss_supported() {
         vmsa.s_cet = read_s_cet().bits();
     }
 

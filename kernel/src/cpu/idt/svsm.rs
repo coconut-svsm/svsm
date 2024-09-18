@@ -17,6 +17,7 @@ use super::common::{
 };
 use crate::address::VirtAddr;
 use crate::cpu::registers::RFlags;
+use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::mm::GuestPtr;
@@ -333,5 +334,6 @@ global_asm!(
     include_str!("../x86/smap.S"),
     include_str!("entry.S"),
     IF = const RFlags::IF.bits(),
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     options(att_syntax)
 );

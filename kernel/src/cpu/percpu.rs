@@ -9,7 +9,7 @@ extern crate alloc;
 use super::gdt_mut;
 use super::isst::Isst;
 use super::msr::write_msr;
-use super::shadow_stack::ISST_ADDR;
+use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::idt::common::INT_INJ_VECTOR;
@@ -639,14 +639,14 @@ impl PerCpu {
         // Allocate per-cpu init stack
         self.allocate_init_stack()?;
 
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             self.allocate_init_shadow_stack()?;
         }
 
         // Allocate per-cpu context switch stack
         self.allocate_context_switch_stack()?;
 
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             self.allocate_context_switch_shadow_stack()?;
         }
 
@@ -656,7 +656,7 @@ impl PerCpu {
         // Setup TSS
         self.setup_tss();
 
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             // Allocate ISST shadow stacks
             self.allocate_isst_shadow_stacks()?;
 
@@ -709,7 +709,7 @@ impl PerCpu {
     pub fn load(&self) {
         self.load_pgtable();
         self.load_tss();
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             self.load_isst();
         }
     }
@@ -735,7 +735,7 @@ impl PerCpu {
         vmsa.tr = self.vmsa_tr_segment();
         vmsa.rip = start_rip;
         vmsa.rsp = self.get_top_of_stack().into();
-        if cfg!(feature = "shadow-stacks") {
+        if is_cet_ss_supported() {
             vmsa.ssp = self.get_top_of_shadow_stack().into();
         }
         vmsa.cr3 = self.get_pgtable().cr3_value().into();
