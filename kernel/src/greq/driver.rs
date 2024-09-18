@@ -344,13 +344,13 @@ impl SnpGuestRequestDriver {
             command_len,
         )?;
 
-        // The SEV-SNP certificates can be used to verify the attestation report. At this point, a zeroed
-        // ext_data buffer indicates that the certificates were not imported.
-        // The VM owner can import them from the host using the virtee/snphost project
-        if self.ext_data.is_nclear(certs.len())? {
+        // The SEV-SNP certificates can be used to verify the attestation report.
+        self.ext_data.copy_to_slice(certs)?;
+        // At this point, a zeroed ext_data buffer indicates that the
+        // certificates were not imported. The VM owner can import them from the
+        // host using the virtee/snphost project
+        if certs[..24] == [0; 24] {
             log::warn!("SEV-SNP certificates not found. Make sure they were loaded from the host.");
-        } else {
-            self.ext_data.copy_to_slice(certs)?;
         }
 
         Ok(outbuf_len)
