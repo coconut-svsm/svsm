@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::obj::obj_close;
 use crate::task::{current_task_terminated, schedule};
 
 pub fn sys_exit(exit_code: u32) -> ! {
@@ -13,4 +14,11 @@ pub fn sys_exit(exit_code: u32) -> ! {
     }
     schedule();
     panic!("schedule() returned in sys_exit()");
+}
+
+pub fn sys_close(obj_id: u32) -> Result<u64, i32> {
+    // According to syscall ABI/API spec, close always returns 0 even
+    // if called with an invalid handle
+    let _ = obj_close(obj_id.into());
+    Ok(0)
 }
