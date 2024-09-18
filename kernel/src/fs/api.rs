@@ -18,6 +18,7 @@ use packit::PackItError;
 /// Maximum supported length for a single filename
 const MAX_FILENAME_LENGTH: usize = 64;
 pub type FileName = FixedString<MAX_FILENAME_LENGTH>;
+pub type FileNameArray = [u8; MAX_FILENAME_LENGTH];
 
 /// Represents the type of error occured
 /// while doing SVSM filesystem operations.
