@@ -9,6 +9,7 @@ const CLASS0: u64 = 0;
 
 // Syscall number in class0
 pub const SYS_EXIT: u64 = CLASS0;
+pub const SYS_CLOSE: u64 = CLASS0 + 10;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;

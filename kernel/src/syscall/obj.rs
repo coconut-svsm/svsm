@@ -87,7 +87,6 @@ pub fn obj_add(obj: Arc<dyn Obj>) -> Result<ObjHandle, SvsmError> {
 ///
 /// This function will return an error if removing the object from the
 /// current task fails.
-#[expect(dead_code)]
 pub fn obj_close(id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
     current_task().remove_obj(id)
 }
