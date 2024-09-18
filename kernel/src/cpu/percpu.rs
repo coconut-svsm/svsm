@@ -25,8 +25,8 @@ use crate::mm::vm::{
     VMReserved, VMR,
 };
 use crate::mm::{
-    virt_to_phys, PageBox, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END,
-    SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
+    virt_to_phys, PageBox, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE,
+    SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M,
     SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE, SVSM_SHADOW_STACKS_INIT_TASK,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
 };
@@ -499,6 +499,11 @@ impl PerCpu {
         Ok(())
     }
 
+    fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
+        self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?;
+        Ok(())
+    }
+
     fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
         let double_fault_stack = self.allocate_stack(SVSM_STACK_IST_DF_BASE)?;
         self.ist.double_fault_stack.set(Some(double_fault_stack));
@@ -628,6 +633,9 @@ impl PerCpu {
         if cfg!(feature = "shadow-stacks") {
             self.allocate_init_shadow_stack()?;
         }
+
+        // Allocate per-cpu context switch stack
+        self.allocate_context_switch_stack()?;
 
         // Allocate IST stacks
         self.allocate_ist_stacks()?;

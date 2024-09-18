@@ -32,7 +32,7 @@ extern crate alloc;
 
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
-use crate::address::Address;
+use crate::address::{Address, VirtAddr};
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
 use crate::cpu::shadow_stack::PL0_SSP;
@@ -41,6 +41,7 @@ use crate::cpu::sse::sse_save_context;
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
+use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK};
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
@@ -414,6 +415,9 @@ global_asm!(
         jz      1f
         movq    %rsp, {TASK_RSP_OFFSET}(%rsi)
 
+        // Switch to a stack pointer that's valid in both the old and new page tables.
+        mov ${CONTEXT_SWITCH_STACK}, %rsp
+
     1:
         // Switch to the new task state
         mov     %rdx, %cr3
@@ -445,5 +449,16 @@ global_asm!(
         ret
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
+    CONTEXT_SWITCH_STACK = const CONTEXT_SWITCH_STACK.as_usize(),
     options(att_syntax)
 );
+
+/// The location of a cpu-local stack that's mapped into every set of page
+/// tables for use during context switches.
+///
+/// If an IRQ is raised after switching the page tables but before switching
+/// to the new stack, the CPU will try to access the old stack in the new page
+/// tables. To protect against this, we switch to another stack that's mapped
+/// into both the old and the new set of page tables. That way we always have a
+/// valid stack to handle exceptions on.
+const CONTEXT_SWITCH_STACK: VirtAddr = SVSM_CONTEXT_SWITCH_STACK.const_add(STACK_TOTAL_SIZE);
