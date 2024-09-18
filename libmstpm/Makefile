@@ -116,7 +116,8 @@ $(MSTPM_MAKEFILE):
 		./bootstrap && \
 		./configure \
 			CFLAGS="${MSTPM_CFLAGS}" \
-			LIBCRYPTO_LIBS="${$(LIBCRT) $(LIBCRYPTO)}")
+			LIBCRYPTO_LIBS="$(LIBCRT) $(LIBCRYPTO)" \
+			LIBCRYPTO_CFLAGS="${MSTPM_CFLAGS}")
 
 # bindings.rs
 BINDGEN_FLAGS = --use-core

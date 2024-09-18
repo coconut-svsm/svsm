@@ -28,7 +28,7 @@ jobs:
             override: true
 
       - name: Install Microsoft TPM build dependencies
-        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake libssl-dev
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - uses: actions/setup-python@v5
         with:
