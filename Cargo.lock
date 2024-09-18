@@ -949,6 +949,9 @@ dependencies = [
 [[package]]
 name = "syscall"
 version = "0.1.0"
+dependencies = [
+ "zerocopy 0.8.2",
+]
 
 [[package]]
 name = "tdx-tdcall"
