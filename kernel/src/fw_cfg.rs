@@ -78,6 +78,12 @@ impl<'a> FwCfg<'a> {
         self.driver.outw(FW_CFG_CTL, cfg);
     }
 
+    pub fn read_bytes(&self, out: &mut [u8]) {
+        for byte in out.iter_mut() {
+            *byte = self.driver.inb(FW_CFG_DATA);
+        }
+    }
+
     pub fn read_le<T>(&self) -> T
     where
         T: core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> + From<u8>,
