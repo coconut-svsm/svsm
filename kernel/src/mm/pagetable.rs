@@ -53,7 +53,6 @@ pub fn paging_init_early(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()
     init_encrypt_mask(platform)?;
 
     let mut feature_mask = PTEntryFlags::all();
-    feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
     FEATURE_MASK.reinit(&feature_mask)
 }

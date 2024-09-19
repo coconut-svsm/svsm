@@ -99,11 +99,13 @@ global_asm!(
         bts $5, %eax
         movl %eax, %cr4
 
-        /* Enable long mode, EFER.LME. */
+        /* Enable long mode, EFER.LME. Also ensure NXE is set. */
         movl $0xc0000080, %ecx
         rdmsr
-        bts $8, %eax
-        jc 2f
+        movl %eax, %ebx
+        orl $0x900, %eax
+        cmp %eax, %ebx
+        jz 2f
         wrmsr
         2:
 
