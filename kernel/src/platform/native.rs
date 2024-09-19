@@ -18,6 +18,9 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
+#[cfg(debug_assertions)]
+use crate::mm::virt_to_phys;
+
 static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
@@ -108,6 +111,18 @@ impl SvsmPlatform for NativePlatform {
         _region: MemoryRegion<VirtAddr>,
         _op: PageValidateOp,
     ) -> Result<(), SvsmError> {
+        #[cfg(debug_assertions)]
+        {
+            // Ensure that it is possible to translate this virtual address to
+            // a physical address.  This is not necessary for correctness
+            // here, but since other platformss may rely on virtual-to-physical
+            // translation, it is helpful to force a translation here for
+            // debugging purposes just to help catch potential errors when
+            // testing on native.
+            for va in _region.iter_pages(PageSize::Regular) {
+                let _ = virt_to_phys(va);
+            }
+        }
         Ok(())
     }
 
