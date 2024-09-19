@@ -4,9 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use core::array;
 use core::fmt;
-use core::mem::MaybeUninit;
 
 #[derive(Copy, Clone, Debug)]
 pub struct FixedString<const T: usize> {
@@ -46,18 +44,8 @@ impl<const N: usize> Default for FixedString<N> {
 
 impl<const N: usize> From<[u8; N]> for FixedString<N> {
     fn from(arr: [u8; N]) -> FixedString<N> {
-        let mut data: [MaybeUninit<char>; N] = array::from_fn(|_| MaybeUninit::uninit());
-        let mut len = N;
-
-        for (i, (d, val)) in data.iter_mut().zip(&arr).enumerate() {
-            let val = *val;
-            if val == 0 && len == N {
-                len = i;
-            }
-            d.write(val as char);
-        }
-
-        let data = unsafe { *(data.as_ptr().cast::<[char; N]>()) };
+        let data = arr.map(char::from);
+        let len = arr.iter().position(|&b| b == 0).unwrap_or(N);
         FixedString { data, len }
     }
 }
