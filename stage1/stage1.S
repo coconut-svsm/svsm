@@ -87,7 +87,7 @@ startup_32:
 	 * Stage 2 launch info has been prepared
 	 * Make sure platform type is TDP
 	 */
-	movl	$(STAGE1_STACK - 32), %eax
+	movl	$(STAGE1_STACK - 40), %eax
 	movl	(%eax), %eax
 	cmpl	$2, %eax
 	je	.Lsetup_td
@@ -104,7 +104,7 @@ startup_32:
 
 .Lsetup_bsp_stack:
 	/* Set up BSP stack for stage 2 */
-	movl	$(STAGE1_STACK - 40), %esp
+	movl	$(STAGE1_STACK - 48), %esp
 	/* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
 	mov	%esp, %eax
 	/* GPAW must be either 48 or 52 */

@@ -12,14 +12,13 @@ use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::serial::SerialPort;
-use crate::svsm_console::SVSMIOPort;
+use crate::svsm_console::SvsmTdIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use tdx_tdcall::tdx::td_accept_memory;
 
-// FIXME - SVSMIOPort doesn't work on TDP, but the platform does not yet have
-// an alternative available.
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
+static CONSOLE_IO: SvsmTdIOPort = SvsmTdIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
@@ -40,16 +39,19 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
-        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)
-    }
+    fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
 
-    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
+        // Serial console device can be initialized immediately
         CONSOLE_SERIAL
             .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
             .map_err(|_| SvsmError::Console)?;
         (*CONSOLE_SERIAL).init();
         init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
+    }
+
+    fn env_setup_late(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+        Ok(())
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
@@ -72,7 +74,7 @@ impl SvsmPlatform for TdpPlatform {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
-            phys_addr_sizes: res.eax & 0xff,
+            phys_addr_sizes: res.eax,
         }
     }
 
@@ -95,8 +97,13 @@ impl SvsmPlatform for TdpPlatform {
         Err(SvsmError::Tdx)
     }
 
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+    fn validate_page_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        paddr: PhysAddr,
+    ) -> Result<(), SvsmError> {
+        td_accept_memory(paddr.into(), region.len().try_into().unwrap());
+        Ok(())
     }
 
     fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
