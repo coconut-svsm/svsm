@@ -16,7 +16,6 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 GUEST_ROOT_LABEL="${GUEST_ROOT_LABEL:-cloudimg-rootfs}"
 GUEST_KERNEL_APPEND="root=LABEL=${GUEST_ROOT_LABEL} ro console=ttyS0"
 
-
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
@@ -102,7 +101,6 @@ if [ ! -z $IMAGE ]; then
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
     -device scsi-hd,drive=disk0,bootindex=0"
 fi
-
 
 if [ "$EUID" -ne 0 ]; then
 	SUDO_CMD="sudo"
