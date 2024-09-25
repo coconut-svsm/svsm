@@ -443,6 +443,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
 
     let valid_bitmap = valid_bitmap_addr();
 
+    log::info!("Starting SVSM kernel...");
+
     // Shut down the GHCB
     unsafe {
         shutdown_percpu();
