@@ -4,6 +4,7 @@
 # Copyright (C) 2023 IBM
 #
 # Author: Claudio Carvalho <cclaudio@linux.ibm.com>
+set -e
 
 CURDIR=$(dirname "$(realpath "$0")")
 WORKDIR=$(realpath "${CURDIR}/../..")
