@@ -106,6 +106,11 @@ asm_entry_hv:
 	// RIP is in the return window, so update RIP to the cancel point.
 	leaq	switch_vmpl_cancel(%rip), %rbx
 	movq	%rbx, 0x20(%rsp)
+	.if CFG_SHADOW_STACKS
+	// Update RIP on the shadow stack to the cancel point.
+	rdsspq  %rax
+        wrssq	%rbx, 8(%rax)
+	.endif
 	// Defer any further processing until interrupts can be processed.
 	jmp	postpone_hv
 hv_not_vmpl_switch:
@@ -146,6 +151,10 @@ hv_not_vmpl_switch:
 	// points to the register save area, and continue with #HV
 	// processing.
 	movq	%rcx, %rsp
+	// Pop the current stack frame, so that the previous stack frame sits
+	// on top of the shadow stack.
+	movl	$3, %eax
+	incsspq	%rax
 	jmp	handle_as_hv
 
 postpone_hv:
@@ -188,6 +197,12 @@ restart_hv:
 	movq	2*8(%rsp), %rax
 	movq	%rax, -2*8(%rcx)
 	leaq	-4*8(%rcx), %rsp
+        .if CFG_SHADOW_STACKS
+	// Pop the current stack frame, so that the previous stack frame sits
+	// on top of the shadow stack.
+	movl	$3, %eax
+        incsspq	%rax
+	.endif
 	
 continue_hv:
 	// At this point, only the dummy error code and first three registers
