@@ -9,12 +9,17 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
-use crate::io::{IOPort, DEFAULT_IO_DRIVER};
+use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use tdx_tdcall::tdx::{
+    tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8, tdvmcall_io_write_16,
+    tdvmcall_io_write_32, tdvmcall_io_write_8,
+};
 
+static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
@@ -33,12 +38,14 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
-        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)
+    fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
+        // Serial console device can be initialized immediately
+        init_svsm_console(&GHCI_IO_DRIVER, debug_serial_port)
     }
 
-    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
-        init_svsm_console(&DEFAULT_IO_DRIVER, debug_serial_port)
+    fn env_setup_late(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+        Ok(())
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
@@ -72,9 +79,7 @@ impl SvsmPlatform for TdpPlatform {
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
 
     fn get_io_port(&self) -> &'static dyn IOPort {
-        // FIXME - the default I/O port implementation doesn't work on TDP,
-        // but the platform does not yet have an alternative available.
-        &DEFAULT_IO_DRIVER
+        &GHCI_IO_DRIVER
     }
 
     fn page_state_change(
@@ -122,5 +127,40 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
         todo!();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GHCIIOPort {}
+
+impl GHCIIOPort {
+    pub const fn new() -> Self {
+        GHCIIOPort {}
+    }
+}
+
+impl IOPort for GHCIIOPort {
+    fn outb(&self, port: u16, value: u8) {
+        tdvmcall_io_write_8(port, value);
+    }
+
+    fn inb(&self, port: u16) -> u8 {
+        tdvmcall_io_read_8(port)
+    }
+
+    fn outw(&self, port: u16, value: u16) {
+        tdvmcall_io_write_16(port, value);
+    }
+
+    fn inw(&self, port: u16) -> u16 {
+        tdvmcall_io_read_16(port)
+    }
+
+    fn outl(&self, port: u16, value: u32) {
+        tdvmcall_io_write_32(port, value);
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        tdvmcall_io_read_32(port)
     }
 }
