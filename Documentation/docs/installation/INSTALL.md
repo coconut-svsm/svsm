@@ -438,6 +438,15 @@ of these limitations may be addressed in future updates.
 
 Coconut-SVSM CI
 -------------
+The purpose of this section is to perform all these tasks by utilizing scripts.
+
+setup-host: This automates the installation and building of all Coconut-SVSM components and sets up the host server using GRUB with the Coconut-SVSM host kernel.
+
+launch-guest: This launches the guest using the default guest image, installs the Coconut-SVSM guest Linux kernel, retrieves the initrd, shuts down the current guest, and then relaunches the guest VM using direct boot with the specified kernel, initrd, and append options.
+
+attest-guest: This validates the launch measurements using the SNPGuest tool in conjunction with the IGVMMeasure tool.
+
+Note: The host should be a brand new setup of Ubuntu 24.04 or your existing Ubuntu 24.04 work environment.
 
 ## SVSM - Using the Script Utility
 

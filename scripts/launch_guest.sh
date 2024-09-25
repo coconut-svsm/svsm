@@ -8,18 +8,16 @@ set -e
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-
-
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
-: "${KERNEL_BIN:="${guest_kernel}"}"
-: "${INITRD_BIN:="${GENERATED_INITRD_BIN}"}"
+: "${KERNEL_BIN:="${guest_kernel}"}" ## Incase your work environment is ubuntu, guest_kernel is your ubuntu kernel image "vmlinuz-6.8.0-snp-guest-bc4de28e0cc1" o
+: "${INITRD_BIN:="${GENERATED_INITRD_BIN}"}" #Incase your work environment is ubuntu, GENERATED_INITRD_BIN is your generated guest linux "initrd.img-6.8.0-snp-guest-bc4de28e0cc1"
 
 GUEST_ROOT_LABEL="${GUEST_ROOT_LABEL:-cloudimg-rootfs}"
 GUEST_KERNEL_APPEND="root=LABEL=${GUEST_ROOT_LABEL} ro console=ttyS0"
 
 
-#C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
+C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v
