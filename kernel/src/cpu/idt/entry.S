@@ -213,11 +213,6 @@ handle_as_hv:
 	call 	process_hv_events
 	// fall through to default_return
 
-.globl return_new_task
-return_new_task:
-	call setup_new_task
-	jmp default_return
-
 .globl default_return
 default_return:
 	// Ensure that interrupts are disabled before attempting any return.
@@ -272,6 +267,11 @@ default_iret:
 return_user:
 	// Put user-mode specific return code here
 	jmp 	return_all_paths
+
+.globl return_new_task
+return_new_task:
+	call setup_new_task
+	jmp default_return
 
 // #DE Divide-by-Zero-Error Exception (Vector 0)
 default_entry_no_ist	name=de		handler=panic			error_code=0	vector=0
