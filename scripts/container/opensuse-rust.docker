@@ -22,7 +22,7 @@ ENV RUSTUP_HOME=/opt/rustup
 
 SHELL ["/bin/bash", "-c"]
 
-RUN zypper ref && \
+RUN zypper ref && zypper dup -y && \
     zypper install -y system-user-mail make gcc curl \
         patterns-devel-base-devel_basis glibc-devel-static git libclang13 \
         autoconf autoconf-archive pkg-config automake libopenssl-devel perl && \
