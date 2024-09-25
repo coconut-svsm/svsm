@@ -117,7 +117,7 @@ hv_not_vmpl_switch:
 	// point, there are two possibilities.  If RIP is before the IRET
 	// instruction itself, then the RSP at the time of #HV exception
 	// points to the register context that was established for the previous
-	// exceptoin.  In that case, the current RSP can be changed to point
+	// exception.  In that case, the current RSP can be changed to point
 	// to that exception context, and the #HV can be handled using that
 	// register context, and when #HV processing completes, the subsequent
 	// end-of-interrupt flow will restore the context at the time of the
@@ -171,7 +171,7 @@ restart_hv:
 	// register state at the time of the exception that was returning at
 	// the time the #HV arrived.
 	// At this point, RCX holds the stack pointer at the time of the
-	// IRET taht was aborted.  The first QWORD below that pointer is
+	// IRET that was aborted.  The first QWORD below that pointer is
 	// reserved for the dummy error code, then the three QWORDS below that
 	// will hold the RAX, RBX, and RCX values, which are presently stored
 	// in the top three QWORDs of the current stack.
@@ -185,7 +185,7 @@ restart_hv:
 	
 continue_hv:
 	// At this point, only the dummy error code and first three registers
-	// have been pushed onto the stack.  Push the remainder o construct a
+	// have been pushed onto the stack.  Push the remainder to construct a
 	// full exception context.
         pushq   %rdx
         pushq   %rsi
@@ -220,7 +220,7 @@ default_return:
 	testb	$3, 17*8(%rsp) // Check CS in exception frame
 	jnz 	return_user
 return_all_paths:
-	// If interrupts were prerviously available, then check whether any #HV
+	// If interrupts were previously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
 	testl 	$0x200, 18*8(%rsp) // check EFLAGS.IF in exception frame
