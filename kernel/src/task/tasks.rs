@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use alloc::collections::btree_map::BTreeMap;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
@@ -27,6 +28,7 @@ use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
     SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
 };
+use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
@@ -139,6 +141,9 @@ pub struct Task {
 
     /// Link to scheduler run queue
     runlist_link: LinkedListAtomicLink,
+
+    /// Objects shared among threads within the same process
+    objs: Arc<RWLock<BTreeMap<ObjHandle, Arc<dyn Obj>>>>,
 }
 
 // SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
@@ -206,6 +211,7 @@ impl Task {
             id: TASK_ID_ALLOCATOR.next_id(),
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
+            objs: Arc::new(RWLock::new(BTreeMap::new())),
         }))
     }
 
@@ -249,6 +255,7 @@ impl Task {
             id: TASK_ID_ALLOCATOR.next_id(),
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
+            objs: Arc::new(RWLock::new(BTreeMap::new())),
         }))
     }
 
@@ -474,6 +481,87 @@ impl Task {
 
         self.vm_user_range.as_ref().unwrap().remove(addr)?;
         Ok(())
+    }
+
+    /// Adds an object to the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The object to be added.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ObjHandle, SvsmError>` - Returns the object handle for the object
+    ///   to be added if successful, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if allocating the object handle fails.
+    pub fn add_obj(&self, obj: Arc<dyn Obj>) -> Result<ObjHandle, SvsmError> {
+        let mut objs = self.objs.lock_write();
+        let last_key = objs
+            .keys()
+            .last()
+            .map_or(Some(0), |k| u32::from(*k).checked_add(1))
+            .ok_or(SvsmError::from(ObjError::InvalidHandle))?;
+        let id = ObjHandle::new(if last_key != objs.len() as u32 {
+            objs.keys()
+                .enumerate()
+                .find(|(i, &key)| *i as u32 != u32::from(key))
+                .unwrap()
+                .0 as u32
+        } else {
+            last_key
+        });
+
+        objs.insert(id, obj);
+
+        Ok(id)
+    }
+
+    /// Removes an object from the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ObjHandle for the object to be removed.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Arc<dyn Obj>>, SvsmError>` - Returns the removed `Arc<dyn Obj>`
+    ///   on success, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the object handle id does not
+    /// exist in the current task.
+    pub fn remove_obj(&self, id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
+        self.objs
+            .lock_write()
+            .remove(&id)
+            .ok_or(ObjError::NotFound.into())
+    }
+
+    /// Retrieves an object from the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ObjHandle for the object to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Arc<dyn Obj>>, SvsmError>` - Returns the `Arc<dyn Obj>` on
+    ///   success, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the object handle id does not exist
+    /// in the current task.
+    pub fn get_obj(&self, id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
+        self.objs
+            .lock_read()
+            .get(&id)
+            .cloned()
+            .ok_or(ObjError::NotFound.into())
     }
 }
 

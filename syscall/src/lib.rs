@@ -6,5 +6,7 @@
 #![no_std]
 
 mod numbers;
+mod obj;
 
 pub use numbers::*;
+pub use obj::*;

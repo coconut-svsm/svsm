@@ -25,6 +25,7 @@ use crate::mm::alloc::AllocError;
 use crate::sev::ghcb::GhcbError;
 use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
+use crate::syscall::ObjError;
 use crate::task::TaskError;
 use elf::ElfError;
 
@@ -83,6 +84,8 @@ pub enum SvsmError {
     Acpi,
     /// Errors from the filesystem.
     FileSystem(FsError),
+    /// Obj related error
+    Obj(ObjError),
     /// Task management errors,
     Task(TaskError),
     /// Errors from #VC handler
@@ -102,5 +105,11 @@ impl From<ElfError> for SvsmError {
 impl From<ApicError> for SvsmError {
     fn from(err: ApicError) -> Self {
         Self::Apic(err)
+    }
+}
+
+impl From<ObjError> for SvsmError {
+    fn from(err: ObjError) -> Self {
+        Self::Obj(err)
     }
 }
