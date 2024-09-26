@@ -20,8 +20,8 @@ pub mod svsm_gdbstub {
     use crate::locking::{LockGuard, SpinLock};
     use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
+    use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
-    use crate::svsm_console::SVSMIOPort;
     use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
     use core::fmt;
@@ -44,12 +44,11 @@ pub mod svsm_gdbstub {
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
 
-    pub fn gdbstub_start() -> Result<(), u64> {
+    pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         unsafe {
-            GDB_SERIAL.init();
             let mut target = GdbStubTarget::new();
             #[allow(static_mut_refs)]
-            let gdb = GdbStubBuilder::new(GdbStubConnection::new())
+            let gdb = GdbStubBuilder::new(GdbStubConnection::new(platform))
                 .with_packet_buffer(&mut PACKET_BUFFER)
                 .build()
                 .expect("Failed to initialise GDB stub")
@@ -173,8 +172,6 @@ pub mod svsm_gdbstub {
 
     static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
     static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
-    static GDB_IO: SVSMIOPort = SVSMIOPort::new();
-    static mut GDB_SERIAL: SerialPort<'_> = SerialPort::new(&GDB_IO, 0x2f8);
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
     static mut GDB_STACK: [u64; 8192] = [0; 8192];
@@ -217,7 +214,7 @@ pub mod svsm_gdbstub {
     }
 
     struct SvsmGdbStub<'a> {
-        gdb: GdbStubStateMachine<'a, GdbStubTarget, GdbStubConnection>,
+        gdb: GdbStubStateMachine<'a, GdbStubTarget, GdbStubConnection<'a>>,
         target: GdbStubTarget,
     }
 
@@ -306,25 +303,27 @@ pub mod svsm_gdbstub {
         });
     }
 
-    struct GdbStubConnection;
+    struct GdbStubConnection<'a> {
+        serial_port: SerialPort<'a>,
+    }
 
-    impl GdbStubConnection {
-        const fn new() -> Self {
-            Self {}
+    impl<'a> GdbStubConnection<'a> {
+        fn new(platform: &'a dyn SvsmPlatform) -> Self {
+            let serial_port = SerialPort::new(platform.get_io_port(), 0x2f8);
+            serial_port.init();
+            Self { serial_port }
         }
 
         fn read(&self) -> Result<u8, &'static str> {
-            unsafe { Ok(GDB_SERIAL.get_byte()) }
+            Ok(self.serial_port.get_byte())
         }
     }
 
-    impl Connection for GdbStubConnection {
+    impl Connection for GdbStubConnection<'_> {
         type Error = usize;
 
         fn write(&mut self, byte: u8) -> Result<(), Self::Error> {
-            unsafe {
-                GDB_SERIAL.put_byte(byte);
-            }
+            self.serial_port.put_byte(byte);
             Ok(())
         }
 
@@ -742,8 +741,9 @@ pub mod svsm_gdbstub {
 #[cfg(not(feature = "enable-gdb"))]
 pub mod svsm_gdbstub {
     use crate::cpu::X86ExceptionContext;
+    use crate::platform::SvsmPlatform;
 
-    pub fn gdbstub_start() -> Result<(), u64> {
+    pub fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         Ok(())
     }
 

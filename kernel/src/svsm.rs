@@ -388,7 +388,7 @@ pub extern "C" fn svsm_main() {
 
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
-    gdbstub_start().expect("Could not start GDB stub");
+    gdbstub_start(platform).expect("Could not start GDB stub");
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
