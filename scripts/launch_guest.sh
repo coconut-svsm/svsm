@@ -10,6 +10,11 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
+: "${KERNEL_BIN:="${guest_kernel}"}" ## Incase your work environment is ubuntu, guest_kernel is your ubuntu kernel image "vmlinuz-6.8.0-snp-guest-bc4de28e0cc1" o
+: "${INITRD_BIN:="${GENERATED_INITRD_BIN}"}" #Incase your work environment is ubuntu, GENERATED_INITRD_BIN is your generated guest linux "initrd.img-6.8.0-snp-guest-bc4de28e0cc1"
+
+GUEST_ROOT_LABEL="${GUEST_ROOT_LABEL:-cloudimg-rootfs}"
+GUEST_KERNEL_APPEND="root=LABEL=${GUEST_ROOT_LABEL} ro console=ttyS0"
 
 C_BIT_POS=`$SCRIPT_DIR/../utils/cbit`
 COM1_SERIAL="-serial stdio" # console
@@ -33,6 +38,21 @@ while [[ $# -gt 0 ]]; do
       ;;
     --image)
       IMAGE="$2"
+      shift
+      shift
+      ;;
+      --kernel)
+      KERNEL_BIN="$2"
+      shift
+      shift
+      ;;
+    --initrd)
+      INITRD_BIN="$2"
+      shift
+      shift
+      ;;
+    --append)
+      GUEST_KERNEL_APPEND="$2"
       shift
       shift
       ;;
@@ -95,6 +115,9 @@ echo "QEMU:         ${QEMU}"
 echo "QEMU Version: ${QEMU_VERSION}"
 echo "IGVM:         ${IGVM}"
 echo "IMAGE:        ${IMAGE}"
+echo "KERNEL:       ${KERNEL_BIN}"
+echo "INITRD:       ${INITRD_BIN}"
+echo "APPEND:       ${GUEST_KERNEL_APPEND}"
 echo "============================="
 echo "Press Ctrl-] to interrupt"
 echo "============================="
@@ -115,6 +138,9 @@ $SUDO_CMD \
     $IMAGE_DISK \
     -nographic \
     -monitor none \
+    -kernel ${KERNEL_BIN} \
+    -initrd ${INITRD_BIN} \
+    -append "${GUEST_KERNEL_APPEND}"
     $COM1_SERIAL \
     $COM2_SERIAL \
     $COM3_SERIAL \

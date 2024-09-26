@@ -436,6 +436,74 @@ of these limitations may be addressed in future updates.
 * Debugging is currently limited to the SVSM kernel itself. OVMF and the guest
   OS cannot be debugged using the SVSM GDB stub.
 
+Coconut-SVSM CI
+-------------
+The purpose of this section is to perform all these tasks by utilizing scripts.
 
+setup-host: This automates the installation and building of all Coconut-SVSM components and sets up the host server using GRUB with the Coconut-SVSM host kernel.
+
+launch-guest: This launches the guest using the default guest image, installs the Coconut-SVSM guest Linux kernel, retrieves the initrd, shuts down the current guest, and then relaunches the guest VM using direct boot with the specified kernel, initrd, and append options.
+
+attest-guest: This validates the launch measurements using the SNPGuest tool in conjunction with the IGVMMeasure tool.
+
+Note: The host should be a brand new setup of Ubuntu 24.04 or your existing Ubuntu 24.04 work environment.
+
+## SVSM - Using the Script Utility
+
+Download the sev_utils script:
+```
+git clone https://github.com/ramagali24/sev-utils.git
+cd sev-utils/tools
+
+```
+
+To set up the host by building IGVM, SVSM, QEMU, OVMF, and the Linux kernel, use the following command:
+```
+./snp.sh --svsm setup-host
+
+```
+
+Note: This command will clone the repository https://github.com/ramagali24/AMDSEV-SVSM/tree/svsm-latest-fixes before building coconut-svsm supported builds.
+
+
+A reboot will be necessary to boot with coconut-svsm supported host kernel:
+```
+sudo reboot
+
+```
+
+When the system has finished rebooting back into the OS, launch a guest using 
+the following command:
+```
+./snp.sh --svsm launch-guest
+
+```
+
+This will download a cloud-init ubuntu server jammy image that will be used as the 
+guest disk. The guest is launched by passing qemu direct boot command line options 
+for igvm_file(coconut-qemu.igvm), initrd, kernel and the kernel append parameters.
+
+
+Verify Attestation and measurement of  the guest using the following command:
+```
+./snp.sh --svsm attest-guest
+
+```
+
+The above result will show the contents of the SNP report and perform the 
+report signature and certificate CA verification. It uses the 
+[igvmmeasure](https://github.com/coconut-svsm/svsm/tree/main/igvmmeasure) tool to calculate the 
+expected launch measurement by measuring the ovmf and svsm 
+parameters. This expected measurement is then checked and verified against the launch measurement that is output from the 
+[virtee/snpguest](https://github.com/virtee/snpguest) tool. If the two measurements 
+match, then the test returns with a successful output.
+
+## Stopping all Guests
+
+All script created guests can be stopped by running the following command:
+```
+./snp.sh --stop-guests
+
+```
 
 Have a lot of fun!
