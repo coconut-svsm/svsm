@@ -226,6 +226,7 @@ impl IgvmParams<'_> {
 
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
         let mut cpus: Vec<ACPICPUInfo> = Vec::new();
+        log::info!("CPU count is {}", { self.igvm_param_page.cpu_count });
         for i in 0..self.igvm_param_page.cpu_count {
             let cpu = ACPICPUInfo {
                 apic_id: i,

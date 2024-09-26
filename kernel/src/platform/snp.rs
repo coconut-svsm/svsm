@@ -10,6 +10,7 @@ use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
+use crate::greq::driver::guest_request_driver_init;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
 use crate::serial::SerialPort;
@@ -67,7 +68,9 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
-        this_cpu().configure_hv_doorbell()
+        this_cpu().configure_hv_doorbell()?;
+        guest_request_driver_init();
+        Ok(())
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {

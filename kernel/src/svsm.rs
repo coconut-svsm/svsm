@@ -32,7 +32,6 @@ use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
-use svsm::greq::driver::guest_request_driver_init;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -441,8 +440,6 @@ pub extern "C" fn svsm_main() {
         copy_tables_to_fw(fw_meta).expect("Failed to copy firmware tables");
         validate_fw(&config, &LAUNCH_INFO).expect("Failed to validate flash memory");
     }
-
-    guest_request_driver_init();
 
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
