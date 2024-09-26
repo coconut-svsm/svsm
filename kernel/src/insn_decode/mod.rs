@@ -36,6 +36,8 @@ pub enum InsnError {
     ExceptionAC,
     /// Error due to general protection exception.
     ExceptionGP(u8),
+    /// Error due to page fault exception.
+    ExceptionPF(usize, u32),
     /// Error due to stack segment exception.
     ExceptionSS,
     /// Error while mapping linear addresses.
@@ -48,6 +50,8 @@ pub enum InsnError {
     NoOpCodeDesc,
     /// Error while peeking an instruction byte.
     InsnPeek,
+    /// The instruction decoding is not invalid.
+    InvalidDecode,
     /// Invalid RegCode for decoding Register.
     InvalidRegister,
     /// Error while handling input IO operation.
@@ -56,6 +60,12 @@ pub enum InsnError {
     IoIoOut,
     /// The decoded instruction is not supported.
     UnSupportedInsn,
+    /// Error while translating linear address.
+    TranslateLinearAddr,
+    /// Error while handling MMIO read operation.
+    HandleMmioRead,
+    /// Error while handling MMIO write operation.
+    HandleMmioWrite,
 }
 
 impl From<InsnError> for crate::error::SvsmError {

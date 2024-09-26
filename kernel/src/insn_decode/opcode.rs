@@ -42,6 +42,7 @@ pub enum OpCodeClass {
     Group7Rm7,
     In,
     Ins,
+    Mov,
     Out,
     Outs,
     Rdmsr,
@@ -104,6 +105,26 @@ static ONE_BYTE_TABLE: [Option<OpCodeDesc>; 256] = {
         OpCodeFlags::BYTE_OP.bits() | OpCodeFlags::NO_MODRM.bits()
     );
     table[0x6F] = opcode!(0x6F, OpCodeClass::Outs, OpCodeFlags::NO_MODRM.bits());
+    table[0x88] = opcode!(0x88, OpCodeClass::Mov, OpCodeFlags::BYTE_OP.bits());
+    table[0x8A] = opcode!(0x8A, OpCodeClass::Mov, OpCodeFlags::BYTE_OP.bits());
+    table[0x89] = opcode!(0x89, OpCodeClass::Mov);
+    table[0x8B] = opcode!(0x8B, OpCodeClass::Mov);
+    table[0xA1] = opcode!(
+        0xA1,
+        OpCodeClass::Mov,
+        OpCodeFlags::MOFFSET.bits() | OpCodeFlags::NO_MODRM.bits()
+    );
+    table[0xA3] = opcode!(
+        0xA3,
+        OpCodeClass::Mov,
+        OpCodeFlags::MOFFSET.bits() | OpCodeFlags::NO_MODRM.bits()
+    );
+    table[0xC6] = opcode!(
+        0xC6,
+        OpCodeClass::Mov,
+        OpCodeFlags::BYTE_OP.bits() | OpCodeFlags::IMM8.bits()
+    );
+    table[0xC7] = opcode!(0xC7, OpCodeClass::Mov, OpCodeFlags::IMM.bits());
     table[0xE4] = opcode!(
         0xE4,
         OpCodeClass::In,
