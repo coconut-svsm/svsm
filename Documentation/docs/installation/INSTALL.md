@@ -199,7 +199,7 @@ you can do this by:
 ```
 $ sudo zypper in system-user-mail make gcc curl patterns-devel-base-devel_basis \
       glibc-devel-static git libclang13 autoconf autoconf-archive pkg-config \
-      automake libopenssl-devel perl
+      automake perl
 ```
 
 Then checkout the SVSM repository and build the SVSM binary:
