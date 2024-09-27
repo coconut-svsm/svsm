@@ -4,46 +4,170 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
-use igvm::snp_defs::{SevFeatures, SevVmsa};
+use igvm::registers::{SegmentRegister, X86Register};
+use igvm::snp_defs::{SevFeatures, SevSelector, SevVmsa};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
 use zerocopy::FromZeroes;
 
 use crate::cmd_options::SevExtraFeatures;
 
-pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Box<IgvmNativeVpContextX64> {
+pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Vec<X86Register> {
+    let mut vec: Vec<X86Register> = Vec::new();
+
+    // Establish CS as a 32-bit code selector.
+    let cs = SegmentRegister {
+        attributes: 0xc09b,
+        base: 0,
+        limit: 0xffffffff,
+        selector: 0x08,
+    };
+    vec.push(X86Register::Cs(cs));
+
+    // Establish all data segments as generic data selectors.
+    let ds = SegmentRegister {
+        attributes: 0xa093,
+        base: 0,
+        limit: 0xffffffff,
+        selector: 0x10,
+    };
+    vec.push(X86Register::Ds(ds));
+    vec.push(X86Register::Ss(ds));
+    vec.push(X86Register::Es(ds));
+    vec.push(X86Register::Fs(ds));
+    vec.push(X86Register::Gs(ds));
+
+    // CR0.PE | CR0.NE | CR0.ET.
+    vec.push(X86Register::Cr0(0x31));
+
+    // CR4.MCE.
+    vec.push(X86Register::Cr4(0x40));
+
+    vec.push(X86Register::Rflags(2));
+    vec.push(X86Register::Rip(start_rip));
+    vec.push(X86Register::Rsp(start_rsp));
+
+    vec
+}
+
+pub fn construct_native_start_context(
+    regs: &[X86Register],
+    compatibility_mask: u32,
+) -> IgvmDirectiveHeader {
     let mut context_box = IgvmNativeVpContextX64::new_box_zeroed();
     let context = context_box.as_mut();
 
-    // Establish CS as a 32-bit code selector.
-    context.code_attributes = 0xc09b;
-    context.code_limit = 0xffffffff;
-    context.code_selector = 0x08;
+    // Copy values from the register list.
+    for reg in regs.iter() {
+        match reg {
+            X86Register::Rsp(r) => {
+                context.rsp = *r;
+            }
+            X86Register::Rbp(r) => {
+                context.rbp = *r;
+            }
+            X86Register::Rsi(r) => {
+                context.rsi = *r;
+            }
+            X86Register::R8(r) => {
+                context.r8 = *r;
+            }
+            X86Register::R9(r) => {
+                context.r9 = *r;
+            }
+            X86Register::R10(r) => {
+                context.r10 = *r;
+            }
+            X86Register::R11(r) => {
+                context.r11 = *r;
+            }
+            X86Register::R12(r) => {
+                context.r12 = *r;
+            }
+            X86Register::Rip(r) => {
+                context.rip = *r;
+            }
+            X86Register::Rflags(r) => {
+                context.rflags = *r;
+            }
+            X86Register::Idtr(table) => {
+                context.idtr_base = table.base;
+                context.idtr_limit = table.limit;
+            }
+            X86Register::Gdtr(table) => {
+                context.gdtr_base = table.base;
+                context.gdtr_limit = table.limit;
+            }
+            X86Register::Cs(segment) => {
+                context.code_attributes = segment.attributes;
+                context.code_base = segment.base.try_into().unwrap();
+                context.code_limit = segment.limit;
+                context.code_selector = segment.selector;
+            }
+            X86Register::Ds(segment) => {
+                context.data_attributes = segment.attributes;
+                context.data_base = segment.base.try_into().unwrap();
+                context.data_limit = segment.limit;
+                context.data_selector = segment.selector;
+            }
+            X86Register::Gs(segment) => {
+                context.gs_base = segment.base;
+            }
+            X86Register::Cr0(r) => {
+                context.cr0 = *r;
+            }
+            X86Register::Cr3(r) => {
+                context.cr3 = *r;
+            }
+            X86Register::Cr4(r) => {
+                context.cr4 = *r;
+            }
+            X86Register::Efer(r) => {
+                context.efer = *r;
+            }
+            X86Register::Es(_)
+            | X86Register::Fs(_)
+            | X86Register::Ss(_)
+            | X86Register::Tr(_)
+            | X86Register::Pat(_)
+            | X86Register::MtrrDefType(_)
+            | X86Register::MtrrPhysBase0(_)
+            | X86Register::MtrrPhysMask0(_)
+            | X86Register::MtrrPhysBase1(_)
+            | X86Register::MtrrPhysMask1(_)
+            | X86Register::MtrrPhysBase2(_)
+            | X86Register::MtrrPhysMask2(_)
+            | X86Register::MtrrPhysBase3(_)
+            | X86Register::MtrrPhysMask3(_)
+            | X86Register::MtrrPhysBase4(_)
+            | X86Register::MtrrPhysMask4(_)
+            | X86Register::MtrrFix64k00000(_)
+            | X86Register::MtrrFix16k80000(_)
+            | X86Register::MtrrFix4kE0000(_)
+            | X86Register::MtrrFix4kE8000(_)
+            | X86Register::MtrrFix4kF0000(_)
+            | X86Register::MtrrFix4kF8000(_) => {}
+        }
+    }
 
-    // Establish all data segments as generic data selectors.
-    context.data_attributes = 0xa093;
-    context.data_limit = 0xffffffff;
-    context.data_selector = 0x10;
-
-    // CR0.PE | CR0.NE | CR0.ET.
-    context.cr0 = 0x31;
-
-    // CR4.MCE.
-    context.cr4 = 0x40;
-
-    context.rflags = 2;
-    context.rip = start_rip;
-    context.rsp = start_rsp;
-
-    context_box
+    IgvmDirectiveHeader::X64NativeVpContext {
+        compatibility_mask,
+        context: context_box,
+        vp_index: 0,
+    }
 }
 
-fn vmsa_convert_attributes(attributes: u16) -> u16 {
-    (attributes & 0xFF) | ((attributes >> 4) & 0xF00)
+fn convert_vmsa_segment(segment: &SegmentRegister) -> SevSelector {
+    SevSelector {
+        base: segment.base,
+        limit: segment.limit,
+        attrib: (segment.attributes & 0xFF) | ((segment.attributes >> 4) & 0xF00),
+        selector: segment.selector,
+    }
 }
 
 pub fn construct_vmsa(
-    context: &IgvmNativeVpContextX64,
+    regs: &[X86Register],
     gpa_start: u64,
     vtom: u64,
     compatibility_mask: u32,
@@ -52,56 +176,105 @@ pub fn construct_vmsa(
     let mut vmsa_box = SevVmsa::new_box_zeroed();
     let vmsa = vmsa_box.as_mut();
 
-    // Copy GPRs.
-    vmsa.rax = context.rax;
-    vmsa.rcx = context.rcx;
-    vmsa.rdx = context.rdx;
-    vmsa.rbx = context.rbx;
-    vmsa.rsp = context.rsp;
-    vmsa.rbp = context.rbp;
-    vmsa.rsi = context.rsi;
-    vmsa.rdi = context.rdi;
-    vmsa.r8 = context.r8;
-    vmsa.r9 = context.r9;
-    vmsa.r10 = context.r10;
-    vmsa.r11 = context.r11;
-    vmsa.r12 = context.r12;
-    vmsa.r13 = context.r13;
-    vmsa.r14 = context.r14;
-    vmsa.r15 = context.r15;
-
-    // Configure other initial state registers.
-    vmsa.rip = context.rip;
-    vmsa.rflags = context.rflags;
-
-    // Configure selectors.
-    vmsa.cs.selector = context.code_selector;
-    vmsa.cs.attrib = vmsa_convert_attributes(context.code_attributes);
-    vmsa.cs.base = context.code_base as u64;
-    vmsa.cs.limit = context.code_limit;
-
-    vmsa.ds.attrib = vmsa_convert_attributes(context.data_attributes);
-    vmsa.ds.limit = context.data_limit;
-    vmsa.ds.base = context.data_base as u64;
-    vmsa.ds.selector = context.data_selector;
-    vmsa.ss = vmsa.ds;
-    vmsa.es = vmsa.ds;
-    vmsa.fs = vmsa.ds;
-    vmsa.gs = vmsa.ds;
-    vmsa.gs.base = context.gs_base;
-
-    vmsa.idtr.base = context.idtr_base;
-    vmsa.idtr.limit = context.idtr_limit as u32;
-    vmsa.gdtr.base = context.gdtr_base;
-    vmsa.gdtr.limit = context.gdtr_limit as u32;
-
-    // Configure control registers.
-    vmsa.cr0 = context.cr0;
-    vmsa.cr3 = context.cr3;
-    vmsa.cr4 = context.cr4;
+    // Copy values from the register list.
+    for reg in regs.iter() {
+        match reg {
+            X86Register::Rsp(r) => {
+                vmsa.rsp = *r;
+            }
+            X86Register::Rbp(r) => {
+                vmsa.rbp = *r;
+            }
+            X86Register::Rsi(r) => {
+                vmsa.rsi = *r;
+            }
+            X86Register::R8(r) => {
+                vmsa.r8 = *r;
+            }
+            X86Register::R9(r) => {
+                vmsa.r9 = *r;
+            }
+            X86Register::R10(r) => {
+                vmsa.r10 = *r;
+            }
+            X86Register::R11(r) => {
+                vmsa.r11 = *r;
+            }
+            X86Register::R12(r) => {
+                vmsa.r12 = *r;
+            }
+            X86Register::Rip(r) => {
+                vmsa.rip = *r;
+            }
+            X86Register::Rflags(r) => {
+                vmsa.rflags = *r;
+            }
+            X86Register::Gdtr(table) => {
+                vmsa.gdtr.base = table.base;
+                vmsa.gdtr.limit = table.limit as u32;
+            }
+            X86Register::Idtr(table) => {
+                vmsa.idtr.base = table.base;
+                vmsa.idtr.limit = table.limit as u32;
+            }
+            X86Register::Cs(segment) => {
+                vmsa.cs = convert_vmsa_segment(segment);
+            }
+            X86Register::Ds(segment) => {
+                vmsa.ds = convert_vmsa_segment(segment);
+            }
+            X86Register::Es(segment) => {
+                vmsa.es = convert_vmsa_segment(segment);
+            }
+            X86Register::Fs(segment) => {
+                vmsa.fs = convert_vmsa_segment(segment);
+            }
+            X86Register::Gs(segment) => {
+                vmsa.gs = convert_vmsa_segment(segment);
+            }
+            X86Register::Ss(segment) => {
+                vmsa.ss = convert_vmsa_segment(segment);
+            }
+            X86Register::Tr(segment) => {
+                vmsa.tr = convert_vmsa_segment(segment);
+            }
+            X86Register::Cr0(r) => {
+                vmsa.cr0 = *r;
+            }
+            X86Register::Cr3(r) => {
+                vmsa.cr3 = *r;
+            }
+            X86Register::Cr4(r) => {
+                vmsa.cr4 = *r;
+            }
+            X86Register::Efer(r) => {
+                vmsa.efer = *r;
+            }
+            X86Register::Pat(r) => {
+                vmsa.pat = *r;
+            }
+            X86Register::MtrrDefType(_)
+            | X86Register::MtrrPhysBase0(_)
+            | X86Register::MtrrPhysMask0(_)
+            | X86Register::MtrrPhysBase1(_)
+            | X86Register::MtrrPhysMask1(_)
+            | X86Register::MtrrPhysBase2(_)
+            | X86Register::MtrrPhysMask2(_)
+            | X86Register::MtrrPhysBase3(_)
+            | X86Register::MtrrPhysMask3(_)
+            | X86Register::MtrrPhysBase4(_)
+            | X86Register::MtrrPhysMask4(_)
+            | X86Register::MtrrFix64k00000(_)
+            | X86Register::MtrrFix16k80000(_)
+            | X86Register::MtrrFix4kE0000(_)
+            | X86Register::MtrrFix4kE8000(_)
+            | X86Register::MtrrFix4kF0000(_)
+            | X86Register::MtrrFix4kF8000(_) => {}
+        }
+    }
 
     // Include EFER.SVME on SNP platforms.
-    vmsa.efer = context.efer | 0x1000;
+    vmsa.efer |= 0x1000;
 
     // Configure non-zero reset state.
     vmsa.pat = 0x0007040600070406;

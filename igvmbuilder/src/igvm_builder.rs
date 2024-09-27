@@ -13,12 +13,13 @@ use std::mem::size_of;
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo};
 use bootlib::platform::SvsmPlatformType;
 use clap::Parser;
+use igvm::registers::X86Register;
 use igvm::{
     Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
 use igvm_defs::{
-    IgvmNativeVpContextX64, IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType,
-    IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
+    IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
+    IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
 };
 use zerocopy::AsBytes;
 
@@ -27,7 +28,7 @@ use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
 use crate::platform::PlatformMask;
 use crate::stage2_stack::Stage2Stack;
-use crate::vmsa::{construct_start_context, construct_vmsa};
+use crate::vmsa::{construct_native_start_context, construct_start_context, construct_vmsa};
 use crate::GpaMap;
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
@@ -124,7 +125,7 @@ impl IgvmBuilder {
         let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
         let start_context = construct_start_context(start_rip, start_rsp);
 
-        self.build_directives(&param_block, start_context)?;
+        self.build_directives(&param_block, &start_context)?;
         self.build_initialization()?;
         self.build_platforms(&param_block);
 
@@ -285,7 +286,7 @@ impl IgvmBuilder {
     fn build_directives(
         &mut self,
         param_block: &IgvmParamBlock,
-        start_context: Box<IgvmNativeVpContextX64>,
+        start_context: &[X86Register],
     ) -> Result<(), Box<dyn Error>> {
         // Populate firmware directives.
         if let Some(firmware) = &self.firmware {
@@ -348,7 +349,7 @@ impl IgvmBuilder {
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             // Add the VMSA.
             self.directives.push(construct_vmsa(
-                start_context.as_ref(),
+                start_context,
                 self.gpa_map.vmsa.get_start(),
                 param_block.vtom,
                 SNP_COMPATIBILITY_MASK,
@@ -358,12 +359,10 @@ impl IgvmBuilder {
 
         if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
             // Include the native start context.
-            self.directives
-                .push(IgvmDirectiveHeader::X64NativeVpContext {
-                    compatibility_mask: NATIVE_COMPATIBILITY_MASK,
-                    context: start_context,
-                    vp_index: 0,
-                });
+            self.directives.push(construct_native_start_context(
+                start_context,
+                NATIVE_COMPATIBILITY_MASK,
+            ));
         }
 
         // Add the IGVM parameter block
