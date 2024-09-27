@@ -199,6 +199,7 @@ continue_hv:
         pushq   %r13
         pushq   %r14
         pushq   %r15
+handle_as_hv:
 	// Load the address of the #HV doorbell page.  The global address
 	// might not yet be configured, and the per-CPU page might also not
 	// yet be configured, so only process events if there is a valid
@@ -209,7 +210,7 @@ continue_hv:
 	movq	(%rsi), %rdi
 	testq	%rdi, %rdi
 	jz	default_return
-handle_as_hv:
+handle_as_hv_with_doorbell:
 	call 	process_hv_events
 	// fall through to default_return
 
@@ -244,7 +245,7 @@ return_all_paths:
 	// detect any #HV that arrives after the check above, except for
 	// the specific case of processing pending #HV events.
 iret_return_window:
-	jnz 	handle_as_hv
+	jnz 	handle_as_hv_with_doorbell
 begin_iret_return:
 	// Reload registers without modifying the stack pointer so that if #HV
 	// occurs within this window, the saved registers are still intact.
