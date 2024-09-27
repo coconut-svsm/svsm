@@ -34,7 +34,10 @@ use crate::GpaMap;
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
 pub const TDP_COMPATIBILITY_MASK: u32 = 1u32 << 2;
+pub const VSM_COMPATIBILITY_MASK: u32 = 1u32 << 4;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
+
+pub const ANY_NATIVE_COMPATIBILITY_MASK: u32 = NATIVE_COMPATIBILITY_MASK | VSM_COMPATIBILITY_MASK;
 
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
@@ -69,6 +72,10 @@ impl IgvmBuilder {
         // Include the TDP platform if requested.
         if options.tdp {
             COMPATIBILITY_MASK.add(TDP_COMPATIBILITY_MASK);
+        }
+        // Include the VSM_ISOLATION platform if requested.
+        if options.vsm {
+            COMPATIBILITY_MASK.add(VSM_COMPATIBILITY_MASK);
         }
         // Include the NATIVE platform if requested.
         if options.native {
@@ -254,6 +261,17 @@ impl IgvmBuilder {
                 },
             ));
         }
+        if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
+            self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
+                IGVM_VHS_SUPPORTED_PLATFORM {
+                    compatibility_mask: VSM_COMPATIBILITY_MASK,
+                    highest_vtl: 2,
+                    platform_type: IgvmPlatformType::VSM_ISOLATION,
+                    platform_version: 1,
+                    shared_gpa_boundary: 0,
+                },
+            ));
+        }
         if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
@@ -357,6 +375,15 @@ impl IgvmBuilder {
             ));
         }
 
+        if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
+            // Add the VSM register list.
+            self.directives.push(IgvmDirectiveHeader::X64VbsVpContext {
+                vtl: igvm::hv_defs::Vtl::Vtl2,
+                registers: start_context.to_vec(),
+                compatibility_mask: VSM_COMPATIBILITY_MASK,
+            });
+        }
+
         if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
             // Include the native start context.
             self.directives.push(construct_native_start_context(
@@ -433,6 +460,7 @@ impl IgvmBuilder {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
                 SvsmPlatformType::Snp,
+                SNP_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
         }
@@ -440,13 +468,15 @@ impl IgvmBuilder {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
                 SvsmPlatformType::Tdp,
+                TDP_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
         }
-        if COMPATIBILITY_MASK.contains(NATIVE_COMPATIBILITY_MASK) {
+        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
                 SvsmPlatformType::Native,
+                ANY_NATIVE_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
         }
