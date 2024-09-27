@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::{irqs_disable, irqs_enable};
 use core::arch::asm;
 use core::marker::PhantomData;
@@ -32,6 +33,12 @@ pub unsafe fn raw_irqs_disable() {
 #[inline(always)]
 pub unsafe fn raw_irqs_enable() {
     asm!("sti", options(att_syntax, preserves_flags, nomem));
+
+    // Now that interrupts are enabled, process any #HV events that may be
+    // pending.
+    if let Some(doorbell) = this_cpu().hv_doorbell() {
+        doorbell.process_if_required();
+    }
 }
 
 /// Query IRQ state on current CPU

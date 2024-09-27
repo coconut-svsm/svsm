@@ -140,6 +140,13 @@ impl HVDoorbell {
         // is performed.
     }
 
+    pub fn process_if_required(&self) {
+        let flags = HVDoorbellFlags::from(self.flags.load(Ordering::Relaxed));
+        if flags.no_further_signal() {
+            self.process_pending_events();
+        }
+    }
+
     pub fn no_eoi_required(&self) -> bool {
         // Check to see if the "no EOI required" flag is set to determine
         // whether an explicit EOI can be avoided.
