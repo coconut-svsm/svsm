@@ -103,12 +103,15 @@ impl PerCPUPageMappingGuard {
         let flags = PTEntryFlags::data();
 
         let mut pgtable = this_cpu().get_pgtable();
-        for (i, addr) in mapping.region().iter_pages(PageSize::Regular).enumerate() {
-            assert!(pages[i].0.is_aligned(PAGE_SIZE));
-
-            pgtable.map_4k(addr, pages[i].0, flags)?;
-            if pages[i].1 {
-                pgtable.set_shared_4k(addr)?;
+        for (vaddr, (paddr, shared)) in mapping
+            .region()
+            .iter_pages(PageSize::Regular)
+            .zip(pages.iter().copied())
+        {
+            assert!(paddr.is_page_aligned());
+            pgtable.map_4k(vaddr, paddr, flags)?;
+            if shared {
+                pgtable.set_shared_4k(vaddr)?;
             }
         }
 
