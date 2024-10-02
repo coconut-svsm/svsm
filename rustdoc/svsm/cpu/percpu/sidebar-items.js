@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["current_ghcb","current_task","irq_nesting_count","irqs_disable","irqs_enable","process_requests","this_cpu","this_cpu_shared","wait_for_requests"],"static":["PERCPU_AREAS","PERCPU_VMSAS"],"struct":["GuestVmsaRef","IstStacks","PerCpu","PerCpuAreas","PerCpuInfo","PerCpuShared","PerCpuVmsas","VmsaRegistryEntry"]};

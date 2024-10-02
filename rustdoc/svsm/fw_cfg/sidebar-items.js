@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FW_CFG_CTL","FW_CFG_DATA","FW_CFG_FILE_DIR","KERNEL_REGION_SIZE","KERNEL_REGION_SIZE_MASK","MAX_FW_CFG_FILES","_FW_CFG_ID"],"enum":["FwCfgError"],"struct":["FwCfg","FwCfgFile"]};

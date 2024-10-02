@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cpuid_table","cpuid_table_raw","dump_cpuid_table","register_cpuid_table"],"static":["CPUID_PAGE"],"struct":["CpuidLeaf","CpuidResult"]};

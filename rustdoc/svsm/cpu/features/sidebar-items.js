@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["X86_FEATURE_PGE"],"fn":["cpu_has_pge"]};

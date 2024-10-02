@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["pvalidate_page_range"],"static":["APIC_EMULATION_REG_COUNT","CONSOLE_IO","CONSOLE_SERIAL","VTOM"],"struct":["SnpPlatform"]};

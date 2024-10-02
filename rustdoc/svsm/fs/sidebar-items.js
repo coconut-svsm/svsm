@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DirEntry","FsError"],"fn":["create","create_all","initialize_fs","list_dir","mkdir","open","populate_ram_fs","read","seek","unlink","write"],"mod":["api","filesystem","init","ramfs"],"struct":["DirectoryEntry","FileHandle"],"trait":["Directory","File"],"type":["FileName"]};

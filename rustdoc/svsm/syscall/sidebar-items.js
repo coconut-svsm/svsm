@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ObjError"],"fn":["sys_exit","sys_hello"],"mod":["handlers","obj"],"struct":["ObjHandle"],"trait":["Obj"]};
