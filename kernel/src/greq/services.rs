@@ -121,7 +121,9 @@ mod tests {
 
         use alloc::vec;
 
-        let sp = svsm_test_io(IORequest::GetLaunchMeasurement);
+        let sp = svsm_test_io().unwrap();
+
+        sp.put_byte(IORequest::GetLaunchMeasurement as u8);
 
         let mut expected_measurement = [0u8; 48];
         for byte in &mut expected_measurement {

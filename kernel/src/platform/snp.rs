@@ -5,7 +5,7 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::console::init_console;
+use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::error::ApicError::Registration;
@@ -14,14 +14,15 @@ use crate::greq::driver::guest_request_driver_init;
 use crate::io::IOPort;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::serial::SerialPort;
+use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::current_hv_doorbell;
-use crate::sev::msr_protocol::{hypervisor_ghcb_features, verify_ghcb_version, GHCBHvFeatures};
+use crate::sev::msr_protocol::{
+    hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
+};
 use crate::sev::status::vtom_enabled;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
-use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
@@ -31,8 +32,7 @@ use crate::mm::virt_to_phys;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
+static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
@@ -91,11 +91,7 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
-        CONSOLE_SERIAL
-            .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
-            .map_err(|_| SvsmError::Console)?;
-        (*CONSOLE_SERIAL).init();
-        init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)?;
+        init_svsm_console(&GHCB_IO_DRIVER, debug_serial_port)?;
         sev_status_verify();
         init_hypervisor_ghcb_features()?;
         Ok(())
@@ -163,7 +159,7 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn get_io_port(&self) -> &'static dyn IOPort {
-        &CONSOLE_IO
+        &GHCB_IO_DRIVER
     }
 
     fn page_state_change(
@@ -280,5 +276,61 @@ impl SvsmPlatform for SnpPlatform {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GHCBIOPort {}
+
+impl GHCBIOPort {
+    pub const fn new() -> Self {
+        GHCBIOPort {}
+    }
+}
+
+impl IOPort for GHCBIOPort {
+    fn outb(&self, port: u16, value: u8) {
+        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size8, value as u64);
+        if ret.is_err() {
+            request_termination_msr();
+        }
+    }
+
+    fn inb(&self, port: u16) -> u8 {
+        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size8);
+        match ret {
+            Ok(v) => (v & 0xff) as u8,
+            Err(_e) => request_termination_msr(),
+        }
+    }
+
+    fn outw(&self, port: u16, value: u16) {
+        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size16, value as u64);
+        if ret.is_err() {
+            request_termination_msr();
+        }
+    }
+
+    fn inw(&self, port: u16) -> u16 {
+        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size16);
+        match ret {
+            Ok(v) => (v & 0xffff) as u16,
+            Err(_e) => request_termination_msr(),
+        }
+    }
+
+    fn outl(&self, port: u16, value: u32) {
+        let ret = current_ghcb().ioio_out(port, GHCBIOSize::Size32, value as u64);
+        if ret.is_err() {
+            request_termination_msr();
+        }
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        let ret = current_ghcb().ioio_in(port, GHCBIOSize::Size32);
+        match ret {
+            Ok(v) => (v & 0xffffffff) as u32,
+            Err(_e) => request_termination_msr(),
+        }
     }
 }
