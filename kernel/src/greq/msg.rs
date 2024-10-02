@@ -12,21 +12,17 @@ use alloc::{
     alloc::{alloc_zeroed, Layout},
     boxed::Box,
 };
-use core::{
-    mem::{offset_of, size_of},
-    ptr::{self, addr_of_mut},
-    slice::{from_raw_parts, from_raw_parts_mut},
-};
+use core::mem::{offset_of, size_of};
 
 use crate::{
     address::{Address, VirtAddr},
     crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
-    mm::page_visibility::{make_page_private, make_page_shared},
     protocols::errors::SvsmReqError,
     sev::secrets_page::VMPCK_SIZE,
-    types::{PageSize, PAGE_SIZE},
-    utils::MemoryRegion,
+    types::PAGE_SIZE,
 };
+
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// Version of the message header
 const HDR_VERSION: u8 = 1;
@@ -74,7 +70,7 @@ pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
 /// `SNP_GUEST_REQUEST` message header format (AMD SEV-SNP spec. table 98)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromZeroes, FromBytes, AsBytes)]
 pub struct SnpGuestRequestMsgHdr {
     /// Message authentication tag
     authtag: [u8; 32],
@@ -150,19 +146,7 @@ impl SnpGuestRequestMsgHdr {
     /// Get a slice of the header fields used as additional authenticated data (AAD)
     fn get_aad_slice(&self) -> &[u8] {
         let algo_offset = offset_of!(Self, algo);
-
-        let ptr = ptr::from_ref(self).cast::<u8>();
-        // SAFETY: we are simply reinterpreting Self as a slice of bytes. This
-        // is safe because &[u8] as no alignment requirements and no invalid
-        // representations, and Self is composed of simple integer types. We
-        // make sure the resulting byte slice has the same size as Self.
-        let slice = unsafe { from_raw_parts(ptr, size_of::<Self>()) };
-        &slice[algo_offset..]
-    }
-
-    /// Get [`SnpGuestRequestMsgHdr`] as a mutable slice reference
-    fn as_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { from_raw_parts_mut(addr_of_mut!(*self).cast(), size_of::<Self>()) }
+        &self.as_bytes()[algo_offset..]
     }
 }
 
@@ -190,7 +174,7 @@ impl Default for SnpGuestRequestMsgHdr {
 
 /// `SNP_GUEST_REQUEST` message format
 #[repr(C, align(4096))]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromZeroes, FromBytes)]
 pub struct SnpGuestRequestMsg {
     hdr: SnpGuestRequestMsgHdr,
     pld: [u8; MSG_PAYLOAD_SIZE],
@@ -220,30 +204,6 @@ impl SnpGuestRequestMsg {
             let ptr = addr.cast::<Self>();
             Ok(Box::from_raw(ptr))
         }
-    }
-
-    /// Clear the C-bit (memory encryption bit) for the Self page
-    ///
-    /// # Safety
-    ///
-    /// * The caller is responsible for setting the page back to encrypted
-    ///   before the object is dropped. Shared pages should not be freed
-    ///   (returned to the allocator)
-    pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(addr_of_mut!(*self));
-        make_page_shared(vaddr).map_err(|_| SvsmReqError::invalid_request())
-    }
-
-    /// Set the C-bit (memory encryption bit) for the Self page
-    pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        let vaddr = VirtAddr::from(addr_of_mut!(*self));
-        make_page_private(vaddr).map_err(|_| SvsmReqError::invalid_request())
-    }
-
-    /// Fill the [`SnpGuestRequestMsg`] fields with zeros
-    pub fn clear(&mut self) {
-        self.hdr.as_slice_mut().fill(0);
-        self.pld.fill(0);
     }
 
     /// Encrypt the provided `SNP_GUEST_REQUEST` command and store the result in the actual message payload
@@ -377,98 +337,9 @@ fn build_iv(msg_seqno: u64) -> [u8; IV_SIZE] {
     iv
 }
 
-/// Set to encrypted all the 4k pages of a memory range
-fn set_encrypted_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
-    for addr in vregion.iter_pages(PageSize::Regular) {
-        make_page_private(addr).map_err(|_| SvsmReqError::invalid_request())?;
-    }
-    Ok(())
-}
-
-/// Set to shared all the 4k pages of a memory range
-fn set_shared_region_4k(vregion: MemoryRegion<VirtAddr>) -> Result<(), SvsmReqError> {
-    for addr in vregion.iter_pages(PageSize::Regular) {
-        make_page_shared(addr).map_err(|_| SvsmReqError::invalid_request())?;
-    }
-    Ok(())
-}
-
 /// Data page(s) the hypervisor will use to store certificate data in
 /// an extended `SNP_GUEST_REQUEST`
-#[repr(C, align(4096))]
-#[derive(Debug)]
-pub struct SnpGuestRequestExtData {
-    /// According to the GHCB spec, the data page(s) must be contiguous pages if
-    /// supplying more than one page and all certificate pages must be
-    /// assigned to the hypervisor (shared).
-    data: [u8; SNP_GUEST_REQ_MAX_DATA_SIZE],
-}
-
-impl SnpGuestRequestExtData {
-    /// Allocate the object in the heap without going through stack as
-    /// this is a large object
-    pub fn boxed_new() -> Result<Box<Self>, SvsmReqError> {
-        let layout = Layout::new::<Self>();
-        unsafe {
-            let addr = alloc_zeroed(layout);
-            if addr.is_null() {
-                return Err(SvsmReqError::invalid_request());
-            }
-            assert!(VirtAddr::from(addr).is_page_aligned());
-
-            let ptr = addr.cast::<Self>();
-            Ok(Box::from_raw(ptr))
-        }
-    }
-
-    /// Clear the C-bit (memory encryption bit) for the Self pages
-    ///
-    /// # Safety
-    ///
-    /// * The caller is responsible for setting the page back to encrypted
-    ///   before the object is dropped. Shared pages should not be freed
-    ///   (returned to the allocator)
-    pub fn set_shared(&mut self) -> Result<(), SvsmReqError> {
-        let start = VirtAddr::from(addr_of_mut!(*self));
-        let region = MemoryRegion::new(start, size_of::<Self>());
-        set_shared_region_4k(region)
-    }
-
-    /// Set the C-bit (memory encryption bit) for the Self pages
-    pub fn set_encrypted(&mut self) -> Result<(), SvsmReqError> {
-        let start = VirtAddr::from(addr_of_mut!(*self));
-        let region = MemoryRegion::new(start, size_of::<Self>());
-        set_encrypted_region_4k(region)
-    }
-
-    /// Clear the first `n` bytes from data
-    pub fn nclear(&mut self, n: usize) -> Result<(), SvsmReqError> {
-        self.data
-            .get_mut(..n)
-            .ok_or_else(SvsmReqError::invalid_parameter)?
-            .fill(0);
-        Ok(())
-    }
-
-    /// Fill up the `outbuf` slice provided with bytes from data
-    pub fn copy_to_slice(&self, outbuf: &mut [u8]) -> Result<(), SvsmReqError> {
-        let data = self
-            .data
-            .get(..outbuf.len())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-        outbuf.copy_from_slice(data);
-        Ok(())
-    }
-
-    /// Check if the first `n` bytes from data are zeroed
-    pub fn is_nclear(&self, n: usize) -> Result<bool, SvsmReqError> {
-        let data = self
-            .data
-            .get(..n)
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-        Ok(data.iter().all(|e| *e == 0))
-    }
-}
+pub type SnpGuestRequestExtData = [u8; SNP_GUEST_REQ_MAX_DATA_SIZE];
 
 #[cfg(test)]
 mod tests {
@@ -500,16 +371,9 @@ mod tests {
     #[test]
     fn test_requestmsg_boxed_new() {
         let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        let mut data = SnpGuestRequestMsg::boxed_new().unwrap();
-        assert!(data.hdr.as_slice_mut().iter().all(|c| *c == 0));
+        let data = SnpGuestRequestMsg::boxed_new().unwrap();
+        assert!(data.hdr.as_bytes().iter().all(|c| *c == 0));
         assert!(data.pld.iter().all(|c| *c == 0));
-    }
-
-    #[test]
-    fn test_reqextdata_boxed_new() {
-        let _mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
-        let data = SnpGuestRequestExtData::boxed_new().unwrap();
-        assert!(data.data.iter().all(|c| *c == 0));
     }
 
     #[test]

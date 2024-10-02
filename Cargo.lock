@@ -842,6 +842,7 @@ dependencies = [
  "packit",
  "syscall",
  "test",
+ "zerocopy",
 ]
 
 [[package]]

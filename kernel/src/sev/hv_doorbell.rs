@@ -4,13 +4,12 @@
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
-use crate::mm::page_visibility::{make_page_private, make_page_shared};
-use crate::mm::{virt_to_phys, PageBox};
+use crate::mm::page_visibility::SharedBox;
+use crate::mm::virt_to_phys;
 use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
-use core::mem::ManuallyDrop;
-use core::ops::Deref;
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 #[bitfield(u8)]
@@ -47,51 +46,24 @@ pub struct HVExtIntInfo {
     pub isr: [AtomicU32; 8],
 }
 
-/// An allocation containing the `#HV` doorbell page.
-#[derive(Debug)]
-pub struct HVDoorbellPage(PageBox<HVDoorbell>);
+/// Allocates a new HV doorbell page and registers it on the hypervisor
+/// using the given GHCB.
+pub fn allocate_hv_doorbell_page(ghcb: &GHCB) -> Result<&'static HVDoorbell, SvsmError> {
+    let page = SharedBox::<HVDoorbell>::try_new_zeroed()?;
 
-impl HVDoorbellPage {
-    /// Allocates a new HV doorbell page and registers it on the hypervisor
-    /// using the given GHCB.
-    pub fn new(ghcb: &GHCB) -> Result<Self, SvsmError> {
-        // SAFETY: all zeroes is a valid representation for `HVDoorbell`.
-        let page = PageBox::try_new_zeroed()?;
-        let paddr = virt_to_phys(page.vaddr());
+    let vaddr = page.addr();
+    let paddr = virt_to_phys(vaddr);
+    ghcb.register_hv_doorbell(paddr)?;
 
-        // The #HV doorbell page must be shared before it can be used.
-        make_page_shared(page.vaddr())?;
+    // Create a static shared reference.
+    let ptr = page.leak();
+    let doorbell = unsafe {
+        // SAFETY: Any bit-pattern is valid for `HVDoorbell` and it tolerates
+        // unsynchronized writes from the host.
+        ptr.as_ref()
+    };
 
-        // Now Drop will have correct behavior, so construct the new type.
-        // SAFETY: all zeros is a valid representation of the HV doorbell page.
-        let page = unsafe { Self(page.assume_init()) };
-        ghcb.register_hv_doorbell(paddr)?;
-        Ok(page)
-    }
-
-    /// Leaks the page allocation, ensuring it will never be freed.
-    pub fn leak(self) -> &'static HVDoorbell {
-        let mut doorbell = ManuallyDrop::new(self);
-        let ptr = core::ptr::from_mut(&mut doorbell);
-        // SAFETY: this pointer will never be freed because of ManuallyDrop,
-        // so we can create a static mutable reference. We go through a raw
-        // pointer to promote the lifetime to static.
-        unsafe { &mut *ptr }
-    }
-}
-
-impl Deref for HVDoorbellPage {
-    type Target = HVDoorbell;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.deref()
-    }
-}
-
-impl Drop for HVDoorbellPage {
-    fn drop(&mut self) {
-        make_page_private(self.0.vaddr()).expect("Failed to restore HV doorbell page visibility");
-    }
+    Ok(doorbell)
 }
 
 #[repr(C)]
@@ -101,7 +73,7 @@ pub struct HVDoorbell {
     pub flags: AtomicU8,
     pub no_eoi_required: AtomicU8,
     pub per_vmpl_events: AtomicU8,
-    reserved_63_4: [u8; 60],
+    reserved_63_4: UnsafeCell<[u8; 60]>,
     pub per_vmpl: [HVExtIntInfo; 3],
 }
 

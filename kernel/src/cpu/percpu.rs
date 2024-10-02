@@ -25,7 +25,7 @@ use crate::mm::{
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
-use crate::sev::hv_doorbell::{HVDoorbell, HVDoorbellPage};
+use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
@@ -487,8 +487,7 @@ impl PerCpu {
     }
 
     fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let page = HVDoorbellPage::new(current_ghcb())?;
-        let doorbell = HVDoorbellPage::leak(page);
+        let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
         self.hv_doorbell
             .set(doorbell)
             .expect("Attempted to reinitialize the HV doorbell page");
@@ -617,13 +616,6 @@ impl PerCpu {
     pub fn load(&self) {
         self.load_pgtable();
         self.load_tss();
-    }
-
-    pub fn shutdown(&self) -> Result<(), SvsmError> {
-        if let Some(ghcb) = self.ghcb.get() {
-            ghcb.shutdown()?;
-        }
-        Ok(())
     }
 
     pub fn set_reset_ip(&self, reset_ip: u64) {
@@ -864,7 +856,7 @@ impl PerCpu {
 }
 
 pub fn this_cpu() -> &'static PerCpu {
-    unsafe { &*SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>() }
+    unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {

@@ -32,7 +32,7 @@ use svsm::mm::pagetable::{paging_init_early, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
 use svsm::platform::{PageStateChangeOp, SvsmPlatform, SvsmPlatformCell};
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{halt, is_aligned, MemoryRegion};
@@ -63,10 +63,15 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn shutdown_percpu() {
-    this_cpu()
-        .shutdown()
-        .expect("Failed to shut down percpu data (including GHCB)");
+/// Release all resources in the `PerCpu` instance associated with the current
+/// CPU.
+///
+/// # Safety
+///
+/// The caller must ensure that the `PerCpu` is never used again.
+unsafe fn shutdown_percpu() {
+    let ptr = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
+    core::ptr::drop_in_place(ptr);
 }
 
 fn setup_env(
@@ -436,7 +441,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let valid_bitmap = valid_bitmap_addr();
 
     // Shut down the GHCB
-    shutdown_percpu();
+    unsafe {
+        shutdown_percpu();
+    }
 
     unsafe {
         asm!("jmp *%rax",
