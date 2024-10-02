@@ -11,10 +11,11 @@ use crate::fw_cfg::FwCfg;
 use crate::string::FixedString;
 use alloc::vec::Vec;
 use core::mem;
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// ACPI Root System Description Pointer (RSDP)
 /// used by ACPI programming interface
-#[derive(Debug, Default)]
+#[derive(Debug, Default, FromZeroes, FromBytes, AsBytes)]
 #[repr(C, packed)]
 struct RSDPDesc {
     /// Signature must contain "RSD PTR"
@@ -40,7 +41,6 @@ impl RSDPDesc {
     ///
     /// A [`Result`] containing the [`RSDPDesc`] if successful, or an [`SvsmError`] on failure.
     fn from_fwcfg(fw_cfg: &FwCfg<'_>) -> Result<Self, SvsmError> {
-        let mut buf = mem::MaybeUninit::<Self>::uninit();
         let path = option_env!("ACPI_RSDP_PATH").unwrap_or("etc/acpi/rsdp");
         let file = fw_cfg.file_selector(path)?;
 
@@ -49,17 +49,13 @@ impl RSDPDesc {
         }
 
         fw_cfg.select(file.selector());
-        let ptr = buf.as_mut_ptr().cast::<u8>();
-        for i in 0..mem::size_of::<Self>() {
-            let byte: u8 = fw_cfg.read_le();
-            unsafe { ptr.add(i).write(byte) };
-        }
-
-        unsafe { Ok(buf.assume_init()) }
+        let mut this = Self::new_zeroed();
+        fw_cfg.read_bytes(this.as_bytes_mut());
+        Ok(this)
     }
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 /// Raw header of an ACPI table. It corresponds to the beginning
 /// portion of ACPI tables, before any specific table data
@@ -168,12 +164,8 @@ impl ACPITable {
     ///
     /// A new [`ACPITable`] instance on success, or an [`SvsmError`] if parsing fails.
     fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
-        let raw_header = ptr
-            .get(..mem::size_of::<RawACPITableHeader>())
-            .ok_or(SvsmError::Acpi)?
-            .as_ptr()
-            .cast::<RawACPITableHeader>();
-        let size = unsafe { (*raw_header).len as usize };
+        let raw_header = RawACPITableHeader::read_from_prefix(ptr).ok_or(SvsmError::Acpi)?;
+        let size = raw_header.len as usize;
         let content = ptr.get(..size).ok_or(SvsmError::Acpi)?;
 
         let mut buf = Vec::<u8>::new();
@@ -181,7 +173,7 @@ impl ACPITable {
         buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
         buf.extend_from_slice(content);
 
-        let header = unsafe { ACPITableHeader::new(*raw_header) };
+        let header = ACPITableHeader::new(raw_header);
 
         Ok(Self { header, buf })
     }
@@ -221,9 +213,12 @@ impl ACPITable {
     ///
     /// A pointer to the content of the ACPI table at specified offset as type `T`,
     /// or [`None`] if the offset is out of bounds.
-    fn content_ptr<T>(&self, offset: usize) -> Option<*const T> {
-        let end = offset.checked_add(mem::size_of::<T>())?;
-        Some(self.content()?.get(offset..end)?.as_ptr().cast::<T>())
+    fn content_ptr<T>(&self, offset: usize) -> Option<&T>
+    where
+        T: FromBytes,
+    {
+        let bytes = self.content()?.get(offset..)?;
+        T::ref_from_prefix(bytes)
     }
 }
 
@@ -290,14 +285,9 @@ impl ACPITableBuffer {
             return Err(SvsmError::Mem);
         }
         buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
-        let ptr = buf.as_mut_ptr();
-
+        buf.resize(size, 0);
         fw_cfg.select(file.selector());
-        for i in 0..size {
-            let byte: u8 = fw_cfg.read_le();
-            unsafe { ptr.add(i).write(byte) };
-        }
-        unsafe { buf.set_len(size) }
+        fw_cfg.read_bytes(&mut buf);
 
         let mut acpibuf = Self {
             buf,
@@ -329,15 +319,12 @@ impl ACPITableBuffer {
             .map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize);
 
         for offset in offsets {
-            let raw_header = offset
-                .checked_add(mem::size_of::<RawACPITableHeader>())
-                .and_then(|end| self.buf.get(offset..end))
-                .ok_or(SvsmError::Acpi)?
-                .as_ptr()
-                .cast::<RawACPITableHeader>();
-
-            let meta = unsafe { ACPITableMeta::new(&*raw_header, offset) };
-
+            let raw_header = self
+                .buf
+                .get(offset..)
+                .and_then(RawACPITableHeader::ref_from_prefix)
+                .ok_or(SvsmError::Acpi)?;
+            let meta = ACPITableMeta::new(raw_header, offset);
             self.tables.push(meta);
         }
 
@@ -388,7 +375,7 @@ impl ACPITableBuffer {
 const MADT_HEADER_SIZE: usize = 8;
 
 /// Header of an entry within MADT
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryHeader {
@@ -397,7 +384,7 @@ struct RawMADTEntryHeader {
 }
 
 /// Entry for a local APIC within MADT
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalApic {
@@ -408,7 +395,7 @@ struct RawMADTEntryLocalApic {
 }
 
 /// Entry for a local X2APIC within MADT
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 #[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalX2Apic {
@@ -492,38 +479,35 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmEr
         let entry_ptr = apic_table
             .content_ptr::<RawMADTEntryHeader>(offset)
             .ok_or(SvsmError::Acpi)?;
-        let (madt_type, entry_len) = unsafe { ((*entry_ptr).entry_type, (*entry_ptr).entry_len) };
-        let entry_len = usize::from(entry_len);
+        let entry_len = usize::from(entry_ptr.entry_len);
 
-        match madt_type {
+        match entry_ptr.entry_type {
             0 if entry_len == mem::size_of::<RawMADTEntryLocalApic>() => {
                 let lapic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalApic>(offset)
                     .ok_or(SvsmError::Acpi)?;
-                let (apic_id, flags) = unsafe { ((*lapic_ptr).apic_id as u32, (*lapic_ptr).flags) };
                 cpus.push(ACPICPUInfo {
-                    apic_id,
-                    enabled: (flags & 1) == 1,
+                    apic_id: lapic_ptr.apic_id as u32,
+                    enabled: (lapic_ptr.flags & 1) == 1,
                 });
             }
             9 if entry_len == mem::size_of::<RawMADTEntryLocalX2Apic>() => {
                 let x2apic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalX2Apic>(offset)
                     .ok_or(SvsmError::Acpi)?;
-                let (apic_id, flags) = unsafe { ((*x2apic_ptr).apic_id, (*x2apic_ptr).flags) };
                 cpus.push(ACPICPUInfo {
-                    apic_id,
-                    enabled: (flags & 1) == 1,
+                    apic_id: x2apic_ptr.apic_id,
+                    enabled: (x2apic_ptr.flags & 1) == 1,
                 });
             }
-            _ if entry_len == 0 => {
+            madt_type if entry_len == 0 => {
                 log::warn!(
                     "Found zero-length MADT entry with type {}, stopping",
                     madt_type
                 );
                 break;
             }
-            _ => {
+            madt_type => {
                 log::info!("Ignoring MADT entry with type {}", madt_type);
             }
         }

@@ -6,6 +6,8 @@
 
 //! API to send `SNP_GUEST_REQUEST` commands to the PSP
 
+use zerocopy::FromBytes;
+
 use crate::{
     greq::{
         driver::{send_extended_guest_request, send_regular_guest_request},
@@ -43,7 +45,8 @@ fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, Svsm
     if REPORT_RESPONSE_SIZE > response_len {
         return Err(SvsmReqError::invalid_request());
     }
-    let response: &SnpReportResponse = SnpReportResponse::try_from_as_ref(buffer)?;
+    let response =
+        SnpReportResponse::ref_from_prefix(buffer).ok_or_else(SvsmReqError::invalid_parameter)?;
     response.validate()?;
 
     Ok(response_len)
@@ -132,7 +135,7 @@ mod tests {
         let size = get_regular_report(&mut buf).unwrap();
         assert_eq!(size, buf.len());
 
-        let response = SnpReportResponse::try_from_as_ref(&buf).unwrap();
+        let response = SnpReportResponse::ref_from_prefix(&buf).unwrap();
         response.validate().unwrap();
         // FIXME: we still have some cases where the precalculated value does
         // not match, so for now we just issue a warning until we fix the problem.

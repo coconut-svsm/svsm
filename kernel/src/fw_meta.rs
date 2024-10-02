@@ -18,9 +18,10 @@ use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
 use bootlib::kernel_launch::KernelLaunchInfo;
+use zerocopy::{FromBytes, FromZeroes};
 
 use core::fmt;
-use core::mem::{align_of, size_of, size_of_val};
+use core::mem::{size_of, size_of_val};
 use core::str::FromStr;
 
 #[derive(Clone, Debug, Default)]
@@ -135,7 +136,7 @@ const OVMF_TABLE_FOOTER_GUID: &str = "96b582de-1fb2-45f7-baea-a366c55a082d";
 const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
 const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 struct SevMetaDataHeader {
     signature: [u8; 4],
@@ -144,7 +145,7 @@ struct SevMetaDataHeader {
     num_desc: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 struct SevMetaDataDesc {
     base: u32,
@@ -157,7 +158,7 @@ const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 struct RawMetaHeader {
     len: u16,
@@ -171,7 +172,7 @@ impl RawMetaHeader {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 struct RawMetaBuffer {
     data: [u8; PAGE_SIZE - size_of::<RawMetaHeader>() - 32],
@@ -190,14 +191,7 @@ fn find_table<'a>(uuid: &Uuid, mem: &'a [u8]) -> Option<&'a [u8]> {
 
     while idx != 0 {
         let hdr_start = idx.checked_sub(size_of::<RawMetaHeader>())?;
-        let hdr_start_ptr = mem.get(hdr_start..idx)?.as_ptr().cast::<RawMetaHeader>();
-        if hdr_start_ptr.align_offset(align_of::<RawMetaHeader>()) != 0 {
-            log::error!("Misaligned firmware metadata table");
-            return None;
-        }
-
-        // Safety: we have checked the pointer is within bounds and aligned
-        let hdr = unsafe { hdr_start_ptr.read() };
+        let hdr = RawMetaHeader::ref_from(&mem[hdr_start..idx]).unwrap();
 
         let data_len = hdr.data_len()?;
         idx = hdr_start.checked_sub(data_len)?;
@@ -216,14 +210,7 @@ fn find_table<'a>(uuid: &Uuid, mem: &'a [u8]) -> Option<&'a [u8]> {
 pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let mut meta_data = SevFWMetaData::new();
 
-    if mem.len() != size_of::<RawMetaBuffer>() {
-        return Err(SvsmError::Firmware);
-    }
-
-    // Safety: `RawMetaBuffer` has no invalid representations and is
-    // `repr(C, packed)`, which means there are no alignment requirements.
-    // We have also verified that the size of the slice matches.
-    let raw_meta = unsafe { &*mem.as_ptr().cast::<RawMetaBuffer>() };
+    let raw_meta = RawMetaBuffer::ref_from(mem).ok_or(SvsmError::Firmware)?;
 
     // Check the UUID
     let raw_uuid = raw_meta.header.uuid;
@@ -283,51 +270,19 @@ fn parse_sev_meta(
         .ok_or(SvsmError::Firmware)?;
     let sev_meta_end = sev_meta_start + size_of::<SevMetaDataHeader>();
     // Bounds check the header and get a pointer to it
-    let sev_meta_hdr_ptr = raw_meta
+    let bytes = raw_meta
         .data
         .get(sev_meta_start..sev_meta_end)
-        .ok_or(SvsmError::Firmware)?
-        .as_ptr()
-        .cast::<SevMetaDataHeader>();
-
-    // Check that the header pointer is aligned. This also guarantees that
-    // descriptors down the line will be aligned. If the pointer was not
-    // aligned we would need to use ptr::read_unaligned(), so simply check
-    // beforehand and use ptr::read(), as there's no reason for the metadata
-    // to be misaligned.
-    if sev_meta_hdr_ptr.align_offset(align_of::<SevMetaDataHeader>()) != 0 {
-        log::error!("Misaligned SEV metadata header");
-        return Err(SvsmError::Firmware);
-    }
-    // Safety: we have checked the pointer is within bounds and aligned.
-    let sev_meta_hdr = unsafe { sev_meta_hdr_ptr.read() };
+        .ok_or(SvsmError::Firmware)?;
+    let sev_meta_hdr = SevMetaDataHeader::ref_from(bytes).ok_or(SvsmError::Firmware)?;
 
     // Now find the descriptors
+    let bytes = &raw_meta.data[sev_meta_end..];
     let num_desc = sev_meta_hdr.num_desc as usize;
-    let sev_descs_start = sev_meta_end;
-    let sev_descs_len = num_desc
-        .checked_mul(size_of::<SevMetaDataDesc>())
-        .ok_or(SvsmError::Firmware)?;
-    let sev_descs_end = sev_descs_start
-        .checked_add(sev_descs_len)
-        .ok_or(SvsmError::Firmware)?;
+    let (descs, _) =
+        SevMetaDataDesc::slice_from_prefix(bytes, num_desc).ok_or(SvsmError::Firmware)?;
 
-    // We have a variable number of descriptors following the header.
-    // Unfortunately flexible array members in Rust are not fully supported,
-    // so we cannot avoid using raw pointers.
-    let sev_descs_ptr = raw_meta
-        .data
-        .get(sev_descs_start..sev_descs_end)
-        .ok_or(SvsmError::Firmware)?
-        .as_ptr()
-        .cast::<SevMetaDataDesc>();
-
-    for i in 0..num_desc {
-        // Safety: We have checked that the descriptors are within bounds of
-        // the metadata memory. Since the descriptors follow the header, and
-        // the header is properly aligned, the descriptors must be so as
-        // well.
-        let desc = unsafe { sev_descs_ptr.add(i).read() };
+    for desc in descs {
         let t = desc.t;
         let base = PhysAddr::from(desc.base as usize);
         let len = desc.len as usize;

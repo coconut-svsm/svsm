@@ -197,36 +197,28 @@ impl<T: ?Sized> DerefMut for PageBox<T> {
 impl<T: ?Sized> borrow::Borrow<T> for PageBox<T> {
     #[inline]
     fn borrow(&self) -> &T {
-        // SAFETY: this is part of the invariants of this type, as it must
-        // hold a pointer to valid memory for the given `T`.
-        unsafe { self.ptr.as_ref() }
+        self
     }
 }
 
 impl<T: ?Sized> borrow::BorrowMut<T> for PageBox<T> {
     #[inline]
     fn borrow_mut(&mut self) -> &mut T {
-        // SAFETY: this is part of the invariants of this type, as it must
-        // hold a pointer to valid memory for the given `T`.
-        unsafe { self.ptr.as_mut() }
+        self
     }
 }
 
 impl<T: ?Sized> AsRef<T> for PageBox<T> {
     #[inline]
     fn as_ref(&self) -> &T {
-        // SAFETY: this is part of the invariants of this type, as it must
-        // hold a pointer to valid memory for the given `T`.
-        unsafe { self.ptr.as_ref() }
+        self
     }
 }
 
 impl<T: ?Sized> AsMut<T> for PageBox<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
-        // SAFETY: this is part of the invariants of this type, as it must
-        // hold a pointer to valid memory for the given `T`.
-        unsafe { self.ptr.as_mut() }
+        self
     }
 }
 

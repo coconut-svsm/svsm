@@ -8,6 +8,8 @@
 
 use core::mem::size_of;
 
+use zerocopy::{FromBytes, FromZeroes};
+
 use crate::protocols::errors::SvsmReqError;
 
 /// Size of the `SnpReportRequest.user_data`
@@ -15,7 +17,7 @@ pub const USER_DATA_SIZE: usize = 64;
 
 /// MSG_REPORT_REQ payload format (AMD SEV-SNP spec. table 20)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 pub struct SnpReportRequest {
     /// Guest-provided data to be included in the attestation report
     /// REPORT_DATA (512 bits)
@@ -36,20 +38,9 @@ pub struct SnpReportRequest {
 impl SnpReportRequest {
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let buffer = buffer
-            .get(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-
-        // SAFETY: SnpReportRequest has no invalid representations, as it is
-        // comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
-
-        if !request.is_reserved_clear() {
-            return Err(SvsmReqError::invalid_parameter());
-        }
-        Ok(request)
+        Self::ref_from_prefix(buffer)
+            .filter(|request| request.is_reserved_clear())
+            .ok_or_else(SvsmReqError::invalid_parameter)
     }
 
     pub fn is_vmpl0(&self) -> bool {
@@ -64,7 +55,7 @@ impl SnpReportRequest {
 
 ///  MSG_REPORT_RSP payload format (AMD SEV-SNP spec. table 23)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 pub struct SnpReportResponse {
     /// The status of the key derivation operation, see [SnpReportResponseStatus]
     status: u32,
@@ -86,19 +77,6 @@ pub enum SnpReportResponseStatus {
 }
 
 impl SnpReportResponse {
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let buffer = buffer
-            .get(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-
-        // SAFETY: SnpReportResponse has no invalid representations, as it is
-        // comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let response = unsafe { &*buffer.as_ptr().cast::<Self>() };
-        Ok(response)
-    }
-
     /// Validate the [SnpReportResponse] fields
     pub fn validate(&self) -> Result<(), SvsmReqError> {
         if self.status != SnpReportResponseStatus::Success as u32 {
@@ -121,7 +99,7 @@ impl SnpReportResponse {
 /// component in the trusted computing base (TCB) of the SNP firmware.
 /// (AMD SEV-SNP spec. table 3)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 struct TcbVersion {
     /// Version of the Microcode, SNP firmware, PSP and boot loader
     raw: u64,
@@ -129,7 +107,7 @@ struct TcbVersion {
 
 /// Format for an ECDSA P-384 with SHA-384 signature (AMD SEV-SNP spec. table 115)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 struct Signature {
     /// R component of this signature
     r: [u8; 72],
@@ -141,7 +119,7 @@ struct Signature {
 
 /// ATTESTATION_REPORT format (AMD SEV-SNP spec. table 21)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, FromZeroes)]
 pub struct AttestationReport {
     /// Version number of this attestation report
     version: u32,
