@@ -11,12 +11,15 @@ use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::serial::SerialPort;
 use crate::svsm_console::NativeIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+
+#[cfg(debug_assertions)]
+use crate::mm::virt_to_phys;
 
 static CONSOLE_IO: NativeIOPort = NativeIOPort::new();
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
@@ -95,13 +98,31 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_physical_page_range(
+        &self,
+        _region: MemoryRegion<PhysAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
         Ok(())
     }
 
-    /// Marks a range of pages as invalid for use as private pages.
-    fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_virtual_page_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
+        #[cfg(debug_assertions)]
+        {
+            // Ensure that it is possible to translate this virtual address to
+            // a physical address.  This is not necessary for correctness
+            // here, but since other platformss may rely on virtual-to-physical
+            // translation, it is helpful to force a translation here for
+            // debugging purposes just to help catch potential errors when
+            // testing on native.
+            for va in _region.iter_pages(PageSize::Regular) {
+                let _ = virt_to_phys(va);
+            }
+        }
         Ok(())
     }
 

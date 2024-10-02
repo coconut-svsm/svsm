@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
@@ -12,7 +12,8 @@ use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::io::IOPort;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::serial::SerialPort;
 use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, verify_ghcb_version, GHCBHvFeatures};
@@ -25,6 +26,9 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
+#[cfg(debug_assertions)]
+use crate::mm::virt_to_phys;
+
 use core::sync::atomic::{AtomicU32, Ordering};
 
 static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
@@ -33,6 +37,36 @@ static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
+
+fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Result<(), SvsmError> {
+    // In the future, it is likely that this function will need to be prepared
+    // to execute both PVALIDATE and RMPADJUST over the same set of addresses,
+    // so the loop is structured to anticipate that possibility.
+    let mut paddr = range.start();
+    let paddr_end = range.end();
+    while paddr < paddr_end {
+        // Check whether a 2 MB page can be attempted.
+        let len = if paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= paddr_end {
+            PAGE_SIZE_2M
+        } else {
+            PAGE_SIZE
+        };
+        let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0)?;
+        pvalidate_range(MemoryRegion::new(mapping.virt_addr(), len), op)?;
+        paddr = paddr + len;
+    }
+
+    Ok(())
+}
+
+impl From<PageValidateOp> for PvalidateOp {
+    fn from(op: PageValidateOp) -> PvalidateOp {
+        match op {
+            PageValidateOp::Validate => PvalidateOp::Valid,
+            PageValidateOp::Invalidate => PvalidateOp::Invalid,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct SnpPlatform {}
@@ -141,14 +175,32 @@ impl SvsmPlatform for SnpPlatform {
         current_ghcb().page_state_change(region, size, op)
     }
 
-    /// Marks a range of pages as valid for use as private pages.
-    fn validate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
-        pvalidate_range(region, PvalidateOp::Valid)
+    fn validate_physical_page_range(
+        &self,
+        region: MemoryRegion<PhysAddr>,
+        op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
+        pvalidate_page_range(region, PvalidateOp::from(op))
     }
 
-    /// Marks a range of pages as invalid for use as private pages.
-    fn invalidate_page_range(&self, region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
-        pvalidate_range(region, PvalidateOp::Invalid)
+    fn validate_virtual_page_range(
+        &self,
+        region: MemoryRegion<VirtAddr>,
+        op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
+        #[cfg(debug_assertions)]
+        {
+            // Ensure that it is possible to translate this virtual address to
+            // a physical address.  This is not necessary for correctness
+            // here, but since other platformss may rely on virtual-to-physical
+            // translation, it is helpful to force a translation here for
+            // debugging purposes just to help catch potential errors when
+            // testing on SNP.
+            for va in region.iter_pages(PageSize::Regular) {
+                let _ = virt_to_phys(va);
+            }
+        }
+        pvalidate_range(region, PvalidateOp::from(op))
     }
 
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {

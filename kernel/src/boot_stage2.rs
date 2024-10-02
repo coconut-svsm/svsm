@@ -81,6 +81,16 @@ global_asm!(
         decl %ecx
         jnz 1b
 
+        /* Insert a self-map entry */
+        movl $pgtable, %edi
+        movl %edi, %eax
+        orl $0x63, %eax
+        /* The value 0xF68 is equivalent to 8 * PGTABLE_LVL3_IDX_PTE_SELFMAP */
+        movl %eax, 0xF68(%edi)
+        movl $0x80000000, %eax
+        orl %edx, %eax
+        movl %eax, 0xF6C(%edi)
+
         /* Signal APs */
         movl $setup_flag, %edi
         movl $1, (%edi)
@@ -99,11 +109,13 @@ global_asm!(
         bts $5, %eax
         movl %eax, %cr4
 
-        /* Enable long mode, EFER.LME. */
+        /* Enable long mode, EFER.LME. Also ensure NXE is set. */
         movl $0xc0000080, %ecx
         rdmsr
-        bts $8, %eax
-        jc 2f
+        movl %eax, %ebx
+        orl $0x900, %eax
+        cmp %eax, %ebx
+        jz 2f
         wrmsr
         2:
 

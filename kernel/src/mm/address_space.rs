@@ -7,6 +7,9 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
+#[cfg(target_os = "none")]
+use crate::mm::pagetable::PageTable;
+
 #[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 pub struct FixedAddressMappingRange {
@@ -38,16 +41,6 @@ impl FixedAddressMappingRange {
             }
         }
     }
-
-    #[cfg(target_os = "none")]
-    fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
-        if (vaddr < self.virt_start) || (vaddr >= self.virt_end) {
-            None
-        } else {
-            let offset: usize = vaddr - self.virt_start;
-            Some(self.phys_start + offset)
-        }
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -74,16 +67,12 @@ pub fn init_kernel_mapping_info(
 
 #[cfg(target_os = "none")]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    if let Some(addr) = FIXED_MAPPING.kernel_mapping.virt_to_phys(vaddr) {
-        return addr;
-    }
-    if let Some(ref mapping) = FIXED_MAPPING.heap_mapping {
-        if let Some(addr) = mapping.virt_to_phys(vaddr) {
-            return addr;
+    match PageTable::virt_to_phys(vaddr) {
+        Some(paddr) => paddr,
+        None => {
+            panic!("Invalid virtual address {:#018x}", vaddr);
         }
     }
-
-    panic!("Invalid virtual address {:#018x}", vaddr);
 }
 
 #[cfg(target_os = "none")]
@@ -202,6 +191,11 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
+
+/// Page table self-map level 3 index
+pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
+
+pub const SVSM_PTE_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PTE_SELFMAP);
 
 //
 // User-space mapping constants

@@ -10,7 +10,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, SvsmPlatform};
+use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::serial::SerialPort;
 use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
@@ -95,11 +95,19 @@ impl SvsmPlatform for TdpPlatform {
         Err(SvsmError::Tdx)
     }
 
-    fn validate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_physical_page_range(
+        &self,
+        _region: MemoryRegion<PhysAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }
 
-    fn invalidate_page_range(&self, _region: MemoryRegion<VirtAddr>) -> Result<(), SvsmError> {
+    fn validate_virtual_page_range(
+        &self,
+        _region: MemoryRegion<VirtAddr>,
+        _op: PageValidateOp,
+    ) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }
 

@@ -11,8 +11,10 @@ use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
 use crate::cpu::registers::RFlags;
 use crate::error::SvsmError;
-use crate::mm::PageBox;
-use crate::mm::{phys_to_virt, virt_to_phys, PGTABLE_LVL3_IDX_SHARED};
+use crate::mm::{
+    phys_to_virt, virt_to_phys, PageBox, PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED,
+    SVSM_PTE_BASE,
+};
 use crate::platform::SvsmPlatform;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
@@ -53,7 +55,6 @@ pub fn paging_init_early(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()
     init_encrypt_mask(platform)?;
 
     let mut feature_mask = PTEntryFlags::all();
-    feature_mask.remove(PTEntryFlags::NX);
     feature_mask.remove(PTEntryFlags::GLOBAL);
     FEATURE_MASK.reinit(&feature_mask)
 }
@@ -361,6 +362,17 @@ impl PTEntry {
         let addr = PhysAddr::from(self.0.bits() & 0x000f_ffff_ffff_f000);
         strip_confidentiality_bits(addr)
     }
+
+    /// Read a page table entry from the specified virtual address.
+    ///
+    /// # Safety
+    ///
+    /// Reads from an arbitrary virtual address, making this essentially a
+    /// raw pointer read.  The caller must be certain to calculate the correct
+    /// address.
+    pub unsafe fn read_pte(vaddr: VirtAddr) -> Self {
+        *vaddr.as_ptr::<Self>()
+    }
 }
 
 /// A pagetable page with multiple entries.
@@ -457,13 +469,33 @@ impl PageTable {
         virt_to_phys(pgtable)
     }
 
+    /// Allocate a new page table root.
+    ///
+    /// # Errors
+    /// Returns [`SvsmError`] if the page cannot be allocated.
+    pub fn allocate_new() -> Result<PageBox<Self>, SvsmError> {
+        let mut pgtable = PageBox::try_new(PageTable::default())?;
+        let paddr = virt_to_phys(pgtable.vaddr());
+
+        // Set the self-map entry.
+        let entry = &mut pgtable.root[PGTABLE_LVL3_IDX_PTE_SELFMAP];
+        let flags = PTEntryFlags::PRESENT
+            | PTEntryFlags::WRITABLE
+            | PTEntryFlags::ACCESSED
+            | PTEntryFlags::DIRTY
+            | PTEntryFlags::NX;
+        entry.set(make_private_address(paddr), flags);
+
+        Ok(pgtable)
+    }
+
     /// Clone the shared part of the page table; excluding the private
     /// parts.
     ///
     /// # Errors
     /// Returns [`SvsmError`] if the page cannot be allocated.
     pub fn clone_shared(&self) -> Result<PageBox<PageTable>, SvsmError> {
-        let mut pgtable = PageBox::try_new(PageTable::default())?;
+        let mut pgtable = Self::allocate_new()?;
         pgtable.root.entries[PGTABLE_LVL3_IDX_SHARED] = self.root.entries[PGTABLE_LVL3_IDX_SHARED];
         Ok(pgtable)
     }
@@ -561,6 +593,72 @@ impl PageTable {
         Self::walk_addr_lvl3(&mut self.root, vaddr)
     }
 
+    /// Calculate the virtual address of a PTE in the self-map, which maps a
+    /// specified virtual address.
+    ///
+    /// # Parameters
+    /// - `vaddr': The virtual address whose PTE should be located.
+    ///
+    /// # Returns
+    /// The virtual address of the PTE.
+    fn get_pte_address(vaddr: VirtAddr) -> VirtAddr {
+        SVSM_PTE_BASE + ((usize::from(vaddr) & 0x0000_FFFF_FFFF_F000) >> 9)
+    }
+
+    /// Perform a virtual to physical translation using the self-map.
+    ///
+    /// # Parameters
+    /// - `vaddr': The virtual address to transalte.
+    ///
+    /// # Returns
+    /// Some(PhysAddr) if the virtual address is valid.
+    /// None if the virtual address is not valid.
+    pub fn virt_to_phys(vaddr: VirtAddr) -> Option<PhysAddr> {
+        // Calculate the virtual addresses of each level of the paging
+        // hierarchy in the self-map.
+        let pte_addr = Self::get_pte_address(vaddr);
+        let pde_addr = Self::get_pte_address(pte_addr);
+        let pdpe_addr = Self::get_pte_address(pde_addr);
+        let pml4e_addr = Self::get_pte_address(pdpe_addr);
+
+        // Check each entry in the paging hierarchy to determine whether this
+        // address is mapped.  Because the hierarchy is read from the top
+        // down using self-map addresses that were calculated correctly,
+        // the reads are safe to perform.
+        let pml4e = unsafe { PTEntry::read_pte(pml4e_addr) };
+        if !pml4e.present() {
+            return None;
+        }
+
+        // There is no need to check for a large page in the PML4E because
+        // the architecture does not support the large bit at the top-level
+        // entry.  If a large page is detected at a lower level of the
+        // hierarchy, the low bits from the virtual address must be combined
+        // with the physical address from the PDE/PDPE.
+        let pdpe = unsafe { PTEntry::read_pte(pdpe_addr) };
+        if !pdpe.present() {
+            return None;
+        }
+        if pdpe.huge() {
+            return Some(pdpe.address() + (usize::from(vaddr) & 0x3FFF_FFFF));
+        }
+
+        let pde = unsafe { PTEntry::read_pte(pde_addr) };
+        if !pde.present() {
+            return None;
+        }
+        if pde.huge() {
+            return Some(pde.address() + (usize::from(vaddr) & 0x001F_FFFF));
+        }
+
+        let pte = unsafe { PTEntry::read_pte(pte_addr) };
+        if pte.present() {
+            Some(pte.address() + (usize::from(vaddr) & 0xFFF))
+        } else {
+            None
+        }
+    }
+
     fn alloc_pte_lvl3(entry: &mut PTEntry, vaddr: VirtAddr, size: PageSize) -> Mapping<'_> {
         let flags = entry.flags();
 
@@ -576,7 +674,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(paddr, flags);
+        entry.set(make_private_address(paddr), flags);
 
         let idx = Self::index::<2>(vaddr);
         Self::alloc_pte_lvl2(&mut page[idx], vaddr, size)
@@ -597,7 +695,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(paddr, flags);
+        entry.set(make_private_address(paddr), flags);
 
         let idx = Self::index::<1>(vaddr);
         Self::alloc_pte_lvl1(&mut page[idx], vaddr, size)
@@ -618,7 +716,7 @@ impl PageTable {
             | PTEntryFlags::WRITABLE
             | PTEntryFlags::USER
             | PTEntryFlags::ACCESSED;
-        entry.set(paddr, flags);
+        entry.set(make_private_address(paddr), flags);
 
         let idx = Self::index::<0>(vaddr);
         Mapping::Level0(&mut page[idx])
@@ -1031,9 +1129,7 @@ impl PageTable {
                 | PTEntryFlags::USER
                 | PTEntryFlags::ACCESSED;
             let entry = &mut self.root[idx];
-            // The C bit is not required here because all page table fetches are
-            // made as C=1.
-            entry.set(paddr, flags);
+            entry.set(make_private_address(paddr), flags);
         }
     }
 }
