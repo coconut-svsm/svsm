@@ -10,9 +10,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_address_percpu;
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
-use crate::mm::virtualrange::{
-    virt_alloc_range_2m, virt_alloc_range_4k, virt_free_range_2m, virt_free_range_4k,
-};
+use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use core::marker::PhantomData;
@@ -21,8 +19,7 @@ use core::marker::PhantomData;
 #[derive(Debug)]
 #[must_use = "if unused the mapping will immediately be unmapped"]
 pub struct PerCPUPageMappingGuard {
-    mapping: MemoryRegion<VirtAddr>,
-    huge: bool,
+    mapping: VRangeAlloc,
 }
 
 impl PerCPUPageMappingGuard {
@@ -58,32 +55,22 @@ impl PerCPUPageMappingGuard {
         let flags = PTEntryFlags::data();
         let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
             && ((paddr_end.bits() & (PAGE_SIZE_2M - 1)) == 0);
-        let raw_mapping = if huge {
-            let region = virt_alloc_range_2m(size, 0)?;
-            if let Err(e) = this_cpu()
+
+        let mapping = if huge {
+            let range = VRangeAlloc::new_2m(size, 0)?;
+            this_cpu()
                 .get_pgtable()
-                .map_region_2m(region, paddr_start, flags)
-            {
-                virt_free_range_2m(region);
-                return Err(e);
-            }
-            region
+                .map_region_2m(range.region(), paddr_start, flags)?;
+            range
         } else {
-            let region = virt_alloc_range_4k(size, 0)?;
-            if let Err(e) = this_cpu()
+            let range = VRangeAlloc::new_4k(size, 0)?;
+            this_cpu()
                 .get_pgtable()
-                .map_region_4k(region, paddr_start, flags)
-            {
-                virt_free_range_4k(region);
-                return Err(e);
-            }
-            region
+                .map_region_4k(range.region(), paddr_start, flags)?;
+            range
         };
 
-        Ok(PerCPUPageMappingGuard {
-            mapping: raw_mapping,
-            huge,
-        })
+        Ok(Self { mapping })
     }
 
     /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
@@ -94,7 +81,7 @@ impl PerCPUPageMappingGuard {
 
     /// Returns the virtual address associated with the guard.
     pub fn virt_addr(&self) -> VirtAddr {
-        self.mapping.start()
+        self.mapping.region().start()
     }
 
     /// Creates a virtual contigous mapping for the given 4k physical pages which
@@ -112,49 +99,39 @@ impl PerCPUPageMappingGuard {
     /// mapping that was created. If an error occurs while creating the page
     /// mapping, it returns a `SvsmError`.
     pub fn create_4k_pages(pages: &[(PhysAddr, bool)]) -> Result<Self, SvsmError> {
-        let region = virt_alloc_range_4k(pages.len() * PAGE_SIZE, 0)?;
+        let mapping = VRangeAlloc::new_4k(pages.len() * PAGE_SIZE, 0)?;
         let flags = PTEntryFlags::data();
 
         let mut pgtable = this_cpu().get_pgtable();
-        for (i, addr) in region.iter_pages(PageSize::Regular).enumerate() {
-            assert!(pages[i].0.is_aligned(PAGE_SIZE));
-
-            pgtable
-                .map_4k(addr, pages[i].0, flags)
-                .and_then(|_| {
-                    if pages[i].1 {
-                        pgtable.set_shared_4k(addr)
-                    } else {
-                        Ok(())
-                    }
-                })
-                .map_err(|e| {
-                    virt_free_range_4k(region);
-                    e
-                })?;
+        for (vaddr, (paddr, shared)) in mapping
+            .region()
+            .iter_pages(PageSize::Regular)
+            .zip(pages.iter().copied())
+        {
+            assert!(paddr.is_page_aligned());
+            pgtable.map_4k(vaddr, paddr, flags)?;
+            if shared {
+                pgtable.set_shared_4k(vaddr)?;
+            }
         }
 
-        Ok(PerCPUPageMappingGuard {
-            mapping: region,
-            huge: false,
-        })
+        Ok(Self { mapping })
     }
 }
 
 impl Drop for PerCPUPageMappingGuard {
     fn drop(&mut self) {
-        let size = if self.huge {
-            this_cpu().get_pgtable().unmap_region_2m(self.mapping);
-            virt_free_range_2m(self.mapping);
+        let region = self.mapping.region();
+        let size = if self.mapping.huge() {
+            this_cpu().get_pgtable().unmap_region_2m(region);
             PageSize::Huge
         } else {
-            this_cpu().get_pgtable().unmap_region_4k(self.mapping);
-            virt_free_range_4k(self.mapping);
+            this_cpu().get_pgtable().unmap_region_4k(region);
             PageSize::Regular
         };
         // This iterative flush is acceptable for same-CPU mappings because no
         // broadcast is involved for each iteration.
-        for page in self.mapping.iter_pages(size) {
+        for page in region.iter_pages(size) {
             flush_address_percpu(page);
         }
     }
@@ -185,7 +162,7 @@ impl<T: Copy> MemMappingGuard<T> {
     ///
     /// Self is returned.
     pub fn new(guard: PerCPUPageMappingGuard, start_off: usize) -> Result<Self, SvsmError> {
-        if start_off >= guard.mapping.len() {
+        if start_off >= guard.mapping.region().len() {
             Err(SvsmError::Mem)
         } else {
             Ok(Self {
@@ -257,7 +234,7 @@ impl<T: Copy> MemMappingGuard<T> {
                     .checked_add(self.start_off + offset)?,
                 len,
             )
-            .filter(|v| self.guard.mapping.contains_region(v))
+            .filter(|v| self.guard.mapping.region().contains_region(v))
         } else {
             None
         }

@@ -80,50 +80,66 @@ pub fn virt_log_usage() {
     );
 }
 
-pub fn virt_alloc_range_4k(
-    size_bytes: usize,
-    alignment: usize,
-) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
-    // Each bit in our bitmap represents a 4K page
-    if (size_bytes & (PAGE_SIZE - 1)) != 0 {
-        return Err(SvsmError::Mem);
+#[derive(Debug)]
+pub struct VRangeAlloc {
+    region: MemoryRegion<VirtAddr>,
+    huge: bool,
+}
+
+impl VRangeAlloc {
+    /// Returns a virtual memory region in the 4K virtual range.
+    pub fn new_4k(size: usize, align: usize) -> Result<Self, SvsmError> {
+        // Each bit in our bitmap represents a 4K page
+        if (size & (PAGE_SIZE - 1)) != 0 {
+            return Err(SvsmError::Mem);
+        }
+        let page_count = size >> PAGE_SHIFT;
+        let addr = this_cpu().vrange_4k.borrow_mut().alloc(page_count, align)?;
+        let region = MemoryRegion::new(addr, size);
+        Ok(Self {
+            region,
+            huge: false,
+        })
     }
-    let page_count = size_bytes >> PAGE_SHIFT;
-    let addr = this_cpu()
-        .vrange_4k
-        .borrow_mut()
-        .alloc(page_count, alignment)?;
-    Ok(MemoryRegion::new(addr, size_bytes))
-}
 
-pub fn virt_free_range_4k(vregion: MemoryRegion<VirtAddr>) {
-    this_cpu()
-        .vrange_4k
-        .borrow_mut()
-        .free(vregion.start(), vregion.len() >> PAGE_SHIFT);
-}
-
-pub fn virt_alloc_range_2m(
-    size_bytes: usize,
-    alignment: usize,
-) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
-    // Each bit in our bitmap represents a 2M page
-    if (size_bytes & (PAGE_SIZE_2M - 1)) != 0 {
-        return Err(SvsmError::Mem);
+    /// Returns a virtual memory region in the 2M virtual range.
+    pub fn new_2m(size: usize, align: usize) -> Result<Self, SvsmError> {
+        // Each bit in our bitmap represents a 2M page
+        if (size & (PAGE_SIZE_2M - 1)) != 0 {
+            return Err(SvsmError::Mem);
+        }
+        let page_count = size >> PAGE_SHIFT_2M;
+        let addr = this_cpu().vrange_2m.borrow_mut().alloc(page_count, align)?;
+        let region = MemoryRegion::new(addr, size);
+        Ok(Self { region, huge: true })
     }
-    let page_count = size_bytes >> PAGE_SHIFT_2M;
-    let addr = this_cpu()
-        .vrange_2m
-        .borrow_mut()
-        .alloc(page_count, alignment)?;
-    Ok(MemoryRegion::new(addr, size_bytes))
+
+    /// Returns the virtual memory region that this allocation spans.
+    pub const fn region(&self) -> MemoryRegion<VirtAddr> {
+        self.region
+    }
+
+    /// Returns true if the allocation was made from the huge (2M) virtual range.
+    pub const fn huge(&self) -> bool {
+        self.huge
+    }
 }
 
-pub fn virt_free_range_2m(vregion: MemoryRegion<VirtAddr>) {
-    this_cpu()
-        .vrange_2m
-        .borrow_mut()
-        .free(vregion.start(), vregion.len() >> PAGE_SHIFT_2M);
+impl Drop for VRangeAlloc {
+    fn drop(&mut self) {
+        let region = self.region();
+        if self.huge {
+            this_cpu()
+                .vrange_2m
+                .borrow_mut()
+                .free(region.start(), region.len() >> PAGE_SHIFT_2M);
+        } else {
+            this_cpu()
+                .vrange_4k
+                .borrow_mut()
+                .free(region.start(), region.len() >> PAGE_SHIFT);
+        }
+    }
 }
 
 #[cfg(test)]
