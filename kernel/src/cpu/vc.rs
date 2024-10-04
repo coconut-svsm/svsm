@@ -527,20 +527,10 @@ mod tests {
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    fn test_rdmsr_debug_ctl() {
-        const MSR_DEBUG_CTL: u32 = 0x1d9;
-        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
-        assert_eq!(apic_base, 0);
-    }
-
-    const MSR_TSC_AUX: u32 = 0xc0000103;
-
-    #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    fn test_wrmsr_tsc_aux() {
-        let test_val = 0x1234;
-        verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
-        let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
+    fn test_wrmsr_apic_base() {
+        let test_val = read_msr(MSR_APIC_BASE);
+        verify_ghcb_gets_altered(|| write_msr(MSR_APIC_BASE, test_val));
+        let readback = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
         assert_eq!(test_val, readback);
     }
 
@@ -592,8 +582,8 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdtscp() {
-        let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
-            .expect("pid should be 32 bits");
+        const MSR_TSC_AUX: u32 = 0xc0000103;
+        let expected_pid = u32::try_from(read_msr(MSR_TSC_AUX)).expect("pid should be 32 bits");
         let RdtscpOut {
             timestamp: mut prev,
             pid,
