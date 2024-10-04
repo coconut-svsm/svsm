@@ -4,10 +4,15 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
+use crate::mm::{USER_MEM_END, USER_MEM_START};
+use alloc::vec::Vec;
 use core::arch::asm;
+use core::ffi::c_char;
 use core::mem::{size_of, MaybeUninit};
 
 #[allow(dead_code)]
@@ -196,6 +201,11 @@ impl<T: Copy> GuestPtr<T> {
     }
 
     #[inline]
+    pub fn as_ptr(&self) -> *const T {
+        self.ptr as *const T
+    }
+
+    #[inline]
     pub const fn from_ptr(p: *mut T) -> Self {
         Self { ptr: p }
     }
@@ -268,6 +278,110 @@ impl<T: Copy> InsnMachineMem for GuestPtr<T> {
     /// Safety: See the GuestPtr's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
         self.write(data).map_err(|_| InsnError::MemWrite)
+    }
+}
+
+#[derive(Debug)]
+pub struct UserPtr<T: Copy> {
+    guest_ptr: GuestPtr<T>,
+}
+
+impl<T: Copy> UserPtr<T> {
+    #[inline]
+    pub fn new(v: VirtAddr) -> Result<Self, SvsmError> {
+        if v < USER_MEM_START || v >= USER_MEM_END {
+            return Err(SvsmError::InvalidAddress);
+        }
+        Ok(Self {
+            guest_ptr: GuestPtr::new(v),
+        })
+    }
+
+    fn check_bounds(&self) -> bool {
+        let v = VirtAddr::from(self.guest_ptr.ptr);
+        if !(USER_MEM_START..USER_MEM_END).contains(&v) {
+            return false;
+        }
+
+        if let Some(end_addr) = v.checked_add(size_of::<T>()) {
+            if !(USER_MEM_START..USER_MEM_END).contains(&end_addr) {
+                return false;
+            }
+        } else {
+            // If the address addition overflows, it's out of bounds
+            return false;
+        }
+        true
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is valid for reading.
+    #[inline]
+    pub unsafe fn read(&self) -> Result<T, SvsmError> {
+        if !self.check_bounds() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        self.guest_ptr.read()
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is valid for writing.
+    #[inline]
+    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError> {
+        if !self.check_bounds() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        self.guest_ptr.write(buf)
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is valid for writing.
+    #[inline]
+    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
+        if !self.check_bounds() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        self.guest_ptr.write_ref(buf)
+    }
+
+    #[inline]
+    pub const fn cast<N: Copy>(&self) -> UserPtr<N> {
+        UserPtr {
+            guest_ptr: self.guest_ptr.cast(),
+        }
+    }
+
+    #[inline]
+    pub fn offset(&self, count: isize) -> UserPtr<T> {
+        UserPtr {
+            guest_ptr: self.guest_ptr.offset(count),
+        }
+    }
+}
+
+impl UserPtr<c_char> {
+    /// # Safety
+    ///
+    /// Reads a null-terminated C string from the user space into the provided buffer.
+    /// Returns a `&str` reference to the buffer.
+    pub unsafe fn read_c_string<'a>(&self, buffer: &'a mut Vec<u8>) -> Result<&'a str, SvsmError> {
+        let mut offset = 0;
+
+        loop {
+            let current_ptr = self.offset(offset);
+            let char_result = current_ptr.read();
+
+            match char_result {
+                Ok(0) => break,
+                Ok(c) => buffer.push(c as u8),
+                Err(_) => return Err(SvsmError::InvalidAddress),
+            }
+            offset += 1;
+        }
+        core::str::from_utf8(buffer).map_err(|_| SvsmError::InvalidUtf8)
     }
 }
 
