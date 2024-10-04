@@ -75,6 +75,8 @@ pub enum SvsmError {
     InvalidAddress,
     /// Error reported when convert a usize to Bytes
     InvalidBytes,
+    /// Error reported when converting to UTF-8
+    InvalidUtf8,
     /// Errors related to firmware parsing
     Firmware,
     /// Errors related to console operation
@@ -121,8 +123,9 @@ impl From<SvsmError> for SysCallError {
             SvsmError::Alloc(AllocError::OutOfMemory) => SysCallError::ENOMEM,
             SvsmError::FileSystem(FsError::FileExists) => SysCallError::EEXIST,
 
-            SvsmError::FileSystem(FsError::FileNotFound)
-            | SvsmError::Obj(ObjError::NotFound) => SysCallError::ENOTFOUND,
+            SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
+                SysCallError::ENOTFOUND
+            }
 
             SvsmError::NotSupported => SysCallError::ENOTSUPP,
 
@@ -130,7 +133,8 @@ impl From<SvsmError> for SysCallError {
             | SvsmError::Obj(ObjError::InvalidHandle)
             | SvsmError::Mem
             | SvsmError::InvalidAddress
-            | SvsmError::InvalidBytes => SysCallError::EINVAL,
+            | SvsmError::InvalidBytes
+            | SvsmError::InvalidUtf8 => SysCallError::EINVAL,
 
             _ => SysCallError::UNKNOWN,
         }
