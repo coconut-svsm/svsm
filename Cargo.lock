@@ -242,6 +242,7 @@ name = "cpuarch"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]

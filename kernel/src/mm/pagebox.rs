@@ -1,3 +1,5 @@
+use zerocopy::FromZeros;
+
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 // Copyright (C) 2024 SUSE
@@ -59,10 +61,17 @@ impl<T> PageBox<T> {
     }
 
     /// Allocates enough pages to hold a `T`, and zeroes them out.
-    pub fn try_new_zeroed() -> Result<PageBox<MaybeUninit<T>>, SvsmError> {
+    pub fn try_new_zeroed() -> Result<PageBox<T>, SvsmError>
+    where
+        T: FromZeros,
+    {
         let mut pages = Self::try_new_uninit()?;
         unsafe { MaybeUninit::as_mut_ptr(&mut pages).write_bytes(0, 1) };
-        Ok(pages)
+        Ok(unsafe {
+            // SAFETY: We know that all zeros is a valid representation because
+            // `T` implements `FromZeros`.
+            pages.assume_init()
+        })
     }
 
     /// Gets the page order required for an allocation to hold a `T`. It also

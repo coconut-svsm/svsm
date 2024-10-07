@@ -30,7 +30,7 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromZeros, Immutable, IntoBytes};
 
 #[repr(C, packed)]
 #[derive(Debug, Default, Clone, Copy, IntoBytes, Immutable)]
@@ -134,7 +134,7 @@ pub struct GhcbPage(PageBox<GHCB>);
 
 impl GhcbPage {
     pub fn new() -> Result<Self, SvsmError> {
-        let page = PageBox::try_new_zeroed()?;
+        let page = PageBox::<GHCB>::try_new_zeroed()?;
         let vaddr = page.vaddr();
         let paddr = virt_to_phys(vaddr);
 
@@ -156,7 +156,7 @@ impl GhcbPage {
         flush_tlb_global_sync();
 
         // SAFETY: all zeros is a valid representation for the GHCB.
-        unsafe { Ok(Self(page.assume_init())) }
+        Ok(Self(page))
     }
 }
 
@@ -195,7 +195,7 @@ impl Deref for GhcbPage {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromZeros)]
 pub struct GHCB {
     reserved_1: [AtomicU8; 0xcb],
     cpl: AtomicU8,

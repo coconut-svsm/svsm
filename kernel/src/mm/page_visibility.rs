@@ -106,7 +106,7 @@ pub struct SharedBox<T> {
 impl<T> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
-        let page_box = PageBox::<T>::try_new_zeroed()?;
+        let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
         let vaddr = page_box.vaddr();
 
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
