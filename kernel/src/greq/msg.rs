@@ -22,7 +22,7 @@ use crate::{
     types::PAGE_SIZE,
 };
 
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 /// Version of the message header
 const HDR_VERSION: u8 = 1;
@@ -70,7 +70,7 @@ pub const SNP_GUEST_REQ_MAX_DATA_SIZE: usize = 4 * PAGE_SIZE;
 
 /// `SNP_GUEST_REQUEST` message header format (AMD SEV-SNP spec. table 98)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, FromZeroes, FromBytes, AsBytes)]
+#[derive(Clone, Copy, Debug, FromBytes, IntoBytes, Immutable)]
 pub struct SnpGuestRequestMsgHdr {
     /// Message authentication tag
     authtag: [u8; 32],
@@ -174,7 +174,7 @@ impl Default for SnpGuestRequestMsgHdr {
 
 /// `SNP_GUEST_REQUEST` message format
 #[repr(C, align(4096))]
-#[derive(Clone, Copy, Debug, FromZeroes, FromBytes)]
+#[derive(Clone, Copy, Debug, FromBytes)]
 pub struct SnpGuestRequestMsg {
     hdr: SnpGuestRequestMsgHdr,
     pld: [u8; MSG_PAYLOAD_SIZE],

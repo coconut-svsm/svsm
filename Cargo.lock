@@ -149,7 +149,7 @@ dependencies = [
 name = "bootlib"
 version = "0.1.0"
 dependencies = [
- "zerocopy",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -490,7 +490,7 @@ dependencies = [
  "range_map_vec",
  "thiserror",
  "tracing",
- "zerocopy",
+ "zerocopy 0.7.34",
 ]
 
 [[package]]
@@ -502,7 +502,7 @@ dependencies = [
  "bitfield-struct",
  "open-enum",
  "static_assertions",
- "zerocopy",
+ "zerocopy 0.7.34",
 ]
 
 [[package]]
@@ -514,7 +514,8 @@ dependencies = [
  "igvm",
  "igvm_defs",
  "uuid",
- "zerocopy",
+ "zerocopy 0.7.34",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -526,7 +527,8 @@ dependencies = [
  "igvm_defs",
  "p384",
  "sha2",
- "zerocopy",
+ "zerocopy 0.7.34",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -662,7 +664,7 @@ name = "packit"
 version = "0.1.1"
 source = "git+https://github.com/coconut-svsm/packit#e2508f686440f6a703fb6c5c0c2fd338e55f1d38"
 dependencies = [
- "zerocopy",
+ "zerocopy 0.7.34",
 ]
 
 [[package]]
@@ -842,7 +844,7 @@ dependencies = [
  "packit",
  "syscall",
  "test",
- "zerocopy",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -1050,7 +1052,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae87e3fcd617500e5d106f0380cf7b77f3c6092aae37191433159dda23cfb087"
 dependencies = [
  "byteorder",
- "zerocopy-derive",
+ "zerocopy-derive 0.7.34",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdf8d0ac51277f0e70d6dcb000b7bfa817968d66df9f5772e731a1d1bc6fc5c6"
+dependencies = [
+ "zerocopy-derive 0.8.2",
 ]
 
 [[package]]
@@ -1058,6 +1069,17 @@ name = "zerocopy-derive"
 version = "0.7.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15e934569e47891f7d9411f1a451d947a60e000ab3bd24fbb970f000387d1b3b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cf1fea9437ee18b719f41c597b00c1745d7ff77184daf6ac8c61110a0115161"
 dependencies = [
  "proc-macro2",
  "quote",

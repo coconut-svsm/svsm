@@ -30,10 +30,10 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
-use zerocopy::AsBytes;
+use zerocopy::{Immutable, IntoBytes};
 
 #[repr(C, packed)]
-#[derive(Debug, Default, Clone, Copy, AsBytes)]
+#[derive(Debug, Default, Clone, Copy, IntoBytes, Immutable)]
 pub struct PageStateChangeHeader {
     cur_entry: u16,
     end_entry: u16,
@@ -429,7 +429,7 @@ impl GHCB {
 
     fn write_buffer<T>(&self, data: &T, offset: usize) -> Result<(), GhcbError>
     where
-        T: AsBytes,
+        T: IntoBytes + Immutable,
     {
         let src = data.as_bytes();
         let dst = &self

@@ -14,7 +14,7 @@ use igvm::IgvmFile;
 use igvm_defs::IgvmPlatformType;
 use igvm_measure::IgvmMeasure;
 use utils::get_compatibility_mask;
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::id_block::SevIdBlockBuilder;
 

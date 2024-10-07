@@ -9,10 +9,10 @@ use std::mem::size_of;
 
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
-use zerocopy::AsBytes;
+use zerocopy::{Immutable, IntoBytes};
 
 #[repr(C, packed(1))]
-#[derive(AsBytes, Copy, Clone, Default)]
+#[derive(IntoBytes, Immutable, Copy, Clone, Default)]
 struct SnpCpuidLeaf {
     eax_in: u32,
     ecx_in: u32,
@@ -56,7 +56,7 @@ impl SnpCpuidLeaf {
 }
 
 #[repr(C, packed(1))]
-#[derive(AsBytes)]
+#[derive(IntoBytes, Immutable)]
 pub struct SnpCpuidPage {
     count: u32,
     reserved: [u32; 3],
