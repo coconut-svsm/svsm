@@ -26,6 +26,7 @@ use svsm::cpu::percpu::current_ghcb;
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_shared};
 use svsm::cpu::smp::start_secondary_cpus;
+use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
@@ -374,6 +375,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .init(&platform_cell)
         .expect("Failed to initialize SVSM platform object");
 
+    sse_init();
     schedule_init();
 
     panic!("SVSM entry point terminated unexpectedly");
