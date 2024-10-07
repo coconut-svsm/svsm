@@ -20,7 +20,7 @@ use igvm_defs::{
     IgvmNativeVpContextX64, IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType,
     IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
 };
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;

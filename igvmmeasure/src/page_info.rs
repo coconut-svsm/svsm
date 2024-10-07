@@ -5,10 +5,10 @@
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
 use sha2::{Digest, Sha384};
-use zerocopy::AsBytes;
+use zerocopy::{Immutable, IntoBytes};
 
 #[repr(u8)]
-#[derive(AsBytes, Debug, Copy, Clone)]
+#[derive(IntoBytes, Immutable, Debug, Copy, Clone)]
 pub enum PageType {
     Normal = 1,
     Vmsa = 2,
@@ -19,7 +19,7 @@ pub enum PageType {
 }
 
 #[repr(C, packed)]
-#[derive(AsBytes, Debug, Copy, Clone)]
+#[derive(IntoBytes, Immutable, Debug, Copy, Clone)]
 pub struct PageInfo {
     digest_cur: [u8; 48],
     contents: [u8; 48],

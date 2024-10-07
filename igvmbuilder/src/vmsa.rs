@@ -7,7 +7,7 @@
 use igvm::snp_defs::{SevFeatures, SevVmsa};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
-use zerocopy::FromZeroes;
+use zerocopy07::FromZeroes;
 
 use crate::cmd_options::SevExtraFeatures;
 

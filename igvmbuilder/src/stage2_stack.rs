@@ -10,7 +10,7 @@ use bootlib::kernel_launch::Stage2LaunchInfo;
 use bootlib::platform::SvsmPlatformType;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::gpa_map::GpaMap;
 use crate::igvm_builder::{
