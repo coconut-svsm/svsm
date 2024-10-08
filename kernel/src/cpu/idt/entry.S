@@ -34,6 +34,8 @@ HV_DOORBELL_ADDR:
 .macro default_entry_no_ist name: req handler:req error_code:req vector:req
 	.globl asm_entry_\name
 asm_entry_\name:
+	asm_clac
+
 	.if \error_code == 0
 	pushq $0
 	.endif
@@ -47,6 +49,8 @@ asm_entry_\name:
 .macro irq_entry name:req vector:req
 	.globl asm_entry_irq_\name
 asm_entry_irq_\name:
+	asm_clac
+
 	pushq	$0
 	push_regs
 	movl	$\vector, %edi
@@ -78,6 +82,8 @@ asm_entry_irq_\name:
 //    exception.
 .globl asm_entry_hv
 asm_entry_hv:
+	asm_clac
+
 	// Push a dummy error code, and only three registers.  If no #HV
 	// processing is required, then only these three registers will need to
 	// be popped.

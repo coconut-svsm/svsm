@@ -22,6 +22,7 @@ pub mod tlb;
 pub mod tss;
 pub mod vc;
 pub mod vmsa;
+pub mod x86;
 
 pub use apic::LocalApic;
 pub use gdt::{gdt, gdt_mut};

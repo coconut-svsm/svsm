@@ -45,8 +45,6 @@ pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
 pub const SX_VECTOR: usize = 30;
 
-pub const PF_ERROR_WRITE: usize = 2;
-
 pub const INT_INJ_VECTOR: usize = 0x50;
 
 bitflags::bitflags! {
