@@ -235,10 +235,16 @@ extern "C" fn ex_handler_system_call(ctxt: &mut X86ExceptionContext) {
     };
 
     ctxt.regs.rax = match input {
-        SYS_HELLO => sys_hello(),
-        SYS_EXIT => sys_exit(),
-        _ => !0,
-    };
+        SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
+        SYS_EXEC => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
+        SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
+        SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
+        SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
+        _ => Err(EINVAL),
+    }
+    // Intermediate casting to u32 prevents overflow and undefined behavior
+    // when casting the usize back to i32 in the user space.
+    .map_or_else(|e| e as u32 as usize, |v| v as usize);
 }
 
 #[no_mangle]

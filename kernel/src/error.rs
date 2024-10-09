@@ -74,6 +74,8 @@ pub enum SvsmError {
     InvalidAddress,
     /// Error reported when convert a usize to Bytes
     InvalidBytes,
+    /// Error reported when converting to UTF-8
+    InvalidUtf8,
     /// Errors related to firmware parsing
     Firmware,
     /// Errors related to console operation

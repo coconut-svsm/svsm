@@ -4,13 +4,16 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::fs::open;
+use crate::fs::{open, Directory};
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::USER_MEM_END;
-use crate::task::{create_user_task, current_task, schedule};
+use crate::task::{create_user_task, current_task, schedule, TaskError};
 use crate::types::PAGE_SIZE;
+use alloc::sync::Arc;
 use elf::{Elf64File, Elf64PhdrFlags};
 
 fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
@@ -27,7 +30,7 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     vm_flags
 }
 
-pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
+pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmError> {
     let fh = open(binary)?;
     let file_size = fh.size();
 
@@ -40,13 +43,16 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
         VMFileMappingFlags::Read,
     )?;
     let buf = unsafe { vstart.to_slice::<u8>(file_size) };
+    // TODO: Due to a bug in the ELF parser, this function returns an error when p_vaddr is not
+    // aligned. But since spec doesn't guarantee that p_vaddr must be aligned, our ELF parser
+    // needs to be fixed. Current WA is to use a custom linker script to align p_vaddr.
     let elf_bin = Elf64File::read(buf).map_err(|_| SvsmError::Mem)?;
 
     let alloc_info = elf_bin.image_load_vaddr_alloc_info();
     let virt_base = alloc_info.range.vaddr_begin;
     let entry = elf_bin.get_entry(virt_base);
 
-    let task = create_user_task(entry.try_into().unwrap())?;
+    let task = create_user_task(entry.try_into().unwrap(), root)?;
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);
@@ -77,5 +83,9 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
 
     schedule();
 
-    Ok(())
+    if task.is_terminated() {
+        Err(SvsmError::Task(TaskError::Terminated))
+    } else {
+        Ok(task.get_task_id())
+    }
 }

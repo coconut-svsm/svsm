@@ -36,6 +36,7 @@ use crate::address::Address;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
+use crate::fs::Directory;
 use crate::locking::SpinLock;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
@@ -239,9 +240,12 @@ pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErr
     Ok(task)
 }
 
-pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
+pub fn create_user_task(
+    user_entry: usize,
+    root: Arc<dyn Directory>,
+) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    let task = Task::create_user(cpu, user_entry)?;
+    let task = Task::create_user(cpu, user_entry, root)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU

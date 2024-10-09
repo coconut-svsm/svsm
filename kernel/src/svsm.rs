@@ -29,7 +29,7 @@ use svsm::cpu::smp::start_secondary_cpus;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
-use svsm::fs::{initialize_fs, populate_ram_fs};
+use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
@@ -44,7 +44,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{secrets_page, secrets_page_mut};
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
-use svsm::task::{create_kernel_task, schedule_init};
+use svsm::task::{create_kernel_task, schedule_init, TaskError};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "mstpm", not(test)))]
@@ -346,6 +346,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
 
+    initialize_fs();
+
     // Idle task must be allocated after PerCPU data is mapped
     bsp_percpu
         .setup_idle_task(svsm_main)
@@ -409,8 +411,6 @@ pub extern "C" fn svsm_main() {
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
-    initialize_fs();
-
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
@@ -459,8 +459,9 @@ pub extern "C" fn svsm_main() {
     #[cfg(test)]
     crate::test_main();
 
-    if exec_user("/init").is_err() {
-        log::info!("Failed to launch /init");
+    match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
+        Ok(_) | Err(SvsmError::Task(TaskError::Terminated)) => (),
+        Err(e) => log::info!("Failed to launch /init: {:#?}", e),
     }
 
     request_loop();

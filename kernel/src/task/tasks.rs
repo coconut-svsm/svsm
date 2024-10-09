@@ -19,7 +19,7 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
-use crate::fs::FileHandle;
+use crate::fs::{opendir, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
@@ -47,6 +47,8 @@ pub enum TaskState {
 
 #[derive(Clone, Copy, Debug)]
 pub enum TaskError {
+    // Task is already terminated
+    Terminated,
     // Attempt to close a non-terminated task
     NotTerminated,
     // A closed task could not be removed from the task list
@@ -136,6 +138,9 @@ pub struct Task {
     /// ID of the task
     id: u32,
 
+    /// Root directory for this task
+    rootdir: Arc<dyn Directory>,
+
     /// Link to global task list
     list_link: LinkedListAtomicLink,
 
@@ -209,13 +214,18 @@ impl Task {
                 cpu: cpu.get_apic_id(),
             }),
             id: TASK_ID_ALLOCATOR.next_id(),
+            rootdir: opendir("/")?,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
             objs: Arc::new(RWLock::new(BTreeMap::new())),
         }))
     }
 
-    pub fn create_user(cpu: &PerCpu, user_entry: usize) -> Result<TaskPointer, SvsmError> {
+    pub fn create_user(
+        cpu: &PerCpu,
+        user_entry: usize,
+        root: Arc<dyn Directory>,
+    ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -253,6 +263,7 @@ impl Task {
                 cpu: cpu.get_apic_id(),
             }),
             id: TASK_ID_ALLOCATOR.next_id(),
+            rootdir: root,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
             objs: Arc::new(RWLock::new(BTreeMap::new())),
@@ -265,6 +276,10 @@ impl Task {
 
     pub fn get_task_id(&self) -> u32 {
         self.id
+    }
+
+    pub fn get_rootdir(&self) -> Arc<dyn Directory> {
+        self.rootdir.clone()
     }
 
     pub fn set_task_running(&self) {
