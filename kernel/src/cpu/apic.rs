@@ -715,10 +715,8 @@ impl LocalApic {
             let mut vector;
             // Consume the correct vector atomically.
             loop {
-                let mut new_flags = flags;
                 vector = flags.pending_vector();
-                new_flags.set_pending_vector(0);
-                new_flags.set_level_sensitive(false);
+                let new_flags = flags.with_pending_vector(0).with_level_sensitive(false);
                 if let Err(fail_flags) = descriptor.status.compare_exchange(
                     flags.into(),
                     new_flags.into(),
@@ -768,8 +766,7 @@ impl LocalApic {
             // atomically, then it must be because some other interrupt
             // has been presented, and that can be consumed in another
             // pass.
-            let mut new_flags = flags;
-            new_flags.set_pending_vector(0);
+            let new_flags = flags.with_pending_vector(0);
             if descriptor
                 .status
                 .compare_exchange(
