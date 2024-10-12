@@ -14,7 +14,6 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
-use crate::cpu::msr::read_flags;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
@@ -351,8 +350,11 @@ impl Task {
                 .try_into()
                 .unwrap();
             let task_context = stack_ptr.offset(-tc_offset).cast::<TaskContext>();
-            // flags
-            (*task_context).flags = read_flags();
+            // The processor flags must always be in a default state, unrelated
+            // to the flags of the caller.  In particular, interrupts must be
+            // disabled because the task switch code expects to execute a new
+            // task with interrupts disabled.
+            (*task_context).flags = 2;
             // ret_addr
             (*task_context).regs.rdi = entry as *const () as usize;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
