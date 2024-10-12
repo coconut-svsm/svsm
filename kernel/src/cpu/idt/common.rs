@@ -401,3 +401,21 @@ global_asm!(
         "#,
     options(att_syntax)
 );
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum IdtEventType {
+    Unknown = 0,
+    External,
+    Software,
+}
+
+impl IdtEventType {
+    pub fn is_external_interrupt(&self, vector: usize) -> bool {
+        match self {
+            Self::External => true,
+            Self::Software => false,
+            Self::Unknown => SVSM_PLATFORM.as_dyn_ref().is_external_interrupt(vector),
+        }
+    }
+}

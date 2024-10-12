@@ -286,6 +286,15 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
+    fn is_external_interrupt(&self, _vector: usize) -> bool {
+        // When restricted injection is active, the event disposition is
+        // already known to the caller and thus need not be examined.  When
+        // restricted injection is not active, the hypervisor must be trusted
+        // with all event delivery, so all events are assumed not to be
+        // external interrupts.
+        false
+    }
+
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
