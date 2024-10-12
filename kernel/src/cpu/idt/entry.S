@@ -40,6 +40,7 @@ asm_entry_\name:
 	push_regs
 	movl	$\vector, %esi
 	movq	%rsp, %rdi
+	xorl	%edx, %edx
 	call	ex_handler_\handler
 	jmp	default_return
 .endm

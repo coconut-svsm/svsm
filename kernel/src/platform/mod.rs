@@ -124,6 +124,10 @@ pub trait SvsmPlatform {
     /// Perform an EOI of the current interrupt.
     fn eoi(&self);
 
+    /// Determines whether a given interrupt vector was invoked as an external
+    /// interrupt.
+    fn is_external_interrupt(&self, vector: usize) -> bool;
+
     /// Start an additional processor.
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
 }

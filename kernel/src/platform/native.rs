@@ -141,6 +141,13 @@ impl SvsmPlatform for NativePlatform {
         todo!();
     }
 
+    fn is_external_interrupt(&self, _vector: usize) -> bool {
+        // For a native platform, the hypervisor is fully trusted with all
+        // event delivery, so all events are assumed not to be external
+        // interrupts.
+        false
+    }
+
     fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
         todo!();
     }

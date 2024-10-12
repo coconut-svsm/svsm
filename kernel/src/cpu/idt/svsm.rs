@@ -10,10 +10,10 @@ use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::{
-    idt_mut, user_mode, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR,
-    DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR,
-    NP_VECTOR, OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR,
-    VC_VECTOR, XF_VECTOR,
+    idt_mut, user_mode, IdtEntry, IdtEventType, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR,
+    DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR, MF_VECTOR,
+    NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR,
+    TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::X86ExceptionContext;
@@ -224,7 +224,16 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
 
 // System Call SoftIRQ handler
 #[no_mangle]
-extern "C" fn ex_handler_system_call(ctxt: &mut X86ExceptionContext) {
+extern "C" fn ex_handler_system_call(
+    ctxt: &mut X86ExceptionContext,
+    vector: usize,
+    event_type: IdtEventType,
+) {
+    // Ensure that this vector was not invoked as a hardware interrupt vector.
+    if event_type.is_external_interrupt(vector) {
+        panic!("Syscall handler invoked as external interrupt!");
+    }
+
     if !user_mode(ctxt) {
         panic!("Syscall handler called from kernel mode!");
     }

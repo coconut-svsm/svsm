@@ -124,6 +124,13 @@ impl SvsmPlatform for TdpPlatform {
 
     fn eoi(&self) {}
 
+    fn is_external_interrupt(&self, _vector: usize) -> bool {
+        // Examine the APIC ISR to determine whether this interrupt vector is
+        // active.  If so, it is assumed to be an external interrupt.
+        // TODO - add code to read the APIC ISR.
+        todo!();
+    }
+
     fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
         todo!();
     }
