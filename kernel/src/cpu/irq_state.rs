@@ -152,6 +152,19 @@ impl IrqState {
     pub fn count(&self) -> isize {
         self.count.load(Ordering::Relaxed)
     }
+
+    /// Changes whether interrupts will be enabled when the nesting count
+    /// drops to zero.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the current nesting count is non-zero,
+    /// and must ensure that the specified value is appropriate for the
+    /// current environment.
+    pub unsafe fn set_restore_state(&self, enabled: bool) {
+        assert!(self.count.load(Ordering::Relaxed) != 0);
+        self.state.store(enabled, Ordering::Relaxed);
+    }
 }
 
 impl Drop for IrqState {

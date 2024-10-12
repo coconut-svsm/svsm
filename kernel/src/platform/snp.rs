@@ -19,7 +19,7 @@ use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
 };
-use crate::sev::status::vtom_enabled;
+use crate::sev::status::{sev_restricted_injection, vtom_enabled};
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
@@ -69,11 +69,15 @@ impl From<PageValidateOp> for PvalidateOp {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct SnpPlatform {}
+pub struct SnpPlatform {
+    can_use_interrupts: bool,
+}
 
 impl SnpPlatform {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            can_use_interrupts: false,
+        }
     }
 }
 
@@ -87,6 +91,14 @@ impl SvsmPlatform for SnpPlatform {
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
         VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
+
+        // Now that SEV status is initialized, determine whether this platform
+        // supports the use of SVSM interrupts.  SVSM interrupts are supported
+        // if this system uses restricted injection.
+        if sev_restricted_injection() {
+            self.can_use_interrupts = true;
+        }
+
         Ok(())
     }
 
@@ -253,6 +265,10 @@ impl SvsmPlatform for SnpPlatform {
 
     fn query_apic_registration_state(&self) -> bool {
         APIC_EMULATION_REG_COUNT.load(Ordering::Relaxed) > 0
+    }
+
+    fn use_interrupts(&self) -> bool {
+        self.can_use_interrupts
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
