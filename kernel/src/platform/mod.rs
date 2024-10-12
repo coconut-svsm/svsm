@@ -115,6 +115,9 @@ pub trait SvsmPlatform {
     /// Queries the state of APIC registration on this system.
     fn query_apic_registration_state(&self) -> bool;
 
+    /// Determines whether the platform supports interrupts to the SVSM.
+    fn use_interrupts(&self) -> bool;
+
     /// Signal an IRQ on one or more CPUs.
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;
 
