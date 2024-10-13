@@ -7,7 +7,7 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::{flush_tlb_global_sync, X86GeneralRegs};
+use crate::cpu::{flush_tlb_global_sync, IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -377,8 +377,14 @@ impl GHCB {
 
         let ghcb_address = VirtAddr::from(self as *const GHCB);
         let ghcb_pa = u64::from(virt_to_phys(ghcb_address));
+        // Disable interrupts between writing the MSR and making the GHCB call
+        // to prevent reentrant use of the GHCB MSR.
+        let guard = IrqGuard::new();
         write_msr(SEV_GHCB, ghcb_pa);
-        raw_vmgexit();
+        unsafe {
+            raw_vmgexit();
+        }
+        drop(guard);
 
         let sw_exit_info_1 = self.get_exit_info_1_valid()?;
         if sw_exit_info_1 != 0 {
