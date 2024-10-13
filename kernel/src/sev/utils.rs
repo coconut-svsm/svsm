@@ -164,10 +164,13 @@ pub fn get_dr7() -> u64 {
     out
 }
 
-pub fn raw_vmgexit() {
-    unsafe {
-        asm!("rep; vmmcall", options(att_syntax));
-    }
+/// # Safety
+/// VMGEXIT operations generally need to be performed with interrupts disabled
+/// to ensure that an interrupt cannot cause the GHCB MSR to change prior to
+/// exiting to the host.  It is the caller's responsibility to ensure that
+/// interrupt handling is configured correctly for the attemtped operation.
+pub unsafe fn raw_vmgexit() {
+    asm!("rep; vmmcall", options(att_syntax));
 }
 
 bitflags::bitflags! {
