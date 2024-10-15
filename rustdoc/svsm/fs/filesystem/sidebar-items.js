@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create","create_all","initialize_fs","list_dir","mkdir","open","read","seek","split_path","split_path_allow_empty","unlink","walk_path","walk_path_create","write"],"static":["FS_ROOT"],"struct":["FileHandle","RawFileHandle","SvsmFs"]};

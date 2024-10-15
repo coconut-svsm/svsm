@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["read_sev_status","sev_es_enabled","sev_flags","sev_snp_enabled","sev_status_init","sev_status_verify","vtom_enabled"],"static":["SEV_FLAGS"],"struct":["SEVStatusFlags"]};

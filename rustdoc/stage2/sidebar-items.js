@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_launch_info","get_svsm_config","init_percpu","load_elf_segment","load_igvm_params","load_kernel_elf","map_and_validate","panic","prepare_heap","setup_env","setup_stage2_allocator","shutdown_percpu","stage2_main"],"mod":["boot_stage2"],"static":["pgtable"]};

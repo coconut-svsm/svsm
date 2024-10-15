@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["VTOM"],"struct":["TdpPlatform"]};
