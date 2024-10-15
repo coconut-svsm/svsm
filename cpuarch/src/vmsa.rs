@@ -4,14 +4,18 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+#![allow(non_camel_case_types)]
+
 use bitfield_struct::bitfield;
+use zerocopy::FromZeros;
 
 // AE Exitcodes
 // Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
 #[repr(u64)]
-#[derive(Clone, Copy, Default, Debug)]
-#[allow(dead_code, non_camel_case_types)]
+#[derive(Clone, Copy, Default, Debug, FromZeros)]
+#[allow(dead_code)]
 pub enum GuestVMExit {
+    CR0_READ = 0,
     MC = 0x52,
     INTR = 0x60,
     NMI = 0x61,
@@ -46,6 +50,7 @@ pub enum GuestVMExit {
 }
 
 #[bitfield(u64)]
+#[derive(FromZeros)]
 pub struct VIntrCtrl {
     pub v_tpr: u8,
     pub v_irq: bool,
@@ -92,6 +97,7 @@ impl VmsaEventType {
 }
 
 #[bitfield(u64)]
+#[derive(FromZeros)]
 pub struct VmsaEventInject {
     pub vector: u8,
     #[bits(3)]
@@ -104,7 +110,7 @@ pub struct VmsaEventInject {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, FromZeros)]
 pub struct VMSASegment {
     pub selector: u16,
     pub flags: u16,
@@ -113,7 +119,7 @@ pub struct VMSASegment {
 }
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, FromZeros)]
 pub struct VMSA {
     pub es: VMSASegment,
     pub cs: VMSASegment,

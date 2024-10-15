@@ -31,7 +31,7 @@ impl VmsaPage {
     pub fn new(vmpl: RMPFlags) -> Result<Self, SvsmError> {
         assert!(vmpl.bits() < (VMPL_MAX as u64));
 
-        let page = PageBox::try_new_zeroed()?;
+        let page = PageBox::<[VMSA; 2]>::try_new_zeroed()?;
         // Make sure the VMSA page is not 2M-aligned, as some hardware
         // generations can't handle this properly. To ensure this property, we
         // allocate 2 VMSAs and choose whichever is not 2M-aligned.
@@ -43,8 +43,6 @@ impl VmsaPage {
 
         let vaddr = page.vaddr() + idx * size_of::<VMSA>();
         rmp_adjust(vaddr, RMPFlags::VMSA | vmpl, PageSize::Regular)?;
-        // SAFETY: all zeros is a valid representation for the VMSA.
-        let page = unsafe { page.assume_init() };
         Ok(Self { page, idx })
     }
 
