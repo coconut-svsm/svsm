@@ -118,8 +118,8 @@ pub struct LocalApic {
 }
 
 impl LocalApic {
-    pub fn new() -> Self {
-        LocalApic {
+    pub const fn new() -> Self {
+        Self {
             irr: [0; 8],
             allowed_irr: [0; 8],
             isr_stack_index: 0,
@@ -194,7 +194,7 @@ impl LocalApic {
         }
 
         // If a lazy EOI is pending, then check to see whether an EOI has been
-        // requested by the guest.  Note that if a lazy EOI was dismissed
+        // requested by the guest. Note that if a lazy EOI was dismissed
         // above, the guest lazy EOI flag need not be cleared here, since
         // dismissal of any interrupt above will require reprocessing of
         // interrupt state prior to guest reentry, and that reprocessing will
@@ -249,6 +249,10 @@ impl LocalApic {
         Some(calling_area)
     }
 
+    /// Attempts to deliver the specified IRQ into the specified guest CPU
+    /// so that it will be immediately observed upon guest entry.
+    /// Returns `true` if the interrupt request was delivered, or `false`
+    /// if the guest cannot immediately receive an interrupt.
     fn deliver_interrupt_immediately<T: GuestCpuState>(&self, irq: u8, cpu_state: &mut T) -> bool {
         if !cpu_state.interrupts_enabled() || cpu_state.in_intr_shadow() {
             false
@@ -264,7 +268,7 @@ impl LocalApic {
         }
     }
 
-    pub fn consume_pending_ipis(&mut self, cpu_shared: &PerCpuShared) {
+    fn consume_pending_ipis(&mut self, cpu_shared: &PerCpuShared) {
         // Scan the IPI IRR vector and transfer any pending IPIs into the local
         // IRR vector.
         for (i, irr) in self.irr.iter_mut().enumerate() {
@@ -317,7 +321,7 @@ impl LocalApic {
 
             // This interrupt is a candidate for delivery only if its priority
             // exceeds the priority of the highest priority interrupt currently
-            // in service.  This check does not consider TPR, because an
+            // in service. This check does not consider TPR, because an
             // interrupt lower in priority than TPR must be queued for delivery
             // as soon as TPR is lowered.
             if (irq & 0xF0) <= (current_priority & 0xF0) {
@@ -325,7 +329,7 @@ impl LocalApic {
             }
 
             // Determine whether this interrupt can be injected
-            // immediately.  If not, queue it for delivery when possible.
+            // immediately. If not, queue it for delivery when possible.
             let try_lazy_eoi = if self.deliver_interrupt_immediately(irq, cpu_state) {
                 self.interrupt_delivered = true;
 
@@ -337,7 +341,7 @@ impl LocalApic {
                 self.interrupt_queued = true;
 
                 // A lazy EOI can only be attempted if there is no lower
-                // priority interrupt in service.  If a lower priority
+                // priority interrupt in service. If a lower priority
                 // interrupt is in service, then the lazy EOI handler
                 // won't know whether the lazy EOI is for the one that
                 // is already in service or the one that is being queued
@@ -345,19 +349,19 @@ impl LocalApic {
                 self.isr_stack_index == 0
             };
 
-            // Mark this interrupt in-service.  It will be recalled if
+            // Mark this interrupt in-service. It will be recalled if
             // the ISR is examined again before the interrupt is actually
             // delivered.
             Self::remove_vector_register(&mut self.irr, irq);
             self.isr_stack[self.isr_stack_index] = irq;
             self.isr_stack_index += 1;
 
-            // Configure a lazy EOI if possible.  Lazy EOI is not possible
+            // Configure a lazy EOI if possible. Lazy EOI is not possible
             // for level-sensitive interrupts, because an explicit EOI
             // is required to acknowledge the interrupt at the source.
             if try_lazy_eoi && !Self::test_vector_register(&self.tmr, irq) {
                 // A lazy EOI is possible only if there is no other
-                // interrupt pending.  If another interrupt is pending,
+                // interrupt pending. If another interrupt is pending,
                 // then an explicit EOI will be required to prompt
                 // delivery of the next interrupt.
                 if self.scan_irr() == 0 {
@@ -387,8 +391,8 @@ impl LocalApic {
         assert!(_r.is_ok());
     }
 
-    pub fn perform_eoi(&mut self) {
-        // Pop any in-service interrupt from the stack.  If there is no
+    fn perform_eoi(&mut self) {
+        // Pop any in-service interrupt from the stack. If there is no
         // interrupt in service, then there is nothing to do.
         if self.isr_stack_index == 0 {
             return;
@@ -424,7 +428,7 @@ impl LocalApic {
     }
 
     fn post_interrupt(&mut self, irq: u8, level_sensitive: bool) {
-        // Set the appropriate bit in the IRR.  Once set, signal that interrupt
+        // Set the appropriate bit in the IRR. Once set, signal that interrupt
         // processing is required before returning to the guest.
         Self::insert_vector_register(&mut self.irr, irq);
         if level_sensitive {
@@ -450,6 +454,8 @@ impl LocalApic {
         }
     }
 
+    /// Sends an IPI using the APIC logical destination mode. Returns `true` if
+    /// the host needs to be notified.
     fn send_logical_ipi(&mut self, icr: ApicIcr) -> bool {
         let mut signal = false;
 
@@ -461,7 +467,7 @@ impl LocalApic {
         }
 
         // Enumerate all CPUs to see which have APIC IDs that match the
-        // requested destination.  Skip the current CPU, since it was checked
+        // requested destination. Skip the current CPU, since it was checked
         // above.
         for cpu_ref in PERCPU_AREAS.iter() {
             let cpu = cpu_ref.as_cpu_ref();
@@ -477,6 +483,7 @@ impl LocalApic {
         signal
     }
 
+    /// Returns `true` if the specified APIC ID matches the given logical destination.
     fn logical_destination_match(destination: u32, apic_id: u32) -> bool {
         // CHeck for a cluster match.
         if (destination >> 16) != (apic_id >> 4) {
@@ -487,9 +494,11 @@ impl LocalApic {
         }
     }
 
+    /// Send an IPI using the APIC physical destination mode. Returns `true` if
+    /// the host needs to be notified.
     fn send_physical_ipi(&mut self, icr: ApicIcr) -> bool {
         // If the target APIC ID matches the current processor, then treat this
-        // as a self-IPI.  Otherwise, locate the target processor by APIC ID.
+        // as a self-IPI. Otherwise, locate the target processor by APIC ID.
         let destination = icr.destination();
         if destination == this_cpu().get_apic_id() {
             self.post_interrupt(icr.vector(), false);
@@ -506,6 +515,7 @@ impl LocalApic {
         }
     }
 
+    /// Sends an IPI using the specified ICR.
     fn send_ipi(&mut self, icr: ApicIcr) {
         let (signal_host, include_others, include_self) = match icr.destination_shorthand() {
             IcrDestFmt::Dest => {
@@ -546,7 +556,7 @@ impl LocalApic {
         }
 
         if signal_host {
-            // Calculate an ICR value to use for a host IPI request.  This will
+            // Calculate an ICR value to use for a host IPI request. This will
             // be a fixed interrupt on the interrupt notification vector using
             // the destination format specified in the ICR value.
             let mut hv_icr = ApicIcr::new()
@@ -557,18 +567,19 @@ impl LocalApic {
                 .with_destination(icr.destination());
 
             // Avoid a self interrupt if the target is all-including-self,
-            // because the self IPI was delivered above.  In the case of
+            // because the self IPI was delivered above. In the case of
             // a logical cluster IPI, it is impractical to avoid the self
             // interrupt, but such cases should be rare.
             if hv_icr.destination_shorthand() == IcrDestFmt::AllWithSelf {
                 hv_icr.set_destination_shorthand(IcrDestFmt::AllButSelf);
             }
 
-            let _r = SVSM_PLATFORM.as_dyn_ref().post_irq(hv_icr.into());
-            assert!(_r.is_ok());
+            SVSM_PLATFORM.as_dyn_ref().post_irq(hv_icr.into()).unwrap();
         }
     }
 
+    /// Reads an APIC register, returning its value, or an error if an invalid
+    /// register is requested.
     pub fn read_register<T: GuestCpuState>(
         &mut self,
         cpu_shared: &PerCpuShared,
@@ -624,6 +635,8 @@ impl LocalApic {
         Ok(())
     }
 
+    /// Writes a value to the specified APIC register. Returns an error if an
+    /// invalid register or value is specified.
     pub fn write_register<T: GuestCpuState>(
         &mut self,
         cpu_state: &mut T,
@@ -638,26 +651,20 @@ impl LocalApic {
         match register {
             APIC_REGISTER_TPR => {
                 // TPR must be an 8-bit value.
-                match u8::try_from(value) {
-                    Ok(tpr) => {
-                        cpu_state.set_tpr(tpr);
-                        Ok(())
-                    }
-                    Err(_) => Err(SvsmError::Apic(Emulation)),
-                }
+                let tpr = u8::try_from(value).map_err(|_| Emulation)?;
+                cpu_state.set_tpr(tpr);
+                Ok(())
             }
             APIC_REGISTER_EOI => {
                 self.perform_eoi();
                 Ok(())
             }
             APIC_REGISTER_ICR => self.handle_icr_write(value),
-            APIC_REGISTER_SELF_IPI => match u8::try_from(value) {
-                Ok(vector) => {
-                    self.post_interrupt(vector, false);
-                    Ok(())
-                }
-                Err(_) => Err(SvsmError::Apic(Emulation)),
-            },
+            APIC_REGISTER_SELF_IPI => {
+                let vector = u8::try_from(value).map_err(|_| Emulation)?;
+                self.post_interrupt(vector, false);
+                Ok(())
+            }
             _ => Err(SvsmError::Apic(Emulation)),
         }
     }
@@ -692,7 +699,7 @@ impl LocalApic {
         }
     }
 
-    pub fn consume_host_interrupts(&mut self) {
+    fn consume_host_interrupts(&mut self) {
         let hv_doorbell = this_cpu().hv_doorbell().unwrap();
         let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
         // Ignore events other than for the guest VMPL.
@@ -708,10 +715,8 @@ impl LocalApic {
             let mut vector;
             // Consume the correct vector atomically.
             loop {
-                let mut new_flags = flags;
                 vector = flags.pending_vector();
-                new_flags.set_pending_vector(0);
-                new_flags.set_level_sensitive(false);
+                let new_flags = flags.with_pending_vector(0).with_level_sensitive(false);
                 if let Err(fail_flags) = descriptor.status.compare_exchange(
                     flags.into(),
                     new_flags.into(),
@@ -734,7 +739,7 @@ impl LocalApic {
         // process the entire IRR.
         if flags.multiple_vectors() {
             // Clear the multiple vectors flag first so that additional
-            // interrupts are presented via the 8-bit vector.  This must
+            // interrupts are presented via the 8-bit vector. This must
             // be done before the IRR is scanned so that if additional
             // vectors are presented later, the multiple vectors flag
             // will be set again.
@@ -757,12 +762,11 @@ impl LocalApic {
                 self.signal_several_interrupts(i, bits & self.allowed_irr[i]);
             }
         } else if flags.pending_vector() != 0 {
-            // Atomically consume this interrupt.  If it cannot be consumed
+            // Atomically consume this interrupt. If it cannot be consumed
             // atomically, then it must be because some other interrupt
             // has been presented, and that can be consumed in another
             // pass.
-            let mut new_flags = flags;
-            new_flags.set_pending_vector(0);
+            let new_flags = flags.with_pending_vector(0);
             if descriptor
                 .status
                 .compare_exchange(
@@ -796,9 +800,9 @@ impl LocalApic {
         }
 
         // If a single, edge-triggered interrupt is present in the interrupt
-        // descriptor, then transfer it to the local IRR.  Level-sensitive
+        // descriptor, then transfer it to the local IRR. Level-sensitive
         // interrupts can be left alone since the host must be prepared to
-        // consume those directly.  Note that consuming the interrupt does not
+        // consume those directly. Note that consuming the interrupt does not
         // require zeroing the vector, since the host is supposed to ignore the
         // vector field when multiple vectors are present (except for the case
         // of level-sensitive interrupts).
