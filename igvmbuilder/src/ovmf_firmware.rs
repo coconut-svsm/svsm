@@ -240,9 +240,8 @@ impl OvmfFirmware {
         _parameter_count: u32,
         compatibility_mask: u32,
     ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
-        let mut in_file = File::open(filename).map_err(|e| {
+        let mut in_file = File::open(filename).inspect_err(|_| {
             eprintln!("Failed to open firmware file {}", filename);
-            e
         })?;
         let len = in_file.metadata()?.len() as usize;
         if len > 0xffffffff {

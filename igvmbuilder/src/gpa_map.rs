@@ -174,9 +174,8 @@ impl GpaMap {
     }
 
     pub fn get_metadata(path: &String) -> Result<std::fs::Metadata, Box<dyn Error>> {
-        let meta = metadata(path).map_err(|e| {
+        let meta = metadata(path).inspect_err(|_| {
             eprintln!("Failed to access {}", path);
-            e
         })?;
         Ok(meta)
     }
