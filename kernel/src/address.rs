@@ -322,6 +322,10 @@ impl VirtAddr {
         VirtAddr::new(self.0 + offset)
     }
 
+    pub const fn const_sub(&self, offset: usize) -> Self {
+        VirtAddr::new(self.0 - offset)
+    }
+
     /// Converts the `VirtAddr` to a slice of a given type
     ///
     /// # Arguments:

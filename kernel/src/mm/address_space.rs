@@ -147,6 +147,9 @@ pub const SVSM_SHARED_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_SHARED);
 pub const SVSM_SHARED_STACK_BASE: VirtAddr = SVSM_SHARED_BASE.const_add(256 * SIZE_1G);
 pub const SVSM_SHARED_STACK_END: VirtAddr = SVSM_SHARED_STACK_BASE.const_add(SIZE_1G);
 
+/// Mapping address for Hyper-V hypercall page.
+pub const SVSM_HYPERCALL_CODE_PAGE: VirtAddr = SVSM_SHARED_STACK_BASE.const_sub(PAGE_SIZE);
+
 /// PerCPU mappings level 3 index
 pub const PGTABLE_LVL3_IDX_PERCPU: usize = 510;
 

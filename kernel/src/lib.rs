@@ -22,6 +22,7 @@ pub mod fs;
 pub mod fw_cfg;
 pub mod fw_meta;
 pub mod greq;
+pub mod hyperv;
 pub mod igvm_params;
 pub mod insn_decode;
 pub mod io;

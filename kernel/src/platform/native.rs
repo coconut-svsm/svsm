@@ -10,6 +10,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
+use crate::hyperv::{hyperv_setup_hypercalls, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
@@ -21,11 +22,15 @@ use crate::mm::virt_to_phys;
 const APIC_MSR_ICR: u32 = 0x830;
 
 #[derive(Clone, Copy, Debug)]
-pub struct NativePlatform {}
+pub struct NativePlatform {
+    is_hyperv: bool,
+}
 
 impl NativePlatform {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            is_hyperv: is_hyperv_hypervisor(),
+        }
     }
 }
 
@@ -47,6 +52,10 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        if self.is_hyperv {
+            hyperv_setup_hypercalls()?;
+        }
+
         Ok(())
     }
 
