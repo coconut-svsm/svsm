@@ -16,6 +16,8 @@ use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(apic_id)?;
+    let pgtable = this_cpu().get_pgtable().clone_shared()?;
+    percpu.setup(platform, pgtable)?;
     platform.start_cpu(percpu, start_rip)?;
 
     let percpu_shared = percpu.shared();
