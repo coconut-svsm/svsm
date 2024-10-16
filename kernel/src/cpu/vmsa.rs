@@ -4,73 +4,98 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::address::{Address, VirtAddr};
+use crate::address::VirtAddr;
+use crate::hyperv;
 use crate::sev::status::{sev_flags, SEVStatusFlags};
-use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_FLAGS, SVSM_DS, SVSM_DS_FLAGS};
+use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
 use cpuarch::vmsa::{VMSASegment, VMSA};
 
-use super::control_regs::{read_cr0, read_cr3, read_cr4};
-use super::efer::read_efer;
 use super::gdt;
 use super::idt::common::idt;
 
-fn svsm_code_segment() -> VMSASegment {
-    VMSASegment {
+pub fn svsm_code_segment() -> hyperv::HvSegmentRegister {
+    hyperv::HvSegmentRegister {
         selector: SVSM_CS,
-        flags: SVSM_CS_FLAGS,
+        attributes: SVSM_CS_ATTRIBUTES,
         limit: 0xffff_ffff,
         base: 0,
     }
 }
 
-fn svsm_data_segment() -> VMSASegment {
-    VMSASegment {
+pub fn svsm_data_segment() -> hyperv::HvSegmentRegister {
+    hyperv::HvSegmentRegister {
         selector: SVSM_DS,
-        flags: SVSM_DS_FLAGS,
+        attributes: SVSM_DS_ATTRIBUTES,
         limit: 0xffff_ffff,
         base: 0,
     }
 }
 
-fn svsm_gdt_segment() -> VMSASegment {
+pub fn svsm_gdt_segment() -> hyperv::HvTableRegister {
     let (base, limit) = gdt().base_limit();
-    VMSASegment {
-        selector: 0,
-        flags: 0,
+    hyperv::HvTableRegister {
         limit,
         base,
+        ..Default::default()
     }
 }
 
-fn svsm_idt_segment() -> VMSASegment {
+pub fn svsm_idt_segment() -> hyperv::HvTableRegister {
     let (base, limit) = idt().base_limit();
-    VMSASegment {
-        selector: 0,
-        flags: 0,
+    hyperv::HvTableRegister {
         limit,
         base,
+        ..Default::default()
     }
 }
 
-pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64) {
-    vmsa.es = svsm_data_segment();
-    vmsa.cs = svsm_code_segment();
-    vmsa.ss = svsm_data_segment();
-    vmsa.ds = svsm_data_segment();
-    vmsa.fs = svsm_data_segment();
-    vmsa.gs = svsm_data_segment();
-    vmsa.gdt = svsm_gdt_segment();
-    vmsa.idt = svsm_idt_segment();
+impl From<hyperv::HvSegmentRegister> for VMSASegment {
+    fn from(segment: hyperv::HvSegmentRegister) -> Self {
+        Self {
+            selector: segment.selector,
+            flags: (segment.attributes & 0xFF) | ((segment.attributes & 0xF000) >> 4),
+            limit: segment.limit,
+            base: segment.base,
+        }
+    }
+}
 
-    vmsa.cr0 = read_cr0().bits();
-    vmsa.cr3 = read_cr3().bits() as u64;
-    vmsa.cr4 = read_cr4().bits();
-    vmsa.efer = read_efer().bits();
+impl From<hyperv::HvTableRegister> for VMSASegment {
+    fn from(table: hyperv::HvTableRegister) -> Self {
+        Self {
+            selector: 0,
+            flags: 0,
+            limit: table.limit as u32,
+            base: table.base,
+        }
+    }
+}
 
-    vmsa.rflags = 0x2;
+pub fn init_svsm_vmsa(vmsa: &mut VMSA, vtom: u64, context: &hyperv::HvInitialVpContext) {
+    vmsa.es = context.es.into();
+    vmsa.cs = context.cs.into();
+    vmsa.ss = context.ss.into();
+    vmsa.ds = context.ds.into();
+    vmsa.fs = context.fs.into();
+    vmsa.gs = context.gs.into();
+    vmsa.tr = context.tr.into();
+
+    vmsa.gdt = context.gdtr.into();
+    vmsa.idt = context.idtr.into();
+
+    vmsa.rip = context.rip;
+    vmsa.rsp = context.rsp;
+    vmsa.rflags = context.rflags;
+
+    vmsa.cr0 = context.cr0;
+    vmsa.cr3 = context.cr3;
+    vmsa.cr4 = context.cr4;
+    vmsa.efer = context.efer;
+
+    vmsa.g_pat = context.pat;
+
     vmsa.dr6 = 0xffff0ff0;
     vmsa.dr7 = 0x400;
-    vmsa.g_pat = 0x0007040600070406u64;
     vmsa.xcr0 = 1;
     vmsa.mxcsr = 0x1f80;
     vmsa.x87_ftw = 0x5555;

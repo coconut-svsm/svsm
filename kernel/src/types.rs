@@ -43,9 +43,9 @@ pub const SVSM_USER_CS: u16 = 3 * 8;
 pub const SVSM_USER_DS: u16 = 4 * 8;
 pub const SVSM_TSS: u16 = 6 * 8;
 
-pub const SVSM_CS_FLAGS: u16 = 0x29b;
-pub const SVSM_DS_FLAGS: u16 = 0xc93;
-pub const SVSM_TR_FLAGS: u16 = 0x89;
+pub const SVSM_CS_ATTRIBUTES: u16 = 0xa09b;
+pub const SVSM_DS_ATTRIBUTES: u16 = 0xc093;
+pub const SVSM_TR_ATTRIBUTES: u16 = 0x89;
 
 /// VMPL level the guest OS will be executed at.
 /// Keep VMPL 1 for the SVSM and execute the OS at VMPL-2. This leaves VMPL-3

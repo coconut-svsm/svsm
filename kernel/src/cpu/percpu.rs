@@ -12,11 +12,15 @@ use super::msr::write_msr;
 use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr, VirtPhysPair};
+use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
+use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
+use crate::hyperv;
 use crate::hyperv::HypercallPagesGuard;
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::alloc::allocate_pages;
@@ -40,7 +44,9 @@ use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
-use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use crate::types::{
+    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
+};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -49,7 +55,7 @@ use core::mem::size_of;
 use core::ptr;
 use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use cpuarch::vmsa::{VMSASegment, VMSA};
+use cpuarch::vmsa::VMSA;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PerCpuInfo {
@@ -764,10 +770,44 @@ impl PerCpu {
         self.reset_ip.set(reset_ip);
     }
 
+    /// Fill in the initial context structure for the SVSM.
+    pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
+        let data_segment = svsm_data_segment();
+
+        hyperv::HvInitialVpContext {
+            rip: start_rip,
+            rsp: self.get_top_of_stack().into(),
+            rflags: 2,
+
+            cs: svsm_code_segment(),
+            ss: data_segment,
+            ds: data_segment,
+            es: data_segment,
+            fs: data_segment,
+            gs: data_segment,
+            tr: self.svsm_tr_segment(),
+
+            gdtr: svsm_gdt_segment(),
+            idtr: svsm_idt_segment(),
+
+            cr0: read_cr0().bits(),
+            cr3: self.get_pgtable().cr3_value().into(),
+            cr4: read_cr4().bits(),
+            efer: read_efer().bits(),
+            pat: 0x0007040600070406u64,
+
+            ..Default::default()
+        }
+    }
+
     /// Allocates and initializes a new VMSA for this CPU. Returns its
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
-    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
+    pub fn alloc_svsm_vmsa(
+        &self,
+        vtom: u64,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(PhysAddr, u64), SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -777,11 +817,7 @@ impl PerCpu {
         let paddr = vmsa.paddr();
 
         // Initialize VMSA
-        init_svsm_vmsa(&mut vmsa, vtom);
-        vmsa.tr = self.vmsa_tr_segment();
-        vmsa.rip = start_rip;
-        vmsa.rsp = self.get_top_of_stack().into();
-        vmsa.cr3 = self.get_pgtable().cr3_value().into();
+        init_svsm_vmsa(&mut vmsa, vtom, context);
         vmsa.enable();
 
         let sev_features = vmsa.sev_features;
@@ -914,10 +950,10 @@ impl PerCpu {
         Ok(())
     }
 
-    fn vmsa_tr_segment(&self) -> VMSASegment {
-        VMSASegment {
+    fn svsm_tr_segment(&self) -> hyperv::HvSegmentRegister {
+        hyperv::HvSegmentRegister {
             selector: SVSM_TSS,
-            flags: SVSM_TR_FLAGS,
+            attributes: SVSM_TR_ATTRIBUTES,
             limit: TSS_LIMIT as u32,
             base: &raw const self.tss as u64,
         }

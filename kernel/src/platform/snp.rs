@@ -11,6 +11,7 @@ use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
+use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
@@ -291,8 +292,12 @@ impl SvsmPlatform for SnpPlatform {
         false
     }
 
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
-        let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
+        let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, context)?;
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
     }

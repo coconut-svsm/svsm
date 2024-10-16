@@ -145,10 +145,10 @@ impl ReadLockGuard<'static, GDT> {
         }
     }
 
-    pub fn base_limit(&self) -> (u64, u32) {
+    pub fn base_limit(&self) -> (u64, u16) {
         let gdt_entries = GDT_SIZE as usize;
         let base: *const GDT = core::ptr::from_ref(self);
-        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u32;
+        let limit = ((mem::size_of::<u64>() * gdt_entries) - 1) as u16;
         (base as u64, limit)
     }
 }
