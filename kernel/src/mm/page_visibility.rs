@@ -131,7 +131,7 @@ impl<T> SharedBox<T> {
             copy_bytes(
                 self.ptr.as_ptr() as usize,
                 out as *const T as usize,
-                size_of::<T>(),
+                core::mem::size_of::<T>(),
             );
         }
     }
@@ -146,7 +146,7 @@ impl<T> SharedBox<T> {
             copy_bytes(
                 value as *const T as usize,
                 self.ptr.as_ptr() as usize,
-                size_of::<T>(),
+                core::mem::size_of::<T>(),
             );
         }
     }
@@ -171,7 +171,7 @@ impl<T, const N: usize> SharedBox<[T; N]> {
 
         unsafe {
             // SAFETY: `self.ptr` is valid and we did a bounds check on `n`.
-            write_bytes(self.ptr.as_ptr() as usize, size_of::<T>() * n, 0);
+            write_bytes(self.ptr.as_ptr() as usize, core::mem::size_of::<T>() * n, 0);
         }
 
         Ok(())
@@ -206,7 +206,7 @@ unsafe impl<T> Sync for SharedBox<T> where T: Sync {}
 impl<T> Drop for SharedBox<T> {
     fn drop(&mut self) {
         // Re-encrypt the pages.
-        let res = (0..size_of::<Self>())
+        let res = (0..core::mem::size_of::<Self>())
             .step_by(PAGE_SIZE)
             .try_for_each(|offset| unsafe { make_page_private(self.addr() + offset) });
 
