@@ -2,7 +2,7 @@
 name = "svsm"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.77.0"
 
 [[bin]]
 name = "stage2"
@@ -36,6 +36,11 @@ packit.workspace = true
 libmstpm = { workspace = true, optional = true }
 zerocopy.workspace = true
 
+builtin = { workspace = true, optional = true }
+builtin_macros = { workspace = true }
+vstd = { workspace = true, optional = true }
+verismo = { workspace = true, optional = true}
+
 [target."x86_64-unknown-none".dev-dependencies]
 test.workspace = true
 
@@ -43,8 +48,14 @@ test.workspace = true
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 mstpm = ["dep:libmstpm"]
+verus_no_dep_verify = ["verus", "verismo/noverify"]
+verus = ["vstd", "builtin", "verismo/verus"]
+noverify = []
 
 [dev-dependencies]
+
+[build-dependencies]
+rustc_version = "0.4"
 
 [lints]
 workspace = true
