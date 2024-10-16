@@ -21,7 +21,7 @@ use crate::protocols::errors::SvsmReqError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
-use zerocopy::{FromBytes, FromZeroes};
+use zerocopy::{FromBytes, FromZeros};
 
 /// Makes a virtual page shared by revoking its validation, updating the
 /// page state, and modifying the page tables accordingly.
@@ -106,7 +106,7 @@ pub struct SharedBox<T> {
 impl<T> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
-        let page_box = PageBox::<T>::try_new_zeroed()?;
+        let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
         let vaddr = page_box.vaddr();
 
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
@@ -167,7 +167,7 @@ impl<T, const N: usize> SharedBox<[T; N]> {
     /// Clear the first `n` elements.
     pub fn nclear(&mut self, n: usize) -> Result<(), SvsmReqError>
     where
-        T: FromZeroes,
+        T: FromZeros,
     {
         if n > N {
             return Err(SvsmReqError::invalid_parameter());

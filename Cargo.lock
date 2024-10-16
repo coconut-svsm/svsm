@@ -160,7 +160,7 @@ dependencies = [
 name = "bootlib"
 version = "0.1.0"
 dependencies = [
- "zerocopy",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -271,6 +271,7 @@ name = "cpuarch"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct 0.6.2",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -525,7 +526,7 @@ dependencies = [
  "range_map_vec",
  "thiserror",
  "tracing",
- "zerocopy",
+ "zerocopy 0.7.35",
 ]
 
 [[package]]
@@ -537,7 +538,7 @@ dependencies = [
  "bitfield-struct 0.7.0",
  "open-enum",
  "static_assertions",
- "zerocopy",
+ "zerocopy 0.7.35",
 ]
 
 [[package]]
@@ -549,7 +550,8 @@ dependencies = [
  "igvm",
  "igvm_defs",
  "uuid",
- "zerocopy",
+ "zerocopy 0.7.35",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -561,7 +563,8 @@ dependencies = [
  "igvm_defs",
  "p384",
  "sha2",
- "zerocopy",
+ "zerocopy 0.7.35",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -707,7 +710,7 @@ name = "packit"
 version = "0.1.1"
 source = "git+https://github.com/coconut-svsm/packit#e2508f686440f6a703fb6c5c0c2fd338e55f1d38"
 dependencies = [
- "zerocopy",
+ "zerocopy 0.7.35",
 ]
 
 [[package]]
@@ -939,7 +942,7 @@ dependencies = [
  "test",
  "verismo",
  "vstd",
- "zerocopy",
+ "zerocopy 0.8.2",
 ]
 
 [[package]]
@@ -1207,7 +1210,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
 dependencies = [
  "byteorder",
- "zerocopy-derive",
+ "zerocopy-derive 0.7.35",
+]
+
+[[package]]
+name = "zerocopy"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdf8d0ac51277f0e70d6dcb000b7bfa817968d66df9f5772e731a1d1bc6fc5c6"
+dependencies = [
+ "zerocopy-derive 0.8.2",
 ]
 
 [[package]]
@@ -1215,6 +1227,17 @@ name = "zerocopy-derive"
 version = "0.7.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.79",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cf1fea9437ee18b719f41c597b00c1745d7ff77184daf6ac8c61110a0115161"
 dependencies = [
  "proc-macro2",
  "quote",

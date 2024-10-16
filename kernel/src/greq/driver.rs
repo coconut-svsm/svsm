@@ -12,7 +12,9 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use core::{cell::OnceCell, mem::size_of};
+use zerocopy::FromZeros;
 
+use crate::mm::alloc::AllocError;
 use crate::mm::page_visibility::SharedBox;
 use crate::{
     cpu::percpu::current_ghcb,
@@ -81,7 +83,8 @@ impl SnpGuestRequestDriver {
     pub fn new() -> Result<Self, SvsmReqError> {
         let request = SharedBox::try_new_zeroed()?;
         let response = SharedBox::try_new_zeroed()?;
-        let staging = SnpGuestRequestMsg::boxed_new()?;
+        let staging = SnpGuestRequestMsg::new_box_zeroed()
+            .map_err(|_| SvsmError::Alloc(AllocError::OutOfMemory))?;
         let ext_data = SharedBox::try_new_zeroed()?;
 
         Ok(Self {

@@ -15,7 +15,7 @@ use igvm_defs::{
     IgvmPageDataType, IgvmVariableHeaderType, IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT,
     PAGE_SIZE_4K,
 };
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::firmware::Firmware;
 

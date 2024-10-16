@@ -64,6 +64,10 @@ pub struct CmdOptions {
     #[arg(long, default_value_t = false)]
     pub native: bool,
 
+    /// Include VSM isolation platform target.
+    #[arg(long, default_value_t = false)]
+    pub vsm: bool,
+
     /// Enable debug features (e.g. SNP debug_swap)
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
