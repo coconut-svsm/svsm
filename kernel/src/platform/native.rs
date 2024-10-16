@@ -59,7 +59,11 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
+        if self.is_hyperv {
+            cpu.allocate_hypercall_pages()?;
+        }
+
         Ok(())
     }
 

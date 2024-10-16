@@ -98,6 +98,8 @@ pub enum SvsmError {
     NotSupported,
     /// Generic errors related to APIC emulation.
     Apic(ApicError),
+    /// Errors related to Hyper-V.
+    HyperV(u16),
 }
 
 impl From<ElfError> for SvsmError {
