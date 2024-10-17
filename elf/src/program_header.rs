@@ -116,6 +116,9 @@ impl Elf64Phdr {
             if !self.p_align.is_power_of_two() {
                 return Err(ElfError::InvalidAddressAlignment);
             }
+            // TODO: Due to a bug in the ELF parser, this function returns an error when p_vaddr is not
+            // aligned. But since spec doesn't guarantee that p_vaddr must be aligned, our ELF parser
+            // needs to be fixed. Current WA is to use a custom linker script to align p_vaddr.
             if self.p_vaddr & (self.p_align - 1) != 0 {
                 return Err(ElfError::UnalignedSegmentAddress);
             }

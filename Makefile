@@ -44,6 +44,8 @@ IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
+INITELF = "target/x86_64-unknown-none/${TARGET_PATH}/init"
+DMELF = "target/x86_64-unknown-none/${TARGET_PATH}/dm"
 
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
@@ -135,6 +137,16 @@ bin/test-kernel.elf: bin
 	LINK_TEST=1 cargo +nightly test ${CARGO_ARGS} ${SVSM_ARGS_TEST} -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
 
+bin/init: bin
+	cargo build --manifest-path init/Cargo.toml ${CARGO_ARGS} --bin init
+	objcopy -O elf64-x86-64 --strip-unneeded ${INITELF} $@
+
+bin/dm: bin
+	cargo build --manifest-path dm/Cargo.toml ${CARGO_ARGS} --bin dm
+	objcopy -O elf64-x86-64 --strip-unneeded ${DMELF} $@
+
+user: bin/init bin/dm
+
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
@@ -176,7 +188,7 @@ bin/svsm-test.bin: bin/stage1-test
 
 clippy:
 	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
-	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --exclude init --exclude dm --target=x86_64-unknown-linux-gnu -- -D warnings
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
@@ -189,4 +201,4 @@ clean:
 distclean: clean
 	$(MAKE) -C libmstpm $@
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean user
