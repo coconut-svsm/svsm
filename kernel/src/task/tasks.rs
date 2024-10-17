@@ -115,7 +115,6 @@ impl TaskSchedState {
     }
 }
 
-#[repr(C)]
 pub struct Task {
     pub rsp: u64,
 
