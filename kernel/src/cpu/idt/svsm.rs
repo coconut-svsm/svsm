@@ -16,6 +16,7 @@ use super::common::{
     VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::registers::RFlags;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::platform::SVSM_PLATFORM;
@@ -262,4 +263,8 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
     SVSM_PLATFORM.as_dyn_ref().eoi();
 }
 
-global_asm!(include_str!("entry.S"), options(att_syntax));
+global_asm!(
+    include_str!("entry.S"),
+    IF = const RFlags::IF.bits(),
+    options(att_syntax)
+);

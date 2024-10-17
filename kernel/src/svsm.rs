@@ -82,11 +82,12 @@ global_asm!(
 
         .bss
 
-        .align 4096
+        .align {PAGE_SIZE}
     bsp_stack:
-        .fill 8*4096, 1, 0
+        .fill 8*{PAGE_SIZE}, 1, 0
     bsp_stack_end:
         "#,
+    PAGE_SIZE = const PAGE_SIZE,
     options(att_syntax)
 );
 

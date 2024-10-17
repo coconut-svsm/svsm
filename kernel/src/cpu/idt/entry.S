@@ -87,7 +87,7 @@ asm_entry_hv:
         pushq   %rcx
 	// Check whether interrupts were enabled at the time of #HV.  If so,
 	// commit to processing all #HV events immediately.
-	testl 	$0x200, 0x30(%rsp)
+	testl 	${IF}, 0x30(%rsp)
 	jnz	continue_hv
 	// Check whether the trap RIP is within the guest VMPL return window.
 	movq	0x20(%rsp), %rax // fetch RIP from the trap frame.
@@ -134,7 +134,7 @@ hv_not_vmpl_switch:
 	// required.  This could not be performed before the RIP check because
 	// the previous RIP determines where to find the previous EFLAGS.IF
 	// value on the stack.
-	testl	$0x200, 18*8(%rcx)
+	testl	${IF}, 18*8(%rcx)
 	jz	postpone_hv
 	// Switch to the stack pointer from the previous exception, which
 	// points to the register save area, and continue with #HV
@@ -157,7 +157,7 @@ restart_hv:
 	// checked because the stack location of the previous EFLAGS.IF value
 	// was not known until RIP was determined to be at the IRET
 	// instruction.
-	testl	$0x200, 0x10(%rcx)
+	testl	${IF}, 0x10(%rcx)
 	jz	postpone_hv
 	// Since interrupts were enabled in the previous exception frame,
 	// #HV processing is now required.  The previous RSP points to the
@@ -229,7 +229,7 @@ return_all_paths:
 	// If interrupts were prerviously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
-	testl 	$0x200, 18*8(%rsp) // check EFLAGS.IF in exception frame
+	testl 	${IF}, 18*8(%rsp) // check EFLAGS.IF in exception frame
 	jz 	begin_iret_return
 	movq 	HV_DOORBELL_ADDR(%rip), %rdi
 	test 	%rdi, %rdi
