@@ -371,8 +371,8 @@ extern "C" {
 }
 
 pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
-    let start = VirtAddr::from(unsafe { addr_of!(entry_code_start) });
-    let end = VirtAddr::from(unsafe { addr_of!(entry_code_end) });
+    let start = VirtAddr::from(addr_of!(entry_code_start));
+    let end = VirtAddr::from(addr_of!(entry_code_end));
     (start..end).contains(&rip)
 }
 

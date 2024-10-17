@@ -12,19 +12,15 @@ use core::arch::global_asm;
 use core::ptr::addr_of;
 
 pub fn early_idt_init_no_ghcb() {
-    unsafe {
-        let mut idt = idt_mut();
-        idt.init(addr_of!(stage2_idt_handler_array_no_ghcb), 32);
-        idt.load();
-    }
+    let mut idt = idt_mut();
+    idt.init(addr_of!(stage2_idt_handler_array_no_ghcb), 32);
+    idt.load();
 }
 
 pub fn early_idt_init() {
-    unsafe {
-        let mut idt = idt_mut();
-        idt.init(addr_of!(stage2_idt_handler_array), 32);
-        idt.load();
-    }
+    let mut idt = idt_mut();
+    idt.init(addr_of!(stage2_idt_handler_array), 32);
+    idt.load();
 }
 
 #[no_mangle]

@@ -235,7 +235,7 @@ pub fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
     // static, but we're simply printing its address. We are not creating a
     // reference so this is safe.
-    let vaddr = unsafe { VirtAddr::from(ptr::addr_of!(bsp_stack_end)) };
+    let vaddr = VirtAddr::from(ptr::addr_of!(bsp_stack_end));
     log::info!("Boot stack starts        @ {:#018x}", vaddr);
 }
 
