@@ -111,7 +111,6 @@ pub mod test_utils {
     pub const TEST_PORT: u16 = 0xE0;
 
     /// A dummy struct to implement InsnMachineCtx for testing purposes.
-    #[allow(dead_code)]
     #[derive(Copy, Clone, Debug)]
     pub struct TestCtx {
         pub efer: u64,
@@ -174,7 +173,7 @@ pub mod test_utils {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     struct TestMem<T: Copy> {
         ptr: *mut T,
     }

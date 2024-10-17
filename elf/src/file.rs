@@ -27,7 +27,6 @@ pub struct Elf64File<'a> {
     /// The maximum alignment requirement among load segments
     pub max_load_segment_align: Elf64Xword,
     /// THe section header string table may not be present
-    #[allow(unused)]
     pub sh_strtab: Option<Elf64Strtab<'a>>,
     pub dynamic: Option<Elf64Dynamic>,
 }

@@ -10,7 +10,6 @@ pub type Elf64Addr = u64;
 pub type Elf64Off = u64;
 pub type Elf64Half = u16;
 pub type Elf64Word = u32;
-#[allow(unused)]
 pub type Elf64Sword = i32;
 pub type Elf64Xword = u64;
 pub type Elf64Sxword = i64;

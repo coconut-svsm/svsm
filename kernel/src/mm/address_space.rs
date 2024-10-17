@@ -11,7 +11,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::mm::pagetable::PageTable;
 
 #[derive(Debug, Copy, Clone)]
-#[allow(dead_code)]
+#[cfg_attr(not(any(test, target_os = "none")), expect(dead_code))]
 pub struct FixedAddressMappingRange {
     virt_start: VirtAddr,
     virt_end: VirtAddr,
@@ -44,7 +44,7 @@ impl FixedAddressMappingRange {
 }
 
 #[derive(Debug, Copy, Clone)]
-#[cfg_attr(not(target_os = "none"), allow(dead_code))]
+#[cfg_attr(not(target_os = "none"), expect(dead_code))]
 pub struct FixedAddressMapping {
     kernel_mapping: FixedAddressMappingRange,
     heap_mapping: Option<FixedAddressMappingRange>,
@@ -115,9 +115,9 @@ pub const PAGE_SIZE_2M: usize = SIZE_1M * 2;
 /// More size helpers
 pub const SIZE_LEVEL3: usize = 1usize << ((9 * 3) + 12);
 pub const SIZE_LEVEL2: usize = 1usize << ((9 * 2) + 12);
-#[allow(clippy::identity_op)]
+#[expect(clippy::identity_op)]
 pub const SIZE_LEVEL1: usize = 1usize << ((9 * 1) + 12);
-#[allow(clippy::erasing_op, clippy::identity_op)]
+#[expect(clippy::erasing_op, clippy::identity_op)]
 pub const SIZE_LEVEL0: usize = 1usize << ((9 * 0) + 12);
 
 // Stack definitions

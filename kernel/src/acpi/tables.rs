@@ -85,7 +85,6 @@ struct RawACPITableHeader {
 }
 
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 /// Higher level representation of the raw ACPI table header
 struct ACPITableHeader {
     sig: [u8; 4],
@@ -126,7 +125,7 @@ impl ACPITableHeader {
     }
 
     /// Print a human-readable summary of the ACPI table header's fields
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn print_summary(&self) {
         let sig = FixedString::from(self.sig);
         let oem_id = FixedString::from(self.oem_id);
@@ -189,7 +188,7 @@ impl ACPITable {
     /// Get the signature of the ACPI table.
     ///
     /// This method returns the 4-character signature of the ACPI table, such as "APIC."
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn signature(&self) -> FixedString<4> {
         FixedString::from(self.header.sig)
     }
@@ -389,7 +388,6 @@ const MADT_HEADER_SIZE: usize = 8;
 
 /// Header of an entry within MADT
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryHeader {
     entry_type: u8,
@@ -398,7 +396,6 @@ struct RawMADTEntryHeader {
 
 /// Entry for a local APIC within MADT
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalApic {
     header: RawMADTEntryHeader,
@@ -409,7 +406,6 @@ struct RawMADTEntryLocalApic {
 
 /// Entry for a local X2APIC within MADT
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 #[repr(C, packed)]
 struct RawMADTEntryLocalX2Apic {
     header: RawMADTEntryHeader,

@@ -10,7 +10,7 @@ use bitfield_struct::bitfield;
 // Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
 #[repr(u64)]
 #[derive(Clone, Copy, Default, Debug)]
-#[allow(dead_code, non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum GuestVMExit {
     MC = 0x52,
     INTR = 0x60,

@@ -47,7 +47,7 @@ pub mod svsm_gdbstub {
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         unsafe {
             let mut target = GdbStubTarget::new();
-            #[allow(static_mut_refs)]
+            #[expect(static_mut_refs)]
             let gdb = GdbStubBuilder::new(GdbStubConnection::new(platform))
                 .with_packet_buffer(&mut PACKET_BUFFER)
                 .build()

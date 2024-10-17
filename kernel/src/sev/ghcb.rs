@@ -92,7 +92,7 @@ impl From<GhcbError> for SvsmError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u64)]
-#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[expect(non_camel_case_types, clippy::upper_case_acronyms)]
 enum GHCBExitCode {
     RDTSC = 0x6e,
     IOIO = 0x7b,

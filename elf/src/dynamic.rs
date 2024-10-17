@@ -51,7 +51,6 @@ pub struct Elf64DynamicSymtab {
     pub entsize: Elf64Xword,
     /// Optional value indicating the table index of symbols
     /// in the extended section header table (DT_SYMTAB_SHNDX)
-    #[allow(unused)]
     pub shndx: Option<Elf64Addr>,
 }
 

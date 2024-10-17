@@ -67,7 +67,7 @@ impl From<ObjHandle> for u32 {
 ///
 /// This function will return an error if adding the object to the
 /// current task fails.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn obj_add(obj: Arc<dyn Obj>) -> Result<ObjHandle, SvsmError> {
     current_task().add_obj(obj)
 }
@@ -87,7 +87,7 @@ pub fn obj_add(obj: Arc<dyn Obj>) -> Result<ObjHandle, SvsmError> {
 ///
 /// This function will return an error if removing the object from the
 /// current task fails.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn obj_close(id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
     current_task().remove_obj(id)
 }
@@ -107,7 +107,7 @@ pub fn obj_close(id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
 ///
 /// This function will return an error if retrieving the object from the
 /// current task fails.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub fn obj_get(id: ObjHandle) -> Result<Arc<dyn Obj>, SvsmError> {
     current_task().get_obj(id)
 }

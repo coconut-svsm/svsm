@@ -12,7 +12,7 @@ use core::arch::asm;
 use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum SevSnpError {
     FAIL_INPUT(u64),
     FAIL_PERMISSION(u64),

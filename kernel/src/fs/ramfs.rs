@@ -246,7 +246,6 @@ pub struct RamFile {
 
 impl RamFile {
     /// Used to get a new instance of [`RamFile`].
-    #[allow(dead_code)]
     pub fn new() -> Self {
         RamFile {
             rawfile: RWLock::new(RawRamFile::new()),

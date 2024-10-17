@@ -168,7 +168,6 @@ impl GuestVmsaRef {
         self.caa
     }
 
-    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn vmsa(&mut self) -> &mut VMSA {
         assert!(self.vmsa.is_some());
         // SAFETY: this function takes &mut self, so only one mutable

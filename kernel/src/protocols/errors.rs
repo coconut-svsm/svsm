@@ -8,7 +8,7 @@ use crate::error::ApicError;
 use crate::error::SvsmError;
 
 #[derive(Debug, Clone, Copy)]
-#[allow(non_camel_case_types, dead_code, clippy::upper_case_acronyms)]
+#[expect(non_camel_case_types)]
 pub enum SvsmResultCode {
     SUCCESS,
     INCOMPLETE,
@@ -55,7 +55,6 @@ macro_rules! impl_req_err {
     };
 }
 
-#[allow(dead_code)]
 impl SvsmReqError {
     impl_req_err!(incomplete, INCOMPLETE);
     impl_req_err!(unsupported_protocol, UNSUPPORTED_PROTOCOL);

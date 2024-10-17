@@ -27,7 +27,7 @@ impl From<PageSize> for usize {
     }
 }
 
-#[allow(clippy::identity_op)]
+#[expect(clippy::identity_op)]
 pub const SVSM_CS: u16 = 1 * 8;
 pub const SVSM_DS: u16 = 2 * 8;
 pub const SVSM_USER_CS: u16 = 3 * 8;
@@ -43,7 +43,6 @@ pub const SVSM_TR_FLAGS: u16 = 0x89;
 /// free for the OS to use in the future.
 pub const GUEST_VMPL: usize = 2;
 
-#[allow(clippy::assertions_on_constants)]
 const _: () = assert!(GUEST_VMPL > 0 && GUEST_VMPL < VMPL_MAX);
 
 pub const MAX_CPUS: usize = 512;
