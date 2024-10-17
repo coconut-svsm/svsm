@@ -12,7 +12,6 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
-use core::ptr;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{PhysAddr, VirtAddr};
@@ -235,7 +234,7 @@ pub fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
     // static, but we're simply printing its address. We are not creating a
     // reference so this is safe.
-    let vaddr = VirtAddr::from(ptr::addr_of!(bsp_stack_end));
+    let vaddr = VirtAddr::from(&raw const bsp_stack_end);
     log::info!("Boot stack starts        @ {:#018x}", vaddr);
 }
 
