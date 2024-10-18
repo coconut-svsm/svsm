@@ -17,11 +17,11 @@ use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
+use svsm::cpu::line_buffer::install_buffer_logger;
 use svsm::cpu::percpu::current_ghcb;
 use svsm::cpu::percpu::PerCpu;
 use svsm::cpu::percpu::{this_cpu, this_cpu_shared};
@@ -33,6 +33,8 @@ use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
+use svsm::log_buffer::migrate_log_buffer;
+use svsm::migrate::MigrateInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
 use svsm::mm::pagetable::paging_init;
@@ -63,7 +65,7 @@ extern "C" {
  * startup_64.
  *
  * %r8  Pointer to the KernelLaunchInfo structure
- * %r9  Pointer to the valid-bitmap from stage2
+ * %r9  Pointer to the MigrateInfo from stage2
  */
 global_asm!(
     r#"
@@ -273,9 +275,9 @@ fn init_cpuid_table(addr: VirtAddr) {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
+pub extern "C" fn svsm_start(li: &KernelLaunchInfo, mi: &MigrateInfo) {
     let launch_info: KernelLaunchInfo = *li;
-    let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
+    let vb_ptr = core::ptr::NonNull::new(mi.bitmap_addr.as_mut_ptr::<u64>()).unwrap();
 
     mapping_info_init(&launch_info);
 
@@ -310,13 +312,14 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     cr0_init();
     cr4_init(platform);
-    install_console_logger("SVSM").expect("Console logger already initialized");
+    install_buffer_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
     memory_init(&launch_info);
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
+    migrate_log_buffer(mi.lb);
 
     let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
         - launch_info.kernel_elf_stage2_virt_start) as usize;

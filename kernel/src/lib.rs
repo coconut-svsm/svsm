@@ -27,6 +27,8 @@ pub mod insn_decode;
 pub mod io;
 pub mod kernel_region;
 pub mod locking;
+pub mod log_buffer;
+pub mod migrate;
 pub mod mm;
 pub mod platform;
 pub mod protocols;

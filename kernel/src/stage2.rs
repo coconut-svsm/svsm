@@ -19,14 +19,16 @@ use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
-use svsm::console::install_console_logger;
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
+use svsm::cpu::line_buffer::install_buffer_logger;
 use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
+use svsm::log_buffer::get_lb;
+use svsm::migrate::MigrateInfo;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init_early, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
@@ -83,7 +85,7 @@ fn setup_env(
     early_idt_init_no_ghcb();
 
     let debug_serial_port = config.debug_serial_port();
-    install_console_logger("Stage2").expect("Console logger already initialized");
+    install_buffer_logger("Stage2").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
@@ -442,6 +444,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     );
 
     let valid_bitmap = valid_bitmap_addr();
+    let migrate_info = MigrateInfo::new(VirtAddr::from(valid_bitmap.bits()), get_lb());
 
     // Shut down the GHCB
     unsafe {
@@ -452,7 +455,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("r8") &launch_info,
-             in("r9") valid_bitmap.bits(),
+             in("r9") &migrate_info,
              options(att_syntax))
     };
 
