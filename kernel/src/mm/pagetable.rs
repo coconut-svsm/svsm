@@ -16,7 +16,7 @@ use crate::mm::{
     SVSM_PTE_BASE,
 };
 use crate::platform::SvsmPlatform;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use crate::utils::MemoryRegion;
 use crate::BIT_MASK;
@@ -448,6 +448,41 @@ pub enum Mapping<'a> {
     Level2(&'a mut PTEntry),
     Level1(&'a mut PTEntry),
     Level0(&'a mut PTEntry),
+}
+
+/// A physical address within a page frame
+#[derive(Debug)]
+pub enum PageFrame {
+    Size4K(PhysAddr),
+    Size2M(PhysAddr),
+    Size1G(PhysAddr),
+}
+
+impl PageFrame {
+    pub fn address(&self) -> PhysAddr {
+        match *self {
+            Self::Size4K(pa) => pa,
+            Self::Size2M(pa) => pa,
+            Self::Size1G(pa) => pa,
+        }
+    }
+
+    fn size(&self) -> usize {
+        match self {
+            Self::Size4K(_) => PAGE_SIZE,
+            Self::Size2M(_) => PAGE_SIZE_2M,
+            Self::Size1G(_) => PAGE_SIZE_1G,
+        }
+    }
+
+    pub fn start(&self) -> PhysAddr {
+        let end = self.address().bits() & !(self.size() - 1);
+        end.into()
+    }
+
+    pub fn end(&self) -> PhysAddr {
+        self.start() + self.size()
+    }
 }
 
 /// Page table structure containing a root page with multiple entries.
