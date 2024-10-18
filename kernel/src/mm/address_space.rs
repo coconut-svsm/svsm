@@ -167,6 +167,9 @@ pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_STACKS_INIT_TASK.const_add(STACK
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
 
+/// PerCPU XSave Context area base address
+pub const SVSM_XSAVE_AREA_BASE: VirtAddr = SVSM_STACKS_IST_BASE.const_add(STACK_TOTAL_SIZE);
+
 /// Base Address for temporary mappings - used by page-table guards
 pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
 
@@ -191,6 +194,10 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Kernel stack for a task
 pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
+
+/// SSE context save area for a task
+pub const SVSM_PERTASK_XSAVE_AREA_BASE: VirtAddr =
+    SVSM_PERTASK_STACK_BASE.const_add(STACK_TOTAL_SIZE);
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
