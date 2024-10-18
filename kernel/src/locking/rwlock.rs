@@ -330,11 +330,11 @@ mod tests {
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn rw_lock_irq_unsafe() {
         use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
-        use crate::cpu::{irqs_disabled, irqs_enabled};
+        use crate::cpu::irqs_enabled;
         use crate::locking::*;
 
-        assert!(irqs_disabled());
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
             let lock = RWLock::new(0);
 
@@ -354,7 +354,9 @@ mod tests {
 
             // IRQs must still be enabled
             assert!(irqs_enabled());
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 
@@ -365,8 +367,8 @@ mod tests {
         use crate::cpu::{irqs_disabled, irqs_enabled};
         use crate::locking::*;
 
-        assert!(irqs_disabled());
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
             let lock = RWLockIrqSafe::new(0);
 
@@ -388,7 +390,9 @@ mod tests {
 
             // IRQs must still be enabled
             assert!(irqs_enabled());
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 }

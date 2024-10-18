@@ -212,21 +212,24 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_enable_disable() {
-        assert!(irqs_disabled());
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
             assert!(irqs_enabled());
             raw_irqs_disable();
             assert!(irqs_disabled());
+            if was_enabled {
+                raw_irqs_enable();
+            }
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_state() {
-        assert!(irqs_disabled());
         unsafe {
             let state = IrqState::new();
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
             state.disable();
             assert!(irqs_disabled());
@@ -235,22 +238,26 @@ mod tests {
             assert!(irqs_disabled());
             state.enable();
             assert!(irqs_enabled());
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_guard_test() {
-        assert!(irqs_disabled());
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
             assert!(irqs_enabled());
             let g1 = IrqGuard::new();
             assert!(irqs_disabled());
             drop(g1);
             assert!(irqs_enabled());
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 }
