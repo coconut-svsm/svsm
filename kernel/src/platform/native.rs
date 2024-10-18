@@ -128,6 +128,10 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
+    fn use_interrupts(&self) -> bool {
+        true
+    }
+
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         write_msr(APIC_MSR_ICR, icr);
         Ok(())
@@ -135,6 +139,13 @@ impl SvsmPlatform for NativePlatform {
 
     fn eoi(&self) {
         todo!();
+    }
+
+    fn is_external_interrupt(&self, _vector: usize) -> bool {
+        // For a native platform, the hypervisor is fully trusted with all
+        // event delivery, so all events are assumed not to be external
+        // interrupts.
+        false
     }
 
     fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {

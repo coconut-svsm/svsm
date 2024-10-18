@@ -826,6 +826,17 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
+        // If the platform permits the use of interrupts, then ensure that
+        // interrupts will be enabled on the current CPU when leaving the
+        // scheduler environment.  This is done after disabling interrupts
+        // for scheduler initialization so that the first interrupt that can
+        // be received will always observe that there is a current task and
+        // not the boot thread.
+        if SVSM_PLATFORM.as_dyn_ref().use_interrupts() {
+            unsafe {
+                self.irq_state.set_restore_state(true);
+            }
+        }
         let task = self.runqueue.lock_write().schedule_init();
         self.current_stack.set(task.stack_bounds());
         task
