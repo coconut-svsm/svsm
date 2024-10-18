@@ -450,6 +450,42 @@ pub enum Mapping<'a> {
     Level0(&'a mut PTEntry),
 }
 
+/// A physical address within a page frame
+#[derive(Debug)]
+pub enum PageFrame {
+    Size4K(PhysAddr),
+    Size2M(PhysAddr),
+    Size1G(PhysAddr),
+}
+
+impl PageFrame {
+    pub fn address(&self) -> PhysAddr {
+        match *self {
+            Self::Size4K(pa) => pa,
+            Self::Size2M(pa) => pa,
+            Self::Size1G(pa) => pa,
+        }
+    }
+
+    fn size(&self) -> usize {
+        let sz = match *self {
+            Self::Size4K(_) => PageSize::Regular,
+            Self::Size2M(_) => PageSize::Huge,
+            Self::Size1G(_) => PageSize::Huge1G,
+        };
+        usize::from(sz)
+    }
+
+    pub fn start(&self) -> PhysAddr {
+        let end = self.address().bits() & !(self.size() - 1);
+        end.into()
+    }
+
+    pub fn end(&self) -> PhysAddr {
+        self.start() + self.size()
+    }
+}
+
 /// Page table structure containing a root page with multiple entries.
 #[repr(C)]
 #[derive(Default, Debug)]
@@ -611,9 +647,9 @@ impl PageTable {
     /// - `vaddr': The virtual address to transalte.
     ///
     /// # Returns
-    /// Some(PhysAddr) if the virtual address is valid.
+    /// Some(PageFrame) if the virtual address is valid.
     /// None if the virtual address is not valid.
-    pub fn virt_to_phys(vaddr: VirtAddr) -> Option<PhysAddr> {
+    pub fn virt_to_phys(vaddr: VirtAddr) -> Option<PageFrame> {
         // Calculate the virtual addresses of each level of the paging
         // hierarchy in the self-map.
         let pte_addr = Self::get_pte_address(vaddr);
@@ -640,7 +676,8 @@ impl PageTable {
             return None;
         }
         if pdpe.huge() {
-            return Some(pdpe.address() + (usize::from(vaddr) & 0x3FFF_FFFF));
+            let pa = pdpe.address() + (usize::from(vaddr) & 0x3FFF_FFFF);
+            return Some(PageFrame::Size1G(pa));
         }
 
         let pde = unsafe { PTEntry::read_pte(pde_addr) };
@@ -648,12 +685,14 @@ impl PageTable {
             return None;
         }
         if pde.huge() {
-            return Some(pde.address() + (usize::from(vaddr) & 0x001F_FFFF));
+            let pa = pde.address() + (usize::from(vaddr) & 0x001F_FFFF);
+            return Some(PageFrame::Size2M(pa));
         }
 
         let pte = unsafe { PTEntry::read_pte(pte_addr) };
         if pte.present() {
-            Some(pte.address() + (usize::from(vaddr) & 0xFFF))
+            let pa = pte.address() + (usize::from(vaddr) & 0xFFF);
+            Some(PageFrame::Size4K(pa))
         } else {
             None
         }

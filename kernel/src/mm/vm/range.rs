@@ -223,6 +223,9 @@ impl VMR {
                     PageSize::Huge => {
                         pgtbl_parts[idx].map_2m(vmm_start + offset, paddr, pt_flags, shared)?
                     }
+                    PageSize::Huge1G => {
+                        return Err(SvsmError::Mem);
+                    }
                 }
             }
             offset += usize::from(page_size);
@@ -249,6 +252,7 @@ impl VMR {
             let result = match page_size {
                 PageSize::Regular => pgtbl_parts[idx].unmap_4k(vmm_start + offset),
                 PageSize::Huge => pgtbl_parts[idx].unmap_2m(vmm_start + offset),
+                PageSize::Huge1G => unimplemented!("1G pages not supported"),
             };
 
             if result.is_some() {
