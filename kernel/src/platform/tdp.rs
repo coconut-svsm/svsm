@@ -10,13 +10,14 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
+use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::MemoryRegion;
+use crate::utils::{zero_mem_region, MemoryRegion};
 use tdx_tdcall::tdx::{
-    tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8, tdvmcall_io_write_16,
-    tdvmcall_io_write_32, tdvmcall_io_write_8,
+    td_accept_memory, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
+    tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
 };
 
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
@@ -93,18 +94,42 @@ impl SvsmPlatform for TdpPlatform {
 
     fn validate_physical_page_range(
         &self,
-        _region: MemoryRegion<PhysAddr>,
-        _op: PageValidateOp,
+        region: MemoryRegion<PhysAddr>,
+        op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        match op {
+            PageValidateOp::Validate => {
+                td_accept_memory(region.start().into(), region.len().try_into().unwrap());
+            }
+            PageValidateOp::Invalidate => {
+                let mapping = PerCPUPageMappingGuard::create(region.start(), region.end(), 0)?;
+                zero_mem_region(mapping.virt_addr(), mapping.virt_addr() + region.len());
+            }
+        }
+        Ok(())
     }
 
     fn validate_virtual_page_range(
         &self,
-        _region: MemoryRegion<VirtAddr>,
-        _op: PageValidateOp,
+        region: MemoryRegion<VirtAddr>,
+        op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        match op {
+            PageValidateOp::Validate => {
+                let mut va = region.start();
+                while va < region.end() {
+                    let pa = virt_to_frame(va);
+                    let sz = pa.end() - pa.address();
+                    // td_accept_memory() will take care of alignment
+                    td_accept_memory(pa.address().into(), sz.try_into().unwrap());
+                    va = va + sz;
+                }
+            }
+            PageValidateOp::Invalidate => {
+                zero_mem_region(region.start(), region.end());
+            }
+        }
+        Ok(())
     }
 
     fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
