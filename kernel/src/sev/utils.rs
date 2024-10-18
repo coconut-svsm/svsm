@@ -99,6 +99,7 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     let rcx: u64 = match size {
         PageSize::Regular => 0,
         PageSize::Huge => 1,
+        PageSize::Huge1G => return Err(SvsmError::Mem),
     };
     let rdx = valid as u64;
     let ret: u64;
@@ -192,6 +193,7 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(),
     let rcx: u64 = match size {
         PageSize::Regular => 0,
         PageSize::Huge => 1,
+        PageSize::Huge1G => return Err(SvsmError::Mem),
     };
     let rax: u64 = addr.bits() as u64;
     let rdx: u64 = flags.bits();
