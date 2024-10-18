@@ -450,6 +450,42 @@ pub enum Mapping<'a> {
     Level0(&'a mut PTEntry),
 }
 
+/// A physical address within a page frame
+#[derive(Debug)]
+pub enum PageFrame {
+    Size4K(PhysAddr),
+    Size2M(PhysAddr),
+    Size1G(PhysAddr),
+}
+
+impl PageFrame {
+    pub fn address(&self) -> PhysAddr {
+        match *self {
+            Self::Size4K(pa) => pa,
+            Self::Size2M(pa) => pa,
+            Self::Size1G(pa) => pa,
+        }
+    }
+
+    fn size(&self) -> usize {
+        let sz = match *self {
+            Self::Size4K(_) => PageSize::Regular,
+            Self::Size2M(_) => PageSize::Huge,
+            Self::Size1G(_) => PageSize::Huge1G,
+        };
+        usize::from(sz)
+    }
+
+    pub fn start(&self) -> PhysAddr {
+        let end = self.address().bits() & !(self.size() - 1);
+        end.into()
+    }
+
+    pub fn end(&self) -> PhysAddr {
+        self.start() + self.size()
+    }
+}
+
 /// Page table structure containing a root page with multiple entries.
 #[repr(C)]
 #[derive(Default, Debug)]
