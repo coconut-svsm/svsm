@@ -7,12 +7,12 @@
 use crate::address::{VirtAddr, VirtPhysPair};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::this_cpu;
+use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
 use crate::hyperv;
-use crate::hyperv::HyperVMsr;
+use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
@@ -57,6 +57,24 @@ impl<'a> HypercallPagesGuard<'a> {
             output,
             _irq_guard: IrqGuard::new(),
         }
+    }
+
+    /// Casts a hypercall input page into a header of type `H` and returns a
+    /// reference to that header object.
+    ///
+    /// This function requires the use of `mut self` because it generates
+    /// mutable references to the addresses described by the hypercall pages,
+    /// but the compiler cannot understand that relationship.  Therefore,
+    /// suppress the warning for needless mut because it is actually required
+    /// in this case.
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    fn hypercall_input<H>(&mut self) -> &mut H {
+        let header = self.input.vaddr.as_mut_ptr::<H>();
+        assert!(size_of::<H>() <= PAGE_SIZE);
+        // SAFETY - the virtual address represents an entire page which is
+        // exclusively owned by the `HypercallPagesGuard` and can safely be
+        // cast to a header of type `H`.
+        unsafe { &mut *header }
     }
 
     /// Divides a hypercall input page into a header of type `H` and a slice
@@ -136,7 +154,9 @@ struct HvHypercallOutput {
 
 #[repr(u16)]
 enum HvCallCode {
+    EnableVpVtl = 0xf,
     GetVpRegister = 0x50,
+    StartVirtualProcessor = 0x99,
 }
 
 pub const HV_PARTITION_ID_SELF: u64 = 0xFFFF_FFFF_FFFF_FFFF;
@@ -256,4 +276,96 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
     drop(hypercall_pages);
 
     Ok(reg)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct HvInputEnableVpVtl {
+    partition_id: u64,
+    vp_index: u32,
+    vtl: u8,
+    _rsvd: [u8; 3],
+    context: hyperv::HvInitialVpContext,
+}
+
+fn enable_vp_vtl_hypercall(
+    cpu: &PerCpu,
+    vtl: u8,
+    context: &HvInitialVpContext,
+) -> Result<(), SvsmError> {
+    let input_header = HvInputEnableVpVtl {
+        partition_id: HV_PARTITION_ID_SELF,
+        vtl,
+        vp_index: cpu.get_apic_id(),
+        context: *context,
+        ..Default::default()
+    };
+
+    let input_control = HvHypercallInput::new().with_call_code(HvCallCode::EnableVpVtl as u16);
+
+    let mut hypercall_pages = this_cpu().get_hypercall_pages();
+    let header = hypercall_pages.hypercall_input::<HvInputEnableVpVtl>();
+    *header = input_header;
+
+    // SAFETY - the EnableVpVtl hypercall does not write to any memory and
+    // does not consume memory that is not included in the hypercall input.
+    let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
+    let status = call_output.status();
+
+    if status != 0 {
+        Err(HyperV(status))
+    } else {
+        Ok(())
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct HvInputStartVirtualProcessor {
+    partition_id: u64,
+    vp_index: u32,
+    vtl: u8,
+    _rsvd: [u8; 3],
+    context: hyperv::HvInitialVpContext,
+}
+
+fn start_vp_hypercall(
+    cpu: &PerCpu,
+    vtl: u8,
+    context: &HvInitialVpContext,
+) -> Result<(), SvsmError> {
+    let input_header = HvInputStartVirtualProcessor {
+        partition_id: HV_PARTITION_ID_SELF,
+        vtl,
+        vp_index: cpu.get_apic_id(),
+        context: *context,
+        ..Default::default()
+    };
+
+    let input_control =
+        HvHypercallInput::new().with_call_code(HvCallCode::StartVirtualProcessor as u16);
+
+    let mut hypercall_pages = this_cpu().get_hypercall_pages();
+    let header = hypercall_pages.hypercall_input::<HvInputStartVirtualProcessor>();
+    *header = input_header;
+
+    // SAFETY - the StartVp hypercall does not write to any memory and does not
+    // consume memory that is not included in the hypercall input.
+    let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
+    let status = call_output.status();
+
+    if status != 0 {
+        Err(HyperV(status))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn hyperv_start_cpu(cpu: &PerCpu, context: &HvInitialVpContext) -> Result<(), SvsmError> {
+    // Enable the current VTL on the target CPU if the current VTL is not
+    // VTL 0.
+    let vtl = *CURRENT_VTL;
+    if vtl != 0 {
+        enable_vp_vtl_hypercall(cpu, vtl, context)?;
+    }
+    start_vp_hypercall(cpu, vtl, context)
 }
