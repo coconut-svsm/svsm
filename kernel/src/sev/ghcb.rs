@@ -738,13 +738,6 @@ global_asm!(
         /* An aborted VMPL switch is treated as a successful switch. */
         .globl switch_vmpl_cancel
     switch_vmpl_cancel:
-        /* Process any pending events if NoFurtherSignal has been set. */
-        test %rdi, %rdi
-        jz no_pending_events
-        testw $0x8000, (%rdi)
-        jz no_pending_events
-        call process_hv_events
-    no_pending_events:
         movl $1, %eax
         ret
         "#,
