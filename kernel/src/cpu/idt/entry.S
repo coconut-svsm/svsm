@@ -84,11 +84,7 @@ asm_entry_hv:
 	pushq	$0
 	pushq	%rax
 	pushq 	%rbx
-        pushq   %rcx
-	// Check whether interrupts were enabled at the time of #HV.  If so,
-	// commit to processing all #HV events immediately.
-	testl 	$0x200, 0x30(%rsp)
-	jnz	continue_hv
+	pushq   %rcx
 	// Check whether the trap RIP is within the guest VMPL return window.
 	movq	0x20(%rsp), %rax // fetch RIP from the trap frame.
 	leaq	switch_vmpl_window_start(%rip), %rbx
@@ -100,18 +96,19 @@ asm_entry_hv:
 	// RIP is in the return window, so update RIP to the cancel point.
 	leaq	switch_vmpl_cancel(%rip), %rbx
 	movq	%rbx, 0x20(%rsp)
-	// Defer any further processing until interrupts can be processed.
-	jmp	postpone_hv
+	// Continue processing the #HV
+	jmp	hv_check_if
+
 hv_not_vmpl_switch:
 	// Load the RSP value that was live at the time of the #HV.
 	movq	0x38(%rsp), %rcx
 	// Check to see whether this interrupt occurred on the IRET path
 	leaq	iret_return_window(%rip), %rbx
 	cmp	%rbx, %rax
-	jb	postpone_hv
+	jb	hv_check_if
 	leaq	default_iret(%rip), %rbx
 	cmp	%rbx, %rax
-	ja	postpone_hv
+	ja	hv_check_if
 	// RIP is within the IRET sequence, so the IRET should be aborted, and
 	// the previous exception should be handled as if it were #HV.  At this
 	// point, there are two possibilities.  If RIP is before the IRET
@@ -141,6 +138,12 @@ hv_not_vmpl_switch:
 	// processing.
 	movq	%rcx, %rsp
 	jmp	handle_as_hv
+
+hv_check_if:
+	// Check whether interrupts were enabled at the time of #HV.  If so,
+	// commit to processing all #HV events immediately.
+	testl 	$0x200, 0x30(%rsp)
+	jnz	continue_hv
 
 postpone_hv:
 	popq	%rcx
