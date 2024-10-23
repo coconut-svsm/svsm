@@ -3,6 +3,7 @@
 // Copyright (c) 2024 SUSE LLC
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
+#![forbid(unsafe_code)]
 
 use std::error::Error;
 use std::fs::{self, File};
