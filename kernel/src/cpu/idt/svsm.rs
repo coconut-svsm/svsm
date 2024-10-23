@@ -16,8 +16,10 @@ use super::common::{
     VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
+use crate::mm::GuestPtr;
 use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
 
@@ -202,6 +204,51 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
     }
 }
 
+// Control-Protection handler
+#[no_mangle]
+extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vector: usize) {
+    // From AMD64 Architecture Programmer's Manual, Volume 2, 8.4.3
+    // Control-Protection Error Code:
+    /// A RET (near) instruction encountered a return address mismatch.
+    const NEAR_RET: usize = 1;
+    /// A RET (far) or IRET instruction encountered a return address mismatch.
+    const FAR_RET_IRET: usize = 2;
+    /// An RSTORSSP instruction encountered an invalid shadow stack restore
+    /// token.
+    const RSTORSSP: usize = 4;
+    /// A SETSSBSY instruction encountered an invalid supervisor shadow stack
+    /// token.
+    const SETSSBSY: usize = 5;
+
+    let rip = ctxt.frame.rip;
+    match ctxt.error_code & 0x7fff {
+        code @ (NEAR_RET | FAR_RET_IRET) => {
+            // Read the return address on the normal stack.
+            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.frame.rsp));
+            let ret = unsafe { ret_ptr.read() }.expect("Failed to read return address");
+
+            // Read the return address on the shadow stack.
+            let prev_rssp_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.ssp));
+            let prev_rssp = unsafe { prev_rssp_ptr.read() }
+                .expect("Failed to read address of previous shadow stack pointer");
+            // The offset to the return pointer is different for RET and IRET.
+            let offset = if code == NEAR_RET { 0 } else { 8 };
+            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(prev_rssp + offset));
+            let ret_on_ssp =
+                unsafe { ret_ptr.read() }.expect("Failed to read return address on shadow stack");
+
+            panic!("thread tried to return to {ret:#x}, but return address on shadow stack was {ret_on_ssp:#x}!");
+        }
+        RSTORSSP => {
+            panic!("rstorssp instruction encountered an unexpected shadow stack restore token at RIP {rip:#018x}");
+        }
+        SETSSBSY => {
+            panic!("setssbsy instruction encountered an unexpected supervisor shadow stack token at RIP {rip:#018x}");
+        }
+        code => unreachable!("unexpected code for #CP exception: {code}"),
+    }
+}
+
 // VMM Communication handler
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
@@ -262,4 +309,16 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
     SVSM_PLATFORM.as_dyn_ref().eoi();
 }
 
-global_asm!(include_str!("entry.S"), options(att_syntax));
+global_asm!(
+    // Make the value of the `shadow-stacks` feature usable in assembly.
+    ".set const_false, 0",
+    ".set const_true, 1",
+    concat!(
+        ".set CFG_SHADOW_STACKS, const_",
+        cfg!(feature = "shadow-stacks")
+    ),
+    // Include the assembly.
+    include_str!("entry.S"),
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
+    options(att_syntax)
+);

@@ -229,7 +229,8 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
-    ctx.frame.rip += insn_ctx.as_ref().map_or(0, |d| d.size())
+    let new_rip = ctx.frame.rip + insn_ctx.as_ref().map_or(0, |d| d.size());
+    ctx.set_rip(new_rip);
 }
 
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
