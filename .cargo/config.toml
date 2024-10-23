@@ -11,3 +11,7 @@ rustflags = [
 rustflags = [
        "-C", "code-model=kernel",
 ]
+
+[alias]
+vfmt = "run-script vfmt" # Format verus codes
+verify = "v build --features verus"

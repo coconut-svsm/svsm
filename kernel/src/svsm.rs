@@ -94,7 +94,7 @@ global_asm!(
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
-const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
+const _: () = assert!(core::mem::size_of::<SnpCpuidTable>() <= PAGE_SIZE);
 
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;

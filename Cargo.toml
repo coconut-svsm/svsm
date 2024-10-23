@@ -14,6 +14,9 @@ members = [
     "libmstpm",
     # syscall interface definitions
     "syscall",
+    # verification libraries for svsm
+    "verify_proof",
+    "verify_external",
 ]
 
 
@@ -49,6 +52,15 @@ zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
 # other repos
 packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 
+# Verus repos
+builtin = { git = "https://github.com/verus-lang/verus", rev ="2776465", default-features = false }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="2776465", default-features = false }
+vstd = { git = "https://github.com/verus-lang/verus", rev ="2776465", features = ["alloc"], default-features = false }
+
+# Verification libs
+verify_proof = { path = "verify_proof", default-features = false  }
+verify_external = { path = "verify_external", default-features = false  }
+
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
 nonstandard_style = { level = "deny", priority = 126 }
@@ -80,3 +92,6 @@ suboptimal_flops = "warn"
 # TODO: fires many times, fix then enable.
 # undocumented_unsafe_blocks = "warn"
 unnecessary_box_returns = "warn"
+
+[workspace.metadata.scripts]
+vfmt = "verusfmt `find ./ -name *.verus.rs`"
