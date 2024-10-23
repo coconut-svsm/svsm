@@ -271,8 +271,6 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
-        let pgtable = this_cpu().get_pgtable().clone_shared()?;
-        cpu.setup(self, pgtable)?;
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
