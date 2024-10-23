@@ -98,7 +98,7 @@ pub trait SvsmPlatform {
 
     /// Marks a virtual range of pages as valid or invalid for use as private
     /// pages.  Provided primarily for use in stage2 where validation by
-    /// physical address cannot e supported.
+    /// physical address cannot be supported.
     fn validate_virtual_page_range(
         &self,
         region: MemoryRegion<VirtAddr>,
