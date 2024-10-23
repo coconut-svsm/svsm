@@ -1,8 +1,7 @@
 name: Verification
 
 on:
-  push:
-    branches: [ "verify" ]
+  workflow_dispatch:
   pull_request:
     branches: [ "verify" ]
 
@@ -40,9 +39,13 @@ jobs:
       - name: Install verus toolchains
         run: ./scripts/vinstall.sh
 
-      - name: Build with verus
+      - name: Verify svsm with verus
         run: cargo verify
         working-directory: kernel
+
+      - name: Verify extra proof libs with verus
+        run: cargo verify
+        working-directory: verify_proof
 
       - name: Build without verifying
         run: cargo build

@@ -16,8 +16,9 @@ members = [
     "syscall",
     # PackIt library and command line utility
     "packit",
-    # verification library for svsm
-    "verismo"
+    # verification libraries for svsm
+    "verify_proof",
+    "verify_external",
 ]
 
 
@@ -52,12 +53,13 @@ uuid = "1.6.1"
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
 
 # Verus repos
-builtin = { git = "https://github.com/verus-lang/verus", rev ="0ee96be2", default-features = false }
-builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="0ee96be2", default-features = false  }
-vstd = { git = "https://github.com/verus-lang/verus", rev ="0ee96be2", features = ["alloc"], default-features = false }
+builtin = { git = "https://github.com/verus-lang/verus", rev ="2776465", default-features = false }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="2776465", default-features = false }
+vstd = { git = "https://github.com/verus-lang/verus", rev ="2776465", features = ["alloc"], default-features = false }
 
 # Verification libs
-verismo = { path = "verismo", default-features = false  }
+verify_proof = { path = "verify_proof", default-features = false  }
+verify_external = { path = "verify_external", default-features = false  }
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }

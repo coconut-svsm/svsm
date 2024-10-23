@@ -166,12 +166,12 @@ dependencies = [
 [[package]]
 name = "builtin"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 
 [[package]]
 name = "builtin_macros"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 dependencies = [
  "prettyplease_verus",
  "proc-macro2",
@@ -768,7 +768,7 @@ dependencies = [
 [[package]]
 name = "prettyplease_verus"
 version = "0.1.15"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 dependencies = [
  "proc-macro2",
  "syn_verus",
@@ -901,7 +901,7 @@ dependencies = [
 [[package]]
 name = "state_machines_macros"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 dependencies = [
  "indexmap",
  "proc-macro2",
@@ -949,7 +949,8 @@ dependencies = [
  "rustc_version",
  "syscall",
  "test",
- "verismo",
+ "verify_external",
+ "verify_proof",
  "vstd",
  "zerocopy 0.8.10",
 ]
@@ -988,7 +989,7 @@ dependencies = [
 [[package]]
 name = "syn_verus"
 version = "1.0.95"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1107,7 +1108,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8c5f0a0af699448548ad1a2fbf920fb4bee257eae39953ba95cb84891a0446a"
 
 [[package]]
-name = "verismo"
+name = "verify_external"
+version = "0.1.0"
+dependencies = [
+ "builtin",
+ "builtin_macros",
+ "vstd",
+]
+
+[[package]]
+name = "verify_proof"
 version = "0.1.0"
 dependencies = [
  "builtin",
@@ -1126,7 +1136,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vstd"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=0ee96be2#0ee96be22afe96fc15a228db7eaba8350e9bcbf8"
+source = "git+https://github.com/verus-lang/verus?rev=2776465#27764656a55aa214134f79187aac28435ae52ebc"
 dependencies = [
  "builtin",
  "builtin_macros",

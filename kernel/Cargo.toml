@@ -39,7 +39,8 @@ zerocopy.workspace = true
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
 vstd = { workspace = true, optional = true }
-verismo = { workspace = true, optional = true}
+verify_proof = { workspace = true, optional = true}
+verify_external = { workspace = true, optional = true}
 
 [target."x86_64-unknown-none".dev-dependencies]
 test.workspace = true
@@ -51,8 +52,8 @@ vtpm = ["dep:libtcgtpm"]
 nosmep = []
 nosmap = []
 shadow-stacks = []
-verus_no_dep_verify = ["verus", "verismo/noverify"]
-verus = ["vstd", "builtin", "verismo/verus"]
+verus_all = ["vstd", "builtin", "verify_proof/verus", "verify_external/verus"]
+verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
 
 [dev-dependencies]

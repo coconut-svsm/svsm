@@ -3,10 +3,12 @@
 // Copyright (c) Microsoft Corporation
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
-use vstd::prelude::*;
-
 verus! {
 
-global size_of usize == 8;
+pub broadcast group group_types_proof {
+    verify_proof::bits::lemma_bit_usize_shl_values,
+}
+
+broadcast use group_types_proof;
 
 } // verus!
