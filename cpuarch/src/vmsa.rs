@@ -9,44 +9,51 @@
 use bitfield_struct::bitfield;
 use zerocopy::FromZeros;
 
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, FromZeros, PartialEq)]
+#[allow(dead_code)]
+pub struct GuestVMExit(u64);
+
+impl Default for GuestVMExit {
+    #[inline]
+    fn default() -> Self {
+        Self::INVALID
+    }
+}
+
 // AE Exitcodes
 // Table 15-35, AMD64 Architecture Programmer’s Manual, Vol. 2
-#[repr(u64)]
-#[derive(Clone, Copy, Default, Debug, FromZeros)]
-#[allow(dead_code)]
-pub enum GuestVMExit {
-    CR0_READ = 0,
-    MC = 0x52,
-    INTR = 0x60,
-    NMI = 0x61,
-    SMI = 0x62,
-    INIT = 0x63,
-    VINTR = 0x64,
-    PAUSE = 0x77,
-    HLT = 0x78,
-    SHUTDOWN = 0x7F,
-    EFER_WRITE_TRAP = 0x8F,
-    CR0_WRITE_TRAP = 0x90,
-    CR1_WRITE_TRAP = 0x91,
-    CR2_WRITE_TRAP = 0x92,
-    CR3_WRITE_TRAP = 0x93,
-    CR4_WRITE_TRAP = 0x94,
-    CR5_WRITE_TRAP = 0x95,
-    CR6_WRITE_TRAP = 0x96,
-    CR7_WRITE_TRAP = 0x97,
-    CR8_WRITE_TRAP = 0x98,
-    CR9_WRITE_TRAP = 0x99,
-    CR10_WRITE_TRAP = 0x9a,
-    CR11_WRITE_TRAP = 0x9b,
-    CR12_WRITE_TRAP = 0x9c,
-    CR13_WRITE_TRAP = 0x9d,
-    CR14_WRITE_TRAP = 0x9e,
-    CR15_WRITE_TRAP = 0x9f,
-    NPF = 0x400,
-    VMGEXIT = 0x403,
-    #[default]
-    INVALID = 0xffffffffffffffff,
-    BUSY = 0xfffffffffffffffe,
+impl GuestVMExit {
+    pub const MC: Self = Self(0x52);
+    pub const INTR: Self = Self(0x60);
+    pub const NMI: Self = Self(0x61);
+    pub const SMI: Self = Self(0x62);
+    pub const INIT: Self = Self(0x63);
+    pub const VINTR: Self = Self(0x64);
+    pub const PAUSE: Self = Self(0x77);
+    pub const HLT: Self = Self(0x78);
+    pub const SHUTDOWN: Self = Self(0x7F);
+    pub const EFER_WRITE_TRAP: Self = Self(0x8F);
+    pub const CR0_WRITE_TRAP: Self = Self(0x90);
+    pub const CR1_WRITE_TRAP: Self = Self(0x91);
+    pub const CR2_WRITE_TRAP: Self = Self(0x92);
+    pub const CR3_WRITE_TRAP: Self = Self(0x93);
+    pub const CR4_WRITE_TRAP: Self = Self(0x94);
+    pub const CR5_WRITE_TRAP: Self = Self(0x95);
+    pub const CR6_WRITE_TRAP: Self = Self(0x96);
+    pub const CR7_WRITE_TRAP: Self = Self(0x97);
+    pub const CR8_WRITE_TRAP: Self = Self(0x98);
+    pub const CR9_WRITE_TRAP: Self = Self(0x99);
+    pub const CR10_WRITE_TRAP: Self = Self(0x9a);
+    pub const CR11_WRITE_TRAP: Self = Self(0x9b);
+    pub const CR12_WRITE_TRAP: Self = Self(0x9c);
+    pub const CR13_WRITE_TRAP: Self = Self(0x9d);
+    pub const CR14_WRITE_TRAP: Self = Self(0x9e);
+    pub const CR15_WRITE_TRAP: Self = Self(0x9f);
+    pub const NPF: Self = Self(0x400);
+    pub const VMGEXIT: Self = Self(0x403);
+    pub const INVALID: Self = Self(0xffffffffffffffff);
+    pub const BUSY: Self = Self(0xfffffffffffffffe);
 }
 
 #[bitfield(u64)]
