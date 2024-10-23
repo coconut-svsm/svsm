@@ -168,21 +168,18 @@ impl IgvmBuilder {
             self.initialization,
             self.directives,
         )
-        .map_err(|e| {
+        .inspect_err(|_| {
             eprintln!("Failed to create output file");
-            e
         })?;
 
         let mut binary_file = Vec::new();
         file.serialize(&mut binary_file)?;
 
-        let mut output = File::create(&self.options.output).map_err(|e| {
+        let mut output = File::create(&self.options.output).inspect_err(|_| {
             eprintln!("Failed to create output file {}", self.options.output);
-            e
         })?;
-        output.write_all(binary_file.as_slice()).map_err(|e| {
+        output.write_all(binary_file.as_slice()).inspect_err(|_| {
             eprintln!("Failed to write output file {}", self.options.output);
-            e
         })?;
         Ok(())
     }
@@ -518,9 +515,8 @@ impl IgvmBuilder {
         compatibility_mask: u32,
     ) -> Result<(), Box<dyn Error>> {
         let mut gpa = gpa_start;
-        let mut in_file = File::open(path).map_err(|e| {
+        let mut in_file = File::open(path).inspect_err(|_| {
             eprintln!("Could not open input file {}", path);
-            e
         })?;
         let mut buf = vec![0; 4096];
 

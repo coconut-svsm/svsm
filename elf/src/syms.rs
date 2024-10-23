@@ -34,7 +34,6 @@ impl<'a> Elf64Strtab<'a> {
     ///
     /// - [`Result<&'a ffi::CStr, ElfError>`]: A [`Result`] containing the string as a CStr reference
     ///   if found, or an [`ElfError`] if the index is out of bounds or the string is invalid.
-    #[allow(unused)]
     pub fn get_str(&self, index: Elf64Word) -> Result<&'a ffi::CStr, ElfError> {
         let index = usize::try_from(index).unwrap();
         if index >= self.strtab_buf.len() {
@@ -50,20 +49,16 @@ impl<'a> Elf64Strtab<'a> {
 #[derive(Debug, Copy, Clone)]
 pub struct Elf64Sym {
     /// Name of the symbol as an index into the string table
-    #[allow(unused)]
     pub st_name: Elf64Word,
     /// Symbol information and binding attributes
-    #[allow(unused)]
     pub st_info: Elf64char,
     /// Reserved for additional symbol attributes (unused)
-    #[allow(unused)]
     pub st_other: Elf64char,
     /// Section index associated with the symbol
     pub st_shndx: Elf64Half,
     /// Value or address of the symbol
     pub st_value: Elf64Addr,
     /// Size of the symbol in bytes
-    #[allow(unused)]
     pub st_size: Elf64Xword,
 }
 

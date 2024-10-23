@@ -122,9 +122,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     let lock = PVALIDATE_LOCK.lock_write();
 
     // Make sure the guest can't make modifications to the VMSA page
-    rmp_revoke_guest_access(vaddr, PageSize::Regular).map_err(|err| {
+    rmp_revoke_guest_access(vaddr, PageSize::Regular).inspect_err(|_| {
         core_create_vcpu_error_restore(Some(paddr), None);
-        err
     })?;
 
     // TLB flush needed to propagate new permissions
@@ -140,9 +139,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     // Set the VMSA bit
-    rmp_set_guest_vmsa(vaddr).map_err(|err| {
+    rmp_set_guest_vmsa(vaddr).inspect_err(|_| {
         core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
-        err
     })?;
 
     drop(lock);

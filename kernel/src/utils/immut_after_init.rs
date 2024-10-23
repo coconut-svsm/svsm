@@ -124,7 +124,7 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         self.set_init();
         (*self.data.get())
             .as_mut_ptr()
-            .copy_from_nonoverlapping(v as *const T, 1)
+            .copy_from_nonoverlapping(v, 1)
     }
 
     // The caller must ensure that the cell is initialized

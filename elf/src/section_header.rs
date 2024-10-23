@@ -48,7 +48,6 @@ pub struct Elf64Shdr {
     pub sh_info: Elf64Word,
     /// Address alignment constraint
     pub sh_addralign: Elf64Xword,
-    #[allow(unused)]
     /// Size of each entry
     pub sh_entsize: Elf64Xword,
 }

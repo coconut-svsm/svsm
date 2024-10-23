@@ -92,7 +92,7 @@ impl From<GhcbError> for SvsmError {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u64)]
-#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
+#[expect(non_camel_case_types, clippy::upper_case_acronyms)]
 enum GHCBExitCode {
     RDTSC = 0x6e,
     IOIO = 0x7b,
@@ -720,7 +720,7 @@ global_asm!(
          * GHCB page.  Run VMPL request is 0x16 and response is 0x17. */
         movl $0x16, %eax
         movl %esi, %edx
-        movl $0xC0010130, %ecx
+        movl ${SEV_GHCB}, %ecx
         wrmsr
         rep; vmmcall
 
@@ -748,6 +748,7 @@ global_asm!(
         movl $1, %eax
         ret
         "#,
+    SEV_GHCB = const SEV_GHCB,
     options(att_syntax)
 );
 

@@ -101,7 +101,7 @@ struct ApicIcr {
 
 // This structure must never be copied because a silent copy will cause APIC
 // state to be lost.
-#[allow(missing_copy_implementations)]
+#[expect(missing_copy_implementations)]
 #[derive(Default, Debug)]
 pub struct LocalApic {
     irr: [u32; 8],

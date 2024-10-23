@@ -392,7 +392,7 @@ impl MemoryRegion {
     }
 
     /// Converts a physical address within this memory region to a virtual address.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
         let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
 
@@ -411,7 +411,7 @@ impl MemoryRegion {
     }
 
     /// Converts a virtual address to a physical address within the memory region.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn virt_to_phys(&self, vaddr: VirtAddr) -> Option<PhysAddr> {
         let offset = self.get_virt_offset(vaddr)?;
         Some(self.start_phys + offset)
@@ -1148,7 +1148,7 @@ impl<const N: u16> SlabPage<N> {
     }
 
     /// Free the memory (destroy) the [`SlabPage`]
-    #[allow(clippy::needless_pass_by_ref_mut)]
+    #[expect(clippy::needless_pass_by_ref_mut)]
     fn destroy(&mut self) {
         if self.vaddr.is_null() {
             return;
@@ -1610,7 +1610,6 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 }
 
 #[cfg_attr(any(target_os = "none"), global_allocator)]
-#[cfg_attr(not(target_os = "none"), allow(dead_code))]
 static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start
@@ -1676,7 +1675,7 @@ pub const DEFAULT_TEST_MEMORY_SIZE: usize = 16usize * 1024 * 1024;
 /// A dummy struct to acquire a lock over global memory for tests.
 #[cfg(any(test, fuzzing))]
 #[derive(Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
 #[cfg(any(test, fuzzing))]

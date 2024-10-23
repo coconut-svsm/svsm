@@ -32,7 +32,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 pub struct RawLockGuard<'a, T, I = IrqUnsafeLocking> {
     holder: &'a AtomicU64,
     data: &'a mut T,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     irq_state: I,
 }
 

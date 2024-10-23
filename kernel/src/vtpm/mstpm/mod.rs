@@ -14,7 +14,7 @@ mod wrapper;
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::{ffi::c_void, ptr::addr_of_mut};
+use core::ffi::c_void;
 use libmstpm::bindings::{
     TPM_Manufacture, TPM_TearDown, _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable,
     _plat__RunCommand, _plat__SetNvAvail, _plat__Signal_PowerOn, _plat__Signal_Reset,
@@ -101,8 +101,8 @@ impl MsTpmSimulatorInterface for MsTpm {
             _plat__RunCommand(
                 request_ffi.len() as u32,
                 request_ffi.as_mut_ptr().cast::<u8>(),
-                addr_of_mut!(response_ffi_size),
-                addr_of_mut!(response_ffi_p),
+                &raw mut response_ffi_size,
+                &raw mut response_ffi_p,
             );
             if response_ffi_size == 0 || response_ffi_size as usize > response_ffi.capacity() {
                 return Err(SvsmReqError::invalid_request());

@@ -27,9 +27,8 @@ mod utils;
 fn main() -> Result<(), Box<dyn Error>> {
     let options = CmdOptions::parse();
 
-    let igvm_buffer = fs::read(&options.input).map_err(|e| {
+    let igvm_buffer = fs::read(&options.input).inspect_err(|_| {
         eprintln!("Failed to open firmware file {}", options.input);
-        e
     })?;
     let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
     let platform = match options.platform {
@@ -121,20 +120,17 @@ fn sign_command(
         igvm.initializations().to_vec(),
         directives,
     )
-    .map_err(|e| {
+    .inspect_err(|_| {
         eprintln!("Failed to create signed IGVM output file");
-        e
     })?;
     let mut binary_file = Vec::new();
     signed_file.serialize(&mut binary_file)?;
 
-    let mut file = File::create(output).map_err(|e| {
+    let mut file = File::create(output).inspect_err(|_| {
         eprintln!("Failed to create output file {}", output);
-        e
     })?;
-    file.write_all(binary_file.as_slice()).map_err(|e| {
+    file.write_all(binary_file.as_slice()).inspect_err(|_| {
         eprintln!("Failed to write output file {}", output);
-        e
     })?;
 
     println!("Successfully created signed file: {}", output);

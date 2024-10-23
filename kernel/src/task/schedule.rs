@@ -40,6 +40,7 @@ use crate::locking::SpinLock;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
+use core::mem::offset_of;
 use core::ptr::null_mut;
 use intrusive_collections::LinkedList;
 
@@ -399,14 +400,14 @@ global_asm!(
         // Save the current stack pointer
         testq   %rsi, %rsi
         jz      1f
-        movq    %rsp, (%rsi)
+        movq    %rsp, {TASK_RSP_OFFSET}(%rsi)
 
     1:
         // Switch to the new task state
         mov     %rdx, %cr3
 
         // Switch to the new task stack
-        movq    (%rdi), %rsp
+        movq    {TASK_RSP_OFFSET}(%rdi), %rsp
 
         // We've already restored rsp
         addq        $8, %rsp
@@ -431,5 +432,6 @@ global_asm!(
 
         ret
     "#,
+    TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     options(att_syntax)
 );

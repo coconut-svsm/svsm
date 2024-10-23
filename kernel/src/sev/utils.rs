@@ -12,7 +12,7 @@ use core::arch::asm;
 use core::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum SevSnpError {
     FAIL_INPUT(u64),
     FAIL_PERMISSION(u64),
@@ -106,7 +106,7 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
 
     unsafe {
         asm!("xorq %r8, %r8",
-            ".byte 0xf2, 0x0f, 0x01, 0xff",
+             "pvalidate",
              "jnc 1f",
              "incq %r8",
              "1:",
@@ -199,7 +199,7 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(),
     let mut ex: u64;
 
     unsafe {
-        asm!("1: .byte 0xf3, 0x0f, 0x01, 0xfe
+        asm!("1: rmpadjust
                  xorq %rcx, %rcx
               2:
               .pushsection \"__exception_table\",\"a\"

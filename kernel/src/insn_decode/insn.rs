@@ -111,7 +111,6 @@ pub mod test_utils {
     pub const TEST_PORT: u16 = 0xE0;
 
     /// A dummy struct to implement InsnMachineCtx for testing purposes.
-    #[allow(dead_code)]
     #[derive(Copy, Clone, Debug)]
     pub struct TestCtx {
         pub efer: u64,
@@ -174,7 +173,7 @@ pub mod test_utils {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code))]
     struct TestMem<T: Copy> {
         ptr: *mut T,
     }
@@ -295,7 +294,7 @@ pub mod test_utils {
             _shared: bool,
             size: Bytes,
         ) -> Result<u64, InsnError> {
-            if pa != core::ptr::addr_of!(self.mmio_reg) as usize {
+            if pa != &raw const self.mmio_reg as usize {
                 return Ok(0);
             }
 
@@ -315,7 +314,7 @@ pub mod test_utils {
             size: Bytes,
             data: u64,
         ) -> Result<(), InsnError> {
-            if pa != core::ptr::addr_of!(self.mmio_reg) as usize {
+            if pa != &raw const self.mmio_reg as usize {
                 return Ok(());
             }
 
@@ -772,7 +771,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[0]) as usize,
+            rdi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -788,7 +787,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len() * Bytes::One as usize,
+                testdata.as_ptr() as usize + testdata.len() * Bytes::One as usize,
                 testctx.rdi
             );
             assert_eq!(i, testdata.len() - 1);
@@ -803,7 +802,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rdi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -820,7 +819,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata[0]) as usize - Bytes::One as usize,
+                testdata.as_ptr() as usize - Bytes::One as usize,
                 testctx.rdi
             );
             assert_eq!(i, 0);
@@ -844,7 +843,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[0]) as usize,
+            rdi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -860,7 +859,7 @@ mod tests {
             assert_eq!(decoded.size(), 3);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len() * Bytes::Two as usize,
+                testdata.as_ptr() as usize + testdata.len() * Bytes::Two as usize,
                 testctx.rdi
             );
             assert_eq!(i, testdata.len() - 1);
@@ -875,7 +874,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rdi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -892,7 +891,7 @@ mod tests {
             assert_eq!(decoded.size(), 3);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize - Bytes::Two as usize,
+                testdata.as_ptr() as usize - Bytes::Two as usize,
                 testctx.rdi
             );
             assert_eq!(i, 0);
@@ -916,7 +915,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[0]) as usize,
+            rdi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -932,7 +931,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len() * Bytes::Four as usize,
+                testdata.as_ptr() as usize + testdata.len() * Bytes::Four as usize,
                 testctx.rdi
             );
             assert_eq!(i, testdata.len() - 1);
@@ -947,7 +946,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rdi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -964,7 +963,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize - Bytes::Four as usize,
+                testdata.as_ptr() as usize - Bytes::Four as usize,
                 testctx.rdi
             );
             assert_eq!(i, 0);
@@ -988,7 +987,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata[0]) as usize,
+            rsi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -1003,10 +1002,7 @@ mod tests {
             assert_eq!(decoded.insn().unwrap(), DecodedInsn::Outs);
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
-            assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len(),
-                testctx.rsi
-            );
+            assert_eq!(testdata.as_ptr() as usize + testdata.len(), testctx.rsi);
             assert_eq!(i, testdata.len() - 1);
             for (i, d) in testdata.iter().enumerate() {
                 assert_eq!(d, iodata.get(i).unwrap());
@@ -1019,7 +1015,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rsi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -1036,7 +1032,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata[0]) as usize - Bytes::One as usize,
+                testdata.as_ptr() as usize - Bytes::One as usize,
                 testctx.rsi
             );
             assert_eq!(i, 0);
@@ -1060,7 +1056,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata[0]) as usize,
+            rsi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -1076,7 +1072,7 @@ mod tests {
             assert_eq!(decoded.size(), 3);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len() * Bytes::Two as usize,
+                testdata.as_ptr() as usize + testdata.len() * Bytes::Two as usize,
                 testctx.rsi
             );
             assert_eq!(i, testdata.len() - 1);
@@ -1091,7 +1087,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rsi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -1108,7 +1104,7 @@ mod tests {
             assert_eq!(decoded.size(), 3);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata[0]) as usize - Bytes::Two as usize,
+                testdata.as_ptr() as usize - Bytes::Two as usize,
                 testctx.rsi
             );
             assert_eq!(i, 0);
@@ -1132,7 +1128,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata) as usize,
+            rsi: testdata.as_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -1149,7 +1145,7 @@ mod tests {
             assert_eq!(*testdata.last().unwrap() as u64, testctx.iodata);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata) as usize + testdata.len() * Bytes::Four as usize,
+                testdata.as_ptr() as usize + testdata.len() * Bytes::Four as usize,
                 testctx.rsi
             );
             assert_eq!(i, testdata.len() - 1);
@@ -1164,7 +1160,7 @@ mod tests {
         testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rsi: core::ptr::addr_of!(testdata[testdata.len() - 1]) as usize,
+            rsi: &raw const testdata[testdata.len() - 1] as usize,
             flags: RFlags::DF.bits(),
             ..Default::default()
         };
@@ -1181,7 +1177,7 @@ mod tests {
             assert_eq!(decoded.size(), 2);
             assert_eq!(0, testctx.rcx);
             assert_eq!(
-                core::ptr::addr_of!(testdata[0]) as usize - Bytes::Four as usize,
+                testdata.as_ptr() as usize - Bytes::Four as usize,
                 testctx.rsi
             );
             assert_eq!(i, 0);
@@ -1203,7 +1199,7 @@ mod tests {
             rax: 0xab,
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
@@ -1221,7 +1217,7 @@ mod tests {
             rax: 0x1234567890abcdef,
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
@@ -1242,7 +1238,7 @@ mod tests {
             mmio_reg: 0xab,
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
@@ -1260,7 +1256,7 @@ mod tests {
             mmio_reg: 0x1234567890abcdef,
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
@@ -1281,7 +1277,7 @@ mod tests {
             mmio_reg: 0x12345678,
             ..Default::default()
         };
-        let addr = (core::ptr::addr_of!(testctx.mmio_reg) as usize).to_le_bytes();
+        let addr = (&raw const testctx.mmio_reg as usize).to_le_bytes();
         raw_insn[1..9].copy_from_slice(&addr);
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
@@ -1303,7 +1299,7 @@ mod tests {
             rax: 0x12345678,
             ..Default::default()
         };
-        let addr = (core::ptr::addr_of!(testctx.mmio_reg) as usize).to_le_bytes();
+        let addr = (&raw const testctx.mmio_reg as usize).to_le_bytes();
         raw_insn[1..9].copy_from_slice(&addr);
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
@@ -1324,7 +1320,7 @@ mod tests {
         let mut testctx = TestCtx {
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
@@ -1341,7 +1337,7 @@ mod tests {
         let mut testctx = TestCtx {
             ..Default::default()
         };
-        testctx.rdi = core::ptr::addr_of!(testctx.mmio_reg) as usize;
+        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();

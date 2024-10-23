@@ -15,7 +15,7 @@
 pub struct ObjHandle(u32);
 
 impl ObjHandle {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn new(id: u32) -> Self {
         Self(id)
     }

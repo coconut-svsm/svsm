@@ -168,7 +168,6 @@ impl GuestVmsaRef {
         self.caa
     }
 
-    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn vmsa(&mut self) -> &mut VMSA {
         assert!(self.vmsa.is_some());
         // SAFETY: this function takes &mut self, so only one mutable
@@ -776,7 +775,7 @@ impl PerCpu {
             selector: SVSM_TSS,
             flags: SVSM_TR_FLAGS,
             limit: TSS_LIMIT as u32,
-            base: ptr::addr_of!(self.tss) as u64,
+            base: &raw const self.tss as u64,
         }
     }
 

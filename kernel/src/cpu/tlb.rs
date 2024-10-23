@@ -17,7 +17,7 @@ const INVLPGB_VALID_GLOBAL: u64 = 1u64 << 3;
 #[inline]
 fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
     unsafe {
-        asm!(".byte 0x0f, 0x01, 0xfe",
+        asm!("invlpgb",
              in("rax") rax,
              in("rcx") rcx,
              in("rdx") rdx,
@@ -28,7 +28,7 @@ fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
 #[inline]
 fn do_tlbsync() {
     unsafe {
-        asm!(".byte 0x0f, 0x01, 0xff", options(att_syntax));
+        asm!("tlbsync", options(att_syntax));
     }
 }
 

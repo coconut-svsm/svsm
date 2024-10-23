@@ -16,6 +16,7 @@ use super::common::{
     UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::registers::RFlags;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::platform::SVSM_PLATFORM;
@@ -272,5 +273,6 @@ global_asm!(
     concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
     include_str!("../x86/smap.S"),
     include_str!("entry.S"),
+    IF = const RFlags::IF.bits(),
     options(att_syntax)
 );

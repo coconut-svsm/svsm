@@ -6,6 +6,14 @@
 
 use core::arch::global_asm;
 
+use svsm::{
+    cpu::{
+        efer::EFERFlags,
+        msr::{EFER, SEV_STATUS},
+    },
+    mm::PGTABLE_LVL3_IDX_PTE_SELFMAP,
+};
+
 global_asm!(
     r#"
         .text
@@ -85,8 +93,7 @@ global_asm!(
         movl $pgtable, %edi
         movl %edi, %eax
         orl $0x63, %eax
-        /* The value 0xF68 is equivalent to 8 * PGTABLE_LVL3_IDX_PTE_SELFMAP */
-        movl %eax, 0xF68(%edi)
+        movl %eax, 8*{PGTABLE_LVL3_IDX_PTE_SELFMAP}(%edi)
         movl $0x80000000, %eax
         orl %edx, %eax
         movl %eax, 0xF6C(%edi)
@@ -110,10 +117,10 @@ global_asm!(
         movl %eax, %cr4
 
         /* Enable long mode, EFER.LME. Also ensure NXE is set. */
-        movl $0xc0000080, %ecx
+        movl ${EFER}, %ecx
         rdmsr
         movl %eax, %ebx
-        orl $0x900, %eax
+        orl $({LME} | {NXE}), %eax
         cmp %eax, %ebx
         jz 2f
         wrmsr
@@ -140,7 +147,7 @@ global_asm!(
         /*
          * Check that the SNP_Active bit in the SEV_STATUS MSR is set.
          */
-        movl $0xc0010131, %ecx
+        movl ${SEV_STATUS}, %ecx
         rdmsr
 
         testl $0x04, %eax
@@ -294,5 +301,10 @@ global_asm!(
     pgtable:
         .fill 7 * 4096, 1, 0
     pgtable_end:"#,
+    PGTABLE_LVL3_IDX_PTE_SELFMAP = const PGTABLE_LVL3_IDX_PTE_SELFMAP,
+    EFER = const EFER,
+    LME = const EFERFlags::LME.bits(),
+    NXE = const EFERFlags::NXE.bits(),
+    SEV_STATUS = const SEV_STATUS,
     options(att_syntax)
 );

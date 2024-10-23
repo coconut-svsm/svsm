@@ -15,16 +15,12 @@ use core::mem;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Elf64Hdr {
-    #[allow(unused)]
     /// An array of 16 bytes representing the ELF identification, including the ELF magic number
     pub e_ident: [Elf64char; 16],
-    #[allow(unused)]
     /// The type of ELF file
     pub e_type: Elf64Half,
-    #[allow(unused)]
     /// The target architecture of the ELF file
     pub e_machine: Elf64Half,
-    #[allow(unused)]
     /// The version of the ELF file
     pub e_version: Elf64Word,
     /// The virtual address of the program entry point
@@ -34,10 +30,8 @@ pub struct Elf64Hdr {
     /// The file offset to the start of the program header table
     pub e_shoff: Elf64Off,
     /// The file offset to the start of the section header table
-    #[allow(unused)]
     /// Processor-specific flags associated with the file
     pub e_flags: Elf64Word,
-    #[allow(unused)]
     /// The size of the ELF header
     pub e_ehsize: Elf64Half,
     /// The size of a program header entry

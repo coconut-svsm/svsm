@@ -10,7 +10,6 @@ use crate::insn_decode::{InsnError, InsnMachineMem};
 use core::arch::asm;
 use core::mem::{size_of, MaybeUninit};
 
-#[allow(dead_code)]
 #[inline]
 pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     let mut rcx: u64;
@@ -50,7 +49,6 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
 ///
 /// Returns an error if the specified address is not mapped or is not mapped
 /// with the appropriate write permissions.
-#[allow(dead_code)]
 #[inline]
 pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     let mut rcx: u64;
@@ -77,7 +75,7 @@ pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[inline]
 unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     let mut rcx: u64;
@@ -104,7 +102,7 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[inline]
 unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     let mut rcx: u64;
@@ -131,7 +129,7 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[inline]
 unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     let mut rcx: u64;
