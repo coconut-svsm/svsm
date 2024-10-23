@@ -308,7 +308,7 @@ pub struct PerCpu {
     ghcb: OnceCell<GhcbPage>,
 
     /// `#HV` doorbell page for this CPU.
-    hv_doorbell: OnceCell<&'static HVDoorbell>,
+    hv_doorbell: Cell<Option<&'static HVDoorbell>>,
 
     init_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
@@ -340,7 +340,7 @@ impl PerCpu {
 
             shared: PerCpuShared::new(apic_id),
             ghcb: OnceCell::new(),
-            hv_doorbell: OnceCell::new(),
+            hv_doorbell: Cell::new(None),
             init_stack: Cell::new(None),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
@@ -407,17 +407,14 @@ impl PerCpu {
     }
 
     pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
-        self.hv_doorbell.get().copied()
+        self.hv_doorbell.get()
     }
 
     /// Gets a pointer to the location of the HV doorbell pointer in the
     /// PerCpu structure. Pointers and references have the same layout, so
     /// the return type is equivalent to `*const *const HVDoorbell`.
     pub fn hv_doorbell_addr(&self) -> *const &'static HVDoorbell {
-        self.hv_doorbell
-            .get()
-            .map(ptr::from_ref)
-            .unwrap_or(ptr::null())
+        self.hv_doorbell.as_ptr().cast()
     }
 
     pub fn get_top_of_stack(&self) -> VirtAddr {
@@ -487,9 +484,11 @@ impl PerCpu {
 
     fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
-        self.hv_doorbell
-            .set(doorbell)
-            .expect("Attempted to reinitialize the HV doorbell page");
+        assert!(
+            self.hv_doorbell.get().is_none(),
+            "Attempted to reinitialize the HV doorbell page"
+        );
+        self.hv_doorbell.set(Some(doorbell));
         Ok(())
     }
 

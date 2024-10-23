@@ -13,6 +13,7 @@ igvm_defs.workspace = true
 igvm.workspace = true
 uuid.workspace = true
 zerocopy.workspace = true
+zerocopy07 = { package = "zerocopy", version = "0.7" }
 
 [lints]
 workspace = true

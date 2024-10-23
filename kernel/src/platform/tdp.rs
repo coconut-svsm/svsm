@@ -5,23 +5,22 @@
 // Author: Peter Fang <peter.fang@intel.com>
 
 use crate::address::{PhysAddr, VirtAddr};
-use crate::console::init_console;
+use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
+use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::serial::SerialPort;
-use crate::svsm_console::SVSMIOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::MemoryRegion;
+use crate::utils::{zero_mem_region, MemoryRegion};
+use tdx_tdcall::tdx::{
+    td_accept_memory, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
+    tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
+};
 
-// FIXME - SVSMIOPort doesn't work on TDP, but the platform does not yet have
-// an alternative available.
-static CONSOLE_IO: SVSMIOPort = SVSMIOPort::new();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
-
+static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
@@ -40,16 +39,14 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
-    fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
-        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)
+    fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
+        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
+        // Serial console device can be initialized immediately
+        init_svsm_console(&GHCI_IO_DRIVER, debug_serial_port)
     }
 
-    fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
-        CONSOLE_SERIAL
-            .init(&SerialPort::new(&CONSOLE_IO, debug_serial_port))
-            .map_err(|_| SvsmError::Console)?;
-        (*CONSOLE_SERIAL).init();
-        init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
+    fn env_setup_late(&mut self, _debug_serial_port: u16) -> Result<(), SvsmError> {
+        Ok(())
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
@@ -72,7 +69,7 @@ impl SvsmPlatform for TdpPlatform {
             private_pte_mask: 0,
             shared_pte_mask: vtom,
             addr_mask_width: vtom.trailing_zeros(),
-            phys_addr_sizes: res.eax & 0xff,
+            phys_addr_sizes: res.eax,
         }
     }
 
@@ -83,7 +80,7 @@ impl SvsmPlatform for TdpPlatform {
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}
 
     fn get_io_port(&self) -> &'static dyn IOPort {
-        &CONSOLE_IO
+        &GHCI_IO_DRIVER
     }
 
     fn page_state_change(
@@ -97,18 +94,42 @@ impl SvsmPlatform for TdpPlatform {
 
     fn validate_physical_page_range(
         &self,
-        _region: MemoryRegion<PhysAddr>,
-        _op: PageValidateOp,
+        region: MemoryRegion<PhysAddr>,
+        op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        match op {
+            PageValidateOp::Validate => {
+                td_accept_memory(region.start().into(), region.len().try_into().unwrap());
+            }
+            PageValidateOp::Invalidate => {
+                let mapping = PerCPUPageMappingGuard::create(region.start(), region.end(), 0)?;
+                zero_mem_region(mapping.virt_addr(), mapping.virt_addr() + region.len());
+            }
+        }
+        Ok(())
     }
 
     fn validate_virtual_page_range(
         &self,
-        _region: MemoryRegion<VirtAddr>,
-        _op: PageValidateOp,
+        region: MemoryRegion<VirtAddr>,
+        op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        match op {
+            PageValidateOp::Validate => {
+                let mut va = region.start();
+                while va < region.end() {
+                    let pa = virt_to_frame(va);
+                    let sz = pa.end() - pa.address();
+                    // td_accept_memory() will take care of alignment
+                    td_accept_memory(pa.address().into(), sz.try_into().unwrap());
+                    va = va + sz;
+                }
+            }
+            PageValidateOp::Invalidate => {
+                zero_mem_region(region.start(), region.end());
+            }
+        }
+        Ok(())
     }
 
     fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
@@ -131,5 +152,40 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
         todo!();
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GHCIIOPort {}
+
+impl GHCIIOPort {
+    pub const fn new() -> Self {
+        GHCIIOPort {}
+    }
+}
+
+impl IOPort for GHCIIOPort {
+    fn outb(&self, port: u16, value: u8) {
+        tdvmcall_io_write_8(port, value);
+    }
+
+    fn inb(&self, port: u16) -> u8 {
+        tdvmcall_io_read_8(port)
+    }
+
+    fn outw(&self, port: u16, value: u16) {
+        tdvmcall_io_write_16(port, value);
+    }
+
+    fn inw(&self, port: u16) -> u16 {
+        tdvmcall_io_read_16(port)
+    }
+
+    fn outl(&self, port: u16, value: u32) {
+        tdvmcall_io_write_32(port, value);
+    }
+
+    fn inl(&self, port: u16) -> u32 {
+        tdvmcall_io_read_32(port)
     }
 }

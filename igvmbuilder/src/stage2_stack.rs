@@ -10,12 +10,9 @@ use bootlib::kernel_launch::Stage2LaunchInfo;
 use bootlib::platform::SvsmPlatformType;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::gpa_map::GpaMap;
-use crate::igvm_builder::{
-    NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK, TDP_COMPATIBILITY_MASK,
-};
 
 pub struct Stage2Stack {
     stage2_stack: Stage2LaunchInfo,
@@ -45,14 +42,9 @@ impl Stage2Stack {
         &self,
         gpa: u64,
         platform: SvsmPlatformType,
+        compatibility_mask: u32,
         directives: &mut Vec<IgvmDirectiveHeader>,
     ) {
-        let compatibility_mask = match platform {
-            SvsmPlatformType::Snp => SNP_COMPATIBILITY_MASK,
-            SvsmPlatformType::Tdp => TDP_COMPATIBILITY_MASK,
-            SvsmPlatformType::Native => NATIVE_COMPATIBILITY_MASK,
-        };
-
         let mut stage2_stack = self.stage2_stack;
         stage2_stack.platform_type = u32::from(platform);
 

@@ -5,10 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{PhysAddr, VirtAddr};
+use crate::mm::pagetable::{PageFrame, PageTable};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-
-#[cfg(target_os = "none")]
-use crate::mm::pagetable::PageTable;
 
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(not(any(test, target_os = "none")), expect(dead_code))]
@@ -67,7 +65,16 @@ pub fn init_kernel_mapping_info(
 
 #[cfg(target_os = "none")]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
-    match PageTable::virt_to_phys(vaddr) {
+    match PageTable::virt_to_frame(vaddr) {
+        Some(paddr) => paddr.address(),
+        None => {
+            panic!("Invalid virtual address {:#018x}", vaddr);
+        }
+    }
+}
+
+pub fn virt_to_frame(vaddr: VirtAddr) -> PageFrame {
+    match PageTable::virt_to_frame(vaddr) {
         Some(paddr) => paddr,
         None => {
             panic!("Invalid virtual address {:#018x}", vaddr);

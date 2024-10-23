@@ -10,10 +10,10 @@ use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::{
-    idt_mut, user_mode, IdtEntry, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR,
-    DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR,
-    NP_VECTOR, OF_VECTOR, PF_ERROR_WRITE, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR, UD_VECTOR,
-    VC_VECTOR, XF_VECTOR,
+    idt_mut, user_mode, IdtEntry, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR,
+    DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR, MF_VECTOR,
+    NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR, TS_VECTOR,
+    UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::registers::RFlags;
@@ -21,7 +21,6 @@ use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
-
 use core::arch::global_asm;
 
 use crate::syscall::*;
@@ -179,7 +178,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
     if user_mode(ctxt) {
         let kill_task: bool = if is_task_fault(vaddr) {
             current_task()
-                .fault(vaddr, (err & PF_ERROR_WRITE) != 0)
+                .fault(vaddr, (err & PageFaultError::W.bits() as usize) != 0)
                 .is_err()
         } else {
             true
@@ -191,7 +190,10 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
             terminate();
         }
     } else if this_cpu()
-        .handle_pf(VirtAddr::from(cr2), (err & PF_ERROR_WRITE) != 0)
+        .handle_pf(
+            VirtAddr::from(cr2),
+            (err & PageFaultError::W.bits() as usize) != 0,
+        )
         .is_err()
         && !handle_exception_table(ctxt)
     {
@@ -264,6 +266,12 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
 }
 
 global_asm!(
+    r#"
+        .set const_false, 0
+        .set const_true, 1
+    "#,
+    concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
+    include_str!("../x86/smap.S"),
     include_str!("entry.S"),
     IF = const RFlags::IF.bits(),
     options(att_syntax)

@@ -6,7 +6,7 @@
 
 use crate::platform::SvsmPlatformType;
 
-use zerocopy::AsBytes;
+use zerocopy::{Immutable, IntoBytes};
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -46,7 +46,7 @@ impl KernelLaunchInfo {
 // Stage 2 launch info from stage1
 // The layout has to match the order in which the parts are pushed to the stack
 // in stage1/stage1.S
-#[derive(AsBytes, Default, Debug, Clone, Copy)]
+#[derive(IntoBytes, Immutable, Default, Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Stage2LaunchInfo {
     // VTOM must be the first field.

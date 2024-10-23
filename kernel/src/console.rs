@@ -4,8 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
+use crate::io::IOPort;
 use crate::locking::SpinLock;
-use crate::serial::{Terminal, DEFAULT_SERIAL_PORT};
+use crate::serial::{SerialPort, Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
 
@@ -27,12 +29,21 @@ static WRITER: SpinLock<Console> = SpinLock::new(Console {
     writer: &DEFAULT_SERIAL_PORT,
 });
 static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
+static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-pub fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
+fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
     WRITER.lock().writer = writer;
     CONSOLE_INITIALIZED.reinit(&true)?;
     log::info!("COCONUT Secure Virtual Machine Service Module");
     Ok(())
+}
+
+pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
+    CONSOLE_SERIAL
+        .init(&SerialPort::new(writer, port))
+        .map_err(|_| SvsmError::Console)?;
+    (*CONSOLE_SERIAL).init();
+    init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
 }
 
 #[doc(hidden)]

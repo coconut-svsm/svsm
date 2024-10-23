@@ -15,13 +15,14 @@ use p384::ecdsa::signature::Signer;
 use p384::ecdsa::{Signature, SigningKey};
 use p384::elliptic_curve::bigint::ArrayEncoding;
 use p384::{EncodedPoint, SecretKey};
-use zerocopy::{AsBytes, FromZeroes};
+use zerocopy::{Immutable, IntoBytes};
+use zerocopy07::FromZeroes;
 
 use crate::igvm_measure::IgvmMeasure;
 use crate::utils::{get_compatibility_mask, get_policy};
 
 #[repr(C, packed)]
-#[derive(AsBytes, Clone, Copy, Debug)]
+#[derive(IntoBytes, Immutable, Clone, Copy, Debug)]
 pub struct SevIdBlock {
     pub ld: [u8; 48],
     pub family_id: [u8; 16],
