@@ -146,7 +146,7 @@ bitflags! {
 
 impl PTEntryFlags {
     pub fn exec() -> Self {
-        Self::PRESENT | Self::GLOBAL | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::GLOBAL | Self::ACCESSED
     }
 
     pub fn data() -> Self {
@@ -154,11 +154,11 @@ impl PTEntryFlags {
     }
 
     pub fn data_ro() -> Self {
-        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED
     }
 
     pub fn task_exec() -> Self {
-        Self::PRESENT | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::ACCESSED
     }
 
     pub fn task_data() -> Self {
@@ -166,7 +166,7 @@ impl PTEntryFlags {
     }
 
     pub fn task_data_ro() -> Self {
-        Self::PRESENT | Self::NX | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::NX | Self::ACCESSED
     }
 }
 
