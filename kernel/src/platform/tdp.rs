@@ -16,7 +16,7 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{zero_mem_region, MemoryRegion};
 use tdx_tdcall::tdx::{
-    td_accept_memory, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
+    td_accept_memory, tdvmcall_halt, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
     tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
 };
 
@@ -29,6 +29,10 @@ pub struct TdpPlatform {}
 impl TdpPlatform {
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn halt() {
+        tdvmcall_halt();
     }
 }
 

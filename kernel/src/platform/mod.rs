@@ -157,4 +157,12 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Tdp(platform) => platform,
         }
     }
+
+    pub fn halt(platform_type: SvsmPlatformType) {
+        match platform_type {
+            SvsmPlatformType::Native => NativePlatform::halt(),
+            SvsmPlatformType::Snp => SnpPlatform::halt(),
+            SvsmPlatformType::Tdp => TdpPlatform::halt(),
+        }
+    }
 }

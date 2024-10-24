@@ -13,7 +13,7 @@ use crate::error::SvsmError;
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
-use crate::utils::MemoryRegion;
+use crate::utils::{halt, MemoryRegion};
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
@@ -26,6 +26,10 @@ pub struct NativePlatform {}
 impl NativePlatform {
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn halt() {
+        halt()
     }
 }
 

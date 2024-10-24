@@ -25,7 +25,7 @@ use crate::sev::{
 };
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::MemoryRegion;
+use crate::utils::{halt, MemoryRegion};
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
@@ -74,6 +74,10 @@ pub struct SnpPlatform {}
 impl SnpPlatform {
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn halt() {
+        halt();
     }
 }
 
