@@ -15,7 +15,6 @@ use crate::mm::validate::{
 use crate::mm::virt_to_phys;
 use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
-use crate::sev::sev_snp_enabled;
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{Bytes, PageSize, GUEST_VMPL, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
@@ -138,17 +137,15 @@ impl GhcbPage {
         let vaddr = page.vaddr();
         let paddr = virt_to_phys(vaddr);
 
-        if sev_snp_enabled() {
-            // Make page invalid
-            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
+        // Make page invalid
+        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
 
-            // Let the Hypervisor take the page back
-            invalidate_page_msr(paddr)?;
+        // Let the Hypervisor take the page back
+        invalidate_page_msr(paddr)?;
 
-            // Needs guarding for Stage2 GHCB
-            if valid_bitmap_valid_addr(paddr) {
-                valid_bitmap_clear_valid_4k(paddr);
-            }
+        // Needs guarding for Stage2 GHCB
+        if valid_bitmap_valid_addr(paddr) {
+            valid_bitmap_clear_valid_4k(paddr);
         }
 
         // Map page unencrypted

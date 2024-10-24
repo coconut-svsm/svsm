@@ -17,6 +17,5 @@ pub use msr_protocol::init_hypervisor_ghcb_features;
 pub use secrets_page::{secrets_page, secrets_page_mut, SecretsPage, VMPCK_SIZE};
 pub use status::sev_status_init;
 pub use status::sev_status_verify;
-pub use status::{sev_es_enabled, sev_snp_enabled};
 pub use utils::{pvalidate, pvalidate_range, PvalidateOp, SevSnpError};
 pub use utils::{rmp_adjust, RMPFlags};

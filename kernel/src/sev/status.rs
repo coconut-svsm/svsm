@@ -146,14 +146,6 @@ pub fn sev_status_init() {
         .expect("Already initialized SEV flags");
 }
 
-pub fn sev_es_enabled() -> bool {
-    sev_flags().contains(SEVStatusFlags::SEV_ES)
-}
-
-pub fn sev_snp_enabled() -> bool {
-    sev_flags().contains(SEVStatusFlags::SEV_SNP)
-}
-
 pub fn vtom_enabled() -> bool {
     sev_flags().contains(SEVStatusFlags::VTOM)
 }
