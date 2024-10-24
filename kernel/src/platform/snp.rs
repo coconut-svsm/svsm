@@ -30,7 +30,9 @@ use crate::utils::MemoryRegion;
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+
+static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -112,6 +114,7 @@ impl SvsmPlatform for SnpPlatform {
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
         this_cpu().configure_hv_doorbell()?;
         guest_request_driver_init();
+        SVSM_ENV_INITIALIZED.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -122,6 +125,14 @@ impl SvsmPlatform for SnpPlatform {
 
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         cpu.register_ghcb()?;
+
+        // #HV doorbell allocation can only occur if the SVSM environment has
+        // already been initialized.  Skip allocation if not; it will be done
+        // during environment initialization.
+        if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
+            cpu.configure_hv_doorbell()?;
+        }
+
         Ok(())
     }
 
