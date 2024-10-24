@@ -224,9 +224,8 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_unsafe() {
-        assert!(irqs_disabled());
-
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
 
             let spin_lock = SpinLock::new(0);
@@ -235,16 +234,17 @@ mod tests {
             drop(guard);
             assert!(irqs_enabled());
 
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_safe() {
-        assert!(irqs_disabled());
-
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
 
             let spin_lock = SpinLockIrqSafe::new(0);
@@ -253,16 +253,17 @@ mod tests {
             drop(guard);
             assert!(irqs_enabled());
 
-            raw_irqs_disable();
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_trylock_irq_safe() {
-        assert!(irqs_disabled());
-
         unsafe {
+            let was_enabled = irqs_enabled();
             raw_irqs_enable();
 
             let spin_lock = SpinLockIrqSafe::new(0);
@@ -276,8 +277,10 @@ mod tests {
             drop(g1);
             assert!(irqs_enabled());
 
-            // Leave with IRQs disabled, as test was entered.
-            raw_irqs_disable();
+            // Leave with IRQs configured as test was entered.
+            if !was_enabled {
+                raw_irqs_disable();
+            }
         }
     }
 }
