@@ -10,6 +10,7 @@
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
@@ -45,7 +46,7 @@ use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "mstpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -54,6 +55,8 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 extern "C" {
     pub static bsp_stack_end: u8;
 }
+
+static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 
 /*
  * Launch protocol:
@@ -275,6 +278,12 @@ fn init_cpuid_table(addr: VirtAddr) {
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
+
+    // Set the platform type first so that it's available to the panic code.
+    // No failure is expected and it cannot be handled anyway, so just ignore
+    // errors.
+    let _ = SVSM_PLATFORM_TYPE.init(&launch_info.platform_type);
+
     let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
 
     mapping_info_init(&launch_info);
@@ -481,6 +490,10 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     loop {
         debug_break();
-        halt();
+
+        // Use a platform-specific halt.  However, the SVSM_PLATFORM global
+        // may not yet be initialized, so go choose the halt implementation
+        // based on the platform-specific halt instead.
+        SvsmPlatformCell::halt(*SVSM_PLATFORM_TYPE);
     }
 }
