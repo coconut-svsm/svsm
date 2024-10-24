@@ -99,6 +99,10 @@ echo "============================="
 echo "Press Ctrl-] to interrupt"
 echo "============================="
 
+# Store original terminal settings and restore it on exit
+STTY_ORIGINAL=$(stty -g)
+trap 'stty "$STTY_ORIGINAL"' EXIT
+
 # Remap Ctrl-C to Ctrl-] to allow the guest to handle Ctrl-C.
 stty intr ^]
 
@@ -121,5 +125,3 @@ $SUDO_CMD \
     $COM4_SERIAL \
     $QEMU_EXIT_DEVICE \
     $QEMU_TEST_IO_DEVICE
-
-stty intr ^C
