@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_kernel_task","create_user_task","current_task","current_task_terminated","is_current_task","preemption_checks","schedule","schedule_init","schedule_task","switch_to","task_pointer","terminate"],"static":["TASKLIST"],"struct":["RunQueue","TaskList"]};

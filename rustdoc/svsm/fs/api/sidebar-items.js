@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_FILENAME_LENGTH"],"enum":["DirEntry","FsError"],"macro":["impl_fs_err"],"struct":["DirectoryEntry"],"trait":["Directory","File"],"type":["FileName"]};
