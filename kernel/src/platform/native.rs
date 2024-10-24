@@ -128,10 +128,6 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
-    fn use_interrupts(&self) -> bool {
-        true
-    }
-
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         write_msr(APIC_MSR_ICR, icr);
         Ok(())

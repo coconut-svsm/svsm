@@ -144,10 +144,6 @@ impl SvsmPlatform for TdpPlatform {
         false
     }
 
-    fn use_interrupts(&self) -> bool {
-        true
-    }
-
     fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
         Err(SvsmError::Tdx)
     }
