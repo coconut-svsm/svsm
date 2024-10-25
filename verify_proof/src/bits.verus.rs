@@ -213,14 +213,11 @@ pub open spec fn bit_value(n: u64) -> u64
     recommends
         n < 64,
 {
-    seq_macro::seq! { N in 1..64 {
-    if n == 0 {
-        POW2_VALUE!(0)
-    }
-    #(else if n == N {
+    seq_macro::seq! { N in 0..64 {
+    #(if n == N {
         POW2_VALUE!(N)
-    })*
-    else {
+    } else)*
+    {
         0
     }
 }

@@ -11,7 +11,7 @@ pub fn ex_map<T, U, F: FnOnce(T) -> U>(a: Option<T>, f: F) -> (ret: Option<U>)
     requires
         a.is_some() ==> call_requires(f, (a.unwrap(),)),
     ensures
-        ret.is_some() ==> a.is_some(),
+        ret.is_some() == a.is_some(),
         ret.is_some() ==> call_ensures(f, (a.unwrap(),), ret.unwrap()),
 {
     a.map(f)
