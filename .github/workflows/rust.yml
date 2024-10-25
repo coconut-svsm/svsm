@@ -31,6 +31,12 @@ jobs:
       - name: Install Microsoft TPM build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
+      - name: Check that Cargo.lock is up to date
+        uses: actions-rs/cargo@v1
+        with:
+          command: update
+          args: --workspace --locked
+
       # ubuntu-latest does not have binutils 2.39, which we need for
       # ld to work, so build all the objects without performing the
       # final linking step.
