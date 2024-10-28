@@ -4,7 +4,6 @@
 //
 // Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
 
-use std::env::current_dir;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -20,8 +19,7 @@ fn main() {
     }
 
     // Tell cargo to link libmstpm and where to find it.
-    let cwd = current_dir().unwrap();
-    let cwd = cwd.as_os_str().to_str().unwrap();
-    println!("cargo:rustc-link-search={cwd}");
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+    println!("cargo:rustc-link-search={out_dir}");
     println!("cargo:rustc-link-lib=mstpm");
 }

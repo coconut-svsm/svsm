@@ -28,9 +28,9 @@ LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBTPM) $(LIBPLATFORM)
 
 OUT_DIR ?= $(CWD)
 
-all: libmstpm.a $(OUT_DIR)/bindings.rs
+all: $(OUT_DIR)/libmstpm.a $(OUT_DIR)/bindings.rs
 
-libmstpm.a: $(LIBS)
+$(OUT_DIR)/libmstpm.a: $(LIBS)
 	rm -f $@
 	ar rcsTPD $@ $^
 
