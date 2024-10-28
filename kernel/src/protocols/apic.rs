@@ -26,24 +26,23 @@ fn apic_query_features(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 fn apic_configure(params: &RequestParams) -> Result<(), SvsmReqError> {
-    let platform = SVSM_PLATFORM.as_dyn_ref();
     let enabled = match params.rcx {
         0b00 => {
             // Query the current registration state of APIC emulation to
             // determine whether it should be disabled on the current CPU.
-            platform.query_apic_registration_state()
+            SVSM_PLATFORM.query_apic_registration_state()
         }
 
         0b01 => {
             // Deregister APIC emulation if possible, noting whether it is now
             // disabled for the platform.  This cannot fail.
-            platform.change_apic_registration_state(false).unwrap()
+            SVSM_PLATFORM.change_apic_registration_state(false).unwrap()
         }
 
         0b10 => {
             // Increment the APIC emulation registration count.  If successful,
             // this will not cause any change to the state of the current CPU.
-            platform.change_apic_registration_state(true)?;
+            SVSM_PLATFORM.change_apic_registration_state(true)?;
             return Ok(());
         }
 

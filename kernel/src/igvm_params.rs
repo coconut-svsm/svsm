@@ -163,9 +163,8 @@ impl IgvmParams<'_> {
         // host-provided IGVM parameters, which requires the pages to be
         // validated.  Since the memory was not declared as part of the guest
         // firmware image, the pages must be validated here.
-        let platform = SVSM_PLATFORM.as_dyn_ref();
         if self.page_state_change_required() {
-            platform.page_state_change(
+            SVSM_PLATFORM.page_state_change(
                 mem_map_region,
                 PageSize::Regular,
                 PageStateChangeOp::Private,
@@ -173,7 +172,7 @@ impl IgvmParams<'_> {
         }
 
         let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
-        platform.validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+        SVSM_PLATFORM.validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
 
         // Calculate the maximum number of entries that can be inserted.
         let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE

@@ -669,7 +669,7 @@ impl PerCpu {
 
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
-        let use_alternate_injection = SVSM_PLATFORM.as_dyn_ref().query_apic_registration_state();
+        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
         if use_alternate_injection {
             self.apic.replace(Some(LocalApic::new()));
 
@@ -831,7 +831,7 @@ impl PerCpu {
         // for scheduler initialization so that the first interrupt that can
         // be received will always observe that there is a current task and
         // not the boot thread.
-        if SVSM_PLATFORM.as_dyn_ref().use_interrupts() {
+        if SVSM_PLATFORM.use_interrupts() {
             unsafe {
                 self.irq_state.set_restore_state(true);
             }

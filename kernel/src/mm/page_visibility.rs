@@ -36,10 +36,8 @@ use zerocopy::{FromBytes, FromZeros};
 /// Notably any objects at `vaddr` must tolerate unsynchronized writes of any
 /// bit pattern.
 unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
-    let platform = SVSM_PLATFORM.as_dyn_ref();
-
     // Revoke page validation before changing page state.
-    platform.validate_virtual_page_range(
+    SVSM_PLATFORM.validate_virtual_page_range(
         MemoryRegion::new(vaddr, PAGE_SIZE),
         PageValidateOp::Invalidate,
     )?;
@@ -49,7 +47,7 @@ unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     }
 
     // Ask the hypervisor to make the page shared.
-    platform.page_state_change(
+    SVSM_PLATFORM.page_state_change(
         MemoryRegion::new(paddr, PAGE_SIZE),
         PageSize::Regular,
         PageStateChangeOp::Shared,
@@ -76,18 +74,16 @@ unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
 
-    let platform = SVSM_PLATFORM.as_dyn_ref();
-
     // Ask the hypervisor to make the page private.
     let paddr = virt_to_phys(vaddr);
-    platform.page_state_change(
+    SVSM_PLATFORM.page_state_change(
         MemoryRegion::new(paddr, PAGE_SIZE),
         PageSize::Regular,
         PageStateChangeOp::Private,
     )?;
 
     // Validate the page now that it is private again.
-    platform.validate_virtual_page_range(
+    SVSM_PLATFORM.validate_virtual_page_range(
         MemoryRegion::new(vaddr, PAGE_SIZE),
         PageValidateOp::Validate,
     )?;
