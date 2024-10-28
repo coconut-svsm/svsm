@@ -9,15 +9,13 @@ use std::process::Command;
 use std::process::Stdio;
 
 fn main() {
-    let output = Command::new("make")
+    // Build libmstpm.
+    let status = Command::new("make")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
-        .output()
+        .status()
         .unwrap();
-
-    if !output.status.success() {
-        panic!();
-    }
+    assert!(status.success());
 
     // Tell cargo to link libmstpm and where to find it.
     let out_dir = std::env::var("OUT_DIR").unwrap();
