@@ -18,7 +18,7 @@ use crate::mm::vm::VMR;
 use crate::mm::PageRef;
 use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
 use crate::types::PAGE_SHIFT;
-use crate::utils::align_up;
+use crate::utils::{align_up, is_aligned, zero_mem_region};
 
 bitflags! {
     #[derive(Debug, PartialEq, Copy, Clone)]
@@ -90,7 +90,13 @@ impl VMFileMapping {
                 .mapping(offset + page_index * PAGE_SIZE)
                 .ok_or(SvsmError::Mem)?;
             if flags.contains(VMFileMappingFlags::Private) {
-                pages.push(page_ref.try_copy_page()?);
+                let private_page_ref = page_ref.try_copy_page()?;
+                if page_index == count - 1 && !is_aligned(size as u64, PAGE_SIZE as u64) {
+                    let start = private_page_ref.virt_addr() + (size & (PAGE_SIZE - 1));
+                    let end = private_page_ref.virt_addr() + PAGE_SIZE;
+                    zero_mem_region(start, end);
+                }
+                pages.push(private_page_ref);
             } else {
                 pages.push(page_ref);
             }
