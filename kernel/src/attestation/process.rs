@@ -5,8 +5,8 @@ pub fn attest_process() -> bool {
     true
 }
 
-pub fn hash_process(process: &mut TrustedProcess) {
+pub fn hash_process(_process: &mut TrustedProcess) {
     log::info!("Hash of Process is: 0");
-    process.hash = [0u8;32];
+    //process.hash = [0u8;32];
 
 }

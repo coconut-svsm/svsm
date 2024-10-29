@@ -4,13 +4,9 @@ use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::mm::PerCPUPageMappingGuard;
 use core::slice;
-extern crate alloc;
-use alloc::vec::Vec;
 
-use crate::my_crypto_wrapper::get_key_size;
 use crate::my_crypto_wrapper::my_SHA512;
 use crate::my_crypto_wrapper::get_keys;
-use crate::my_crypto_wrapper::get_cycles;
 use crate::my_crypto_wrapper::decrypt;
 use crate::my_crypto_wrapper::key_pair;
 
@@ -23,7 +19,7 @@ pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     // TODO: Change VMPL level before writing hash s.t. guest can't tamper with it
     let mut pub_key: [u8;32] = unsafe{(*get_keys()).public_key};
     let mut hash: [u8; 64] = [0; 64];
-    let mut n: i32 = unsafe{my_SHA512(pub_key.as_mut_ptr(), pub_key.len().try_into().unwrap(), hash.as_mut_ptr()).try_into().unwrap()};
+    let _n: i32 = unsafe{my_SHA512(pub_key.as_mut_ptr(), pub_key.len().try_into().unwrap(), hash.as_mut_ptr()).try_into().unwrap()};
  //   log::info!("Raw key: {:?}", pub_key);
  //   log::info!("SHA returned: {} and a hash of {:?}", n, hash);
 
@@ -50,7 +46,7 @@ pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     params.rdx = rep_size.try_into().unwrap();
 
     //log::info!("Size of Report: {rep_size}");
-    let r = SnpReportResponse::try_from_as_ref(&mut rep)?;
+    let _r = SnpReportResponse::try_from_as_ref(&mut rep)?;
     //log::info!("Report r: {:?}\n",r);
     //log::info!("Report rep: {:?}\n",rep);
     //TODO: Check if address is valid for this request
@@ -139,7 +135,7 @@ pub fn send_policy(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
     let mut nonce: [u8; 24] = [0; 24];
 //    let initial_time = unsafe{get_cycles()};
-    let n: u32 = unsafe{decrypt(decrypted.as_mut_ptr(), encrypted_data.as_mut_ptr(), encrypted_data_size , nonce.as_mut_ptr(), sender_pub_key.as_mut_ptr(), (*get_keys()).private_key.as_mut_ptr())};
+    let _n: u32 = unsafe{decrypt(decrypted.as_mut_ptr(), encrypted_data.as_mut_ptr(), encrypted_data_size , nonce.as_mut_ptr(), sender_pub_key.as_mut_ptr(), (*get_keys()).private_key.as_mut_ptr())};
  //   let final_time = unsafe{get_cycles()};
     //log::info!("Total cycles for decryption: {}", final_time - initial_time);
     //log::info!("Sender pub key: {:?}", sender_pub_key);
