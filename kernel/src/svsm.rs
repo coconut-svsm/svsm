@@ -436,7 +436,7 @@ pub extern "C" fn svsm_main() {
     invalidate_early_boot_memory(&config, launch_info)
         .expect("Failed to invalidate early boot memory");
 
-    additional_monitor_memory_init();
+    additional_monitor_memory_init().unwrap();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

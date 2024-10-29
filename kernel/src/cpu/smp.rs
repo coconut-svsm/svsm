@@ -75,7 +75,7 @@ fn start_ap() {
     log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());
 
     // Initilize Additional Memory
-    additional_monitor_memory_init();
+    let _ = additional_monitor_memory_init();
 
     // Set CPU online so that BSP can proceed
     this_cpu_shared().set_online();
