@@ -101,7 +101,6 @@ fn request_loop_once(
         SVSM_PROCESS_PROTOCOL => process_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),
     };
-    log::info!("RETURN of protocol {:?}", m);
     m
 }
 
@@ -244,7 +243,6 @@ pub extern "C" fn request_processing_main() {
             }
         };
         request_info.params.r8 = rax;
-        log::info!("{:?}",request_info.params);
         // Write back results
         {
             let cpu = this_cpu();
