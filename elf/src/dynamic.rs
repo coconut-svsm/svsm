@@ -84,6 +84,8 @@ pub struct Elf64Dynamic {
 impl Elf64Dynamic {
     /// Constant representing a null dynamic entry
     const DT_NULL: Elf64Xword = 0;
+    /// Constant representing
+    const DT_DYN: Elf64Xword = 2;
     /// Constant representing a hash table address (DT_HASH)
     const DT_HASH: Elf64Xword = 4;
     /// Constant representing the address of the string table (DT_STRTAB)
@@ -156,6 +158,7 @@ impl Elf64Dynamic {
             Self::DT_FLAGS,
             Self::DT_GNU_HASH,
             Self::DT_RELACOUNT,
+            Self::DT_DYN,
         ];
         let mut null_seen = false;
         for entry_buf in buf.chunks(16) {
@@ -178,7 +181,10 @@ impl Elf64Dynamic {
                 // failing to take the associated, required fixup action from
                 // the dynamic loader, if any, would result in a broken image,
                 // respectively in hard to debug runtime breakages.
-                return Err(ElfError::UnrecognizedDynamicField);
+
+                //TODO: For now I ignore this since the SVSM binary and
+                // the Dynamic one we load have different requirements
+                //return Err(ElfError::UnrecognizedDynamicField);
             }
         }
         if !null_seen {
