@@ -31,7 +31,7 @@ pub fn init_kernel_mapping_info(vstart: VirtAddr, vend: VirtAddr, pstart: PhysAd
 #[cfg(target_os = "none")]
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     if vaddr < KERNEL_MAPPING.virt_start || vaddr >= KERNEL_MAPPING.virt_end {
-        panic!("Invalid physical address {:#018x}", vaddr);
+        panic!("Invalid virtual address {:#018x}", vaddr);
     }
 
     let offset: usize = vaddr - KERNEL_MAPPING.virt_start;
