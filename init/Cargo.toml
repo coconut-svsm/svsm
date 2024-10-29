@@ -1,0 +1,16 @@
+[package]
+name = "init"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "init"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+syscall = { path = "../syscall" }
+buddy_system_allocator = { workspace = true }
+
+[lints]
+workspace = true
