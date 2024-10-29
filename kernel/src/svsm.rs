@@ -10,6 +10,7 @@
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
+use svsm::process_manager;
 use core::arch::global_asm;
 use core::mem::size_of;
 use core::panic::PanicInfo;
@@ -54,18 +55,10 @@ use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "mstpm", not(test)))]
 use svsm::vtpm::vtpm_init;
-use core::arch::asm;    
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use svsm::my_crypto_wrapper::key_pair;
 use svsm::my_crypto_wrapper::gen_keys;
-use svsm::my_crypto_wrapper::encrypt;
-use svsm::my_crypto_wrapper::decrypt;
-use svsm::my_crypto_wrapper::my_SHA512;
-use svsm::my_crypto_wrapper::get_key_size;
-
-extern crate alloc;
-use alloc::vec::Vec;
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -108,7 +101,6 @@ global_asm!(
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
-static FIXEDSIZE: [u8;2147483648] = [0;2147483648];
 const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
 
 fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
@@ -288,8 +280,8 @@ fn init_cpuid_table(addr: VirtAddr) {
 
 #[allow(non_snake_case)]
 fn generate_key_pair() {
-    let mut encryption_keys: key_pair = unsafe{*gen_keys()};
-    unsafe{log::info!("Monitor generated keys: private key {:?}, public key {:?}", encryption_keys.private_key, encryption_keys.public_key)};
+    let encryption_keys: key_pair = unsafe{*gen_keys()};
+    log::info!("Monitor generated keys: private key {:?}, public key {:?}", encryption_keys.private_key, encryption_keys.public_key);
 }
 
 #[no_mangle]
@@ -406,6 +398,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     panic!("SVSM entry point terminated unexpectedly");
 }
 
+
 #[no_mangle]
 pub extern "C" fn svsm_main() {
     let platform = SVSM_PLATFORM.as_dyn_ref();
@@ -451,7 +444,8 @@ pub extern "C" fn svsm_main() {
     }
 
     log::info!("{} CPU(s) present", nr_cpus);
-
+    let _ = process_manager::process_memory::CPU_COUNT.reinit(&nr_cpus);
+   
     start_secondary_cpus(platform, &cpus, launch_info.vtom);
 
     let fw_metadata = config.get_fw_metadata();
