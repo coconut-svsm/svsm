@@ -11,6 +11,7 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use svsm::process_manager;
+use svsm::process_manager::process_memory::additional_monitor_memory_init;
 use core::arch::global_asm;
 use core::mem::size_of;
 use core::panic::PanicInfo;
@@ -433,6 +434,8 @@ pub extern "C" fn svsm_main() {
 
     invalidate_early_boot_memory(&config, launch_info)
         .expect("Failed to invalidate early boot memory");
+
+    additional_monitor_memory_init();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

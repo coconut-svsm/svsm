@@ -10,6 +10,7 @@ use crate::cpu::percpu::{this_cpu_mut, this_cpu_shared, PerCpu};
 use crate::cpu::vmsa::init_svsm_vmsa;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
+use crate::process_manager::process_memory::additional_monitor_memory_init;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{create_kernel_task, schedule_init};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
@@ -72,6 +73,9 @@ fn start_ap() {
 
     // Send a life-sign
     log::info!("AP with APIC-ID {} is online", this_cpu_mut().get_apic_id());
+
+    // Initilize Additional Memory
+    additional_monitor_memory_init();
 
     // Set CPU online so that BSP can proceed
     this_cpu_shared().set_online();
