@@ -297,8 +297,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .init(li)
         .expect("Already initialized launch info");
 
-    let mut platform_cell = SvsmPlatformCell::new(li.platform_type);
-    let platform = platform_cell.as_mut_dyn_ref();
+    let mut platform = SvsmPlatformCell::new(li.platform_type);
 
     init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
 
@@ -313,7 +312,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();
-    cr4_init(platform);
+    cr4_init(&*platform);
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
@@ -335,7 +334,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(platform).expect("Failed to initialize paging");
+    paging_init(&*platform).expect("Failed to initialize paging");
     let init_pgtable =
         init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
     init_pgtable.load();
@@ -343,10 +342,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
-        .setup(platform, init_pgtable)
+        .setup(&*platform, init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     bsp_percpu
-        .setup_on_cpu(platform)
+        .setup_on_cpu(&*platform)
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
 
@@ -375,7 +374,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Alternate injection required but not available");
 
     SVSM_PLATFORM
-        .init(&platform_cell)
+        .init(&platform)
         .expect("Failed to initialize SVSM platform object");
 
     sse_init();
@@ -386,17 +385,14 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
 #[no_mangle]
 pub extern "C" fn svsm_main() {
-    let platform = SVSM_PLATFORM.as_dyn_ref();
-
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
-    gdbstub_start(platform).expect("Could not start GDB stub");
+    gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
 
     SVSM_PLATFORM
-        .as_dyn_ref()
         .env_setup_svsm()
         .expect("SVSM platform environment setup failed");
 
@@ -409,7 +405,7 @@ pub extern "C" fn svsm_main() {
         }
         SvsmConfig::IgvmConfig(igvm_params)
     } else {
-        SvsmConfig::FirmwareConfig(FwCfg::new(SVSM_PLATFORM.as_dyn_ref().get_io_port()))
+        SvsmConfig::FirmwareConfig(FwCfg::new(SVSM_PLATFORM.get_io_port()))
     };
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
@@ -419,7 +415,7 @@ pub extern "C" fn svsm_main() {
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    invalidate_early_boot_memory(platform, &config, launch_info)
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
         .expect("Failed to invalidate early boot memory");
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
@@ -433,7 +429,7 @@ pub extern "C" fn svsm_main() {
 
     log::info!("{} CPU(s) present", nr_cpus);
 
-    start_secondary_cpus(platform, &cpus);
+    start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
 
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {

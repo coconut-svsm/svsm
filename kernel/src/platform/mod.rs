@@ -4,6 +4,8 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use core::ops::{Deref, DerefMut};
+
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
@@ -159,16 +161,22 @@ impl SvsmPlatformCell {
             SvsmPlatformType::Tdp => SvsmPlatformCell::Tdp(TdpPlatform::new()),
         }
     }
+}
 
-    pub fn as_dyn_ref(&self) -> &dyn SvsmPlatform {
+impl Deref for SvsmPlatformCell {
+    type Target = dyn SvsmPlatform;
+
+    fn deref(&self) -> &Self::Target {
         match self {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
         }
     }
+}
 
-    pub fn as_mut_dyn_ref(&mut self) -> &mut dyn SvsmPlatform {
+impl DerefMut for SvsmPlatformCell {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,

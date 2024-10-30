@@ -47,7 +47,7 @@ pub enum IORequest {
 pub fn svsm_test_io() -> LockGuard<'static, Option<SerialPort<'static>>> {
     let mut sp = SERIAL_PORT.lock();
     if sp.is_none() {
-        let io_port = SVSM_PLATFORM.as_dyn_ref().get_io_port();
+        let io_port = SVSM_PLATFORM.get_io_port();
         let serial_port = SerialPort::new(io_port, 0x2e8 /*COM4*/);
         *sp = Some(serial_port);
         serial_port.init();
