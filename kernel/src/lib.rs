@@ -45,7 +45,8 @@ pub mod vtpm;
 
 pub mod attestation;
 pub mod process_manager;
-pub mod sp_pagetable;
+pub mod process_runtime;
+//pub mod sp_pagetable;
 #[test]
 fn test_nop() {}
 
