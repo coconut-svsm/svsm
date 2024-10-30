@@ -33,9 +33,12 @@ use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
-use svsm::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform, SvsmPlatformCell};
+use svsm::platform;
+use svsm::platform::{
+    init_platform_type, PageStateChangeOp, PageValidateOp, SvsmPlatform, SvsmPlatformCell,
+};
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{halt, is_aligned, MemoryRegion};
+use svsm::utils::{is_aligned, MemoryRegion};
 
 extern "C" {
     static mut pgtable: PageTable;
@@ -345,6 +348,8 @@ fn prepare_heap(
 #[no_mangle]
 pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
+
+    init_platform_type(platform_type);
     let mut platform = SvsmPlatformCell::new(platform_type);
 
     let config =
@@ -465,6 +470,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
 fn panic(info: &PanicInfo<'_>) -> ! {
     log::error!("Panic: {}", info);
     loop {
-        halt();
+        platform::halt();
     }
 }

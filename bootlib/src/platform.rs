@@ -5,7 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 /// Defines the underlying platform type on which the SVSM will run.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(C)]
 pub enum SvsmPlatformType {
     Native = 0,

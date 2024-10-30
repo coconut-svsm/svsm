@@ -16,7 +16,7 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{zero_mem_region, MemoryRegion};
 use tdx_tdcall::tdx::{
-    td_accept_memory, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
+    td_accept_memory, tdvmcall_halt, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
     tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
 };
 
@@ -39,6 +39,10 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
+    fn halt() {
+        tdvmcall_halt();
+    }
+
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
         // Serial console device can be initialized immediately
