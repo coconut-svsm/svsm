@@ -2,45 +2,27 @@ extern crate alloc;
 
 use core::cell::UnsafeCell;
 use alloc::vec::Vec;
-//use cpuarch::vmsa::GuestVMExit;
-//use cpuarch::vmsa::VMSASegment;
 use crate::address::PhysAddr;
-use crate::cpu::percpu::this_cpu_mut;
 use crate::cpu::percpu::this_cpu_shared;
 use crate::cpu::percpu::this_cpu_unsafe;
-use crate::cpu::percpu::PerCpuUnsafe;
-//use crate::cpu::vmsa::vmsa_mut_ref_from_vaddr;
-//use crate::cpu::vmsa::vmsa_ref_from_vaddr;
-use crate::mm::alloc::free_page;
 use crate::mm::SVSM_PERCPU_VMSA_BASE;
-//use crate::attestation::process;
+use crate::process_manager::process_memory::allocate_page;
+use crate::process_manager::allocation::AllocationRange;
+use crate::process_manager::process_paging::ProcessPageTableRef;
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
-//use crate::sp_pagetable::tmp_mapping::TemporaryPageMapping;
-//Testing
-use crate::sp_pagetable::*;
 use crate::sev::RMPFlags;
 use crate::sev::rmp_adjust;
 //use crate::cpu::percpu::this_cpu_mut;
-use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::cpu::percpu::this_cpu;
-use core::mem::replace;
-use crate::mm::PAGE_SIZE;
-use crate::utils::zero_mem_region;
-use cpuarch::vmsa::VMSA;
-use crate::sev::utils::rmp_revoke_guest_access;
-use crate::cpu::flush_tlb_global_sync;
-use crate::mm::virt_to_phys;
-use crate::mm::alloc::allocate_zeroed_page;
+//use crate::cpu::flush_tlb_global_sync;
 use crate::types::PageSize;
 use crate::address::VirtAddr;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::utils::rmp_set_guest_vmsa;
-use core::ptr::null_mut;
 
-//use crate::time::*;
-
-//use crate::protocols::core::core_create_vcpu_error_restore; //
+use cpuarch::vmsa::VMSA;
+use core::mem::replace;
 
 trait FromVAddr {
     fn from_virt_addr(v: VirtAddr) -> &'static mut VMSA;
@@ -87,10 +69,13 @@ impl TrustedProcessStore {
             self.push(empty_process);
         }
     }
-    pub fn insert(&self, p: TrustedProcess) -> i64 {
+    pub fn insert(&self, mut p: TrustedProcess) -> i64 {
         let ptr: &mut Vec<TrustedProcess> = unsafe { self.processes.get().as_mut().unwrap() };
         for i in 0..(ptr.len()) {
             if ptr[i].process_type == TrustedProcessType::Undefined {
+                // ID of the Process is set when inserting into the
+                // store. Only after the insert is the process id valid
+                p.id = i.try_into().unwrap();
                 ptr[i] = p;
                 return i.try_into().unwrap();
             }
@@ -118,163 +103,64 @@ impl ProcessData {
 }
 
 #[derive(Clone,Copy,Debug)]
-pub struct ProcessID(usize);
+pub struct ProcessID(pub usize);
 
 #[derive(Clone,Copy,Debug)]
 pub struct TrustedProcess {
-    process_type: TrustedProcessType,
-    data: ProcessData,
-    page_table: *mut PageTableReference,
-    vmsa: VirtAddr,
-    len: u64,
-    input: VirtAddr,
+    pub process_type: TrustedProcessType,
+    pub id: u64,
+    pub base: ProcessBaseContext,
+    #[allow(dead_code)]
+    pub context: ProcessContext,
+    /*input: VirtAddr,
     output: VirtAddr,
-    pub hash: [u8; 32],
+    pub hash: [u8; 32]i,*/
 }
 
 impl TrustedProcess {
 
-    const fn new(process_type: TrustedProcessType, data: PhysAddr, len: u64, hash: [u8; 32])->Self{
-        Self {process_type, data: ProcessData(data), page_table: null_mut(), vmsa: VirtAddr::null(), len, input: VirtAddr::null(), output: VirtAddr::null(),  hash}
-    }
+    pub fn zygote(data: u64,size: u64, pgt: u64) -> Self{
 
-    fn create_zygote_page_table(data: ProcessData) -> *mut PageTableReference {
+        let (zygote_data, range) = ProcessPageTableRef::copy_data_from_guest(data, size, pgt);
+        let mut base = ProcessBaseContext::default();
+        base.init_with_data(zygote_data, size, range);
 
-        let vaddr_page_table_ref = allocate_zeroed_page().unwrap();
-        let vaddr_page_table_top = allocate_zeroed_page().unwrap();
-        let paddr_page_table_top = virt_to_phys(vaddr_page_table_top);
-        rmp_adjust(vaddr_page_table_top, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        let mut sub_pages: [VirtAddr;5]  = [VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64)];
-        let mut sub_pages_phy: [PhysAddr; 5] = [PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64)];
-        for i in 0..5 {
-            sub_pages[i] = allocate_zeroed_page().unwrap();
-            sub_pages_phy[i] = virt_to_phys(sub_pages[i]);
-            rmp_adjust(sub_pages[i], RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        }        
-        let page_table_ref: &mut PageTableReference = unsafe { vaddr_page_table_ref.as_mut_ptr::<PageTableReference>().as_mut().unwrap() };
-        page_table_ref.init(paddr_page_table_top, vaddr_page_table_top, &sub_pages_phy, &sub_pages);
-        page_table_ref.mount();
-
-        log::info!("Using the following address {:#}",data.0);
-        //panic!("Stop");
-        let _ = page_table_ref.map_4k_page(VirtAddr::from(0x8000000000u64), data.0, PageFlags::exec()| PageFlags::USER_ACCESSIBLE);
-        let mapping_guard = PerCPUPageMappingGuard::create_4k(data.0).unwrap();
-        let vaddr_data = mapping_guard.virt_addr();
-        rmp_adjust(vaddr_data, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        log::info!("ZYGOTE PAGE TABLE:");
-        page_table_ref.dump();
-
-        vaddr_page_table_ref.as_mut_ptr::<PageTableReference>()
-    }
-
-    fn duplicate_page_table_ro(page_table_ref_ptr: *mut PageTableReference, input: VirtAddr, output: VirtAddr) -> *mut PageTableReference {
-        let page_table_ref_base: &mut PageTableReference = unsafe {page_table_ref_ptr.as_mut().unwrap()};
-        let page_table_ref = page_table_ref_base;
-
-
-
-
-
-        /* 
-        let vaddr_page_table_ref = allocate_zeroed_page().unwrap();
-
-
-        let vaddr_page_table_top = allocate_zeroed_page().unwrap();
-        let paddr_page_table_top = virt_to_phys(vaddr_page_table_top);
-        rmp_adjust(vaddr_page_table_top, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        let mut sub_pages: [VirtAddr;5]  = [VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64)];
-        let mut sub_pages_phy: [PhysAddr; 5] = [PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64)];
-        for i in 0..5 {
-            sub_pages[i] = allocate_zeroed_page().unwrap();
-            sub_pages_phy[i] = virt_to_phys(sub_pages[i]);
-            rmp_adjust(sub_pages[i], RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
+        Self {
+            process_type: TrustedProcessType::Zygote,
+            id: 0,
+            base,
+            context: ProcessContext::default(),
         }
-
-        let page_table_ref: &mut PageTableReference = unsafe { vaddr_page_table_ref.as_mut_ptr::<PageTableReference>().as_mut().unwrap() };
-
-
-
-        page_table_ref.init(paddr_page_table_top, vaddr_page_table_top, &sub_pages_phy, &sub_pages);
-        page_table_ref.mount();
-        //log::info!("TRUSTLET PAGE TABLE0:");
-        //page_table_ref.dump();
-        let data = page_table_ref_base.page_walk_pub(VirtAddr::from(0x8000000000u64));
-        page_table_ref.map_4k_page(VirtAddr::from(0x8000000000u64), data, PageFlags::exec()| PageFlags::USER_ACCESSIBLE);
-    
-        log::info!("TRUSTLET PAGE TABLE1:");
-        page_table_ref.dump();
-        */
-
-
-        for e in 0..5  {
-            let vaddr_mem = allocate_zeroed_page().unwrap();
-            let paddr_mem = virt_to_phys(vaddr_mem);
-            rmp_adjust(vaddr_mem, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-            let _ = page_table_ref.map_4k_page(VirtAddr::from(0x8000000000u64)+PAGE_SIZE*(3+e), paddr_mem, PageFlags::data()| PageFlags::USER_ACCESSIBLE);
-
-        }
-
-
-        let vaddr_stack = output;
-        let paddr_stack = virt_to_phys(vaddr_stack);
-
-        let vaddr_res = input;
-        let paddr_res = virt_to_phys(vaddr_res);
-        rmp_adjust(vaddr_res, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        let _ = page_table_ref.map_4k_page(VirtAddr::from(0x8000000000u64)+PAGE_SIZE*2, paddr_res, PageFlags::data()| PageFlags::USER_ACCESSIBLE);
-
-
-        rmp_adjust(vaddr_stack, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-        let _ = page_table_ref.map_4k_page(VirtAddr::from(0x8000000000u64)+PAGE_SIZE, paddr_stack, PageFlags::data()| PageFlags::USER_ACCESSIBLE);
-        //let _ = page_table_ref.map_4k_page(target, addr, flags);
-
-
-        page_table_ref_ptr
-        //vaddr_page_table_ref.as_mut_ptr::<PageTableReference>()
-
-    }
-
-    pub fn zygote(d: PhysAddr, len: u64) -> Self{
-        let hash = [0u8;32];
-        let vmsa: VirtAddr = unsafe {this_cpu_unsafe().as_mut().unwrap().get_trustlet_vmsa()};
-        
-        //let vaddr_vmsa_new: VirtAddr = allocate_zeroed_page().unwrap();
-        //let vmsa_new = vmsa_mut_ref_from_vaddr(vaddr_vmsa_new);
-        
-        
-
-        let vmsa_: &mut VMSA = unsafe {vmsa.as_mut_ptr::<VMSA>().as_mut().unwrap()};
-        vmsa_.rip = 0x8000000000u64;
-
-        let mut process = Self::new(TrustedProcessType::Zygote, d, len, hash);
-        process.vmsa = vmsa;
-        process.page_table = TrustedProcess::create_zygote_page_table(process.data);
-        super::super::attestation::process::hash_process(&mut process);
-        process
     }
 
     fn dublicate(pid: ProcessID) -> TrustedProcess {
         let process = PROCESS_STORE.get(pid);
+        let base: ProcessBaseContext = process.base;
+        let mut context = ProcessContext::default();
+        context.init(base);
 
-        let vmsa: VirtAddr = unsafe{this_cpu_unsafe().as_mut().unwrap().get_trustlet_vmsa()};
-        let vmsa_: &mut VMSA = unsafe {vmsa.as_mut_ptr::<VMSA>().as_mut().unwrap()};
-        vmsa_.rip = 0x8000000000u64;
-        
-        let input: VirtAddr = allocate_zeroed_page().unwrap();
-        let output: VirtAddr = allocate_zeroed_page().unwrap();
+        TrustedProcess {
+            process_type: TrustedProcessType::Trustlet,
+            id: 0,
+            base,
+            context,
+        }
 
-        TrustedProcess { process_type: TrustedProcessType::Trustlet, data: process.data.dublicate_read_only(), page_table: TrustedProcess::duplicate_page_table_ro(process.page_table,input,output),vmsa, len: process.len,input, output, hash: process.hash }
     }
 
-    pub fn trustlet(parent: ProcessID, _d: PhysAddr, _len: u64) -> Self{
-        let _hash = [0u8;32];
-        let mut trustlet = TrustedProcess::dublicate(parent);
-        super::super::attestation::process::hash_process(&mut trustlet);
+    pub fn trustlet(parent: ProcessID, _data: u64, _size: u64, _pgt: u64) -> Self{
+        // Inherit the data from the Zygote
+        let trustlet = TrustedProcess::dublicate(parent);
         trustlet
     }
 
     pub fn empty() -> Self {
-        Self::new(TrustedProcessType::Undefined, PhysAddr::from(0u64), 0, [0u8;32])
+        Self {
+            process_type: TrustedProcessType::Undefined,
+            id: 0,
+            base: ProcessBaseContext::default(),
+            context: ProcessContext::default(),
+        }
     }
 
     pub fn delete(&self) -> bool {
@@ -289,203 +175,49 @@ pub fn check_vmsa_ind(new: &VMSA, sev_features: u64, svme_mask: u64, vmpl_level:
         && new.sev_features == sev_features
 }
 
+pub fn create_trusted_process(params: &mut RequestParams, t: TrustedProcessType) -> Result<(), SvsmReqError>{
 
-pub fn create_tmp_page_tabel() -> (*mut PageTableReference, PhysAddr) {
-    
-    let ref_page = allocate_zeroed_page().unwrap();
-    let _ref_page_phy = virt_to_phys(ref_page);
+    let size = params.rcx;
+    let process_addr = params.rdx;
+    let guest_pgt = params.r8;
 
-    rmp_adjust(ref_page, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-
-    let table_page = allocate_zeroed_page().unwrap();
-    let table_page_phy = virt_to_phys(table_page);
-    rmp_adjust(table_page, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-    let mut sub_pages: [VirtAddr;5]  = [VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64),VirtAddr::from(0u64)];
-    let mut sub_pages_phy: [PhysAddr; 5] = [PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64),PhysAddr::from(0u64)];
-    for i in 0..5 {
-        sub_pages[i] = allocate_zeroed_page().unwrap();
-        sub_pages_phy[i] = virt_to_phys(sub_pages[i]);
-        rmp_adjust(sub_pages[i], RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
-    }
-    let r = unsafe { ref_page.as_mut_ptr::<PageTableReference>().as_mut().unwrap() };
-    r.init(table_page_phy, table_page, &sub_pages_phy, &sub_pages);
-    r.mount();
-    (ref_page.as_mut_ptr::<PageTableReference>(), table_page_phy)
-}
-
-pub fn vmpl1_init() -> Result<(), SvsmReqError>{
-
-    let cpu_unsafe: &mut PerCpuUnsafe = unsafe { this_cpu_unsafe().as_mut().unwrap() };
-
-    if cpu_unsafe.is_trustlet_vmsa() {
-        let cpu = this_cpu_mut().get_apic_id();
-        log::info!("Trustlet vCore #{} already initialized", cpu);
-        return Ok(());
-    }
-
-
-    let tmp_vmsa_store = allocate_zeroed_page().unwrap();
-    let vmsa_copy = unsafe { tmp_vmsa_store.as_mut_ptr::<VMSA>().as_mut().unwrap()};
-    *vmsa_copy = unsafe { *SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() };
-
-    let vaddr_vmsa = allocate_zeroed_page().unwrap();
-    let paddr_vmsa =virt_to_phys(vaddr_vmsa);
-
-    let vaddr_stack = allocate_zeroed_page().unwrap();
-    let paddr_stack = virt_to_phys(vaddr_stack);
-    let tmp = allocate_zeroed_page().unwrap();
-    let t2 = unsafe { tmp.as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
-    let t: [u8; 6] = [0x0f, 0xa2, 0xeb, 0x00, 0xeb, 0xfe]; //cpuid; jmp +0;jmp -2;
-    for i in 0..6 {
-        t2[i] = t[i];
-    }
-    let paddr_pages = virt_to_phys(tmp);
-    //
-
-    log::info!("Allocating new page table");
-    let page_table = create_tmp_page_tabel();
-    let page_table_phy = page_table.1;
-    let page_table: &mut PageTableReference = unsafe { page_table.0.as_mut().unwrap() };
-
-
-    page_table.map_4k_page(VirtAddr::from(0x8000000000u64), paddr_pages, PageFlags::exec() | PageFlags::USER_ACCESSIBLE ).unwrap();
-    page_table.map_4k_page(VirtAddr::from(0x8000000000u64)+PAGE_SIZE, paddr_stack, PageFlags::data() | PageFlags::USER_ACCESSIBLE).unwrap();
-    
-    
-    //page_table.dump();
-
-    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr_pages)?;
-    let vaddr_pages = mapping_guard.virt_addr();
-    //let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr_stack)?;
-    //let vaddr_stack = mapping_guard.virt_addr();
-    //let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr_vmsa)?;
-    //let vaddr_vmsa = mapping_guard.virt_addr();
-    
-    
-    flush_tlb_global_sync();
-  
-    rmp_adjust(vaddr_pages, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular)?;
-    rmp_adjust(vaddr_stack, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular)?;
-    rmp_adjust(vaddr_vmsa, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular)?;
-    rmp_adjust(vaddr_pages, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular)?;
-
-    flush_tlb_global_sync();
-
-    rmp_set_guest_vmsa(vaddr_vmsa)?;
-    rmp_revoke_guest_access(vaddr_vmsa, PageSize::Regular)?;
-    rmp_adjust(
-        vaddr_vmsa,
-        RMPFlags::VMPL1 | RMPFlags::VMSA,
-        PageSize::Regular,
-    )?;
-    let vmsa = VMSA::from_virt_addr(vaddr_vmsa);
-    zero_mem_region(vaddr_vmsa, vaddr_vmsa + PAGE_SIZE);
-    let locked = this_cpu_shared().guest_vmsa.lock();
-    let vmsa_ptr = unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() };
-    _ = replace(vmsa,*vmsa_ptr); 
-    drop(locked);
-
-    vmsa.vmpl = 1;
-    vmsa.cpl = 3;
-    vmsa.cr3 = u64::from(page_table_phy);
-    vmsa.rbp = u64::from(0x8000000000u64)+2*4096-1;
-    vmsa.rsp = u64::from(0x8000000000u64)+2*4096-1;
-    vmsa.efer = vmsa.efer | 1u64 << 12;
-    vmsa.rip = u64::from(0x8000000000u64);
-    vmsa.sev_features = vmsa_ptr.sev_features | 4; // VC Reflect feature
-     
-    let svme_mask: u64 = 1u64 << 12;
-    if !check_vmsa_ind(vmsa, vmsa.sev_features | 4, svme_mask,RMPFlags::VMPL1.bits()) {
-        log::info!("VMSA Check failed");
-        log::info!("Bits: {}",vmsa.vmpl == RMPFlags::VMPL3.bits() as u8);
-        log::info!("Efer & vsme_mask: {}", vmsa.efer & svme_mask == svme_mask);
-        log::info!("SEV features: {}", vmsa.sev_features == vmsa.sev_features);
-        if vmsa.efer & svme_mask == svme_mask {
-            PERCPU_VMSAS.unregister(paddr_vmsa, false).unwrap();
-            //core_create_vcpu_error_restore(vaddr_vmsa)?;
-            return Err(SvsmReqError::invalid_parameter());   
-        }
-    }
-
-    log::info!("{:?}",vmsa);
-
-    let apic_id = this_cpu().get_apic_id();
-    PERCPU_VMSAS.register(paddr_vmsa, apic_id, true)?;
-
-    assert!(PERCPU_VMSAS.set_used(paddr_vmsa) == Some(apic_id));
-    unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    vmsa.rip = u64::from(0x8000000000u64);
-    log::info!("Second try");
-    unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    vmsa.rip = u64::from(0x8000000000u64);
-    log::info!("Third try");
-    unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    log::info!("Initilized VMPL1 Trustlet for #{}",apic_id);
-
-
-    page_table.dump();
-    //log::info!("Guest Exit Code: {}!!!!!!!!!!!!!!!!!!!!!!!",vmsa.guest_exit_code as u64);
-    //log::info!("VMSA: {:?}", vmsa);
-    log::info!("");
-    //
-    page_table.unmount();
-    log::info!("unmount done");
-    for i in page_table.pages_virt {
-        if i == VirtAddr::from(0u64) {
-            break;
-        }
-        log::info!("before rmp_adjust {}", i);
-        rmp_adjust(i, RMPFlags::VMPL1 | RMPFlags::NONE, PageSize::Regular)?;
-        log::info!("rmp_adjust {}", i);
-        log::info!("before Free {}",i);
-        free_page(i);
-        log::info!("Free {}",i);
-    }
-    log::info!("page-table extra pages");
-    rmp_adjust(page_table.table_virt, RMPFlags::VMPL1 | RMPFlags::NONE, PageSize::Regular)?;
-    free_page(page_table.table_virt);
-    log::info!("page-table table");
-    rmp_adjust(vaddr_pages, RMPFlags::VMPL1 | RMPFlags::NONE, PageSize::Regular)?;
-    rmp_adjust(vaddr_stack, RMPFlags::VMPL1 | RMPFlags::NONE, PageSize::Regular)?;
-    log::info!("Changed permissions");
-    free_page(tmp);
-    log::info!("Free tmp");
-    free_page(vaddr_stack);
-    log::info!("Free stack");
-
-    cpu_unsafe.set_trustlet_vmsa(vaddr_vmsa);
-    
-    
-
-    return Ok(());
-
-}
-
-pub fn create_trusted_process(params: &mut RequestParams, _t: TrustedProcessType) -> Result<(), SvsmReqError>{
-    /* End of Test code */
-    /* Start of actual Trustlet creation */
-    match _t {
+    match t {
         TrustedProcessType::Undefined => panic!("Invalid Creation Request"),
         TrustedProcessType::Zygote => {
 
             log::info!("create_trusted_process(): Creating and registering Zygote");
-            let len = params.rcx;
-            let zygote_address = PhysAddr::from(params.r8);
-            let z: TrustedProcess = TrustedProcess::zygote(zygote_address, len);
+
+            // Create contexts for the Zygote
+            // e.g. Copy the Zygote into memory
+            // and parse it to create a page table
+            let z: TrustedProcess = TrustedProcess::zygote(process_addr, size, guest_pgt);
+
+            // Insert it into the process store
+            // Each process is identified with an idea from
+            // the store
             let res = PROCESS_STORE.insert(z);
-            // if res < 0 {
-            //     params.rcx = u64::from_ne_bytes(res.to_ne_bytes());
-            // }
+
+            // Copy the value to the return register
+            // Conversion is required because the store
+            // id is signed but the register representation
+            // is not
             params.rcx = u64::from_ne_bytes(res.to_ne_bytes());
+           
             log::info!("Created Zygote #{}", params.rcx);
             Ok(())
         },
         TrustedProcessType::Trustlet => {
 
             log::info!("create_trusted_process(): Creating and registering Trustlet");
-            let len = params.rcx;
-            //let _trustlet_address = PhysAddr::from(params.r8);
-            let trustlet = TrustedProcess::trustlet(ProcessID(params.rdx as usize), PhysAddr::null(), len);
+
+            // We get the Zygote ID from the guest
+            // Each Trustlet requires one Zygote
+            let zygote_id = ProcessID(params.r9 as usize);
+
+
+            let trustlet = TrustedProcess::trustlet(zygote_id, process_addr, size, guest_pgt);
+
+            // The creation process might fail
             if trustlet.process_type == TrustedProcessType::Undefined {
                 params.rcx = u64::from_ne_bytes((-1i64).to_ne_bytes());
                 return Ok(());
@@ -518,161 +250,137 @@ pub fn attest_trusted_process(_params: &mut RequestParams) -> Result<(), SvsmReq
     todo!()
 }
 
-use core::slice;
+pub fn check_page_table(pgd_addr: u64, test_location: u64) {
 
-pub fn load_elf(params: &mut RequestParams) -> Result<(), SvsmReqError> {
-    let page1_address = PhysAddr::from(params.r8);
-    let page1 = PerCPUPageMappingGuard::create_4k(page1_address).unwrap();
-    let page1_data = unsafe { page1.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap() };
-    let page2_address = PhysAddr::from(params.rcx);
-    let page2 = PerCPUPageMappingGuard::create_4k(page2_address).unwrap();
-    let page2_data = unsafe {page2.virt_addr().as_mut_ptr::<[u8;4096]>().as_mut().unwrap()};
-    let elf_size : u32 = params.rdx.try_into().unwrap();
-    log::info!("[Monitor] Elf size: {}", elf_size);
-    let mut elf_raw_data : [u8; 4096 * 2] = [0; 4096 * 2];
-    let mut i = 0;
-    while i < 4096 {
-        elf_raw_data[i] = page1_data[i];
-        elf_raw_data[i + 4096] = page2_data[i];
-        i = i + 1;
+    log::info!("Using Address: {:#x}", pgd_addr);
+    let mut page_table_ref = ProcessPageTableRef::default();
+    page_table_ref.set_external_table(pgd_addr);
+    log::info!("Trying to print page table");
+    //page_table_ref.print_table();
+    log::info!("Finding address");
+    page_table_ref.copy_address_range(VirtAddr::from(test_location),1,VirtAddr::null());
+}
+
+pub fn create_trustlet_page_table_from_user_data(data: VirtAddr, size: u64) -> ProcessPageTableRef {
+
+    log::info!("Trying to create Page Table");
+    //Page Table ref for the Trustlet
+    let mut page_table_ref = ProcessPageTableRef::default();
+    page_table_ref.build_from_file(data, size);
+
+    page_table_ref
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ProcessBaseContext {
+    pub page_table_ref: ProcessPageTableRef,
+    pub entry_point: VirtAddr,
+    pub alloc_range: AllocationRange,
+}
+
+impl Default for ProcessBaseContext {
+  fn default() -> Self {
+      return ProcessBaseContext {
+          page_table_ref: ProcessPageTableRef::default(),
+          entry_point: VirtAddr::null(),
+          alloc_range: AllocationRange(0,0),
+      }
+  }
+}
+
+impl ProcessBaseContext {
+    pub fn init(&mut self, elf: VirtAddr, size: u64) {
+        let mut ptr = ProcessPageTableRef::default();
+        self.entry_point = ptr.build_from_file(elf, size);
+        self.page_table_ref = ptr;
     }
-    let elf_buf = unsafe { slice::from_raw_parts(elf_raw_data.as_ptr(), elf_size.try_into().unwrap()) };
-    let elf = match elf::Elf64File::read(elf_buf) {
-        Ok(elf) => elf,
-        Err(e) => panic!("error reading ELF: {}", e),
-    };
-    log::info!("Elf file: {:?}", elf);
-    Ok(())
+
+    pub fn init_with_data(&mut self, elf: VirtAddr, size: u64, data: AllocationRange) {
+        self.init(elf, size);
+        self.alloc_range = data;
+    }
+
 }
 
-pub fn from_host(params: &mut RequestParams) -> Result<(), SvsmReqError>{
-    let page_table_paddr = params.rcx;
-    let guard = PerCPUPageMappingGuard::create_4k(PhysAddr::from(page_table_paddr))?;
-    let vaddr: VirtAddr = guard.virt_addr();
-    let entry: &mut [u64; 512] = unsafe {&mut *vaddr.as_mut_ptr::<[u64;512]>() };
-    log::info!("Process Table:  {:?}", entry);
-    //Copy table (for now only executable and stack)
-    let page_table_ref_vaddr = allocate_zeroed_page().unwrap();
-    let page_table_vaddr = allocate_zeroed_page().unwrap();
-    let page_table_ref: &mut PageTableReference = unsafe { page_table_ref_vaddr.as_mut_ptr::<PageTableReference>().as_mut().unwrap() };
-    page_table_ref.init(virt_to_phys(page_table_vaddr), page_table_vaddr, &[], &[]);
-    //let res = page_table_ref.page_walk_pub(VirtAddr::from(0x400000u64));
-
-    //page_table_ref.dump();
-    let paddr = entry[0] & !(PAGE_SIZE as u64 - 1);
-    log::info!("Address: {:#x}",paddr);
-    let guard2 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
-    let vaddr: VirtAddr = guard2.virt_addr();
-    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
-    log::info!("Table2: {:?}", entry);
-
-    let paddr = entry[0] &  !(PAGE_SIZE as u64 - 1);
-    log::info!("Address: {:#x}",paddr);
-    let guard3 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
-    let vaddr: VirtAddr = guard3.virt_addr();
-    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
-    log::info!("Table3: {:?}", entry);
-
-    let paddr = entry[2] &  !(PAGE_SIZE as u64 - 1);
-    log::info!("Address: {:#x}",paddr);
-    let guard4 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
-    let vaddr: VirtAddr = guard4.virt_addr();
-    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
-    log::info!("Table4: {:?}", entry);
-    //log::info!("Res: {:?}",res);
-    //page_table_ref.map_4k_page(target, addr, flags)
-    let paddr = entry[4] & !(PAGE_SIZE as u64 - 1);
-    log::info!("Address: {:#x}", paddr);
-    let guard5 = PerCPUPageMappingGuard::create_4k(PhysAddr::from(paddr))?;
-    let vaddr: VirtAddr = guard5.virt_addr();
-    log::info!("Test");
-    let entry: &mut [u64; 512] = unsafe { &mut *vaddr.as_mut_ptr::<[u64;512]>() };
-    log::info!("Data: {:?}", entry);
-    Ok(())
+#[derive(Debug, Copy, Clone)]
+pub struct ProcessContext {
+    pub base: ProcessBaseContext,
+    pub vmsa: PhysAddr,
+    pub sev_features: u64,
 }
 
-pub fn invoke_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
-
-    log::info!("Starting Trustlet invocation");
-
-    let trustlet_id = params.rcx;
-    let trustlet = PROCESS_STORE.get(ProcessID(trustlet_id.try_into().unwrap()));
-
-    log::info!("{:?}", trustlet);
-    log::info!("Test1");
-
-    let vaddr_vmsa = trustlet.vmsa;
-    let paddr_vmsa = virt_to_phys(vaddr_vmsa);
-    log::info!("Test2");
-    let vmsa = VMSA::from_virt_addr(vaddr_vmsa);
-    //vmsa.rbp = u64::from(0x8000000000u64)+1*4096-1;
-    //vmsa.rsp = u64::from(0x8000000000u64)+1*4096-1;
-    vmsa.cr3 = u64::from(unsafe {(*trustlet.page_table).table_phy});
-    vmsa.rip = 0x8000000000u64;
-    vmsa.efer = vmsa.efer | 1u64 << 12;
-    //log::info!("{:?}",vmsa);
-    
-    
-    log::info!("Test3");
-    let apic_id = this_cpu().get_apic_id();
-    //PERCPU_VMSAS.register(paddr_vmsa, apic_id, true)?;
-
-
-    let svme_mask: u64 = 1u64 << 12;
-    if !check_vmsa_ind(vmsa, vmsa.sev_features | 4, svme_mask,RMPFlags::VMPL1.bits()) {
-        log::info!("VMSA Check failed");
-        log::info!("Bits: {}",vmsa.vmpl == RMPFlags::VMPL3.bits() as u8);
-        log::info!("Efer & vsme_mask: {}", vmsa.efer & svme_mask == svme_mask);
-        log::info!("SEV features: {}", vmsa.sev_features == vmsa.sev_features);
-        if vmsa.efer & svme_mask == svme_mask {
-            PERCPU_VMSAS.unregister(paddr_vmsa, false).unwrap();
-            //core_create_vcpu_error_restore(vaddr_vmsa)?;
-            return Err(SvsmReqError::invalid_parameter());   
+impl Default for ProcessContext {
+    fn default() -> Self {
+        return ProcessContext {
+            base: ProcessBaseContext::default(),
+            vmsa: PhysAddr::null(),
+            sev_features: 0,
         }
     }
-    
-
-    /*let ptr = unsafe {&*trustlet.page_table};
-    let data_page = ptr.page_walk_pub(VirtAddr::from(0x8000000000u64));
-    log::info!("Page Addr: {}", data_page);
-    let mapping = TemporaryPageMapping::create_4k(data_page).unwrap();
-    let data_page_mapped = mapping.virt_addr().as_mut_ptr::<[u8;4096]>();
-    log::info!("{:?}",data_page_mapped);*/
-    //unsafe {(*trustlet.page_table).dump()};
-
-    //log::info!("VMSA: {:?}",vmsa);
-    //return Ok(());
-    //assert!(PERCPU_VMSAS.set_used(paddr_vmsa) == Some(apic_id));
-    log::info!("Test starting invocation");
-    //
-
-    let vmexit = vmsa.guest_exit_code as u64;
-    log::info!("Exit code: {}",vmexit);
-    //let t1 = get_current_time();
-
-    unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    let vmexit = vmsa.guest_exit_code as u64;
-    log::info!("Exit code: {}",vmexit);
-    let rip = vmsa.rip;
-    vmsa.rip += 0x2;
-    unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    //0x72 (114) in guest_exit_code stand for vmexit_cpuid
-    //unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    //unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(paddr_vmsa,u64::from(apic_id), 1, vmsa.sev_features | 4)?}
-    let rip = vmsa.rip;
-    //log::info!("IP3: {}", rip);
-    //let t2 = get_current_time();
-    /* 
-    log::info!("Test after invocation");
-    log::info!("Cyles ({}-{}): {}",t2,t1,t2-t1);
-    log::info!("Milliseconds: {}",(t2-t1).to_millisconds());
-    log::info!("Microseconds: {}",(t2-t1).to_microseconds());
-    log::info!("Nanoseconds: {}",(t2-t1).to_nanoseconds());
-    let arr = unsafe { trustlet.input.as_mut_ptr::<[u64;512]>().as_mut().unwrap()};
-
-    //log::info!("Read Time: {}\nWrite Time: {}", arr[511],arr[510]);
-    log::info!("Read Time: {}\nWrite Time: {}", arr[0],arr[1]);
-*/
-    params.rcx = 0;
-    Ok(())
 }
+
+
+impl ProcessContext {
+
+    pub fn init(&mut self, base: ProcessBaseContext) {
+
+        //Creating new VMSA for the Process
+        let new_vmsa_page = allocate_page();
+        let new_vmsa_mapping = PerCPUPageMappingGuard::create_4k(new_vmsa_page).unwrap();
+        let new_vmsa_vaddr = new_vmsa_mapping.virt_addr();
+
+        //Permission Setup for VMSA
+        rmp_adjust(new_vmsa_vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
+        rmp_set_guest_vmsa(new_vmsa_vaddr).unwrap();
+        rmp_adjust(new_vmsa_vaddr, RMPFlags::VMPL1 | RMPFlags::VMSA, PageSize::Regular).unwrap();
+
+        //Guest VMSA -> New VMSA
+        let vmsa = VMSA::from_virt_addr(new_vmsa_vaddr);
+        let locked = this_cpu_shared().guest_vmsa.lock();
+        let old_vmsa_ptr = unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() };
+        _ = replace(vmsa, *old_vmsa_ptr);
+        drop(locked);
+
+        //New VMSA Setup
+        vmsa.vmpl = 1; // Trustlets always run in VMPL1
+        vmsa.cpl = 3; // Ring 3
+        vmsa.cr3 = u64::from(base.page_table_ref.process_page_table);
+        vmsa.efer = vmsa.efer | 1u64 << 12;
+        vmsa.rip = base.entry_point.into();
+        vmsa.sev_features = old_vmsa_ptr.sev_features | 4; // 4 is for #VC Reflect
+        // New Stack
+        vmsa.rbp = u64::from(0x8000000000u64)+2*4096-1;
+        vmsa.rsp = u64::from(0x8000000000u64)+2*4096-1;
+
+        //Check VMSA
+        let svme_mask: u64 = 1u64 << 12;
+        if !check_vmsa_ind(vmsa, vmsa.sev_features, svme_mask, RMPFlags::VMPL1.bits()) {
+            log::info!("VMSA Check failed");
+            log::info!("Bits: {}",vmsa.vmpl == RMPFlags::VMPL1.bits() as u8);
+            log::info!("Efer & vsme_mask: {}", vmsa.efer & svme_mask == svme_mask);
+            log::info!("SEV features: {}", vmsa.sev_features == vmsa.sev_features);
+            panic!("Failed to create new VMSA");
+        }
+
+        self.vmsa = new_vmsa_page;
+        self.sev_features = vmsa.sev_features;
+        self.base = base;
+
+    }
+
+    pub fn test_run(&self) {
+        let apic_id = this_cpu().get_apic_id();
+        log::info!("Trying to execute Context");
+        unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(self.vmsa,u64::from(apic_id), 1, self.sev_features | 4).unwrap()}
+        log::info!("Done Trying");
+        log::info!("Moving RIP");
+        let mapping = PerCPUPageMappingGuard::create_4k(self.vmsa).unwrap();
+        let vmsa_vaddr = mapping.virt_addr();
+        let vmsa = unsafe {vmsa_vaddr.as_mut_ptr::<VMSA>().as_mut().unwrap() };
+        let rip = vmsa.rip;
+        log::info!("Now: {:?}",rip);
+        vmsa.rip = vmsa.rip + 2; //cpuid is 2 Bytes long
+    }
+
+}
+
