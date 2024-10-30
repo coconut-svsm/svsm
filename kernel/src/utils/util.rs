@@ -41,6 +41,10 @@ pub fn page_align_up(x: usize) -> usize {
     align_up(x, PAGE_SIZE)
 }
 
+pub fn page_align(x: usize) -> usize {
+    align_down(x, PAGE_SIZE)
+}
+
 pub fn page_offset(x: usize) -> usize {
     x & (PAGE_SIZE - 1)
 }
