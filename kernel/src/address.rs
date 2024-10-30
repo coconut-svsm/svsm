@@ -268,11 +268,13 @@ impl VirtAddr {
     }
 
     #[inline]
+    #[verus_verify(external_body)]
     pub fn as_ptr<T>(&self) -> *const T {
         self.0 as *const T
     }
 
     #[inline]
+    #[verus_verify(external_body)]
     pub fn as_mut_ptr<T>(&self) -> *mut T {
         self.0 as *mut T
     }
@@ -290,6 +292,7 @@ impl VirtAddr {
     /// All safety requirements for pointers apply, minus alignment and NULL
     /// checks, which this function already does.
     #[inline]
+    #[verus_verify(external_body)]
     pub unsafe fn aligned_ref<'a, T>(&self) -> Option<&'a T> {
         self.is_aligned_to::<T>()
             .then(|| self.as_ptr::<T>().as_ref())
@@ -304,6 +307,7 @@ impl VirtAddr {
     /// All safety requirements for pointers apply, minus alignment and NULL
     /// checks, which this function already does.
     #[inline]
+    #[verus_verify(external)]
     pub unsafe fn aligned_mut<'a, T>(&self) -> Option<&'a mut T> {
         self.is_aligned_to::<T>()
             .then(|| self.as_mut_ptr::<T>().as_mut())
@@ -332,6 +336,7 @@ impl VirtAddr {
     ///
     /// All Safety requirements from [`core::slice::from_raw_parts`] for the
     /// data pointed to by the `VirtAddr` apply here as well.
+    #[verus_verify(external_body)]
     pub unsafe fn to_slice<T>(&self, len: usize) -> &[T] {
         slice::from_raw_parts::<T>(self.as_ptr::<T>(), len)
     }

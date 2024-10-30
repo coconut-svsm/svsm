@@ -18,9 +18,6 @@
 // Add spec for convert traits
 pub mod convert;
 
-#[cfg(verus_keep_ghost)]
-include!("vstd.verus.rs");
-
 use builtin_macros::*;
 
 verus! {

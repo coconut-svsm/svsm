@@ -34,9 +34,9 @@ broadcast group vaddr_impl_proof {
 }
 
 broadcast use vaddr_impl_proof;
+
 /// Define a broadcast function and its related spec function calls in a inner
 /// module to avoid cyclic self-reference
-
 mod address_spec { include!("address_inner.verus.rs");  }
 
 #[cfg(verus_keep_ghost)]
