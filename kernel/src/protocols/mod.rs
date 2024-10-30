@@ -24,6 +24,7 @@ pub struct RequestParams {
     pub rcx: u64,
     pub rdx: u64,
     pub r8: u64,
+    pub r9: u64,
 }
 
 impl RequestParams {
@@ -34,6 +35,7 @@ impl RequestParams {
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
             r8: vmsa.r8,
+            r9: vmsa.r9,
         }
     }
 
@@ -41,5 +43,6 @@ impl RequestParams {
         vmsa.rcx = self.rcx;
         vmsa.rdx = self.rdx;
         vmsa.r8 = self.r8;
+        vmsa.r9 = self.r9;
     }
 }
