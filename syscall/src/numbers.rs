@@ -8,3 +8,6 @@
 
 pub const SYS_HELLO: u64 = 0;
 pub const SYS_EXIT: u64 = 1;
+
+///Maximum length of path name including null character in bytes
+pub const PATH_MAX: usize = 4096;
