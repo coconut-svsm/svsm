@@ -5,6 +5,7 @@
 // Author: Carlos López <carlos.lopez@suse.com>
 
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
+use crate::utils::{align_down, align_up};
 use core::fmt;
 use core::ops;
 
@@ -42,7 +43,12 @@ pub trait Address:
 
     #[inline]
     fn align_up(&self, align: InnerAddr) -> Self {
-        Self::from((self.bits() + (align - 1)) & !(align - 1))
+        Self::from(align_up((*self).into(), align))
+    }
+
+    #[inline]
+    fn align_down(&self, align: InnerAddr) -> Self {
+        Self::from(align_down((*self).into(), align))
     }
 
     #[inline]
@@ -52,7 +58,7 @@ pub trait Address:
 
     #[inline]
     fn page_align(&self) -> Self {
-        Self::from(self.bits() & !(PAGE_SIZE - 1))
+        self.align_down(PAGE_SIZE)
     }
 
     #[inline]
