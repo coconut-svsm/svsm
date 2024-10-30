@@ -11,8 +11,8 @@ use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 
 use bootlib::kernel_launch::KernelLaunchInfo;
 use svsm::process_manager;
+use svsm::process_manager::monitor_init;
 use svsm::process_manager::process::PROCESS_STORE;
-use svsm::process_manager::process_memory::additional_monitor_memory_init;
 use core::arch::global_asm;
 use core::mem::size_of;
 use core::panic::PanicInfo;
@@ -436,7 +436,7 @@ pub extern "C" fn svsm_main() {
     invalidate_early_boot_memory(&config, launch_info)
         .expect("Failed to invalidate early boot memory");
 
-    additional_monitor_memory_init().unwrap();
+    monitor_init();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
@@ -451,8 +451,6 @@ pub extern "C" fn svsm_main() {
     let _ = process_manager::process_memory::CPU_COUNT.reinit(&nr_cpus);
    
     start_secondary_cpus(platform, &cpus, launch_info.vtom);
-
-    PROCESS_STORE.init(10);
 
     let fw_metadata = config.get_fw_metadata();
     if let Some(ref fw_meta) = fw_metadata {
