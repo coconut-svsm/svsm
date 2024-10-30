@@ -38,7 +38,8 @@ use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PerCPUPageMappingGuard};
-use svsm::platform::{SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::platform;
+use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{secrets_page, secrets_page_mut};
@@ -46,7 +47,7 @@ use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use svsm::utils::{halt, immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "mstpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -276,6 +277,8 @@ fn init_cpuid_table(addr: VirtAddr) {
 #[no_mangle]
 pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let launch_info: KernelLaunchInfo = *li;
+    init_platform_type(launch_info.platform_type);
+
     let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
 
     mapping_info_init(&launch_info);
@@ -483,6 +486,6 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     loop {
         debug_break();
-        halt();
+        platform::halt();
     }
 }

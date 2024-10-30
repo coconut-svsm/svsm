@@ -13,6 +13,7 @@ use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
 use crate::platform::tdp::TdpPlatform;
 use crate::types::PageSize;
+use crate::utils;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
@@ -23,6 +24,7 @@ pub mod native;
 pub mod snp;
 pub mod tdp;
 
+static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
@@ -50,6 +52,14 @@ pub enum PageValidateOp {
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform {
+    /// Halts the system as required by the platform.
+    fn halt()
+    where
+        Self: Sized,
+    {
+        utils::halt();
+    }
+
     /// Performs basic early initialization of the runtime environment.
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
 
@@ -142,6 +152,7 @@ pub enum SvsmPlatformCell {
 
 impl SvsmPlatformCell {
     pub fn new(platform_type: SvsmPlatformType) -> Self {
+        assert_eq!(platform_type, *SVSM_PLATFORM_TYPE);
         match platform_type {
             SvsmPlatformType::Native => SvsmPlatformCell::Native(NativePlatform::new()),
             SvsmPlatformType::Snp => SvsmPlatformCell::Snp(SnpPlatform::new()),
@@ -163,5 +174,20 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
         }
+    }
+}
+
+pub fn init_platform_type(platform_type: SvsmPlatformType) {
+    SVSM_PLATFORM_TYPE.init(&platform_type).unwrap();
+}
+
+pub fn halt() {
+    // Use a platform-specific halt.  However, the SVSM_PLATFORM global may not
+    // yet be initialized, so go choose the halt implementation based on the
+    // platform-specific halt instead.
+    match *SVSM_PLATFORM_TYPE {
+        SvsmPlatformType::Native => NativePlatform::halt(),
+        SvsmPlatformType::Snp => SnpPlatform::halt(),
+        SvsmPlatformType::Tdp => TdpPlatform::halt(),
     }
 }
