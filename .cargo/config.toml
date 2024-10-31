@@ -13,5 +13,4 @@ rustflags = [
 ]
 
 [alias]
-vfmt = "run-script vfmt" # Format verus codes
 verify = "v build --features verus"
