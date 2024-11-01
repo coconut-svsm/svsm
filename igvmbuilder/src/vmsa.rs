@@ -10,7 +10,7 @@ use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
 use zerocopy07::FromZeroes;
 
-use crate::cmd_options::SevExtraFeatures;
+use crate::cmd_options::{Hypervisor, SevExtraFeatures};
 
 pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Vec<X86Register> {
     let mut vec: Vec<X86Register> = Vec::new();
@@ -172,6 +172,7 @@ pub fn construct_vmsa(
     vtom: u64,
     compatibility_mask: u32,
     extra_features: &Vec<SevExtraFeatures>,
+    hypervisor: Hypervisor,
 ) -> IgvmDirectiveHeader {
     let mut vmsa_box = SevVmsa::new_box_zeroed();
     let vmsa = vmsa_box.as_mut();
@@ -277,8 +278,20 @@ pub fn construct_vmsa(
     vmsa.efer |= 0x1000;
 
     // Configure non-zero reset state.
-    vmsa.pat = 0x0007040600070406;
+    vmsa.pat = match hypervisor {
+        Hypervisor::Vanadium => 0x70106,
+        _ => 0x0007040600070406,
+    };
     vmsa.xcr0 = 1;
+
+    vmsa.dr6 = match hypervisor {
+        Hypervisor::Vanadium => 0xffff0ff0,
+        _ => 0,
+    };
+    vmsa.dr7 = match hypervisor {
+        Hypervisor::Vanadium => 0x400,
+        _ => 0,
+    };
 
     let mut features = SevFeatures::new();
     features.set_snp(true);
