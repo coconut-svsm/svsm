@@ -36,11 +36,11 @@ impl VMalloc {
     pub fn new(size: usize, flags: VMFileMappingFlags) -> Result<Self, SvsmError> {
         let mut vmalloc = VMalloc {
             alloc: RawAllocMapping::new(size),
-            flags: PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY,
+            flags: PTEntryFlags::ACCESSED,
         };
 
         if flags.contains(VMFileMappingFlags::Write) {
-            vmalloc.flags |= PTEntryFlags::WRITABLE;
+            vmalloc.flags |= PTEntryFlags::WRITABLE | PTEntryFlags::DIRTY;
         }
 
         if !flags.contains(VMFileMappingFlags::Execute) {

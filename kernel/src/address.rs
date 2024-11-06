@@ -227,6 +227,11 @@ impl VirtAddr {
         self.0 as *mut T
     }
 
+    #[inline]
+    pub const fn as_usize(&self) -> usize {
+        self.0
+    }
+
     /// Converts the `VirtAddr` to a reference to the given type, checking
     /// that the address is not NULL and properly aligned.
     ///
