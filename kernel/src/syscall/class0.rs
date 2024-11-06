@@ -6,11 +6,6 @@
 
 use crate::task::{current_task_terminated, schedule};
 
-pub fn sys_hello() -> usize {
-    log::info!("Hello, world! System call invoked from user-space.");
-    0
-}
-
 pub fn sys_exit() -> ! {
     log::info!("Terminating current task");
     unsafe {

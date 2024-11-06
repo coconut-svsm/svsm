@@ -4,6 +4,8 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use core::ops::{Deref, DerefMut};
+
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
@@ -13,6 +15,7 @@ use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
 use crate::platform::tdp::TdpPlatform;
 use crate::types::PageSize;
+use crate::utils;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
@@ -23,6 +26,7 @@ pub mod native;
 pub mod snp;
 pub mod tdp;
 
+static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
@@ -50,6 +54,14 @@ pub enum PageValidateOp {
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform {
+    /// Halts the system as required by the platform.
+    fn halt()
+    where
+        Self: Sized,
+    {
+        utils::halt();
+    }
+
     /// Performs basic early initialization of the runtime environment.
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
 
@@ -142,26 +154,48 @@ pub enum SvsmPlatformCell {
 
 impl SvsmPlatformCell {
     pub fn new(platform_type: SvsmPlatformType) -> Self {
+        assert_eq!(platform_type, *SVSM_PLATFORM_TYPE);
         match platform_type {
             SvsmPlatformType::Native => SvsmPlatformCell::Native(NativePlatform::new()),
             SvsmPlatformType::Snp => SvsmPlatformCell::Snp(SnpPlatform::new()),
             SvsmPlatformType::Tdp => SvsmPlatformCell::Tdp(TdpPlatform::new()),
         }
     }
+}
 
-    pub fn as_dyn_ref(&self) -> &dyn SvsmPlatform {
+impl Deref for SvsmPlatformCell {
+    type Target = dyn SvsmPlatform;
+
+    fn deref(&self) -> &Self::Target {
         match self {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
         }
     }
+}
 
-    pub fn as_mut_dyn_ref(&mut self) -> &mut dyn SvsmPlatform {
+impl DerefMut for SvsmPlatformCell {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
         }
+    }
+}
+
+pub fn init_platform_type(platform_type: SvsmPlatformType) {
+    SVSM_PLATFORM_TYPE.init(&platform_type).unwrap();
+}
+
+pub fn halt() {
+    // Use a platform-specific halt.  However, the SVSM_PLATFORM global may not
+    // yet be initialized, so go choose the halt implementation based on the
+    // platform-specific halt instead.
+    match *SVSM_PLATFORM_TYPE {
+        SvsmPlatformType::Native => NativePlatform::halt(),
+        SvsmPlatformType::Snp => SnpPlatform::halt(),
+        SvsmPlatformType::Tdp => TdpPlatform::halt(),
     }
 }

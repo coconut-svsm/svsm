@@ -40,7 +40,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
 #[no_mangle]
 fn start_ap() {
     this_cpu()
-        .setup_on_cpu(SVSM_PLATFORM.as_dyn_ref())
+        .setup_on_cpu(&**SVSM_PLATFORM)
         .expect("setup_on_cpu() failed");
 
     this_cpu()

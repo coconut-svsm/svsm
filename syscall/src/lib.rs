@@ -5,8 +5,10 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 #![no_std]
 
-mod numbers;
+mod call;
+mod def;
 mod obj;
 
-pub use numbers::*;
+pub use call::SysCallError;
+pub use def::*;
 pub use obj::*;

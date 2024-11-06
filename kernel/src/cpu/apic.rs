@@ -574,7 +574,7 @@ impl LocalApic {
                 hv_icr.set_destination_shorthand(IcrDestFmt::AllButSelf);
             }
 
-            SVSM_PLATFORM.as_dyn_ref().post_irq(hv_icr.into()).unwrap();
+            SVSM_PLATFORM.post_irq(hv_icr.into()).unwrap();
         }
     }
 

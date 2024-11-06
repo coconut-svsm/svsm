@@ -369,6 +369,7 @@ impl IgvmBuilder {
                 param_block.vtom,
                 SNP_COMPATIBILITY_MASK,
                 &self.options.sev_features,
+                self.options.hypervisor,
             ));
         }
 

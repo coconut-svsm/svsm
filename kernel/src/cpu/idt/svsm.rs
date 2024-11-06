@@ -294,7 +294,6 @@ extern "C" fn ex_handler_system_call(
     };
 
     ctxt.regs.rax = match input {
-        SYS_HELLO => sys_hello(),
         SYS_EXIT => sys_exit(),
         _ => !0,
     };
@@ -318,7 +317,7 @@ pub extern "C" fn common_isr_handler(_vector: usize) {
     // simply to ensure an exit from the guest.
 
     // Treat any unhandled interrupt as a spurious interrupt.
-    SVSM_PLATFORM.as_dyn_ref().eoi();
+    SVSM_PLATFORM.eoi();
 }
 
 global_asm!(

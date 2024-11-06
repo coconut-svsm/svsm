@@ -179,7 +179,7 @@ impl InsnMachineCtx for X86ExceptionContext {
     }
 
     fn ioio_in(&self, port: u16, size: Bytes) -> Result<u64, InsnError> {
-        let io_port = SVSM_PLATFORM.as_dyn_ref().get_io_port();
+        let io_port = SVSM_PLATFORM.get_io_port();
         let data = match size {
             Bytes::One => io_port.inb(port) as u64,
             Bytes::Two => io_port.inw(port) as u64,
@@ -190,7 +190,7 @@ impl InsnMachineCtx for X86ExceptionContext {
     }
 
     fn ioio_out(&mut self, port: u16, size: Bytes, data: u64) -> Result<(), InsnError> {
-        let io_port = SVSM_PLATFORM.as_dyn_ref().get_io_port();
+        let io_port = SVSM_PLATFORM.get_io_port();
         match size {
             Bytes::One => io_port.outb(port, data as u8),
             Bytes::Two => io_port.outw(port, data as u16),
@@ -437,7 +437,7 @@ impl IdtEventType {
         match self {
             Self::External => true,
             Self::Software => false,
-            Self::Unknown => SVSM_PLATFORM.as_dyn_ref().is_external_interrupt(vector),
+            Self::Unknown => SVSM_PLATFORM.is_external_interrupt(vector),
         }
     }
 }
