@@ -27,3 +27,7 @@ impl From<&ObjHandle> for u32 {
         obj_handle.0
     }
 }
+
+pub trait Obj {
+    fn id(&self) -> u32;
+}
