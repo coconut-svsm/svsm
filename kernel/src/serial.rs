@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::io::{IOPort, DEFAULT_IO_DRIVER};
+use crate::{error::SvsmError, io};
 use core::fmt::Debug;
 
 pub const SERIAL_PORT: u16 = 0x3f8;
@@ -89,6 +90,30 @@ impl Terminal for SerialPort<'_> {
                 return self.inb(0);
             }
         }
+    }
+}
+
+impl io::Read for SerialPort<'_> {
+    type Err = SvsmError;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        for b in buf.iter_mut() {
+            *b = self.get_byte();
+        }
+
+        Ok(buf.len())
+    }
+}
+
+impl io::Write for SerialPort<'_> {
+    type Err = SvsmError;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        for b in buf.iter() {
+            self.put_byte(*b);
+        }
+
+        Ok(buf.len())
     }
 }
 
