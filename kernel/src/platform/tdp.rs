@@ -10,7 +10,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
+use crate::mm::virt_to_frame;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -101,14 +101,9 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        match op {
-            PageValidateOp::Validate => {
-                td_accept_memory(region.start().into(), region.len().try_into().unwrap());
-            }
-            PageValidateOp::Invalidate => {
-                let mapping = PerCPUPageMappingGuard::create(region.start(), region.end(), 0)?;
-                zero_mem_region(mapping.virt_addr(), mapping.virt_addr() + region.len());
-            }
+        // There is no need for page invalidation on TDP
+        if let PageValidateOp::Validate = op {
+            td_accept_memory(region.start().into(), region.len().try_into().unwrap());
         }
         Ok(())
     }
