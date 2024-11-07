@@ -9,11 +9,12 @@ use crate::config::SvsmConfig;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::PageBox;
+use crate::mm::{PageBox, PerCPUPageMappingGuard};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
-use crate::utils::MemoryRegion;
+use crate::types::{PageSize, PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::utils::{align_down, page_align, zero_mem_region, MemoryRegion};
 use bootlib::kernel_launch::KernelLaunchInfo;
+use core::cmp::min;
 
 struct IgvmParamInfo<'a> {
     virt_addr: VirtAddr,
@@ -94,6 +95,54 @@ pub fn init_page_table(
     Ok(pgtable)
 }
 
+fn scrub_phys_memory_region(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+    let mut start = region.start();
+    let mut maxlen_4k = 512 * PAGE_SIZE; // 2M
+    let mut maxlen_2m = 512 * PAGE_SIZE_2M; // 1G
+    let region_end_4k = region.end().page_align_up();
+    let region_end_2m = region.end().align_up(PAGE_SIZE_2M);
+
+    while start < region.end() {
+        let mut map_start = start.page_align();
+        let (mapping, map_end) = if maxlen_4k == 0 && maxlen_2m == 0 {
+            // No more space for temporary mappings
+            return Err(SvsmError::Mem);
+        } else if (maxlen_4k > 0 && (region_end_4k - map_start) < PAGE_SIZE_2M) || maxlen_2m == 0 {
+            // Use 4K mappings if
+            // - The mapping size < a 2M huge page, or
+            // - There is no space for 2M temporary mappings
+            let map_end = min(map_start + maxlen_4k, region_end_4k);
+            match PerCPUPageMappingGuard::create(map_start, map_end, 0) {
+                Ok(m) => (m, map_end),
+                Err(SvsmError::Mem) => {
+                    maxlen_4k = page_align((map_end - map_start) >> 1);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            // Use 2M mappings if
+            // - The mapping size >= a 2M huge page, or
+            // - There is no space for 4K temporary mappings
+            map_start = start.align_down(PAGE_SIZE_2M);
+            let map_end = min(map_start + maxlen_2m, region_end_2m);
+            match PerCPUPageMappingGuard::create(map_start, map_end, PAGE_SHIFT_2M - PAGE_SHIFT) {
+                Ok(m) => (m, map_end),
+                Err(SvsmError::Mem) => {
+                    maxlen_2m = align_down((map_end - map_start) >> 1, PAGE_SIZE_2M);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        };
+        let off = start - map_start;
+        let len = min(map_end, region.end()) - map_start;
+        zero_mem_region(mapping.virt_addr() + off, mapping.virt_addr() + len);
+        start = map_end;
+    }
+    Ok(())
+}
+
 fn clean_up_boot_memory_region(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
@@ -106,6 +155,10 @@ fn clean_up_boot_memory_region(
     );
 
     if !region.is_empty() {
+        // Some platforms (such as TDP) do not need page invalidation.
+        // Scrub the memory region first to make sure its content is
+        // always at least wiped.
+        scrub_phys_memory_region(region)?;
         platform.validate_physical_page_range(region, PageValidateOp::Invalidate)?;
 
         if config.page_state_change_required() {
