@@ -159,7 +159,7 @@ impl SvsmConfig<'_> {
         }
     }
 
-    pub fn invalidate_boot_data(&self) -> bool {
+    pub fn clean_up_boot_data(&self) -> bool {
         match self {
             SvsmConfig::FirmwareConfig(_) => false,
             SvsmConfig::IgvmConfig(_) => true,

@@ -45,7 +45,7 @@ use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::{request_loop, request_processing_main, update_mappings};
 use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{secrets_page, secrets_page_mut};
-use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
+use svsm::svsm_paging::{clean_up_early_boot_memory, init_page_table};
 use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
@@ -423,8 +423,8 @@ pub extern "C" fn svsm_main() {
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
-        .expect("Failed to invalidate early boot memory");
+    clean_up_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
+        .expect("Failed to clean up early boot memory");
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

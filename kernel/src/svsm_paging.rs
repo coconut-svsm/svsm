@@ -94,13 +94,13 @@ pub fn init_page_table(
     Ok(pgtable)
 }
 
-fn invalidate_boot_memory_region(
+fn clean_up_boot_memory_region(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     log::info!(
-        "Invalidating boot region {:018x}-{:018x}",
+        "Cleaning up boot region {:018x}-{:018x}",
         region.start(),
         region.end()
     );
@@ -116,33 +116,33 @@ fn invalidate_boot_memory_region(
     Ok(())
 }
 
-pub fn invalidate_early_boot_memory(
+pub fn clean_up_early_boot_memory(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
-    // Early boot memory must be invalidated after changing to the SVSM page
-    // page table to avoid invalidating page tables currently in use.  Always
-    // invalidate stage 2 memory, unless firmware is loaded into low memory.
-    // Also invalidate the boot data if required.
+    // Early boot memory must be cleaned up after changing to the SVSM page
+    // page table to avoid destroying page tables currently in use.  Always
+    // clean up stage 2 memory, unless firmware is loaded into low memory.
+    // Also clean up the boot data if required.
     if !config.fw_in_low_memory() {
         let lowmem_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
-        invalidate_boot_memory_region(platform, config, lowmem_region)?;
+        clean_up_boot_memory_region(platform, config, lowmem_region)?;
     }
 
     let stage2_base = PhysAddr::from(launch_info.stage2_start);
     let stage2_end = PhysAddr::from(launch_info.stage2_end);
     let stage2_region = MemoryRegion::from_addresses(stage2_base, stage2_end);
-    invalidate_boot_memory_region(platform, config, stage2_region)?;
+    clean_up_boot_memory_region(platform, config, stage2_region)?;
 
-    if config.invalidate_boot_data() {
+    if config.clean_up_boot_data() {
         let kernel_elf_size =
             launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
         let kernel_elf_region = MemoryRegion::new(
             PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
             kernel_elf_size.try_into().unwrap(),
         );
-        invalidate_boot_memory_region(platform, config, kernel_elf_region)?;
+        clean_up_boot_memory_region(platform, config, kernel_elf_region)?;
 
         let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
         if kernel_fs_size > 0 {
@@ -150,7 +150,7 @@ pub fn invalidate_early_boot_memory(
                 PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
                 kernel_fs_size.try_into().unwrap(),
             );
-            invalidate_boot_memory_region(platform, config, kernel_fs_region)?;
+            clean_up_boot_memory_region(platform, config, kernel_fs_region)?;
         }
 
         if launch_info.stage2_igvm_params_size > 0 {
@@ -158,7 +158,7 @@ pub fn invalidate_early_boot_memory(
                 PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
                 launch_info.stage2_igvm_params_size as usize,
             );
-            invalidate_boot_memory_region(platform, config, igvm_params_region)?;
+            clean_up_boot_memory_region(platform, config, igvm_params_region)?;
         }
     }
 
