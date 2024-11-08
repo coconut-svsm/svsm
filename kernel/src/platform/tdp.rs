@@ -4,17 +4,17 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
+use crate::mm::virt_to_frame;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
+use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::{zero_mem_region, MemoryRegion};
+use crate::utils::MemoryRegion;
 use tdx_tdcall::tdx::{
     td_accept_memory, tdvmcall_halt, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
     tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
@@ -105,10 +105,7 @@ impl SvsmPlatform for TdpPlatform {
             PageValidateOp::Validate => {
                 td_accept_memory(region.start().into(), region.len().try_into().unwrap());
             }
-            PageValidateOp::Invalidate => {
-                let mapping = PerCPUPageMappingGuard::create(region.start(), region.end(), 0)?;
-                zero_mem_region(mapping.virt_addr(), mapping.virt_addr() + region.len());
-            }
+            PageValidateOp::Invalidate => {}
         }
         Ok(())
     }
@@ -121,17 +118,26 @@ impl SvsmPlatform for TdpPlatform {
         match op {
             PageValidateOp::Validate => {
                 let mut va = region.start();
-                while va < region.end() {
-                    let pa = virt_to_frame(va);
-                    let sz = pa.end() - pa.address();
-                    // td_accept_memory() will take care of alignment
-                    td_accept_memory(pa.address().into(), sz.try_into().unwrap());
-                    va = va + sz;
+                let va_end = region.end();
+                while va < va_end {
+                    let frame = virt_to_frame(va);
+                    // Validate a 2 MB page if and only if the addresses are
+                    // appropriately aligned and the underlying mapping is a
+                    // 2 MB mapping.
+                    let size = if va.is_aligned(PAGE_SIZE_2M)
+                        && va + PAGE_SIZE_2M <= va_end
+                        && frame.size() >= PAGE_SIZE_2M
+                    {
+                        PAGE_SIZE_2M
+                    } else {
+                        PAGE_SIZE
+                    };
+
+                    td_accept_memory(frame.address().into(), size.try_into().unwrap());
+                    va = va + size;
                 }
             }
-            PageValidateOp::Invalidate => {
-                zero_mem_region(region.start(), region.end());
-            }
+            PageValidateOp::Invalidate => {}
         }
         Ok(())
     }
