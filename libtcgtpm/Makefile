@@ -100,10 +100,10 @@ $(OPENSSL_MAKEFILE):
 
 # tcgtpm
 $(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -C $(TCGTPM_DIR) $(LIBTPM_A)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_DIR) $(LIBTPM_A)
 
 $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -C $(TCGTPM_DIR) $(LIBPLATFORM_A)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_DIR) $(LIBPLATFORM_A)
 
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
 TCGTPM_CFLAGS += -DSIMULATION=NO -DFILE_BACKED_NV=NO
