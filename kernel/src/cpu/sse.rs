@@ -31,13 +31,18 @@ fn legacy_sse_enable() {
 }
 
 fn extended_sse_supported() -> bool {
-    let res = CpuidResult::get(0xD, 1);
+    let res = CpuidResult::get(0xD, 0);
     (res.eax & 0x7) == 0x7
 }
 
 fn xsave_supported() -> bool {
     let res = CpuidResult::get(1, 0);
     (res.ecx & (1 << CPUID_ECX_XSAVE)) != 0
+}
+
+fn xsaveopt_supported() -> bool {
+    let res = CpuidResult::get(0xD, 1);
+    (res.eax & (1 << CPUID_EAX_XSAVEOPT)) != 0
 }
 
 fn xcr0_set() {
@@ -50,14 +55,11 @@ fn xcr0_set() {
 
 pub fn get_xsave_area_size() -> u32 {
     let res = CpuidResult::get(0xD, 0);
-    if (res.eax & (1 << CPUID_EAX_XSAVEOPT)) == 0 {
-        panic!("XSAVEOPT unsupported");
-    }
     res.ecx
 }
 
 fn extended_sse_enable() {
-    if extended_sse_supported() && xsave_supported() {
+    if extended_sse_supported() && xsave_supported() && xsaveopt_supported() {
         cr4_xsave_enable();
         xcr0_set();
     } else {
