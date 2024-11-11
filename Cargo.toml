@@ -19,6 +19,8 @@ members = [
     # verification libraries for svsm
     "verify_proof",
     "verify_external",
+    # User-space support library
+    "user/lib",
 ]
 
 
@@ -32,6 +34,7 @@ elf = { path = "elf" }
 libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
+userlib = { path = "user/lib" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
