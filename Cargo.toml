@@ -21,6 +21,8 @@ members = [
     "verify_external",
     # User-space support library
     "user/lib",
+    # Init user-space module
+    "user/init",
 ]
 
 
@@ -35,6 +37,7 @@ libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
+userinit = { path = "user/init" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
