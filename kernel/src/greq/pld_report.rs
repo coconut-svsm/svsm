@@ -95,6 +95,10 @@ impl SnpReportResponse {
     pub fn measurement(&self) -> &[u8; 48] {
         &self.report.measurement
     }
+
+    pub fn report(&self) -> &AttestationReport {
+        &self.report
+    }
 }
 
 /// The `TCB_VERSION` contains the security version numbers of each
