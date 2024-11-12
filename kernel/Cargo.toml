@@ -43,7 +43,7 @@ test.workspace = true
 [features]
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
-mstpm = ["dep:libmstpm"]
+vtpm = ["dep:libmstpm"]
 nosmep = []
 nosmap = []
 shadow-stacks = []
