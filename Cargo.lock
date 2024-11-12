@@ -598,7 +598,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "libmstpm"
+name = "libtcgtpm"
 version = "0.1.0"
 
 [[package]]
@@ -906,7 +906,7 @@ dependencies = [
  "gdbstub_arch",
  "igvm_defs",
  "intrusive-collections",
- "libmstpm",
+ "libtcgtpm",
  "log",
  "packit",
  "syscall",

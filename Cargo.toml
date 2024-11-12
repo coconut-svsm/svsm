@@ -10,8 +10,8 @@ members = [
     "fuzz",
     # ELF loader
     "elf",
-    # Microsoft TPM library
-    "libmstpm",
+    # TPM 2.0 Reference Implementation library
+    "libtcgtpm",
     # syscall interface definitions
     "syscall",
 ]
@@ -24,7 +24,7 @@ cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
-libmstpm = { path = "libmstpm" }
+libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 
 # crates.io

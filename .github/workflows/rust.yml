@@ -28,7 +28,7 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
-      - name: Install Microsoft TPM build dependencies
+      - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - name: Check that Cargo.lock is up to date
@@ -104,8 +104,8 @@ jobs:
       # building the code with nightly. So we initialize bindings.rs here
       # for cargo-fmt in the next workflow, otherwise it will fail reporting
       # that bindings.rs does not exist.
-      - name: Touch libmstpm bindings
-        run: echo "" > libmstpm/src/bindings.rs
+      - name: Touch libtcgtpm bindings
+        run: echo "" > libtcgtpm/src/bindings.rs
 
       - name: Format doctests
         uses: actions-rs/cargo@v1
