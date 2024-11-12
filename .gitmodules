@@ -3,4 +3,4 @@
 	url = https://github.com/openssl/openssl.git
 [submodule "libtcgtpm/deps/tpm-20-ref"]
 	path = libtcgtpm/deps/tpm-20-ref
-	url = https://github.com/microsoft/ms-tpm-20-ref.git
+	url = https://github.com/TrustedComputingGroup/TPM.git

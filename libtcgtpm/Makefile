@@ -106,7 +106,7 @@ $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
 	$(MAKE) -j$$(nproc) -C $(TCGTPM_DIR) $(LIBPLATFORM_A)
 
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
-TCGTPM_CFLAGS += -DSIMULATION=NO -DFILE_BACKED_NV=NO
+TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
 TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 # This is needed to workaround an issue with an unused variable when
@@ -114,6 +114,8 @@ TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 # https://github.com/TrustedComputingGroup/TPM/pull/7
 # When that PR is merged, we can remove this line.
 TCGTPM_CFLAGS += -Wno-error=unused-variable
+
+TCGTPM_EXTRA_CFLAGS = -I $(DEPS_DIR)/TpmConfiguration
 
 # Configure the TPM 2.0 Reference Implementation and remove the pthread requirement.
 # In fact, pthread is required only in the TPM simulator, but we
@@ -127,6 +129,7 @@ $(TCGTPM_MAKEFILE):
 		./bootstrap && \
 		sed -i 's/^ax_pthread_ok=no/ax_pthread_ok=yes/' configure && \
 		./configure \
+			EXTRA_CFLAGS="${TCGTPM_EXTRA_CFLAGS}" \
 			CFLAGS="${TCGTPM_CFLAGS}" \
 			LIBCRYPTO_LIBS="$(LIBCRT) $(LIBCRYPTO)" \
 			LIBCRYPTO_CFLAGS="${TCGTPM_CFLAGS}")
