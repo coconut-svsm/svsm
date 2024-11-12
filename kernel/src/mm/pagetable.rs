@@ -467,7 +467,7 @@ impl PageFrame {
         }
     }
 
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         match self {
             Self::Size4K(_) => PAGE_SIZE,
             Self::Size2M(_) => PAGE_SIZE_2M,

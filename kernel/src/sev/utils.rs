@@ -6,6 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
+use crate::mm::virt_to_frame;
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
@@ -67,7 +68,12 @@ pub fn pvalidate_range(
     let end = region.end();
 
     while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
+        // Validation as a 2 MB page can only be attempted if the underlying
+        // mapping is a 2 MB mapping.
+        if addr.is_aligned(PAGE_SIZE_2M)
+            && addr + PAGE_SIZE_2M <= end
+            && virt_to_frame(addr).size() >= PAGE_SIZE_2M
+        {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
