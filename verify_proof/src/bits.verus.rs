@@ -248,7 +248,7 @@ macro_rules! bit_shl_values {
         pub broadcast proof fn $pname()
         ensures
         #(
-            N < $styp::BITS ==> ($one << N) == POW2_VALUE!(N),
+            N < $styp::BITS ==> #[trigger]($one << N) == POW2_VALUE!(N),
         )*
         {
             #(assert($one << N == POW2_VALUE!(N)) by(compute_only);)*

@@ -1,13 +1,18 @@
 #!/bin/bash
-VERISMO_REV=5186244
+VERISMO_REV=9864eac
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV cargo-v
 builtin=`cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "builtin_macros") | .targets[].src_path'`
 verus=`dirname $builtin`/../../../source/target-verus/release/verus
 if [ -f ${verus} ]; then
     echo "verus (${verus}) is already built"
 else
-    cargo v prepare-verus 
+    # build the verus using the source code from builtin/vstd defined in
+    # Cargo.toml so that the verus lib and tool are compatible.
+    cargo v prepare-verus
 fi
+
+# verus-rustc as a wrapper to call verus with proper rustc flags.
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV verus-rustc
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/verus-lang/verusfmt/releases/download/v0.5.0/verusfmt-installer.sh | sh
-sudo apt-get install build-essential ninja-build libclang-dev
+
+# verus formatter
+cargo install --git https://github.com/verus-lang/verusfmt --rev v0.5.0
