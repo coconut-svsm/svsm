@@ -540,6 +540,12 @@ impl GHCB {
         Ok(())
     }
 
+    fn pepare_buffer(&self) {
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+    }
+
     pub fn psc_entry(
         &self,
         paddr: PhysAddr,
@@ -602,9 +608,7 @@ impl GHCB {
                 };
                 self.write_buffer(&header, 0)?;
 
-                let buffer_va = VirtAddr::from(self.buffer.as_ptr());
-                let buffer_pa = u64::from(virt_to_phys(buffer_va));
-                self.set_sw_scratch_valid(buffer_pa);
+                self.pepare_buffer();
 
                 if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
                     if let Err(err) = self.get_exit_info_2_valid() {
