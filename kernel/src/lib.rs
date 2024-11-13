@@ -12,6 +12,7 @@
 
 pub mod acpi;
 pub mod address;
+pub mod attest;
 pub mod config;
 pub mod console;
 pub mod cpu;

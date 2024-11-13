@@ -21,6 +21,7 @@ doctest = true
 [dependencies]
 bootlib.workspace = true
 cpuarch.workspace = true
+libaproxy.workspace = true
 elf.workspace = true
 syscall.workspace = true
 
@@ -31,9 +32,12 @@ gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }
 igvm_defs = { workspace = true, features = ["unstable"] }
 intrusive-collections.workspace = true
+kbs-types.workspace = true
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 
 builtin = { workspace = true, optional = true }
