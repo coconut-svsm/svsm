@@ -1,4 +1,11 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# Copyright (c) Microsoft Corporation
+#
+# Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
+# A script to install verus tools
+
 VERISMO_REV=9864eac
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV cargo-v
 builtin=`cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "builtin_macros") | .targets[].src_path'`

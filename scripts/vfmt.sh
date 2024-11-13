@@ -1,3 +1,11 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# Copyright (c) Microsoft Corporation
+#
+# Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
+# A script to format code inside verus macro.
+
 for f in `find ./ -type f -name "*.verus.rs"`
 do
 output=$(verusfmt $f $@ 2>&1)
