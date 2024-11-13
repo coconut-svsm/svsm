@@ -899,6 +899,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "stage1"
+version = "0.1.0"
+
+[[package]]
 name = "state_machines_macros"
 version = "0.1.0"
 source = "git+https://github.com/verus-lang/verus?rev=943ba63#943ba63e0a33b668f840f8e0cb0b6e4d59759a8e"

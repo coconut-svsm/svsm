@@ -21,6 +21,7 @@ else ifeq ($(V), 2)
 CARGO_ARGS += -vv
 endif
 
+STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
@@ -36,9 +37,6 @@ endif
 
 C_BIT_POS ?= 51
 
-STAGE1_OBJS = stage1/stage1.o stage1/reset.o
-STAGE1_TEST_OBJS = stage1/stage1-test.o stage1/reset.o
-STAGE1_TRAMPOLINE_OBJS = stage1/stage1-trampoline.o stage1/reset.o
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm bin/coconut-vanadium.igvm
 IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
@@ -141,42 +139,35 @@ ifneq ($(FS_FILE), none)
 endif
 	touch ${FS_BIN}
 
-stage1/stage1.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin
+bin/svsm: bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin/meta.bin
 	ln -sf svsm-kernel.elf bin/kernel.elf
-	cc -c -DLOAD_STAGE2 -o $@ $<
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- -C panic=abort
 	rm -f bin/kernel.elf
+	cp -f $(STAGE1_ELF) $@
 
-stage1/stage1-test.o: stage1/stage1.S bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin
+bin/stage1-trampoline: bin/meta.bin
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --bin stage1 -- -C panic=abort
+	cp -f $(STAGE1_ELF) $@
+
+bin/svsm-test: bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin/meta.bin
 	ln -sf test-kernel.elf bin/kernel.elf
-	cc -c -DLOAD_STAGE2 -o $@ $<
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- -C panic=abort
 	rm -f bin/kernel.elf
+	cp -f $(STAGE1_ELF) $@
 
-stage1/stage1-trampoline.o: stage1/stage1.S
-	cc -c -o $@ $<
-
-stage1/reset.o:  stage1/reset.S bin/meta.bin
-
-bin/stage1: ${STAGE1_OBJS}
-	$(CC) -o $@ $(STAGE1_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
-
-bin/stage1-test: ${STAGE1_TEST_OBJS}
-	$(CC) -o $@ $(STAGE1_TEST_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
-
-bin/stage1-trampoline: ${STAGE1_TRAMPOLINE_OBJS}
-	$(CC) -o $@ $(STAGE1_TRAMPOLINE_OBJS) -nostdlib -Wl,--build-id=none -Wl,-Tstage1/stage1.lds -no-pie
-
-bin/svsm.bin: bin/stage1
+bin/svsm.bin: bin/svsm
 	objcopy -O binary $< $@
 
 bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
 
-bin/svsm-test.bin: bin/stage1-test
+bin/svsm-test.bin: bin/svsm-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -C panic=abort -D warnings
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
@@ -189,4 +180,4 @@ clean:
 distclean: clean
 	$(MAKE) -C libtcgtpm $@
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf bin/svsm bin/stage1-trampoline bin/svsm-test distclean

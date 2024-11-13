@@ -5,6 +5,7 @@ members = [
     "igvmbuilder",
     "igvmmeasure",
     # binary targets
+    "stage1",
     "kernel",
     # fuzzing
     "fuzz",
