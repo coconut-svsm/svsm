@@ -97,6 +97,8 @@ enum GHCBExitCode {
     IOIO = 0x7b,
     MSR = 0x7c,
     RDTSCP = 0x87,
+    MMIO_READ = 0x8000_0001,
+    MMIO_WRITE = 0x8000_0002,
     SNP_PSC = 0x8000_0010,
     GUEST_REQUEST = 0x8000_0011,
     GUEST_EXT_REQUEST = 0x8000_0012,
@@ -449,15 +451,51 @@ impl GHCB {
         T: IntoBytes + Immutable,
     {
         let src = data.as_bytes();
+        self.write_buffer_slice(src, offset)
+    }
+
+    fn write_buffer_slice(&self, data: &[u8], offset: usize) -> Result<(), GhcbError> {
         let dst = &self
             .buffer
             .get(offset..)
             .ok_or(GhcbError::InvalidOffset)?
-            .get(..src.len())
+            .get(..data.len())
             .ok_or(GhcbError::InvalidOffset)?;
-        for (dst, src) in dst.iter().zip(src.iter().copied()) {
+        for (dst, src) in dst.iter().zip(data.iter().copied()) {
             dst.store(src, Ordering::Relaxed);
         }
+        Ok(())
+    }
+
+    fn read_buffer_slice(&self, data: &mut [u8], offset: usize) -> Result<(), GhcbError> {
+        let src = &self
+            .buffer
+            .get(offset..)
+            .ok_or(GhcbError::InvalidOffset)?
+            .get(..data.len())
+            .ok_or(GhcbError::InvalidOffset)?;
+        for (d, s) in data.iter_mut().zip(src.iter()) {
+            *d = s.load(Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    pub fn mmio_write(&self, pa: PhysAddr, value: &[u8]) -> Result<(), SvsmError> {
+        self.clear();
+        self.write_buffer_slice(value, 0)?;
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(GHCBExitCode::MMIO_WRITE, u64::from(pa), value.len() as u64)?;
+        Ok(())
+    }
+
+    pub fn mmio_read(&self, pa: PhysAddr, value: &mut [u8]) -> Result<(), SvsmError> {
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+        self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), value.len() as u64)?;
+        self.read_buffer_slice(value, 0)?;
         Ok(())
     }
 
