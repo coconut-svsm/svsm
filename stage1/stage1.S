@@ -6,8 +6,6 @@
  * Author: Joerg Roedel <jroedel@suse.de>
  */
 
-#include "types.h"
-
 /* Stage2 is loaded at 8 MB + 16 KB */
 #define STAGE2_START		0x808000
 
