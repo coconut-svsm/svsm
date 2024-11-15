@@ -90,18 +90,20 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
-    asm!("1: movw ({0}), {1}",
-         "   xorq %rcx, %rcx",
-         "2:",
-         ".pushsection \"__exception_table\",\"a\"",
-         ".balign 16",
-         ".quad (1b)",
-         ".quad (2b)",
-         ".popsection",
-            in(reg) v.bits(),
-            out(reg) val,
-            out("rcx") rcx,
-            options(att_syntax, nostack));
+    unsafe {
+        asm!("1: movw ({0}), {1}",
+             "   xorq %rcx, %rcx",
+             "2:",
+             ".pushsection \"__exception_table\",\"a\"",
+             ".balign 16",
+             ".quad (1b)",
+             ".quad (2b)",
+             ".popsection",
+                in(reg) v.bits(),
+                out(reg) val,
+                out("rcx") rcx,
+                options(att_syntax, nostack));
+    }
 
     let ret: u16 = (val & 0xffff) as u16;
     if rcx == 0 {
@@ -117,18 +119,20 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
-    asm!("1: movl ({0}), {1}",
-         "   xorq %rcx, %rcx",
-         "2:",
-         ".pushsection \"__exception_table\",\"a\"",
-         ".balign 16",
-         ".quad (1b)",
-         ".quad (2b)",
-         ".popsection",
-            in(reg) v.bits(),
-            out(reg) val,
-            out("rcx") rcx,
-            options(att_syntax, nostack));
+    unsafe {
+        asm!("1: movl ({0}), {1}",
+             "   xorq %rcx, %rcx",
+             "2:",
+             ".pushsection \"__exception_table\",\"a\"",
+             ".balign 16",
+             ".quad (1b)",
+             ".quad (2b)",
+             ".popsection",
+                in(reg) v.bits(),
+                out(reg) val,
+                out("rcx") rcx,
+                options(att_syntax, nostack));
+    }
 
     let ret: u32 = (val & 0xffffffff) as u32;
     if rcx == 0 {
@@ -144,19 +148,20 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
-    asm!("1: movq ({0}), {1}",
-         "   xorq %rcx, %rcx",
-         "2:",
-         ".pushsection \"__exception_table\",\"a\"",
-         ".balign 16",
-         ".quad (1b)",
-         ".quad (2b)",
-         ".popsection",
-            in(reg) v.bits(),
-            out(reg) val,
-            out("rcx") rcx,
-            options(att_syntax, nostack));
-
+    unsafe {
+        asm!("1: movq ({0}), {1}",
+             "   xorq %rcx, %rcx",
+             "2:",
+             ".pushsection \"__exception_table\",\"a\"",
+             ".balign 16",
+             ".quad (1b)",
+             ".quad (2b)",
+             ".popsection",
+                in(reg) v.bits(),
+                out(reg) val,
+                out("rcx") rcx,
+                options(att_syntax, nostack));
+    }
     if rcx == 0 {
         Ok(val)
     } else {
@@ -169,18 +174,20 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     let size: usize = size_of::<T>();
     let mut rcx: u64;
 
-    asm!("1:cld
-            rep movsb
-          2:
-         .pushsection \"__exception_table\",\"a\"
-         .balign 16
-         .quad (1b)
-         .quad (2b)
-         .popsection",
-            inout("rsi") src => _,
-            inout("rdi") dst => _,
-            inout("rcx") size => rcx,
-            options(att_syntax, nostack));
+    unsafe {
+        asm!("1:cld
+                rep movsb
+              2:
+             .pushsection \"__exception_table\",\"a\"
+             .balign 16
+             .quad (1b)
+             .quad (2b)
+             .popsection",
+                inout("rsi") src => _,
+                inout("rdi") dst => _,
+                inout("rcx") size => rcx,
+                options(att_syntax, nostack));
+    }
 
     if rcx == 0 {
         Ok(())
@@ -269,12 +276,12 @@ impl<T: Copy> InsnMachineMem for GuestPtr<T> {
 
     /// Safety: See the GuestPtr's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-        self.read().map_err(|_| InsnError::MemRead)
+        unsafe { self.read().map_err(|_| InsnError::MemRead) }
     }
 
     /// Safety: See the GuestPtr's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-        self.write(data).map_err(|_| InsnError::MemWrite)
+        unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
     }
 }
 

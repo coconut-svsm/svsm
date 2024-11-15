@@ -242,7 +242,7 @@ impl VirtAddr {
     #[inline]
     pub unsafe fn aligned_ref<'a, T>(&self) -> Option<&'a T> {
         self.is_aligned_to::<T>()
-            .then(|| self.as_ptr::<T>().as_ref())
+            .then(|| unsafe { self.as_ptr::<T>().as_ref() })
             .flatten()
     }
 
@@ -256,7 +256,7 @@ impl VirtAddr {
     #[inline]
     pub unsafe fn aligned_mut<'a, T>(&self) -> Option<&'a mut T> {
         self.is_aligned_to::<T>()
-            .then(|| self.as_mut_ptr::<T>().as_mut())
+            .then(|| unsafe { self.as_mut_ptr::<T>().as_mut() })
             .flatten()
     }
 
@@ -279,7 +279,7 @@ impl VirtAddr {
     /// All Safety requirements from [`core::slice::from_raw_parts`] for the
     /// data pointed to by the `VirtAddr` apply here as well.
     pub unsafe fn to_slice<T>(&self, len: usize) -> &[T] {
-        slice::from_raw_parts::<T>(self.as_ptr::<T>(), len)
+        unsafe { slice::from_raw_parts::<T>(self.as_ptr::<T>(), len) }
     }
 }
 
