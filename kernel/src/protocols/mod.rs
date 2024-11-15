@@ -5,6 +5,7 @@
 // Author: Dov Murik <dovmurik@linux.ibm.com>
 
 pub mod apic;
+pub mod attestation;
 pub mod core;
 pub mod errors;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -14,6 +15,7 @@ use cpuarch::vmsa::{GuestVMExit, VMSA};
 
 // SVSM protocols
 pub const SVSM_CORE_PROTOCOL: u32 = 0;
+pub const SVSM_ATTESTATION_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
 

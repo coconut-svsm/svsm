@@ -45,6 +45,17 @@ pub enum ApicError {
     Registration,
 }
 
+/// Errors related to Attestation handling. These may originate from multiple
+/// layers in the system.
+#[derive(Clone, Copy, Debug)]
+pub enum AttestationError {
+    /// An error related to attestation report.
+    Report,
+
+    /// An error related to attestation manifest.
+    Manifest,
+}
+
 /// A generic error during SVSM operation.
 #[derive(Clone, Copy, Debug)]
 pub enum SvsmError {
@@ -100,6 +111,8 @@ pub enum SvsmError {
     NotSupported,
     /// Generic errors related to APIC emulation.
     Apic(ApicError),
+    /// Generic errors related to attestation handling.
+    Attestation(AttestationError),
     /// Errors related to Hyper-V.
     HyperV(u16),
 }
@@ -113,6 +126,12 @@ impl From<ElfError> for SvsmError {
 impl From<ApicError> for SvsmError {
     fn from(err: ApicError) -> Self {
         Self::Apic(err)
+    }
+}
+
+impl From<AttestationError> for SvsmError {
+    fn from(err: AttestationError) -> Self {
+        Self::Attestation(err)
     }
 }
 
