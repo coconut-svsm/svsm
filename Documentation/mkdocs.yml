@@ -6,6 +6,8 @@ nav:
   - Documentation Home: 'index.md'
   - Building and launching:
     - 'installation/INSTALL.md'
+  - Build Recipe Documentation:
+    - 'installation/BUILD_RECIPES.md'
 
   - Developer Information:
     - 'developer/DOC-GUIDELINES.md'
