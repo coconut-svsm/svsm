@@ -112,7 +112,7 @@ class CargoRunner:
         binary_dir = os.path.join(target_dir, "release" if self.release else "debug")
         return os.path.join(binary_dir, self.package)
 
-def parse_kernel(recipe):
+def parse_components(recipe):
     """
     Parse a recipe for a single kernel component like tdx-stage1, stage2 or svsm.
 
@@ -149,7 +149,7 @@ def kernel_recipe(config):
 
     kernel_json = config.get("kernel", {})
 
-    return parse_kernel(kernel_json)
+    return parse_components(kernel_json)
 
 
 def parse_igvm_config(target, config):
