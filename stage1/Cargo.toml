@@ -12,3 +12,6 @@ test = false
 [features]
 default = []
 load-stage2 = []
+
+[dependencies]
+bootlib.workspace = true

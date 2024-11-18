@@ -901,6 +901,9 @@ dependencies = [
 [[package]]
 name = "stage1"
 version = "0.1.0"
+dependencies = [
+ "bootlib",
+]
 
 [[package]]
 name = "state_machines_macros"
