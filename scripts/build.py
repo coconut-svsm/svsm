@@ -376,7 +376,8 @@ def build_helpers(args):
     """
     helpers = {
         "igvmbuilder": {},
-        "igvmmeasure": {}
+        "igvmmeasure": {},
+        "packit": { "features": ["cli"] }
     }
     return recipe_build(helpers, get_host_target(), args)
 
