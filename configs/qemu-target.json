@@ -29,5 +29,12 @@
     },
     "firmware": {
         "env": "FW_FILE"
+    },
+    "fs": {
+        "modules": {
+            "userinit": {
+                "path": "/init"
+            }
+        }
     }
 }
