@@ -131,7 +131,8 @@ def parse_components(recipe):
             "manifest": settings.get("manifest", None),
             "features": settings.get("features", "").split(),
             "binary": settings.get("binary", False),
-            "objcopy": settings.get("objcopy", get_svsm_elf_target())
+            "objcopy": settings.get("objcopy", get_svsm_elf_target()),
+            "path": settings.get("path", None),
         }
 
     return kernel_config
