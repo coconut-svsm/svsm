@@ -21,6 +21,8 @@ else ifeq ($(V), 2)
 CARGO_ARGS += -vv
 endif
 
+STAGE1_RUSTC_ARGS += -C panic=abort
+
 STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
@@ -139,20 +141,26 @@ ifneq ($(FS_FILE), none)
 endif
 	touch ${FS_BIN}
 
-bin/svsm: bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin/meta.bin
+stage1_elf_full: bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin/meta.bin
 	ln -sf svsm-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- -C panic=abort
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 	rm -f bin/kernel.elf
-	cp -f $(STAGE1_ELF) $@
 
-bin/stage1-trampoline: bin/meta.bin
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --bin stage1 -- -C panic=abort
-	cp -f $(STAGE1_ELF) $@
+stage1_elf_trampoline: bin/meta.bin
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 
-bin/svsm-test: bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin/meta.bin
+stage1_elf_test: bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin/meta.bin
 	ln -sf test-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- -C panic=abort
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 	rm -f bin/kernel.elf
+
+bin/svsm: stage1_elf_full
+	cp -f $(STAGE1_ELF) $@
+
+bin/stage1-trampoline: stage1_elf_trampoline
+	cp -f $(STAGE1_ELF) $@
+
+bin/svsm-test: stage1_elf_test
 	cp -f $(STAGE1_ELF) $@
 
 bin/svsm.bin: bin/svsm
@@ -167,7 +175,7 @@ bin/svsm-test.bin: bin/svsm-test
 clippy:
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -C panic=abort -D warnings
+	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
@@ -180,4 +188,4 @@ clean:
 distclean: clean
 	$(MAKE) -C libtcgtpm $@
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf bin/svsm bin/stage1-trampoline bin/svsm-test distclean
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean

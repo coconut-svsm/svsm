@@ -41,7 +41,7 @@ jobs:
       # ld to work, so build all the objects without performing the
       # final linking step.
       - name: Build
-        run: make FEATURES="default,enable-gdb" bin/svsm-kernel.elf stage1/stage1.o stage1/reset.o
+        run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
 
       - name: Run tests
         run: make test
@@ -56,13 +56,19 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --all-features -- -D warnings
+          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --all-features -- -D warnings
 
       - name: Clippy on std x86_64-unknown-linux-gnu
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --exclude packit --target=x86_64-unknown-linux-gnu -- -D warnings
+          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --exclude packit --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
+
+      - name: Clippy on stage1
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --package stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings -C panic=abort
 
       - name: Clippy on svsm-fuzz
         uses: actions-rs/cargo@v1
@@ -141,11 +147,11 @@ jobs:
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - name: Build
-        run: make FEATURES="default,enable-gdb" bin/svsm-kernel.elf stage1/stage1.o stage1/reset.o
+        run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
 
       - name: Clippy with undocumented_unsafe_blocks for PR branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt
 
       # Required because after the next checkout everything is removed.
       - name: Upload PR warnings artifact
@@ -160,12 +166,13 @@ jobs:
           submodules: recursive
           ref: ${{ github.event.pull_request.base.sha }}
 
-      - name: Build base branch
-        run: make FEATURES="default,enable-gdb" bin/svsm-kernel.elf stage1/stage1.o stage1/reset.o
+      #TODO remove after PR is merged
+      #- name: Build base branch
+      #run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
 
       - name: Clippy with undocumented_unsafe_blocks for base branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt
 
       - name: Download PR warnings artifact
         uses: actions/download-artifact@v3
@@ -182,7 +189,7 @@ jobs:
           if [ "$PR_WARNINGS" -gt "$BASE_WARNINGS" ]; then
             echo "ERROR: $(($PR_WARNINGS - $BASE_WARNINGS)) new undocumented unsafe code blocks detected in this PR"
             echo "enabling the clippy::undocumented_unsafe_blocks lint in this way:"
-            echo "$ cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz \\"
+            echo "$ cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz \\"
             echo "  --exclude igvmbuilder --exclude igvmmeasure -- -W clippy::undocumented_unsafe_blocks"
             echo ""
             diff --color -u clippy_warnings_base.txt clippy_warnings_pr.txt
