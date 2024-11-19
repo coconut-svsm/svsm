@@ -207,7 +207,7 @@ void init_sev_meta(struct svsm_meta_data *svsm_meta)
 	svsm_meta->descs[2].type = SEV_DESC_TYPE_CPUID;
 
 	svsm_meta->descs[3].base = 0x808000;
-	svsm_meta->descs[3].len  = 0x8A0000 - 0x808000;
+	svsm_meta->descs[3].len  = 0x8D0000 - 0x808000;
 	svsm_meta->descs[3].type = SEV_DESC_TYPE_SNP_SEC_MEM;
 }
 

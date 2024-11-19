@@ -61,6 +61,9 @@ global_asm!(
         movl    $stage2_size, %ecx
         addl    %ebp, %ecx
         movl    (%ecx), %ecx
+        /* Make sure stage 2 doesn't exceed the max allowable length */
+        cmpl    ${STAGE2_MAXLEN}, %ecx
+        jg      3f
         shrl    $2, %ecx
         rep movsl
 
@@ -107,7 +110,8 @@ global_asm!(
         /* Clear ESI to inform stage 2 that this is the BSP */
         xorl    %esi, %esi
 
-        jmp     .Lenter_stage2"#,
+        jmp     .Lenter_stage2
+    3:  ud2"#,
     STAGE2_START = const STAGE2_START,
     STAGE2_MAXLEN = const STAGE2_MAXLEN,
     STAGE1_STACK = const STAGE2_STACK + STAGE2_INFO_SZ,

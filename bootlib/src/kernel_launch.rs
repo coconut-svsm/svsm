@@ -15,7 +15,7 @@ pub const SECRETS_PAGE: u32 = 0x806000;
 pub const CPUID_PAGE: u32 = 0x807000;
 // Stage2 is loaded at 8 MB + 32 KB
 pub const STAGE2_START: u32 = 0x808000;
-pub const STAGE2_MAXLEN: u32 = 0x8A0000 - STAGE2_START;
+pub const STAGE2_MAXLEN: u32 = 0x8D0000 - STAGE2_START;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
