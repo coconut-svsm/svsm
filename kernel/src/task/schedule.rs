@@ -232,7 +232,17 @@ impl TaskList {
 
 pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 
-pub fn create_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+/// Creates, initializes and starts a new kernel task. Note that the task has
+/// already started to run before this function returns.
+///
+/// # Arguments
+///
+/// * entry: The function to run as the new tasks main function
+///
+/// # Returns
+///
+/// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
+pub fn start_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
     let task = Task::create(cpu, entry)?;
     TASKLIST.lock().list().push_back(task.clone());

@@ -14,7 +14,7 @@ use crate::error::SvsmError;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
-use crate::task::{create_kernel_task, schedule_init};
+use crate::task::{schedule_init, start_kernel_task};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
 fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError> {
@@ -68,7 +68,7 @@ fn start_ap() {
 
 #[no_mangle]
 pub extern "C" fn ap_request_loop() {
-    create_kernel_task(request_processing_main).expect("Failed to launch request processing task");
+    start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
     request_loop();
     panic!("Returned from request_loop!");
 }
