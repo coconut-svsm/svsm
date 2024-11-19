@@ -61,6 +61,12 @@ vstd = { git = "https://github.com/verus-lang/verus", rev ="943ba63", features =
 verify_proof = { path = "verify_proof", default-features = false  }
 verify_external = { path = "verify_external", default-features = false  }
 
+[profile.release]
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
+
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
 nonstandard_style = { level = "deny", priority = 126 }
