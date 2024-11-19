@@ -45,7 +45,6 @@ libfuzzer-sys = "0.4"
 log = "0.4.17"
 p384 = { version = "0.13.0" }
 sha2 = "0.10.8"
-tdx-tdcall = "0.2.1"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }

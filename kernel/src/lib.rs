@@ -37,6 +37,7 @@ pub mod string;
 pub mod svsm_paging;
 pub mod syscall;
 pub mod task;
+pub mod tdx;
 pub mod types;
 pub mod utils;
 #[cfg(all(feature = "vtpm", not(test)))]
