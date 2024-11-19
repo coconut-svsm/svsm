@@ -72,7 +72,11 @@ global_asm!(
 
         /* Write startup information to stage 2 stack */
         xorl    %eax, %eax
+
+        /* Reserved */
         pushl   %eax
+
+        /* No IGVM */
         pushl   %eax
 
         movl    $kernel_fs_bin_end, %edi
@@ -107,6 +111,10 @@ global_asm!(
         pushl   %eax
         pushl   %eax
 
+        /* Make sure stage 2 info is completely populated */
+        cmpl    ${STAGE2_STACK}, %esp
+        jne     3f
+
         /* Clear ESI to inform stage 2 that this is the BSP */
         xorl    %esi, %esi
 
@@ -115,6 +123,7 @@ global_asm!(
     STAGE2_START = const STAGE2_START,
     STAGE2_MAXLEN = const STAGE2_MAXLEN,
     STAGE1_STACK = const STAGE2_STACK + STAGE2_INFO_SZ,
+    STAGE2_STACK = const STAGE2_STACK,
     SECRETS_PAGE = const SECRETS_PAGE,
     CPUID_PAGE = const CPUID_PAGE,
     options(att_syntax)
