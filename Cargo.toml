@@ -14,6 +14,8 @@ members = [
     "libtcgtpm",
     # syscall interface definitions
     "syscall",
+    # PackIt library and command line utility
+    "packit"
 ]
 
 
@@ -26,6 +28,7 @@ svsm = { path = "kernel" }
 elf = { path = "elf" }
 libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
+packit = { path = "packit" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -46,9 +49,6 @@ tdx-tdcall = "0.2.1"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
-
-# other repos
-packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }

@@ -624,6 +624,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
+name = "memmap2"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -688,8 +697,9 @@ dependencies = [
 [[package]]
 name = "packit"
 version = "0.1.1"
-source = "git+https://github.com/coconut-svsm/packit#e2508f686440f6a703fb6c5c0c2fd338e55f1d38"
 dependencies = [
+ "clap",
+ "memmap2",
  "zerocopy 0.7.34",
 ]
 

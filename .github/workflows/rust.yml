@@ -56,13 +56,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --all-features -- -D warnings
+          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --all-features -- -D warnings
 
       - name: Clippy on std x86_64-unknown-linux-gnu
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --target=x86_64-unknown-linux-gnu -- -D warnings
+          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --exclude packit --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Clippy on svsm-fuzz
         uses: actions-rs/cargo@v1
@@ -76,7 +76,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+          args: --workspace --exclude packit --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Check documentation
         run: make doc
