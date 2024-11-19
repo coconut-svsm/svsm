@@ -39,7 +39,7 @@ pub mod syscall;
 pub mod task;
 pub mod types;
 pub mod utils;
-#[cfg(all(feature = "mstpm", not(test)))]
+#[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
 #[test]

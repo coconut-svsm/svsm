@@ -7,7 +7,7 @@
 //! This crate implements the virtual TPM interfaces for the TPM 2.0
 //! Reference Implementation (by Microsoft)
 
-/// Functions required to build the Microsoft TPM libraries
+/// Functions required to build the TPM 2.0 Reference Implementation libraries
 #[cfg(not(any(test, fuzzing)))]
 mod wrapper;
 
@@ -15,7 +15,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 use core::ffi::c_void;
-use libmstpm::bindings::{
+use libtcgtpm::bindings::{
     TPM_Manufacture, TPM_TearDown, _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable,
     _plat__RunCommand, _plat__SetNvAvail, _plat__Signal_PowerOn, _plat__Signal_Reset,
 };
@@ -24,17 +24,17 @@ use crate::{
     address::VirtAddr,
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
-    vtpm::{MsTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface},
+    vtpm::{TcgTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface},
 };
 
 #[derive(Debug, Copy, Clone, Default)]
-pub struct MsTpm {
+pub struct TcgTpm {
     is_powered_on: bool,
 }
 
-impl MsTpm {
-    pub const fn new() -> MsTpm {
-        MsTpm {
+impl TcgTpm {
+    pub const fn new() -> TcgTpm {
+        TcgTpm {
             is_powered_on: false,
         }
     }
@@ -68,7 +68,7 @@ impl MsTpm {
 
 const TPM_CMDS_SUPPORTED: &[TpmPlatformCommand] = &[TpmPlatformCommand::SendCommand];
 
-impl VtpmProtocolInterface for MsTpm {
+impl VtpmProtocolInterface for TcgTpm {
     fn get_supported_commands(&self) -> &[TpmPlatformCommand] {
         TPM_CMDS_SUPPORTED
     }
@@ -76,7 +76,7 @@ impl VtpmProtocolInterface for MsTpm {
 
 pub const TPM_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
 
-impl MsTpmSimulatorInterface for MsTpm {
+impl TcgTpmSimulatorInterface for TcgTpm {
     fn send_tpm_command(
         &self,
         buffer: &mut [u8],
@@ -147,13 +147,13 @@ impl MsTpmSimulatorInterface for MsTpm {
     }
 }
 
-impl VtpmInterface for MsTpm {
+impl VtpmInterface for TcgTpm {
     fn is_powered_on(&self) -> bool {
         self.is_powered_on
     }
 
     fn init(&mut self) -> Result<(), SvsmReqError> {
-        // Initialize the MS TPM following the same steps done in the Simulator:
+        // Initialize the TPM TCG following the same steps done in the Simulator:
         //
         // 1. Manufacture it for the first time
         // 2. Make sure it does not fail if it is re-manufactured
@@ -184,7 +184,7 @@ impl VtpmInterface for MsTpm {
         self.signal_poweron(false)?;
         self.signal_nvon()?;
 
-        log::info!("VTPM: Microsoft TPM 2.0 initialized");
+        log::info!("VTPM: TPM 2.0 Reference Implementation initialized");
 
         Ok(())
     }

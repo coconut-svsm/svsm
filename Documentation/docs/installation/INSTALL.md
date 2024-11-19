@@ -193,8 +193,8 @@ Building the SVSM itself requires:
 - `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
 - `binutils` >= 2.39
 
-You may also need to install the Microsoft TPM build dependencies. On OpenSUSE
-you can do this by:
+You may also need to install the TPM 2.0 Reference Implementation build
+dependencies. On OpenSUSE you can do this by:
 
 ```
 $ sudo zypper in system-user-mail make gcc curl patterns-devel-base-devel_basis \

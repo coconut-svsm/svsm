@@ -1,7 +1,7 @@
-FEATURES ?= mstpm
+FEATURES ?= vtpm
 SVSM_ARGS += --features ${FEATURES}
 
-FEATURES_TEST ?= mstpm
+FEATURES_TEST ?= vtpm
 SVSM_ARGS_TEST += --no-default-features --features ${FEATURES_TEST}
 
 ifdef RELEASE
@@ -187,6 +187,6 @@ clean:
 	rm -rf bin
 
 distclean: clean
-	$(MAKE) -C libmstpm $@
+	$(MAKE) -C libtcgtpm $@
 
 .PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean

@@ -34,7 +34,7 @@ intrusive-collections.workspace = true
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 tdx-tdcall.workspace = true
-libmstpm = { workspace = true, optional = true }
+libtcgtpm = { workspace = true, optional = true }
 zerocopy.workspace = true
 
 [target."x86_64-unknown-none".dev-dependencies]
@@ -43,7 +43,7 @@ test.workspace = true
 [features]
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
-mstpm = ["dep:libmstpm"]
+vtpm = ["dep:libtcgtpm"]
 nosmep = []
 nosmap = []
 shadow-stacks = []

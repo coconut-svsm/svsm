@@ -27,7 +27,7 @@ jobs:
             profile: minimal
             override: true
 
-      - name: Install Microsoft TPM build dependencies
+      - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - uses: actions/setup-python@v5

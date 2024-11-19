@@ -9,7 +9,7 @@ use std::process::Command;
 use std::process::Stdio;
 
 fn main() {
-    // Build libmstpm.
+    // Build libtcgtpm.
     let status = Command::new("make")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -17,10 +17,10 @@ fn main() {
         .unwrap();
     assert!(status.success());
 
-    // Tell cargo to link libmstpm and where to find it.
+    // Tell cargo to link libtcgtpm and where to find it.
     let out_dir = std::env::var("OUT_DIR").unwrap();
     println!("cargo:rustc-link-search={out_dir}");
-    println!("cargo:rustc-link-lib=mstpm");
+    println!("cargo:rustc-link-lib=tcgtpm");
 
     // Tell cargo not to rerun the build-script unless anything in this
     // directory changes.
