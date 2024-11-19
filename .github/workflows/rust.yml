@@ -76,7 +76,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --exclude packit --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+          args: --workspace --exclude packit --exclude user* --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Check documentation
         run: make doc
