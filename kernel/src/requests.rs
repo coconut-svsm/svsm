@@ -13,7 +13,7 @@ use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::sev::ghcb::switch_to_vmpl;
 
-#[cfg(all(feature = "mstpm", not(test)))]
+#[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
 use crate::sev::vmsa::VMSAControl;
@@ -108,7 +108,7 @@ fn request_loop_once(
 
     match protocol {
         SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
-        #[cfg(all(feature = "mstpm", not(test)))]
+        #[cfg(all(feature = "vtpm", not(test)))]
         SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
         SVSM_APIC_PROTOCOL => apic_protocol_request(request, params).map(|_| true),
         _ => Err(SvsmReqError::unsupported_protocol()),

@@ -4,7 +4,8 @@
 //
 // Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
 
-//! Implement functions required to build the Microsoft TPM libraries.
+//! Implement functions required to build the TPM 2.0 Reference Implementation
+//! libraries.
 //! All these functionalities are owned by the SVSM Rust code,
 //! so we just need to create wrappers for them.
 

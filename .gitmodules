@@ -1,6 +1,9 @@
-[submodule "libmstpm/deps/openssl"]
-	path = libmstpm/deps/openssl
+[submodule "libtcgtpm/deps/openssl"]
+	path = libtcgtpm/deps/openssl
 	url = https://github.com/openssl/openssl.git
-[submodule "libmstpm/deps/ms-tpm-20-ref"]
-	path = libmstpm/deps/ms-tpm-20-ref
-	url = https://github.com/coconut-svsm/ms-tpm-20-ref.git
+[submodule "libtcgtpm/deps/tpm-20-ref"]
+	path = libtcgtpm/deps/tpm-20-ref
+	url = https://github.com/TrustedComputingGroup/TPM.git
+[submodule "packit"]
+	path = packit
+	url = https://github.com/coconut-svsm/packit.git

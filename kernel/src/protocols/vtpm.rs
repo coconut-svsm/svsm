@@ -17,7 +17,7 @@ use crate::{
     mm::{valid_phys_address, GuestPtr, PerCPUPageMappingGuard},
     protocols::{errors::SvsmReqError, RequestParams},
     types::PAGE_SIZE,
-    vtpm::{vtpm_get_locked, MsTpmSimulatorInterface, VtpmProtocolInterface},
+    vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
 };
 
 /// vTPM platform commands (SVSM spec, section 8.1 - SVSM_VTPM_QUERY)
@@ -25,7 +25,7 @@ use crate::{
 /// The platform commmand values follow the values used by the
 /// Official TPM 2.0 Reference Implementation by Microsoft.
 ///
-/// `ms-tpm-20-ref/TPMCmd/Simulator/include/TpmTcpProtocol.h`
+/// `tpm-20-ref/TPMCmd/Simulator/include/TpmTcpProtocol.h`
 #[repr(u32)]
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum TpmPlatformCommand {
