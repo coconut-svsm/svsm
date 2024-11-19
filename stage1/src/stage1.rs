@@ -8,6 +8,8 @@
 #![no_main]
 
 #[cfg(not(feature = "load-stage2"))]
+use bootlib::igvm_params::IgvmParamBlock;
+#[cfg(not(feature = "load-stage2"))]
 use bootlib::kernel_launch::Stage2LaunchInfo;
 #[cfg(feature = "load-stage2")]
 use bootlib::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
@@ -159,18 +161,37 @@ global_asm!(
         /* Set up BSP stack for stage 2 */
         movl    $({STAGE2_STACK}), %esp
         /* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
+        subl    $33, %ebx
         movl    $({STAGE2_STACK} + {VTOM_OFF}), %eax
+        xorl    %edx, %edx
+
         /* GPAW must be either 48 or 52 */
-        xorl    %ecx, %ecx
+    1:  xorl    %ecx, %ecx
         movl    %ecx, (%eax)
         addl    $4, %eax
-        subl    $33, %ebx
         bts     %ebx, %ecx
         movl    %ecx, (%eax)
-        jmp     .Lenter_stage2"#,
+
+        /* Jump if IgvmParamBlock.vtom has been fixed up */
+        test    %edx, %edx
+        jnz     .Lenter_stage2
+
+        movl    $({STAGE2_STACK} + {IGVM_OFF}), %edx
+        movl    (%edx), %edx
+        /* %edx: &IgvmParamBlock */
+        test    %edx, %edx
+        jz      .Lenter_stage2
+
+        /* Leave %edx intact to ensure we jump to .Lenter_stage2 */
+        mov     %edx, %eax
+        addl    ${VTOM_OFF_IGVM}, %eax
+        /* %eax: &IgvmParamBlock.vtom */
+        jmp     1b"#,
     STAGE2_STACK = const STAGE2_STACK,
     PLATFORM_TYPE_OFF = const offset_of!(Stage2LaunchInfo, platform_type) as u32,
+    IGVM_OFF = const offset_of!(Stage2LaunchInfo, igvm_params) as u32,
     VTOM_OFF = const offset_of!(Stage2LaunchInfo, vtom) as u32,
+    VTOM_OFF_IGVM = const offset_of!(IgvmParamBlock, vtom) as u32,
     options(att_syntax)
 );
 
