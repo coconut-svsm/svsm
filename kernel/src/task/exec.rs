@@ -9,7 +9,7 @@ use crate::error::SvsmError;
 use crate::fs::open;
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::USER_MEM_END;
-use crate::task::{create_user_task, current_task, schedule};
+use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;
 use elf::{Elf64File, Elf64PhdrFlags};
@@ -28,6 +28,15 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     vm_flags
 }
 
+/// Loads and executes an ELF binary in user-mode.
+///
+/// # Arguments
+///
+/// * binary: Path to file in the file-system
+///
+/// # Returns
+///
+/// `()` on success, [`SvsmError`] on failure.
 pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
     let fh = open(binary)?;
     let file_size = fh.size();
@@ -88,6 +97,7 @@ pub fn exec_user(binary: &str) -> Result<(), SvsmError> {
     let stack_addr = USER_MEM_END - user_stack_size;
     task.mmap_user(stack_addr, None, 0, user_stack_size, stack_flags)?;
 
+    finish_user_task(task);
     schedule();
 
     Ok(())
