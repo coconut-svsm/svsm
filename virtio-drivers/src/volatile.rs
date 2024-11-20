@@ -2,9 +2,9 @@ use crate::Hal;
 /// An MMIO register which can only be read from.
 #[derive(Default)]
 #[repr(transparent)]
-pub struct ReadOnly<T: Copy>(pub(crate) T);
+pub struct ReadOnly<T: FromBytes + Immutable>(pub(crate) T);
 
-impl<T: Copy> ReadOnly<T> {
+impl<T: FromBytes + Immutable> ReadOnly<T> {
     /// Construct a new instance for testing.
     pub const fn new(value: T) -> Self {
         Self(value)
@@ -14,14 +14,14 @@ impl<T: Copy> ReadOnly<T> {
 /// An MMIO register which can only be written to.
 #[derive(Default)]
 #[repr(transparent)]
-pub struct WriteOnly<T: Copy>(pub(crate) T);
+pub struct WriteOnly<T: IntoBytes + Immutable>(pub(crate) T);
 
 /// An MMIO register which may be both read and written.
 #[derive(Default)]
 #[repr(transparent)]
-pub struct Volatile<T: Copy>(T);
+pub struct Volatile<T: FromBytes + IntoBytes + Immutable>(T);
 
-impl<T: Copy> Volatile<T> {
+impl<T: FromBytes + IntoBytes + Immutable> Volatile<T> {
     /// Construct a new instance for testing.
     pub const fn new(value: T) -> Self {
         Self(value)
@@ -35,7 +35,7 @@ pub trait VolatileReadable<T> {
     unsafe fn vread(self) -> T;
 }
 
-impl<T: Copy> VolatileReadable<T> for *const ReadOnly<T> {
+impl<T: FromBytes + Immutable> VolatileReadable<T> for *const ReadOnly<T> {
     unsafe fn vread_hal<H: Hal>(self) -> T {
         H::mmio_read(&(*self).0)
     }
@@ -45,7 +45,7 @@ impl<T: Copy> VolatileReadable<T> for *const ReadOnly<T> {
     }
 }
 
-impl<T: Copy> VolatileReadable<T> for *const Volatile<T> {
+impl<T: IntoBytes + FromBytes + Immutable> VolatileReadable<T> for *const Volatile<T> {
     unsafe fn vread_hal<H: Hal>(self) -> T {
         H::mmio_read(&(*self).0)
     }
@@ -61,7 +61,7 @@ pub trait VolatileWritable<T> {
     unsafe fn vwrite(self, value: T);
 }
 
-impl<T: Copy> VolatileWritable<T> for *mut WriteOnly<T> {
+impl<T: IntoBytes + Immutable> VolatileWritable<T> for *mut WriteOnly<T> {
     unsafe fn vwrite(self, value: T) {
         (self as *mut T).write_volatile(value)
     }
@@ -71,7 +71,7 @@ impl<T: Copy> VolatileWritable<T> for *mut WriteOnly<T> {
     }
 }
 
-impl<T: Copy> VolatileWritable<T> for *mut Volatile<T> {
+impl<T: IntoBytes + FromBytes + Immutable> VolatileWritable<T> for *mut Volatile<T> {
     unsafe fn vwrite(self, value: T) {
         (self as *mut T).write_volatile(value)
     }
@@ -133,3 +133,4 @@ macro_rules! volwrite {
 
 pub(crate) use volread;
 pub(crate) use volwrite;
+use zerocopy::{FromBytes, Immutable, IntoBytes};
