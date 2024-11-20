@@ -61,8 +61,6 @@ pub fn is_cet_ss_supported() -> bool {
 macro_rules! enable_shadow_stacks {
     ($bsp_percpu:ident) => {{
         use core::arch::asm;
-        use svsm::address::Address;
-        use svsm::cpu::shadow_stack::{SCetFlags, MODE_64BIT, S_CET};
 
         let token_addr = $bsp_percpu.get_top_of_shadow_stack();
 

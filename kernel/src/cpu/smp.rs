@@ -5,8 +5,11 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::acpi::tables::ACPICPUInfo;
+use crate::address::Address;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
+use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
+use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::platform::SvsmPlatform;
 use crate::platform::SVSM_PLATFORM;
@@ -39,11 +42,17 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
 
 #[no_mangle]
 fn start_ap() {
-    this_cpu()
+    let percpu = this_cpu();
+
+    if is_cet_ss_supported() {
+        enable_shadow_stacks!(percpu);
+    }
+
+    percpu
         .setup_on_cpu(&**SVSM_PLATFORM)
         .expect("setup_on_cpu() failed");
 
-    this_cpu()
+    percpu
         .setup_idle_task(ap_request_loop)
         .expect("Failed to allocated idle task for AP");
 
