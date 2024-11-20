@@ -140,7 +140,9 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
 
 /// Executes the vmmcall instruction.
 /// # Safety
-/// See cpu vendor documentation for what this can do.
+/// By invoking the hypervisor, all register and memory contents can
+/// potentially be modified as a side-effect of the call, and thus memory
+/// safety cannot be guaranteed.
 pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
     let new_eax;
     unsafe {
@@ -160,9 +162,7 @@ pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
 }
 
 /// Sets the dr7 register to the given value
-/// # Safety
-/// See cpu vendor documentation for what this can do.
-pub unsafe fn set_dr7(new_val: u64) {
+pub fn set_dr7(new_val: u64) {
     unsafe {
         asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
     }
@@ -174,12 +174,16 @@ pub fn get_dr7() -> u64 {
     out
 }
 
-/// # Safety
 /// VMGEXIT operations generally need to be performed with interrupts disabled
 /// to ensure that an interrupt cannot cause the GHCB MSR to change prior to
 /// exiting to the host.  It is the caller's responsibility to ensure that
 /// interrupt handling is configured correctly for the attemtped operation.
-pub unsafe fn raw_vmgexit() {
+///
+/// VMGEXIT does not modify any register state, and the only memory that can be
+/// changed during VMGEXIT is memory that is already visible to the host and
+/// is subject to change even outside of the scope of VMGEXIT.  Therefore,
+/// use of VMGEXIT cannot cause unsafe behavior.
+pub fn raw_vmgexit() {
     unsafe {
         asm!("rep; vmmcall", options(att_syntax));
     }

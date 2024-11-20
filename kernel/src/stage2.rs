@@ -455,9 +455,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     // Shut down the GHCB
     unsafe {
         shutdown_percpu();
-    }
 
-    unsafe {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("r8") &launch_info,

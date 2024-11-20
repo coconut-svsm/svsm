@@ -377,29 +377,21 @@ impl PerCpu {
     /// Disables IRQs on the current CPU. Keeps track of the nesting level and
     /// the original IRQ state.
     ///
-    /// # Safety
-    ///
     /// Caller needs to make sure to match every `disable()` call with an
     /// `enable()` call.
     #[inline(always)]
-    pub unsafe fn irqs_disable(&self) {
-        unsafe {
-            self.irq_state.disable();
-        }
+    pub fn irqs_disable(&self) {
+        self.irq_state.disable();
     }
 
     /// Reduces IRQ-disable nesting level on the current CPU and restores the
     /// original IRQ state when the level reaches 0.
     ///
-    /// # Safety
-    ///
     /// Caller needs to make sure to match every `disable()` call with an
     /// `enable()` call.
     #[inline(always)]
-    pub unsafe fn irqs_enable(&self) {
-        unsafe {
-            self.irq_state.enable();
-        }
+    pub fn irqs_enable(&self) {
+        self.irq_state.enable();
     }
 
     /// Get IRQ-disable nesting count on the current CPU
@@ -934,9 +926,7 @@ impl PerCpu {
         // be received will always observe that there is a current task and
         // not the boot thread.
         if SVSM_PLATFORM.use_interrupts() {
-            unsafe {
-                self.irq_state.set_restore_state(true);
-            }
+            self.irq_state.set_restore_state(true);
         }
         let task = self.runqueue.lock_write().schedule_init();
         self.current_stack.set(task.stack_bounds());
@@ -977,29 +967,21 @@ pub fn this_cpu_shared() -> &'static PerCpuShared {
 /// Disables IRQs on the current CPU. Keeps track of the nesting level and
 /// the original IRQ state.
 ///
-/// # Safety
-///
 /// Caller needs to make sure to match every `irqs_disable()` call with an
 /// `irqs_enable()` call.
 #[inline(always)]
-pub unsafe fn irqs_disable() {
-    unsafe {
-        this_cpu().irqs_disable();
-    }
+pub fn irqs_disable() {
+    this_cpu().irqs_disable();
 }
 
 /// Reduces IRQ-disable nesting level on the current CPU and restores the
 /// original IRQ state when the level reaches 0.
 ///
-/// # Safety
-///
 /// Caller needs to make sure to match every `irqs_disable()` call with an
 /// `irqs_enable()` call.
 #[inline(always)]
-pub unsafe fn irqs_enable() {
-    unsafe {
-        this_cpu().irqs_enable();
-    }
+pub fn irqs_enable() {
+    this_cpu().irqs_enable();
 }
 
 /// Get IRQ-disable nesting count on the current CPU

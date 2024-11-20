@@ -224,63 +224,57 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_unsafe() {
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
 
-            let spin_lock = SpinLock::new(0);
-            let guard = spin_lock.lock();
-            assert!(irqs_enabled());
-            drop(guard);
-            assert!(irqs_enabled());
+        let spin_lock = SpinLock::new(0);
+        let guard = spin_lock.lock();
+        assert!(irqs_enabled());
+        drop(guard);
+        assert!(irqs_enabled());
 
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_safe() {
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
 
-            let spin_lock = SpinLockIrqSafe::new(0);
-            let guard = spin_lock.lock();
-            assert!(irqs_disabled());
-            drop(guard);
-            assert!(irqs_enabled());
+        let spin_lock = SpinLockIrqSafe::new(0);
+        let guard = spin_lock.lock();
+        assert!(irqs_disabled());
+        drop(guard);
+        assert!(irqs_enabled());
 
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn spin_trylock_irq_safe() {
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
 
-            let spin_lock = SpinLockIrqSafe::new(0);
+        let spin_lock = SpinLockIrqSafe::new(0);
 
-            // IRQs are enabled - taking the lock must succeed and disable IRQs
-            let g1 = spin_lock.try_lock();
-            assert!(g1.is_some());
-            assert!(irqs_disabled());
+        // IRQs are enabled - taking the lock must succeed and disable IRQs
+        let g1 = spin_lock.try_lock();
+        assert!(g1.is_some());
+        assert!(irqs_disabled());
 
-            // Release lock and check if that enables IRQs
-            drop(g1);
-            assert!(irqs_enabled());
+        // Release lock and check if that enables IRQs
+        drop(g1);
+        assert!(irqs_enabled());
 
-            // Leave with IRQs configured as test was entered.
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        // Leave with IRQs configured as test was entered.
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 }
