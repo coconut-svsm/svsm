@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend);
+                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
                 attest::attest(&mut stream, &mut http_client)?;
             }
             Err(_) => {

@@ -92,6 +92,14 @@ impl AttestationDriver<'_> {
 
         self.write(request);
 
+        let response: AttestationResponse = {
+            let payload = self.read();
+
+            serde_json::from_slice(&payload).unwrap()
+        };
+
+        log::info!("{:?}", response);
+
         todo!();
     }
 

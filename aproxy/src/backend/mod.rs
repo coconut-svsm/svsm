@@ -7,11 +7,11 @@
 
 mod kbs;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use kbs::KbsProtocol;
 use libaproxy::*;
-use reqwest::blocking::Client;
-use std::str::FromStr;
+use reqwest::{blocking::Client, cookie::Jar};
+use std::{str::FromStr, sync::Arc};
 
 /// HTTP client and protocol identifier.
 #[derive(Clone, Debug)]
@@ -22,17 +22,28 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    pub fn new(url: String, protocol: Protocol) -> Self {
-        let cli = Client::new();
+    pub fn new(url: String, protocol: Protocol) -> anyhow::Result<Self> {
+        let cli = Client::builder()
+            .cookie_provider(Arc::new(Jar::default()))
+            .build()
+            .context("unable to build HTTP client to interact with attestation server")?;
 
-        Self { cli, url, protocol }
+        Ok(Self { cli, url, protocol })
     }
 
     pub fn negotiation(&mut self, req: NegotiationRequest) -> anyhow::Result<NegotiationResponse> {
         // Depending on the underlying protocol of the attestation server, gather negotiation
         // parameters accordingly.
         match self.protocol {
-            Protocol::Kbs(kbs) => kbs.negotiation(self, req),
+            Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
+        }
+    }
+
+    pub fn attestation(&self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
+        // Depending on the underlying protocol of the attestation server, attest TEE evidence
+        // accoridngly.
+        match self.protocol {
+            Protocol::Kbs(kbs) => kbs.attestation(self, req),
         }
     }
 }
@@ -58,8 +69,14 @@ impl FromStr for Protocol {
 /// protocols.
 pub trait AttestationProtocol {
     fn negotiation(
-        &self,
-        client: &HttpClient,
+        &mut self,
+        client: &mut HttpClient,
         req: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse>;
+
+    fn attestation(
+        &self,
+        client: &HttpClient,
+        req: AttestationRequest,
+    ) -> anyhow::Result<AttestationResponse>;
 }
