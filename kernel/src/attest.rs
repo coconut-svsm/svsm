@@ -12,8 +12,8 @@ use crate::{
         pld_report::{SnpReportRequest, SnpReportResponse},
         services::get_regular_report,
     },
-    io::DEFAULT_IO_DRIVER,
-    serial::{Read, SerialPort, Write},
+    io::{Read, Write, DEFAULT_IO_DRIVER},
+    serial::SerialPort,
 };
 use alloc::{
     string::{String, ToString},
@@ -91,6 +91,14 @@ impl AttestationDriver<'_> {
         };
 
         self.write(request);
+
+        let response: AttestationResponse = {
+            let payload = self.read();
+
+            serde_json::from_slice(&payload).unwrap()
+        };
+
+        log::info!("{:?}", response);
 
         todo!();
     }
