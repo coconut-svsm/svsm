@@ -26,6 +26,7 @@ elf.workspace = true
 syscall.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
+base64.workspace = true
 bitfield-struct.workspace = true
 bitflags.workspace = true
 gdbstub = { workspace = true, optional = true }
@@ -36,8 +37,12 @@ kbs-types.workspace = true
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
+rand_chacha.workspace = true
+rdrand.workspace = true
+rsa.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 zerocopy.workspace = true
 
 builtin = { workspace = true, optional = true }
