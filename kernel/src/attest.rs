@@ -9,9 +9,13 @@ extern crate alloc;
 
 use crate::{
     io::DEFAULT_IO_DRIVER,
-    serial::{SerialPort, Write},
+    serial::{Read, SerialPort, Write},
 };
-use alloc::string::{String, ToString};
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -52,7 +56,30 @@ impl AttestationDriver<'_> {
 
         self.write(request);
 
+        let response: NegotiationResponse = {
+            let payload = self.read();
+
+            serde_json::from_slice(&payload).unwrap()
+        };
+
+        log::info!("{:?}", response);
+
         todo!();
+    }
+
+    /// Read attestation data from the serial port.
+    fn read(&mut self) -> Vec<u8> {
+        let len = {
+            let mut bytes = [0u8; 8];
+            self.sp.read(&mut bytes).unwrap();
+
+            usize::from_ne_bytes(bytes)
+        };
+
+        let mut buf = vec![0u8; len];
+        self.sp.read(&mut buf).unwrap();
+
+        buf
     }
 
     /// Write attestation data over the serial port.

@@ -6,6 +6,7 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 mod attest;
+mod backend;
 
 use anyhow::Context;
 use clap::Parser;
@@ -17,6 +18,10 @@ struct Args {
     /// HTTP url to KBS (e.g. http://server:4242)
     #[clap(long)]
     url: String,
+
+    /// Backend attestation protocol that the server implements.
+    #[clap(long = "protocol")]
+    backend: backend::Protocol,
 
     /// UNIX domain socket path to the SVSM serial port
     #[clap(long)]
@@ -39,7 +44,8 @@ fn main() -> anyhow::Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                attest::attest(&mut stream)?;
+                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend);
+                attest::attest(&mut stream, &mut http_client)?;
             }
             Err(_) => {
                 panic!("error");
