@@ -334,11 +334,13 @@ pub mod test_utils {
         type Item = T;
 
         unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-            Ok(*(self.ptr))
+            Ok(unsafe { *(self.ptr) })
         }
 
         unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-            *(self.ptr) = data;
+            unsafe {
+                *(self.ptr) = data;
+            }
             Ok(())
         }
     }

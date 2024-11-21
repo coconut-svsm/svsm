@@ -302,17 +302,19 @@ unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
 
 #[inline(always)]
 unsafe fn switch_to(prev: *const Task, next: *const Task) {
-    let cr3: u64 = unsafe { (*next).page_table.lock().cr3_value().bits() as u64 };
+    unsafe {
+        let cr3: u64 = (*next).page_table.lock().cr3_value().bits() as u64;
 
-    // Switch to new task
-    asm!(
-        r#"
-        call switch_context
-        "#,
-        in("rsi") prev as u64,
-        in("rdi") next as u64,
-        in("rdx") cr3,
-        options(att_syntax));
+        // Switch to new task
+        asm!(
+            r#"
+            call switch_context
+            "#,
+            in("rsi") prev as u64,
+            in("rdi") next as u64,
+            in("rdx") cr3,
+            options(att_syntax));
+    }
 }
 
 /// Initializes the [RunQueue] on the current CPU. It will switch to the idle

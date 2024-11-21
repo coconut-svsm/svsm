@@ -74,7 +74,9 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
 /// The caller must ensure that the `PerCpu` is never used again.
 unsafe fn shutdown_percpu() {
     let ptr = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-    core::ptr::drop_in_place(ptr);
+    unsafe {
+        core::ptr::drop_in_place(ptr);
+    }
 }
 
 fn setup_env(

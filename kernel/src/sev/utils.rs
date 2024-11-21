@@ -143,9 +143,10 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
 /// See cpu vendor documentation for what this can do.
 pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
     let new_eax;
-    asm!(
-            // bx register is reserved by llvm so it can't be passed in directly and must be
-            // restored
+    unsafe {
+        asm!(
+            // bx register is reserved by llvm so it can't be passed in
+            // directly and must be restored
             "xchg %rbx, {0:r}",
             "vmmcall",
             "xchg %rbx, {0:r}",
@@ -154,6 +155,7 @@ pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
             in("ecx") ecx,
             in("edx") edx,
             options(att_syntax));
+    }
     new_eax
 }
 
@@ -161,7 +163,9 @@ pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
 /// # Safety
 /// See cpu vendor documentation for what this can do.
 pub unsafe fn set_dr7(new_val: u64) {
-    asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
+    unsafe {
+        asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
+    }
 }
 
 pub fn get_dr7() -> u64 {
@@ -176,7 +180,9 @@ pub fn get_dr7() -> u64 {
 /// exiting to the host.  It is the caller's responsibility to ensure that
 /// interrupt handling is configured correctly for the attemtped operation.
 pub unsafe fn raw_vmgexit() {
-    asm!("rep; vmmcall", options(att_syntax));
+    unsafe {
+        asm!("rep; vmmcall", options(att_syntax));
+    }
 }
 
 bitflags::bitflags! {
