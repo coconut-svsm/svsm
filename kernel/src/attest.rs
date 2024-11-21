@@ -25,7 +25,7 @@ use kbs_types::Tee;
 use libaproxy::*;
 use rand_chacha::{rand_core::SeedableRng, ChaChaRng};
 use rdrand::RdSeed;
-use rsa::{traits::PublicKeyParts, RsaPrivateKey};
+use rsa::{traits::PublicKeyParts, Pkcs1v15Encrypt, RsaPrivateKey};
 use serde::Serialize;
 use sha2::{Digest, Sha384, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
@@ -50,11 +50,10 @@ impl From<Tee> for AttestationDriver<'_> {
 
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> String {
+    pub fn attest(&mut self) -> Vec<u8> {
         let negotiation = self.negotiation();
-        let _result = self.attestation(negotiation);
 
-        todo!();
+        self.attestation(negotiation)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -80,7 +79,7 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, negotiation: NegotiationResponse) -> AttestationResponse {
+    fn attestation(&mut self, negotiation: NegotiationResponse) -> Vec<u8> {
         // Generate TEE key and evidence for serialization to proxy.
         self.tee_key_generate(&negotiation);
         let evidence = self.evidence(negotiation);
@@ -98,9 +97,11 @@ impl AttestationDriver<'_> {
             serde_json::from_slice(&payload).unwrap()
         };
 
-        log::info!("{:?}", response);
+        if !response.success {
+            panic!("attestation failed");
+        }
 
-        todo!();
+        self.secret_decrypt(response.secret.unwrap())
     }
 
     /// Generate the TEE attestation key.
@@ -181,6 +182,15 @@ impl AttestationDriver<'_> {
         }
 
         sha.finalize().to_vec()
+    }
+
+    /// Decrypt a secret from the attestation server with the TEE private key.
+    fn secret_decrypt(&self, encrypted: String) -> Vec<u8> {
+        let bytes = BASE64_STANDARD.decode(encrypted).unwrap();
+
+        match self.key.clone().unwrap() {
+            TeeKey::Rsa(rsa) => rsa.decrypt(Pkcs1v15Encrypt, &bytes).unwrap(),
+        }
     }
 
     /// Read attestation data from the serial port.
