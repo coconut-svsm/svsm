@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use super::error::{tdx_result, TdxError};
+use super::error::{tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
@@ -75,25 +75,24 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
             let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr))) };
             match ret {
-                Err(TdxError::PageAlreadyAccepted) => {
-                    // The caller is expected not to accept a page twice unless
-                    // doing so is known to be safe.  If the TDX module
-                    // indicates that the page was already accepted, it must
-                    // mean that the page was not removed after a previous
-                    // attempt to accept.  In this case, the page must be
-                    // zeroed now because the caller expects every accepted
-                    // page to be zeroed.
-                    unsafe {
-                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
-                        mapping
-                            .virt_addr()
-                            .as_mut_ptr::<u8>()
-                            .write_bytes(0, PAGE_SIZE_2M);
+                Ok(s) => {
+                    if s == TdxSuccess::PageAlreadyAccepted {
+                        // The caller is expected not to accept a page twice unless
+                        // doing so is known to be safe.  If the TDX module
+                        // indicates that the page was already accepted, it must
+                        // mean that the page was not removed after a previous
+                        // attempt to accept.  In this case, the page must be
+                        // zeroed now because the caller expects every accepted
+                        // page to be zeroed.
+                        unsafe {
+                            let mapping =
+                                PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
+                            mapping
+                                .virt_addr()
+                                .as_mut_ptr::<u8>()
+                                .write_bytes(0, PAGE_SIZE_2M);
+                        }
                     }
-                    addr = addr + PAGE_SIZE_2M;
-                    continue;
-                }
-                Ok(_) => {
                     addr = addr + PAGE_SIZE_2M;
                     continue;
                 }
@@ -107,22 +106,22 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
         }
 
         let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr))) };
-        if let Err(e) = ret {
-            if e != TdxError::PageAlreadyAccepted {
-                return Err(e.into());
+        match ret {
+            Ok(s) => {
+                if s == TdxSuccess::PageAlreadyAccepted {
+                    // Zero the 4 KB page.
+                    unsafe {
+                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
+                        mapping
+                            .virt_addr()
+                            .as_mut_ptr::<u8>()
+                            .write_bytes(0, PAGE_SIZE);
+                    }
+                }
+                addr = addr + PAGE_SIZE;
             }
-
-            // Zero the 4 KB page.
-            unsafe {
-                let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
-                mapping
-                    .virt_addr()
-                    .as_mut_ptr::<u8>()
-                    .write_bytes(0, PAGE_SIZE);
-            }
+            Err(e) => return Err(e.into()),
         }
-
-        addr = addr + PAGE_SIZE;
     }
 
     Ok(())
@@ -136,15 +135,16 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
     match ret {
-        Err(TdxError::PageAlreadyAccepted) => {
-            // Zero the 4 KB page.
-            unsafe {
-                vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
+        Ok(s) => {
+            if s == TdxSuccess::PageAlreadyAccepted {
+                // Zero the 4 KB page.
+                unsafe {
+                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
+                }
             }
             Ok(())
         }
         Err(e) => Err(e.into()),
-        Ok(_) => Ok(()),
     }
 }
 
@@ -156,10 +156,12 @@ unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
     match ret {
-        Err(TdxError::PageAlreadyAccepted) => {
-            // Zero the 2M page.
-            unsafe {
-                vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
+        Ok(s) => {
+            if s == TdxSuccess::PageAlreadyAccepted {
+                // Zero the 2M page.
+                unsafe {
+                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
+                }
             }
             Ok(())
         }
@@ -176,7 +178,6 @@ unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
             Ok(())
         }
         Err(e) => Err(e.into()),
-        Ok(_) => Ok(()),
     }
 }
 
