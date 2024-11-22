@@ -1041,6 +1041,7 @@ impl PageTable {
     /// - `vregion`: The virtual memory region to map.
     /// - `phys`: The starting physical address to map to.
     /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
     ///
     /// # Returns
     /// A result indicating success or failure ([`SvsmError`]).
@@ -1049,10 +1050,16 @@ impl PageTable {
         vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
+        shared: bool,
     ) -> Result<(), SvsmError> {
         for addr in vregion.iter_pages(PageSize::Regular) {
             let offset = addr - vregion.start();
-            self.map_4k(addr, phys + offset, flags)?;
+            let phys_final = if shared {
+                make_shared_address(phys + offset)
+            } else {
+                make_private_address(phys + offset)
+            };
+            self.map_4k(addr, phys_final, flags)?;
         }
         Ok(())
     }
@@ -1073,6 +1080,7 @@ impl PageTable {
     /// - `vregion`: The virtual memory region to map.
     /// - `phys`: The starting physical address to map to.
     /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
     ///
     /// # Returns
     /// A result indicating success or failure ([`SvsmError`]).
@@ -1081,10 +1089,16 @@ impl PageTable {
         vregion: MemoryRegion<VirtAddr>,
         phys: PhysAddr,
         flags: PTEntryFlags,
+        shared: bool,
     ) -> Result<(), SvsmError> {
         for addr in vregion.iter_pages(PageSize::Huge) {
             let offset = addr - vregion.start();
-            self.map_2m(addr, phys + offset, flags)?;
+            let phys_final = if shared {
+                make_shared_address(phys + offset)
+            } else {
+                make_private_address(phys + offset)
+            };
+            self.map_2m(addr, phys_final, flags)?;
         }
         Ok(())
     }
