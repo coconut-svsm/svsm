@@ -11,3 +11,6 @@ rustflags = [
 rustflags = [
        "-C", "code-model=kernel",
 ]
+
+[alias]
+verify = "v build --features verus"
