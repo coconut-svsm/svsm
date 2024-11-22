@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use super::error::{tdx_result, TdxError, TdxSuccess};
+use super::error::{tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
@@ -16,7 +16,7 @@ use bitfield_struct::bitfield;
 use core::arch::asm;
 
 const TDG_VP_TDVMCALL: u32 = 0;
-const TDCALL_TDG_MEM_PAGE_ACCEPT: u32 = 6;
+const TDG_MEM_PAGE_ACCEPT: u32 = 6;
 
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
@@ -47,15 +47,20 @@ impl From<PageFrame> for EptMappingInfo {
 /// required to ensure that the supplied physical address range is appropriate
 /// for acceptance.
 unsafe fn tdg_mem_page_accept(frame: PageFrame) -> u64 {
-    let mut ret: u64;
-    unsafe {
-        asm!("tdcall",
-             in("rax") TDCALL_TDG_MEM_PAGE_ACCEPT,
-             in("rcx") EptMappingInfo::from(frame).into_bits(),
-             lateout("rax") ret,
-             options(att_syntax));
+    loop {
+        let err = unsafe {
+            let mut ret: u64;
+            asm!("tdcall",
+                 in("rax") TDG_MEM_PAGE_ACCEPT,
+                 in("rcx") EptMappingInfo::from(frame).into_bits(),
+                 lateout("rax") ret,
+                 options(att_syntax));
+            ret
+        };
+        if !tdx_recoverable_error(err) {
+            return err;
+        }
     }
-    ret
 }
 
 /// # Safety

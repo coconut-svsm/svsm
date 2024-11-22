@@ -41,3 +41,9 @@ pub fn tdx_result(err: u64) -> Result<TdxSuccess, TdxError> {
         }
     }
 }
+
+pub fn tdx_recoverable_error(err: u64) -> bool {
+    // Bit 63: ERROR
+    // Bit 62: NON_RECOVERABLE
+    (err >> 62) == 2
+}
