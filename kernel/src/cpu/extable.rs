@@ -20,25 +20,25 @@ struct ExceptionTableEntry {
 }
 
 fn check_exception_table(rip: VirtAddr) -> VirtAddr {
-    unsafe {
-        let ex_table_start = VirtAddr::from(&raw const exception_table_start);
-        let ex_table_end = VirtAddr::from(&raw const exception_table_end);
-        let mut current = ex_table_start;
+    let ex_table_start = VirtAddr::from(&raw const exception_table_start);
+    let ex_table_end = VirtAddr::from(&raw const exception_table_end);
+    let mut current = ex_table_start;
 
-        loop {
-            let addr = current.as_ptr::<ExceptionTableEntry>();
+    loop {
+        // SAFETY: `current` is guaranteed to be a valid address within the
+        // exception table.
+        let addr = unsafe { &*current.as_ptr::<ExceptionTableEntry>() };
 
-            let start = (*addr).start;
-            let end = (*addr).end;
+        let start = addr.start;
+        let end = addr.end;
 
-            if rip >= start && rip < end {
-                return end;
-            }
+        if rip >= start && rip < end {
+            return end;
+        }
 
-            current = current + mem::size_of::<ExceptionTableEntry>();
-            if current >= ex_table_end {
-                break;
-            }
+        current = current + mem::size_of::<ExceptionTableEntry>();
+        if current >= ex_table_end {
+            break;
         }
     }
 
@@ -46,23 +46,23 @@ fn check_exception_table(rip: VirtAddr) -> VirtAddr {
 }
 
 pub fn dump_exception_table() {
-    unsafe {
-        let ex_table_start = VirtAddr::from(&raw const exception_table_start);
-        let ex_table_end = VirtAddr::from(&raw const exception_table_end);
-        let mut current = ex_table_start;
+    let ex_table_start = VirtAddr::from(&raw const exception_table_start);
+    let ex_table_end = VirtAddr::from(&raw const exception_table_end);
+    let mut current = ex_table_start;
 
-        loop {
-            let addr = current.as_ptr::<ExceptionTableEntry>();
+    loop {
+        // SAFETY: `current` is guaranteed to be a valid address within the
+        // exception table.
+        let addr = unsafe { &*current.as_ptr::<ExceptionTableEntry>() };
 
-            let start = (*addr).start;
-            let end = (*addr).end;
+        let start = addr.start;
+        let end = addr.end;
 
-            log::info!("Extable Entry {:#018x}-{:#018x}", start, end);
+        log::info!("Extable Entry {:#018x}-{:#018x}", start, end);
 
-            current = current + mem::size_of::<ExceptionTableEntry>();
-            if current >= ex_table_end {
-                break;
-            }
+        current = current + mem::size_of::<ExceptionTableEntry>();
+        if current >= ex_table_end {
+            break;
         }
     }
 }
