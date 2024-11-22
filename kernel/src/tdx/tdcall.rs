@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use super::error::{tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
+use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
@@ -222,6 +222,8 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
 
 pub fn tdvmcall_halt() {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
@@ -229,20 +231,26 @@ pub fn tdvmcall_halt() {
              in("r10") 0,
              in("r11") TDVMCALL_HLT,
              in("r12") 0,
-             lateout("r10") _,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
              lateout("r11") _,
              lateout("r12") _,
              options(att_syntax));
     }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
 }
 
 fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
     let mut ret: u64;
+    let mut vmcall_ret: u64;
     let mut output: u32;
     unsafe {
         asm!("tdcall",
-             in("rax") 0,
+             in("rax") TDG_VP_TDVMCALL,
              in("rcx") pass_regs,
              in("r10") 0,
              in("r11") TDVMCALL_IO,
@@ -250,7 +258,8 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
              in("r13") write as u32,
              in("r14") port as u32,
              in("r15") data,
-             lateout("r10") ret,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
              lateout("r11") output,
              lateout("r12") _,
              lateout("r13") _,
@@ -263,6 +272,7 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     // I/O operation was performed by an untrusted source, the error
     // information is not meaningfully different than a maliciously unreliable
     // operation.
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
     debug_assert!(tdx_result(ret).is_ok());
 
     output

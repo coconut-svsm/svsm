@@ -17,6 +17,13 @@ pub enum TdxSuccess {
 pub enum TdxError {
     PageSizeMismatch,
     Unimplemented,
+    Vmcall(TdVmcallError),
+    Unknown(u64),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TdVmcallError {
+    OperandInvalid,
     Unknown(u64),
 }
 
@@ -46,4 +53,12 @@ pub fn tdx_recoverable_error(err: u64) -> bool {
     // Bit 63: ERROR
     // Bit 62: NON_RECOVERABLE
     (err >> 62) == 2
+}
+
+pub fn tdvmcall_result(err: u64) -> Result<(), TdxError> {
+    match err {
+        0 => Ok(()),
+        0x8000_0000_0000_0000 => Err(TdxError::Vmcall(TdVmcallError::OperandInvalid)),
+        _ => Err(TdxError::Vmcall(TdVmcallError::Unknown(err))),
+    }
 }
