@@ -15,7 +15,10 @@ members = [
     # syscall interface definitions
     "syscall",
     # PackIt library and command line utility
-    "packit"
+    "packit",
+    # verification libraries for svsm
+    "verify_proof",
+    "verify_external",
 ]
 
 
@@ -49,6 +52,15 @@ uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
 
+# Verus repos
+builtin = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
+vstd = { git = "https://github.com/verus-lang/verus", rev ="943ba63", features = ["alloc"], default-features = false }
+
+# Verification libs
+verify_proof = { path = "verify_proof", default-features = false  }
+verify_external = { path = "verify_external", default-features = false  }
+
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
 nonstandard_style = { level = "deny", priority = 126 }
@@ -56,6 +68,7 @@ rust_2018_idioms = { level = "deny", priority = 1 }
 missing_debug_implementations = { level = "deny", priority = 50 }
 single_use_lifetimes = { level = "warn", priority = 125 }
 trivial-numeric-casts = { level = "deny", priority = 10 }
+unsafe_op_in_unsafe_fn = { level = "deny", priority = 2 }
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"
@@ -80,3 +93,6 @@ suboptimal_flops = "warn"
 # TODO: fires many times, fix then enable.
 # undocumented_unsafe_blocks = "warn"
 unnecessary_box_returns = "warn"
+
+[workspace.metadata.scripts]
+vfmt = "verusfmt `find ./ -name *.verus.rs`"

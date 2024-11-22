@@ -51,41 +51,51 @@ impl PoisonAllocator {
     }
 
     unsafe fn unpoison_mem(&self, ptr: *mut u8, size: usize) {
-        ptr.write_bytes(Self::WRITE_BYTE, size);
+        unsafe {
+            ptr.write_bytes(Self::WRITE_BYTE, size);
+        }
     }
 
     unsafe fn poison_mem(&self, ptr: *mut u8, size: usize) {
-        ptr.write_bytes(Self::POISON_BYTE, size);
+        unsafe {
+            ptr.write_bytes(Self::POISON_BYTE, size);
+        }
     }
 
     unsafe fn check_mem(&self, ptr: *mut u8, size: usize) {
         for i in 0..size {
-            assert_eq!(ptr.add(i).read_volatile(), Self::WRITE_BYTE);
+            assert_eq!(unsafe { ptr.add(i).read_volatile() }, Self::WRITE_BYTE);
         }
     }
 
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.heap.alloc(layout);
-        if !ptr.is_null() {
-            self.unpoison_mem(ptr, layout.size());
+        unsafe {
+            let ptr = self.heap.alloc(layout);
+            if !ptr.is_null() {
+                self.unpoison_mem(ptr, layout.size());
+            }
+            ptr
         }
-        ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.check_mem(ptr, layout.size());
-        self.poison_mem(ptr, layout.size());
-        self.heap.dealloc(ptr, layout);
+        unsafe {
+            self.check_mem(ptr, layout.size());
+            self.poison_mem(ptr, layout.size());
+            self.heap.dealloc(ptr, layout);
+        }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_layout: Layout) -> *mut u8 {
-        self.check_mem(ptr, layout.size());
-        self.poison_mem(ptr, layout.size());
-        let ptr = self.heap.realloc(ptr, layout, new_layout.size());
-        if !ptr.is_null() {
-            self.unpoison_mem(ptr, new_layout.size());
+        unsafe {
+            self.check_mem(ptr, layout.size());
+            self.poison_mem(ptr, layout.size());
+            let ptr = self.heap.realloc(ptr, layout, new_layout.size());
+            if !ptr.is_null() {
+                self.unpoison_mem(ptr, new_layout.size());
+            }
+            ptr
         }
-        ptr
     }
 }
 

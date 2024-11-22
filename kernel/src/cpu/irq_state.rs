@@ -20,7 +20,9 @@ const EFLAGS_IF: u64 = 1 << 9;
 /// Callers need to take care of re-enabling IRQs.
 #[inline(always)]
 pub unsafe fn raw_irqs_disable() {
-    asm!("cli", options(att_syntax, preserves_flags, nomem));
+    unsafe {
+        asm!("cli", options(att_syntax, preserves_flags, nomem));
+    }
 }
 
 /// Unconditionally enable IRQs
@@ -32,7 +34,9 @@ pub unsafe fn raw_irqs_disable() {
 /// have been enabled.
 #[inline(always)]
 pub unsafe fn raw_irqs_enable() {
-    asm!("sti", options(att_syntax, preserves_flags, nomem));
+    unsafe {
+        asm!("sti", options(att_syntax, preserves_flags, nomem));
+    }
 
     // Now that interrupts are enabled, process any #HV events that may be
     // pending.
@@ -111,7 +115,9 @@ impl IrqState {
     pub unsafe fn disable(&self) {
         let state = irqs_enabled();
 
-        raw_irqs_disable();
+        unsafe {
+            raw_irqs_disable();
+        }
         let val = self.count.fetch_add(1, Ordering::Relaxed);
 
         assert!(val >= 0);
@@ -139,7 +145,9 @@ impl IrqState {
         if val == 1 {
             let state = self.state.load(Ordering::Relaxed);
             if state {
-                raw_irqs_enable();
+                unsafe {
+                    raw_irqs_enable();
+                }
             }
         }
     }

@@ -91,7 +91,7 @@ impl PerCpuAreas {
     }
 
     unsafe fn push(&self, info: PerCpuInfo) {
-        let ptr = self.areas.get().as_mut().unwrap();
+        let ptr = unsafe { self.areas.get().as_mut().unwrap() };
         ptr.push(info);
     }
 
@@ -383,7 +383,9 @@ impl PerCpu {
     /// `enable()` call.
     #[inline(always)]
     pub unsafe fn irqs_disable(&self) {
-        self.irq_state.disable();
+        unsafe {
+            self.irq_state.disable();
+        }
     }
 
     /// Reduces IRQ-disable nesting level on the current CPU and restores the
@@ -395,7 +397,9 @@ impl PerCpu {
     /// `enable()` call.
     #[inline(always)]
     pub unsafe fn irqs_enable(&self) {
-        self.irq_state.enable();
+        unsafe {
+            self.irq_state.enable();
+        }
     }
 
     /// Get IRQ-disable nesting count on the current CPU
@@ -982,7 +986,9 @@ pub fn this_cpu_shared() -> &'static PerCpuShared {
 /// `irqs_enable()` call.
 #[inline(always)]
 pub unsafe fn irqs_disable() {
-    this_cpu().irqs_disable();
+    unsafe {
+        this_cpu().irqs_disable();
+    }
 }
 
 /// Reduces IRQ-disable nesting level on the current CPU and restores the
@@ -994,7 +1000,9 @@ pub unsafe fn irqs_disable() {
 /// `irqs_enable()` call.
 #[inline(always)]
 pub unsafe fn irqs_enable() {
-    this_cpu().irqs_enable();
+    unsafe {
+        this_cpu().irqs_enable();
+    }
 }
 
 /// Get IRQ-disable nesting count on the current CPU

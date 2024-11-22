@@ -79,12 +79,16 @@ impl GDT {
 
         let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
 
-        tss_entries.add(0).write_volatile(desc0);
-        tss_entries.add(1).write_volatile(desc1);
+        unsafe {
+            tss_entries.add(0).write_volatile(desc0);
+            tss_entries.add(1).write_volatile(desc1);
+        }
     }
 
     unsafe fn clear_tss_entry(&mut self) {
-        self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
+        unsafe {
+            self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
+        }
     }
 
     pub fn load_tss(&mut self, tss: &X86Tss) {

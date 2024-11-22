@@ -1,0 +1,17 @@
+[package]
+name = "verify_external"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+builtin = { workspace = true, optional = true }
+builtin_macros = { workspace = true }
+vstd = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[features]
+default = []
+noverify = []
+verus = ["builtin", "vstd"]

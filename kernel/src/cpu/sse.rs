@@ -85,14 +85,16 @@ pub fn sse_init() {
 /// no other part of the code is accessing this memory at the same time.
 pub unsafe fn sse_save_context(addr: u64) {
     let save_bits = SVSM_XCR0.load(Ordering::Relaxed);
-    asm!(
-        r#"
-        xsaveopt (%rsi)
-        "#,
-        in("rsi") addr,
-        in("rax") save_bits,
-        in("rdx") 0,
-        options(att_syntax));
+    unsafe {
+        asm!(
+            r#"
+            xsaveopt (%rsi)
+            "#,
+            in("rsi") addr,
+            in("rax") save_bits,
+            in("rdx") 0,
+            options(att_syntax));
+    }
 }
 
 /// # Safety
@@ -101,12 +103,14 @@ pub unsafe fn sse_save_context(addr: u64) {
 /// no other part of the code is accessing this memory at the same time.
 pub unsafe fn sse_restore_context(addr: u64) {
     let save_bits = SVSM_XCR0.load(Ordering::Relaxed);
-    asm!(
-        r#"
-        xrstor (%rsi)
-        "#,
-        in("rsi") addr,
-        in("rax") save_bits,
-        in("rdx") 0,
-        options(att_syntax));
+    unsafe {
+        asm!(
+            r#"
+            xrstor (%rsi)
+            "#,
+            in("rsi") addr,
+            in("rax") save_bits,
+            in("rdx") 0,
+            options(att_syntax));
+    }
 }

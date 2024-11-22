@@ -50,10 +50,10 @@ unsafe fn tdg_mem_page_accept(frame: PageFrame) -> u64 {
     let mut ret: u64;
     unsafe {
         asm!("tdcall",
-         in("rax") TDCALL_TDG_MEM_PAGE_ACCEPT,
-         in("rcx") EptMappingInfo::from(frame).into_bits(),
-         lateout("rax") ret,
-         options(att_syntax));
+             in("rax") TDCALL_TDG_MEM_PAGE_ACCEPT,
+             in("rcx") EptMappingInfo::from(frame).into_bits(),
+             lateout("rax") ret,
+             options(att_syntax));
     }
     ret
 }
@@ -73,7 +73,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 
     while addr < end {
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
-            let ret = tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr)));
+            let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr))) };
             match ret {
                 Err(TdxError::PageAlreadyAccepted) => {
                     // The caller is expected not to accept a page twice unless
@@ -106,7 +106,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
             }
         }
 
-        let ret = tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr)));
+        let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr))) };
         if let Err(e) = ret {
             if e != TdxError::PageAlreadyAccepted {
                 return Err(e.into());
@@ -134,7 +134,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
-    let ret = tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr)));
+    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
     match ret {
         Err(TdxError::PageAlreadyAccepted) => {
             // Zero the 4 KB page.
@@ -154,7 +154,7 @@ unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
-    let ret = tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr)));
+    let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
     match ret {
         Err(TdxError::PageAlreadyAccepted) => {
             // Zero the 2M page.
@@ -166,10 +166,12 @@ unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
         Err(TdxError::PageSizeMismatch) => {
             // Process this 2 MB page as a series of 4 KB pages.
             for offset in 0usize..512usize {
-                td_accept_virtual_4k(
-                    vaddr + (offset << PAGE_SHIFT),
-                    paddr + (offset << PAGE_SHIFT),
-                )?;
+                unsafe {
+                    td_accept_virtual_4k(
+                        vaddr + (offset << PAGE_SHIFT),
+                        paddr + (offset << PAGE_SHIFT),
+                    )?;
+                }
             }
             Ok(())
         }
@@ -196,10 +198,14 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
             && vaddr + PAGE_SIZE_2M <= vaddr_end
             && frame.size() >= PAGE_SIZE_2M
         {
-            td_accept_virtual_2m(vaddr, frame.address())?;
+            unsafe {
+                td_accept_virtual_2m(vaddr, frame.address())?;
+            }
             PAGE_SIZE_2M
         } else {
-            td_accept_virtual_4k(vaddr, frame.address())?;
+            unsafe {
+                td_accept_virtual_4k(vaddr, frame.address())?;
+            }
             PAGE_SIZE
         };
 

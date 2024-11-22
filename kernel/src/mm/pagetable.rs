@@ -371,7 +371,7 @@ impl PTEntry {
     /// raw pointer read.  The caller must be certain to calculate the correct
     /// address.
     pub unsafe fn read_pte(vaddr: VirtAddr) -> Self {
-        *vaddr.as_ptr::<Self>()
+        unsafe { *vaddr.as_ptr::<Self>() }
     }
 }
 
@@ -402,7 +402,9 @@ impl PTPage {
     /// The given reference must correspond to a valid previously allocated
     /// page table page.
     unsafe fn free(page: &'static Self) {
-        let _ = PageBox::from_raw(NonNull::from(page));
+        unsafe {
+            let _ = PageBox::from_raw(NonNull::from(page));
+        }
     }
 
     /// Converts a pagetable entry to a mutable reference to a [`PTPage`],

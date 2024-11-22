@@ -128,9 +128,11 @@ impl<T> PageBox<MaybeUninit<T>> {
     ///
     /// See the safety requirements for [`MaybeUninit::assume_init()`].
     pub unsafe fn assume_init(self) -> PageBox<T> {
-        let leaked = PageBox::leak(self).assume_init_mut();
-        let raw = NonNull::from(leaked);
-        PageBox::from_raw(raw)
+        unsafe {
+            let leaked = PageBox::leak(self).assume_init_mut();
+            let raw = NonNull::from(leaked);
+            PageBox::from_raw(raw)
+        }
     }
 }
 
@@ -179,7 +181,7 @@ impl<T> PageBox<[MaybeUninit<T>]> {
         let inited = NonNull::slice_from_raw_parts(leaked.cast(), leaked.len());
         // We obtained this pointer from a previously leaked allocation, so
         // this is safe.
-        PageBox::from_raw(inited)
+        unsafe { PageBox::from_raw(inited) }
     }
 }
 

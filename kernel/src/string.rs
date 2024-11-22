@@ -50,6 +50,17 @@ impl<const N: usize> From<[u8; N]> for FixedString<N> {
     }
 }
 
+// TODO: Fix truncation of unicode characters > 0xff.
+impl<const N: usize> From<FixedString<N>> for [u8; N] {
+    fn from(src: FixedString<N>) -> [u8; N] {
+        let mut data = [0u8; N];
+        for (i, d) in data.iter_mut().enumerate().take(src.length()) {
+            *d = src.data[i] as u8;
+        }
+        data
+    }
+}
+
 impl<const N: usize> From<&str> for FixedString<N> {
     fn from(st: &str) -> FixedString<N> {
         let mut fs = FixedString::new();
