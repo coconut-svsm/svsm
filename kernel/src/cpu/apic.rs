@@ -243,8 +243,10 @@ impl LocalApic {
         // SAFETY: guest vmsa and ca are always validated before beeing updated
         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
         // they're safe to use.
-        if let Ok(caa) = unsafe { calling_area.read() } {
-            let _ = unsafe { calling_area.write(caa.update_no_eoi_required(0)) };
+        unsafe {
+            if let Ok(caa) = calling_area.read() {
+                let _ = calling_area.write(caa.update_no_eoi_required(0));
+            }
         }
         Some(calling_area)
     }
@@ -369,13 +371,14 @@ impl LocalApic {
                         // SAFETY: guest vmsa and ca are always validated before beeing upated
                         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch())
                         // so they're safe to use.
-                        if let Ok(caa) = unsafe { calling_area.read() } {
-                            if unsafe { calling_area.write(caa.update_no_eoi_required(1)).is_ok() }
-                            {
-                                // Only track a pending lazy EOI if the
-                                // calling area page could successfully be
-                                // updated.
-                                self.lazy_eoi_pending = true;
+                        unsafe {
+                            if let Ok(caa) = calling_area.read() {
+                                if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
+                                    // Only track a pending lazy EOI if the
+                                    // calling area page could successfully be
+                                    // updated.
+                                    self.lazy_eoi_pending = true;
+                                }
                             }
                         }
                     }
