@@ -7,32 +7,31 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-use svsm::cpu::shadow_stack::{determine_cet_support, is_cet_ss_supported};
-use svsm::enable_shadow_stacks;
-use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
-
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use svsm::address::{PhysAddr, VirtAddr};
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::current_ghcb;
-use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_shared};
+use svsm::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
+use svsm::cpu::shadow_stack::{
+    determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
+};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
+use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
+use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};

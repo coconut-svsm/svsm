@@ -739,9 +739,6 @@ impl PerCpu {
         vmsa.tr = self.vmsa_tr_segment();
         vmsa.rip = start_rip;
         vmsa.rsp = self.get_top_of_stack().into();
-        if is_cet_ss_supported() {
-            vmsa.ssp = self.get_top_of_shadow_stack().into();
-        }
         vmsa.cr3 = self.get_pgtable().cr3_value().into();
         vmsa.enable();
 
