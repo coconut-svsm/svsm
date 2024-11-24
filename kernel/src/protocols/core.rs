@@ -12,7 +12,7 @@ use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
+use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr, make_page_shared};
 use crate::protocols::apic::{APIC_PROTOCOL, APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
@@ -34,6 +34,8 @@ const SVSM_REQ_CORE_DEPOSIT_MEM: u32 = 4;
 const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
+const SVSM_REQ_CORE_MY_PROTOCOL: u32 = 8;
+const SVSM_REQ_CORE_REGISTER_SHMEM : u32 = 9;
 
 const CORE_PROTOCOL: u32 = 1;
 const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
@@ -417,6 +419,107 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+fn read_phys(phys_addr : u64) -> Result<u64, SvsmReqError> {
+	let phys_addr = PhysAddr::from(phys_addr & 0x0000_ffff_ffff_ffff);
+	if !(valid_phys_address(phys_addr) || phys_addr == PhysAddr(0xc0_0000_0000)) {
+		log::info!("cannot read 0x{:x}", phys_addr);
+		return Err(SvsmReqError::invalid_parameter());
+	}
+
+	let offset = phys_addr.page_offset();
+	let paddr = phys_addr.page_align();
+	let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
+	let start = guard.virt_addr();
+	let vaddr = GuestPtr::<u64>::new(start + offset);
+	log::info!("phys_addr mapped on svsm");
+	log::info!("vaddr : 0x{:x}", start + offset);
+	Ok( unsafe{ vaddr.read()? } )
+}
+
+fn read_phys_shared(phys_addr : u64) -> Result<u64, SvsmReqError> {
+	log::info!("read_phys_shared");
+	let phys_addr = PhysAddr::from(phys_addr & 0x0000_ffff_ffff_ffff);
+	if !(valid_phys_address(phys_addr) || phys_addr == PhysAddr(0xc0_0000_0000)) {
+		log::info!("cannot read 0x{:x}", phys_addr);
+		return Err(SvsmReqError::invalid_parameter());
+	}
+
+	let offset = phys_addr.page_offset();
+	let paddr = phys_addr.page_align();
+	let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
+	let start = guard.virt_addr();
+	log::info!("call make_page_shared");
+	log::info!("start : 0x{:x}", start);
+	match unsafe{make_page_shared(start)} {
+		Ok(()) => log::info!("make_page_shared end"),
+		Err(_) => {
+			log::info!("make_page_shared error");
+			return Err(SvsmReqError::invalid_parameter());
+		}
+	};
+	let vaddr = GuestPtr::<u64>::new(start + offset);
+	log::info!("phys_addr mapped on svsm");
+	log::info!("vaddr : 0x{:x}", start + offset);
+	Ok( unsafe{ vaddr.read()? } )
+}
+
+fn core_my_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+	log::info!("core_my_protocol called!!!");
+	log::info!("rcx : 0x{:x}", params.rcx);
+	let mut vmsa_ref = this_cpu().guest_vmsa_ref();
+	let vmsa = vmsa_ref.vmsa();
+	let cr3 = vmsa.cr3;	
+	log::info!("cr3 : 0x{:x}", cr3);
+	
+	let l4page_ent_offset = ((params.rcx >> 39) & 0b1_11111111)*8; //9bits
+	log::info!("l4page_ent_offset : 0x{:x}", l4page_ent_offset);
+	let l4page_ent = cr3 + l4page_ent_offset;
+	log::info!("l4page_ent : 0x{:x}", l4page_ent);
+	let mut l4page_ent = read_phys(l4page_ent)?;
+	log::info!("*l4page_ent : 0x{:x}", l4page_ent);
+	l4page_ent &= 0x000f_ffff_ffff_f000;
+
+	let l3page_ent_offset = ((params.rcx >> 30) & 0b1_11111111)*8;
+	log::info!("l3page_ent_offset : 0x{:x}", l3page_ent_offset);
+	let l3page_ent = l4page_ent + l3page_ent_offset;
+	log::info!("l3page_ent : 0x{:x}", l3page_ent);
+	let mut l3page_ent = read_phys(l3page_ent)?;
+	log::info!("*l3page_ent : 0x{:x}", l3page_ent);
+	l3page_ent &= 0x000f_ffff_ffff_f000;
+
+	let l2page_ent_offset = ((params.rcx >> 21) & 0b1_11111111)*8;
+	log::info!("l2page_ent_offset : 0x{:x}", l2page_ent_offset);
+	let l2page_ent = l3page_ent + l2page_ent_offset;
+	log::info!("l2page_ent : 0x{:x}", l2page_ent);
+	let mut l2page_ent = read_phys(l2page_ent)?;
+	log::info!("*l2page_ent : 0x{:x}", l2page_ent);
+	l2page_ent &= 0x000f_ffff_ffff_f000;
+
+	let l1page_ent_offset = ((params.rcx >> 12) & 0b1_11111111)*8;
+	log::info!("l1page_ent_offset : 0x{:x}", l1page_ent_offset);
+	let l1page_ent = l2page_ent + l1page_ent_offset;
+	log::info!("l1page_ent : 0x{:x}", l1page_ent);
+	let mut l1page_ent = read_phys(l1page_ent)?;
+	log::info!("*l1page_ent : 0x{:x}", l1page_ent);
+	l1page_ent &= 0x000f_ffff_ffff_f000;
+
+	let phys_offset = params.rcx & 0x0fff;
+	let phys_addr = l1page_ent + phys_offset;
+	log::info!("phys_addr : 0x{:x}", phys_addr);
+	let num = read_phys(phys_addr)?;
+	log::info!("num : {}", num);
+	params.rdx = num;
+
+	Ok(())
+}
+
+pub fn core_register_shmem(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+	log::info!("core_register_shmem called");
+	let mem = read_phys_shared(params.rcx)?;
+	log::info!("shmem : {:x}", mem);
+	Ok(())
+}
+
 pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_REQ_CORE_REMAP_CA => core_remap_ca(params),
@@ -427,6 +530,8 @@ pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result
         SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(params),
         SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(params),
         SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(params),
+				SVSM_REQ_CORE_MY_PROTOCOL => core_my_protocol(params),
+				SVSM_REQ_CORE_REGISTER_SHMEM => core_register_shmem(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }

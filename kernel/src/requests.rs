@@ -102,16 +102,30 @@ fn request_loop_once(
     protocol: u32,
     request: u32,
 ) -> Result<bool, SvsmReqError> {
+		//log::info!("request_loop_once() called.");
     if !matches!(params.guest_exit_code, GuestVMExit::VMGEXIT) {
         return Ok(false);
     }
 
     match protocol {
-        SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
+        SVSM_CORE_PROTOCOL => {
+					//log::info!("SVSM_CORE_PROTOCOL");
+					core_protocol_request(request, params).map(|_| true)
+				},
         #[cfg(all(feature = "mstpm", not(test)))]
-        SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
-        SVSM_APIC_PROTOCOL => apic_protocol_request(request, params).map(|_| true),
-        _ => Err(SvsmReqError::unsupported_protocol()),
+        SVSM_VTPM_PROTOCOL => {
+					//log::info!("SVSM_VTPM_PROTOCOL");
+					//log::info!("request : {}", request);
+					vtpm_protocol_request(request, params).map(|_| true)
+				},
+        SVSM_APIC_PROTOCOL => {
+					//log::info!("SVSM_APIC_PROTOCOL");
+					apic_protocol_request(request, params).map(|_| true)
+				},
+        _ => {
+					log::info!("unsupported protocol");
+					Err(SvsmReqError::unsupported_protocol())
+				},
     }
 }
 
@@ -234,6 +248,7 @@ pub extern "C" fn request_processing_main() {
 
     loop {
         wait_for_requests();
+//				log::info!("request received!");
 
         // Obtain a reference to the VMSA just long enough to extract the
         // request parameters.

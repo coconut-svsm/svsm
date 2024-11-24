@@ -35,7 +35,7 @@ use zerocopy::{FromBytes, FromZeros};
 /// Converting the memory at `vaddr` must be safe within Rust's memory model.
 /// Notably any objects at `vaddr` must tolerate unsynchronized writes of any
 /// bit pattern.
-unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
+pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Revoke page validation before changing page state.
     SVSM_PLATFORM.validate_virtual_page_range(
         MemoryRegion::new(vaddr, PAGE_SIZE),

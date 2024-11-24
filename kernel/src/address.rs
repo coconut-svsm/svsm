@@ -106,7 +106,7 @@ pub trait Address:
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
-pub struct PhysAddr(InnerAddr);
+pub struct PhysAddr(pub InnerAddr);
 
 impl PhysAddr {
     #[inline]
