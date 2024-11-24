@@ -93,3 +93,6 @@ impl TryFrom<usize> for Bytes {
         }
     }
 }
+
+pub const TPR_NORMAL: usize = 0;
+pub const TPR_LOCK: usize = 2;
