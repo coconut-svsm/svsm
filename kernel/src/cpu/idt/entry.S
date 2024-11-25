@@ -421,4 +421,7 @@ default_entry_no_ist	name=int80	handler=system_call		error_code=0	vector=0x80
 // Interrupt injection vector
 irq_entry	name=int_inj	vector=0x50
 
+// IPI vector.
+irq_entry	name=ipi	vector=0xE0
+
 .popsection

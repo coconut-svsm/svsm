@@ -33,7 +33,7 @@ const APIC_REGISTER_ICR: u64 = 0x830;
 const APIC_REGISTER_SELF_IPI: u64 = 0x83F;
 
 #[derive(Debug, PartialEq)]
-enum IcrDestFmt {
+pub enum IcrDestFmt {
     Dest = 0,
     OnlySelf = 1,
     AllWithSelf = 2,
@@ -55,7 +55,7 @@ impl IcrDestFmt {
 }
 
 #[derive(Debug, PartialEq)]
-enum IcrMessageType {
+pub enum IcrMessageType {
     Fixed = 0,
     Unknown = 3,
     Nmi = 4,
@@ -81,7 +81,7 @@ impl IcrMessageType {
 }
 
 #[bitfield(u64)]
-struct ApicIcr {
+pub struct ApicIcr {
     pub vector: u8,
     #[bits(3)]
     pub message_type: IcrMessageType,

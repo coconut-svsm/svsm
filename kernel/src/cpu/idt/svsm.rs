@@ -11,9 +11,9 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::common::{
     idt_mut, user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR,
-    CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, MCE_VECTOR,
-    MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR, SX_VECTOR,
-    TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
+    CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, IPI_VECTOR,
+    MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR,
+    SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
@@ -56,6 +56,7 @@ extern "C" {
     fn asm_entry_sx();
     fn asm_entry_int80();
     fn asm_entry_irq_int_inj();
+    fn asm_entry_irq_ipi();
 
     pub static mut HV_DOORBELL_ADDR: usize;
 }
@@ -92,6 +93,7 @@ pub fn early_idt_init() {
 
     // Interupts
     idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
+    idt.set_entry(IPI_VECTOR, IdtEntry::entry(asm_entry_irq_ipi));
 
     // Load IDT
     idt.load();
@@ -363,9 +365,14 @@ pub fn common_isr_handler(vector: usize) {
     let cpu = this_cpu();
     cpu.irqs_enable();
 
-    // Treat any unhandled interrupt as a spurious interrupt.  Interrupt
-    // injection requests currently require no processing; they occur simply
-    // to ensure an exit from the guest.
+    // Process the requested interrupt vector.
+    match vector {
+        IPI_VECTOR => this_cpu().handle_ipi_interrupt(),
+        _ => {
+            // Ignore all unrecognized interrupt vectors and treat them as
+            // spurious interrupts.
+        }
+    }
 
     // Disable interrupts before restoring TPR.
     cpu.irqs_disable();

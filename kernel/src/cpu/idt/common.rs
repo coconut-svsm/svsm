@@ -46,6 +46,7 @@ pub const VC_VECTOR: usize = 29;
 pub const SX_VECTOR: usize = 30;
 
 pub const INT_INJ_VECTOR: usize = 0x50;
+pub const IPI_VECTOR: usize = 0xE0;
 
 bitflags::bitflags! {
     /// Page fault error code flags.
