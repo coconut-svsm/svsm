@@ -3,6 +3,7 @@
 *.elf
 *.swp
 *~
+verus*.log
 /bin/
 /target/
 gen_meta
