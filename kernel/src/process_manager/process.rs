@@ -20,6 +20,7 @@ use crate::types::PageSize;
 use crate::address::VirtAddr;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::sev::utils::rmp_set_guest_vmsa;
+use crate::vaddr_as_u64_slice;
 
 use cpuarch::vmsa::VMSA;
 use core::mem::replace;
@@ -121,10 +122,32 @@ impl TrustedProcess {
 
     pub fn zygote(data: u64,size: u64, pgt: u64) -> Self{
 
+        // The Zygote is loaded in 3 files
+        // We first load the a struct/array of addresses
+        // that can then be used to get the next parts
         let (zygote_data, range) = ProcessPageTableRef::copy_data_from_guest(data, size, pgt);
-        let mut base = ProcessBaseContext::default();
-        base.init_with_data(zygote_data, size, range);
 
+        let zygote_data_struct = vaddr_as_u64_slice!(zygote_data);
+        let pal = zygote_data_struct[0];
+        let pal_size = zygote_data_struct[3];
+        let manifest = zygote_data_struct[1];
+        let manifest_size = zygote_data_struct[4];
+        let libos = zygote_data_struct[2];
+        let libos_size= zygote_data_struct[5];
+
+
+        // The allocation is always starting at the same virtual address which is why only one allocaiton is valid
+        // at the same time. TODO: Allow for different start addresses
+        let (pal_data, pal_range) = ProcessPageTableRef::copy_data_from_guest(pal, pal_size, pgt);
+        let mut base = ProcessBaseContext::default();
+        base.init_with_data(pal_data, pal_size, pal_range);
+        let (manifest_data, manifest_range) = ProcessPageTableRef::copy_data_from_guest(manifest, manifest_size, pgt);
+        base.add_manifest(manifest_data, manifest_size, manifest_range);
+        let(libos_data, libos_range) = ProcessPageTableRef::copy_data_from_guest(libos, libos_size, pgt);
+        base.add_libos(libos_data, libos_size, libos_range);
+
+
+        // TODO: Free zygote data
         Self {
             process_type: TrustedProcessType::Zygote,
             id: 0,
@@ -271,11 +294,14 @@ pub fn create_trustlet_page_table_from_user_data(data: VirtAddr, size: u64) -> P
     page_table_ref
 }
 
+
 #[derive(Debug, Copy, Clone)]
 pub struct ProcessBaseContext {
     pub page_table_ref: ProcessPageTableRef,
     pub entry_point: VirtAddr,
     pub alloc_range: AllocationRange,
+    pub alloc_range_manifest: AllocationRange,
+    pub alloc_range_libos: AllocationRange,
 }
 
 impl Default for ProcessBaseContext {
@@ -284,6 +310,8 @@ impl Default for ProcessBaseContext {
           page_table_ref: ProcessPageTableRef::default(),
           entry_point: VirtAddr::null(),
           alloc_range: AllocationRange(0,0),
+          alloc_range_manifest: AllocationRange(0,0),
+          alloc_range_libos: AllocationRange(0,0),
       }
   }
 }
@@ -293,6 +321,18 @@ impl ProcessBaseContext {
         let mut ptr = ProcessPageTableRef::default();
         self.entry_point = ptr.build_from_file(elf, size);
         self.page_table_ref = ptr;
+    }
+
+    pub fn add_manifest(&mut self, manifest: VirtAddr, size: u64, data: AllocationRange) {
+        let size = (4096 - (size & 0xFFF)) + size;
+        self.page_table_ref.add_manifest(manifest, size);
+        self.alloc_range_manifest = data;
+    }
+
+    pub fn add_libos(&mut self, manifest: VirtAddr, size: u64, data: AllocationRange){
+        let size = (4096 - (size & 0xFFF)) + size;
+        self.page_table_ref.add_libos(manifest,size);
+        self.alloc_range_libos = data;
     }
 
     pub fn init_with_data(&mut self, elf: VirtAddr, size: u64, data: AllocationRange) {
@@ -349,8 +389,8 @@ impl ProcessContext {
         vmsa.rip = base.entry_point.into();
         vmsa.sev_features = old_vmsa_ptr.sev_features | 4; // 4 is for #VC Reflect
         // New Stack
-        vmsa.rbp = u64::from(0x8000000000u64)+2*4096-1;
-        vmsa.rsp = u64::from(0x8000000000u64)+2*4096-1;
+        vmsa.rbp = u64::from(0x8000000000u64)+8*4096-1;
+        vmsa.rsp = u64::from(0x8000000000u64)+8*4096-1;
 
         //Check VMSA
         let svme_mask: u64 = 1u64 << 12;

@@ -193,6 +193,23 @@ impl ProcessPageTableRef {
 
     }
 
+    fn add_region_vaddr(&self, vaddr: VirtAddr, data: &[u8]) {
+        let page_flags = ProcessPageFlags::data();
+        let len = data.len();
+        let required_pages = len / 4096;
+        for i in 0..required_pages {
+            let new_page = allocate_page();
+            let (_mapping, mapping_vaddr) = map_paddr!(new_page);
+            let mapped_page = unsafe { &mut *mapping_vaddr.as_mut_ptr::<[u8;4096]>() };
+            for j in 0..4096 {
+                mapped_page[j] = data[j + i * 4096];
+            }
+            let target_addr = vaddr + i * 4096;
+            self.map_4k_page(VirtAddr::from(target_addr), new_page, page_flags);
+            rmp_adjust(mapping_vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap()
+        }
+    }
+
     fn add_region(&self, hdr: Elf64Phdr, elf: &[u8]) {
 
         let offset = hdr.p_offset;
@@ -219,7 +236,7 @@ impl ProcessPageTableRef {
         let mut file_size = filesize;
         for i in 0..required_pages {
             let new_page = allocate_page();
-            let (_mapping, mapping_vaddr) = map_paddr!(new_page);
+            let (mapping, mapping_vaddr) = map_paddr!(new_page);
             let mapped_page = unsafe { &mut *mapping_vaddr.as_mut_ptr::<[u8;4096]>()};
             rmp_adjust(mapping_vaddr, RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
             for j in 0..4096 {
@@ -256,6 +273,28 @@ impl ProcessPageTableRef {
         VirtAddr::from(elf.elf_hdr.e_entry)
     }
 
+    pub fn add_manifest(&self, data: VirtAddr, size: u64) {
+        let data: *mut u8 = data.as_mut_ptr::<u8>();
+        let data = unsafe { slice::from_raw_parts(data, size as usize) };
+        self.add_region_vaddr(VirtAddr::from(0x10000000000u64), data);
+    }
+
+    pub fn add_libos(&self, data: VirtAddr, size: u64) {
+        let data: *mut u8 = data.as_mut_ptr::<u8>();
+        let data = unsafe { slice::from_raw_parts(data, size as usize) };
+        self.add_region_vaddr(VirtAddr::from(0x18000000000u64), data);
+    }
+
+    pub fn add_pages(&self, start: VirtAddr, size: u64, flags: ProcessPageFlags) {
+        for i in 0..(size as usize) {
+            let new_page = allocate_page();
+            let (mapping, s) = paddr_as_slice!(new_page);
+            _ = replace(s, ZERO_PAGE);
+            self.map_4k_page(start + i * PAGE_SIZE, new_page, flags);
+            rmp_adjust(mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
+        }
+    }
+
     pub fn add_stack(&self, start: VirtAddr, size: u64){
         for i in 0..(size as usize) {
             let new_page = allocate_page();
@@ -288,7 +327,6 @@ impl ProcessPageTableRef {
             let (_mapping,origin_slice) = paddr_as_slice!(origin_phys);
             let target_vaddr = target + 4096usize * (i as usize);
             let target_slice = vaddr_as_slice!(target_vaddr);
-            log::info!("Copying Page {:#x?} -> {:#x?}", origin_phys, target_vaddr);
             // Copying the src to dst
             _ = replace(target_slice, *origin_slice);
         }
@@ -351,6 +389,20 @@ impl ProcessPageTableRef {
         }
         return ProcessTableLevelMapping::PTE(prev_addr, index);
     }
+
+    pub fn virt_to_phys(&self, vaddr: VirtAddr) -> PhysAddr {
+        let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
+        let mut current_mapping = self.page_walk(&pgd_table, self.process_page_table, vaddr);
+        match current_mapping {
+            ProcessTableLevelMapping::PTE(addr, index) => {
+                let (_mapping, table) = paddr_as_u64_slice!(addr);
+                return PhysAddr::from(table[index] & !0xFFFF000000000FFF);
+            }
+            _ => return PhysAddr::null()
+        }
+
+    }
+
 
     /// Takes the page table of the guest OS and copies the
     /// specified starteding from addr and edning at addr + size * pagesize
