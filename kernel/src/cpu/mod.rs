@@ -7,6 +7,7 @@
 pub mod apic;
 pub mod control_regs;
 pub mod cpuid;
+pub mod cpuset;
 pub mod efer;
 pub mod extable;
 pub mod features;
