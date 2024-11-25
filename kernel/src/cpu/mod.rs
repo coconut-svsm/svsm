@@ -13,6 +13,7 @@ pub mod extable;
 pub mod features;
 pub mod gdt;
 pub mod idt;
+pub mod ipi;
 pub mod irq_state;
 pub mod isst;
 pub mod mem;
