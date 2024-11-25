@@ -15,11 +15,9 @@ const EFLAGS_IF: u64 = 1 << 9;
 
 /// Unconditionally disable IRQs
 ///
-/// # Safety
-///
 /// Callers need to take care of re-enabling IRQs.
 #[inline(always)]
-pub unsafe fn raw_irqs_disable() {
+pub fn raw_irqs_disable() {
     unsafe {
         asm!("cli", options(att_syntax, preserves_flags, nomem));
     }
@@ -27,13 +25,11 @@ pub unsafe fn raw_irqs_disable() {
 
 /// Unconditionally enable IRQs
 ///
-/// # Safety
-///
 /// Callers need to make sure it is safe to enable IRQs. e.g. that no data
 /// structures or locks which are accessed in IRQ handlers are used after IRQs
 /// have been enabled.
 #[inline(always)]
-pub unsafe fn raw_irqs_enable() {
+pub fn raw_irqs_enable() {
     unsafe {
         asm!("sti", options(att_syntax, preserves_flags, nomem));
     }
@@ -107,17 +103,13 @@ impl IrqState {
 
     /// Increase IRQ-disable nesting level by 1. The method will disable IRQs.
     ///
-    /// # Safety
-    ///
     /// The caller needs to make sure to match the number of `disable` calls
     /// with the number of `enable` calls.
     #[inline(always)]
-    pub unsafe fn disable(&self) {
+    pub fn disable(&self) {
         let state = irqs_enabled();
 
-        unsafe {
-            raw_irqs_disable();
-        }
+        raw_irqs_disable();
         let val = self.count.fetch_add(1, Ordering::Relaxed);
 
         assert!(val >= 0);
@@ -130,12 +122,10 @@ impl IrqState {
     /// Decrease IRQ-disable nesting level by 1. The method will restore the
     /// original IRQ state when the nesting level reaches 0.
     ///
-    /// # Safety
-    ///
     /// The caller needs to make sure to match the number of `disable` calls
     /// with the number of `enable` calls.
     #[inline(always)]
-    pub unsafe fn enable(&self) {
+    pub fn enable(&self) {
         debug_assert!(irqs_disabled());
 
         let val = self.count.fetch_sub(1, Ordering::Relaxed);
@@ -145,9 +135,7 @@ impl IrqState {
         if val == 1 {
             let state = self.state.load(Ordering::Relaxed);
             if state {
-                unsafe {
-                    raw_irqs_enable();
-                }
+                raw_irqs_enable();
             }
         }
     }
@@ -164,12 +152,10 @@ impl IrqState {
     /// Changes whether interrupts will be enabled when the nesting count
     /// drops to zero.
     ///
-    /// # Safety
-    ///
     /// The caller must ensure that the current nesting count is non-zero,
     /// and must ensure that the specified value is appropriate for the
     /// current environment.
-    pub unsafe fn set_restore_state(&self, enabled: bool) {
+    pub fn set_restore_state(&self, enabled: bool) {
         assert!(self.count.load(Ordering::Relaxed) != 0);
         self.state.store(enabled, Ordering::Relaxed);
     }
@@ -198,11 +184,9 @@ pub struct IrqGuard {
 
 impl IrqGuard {
     pub fn new() -> Self {
-        // SAFETY: Safe because the struct implements `Drop`, which
-        // restores the IRQ state saved here.
-        unsafe {
-            irqs_disable();
-        }
+        // This struct implements `Drop`, which will restore the IRQ state
+        // saved here.
+        irqs_disable();
 
         Self {
             phantom: PhantomData,
@@ -218,11 +202,9 @@ impl Default for IrqGuard {
 
 impl Drop for IrqGuard {
     fn drop(&mut self) {
-        // SAFETY: Safe because the irqs_enabled() call matches the
-        // irqs_disabled() call during struct creation.
-        unsafe {
-            irqs_enable();
-        }
+        // The irqs_enabled() call matches the irqs_disabled() call during
+        // struct creation.
+        irqs_enable();
     }
 }
 
@@ -233,52 +215,46 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_enable_disable() {
-        unsafe {
-            let was_enabled = irqs_enabled();
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
+        assert!(irqs_enabled());
+        raw_irqs_disable();
+        assert!(irqs_disabled());
+        if was_enabled {
             raw_irqs_enable();
-            assert!(irqs_enabled());
-            raw_irqs_disable();
-            assert!(irqs_disabled());
-            if was_enabled {
-                raw_irqs_enable();
-            }
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_state() {
-        unsafe {
-            let state = IrqState::new();
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
-            state.disable();
-            assert!(irqs_disabled());
-            state.disable();
-            state.enable();
-            assert!(irqs_disabled());
-            state.enable();
-            assert!(irqs_enabled());
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        let state = IrqState::new();
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
+        state.disable();
+        assert!(irqs_disabled());
+        state.disable();
+        state.enable();
+        assert!(irqs_disabled());
+        state.enable();
+        assert!(irqs_enabled());
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn irq_guard_test() {
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
-            assert!(irqs_enabled());
-            let g1 = IrqGuard::new();
-            assert!(irqs_disabled());
-            drop(g1);
-            assert!(irqs_enabled());
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
+        assert!(irqs_enabled());
+        let g1 = IrqGuard::new();
+        assert!(irqs_disabled());
+        drop(g1);
+        assert!(irqs_enabled());
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 }

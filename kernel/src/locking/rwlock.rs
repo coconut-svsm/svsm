@@ -333,30 +333,28 @@ mod tests {
         use crate::cpu::irqs_enabled;
         use crate::locking::*;
 
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
-            let lock = RWLock::new(0);
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
+        let lock = RWLock::new(0);
 
-            // Lock for write
-            let guard = lock.lock_write();
-            // IRQs must still be enabled;
-            assert!(irqs_enabled());
-            // Unlock
-            drop(guard);
+        // Lock for write
+        let guard = lock.lock_write();
+        // IRQs must still be enabled;
+        assert!(irqs_enabled());
+        // Unlock
+        drop(guard);
 
-            // Lock for read
-            let guard = lock.lock_read();
-            // IRQs must still be enabled;
-            assert!(irqs_enabled());
-            // Unlock
-            drop(guard);
+        // Lock for read
+        let guard = lock.lock_read();
+        // IRQs must still be enabled;
+        assert!(irqs_enabled());
+        // Unlock
+        drop(guard);
 
-            // IRQs must still be enabled
-            assert!(irqs_enabled());
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        // IRQs must still be enabled
+        assert!(irqs_enabled());
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 
@@ -367,32 +365,30 @@ mod tests {
         use crate::cpu::{irqs_disabled, irqs_enabled};
         use crate::locking::*;
 
-        unsafe {
-            let was_enabled = irqs_enabled();
-            raw_irqs_enable();
-            let lock = RWLockIrqSafe::new(0);
+        let was_enabled = irqs_enabled();
+        raw_irqs_enable();
+        let lock = RWLockIrqSafe::new(0);
 
-            // Lock for write
-            let guard = lock.lock_write();
-            // IRQs must be disabled
-            assert!(irqs_disabled());
-            // Unlock
-            drop(guard);
+        // Lock for write
+        let guard = lock.lock_write();
+        // IRQs must be disabled
+        assert!(irqs_disabled());
+        // Unlock
+        drop(guard);
 
-            assert!(irqs_enabled());
+        assert!(irqs_enabled());
 
-            // Lock for read
-            let guard = lock.lock_read();
-            // IRQs must still be enabled;
-            assert!(irqs_disabled());
-            // Unlock
-            drop(guard);
+        // Lock for read
+        let guard = lock.lock_read();
+        // IRQs must still be enabled;
+        assert!(irqs_disabled());
+        // Unlock
+        drop(guard);
 
-            // IRQs must still be enabled
-            assert!(irqs_enabled());
-            if !was_enabled {
-                raw_irqs_disable();
-            }
+        // IRQs must still be enabled
+        assert!(irqs_enabled());
+        if !was_enabled {
+            raw_irqs_disable();
         }
     }
 }

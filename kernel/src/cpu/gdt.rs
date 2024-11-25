@@ -74,7 +74,7 @@ impl GDT {
         }
     }
 
-    unsafe fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
+    fn set_tss_entry(&mut self, desc0: GDTEntry, desc1: GDTEntry) {
         let idx = (SVSM_TSS / 8) as usize;
 
         let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
@@ -85,10 +85,8 @@ impl GDT {
         }
     }
 
-    unsafe fn clear_tss_entry(&mut self) {
-        unsafe {
-            self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
-        }
+    fn clear_tss_entry(&mut self) {
+        self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
     }
 
     pub fn load_tss(&mut self, tss: &X86Tss) {
