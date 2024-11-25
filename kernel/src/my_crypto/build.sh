@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 gcc -mno-sse -mno-sse2 -mno-avx -fno-tree-vectorize -nostdlib -Ihacl/karamel/ -Ihacl/karamel/krmllib/dist/minimal -Ihacl/karamel/include/ -fPIC -mrdrnd \
 	 -c my_crypto.c  
