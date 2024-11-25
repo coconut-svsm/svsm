@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use super::error::{tdx_result, TdxError};
+use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
@@ -16,7 +16,7 @@ use bitfield_struct::bitfield;
 use core::arch::asm;
 
 const TDG_VP_TDVMCALL: u32 = 0;
-const TDCALL_TDG_MEM_PAGE_ACCEPT: u32 = 6;
+const TDG_MEM_PAGE_ACCEPT: u32 = 6;
 
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
@@ -47,15 +47,20 @@ impl From<PageFrame> for EptMappingInfo {
 /// required to ensure that the supplied physical address range is appropriate
 /// for acceptance.
 unsafe fn tdg_mem_page_accept(frame: PageFrame) -> u64 {
-    let mut ret: u64;
-    unsafe {
-        asm!("tdcall",
-             in("rax") TDCALL_TDG_MEM_PAGE_ACCEPT,
-             in("rcx") EptMappingInfo::from(frame).into_bits(),
-             lateout("rax") ret,
-             options(att_syntax));
+    loop {
+        let err = unsafe {
+            let mut ret: u64;
+            asm!("tdcall",
+                 in("rax") TDG_MEM_PAGE_ACCEPT,
+                 in("rcx") EptMappingInfo::from(frame).into_bits(),
+                 lateout("rax") ret,
+                 options(att_syntax));
+            ret
+        };
+        if !tdx_recoverable_error(err) {
+            return err;
+        }
     }
-    ret
 }
 
 /// # Safety
@@ -75,25 +80,24 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
             let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr))) };
             match ret {
-                Err(TdxError::PageAlreadyAccepted) => {
-                    // The caller is expected not to accept a page twice unless
-                    // doing so is known to be safe.  If the TDX module
-                    // indicates that the page was already accepted, it must
-                    // mean that the page was not removed after a previous
-                    // attempt to accept.  In this case, the page must be
-                    // zeroed now because the caller expects every accepted
-                    // page to be zeroed.
-                    unsafe {
-                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
-                        mapping
-                            .virt_addr()
-                            .as_mut_ptr::<u8>()
-                            .write_bytes(0, PAGE_SIZE_2M);
+                Ok(s) => {
+                    if s == TdxSuccess::PageAlreadyAccepted {
+                        // The caller is expected not to accept a page twice unless
+                        // doing so is known to be safe.  If the TDX module
+                        // indicates that the page was already accepted, it must
+                        // mean that the page was not removed after a previous
+                        // attempt to accept.  In this case, the page must be
+                        // zeroed now because the caller expects every accepted
+                        // page to be zeroed.
+                        unsafe {
+                            let mapping =
+                                PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
+                            mapping
+                                .virt_addr()
+                                .as_mut_ptr::<u8>()
+                                .write_bytes(0, PAGE_SIZE_2M);
+                        }
                     }
-                    addr = addr + PAGE_SIZE_2M;
-                    continue;
-                }
-                Ok(_) => {
                     addr = addr + PAGE_SIZE_2M;
                     continue;
                 }
@@ -107,22 +111,22 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
         }
 
         let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr))) };
-        if let Err(e) = ret {
-            if e != TdxError::PageAlreadyAccepted {
-                return Err(e.into());
+        match ret {
+            Ok(s) => {
+                if s == TdxSuccess::PageAlreadyAccepted {
+                    // Zero the 4 KB page.
+                    unsafe {
+                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
+                        mapping
+                            .virt_addr()
+                            .as_mut_ptr::<u8>()
+                            .write_bytes(0, PAGE_SIZE);
+                    }
+                }
+                addr = addr + PAGE_SIZE;
             }
-
-            // Zero the 4 KB page.
-            unsafe {
-                let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
-                mapping
-                    .virt_addr()
-                    .as_mut_ptr::<u8>()
-                    .write_bytes(0, PAGE_SIZE);
-            }
+            Err(e) => return Err(e.into()),
         }
-
-        addr = addr + PAGE_SIZE;
     }
 
     Ok(())
@@ -136,15 +140,16 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
     match ret {
-        Err(TdxError::PageAlreadyAccepted) => {
-            // Zero the 4 KB page.
-            unsafe {
-                vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
+        Ok(s) => {
+            if s == TdxSuccess::PageAlreadyAccepted {
+                // Zero the 4 KB page.
+                unsafe {
+                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
+                }
             }
             Ok(())
         }
         Err(e) => Err(e.into()),
-        Ok(_) => Ok(()),
     }
 }
 
@@ -156,10 +161,12 @@ unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
     match ret {
-        Err(TdxError::PageAlreadyAccepted) => {
-            // Zero the 2M page.
-            unsafe {
-                vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
+        Ok(s) => {
+            if s == TdxSuccess::PageAlreadyAccepted {
+                // Zero the 2M page.
+                unsafe {
+                    vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
+                }
             }
             Ok(())
         }
@@ -176,7 +183,6 @@ unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
             Ok(())
         }
         Err(e) => Err(e.into()),
-        Ok(_) => Ok(()),
     }
 }
 
@@ -216,6 +222,8 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
 
 pub fn tdvmcall_halt() {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
@@ -223,20 +231,26 @@ pub fn tdvmcall_halt() {
              in("r10") 0,
              in("r11") TDVMCALL_HLT,
              in("r12") 0,
-             lateout("r10") _,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
              lateout("r11") _,
              lateout("r12") _,
              options(att_syntax));
     }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
 }
 
 fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
     let mut ret: u64;
+    let mut vmcall_ret: u64;
     let mut output: u32;
     unsafe {
         asm!("tdcall",
-             in("rax") 0,
+             in("rax") TDG_VP_TDVMCALL,
              in("rcx") pass_regs,
              in("r10") 0,
              in("r11") TDVMCALL_IO,
@@ -244,7 +258,8 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
              in("r13") write as u32,
              in("r14") port as u32,
              in("r15") data,
-             lateout("r10") ret,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
              lateout("r11") output,
              lateout("r12") _,
              lateout("r13") _,
@@ -257,6 +272,7 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     // I/O operation was performed by an untrusted source, the error
     // information is not meaningfully different than a maliciously unreliable
     // operation.
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
     debug_assert!(tdx_result(ret).is_ok());
 
     output

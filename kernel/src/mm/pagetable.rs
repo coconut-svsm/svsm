@@ -453,7 +453,7 @@ pub enum Mapping<'a> {
 }
 
 /// A physical address within a page frame
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum PageFrame {
     Size4K(PhysAddr),
     Size2M(PhysAddr),
