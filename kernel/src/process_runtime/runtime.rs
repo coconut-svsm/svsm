@@ -216,14 +216,14 @@ impl ProcessRuntime for PALContext  {
         let vaddr = VirtAddr::from(addr);
         let s_vaddr = VirtAddr::from(0x18000000000u64);
 
+        let flags = ProcessPageFlags::PRESENT | ProcessPageFlags::WRITABLE |
+        ProcessPageFlags::USER_ACCESSIBLE | ProcessPageFlags::ACCESSED;
 
         for i in 0..size {
             let t = page_table_ref.virt_to_phys(s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize));
-            log::info!("{:#} {:#?}",s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
-            //page_table_ref.map_4k_page(vaddr + i * PAGE_SIZE, )
+            log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
+            page_table_ref.map_4k_page(vaddr + (i * PAGE_SIZE_4K).try_into().unwrap(), t, flags);
         }
-
-
 
         return true;
     }

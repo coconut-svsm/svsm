@@ -393,6 +393,7 @@ impl ProcessPageTableRef {
     pub fn virt_to_phys(&self, vaddr: VirtAddr) -> PhysAddr {
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
         let mut current_mapping = self.page_walk(&pgd_table, self.process_page_table, vaddr);
+        log::info!("Current Mapping {:?}", current_mapping);
         match current_mapping {
             ProcessTableLevelMapping::PTE(addr, index) => {
                 let (_mapping, table) = paddr_as_u64_slice!(addr);
