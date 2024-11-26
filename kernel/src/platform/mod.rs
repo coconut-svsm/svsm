@@ -4,6 +4,16 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+pub mod guest_cpu;
+pub mod native;
+pub mod snp;
+pub mod snp_fw;
+pub mod tdp;
+
+use native::NativePlatform;
+use snp::SnpPlatform;
+use tdp::TdpPlatform;
+
 use core::ops::{Deref, DerefMut};
 
 use crate::address::{PhysAddr, VirtAddr};
@@ -12,20 +22,12 @@ use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
-use crate::platform::native::NativePlatform;
-use crate::platform::snp::SnpPlatform;
-use crate::platform::tdp::TdpPlatform;
 use crate::types::PageSize;
 use crate::utils;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
 use bootlib::platform::SvsmPlatformType;
-
-pub mod guest_cpu;
-pub mod native;
-pub mod snp;
-pub mod tdp;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();

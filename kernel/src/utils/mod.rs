@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 pub mod bitmap_allocator;
+pub mod fw_meta;
 pub mod immut_after_init;
 pub mod memory_region;
 pub mod util;

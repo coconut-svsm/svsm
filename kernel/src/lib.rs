@@ -20,7 +20,6 @@ pub mod debug;
 pub mod error;
 pub mod fs;
 pub mod fw_cfg;
-pub mod fw_meta;
 pub mod greq;
 pub mod hyperv;
 pub mod igvm_params;
