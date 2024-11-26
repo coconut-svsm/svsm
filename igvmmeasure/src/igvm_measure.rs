@@ -339,7 +339,7 @@ impl IgvmMeasure {
             if vmsa.cr0 != 0x31 {
                 return Err(IgvmMeasureError::InvalidVmsaCr0);
             }
-            if !vmsa.sev_features.debug_swap() {
+            if vmsa.sev_features.debug_swap() {
                 return Err(IgvmMeasureError::InvalidDebugSwap);
             }
         }
