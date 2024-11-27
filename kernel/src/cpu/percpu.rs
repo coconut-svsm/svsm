@@ -90,9 +90,16 @@ impl PerCpuAreas {
         }
     }
 
+    fn next_cpu_index(&self) -> usize {
+        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
+        ptr.len()
+    }
+
     unsafe fn push(&self, info: PerCpuInfo) {
         let ptr = unsafe { self.areas.get().as_mut().unwrap() };
         ptr.push(info);
+        let cpu_shared = ptr[info.as_cpu_ref().cpu_index];
+        assert_eq!(cpu_shared.apic_id, info.cpu_shared.apic_id);
     }
 
     pub fn iter(&self) -> Iter<'_, PerCpuInfo> {
@@ -101,7 +108,7 @@ impl PerCpuAreas {
     }
 
     // Fails if no such area exists or its address is NULL
-    pub fn get(&self, apic_id: u32) -> Option<&'static PerCpuShared> {
+    pub fn get_by_apic_id(&self, apic_id: u32) -> Option<&'static PerCpuShared> {
         // For this to not produce UB the only invariant we must
         // uphold is that there are no mutations or mutable aliases
         // going on when casting via as_ref(). This only happens via
@@ -110,6 +117,12 @@ impl PerCpuAreas {
         ptr.iter()
             .find(|info| info.apic_id == apic_id)
             .map(|info| info.cpu_shared)
+    }
+
+    /// Callers are expected to specify a valid CPU index.
+    pub fn get_by_cpu_index(&self, index: usize) -> &'static PerCpuShared {
+        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
+        ptr[index].cpu_shared
     }
 }
 
@@ -196,6 +209,7 @@ impl GuestVmsaRef {
 #[derive(Debug)]
 pub struct PerCpuShared {
     apic_id: u32,
+    cpu_index: usize,
     guest_vmsa: SpinLock<GuestVmsaRef>,
     online: AtomicBool,
     ipi_irr: [AtomicU32; 8],
@@ -204,9 +218,10 @@ pub struct PerCpuShared {
 }
 
 impl PerCpuShared {
-    fn new(apic_id: u32) -> Self {
+    fn new(apic_id: u32, cpu_index: usize) -> Self {
         PerCpuShared {
             apic_id,
+            cpu_index,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
             online: AtomicBool::new(false),
             ipi_irr: core::array::from_fn(|_| AtomicU32::new(0)),
@@ -217,6 +232,10 @@ impl PerCpuShared {
 
     pub const fn apic_id(&self) -> u32 {
         self.apic_id
+    }
+
+    pub const fn cpu_index(&self) -> usize {
+        self.cpu_index
     }
 
     pub fn update_guest_vmsa_caa(&self, vmsa: PhysAddr, caa: PhysAddr) {
@@ -331,7 +350,7 @@ pub struct PerCpu {
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
-    fn new(apic_id: u32) -> Self {
+    fn new(apic_id: u32, cpu_index: usize) -> Self {
         Self {
             pgtbl: RefCell::new(None),
             irq_state: IrqState::new(),
@@ -351,7 +370,7 @@ impl PerCpu {
             request_waitqueue: RefCell::new(WaitQueue::new()),
             apic: RefCell::new(None),
 
-            shared: PerCpuShared::new(apic_id),
+            shared: PerCpuShared::new(apic_id, cpu_index),
             ghcb: OnceCell::new(),
             hv_doorbell: Cell::new(None),
             init_stack: Cell::new(None),
@@ -364,7 +383,10 @@ impl PerCpu {
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
-        let page = PageBox::try_new(Self::new(apic_id))?;
+        // APIC IDs are expected to be unique.
+        assert!(PERCPU_AREAS.get_by_apic_id(apic_id).is_none());
+        let cpu_index = PERCPU_AREAS.next_cpu_index();
+        let page = PageBox::try_new(Self::new(apic_id, cpu_index))?;
         let percpu = PageBox::leak(page);
         unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
         Ok(percpu)
@@ -1006,16 +1028,16 @@ pub fn current_ghcb() -> &'static GHCB {
 #[derive(Debug, Clone, Copy)]
 pub struct VmsaRegistryEntry {
     pub paddr: PhysAddr,
-    pub apic_id: u32,
+    pub cpu_index: usize,
     pub guest_owned: bool,
     pub in_use: bool,
 }
 
 impl VmsaRegistryEntry {
-    pub const fn new(paddr: PhysAddr, apic_id: u32, guest_owned: bool) -> Self {
+    pub const fn new(paddr: PhysAddr, cpu_index: usize, guest_owned: bool) -> Self {
         VmsaRegistryEntry {
             paddr,
-            apic_id,
+            cpu_index,
             guest_owned,
             in_use: false,
         }
@@ -1047,7 +1069,7 @@ impl PerCpuVmsas {
     pub fn register(
         &self,
         paddr: PhysAddr,
-        apic_id: u32,
+        cpu_index: usize,
         guest_owned: bool,
     ) -> Result<(), SvsmError> {
         let mut guard = self.vmsas.lock_write();
@@ -1055,18 +1077,18 @@ impl PerCpuVmsas {
             return Err(SvsmError::InvalidAddress);
         }
 
-        guard.push(VmsaRegistryEntry::new(paddr, apic_id, guest_owned));
+        guard.push(VmsaRegistryEntry::new(paddr, cpu_index, guest_owned));
         Ok(())
     }
 
-    pub fn set_used(&self, paddr: PhysAddr) -> Option<u32> {
+    pub fn set_used(&self, paddr: PhysAddr) -> Option<usize> {
         self.vmsas
             .lock_write()
             .iter_mut()
             .find(|vmsa| vmsa.paddr == paddr && !vmsa.in_use)
             .map(|vmsa| {
                 vmsa.in_use = true;
-                vmsa.apic_id
+                vmsa.cpu_index
             })
     }
 
@@ -1080,13 +1102,7 @@ impl PerCpuVmsas {
         if in_use {
             let vmsa = &guard[index];
 
-            if vmsa.apic_id == 0 {
-                return Err(0);
-            }
-
-            let target_cpu = PERCPU_AREAS
-                .get(vmsa.apic_id)
-                .expect("Invalid APIC-ID in VMSA registry");
+            let target_cpu = PERCPU_AREAS.get_by_cpu_index(vmsa.cpu_index);
             target_cpu.clear_guest_vmsa_if_match(paddr);
         }
 

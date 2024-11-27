@@ -506,7 +506,7 @@ impl LocalApic {
         } else {
             // If the target CPU cannot be located, then simply drop the
             // request.
-            if let Some(cpu) = PERCPU_AREAS.get(destination) {
+            if let Some(cpu) = PERCPU_AREAS.get_by_apic_id(destination) {
                 cpu.request_ipi(icr.vector());
                 true
             } else {
