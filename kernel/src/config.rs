@@ -14,7 +14,7 @@ use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::igvm_params::IgvmParams;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, SIZE_1G};
-use crate::platform::snp_fw::{parse_fw_meta_data, SevFWMetaData};
+use crate::platform::{parse_fw_meta_data, SevFWMetaData};
 use crate::serial::SERIAL_PORT;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;

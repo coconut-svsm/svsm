@@ -8,17 +8,17 @@ extern crate alloc;
 
 use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
-use crate::cpu::percpu::current_ghcb;
+use crate::cpu::cpuid::copy_cpuid_table_to;
+use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
-use crate::kernel_region::new_kernel_region;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
-use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::requests::update_mappings;
+use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
+use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use crate::utils::fw_meta::{find_table, RawMetaBuffer, Uuid};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
-use bootlib::kernel_launch::KernelLaunchInfo;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use core::mem::{size_of, size_of_val};
@@ -240,7 +240,7 @@ fn validate_fw_memory_vec(
 pub fn validate_fw_memory(
     config: &SvsmConfig<'_>,
     fw_meta: &SevFWMetaData,
-    launch_info: &KernelLaunchInfo,
+    kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     // Initalize vector with regions from the FW
     let mut regions = fw_meta.valid_mem.clone();
@@ -263,9 +263,8 @@ pub fn validate_fw_memory(
     // Sort regions by base address
     regions.sort_unstable_by_key(|a| a.start());
 
-    let kernel_region = new_kernel_region(launch_info);
     for region in regions.iter() {
-        if region.overlap(&kernel_region) {
+        if region.overlap(kernel_region) {
             log::error!("FwMeta region ovelaps with kernel");
             return Err(SvsmError::Firmware);
         }
@@ -299,4 +298,132 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
             region.end()
         );
     }
+}
+
+fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+
+    // SAFETY: this is called from CPU 0, so the underlying physical address
+    // is not being aliased. We are mapping a full page, which is 4K-aligned,
+    // and is enough for SnpCpuidTable.
+    unsafe {
+        copy_cpuid_table_to(guard.virt_addr());
+    }
+
+    Ok(())
+}
+
+fn copy_secrets_page_to_fw(
+    fw_addr: PhysAddr,
+    caa_addr: PhysAddr,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+    let start = guard.virt_addr();
+
+    // Zero target
+    zero_mem_region(start, start + PAGE_SIZE);
+
+    // Copy secrets page
+    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
+
+    fw_secrets_page.set_svsm_data(
+        kernel_region.start().into(),
+        kernel_region.len().try_into().unwrap(),
+        u64::from(caa_addr),
+    );
+
+    // SAFETY: start points to a new allocated and zeroed page.
+    unsafe {
+        fw_secrets_page.copy_to(start);
+    }
+
+    Ok(())
+}
+
+fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+    let vaddr = guard.virt_addr();
+
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+
+    Ok(())
+}
+
+pub fn copy_tables_to_fw(
+    fw_meta: &SevFWMetaData,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    if let Some(addr) = fw_meta.cpuid_page {
+        copy_cpuid_table_to_fw(addr)?;
+    }
+
+    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
+    let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
+
+    copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
+
+    zero_caa_page(caa_page)?;
+
+    Ok(())
+}
+
+pub fn validate_fw(
+    config: &SvsmConfig<'_>,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    let flash_regions = config.get_fw_regions(kernel_region);
+
+    for (i, region) in flash_regions.into_iter().enumerate() {
+        log::info!(
+            "Flash region {} at {:#018x} size {:018x}",
+            i,
+            region.start(),
+            region.len(),
+        );
+
+        for paddr in region.iter_pages(PageSize::Regular) {
+            let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
+            let vaddr = guard.virt_addr();
+            if let Err(e) = rmp_adjust(
+                vaddr,
+                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                PageSize::Regular,
+            ) {
+                log::info!("rmpadjust failed for addr {:#018x}", vaddr);
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
+    if let Some(caa) = fw_meta.caa_page {
+        this_cpu_shared().update_guest_caa(caa);
+    }
+
+    this_cpu().alloc_guest_vmsa()?;
+    update_mappings()?;
+
+    Ok(())
+}
+
+pub fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+    let cpu = this_cpu();
+    let mut vmsa_ref = cpu.guest_vmsa_ref();
+    let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
+    let vmsa = vmsa_ref.vmsa();
+
+    config.initialize_guest_vmsa(vmsa)?;
+
+    log::info!("VMSA PA: {:#x}", vmsa_pa);
+
+    let sev_features = vmsa.sev_features;
+
+    log::info!("Launching Firmware");
+    current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+
+    Ok(())
 }

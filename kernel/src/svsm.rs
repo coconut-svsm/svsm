@@ -19,7 +19,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
+use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -28,26 +28,23 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
-use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::memory::{init_memory_map, write_guest_memory_map};
+use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PerCPUPageMappingGuard};
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
-use svsm::platform::snp_fw::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::{request_loop, request_processing_main, update_mappings};
-use svsm::sev::utils::{rmp_adjust, RMPFlags};
-use svsm::sev::{secrets_page, secrets_page_mut};
+use svsm::requests::{request_loop, request_processing_main};
+use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
 use svsm::task::{schedule_init, start_kernel_task};
-use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
+use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
@@ -96,135 +93,6 @@ global_asm!(
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
-
-const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
-
-fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let start = guard.virt_addr().as_mut_ptr::<u8>();
-
-    // SAFETY: this is called from CPU 0, so the underlying physical address
-    // is not being aliased. We are mapping a full page, which is 4k-aligned,
-    // and is enough for SnpCpuidTable. We also assert above at compile time
-    // that SnpCpuidTable fits within a page, so the write is safe.
-    unsafe {
-        // Zero target and copy data
-        start.write_bytes(0, PAGE_SIZE);
-        start
-            .cast::<SnpCpuidTable>()
-            .copy_from_nonoverlapping(&*CPUID_PAGE, 1);
-    }
-
-    Ok(())
-}
-
-fn copy_secrets_page_to_fw(fw_addr: PhysAddr, caa_addr: PhysAddr) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let start = guard.virt_addr();
-
-    // Zero target
-    zero_mem_region(start, start + PAGE_SIZE);
-
-    // Copy secrets page
-    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
-
-    let &li = &*LAUNCH_INFO;
-
-    fw_secrets_page.set_svsm_data(
-        li.kernel_region_phys_start,
-        li.kernel_region_phys_end - li.kernel_region_phys_start,
-        u64::from(caa_addr),
-    );
-
-    // SAFETY: start points to a new allocated and zeroed page.
-    unsafe {
-        fw_secrets_page.copy_to(start);
-    }
-
-    Ok(())
-}
-
-fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let vaddr = guard.virt_addr();
-
-    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
-
-    Ok(())
-}
-
-fn copy_tables_to_fw(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    if let Some(addr) = fw_meta.cpuid_page {
-        copy_cpuid_table_to_fw(addr)?;
-    }
-
-    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
-    let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
-
-    copy_secrets_page_to_fw(secrets_page, caa_page)?;
-
-    zero_caa_page(caa_page)?;
-
-    Ok(())
-}
-
-fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
-    if let Some(caa) = fw_meta.caa_page {
-        this_cpu_shared().update_guest_caa(caa);
-    }
-
-    this_cpu().alloc_guest_vmsa()?;
-    update_mappings()?;
-
-    Ok(())
-}
-
-fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
-    let cpu = this_cpu();
-    let mut vmsa_ref = cpu.guest_vmsa_ref();
-    let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
-    let vmsa = vmsa_ref.vmsa();
-
-    config.initialize_guest_vmsa(vmsa)?;
-
-    log::info!("VMSA PA: {:#x}", vmsa_pa);
-
-    let sev_features = vmsa.sev_features;
-
-    log::info!("Launching Firmware");
-    current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
-
-    Ok(())
-}
-
-fn validate_fw(config: &SvsmConfig<'_>, launch_info: &KernelLaunchInfo) -> Result<(), SvsmError> {
-    let kernel_region = new_kernel_region(launch_info);
-    let flash_regions = config.get_fw_regions(&kernel_region);
-
-    for (i, region) in flash_regions.into_iter().enumerate() {
-        log::info!(
-            "Flash region {} at {:#018x} size {:018x}",
-            i,
-            region.start(),
-            region.len(),
-        );
-
-        for paddr in region.iter_pages(PageSize::Regular) {
-            let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-            let vaddr = guard.virt_addr();
-            if let Err(e) = rmp_adjust(
-                vaddr,
-                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                PageSize::Regular,
-            ) {
-                log::info!("rmpadjust failed for addr {:#018x}", vaddr);
-                return Err(e);
-            }
-        }
-    }
-
-    Ok(())
-}
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
@@ -438,17 +306,8 @@ pub extern "C" fn svsm_main() {
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
 
-    let fw_metadata = config.get_fw_metadata();
-    if let Some(ref fw_meta) = fw_metadata {
-        print_fw_meta(fw_meta);
-        write_guest_memory_map(&config).expect("Failed to write guest memory map");
-        validate_fw_memory(&config, fw_meta, &LAUNCH_INFO).expect("Failed to validate memory");
-        copy_tables_to_fw(fw_meta).expect("Failed to copy firmware tables");
-        validate_fw(&config, &LAUNCH_INFO).expect("Failed to validate flash memory");
-    }
-
-    if let Some(ref fw_meta) = fw_metadata {
-        prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
+    if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, new_kernel_region(&LAUNCH_INFO)) {
+        panic!("Failed to prepare guest FW: {e:#?}");
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]
@@ -456,10 +315,8 @@ pub extern "C" fn svsm_main() {
 
     virt_log_usage();
 
-    if config.should_launch_fw() {
-        if let Err(e) = launch_fw(&config) {
-            panic!("Failed to launch FW: {:#?}", e);
-        }
+    if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
+        panic!("Failed to launch FW: {e:#?}");
     }
 
     start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
