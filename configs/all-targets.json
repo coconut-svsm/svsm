@@ -1,0 +1,53 @@
+{
+    "igvm": {
+        "qemu": {
+            "output": "coconut-qemu.igvm",
+            "platforms": [
+                "snp",
+                "tdp"
+            ],
+            "policy": "0x30000",
+            "measure": "print",
+            "check-kvm": true
+        },
+        "hyper-v": {
+            "output": "coconut-hyperv.igvm",
+            "platforms": [
+                "native",
+                "snp",
+                "tdp",
+                "vsm"
+            ],
+            "policy": "0x30000",
+            "comport": "3",
+            "measure": "print"
+        },
+        "vanadium": {
+            "output": "coconut-vanadium.igvm",
+            "platforms": [
+                "snp",
+                "tdp"
+            ],
+            "policy": "0x30000",
+            "measure": "print",
+            "check-kvm": true,
+            "measure-native-zeroes": true
+        }
+    },
+    "kernel": {
+        "svsm": {
+            "features": "vtpm,enable-gdb",
+            "binary": true
+        },
+        "stage2": {
+            "manifest": "kernel/Cargo.toml",
+            "binary": true,
+            "objcopy": "binary"
+        },
+        "tdx-stage1": {
+            "type": "make",
+            "output_file": "bin/stage1-trampoline",
+            "objcopy": "binary"
+        }
+    }
+}

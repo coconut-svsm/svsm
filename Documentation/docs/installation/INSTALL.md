@@ -214,13 +214,13 @@ $ cargo install bindgen-cli
 That checks out the SVSM which can be built by
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd make
+$ FW_FILE=/path/to/firmware/OVMF.fd ./build configs/qemu-target.json
 ```
 
 to get a debug build of the SVSM or
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd make RELEASE=1
+$ FW_FILE=/path/to/firmware/OVMF.fd ./build --release configs/qemu-target.json
 ```
 
 to build the SVSM with the release target. When the build is finished
