@@ -34,15 +34,17 @@ test_io(){
     done
 }
 
-PIPES_DIR=$(mktemp -d -q)
-mkfifo $PIPES_DIR/pipe.in
-mkfifo $PIPES_DIR/pipe.out
+TEST_DIR=$(mktemp -d -q)
+mkfifo $TEST_DIR/pipe.in
+mkfifo $TEST_DIR/pipe.out
+truncate -s 16M $TEST_DIR/svsm_state.raw
 
-test_io $PIPES_DIR/pipe.in $PIPES_DIR/pipe.out &
+test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out &
 TEST_IO_PID=$!
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
-    --unit-tests $PIPES_DIR/pipe || true
+    --state $TEST_DIR/svsm_state.raw \
+    --unit-tests $TEST_DIR/pipe || true
 
 kill $TEST_IO_PID
-rm -rf $PIPES_DIR
+rm -rf $TEST_DIR
