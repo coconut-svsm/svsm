@@ -123,14 +123,6 @@ pub fn read_cr2() -> usize {
     ret
 }
 
-pub fn write_cr2(cr2: usize) {
-    unsafe {
-        asm!("mov %rax, %cr2",
-             in("rax") cr2,
-             options(att_syntax));
-    }
-}
-
 pub fn read_cr3() -> PhysAddr {
     let ret: usize;
     unsafe {
