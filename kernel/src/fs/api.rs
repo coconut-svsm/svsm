@@ -28,6 +28,7 @@ pub enum FsError {
     Inval,
     FileExists,
     FileNotFound,
+    NotSupported,
     PackIt(PackItError),
 }
 
@@ -62,6 +63,7 @@ impl FsError {
     impl_fs_err!(inval, Inval);
     impl_fs_err!(file_exists, FileExists);
     impl_fs_err!(file_not_found, FileNotFound);
+    impl_fs_err!(not_supported, NotSupported);
 }
 
 /// Represents file operations
