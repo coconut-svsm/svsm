@@ -67,3 +67,162 @@ impl BlockDriver for VirtIOBlkDriver {
             .map_err(|_| SvsmError::Block(BlockDeviceError::Failed))
     }
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use crate::{address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM};
+    use core::cmp::min;
+    extern crate alloc;
+    use super::*;
+
+    /// Find the first virtio-blk device in the hardware-info list
+    fn get_blk_device() -> VirtIOBlkDriver {
+        let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
+
+        let dev = cfg
+            .get_virtio_mmio_addresses()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|a| VirtIOBlkDriver::new(PhysAddr::from(*a)).ok())
+            .expect("No virtio-blk device found");
+
+        dev
+    }
+
+    /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
+    fn get_image_hash_from_host() -> Option<[u8; 32]> {
+        use crate::serial::Terminal;
+        use crate::testing::{svsm_test_io, IORequest};
+        use crate::testutils::is_qemu_test_env;
+
+        if !is_qemu_test_env() {
+            return None;
+        }
+
+        let sp = svsm_test_io().unwrap();
+
+        sp.put_byte(IORequest::GetStateImageSha256 as u8);
+
+        let mut expected_measurement = [0u8; 32];
+        for byte in &mut expected_measurement {
+            *byte = sp.get_byte();
+        }
+
+        Some(expected_measurement)
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_read_4sectors() {
+        virtio_read(4);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_read_8sectors() {
+        virtio_read(8);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_read_9sectors() {
+        virtio_read(9);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_read_17sectors() {
+        virtio_read(17);
+    }
+
+    /// Read from the block device using the specified buffer size for earch
+    /// request. Then verify the data was correctly read by comparing the sha256
+    /// sums of the read data and the image as seen on the host.
+    fn virtio_read(sectors_at_once: usize) {
+        use alloc::vec;
+        use sha2::{Digest, Sha256};
+        assert!(sectors_at_once > 0);
+        let blk = get_blk_device();
+
+        let expected_hash = get_image_hash_from_host().unwrap();
+
+        let n_sectors = blk.size() / SECTOR_SIZE;
+        let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
+
+        let mut hasher = Sha256::new();
+        for (pos, sectors) in (0..n_sectors)
+            .step_by(sectors_at_once)
+            .map(|pos| (pos, min(sectors_at_once, n_sectors - pos)))
+        {
+            buffer.truncate(sectors * SECTOR_SIZE);
+
+            blk.read_blocks(pos, &mut buffer).unwrap();
+            hasher.update(&buffer);
+        }
+
+        let hash = hasher.finalize();
+        assert_eq!(expected_hash, *hash);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_write_4sectors() {
+        virtio_write(4);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_write_8sectors() {
+        virtio_write(8);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_write_9sectors() {
+        virtio_write(9);
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_write_17sectors() {
+        virtio_write(17);
+    }
+
+    /// Write to the block device and fill it with (random) data, writing with the
+    /// specified buffer size each time. Then verify the data correctly reached the
+    /// disk image by comparing the sha256 sums of the witten data and the image as seen
+    /// on the host.
+    fn virtio_write(sectors_at_once: usize) {
+        use alloc::vec;
+        use sha2::{Digest, Sha256};
+
+        assert!(sectors_at_once > 0);
+
+        let blk = get_blk_device();
+
+        let n_sectors = blk.size() / SECTOR_SIZE;
+        let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
+
+        let mut hasher = Sha256::new();
+
+        let mut gen = (0u64..).flat_map(|x| x.to_le_bytes());
+
+        for (pos, sectors) in (0..n_sectors)
+            .step_by(sectors_at_once)
+            .map(|pos| (pos, min(sectors_at_once, n_sectors - pos)))
+        {
+            buffer.truncate(sectors * SECTOR_SIZE);
+
+            buffer.fill_with(|| gen.next().unwrap());
+
+            blk.write_blocks(pos, &buffer).unwrap();
+            blk.flush().unwrap();
+            hasher.update(&buffer);
+        }
+
+        let hash = hasher.finalize();
+        let expected_hash = get_image_hash_from_host().unwrap();
+
+        assert_eq!(expected_hash, *hash);
+    }
+}
