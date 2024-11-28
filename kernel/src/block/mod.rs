@@ -6,5 +6,7 @@
 
 pub mod api;
 pub mod error;
+#[cfg(feature = "virtio-drivers")]
+pub mod virtio_blk;
 
 pub use error::BlockDeviceError;
