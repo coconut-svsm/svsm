@@ -46,6 +46,8 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
         valid_bitmap_clear_valid_4k(paddr);
     }
 
+		log::info!("validate_virtual_page_range");
+
     // Ask the hypervisor to make the page shared.
     SVSM_PLATFORM.page_state_change(
         MemoryRegion::new(paddr, PAGE_SIZE),

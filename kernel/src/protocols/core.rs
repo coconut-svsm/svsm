@@ -26,6 +26,10 @@ use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
 use cpuarch::vmsa::VMSA;
 
+use crate::platform::SVSM_PLATFORM;
+use crate::utils::MemoryRegion;
+use crate::platform::PageStateChangeOp;
+
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
 const SVSM_REQ_CORE_CREATE_VCPU: u32 = 2;
@@ -34,7 +38,7 @@ const SVSM_REQ_CORE_DEPOSIT_MEM: u32 = 4;
 const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
-const SVSM_REQ_CORE_MY_PROTOCOL: u32 = 8;
+const SVSM_REQ_CORE_READ_GUESTMEM_PROTOCOL: u32 = 8;
 const SVSM_REQ_CORE_REGISTER_SHMEM : u32 = 9;
 
 const CORE_PROTOCOL: u32 = 1;
@@ -448,22 +452,37 @@ fn read_phys_shared(phys_addr : u64) -> Result<u64, SvsmReqError> {
 	let paddr = phys_addr.page_align();
 	let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
 	let start = guard.virt_addr();
+	//*
 	log::info!("call make_page_shared");
 	log::info!("start : 0x{:x}", start);
-	match unsafe{make_page_shared(start)} {
+	match unsafe{ make_page_shared(start) } {
 		Ok(()) => log::info!("make_page_shared end"),
-		Err(_) => {
+		Err(err) => {
 			log::info!("make_page_shared error");
+			log::info!("err : {:?}", err);
 			return Err(SvsmReqError::invalid_parameter());
 		}
 	};
+//	*/
+/*
+	SVSM_PLATFORM.page_state_change(
+		MemoryRegion::new(paddr, PAGE_SIZE),
+		PageSize::Regular,
+		PageStateChangeOp::Shared,
+		)?;
+	this_cpu()
+		.get_pgtable()
+		.set_shared_4k(start)
+		.expect("Failed to remap shared page in page tables");
+	flush_tlb_global_sync();
+// */
 	let vaddr = GuestPtr::<u64>::new(start + offset);
 	log::info!("phys_addr mapped on svsm");
 	log::info!("vaddr : 0x{:x}", start + offset);
 	Ok( unsafe{ vaddr.read()? } )
 }
 
-fn core_my_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+fn core_read_guestmem_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 	log::info!("core_my_protocol called!!!");
 	log::info!("rcx : 0x{:x}", params.rcx);
 	let mut vmsa_ref = this_cpu().guest_vmsa_ref();
@@ -530,7 +549,7 @@ pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result
         SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(params),
         SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(params),
         SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(params),
-				SVSM_REQ_CORE_MY_PROTOCOL => core_my_protocol(params),
+				SVSM_REQ_CORE_READ_GUESTMEM_PROTOCOL => core_read_guestmem_protocol(params),
 				SVSM_REQ_CORE_REGISTER_SHMEM => core_register_shmem(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
