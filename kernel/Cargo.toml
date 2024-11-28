@@ -37,6 +37,7 @@ libtcgtpm = { workspace = true, optional = true }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
 virtio-drivers.workspace = true
+sha2 = { workspace = true, features = ["force-soft"] }
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
