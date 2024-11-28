@@ -24,6 +24,10 @@ test_io(){
                     $SCRIPT_DIR/../bin/coconut-test-qemu.igvm measure -b \
                     | xxd -r -p > $PIPE_IN
                 ;;
+            # 0x02 Virtio-blk test: send md5 sum of svsm state image to SVSM.
+            "02")
+              sha256sum "$TEST_DIR/svsm_state.raw" | cut -f 1 -d ' ' | xxd -p -r > "$PIPE_IN"
+              ;;
             "")
                 # skip EOF
                 ;;
@@ -34,15 +38,18 @@ test_io(){
     done
 }
 
-PIPES_DIR=$(mktemp -d -q)
-mkfifo $PIPES_DIR/pipe.in
-mkfifo $PIPES_DIR/pipe.out
+TEST_DIR=$(mktemp -d -q)
+mkfifo $TEST_DIR/pipe.in
+mkfifo $TEST_DIR/pipe.out
+# Create a raw disk image (512kB in size) for virtio-blk tests containing random data
+dd if=/dev/urandom of="$TEST_DIR/svsm_state.raw" bs=512 count=1024
 
-test_io $PIPES_DIR/pipe.in $PIPES_DIR/pipe.out &
+test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out &
 TEST_IO_PID=$!
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
-    --unit-tests $PIPES_DIR/pipe || true
+    --state "$TEST_DIR/svsm_state.raw" \
+    --unit-tests $TEST_DIR/pipe || true
 
 kill $TEST_IO_PID
-rm -rf $PIPES_DIR
+rm -rf $TEST_DIR
