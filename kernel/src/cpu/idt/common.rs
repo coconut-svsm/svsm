@@ -70,7 +70,12 @@ pub struct X86ExceptionContext {
 }
 
 impl X86ExceptionContext {
-    pub fn set_rip(&mut self, new_rip: usize) {
+    /// # Safety
+    ///
+    /// The caller must ensure to update the rest of the execution state as
+    /// actual hardware would have done it (e.g. for MMIO emulation, CPUID,
+    /// MSR, etc.).
+    pub unsafe fn set_rip(&mut self, new_rip: usize) {
         self.frame.rip = new_rip;
 
         if is_cet_ss_supported() {

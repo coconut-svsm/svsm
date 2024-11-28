@@ -74,7 +74,11 @@ pub fn handle_exception_table(ctx: &mut X86ExceptionContext) -> bool {
     // If an exception hit in an area covered by the exception table, set rcx to -1
     if new_rip != ex_rip {
         ctx.regs.rcx = !0usize;
-        ctx.set_rip(new_rip.bits());
+        // SAFETY: check_exception_table() returns a valid RIP from the
+        // exception table
+        unsafe {
+            ctx.set_rip(new_rip.bits());
+        }
         return true;
     }
 
