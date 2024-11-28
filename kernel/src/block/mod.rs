@@ -6,5 +6,7 @@
 
 pub mod api;
 pub mod error;
+pub mod virtio_blk;
+pub mod virtio_blk_demo;
 
 pub use error::BlockDeviceError;

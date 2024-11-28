@@ -41,7 +41,8 @@ while [[ $# -gt 0 ]]; do
     --state)
       STATE_ENABLE="x-svsm-virtio-mmio=on"
       STATE_DEVICE+="-global virtio-mmio.force-legacy=false "
-      STATE_DEVICE+="-drive file=$2,format=raw,if=none,id=mmio -device virtio-blk-device,drive=mmio"
+      STATE_DEVICE+="-drive file=$2,format=raw,if=none,id=svsm_storage,cache=none "
+      STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage "
       shift
       shift
       ;;
