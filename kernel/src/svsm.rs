@@ -319,6 +319,12 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to launch FW: {e:#?}");
     }
 
+    {
+        use svsm::block::virtio_blk;
+        static MMIO_BASE: u64 = 0xfef03000;
+        let _blk = virtio_blk::VirtIOBlkDriver::new(PhysAddr::from(MMIO_BASE));
+    }
+
     start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
 
     #[cfg(test)]

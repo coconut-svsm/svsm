@@ -1138,7 +1138,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "virtio-drivers"
 version = "0.7.5"
-source = "git+https://github.com/osteffenrh/virtio-drivers?branch=virtio-pr-ng#63c5450f08bd557f609e0ffad7a5bd6281d6562e"
+source = "git+https://github.com/osteffenrh/virtio-drivers?branch=virtio-pr-2#63c5450f08bd557f609e0ffad7a5bd6281d6562e"
 dependencies = [
  "bitflags 2.6.0",
  "embedded-io",
