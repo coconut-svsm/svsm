@@ -5,3 +5,4 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 
 pub mod api;
+pub mod virtio_blk;
