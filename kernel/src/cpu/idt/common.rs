@@ -79,9 +79,11 @@ impl X86ExceptionContext {
         self.frame.rip = new_rip;
 
         if is_cet_ss_supported() {
-            // Update the instruction pointer on the shadow stack.
             let return_on_stack = (self.ssp + 8) as *const usize;
             let return_on_stack_val = new_rip;
+            // SAFETY: Inline assembly to update the instruction pointer on
+            // the shadow stack. The safety of the RIP value is delegated to
+            // the caller of this function which is unsafe.
             unsafe {
                 asm!(
                     "wrssq [{}], {}",
