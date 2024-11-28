@@ -146,7 +146,7 @@ bitflags! {
 
 impl PTEntryFlags {
     pub fn exec() -> Self {
-        Self::PRESENT | Self::GLOBAL | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::GLOBAL | Self::ACCESSED
     }
 
     pub fn data() -> Self {
@@ -154,11 +154,11 @@ impl PTEntryFlags {
     }
 
     pub fn data_ro() -> Self {
-        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::GLOBAL | Self::NX | Self::ACCESSED
     }
 
     pub fn task_exec() -> Self {
-        Self::PRESENT | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::ACCESSED
     }
 
     pub fn task_data() -> Self {
@@ -166,7 +166,7 @@ impl PTEntryFlags {
     }
 
     pub fn task_data_ro() -> Self {
-        Self::PRESENT | Self::NX | Self::ACCESSED | Self::DIRTY
+        Self::PRESENT | Self::NX | Self::ACCESSED
     }
 }
 
@@ -371,7 +371,7 @@ impl PTEntry {
     /// raw pointer read.  The caller must be certain to calculate the correct
     /// address.
     pub unsafe fn read_pte(vaddr: VirtAddr) -> Self {
-        *vaddr.as_ptr::<Self>()
+        unsafe { *vaddr.as_ptr::<Self>() }
     }
 }
 
@@ -402,7 +402,9 @@ impl PTPage {
     /// The given reference must correspond to a valid previously allocated
     /// page table page.
     unsafe fn free(page: &'static Self) {
-        let _ = PageBox::from_raw(NonNull::from(page));
+        unsafe {
+            let _ = PageBox::from_raw(NonNull::from(page));
+        }
     }
 
     /// Converts a pagetable entry to a mutable reference to a [`PTPage`],
@@ -451,7 +453,7 @@ pub enum Mapping<'a> {
 }
 
 /// A physical address within a page frame
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum PageFrame {
     Size4K(PhysAddr),
     Size2M(PhysAddr),
@@ -467,7 +469,7 @@ impl PageFrame {
         }
     }
 
-    fn size(&self) -> usize {
+    pub fn size(&self) -> usize {
         match self {
             Self::Size4K(_) => PAGE_SIZE,
             Self::Size2M(_) => PAGE_SIZE_2M,

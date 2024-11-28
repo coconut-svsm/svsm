@@ -4,21 +4,21 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
 use crate::io::IOPort;
-use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
-use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::{zero_mem_region, MemoryRegion};
-use tdx_tdcall::tdx::{
-    td_accept_memory, tdvmcall_halt, tdvmcall_io_read_16, tdvmcall_io_read_32, tdvmcall_io_read_8,
-    tdvmcall_io_write_16, tdvmcall_io_write_32, tdvmcall_io_write_8,
+use crate::tdx::tdcall::{
+    td_accept_physical_memory, td_accept_virtual_memory, tdvmcall_halt, tdvmcall_io_read,
+    tdvmcall_io_write,
 };
+use crate::tdx::TdxError;
+use crate::types::{PageSize, PAGE_SIZE};
+use crate::utils::immut_after_init::ImmutAfterInitCell;
+use crate::utils::{is_aligned, MemoryRegion};
 
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
@@ -58,11 +58,11 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        Err(TdxError::Unimplemented.into())
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        Err(TdxError::Unimplemented.into())
     }
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
@@ -93,7 +93,7 @@ impl SvsmPlatform for TdpPlatform {
         _size: PageSize,
         _op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        Err(TdxError::Unimplemented.into())
     }
 
     fn validate_physical_page_range(
@@ -101,16 +101,24 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
+        // The cast to u32 below is awkward, but the is_aligned() function
+        // requires its type to be convertible to u32 - which usize is not -
+        // and for an alignment check, only the low 32 bits are needed anyway
+        if !region.start().is_aligned(PAGE_SIZE)
+            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
+        {
+            return Err(SvsmError::InvalidAddress);
+        }
         match op {
-            PageValidateOp::Validate => {
-                td_accept_memory(region.start().into(), region.len().try_into().unwrap());
-            }
+            PageValidateOp::Validate => unsafe {
+                // TODO - verify safety of the physical address range.
+                td_accept_physical_memory(region)
+            },
             PageValidateOp::Invalidate => {
-                let mapping = PerCPUPageMappingGuard::create(region.start(), region.end(), 0)?;
-                zero_mem_region(mapping.virt_addr(), mapping.virt_addr() + region.len());
+                // No work is required at invalidation time.
+                Ok(())
             }
         }
-        Ok(())
     }
 
     fn validate_virtual_page_range(
@@ -118,26 +126,25 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        match op {
-            PageValidateOp::Validate => {
-                let mut va = region.start();
-                while va < region.end() {
-                    let pa = virt_to_frame(va);
-                    let sz = pa.end() - pa.address();
-                    // td_accept_memory() will take care of alignment
-                    td_accept_memory(pa.address().into(), sz.try_into().unwrap());
-                    va = va + sz;
-                }
-            }
-            PageValidateOp::Invalidate => {
-                zero_mem_region(region.start(), region.end());
-            }
+        // The cast to u32 below is awkward, but the is_aligned() function
+        // requires its type to be convertible to u32 - which usize is not -
+        // and for an alignment check, only the low 32 bits are needed anyway
+        if !region.start().is_aligned(PAGE_SIZE)
+            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
+        {
+            return Err(SvsmError::InvalidAddress);
         }
-        Ok(())
+        match op {
+            PageValidateOp::Validate => unsafe {
+                // TODO - verify safety of the physical address range.
+                td_accept_virtual_memory(region)
+            },
+            PageValidateOp::Invalidate => Ok(()),
+        }
     }
 
     fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        Err(TdxError::Unimplemented.into())
     }
 
     fn change_apic_registration_state(&self, _incr: bool) -> Result<bool, SvsmError> {
@@ -153,7 +160,7 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(SvsmError::Tdx)
+        Err(TdxError::Unimplemented.into())
     }
 
     fn eoi(&self) {}
@@ -181,26 +188,26 @@ impl GHCIIOPort {
 
 impl IOPort for GHCIIOPort {
     fn outb(&self, port: u16, value: u8) {
-        tdvmcall_io_write_8(port, value);
+        tdvmcall_io_write(port, value);
     }
 
     fn inb(&self, port: u16) -> u8 {
-        tdvmcall_io_read_8(port)
+        tdvmcall_io_read::<u8>(port) as u8
     }
 
     fn outw(&self, port: u16, value: u16) {
-        tdvmcall_io_write_16(port, value);
+        tdvmcall_io_write(port, value);
     }
 
     fn inw(&self, port: u16) -> u16 {
-        tdvmcall_io_read_16(port)
+        tdvmcall_io_read::<u16>(port) as u16
     }
 
     fn outl(&self, port: u16, value: u32) {
-        tdvmcall_io_write_32(port, value);
+        tdvmcall_io_write(port, value);
     }
 
     fn inl(&self, port: u16) -> u32 {
-        tdvmcall_io_read_32(port)
+        tdvmcall_io_read::<u32>(port)
     }
 }

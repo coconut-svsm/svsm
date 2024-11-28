@@ -16,6 +16,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
@@ -23,11 +24,13 @@ use crate::error::SvsmError;
 use crate::fs::FileHandle;
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
-use crate::mm::PageBox;
+use crate::mm::vm::{
+    Mapping, ShadowStackInit, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR,
+};
 use crate::mm::{
-    mappings::create_anon_mapping, mappings::create_file_mapping, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
+    mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+    SVSM_PERTASK_SHADOW_STACK_BASE, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
 };
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
@@ -119,10 +122,14 @@ impl TaskSchedState {
 pub struct Task {
     pub rsp: u64,
 
+    pub ssp: VirtAddr,
+
     /// XSave area
     pub xsa: PageBox<[u8]>,
 
     pub stack_bounds: MemoryRegion<VirtAddr>,
+
+    pub exception_shadow_stack: VirtAddr,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageBox<PageTable>>,
@@ -187,6 +194,34 @@ impl Task {
 
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
+
+        let mut shadow_stack_offset = VirtAddr::null();
+        let mut exception_shadow_stack = VirtAddr::null();
+        if is_cet_ss_supported() {
+            let shadow_stack;
+            (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
+                SVSM_PERTASK_SHADOW_STACK_BASE,
+                ShadowStackInit::Normal {
+                    entry_return: run_kernel_task as usize,
+                    exit_return: Some(task_exit as usize),
+                },
+            )?;
+            vm_kernel_range.insert_at(
+                SVSM_PERTASK_SHADOW_STACK_BASE,
+                Arc::new(Mapping::new(shadow_stack)),
+            )?;
+
+            let shadow_stack;
+            (shadow_stack, exception_shadow_stack) = VMKernelShadowStack::new(
+                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                ShadowStackInit::Exception,
+            )?;
+            vm_kernel_range.insert_at(
+                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                Arc::new(Mapping::new(shadow_stack)),
+            )?;
+        }
+
         let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry, xsa_addr)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
@@ -204,8 +239,10 @@ impl Task {
                 .checked_sub(rsp_offset)
                 .expect("Invalid stack offset from task::allocate_ktask_stack()")
                 .bits() as u64,
+            ssp: shadow_stack_offset,
             xsa,
             stack_bounds: bounds,
+            exception_shadow_stack,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
             vm_user_range: None,
@@ -231,6 +268,34 @@ impl Task {
 
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
+
+        let mut shadow_stack_offset = VirtAddr::null();
+        let mut exception_shadow_stack = VirtAddr::null();
+        if is_cet_ss_supported() {
+            let shadow_stack;
+            (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
+                SVSM_PERTASK_SHADOW_STACK_BASE,
+                ShadowStackInit::Normal {
+                    entry_return: return_new_task as usize,
+                    exit_return: None,
+                },
+            )?;
+            vm_kernel_range.insert_at(
+                SVSM_PERTASK_SHADOW_STACK_BASE,
+                Arc::new(Mapping::new(shadow_stack)),
+            )?;
+
+            let shadow_stack;
+            (shadow_stack, exception_shadow_stack) = VMKernelShadowStack::new(
+                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                ShadowStackInit::Exception,
+            )?;
+            vm_kernel_range.insert_at(
+                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                Arc::new(Mapping::new(shadow_stack)),
+            )?;
+        }
+
         let (stack, raw_bounds, stack_offset) =
             Self::allocate_utask_stack(cpu, user_entry, xsa_addr)?;
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
@@ -252,8 +317,10 @@ impl Task {
                 .checked_sub(stack_offset)
                 .expect("Invalid stack offset from task::allocate_utask_stack()")
                 .bits() as u64,
+            ssp: shadow_stack_offset,
             xsa,
             stack_bounds: bounds,
+            exception_shadow_stack,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
             vm_user_range: Some(vm_user_range),

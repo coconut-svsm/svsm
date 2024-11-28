@@ -1,7 +1,7 @@
-FEATURES ?= mstpm
+FEATURES ?= vtpm
 SVSM_ARGS += --features ${FEATURES}
 
-FEATURES_TEST ?= mstpm
+FEATURES_TEST ?= vtpm
 SVSM_ARGS_TEST += --no-default-features --features ${FEATURES_TEST}
 
 ifdef RELEASE
@@ -175,10 +175,10 @@ bin/svsm-test.bin: bin/stage1-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
-	cargo clippy --workspace --all-features --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --target=x86_64-unknown-linux-gnu -- -D warnings
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy --workspace --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
 clean:
 	cargo clean
@@ -187,6 +187,6 @@ clean:
 	rm -rf bin
 
 distclean: clean
-	$(MAKE) -C libmstpm $@
+	$(MAKE) -C libtcgtpm $@
 
 .PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf distclean

@@ -27,24 +27,18 @@ struct SnpCpuidLeaf {
 
 impl SnpCpuidLeaf {
     pub fn new1(eax_in: u32) -> Self {
-        Self {
-            eax_in,
-            ecx_in: 0,
-            xcr0: 0,
-            xss: 0,
-            eax_out: 0,
-            ebx_out: 0,
-            ecx_out: 0,
-            edx_out: 0,
-            reserved: 0,
-        }
+        Self::new2(eax_in, 0)
     }
 
     pub fn new2(eax_in: u32, ecx_in: u32) -> Self {
+        Self::new3(eax_in, ecx_in, 0)
+    }
+
+    pub fn new3(eax_in: u32, ecx_in: u32, xcr0: u64) -> Self {
         Self {
             eax_in,
             ecx_in,
-            xcr0: 0,
+            xcr0,
             xss: 0,
             eax_out: 0,
             ebx_out: 0,
@@ -92,8 +86,8 @@ impl SnpCpuidPage {
         cpuid_page.add(SnpCpuidLeaf::new2(7, 1))?;
         cpuid_page.add(SnpCpuidLeaf::new1(11))?;
         cpuid_page.add(SnpCpuidLeaf::new2(11, 1))?;
-        cpuid_page.add(SnpCpuidLeaf::new1(13))?;
-        cpuid_page.add(SnpCpuidLeaf::new2(13, 1))?;
+        cpuid_page.add(SnpCpuidLeaf::new3(13, 0, 1))?;
+        cpuid_page.add(SnpCpuidLeaf::new3(13, 1, 1))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000000))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000001))?;
         cpuid_page.add(SnpCpuidLeaf::new1(0x80000002))?;

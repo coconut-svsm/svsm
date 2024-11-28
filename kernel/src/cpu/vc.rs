@@ -234,7 +234,8 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 }
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
-    ctx.frame.rip += insn_ctx.as_ref().map_or(0, |d| d.size())
+    let new_rip = ctx.frame.rip + insn_ctx.as_ref().map_or(0, |d| d.size());
+    ctx.set_rip(new_rip);
 }
 
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
@@ -578,7 +579,7 @@ mod tests {
         let old_dr7 = verify_ghcb_gets_altered(get_dr7);
         assert_eq!(old_dr7, DR7_DEFAULT);
 
-        verify_ghcb_gets_altered(|| unsafe { set_dr7(DR7_TEST) });
+        verify_ghcb_gets_altered(|| set_dr7(DR7_TEST));
         let new_dr7 = verify_ghcb_gets_altered(get_dr7);
         assert_eq!(new_dr7, DR7_TEST);
     }

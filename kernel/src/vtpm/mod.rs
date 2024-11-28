@@ -7,10 +7,10 @@
 //! This crate defines the Virtual TPM interfaces and shows what
 //! TPM backends are supported
 
-/// TPM 2.0 Reference Implementation by Microsoft
-pub mod mstpm;
+/// TPM 2.0 Reference Implementation
+pub mod tcgtpm;
 
-use crate::vtpm::mstpm::MsTpm as Vtpm;
+use crate::vtpm::tcgtpm::TcgTpm as Vtpm;
 use crate::{locking::LockGuard, protocols::vtpm::TpmPlatformCommand};
 use crate::{locking::SpinLock, protocols::errors::SvsmReqError};
 
@@ -21,12 +21,12 @@ pub trait VtpmProtocolInterface {
 }
 
 /// This implements one handler for each [`TpmPlatformCommand`] supported by the
-/// VTPM Protocol. These handlers are based on the TPM Simulator
-/// interface (by Microsoft), but with a few changes to make it more Rust
-/// idiomatic.
+/// VTPM Protocol. These handlers are based on the TPM Simulator interface
+/// provided by the TPM 2.0 Reference Implementation, but with a few changes
+/// to make it more Rust idiomatic.
 ///
-/// `ms-tpm-20-ref/TPMCmd/Simulator/include/prototypes/Simulator_fp.h`
-pub trait MsTpmSimulatorInterface: VtpmProtocolInterface {
+/// `tpm-20-ref/TPMCmd/Simulator/include/prototypes/Simulator_fp.h`
+pub trait TcgTpmSimulatorInterface: VtpmProtocolInterface {
     /// Send a command for the TPM to run in a given locality
     ///
     /// # Arguments
@@ -59,7 +59,7 @@ pub trait MsTpmSimulatorInterface: VtpmProtocolInterface {
 }
 
 /// Basic TPM driver services
-pub trait VtpmInterface: MsTpmSimulatorInterface {
+pub trait VtpmInterface: TcgTpmSimulatorInterface {
     /// Check if the TPM is powered on.
     fn is_powered_on(&self) -> bool;
 

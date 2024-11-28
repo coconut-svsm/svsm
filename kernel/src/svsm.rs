@@ -7,30 +7,31 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
-
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
-use svsm::address::{PhysAddr, VirtAddr};
+use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::current_ghcb;
-use svsm::cpu::percpu::PerCpu;
-use svsm::cpu::percpu::{this_cpu, this_cpu_shared};
+use svsm::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
+use svsm::cpu::shadow_stack::{
+    determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
+};
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
+use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
+use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -48,7 +49,7 @@ use svsm::task::exec_user;
 use svsm::task::{create_kernel_task, schedule_init};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
-#[cfg(all(feature = "mstpm", not(test)))]
+#[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
@@ -313,6 +314,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     cr0_init();
     cr4_init(&*platform);
+    determine_cet_support();
+
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
@@ -348,6 +351,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .setup_on_cpu(&*platform)
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
+
+    if is_cet_ss_supported() {
+        enable_shadow_stacks!(bsp_percpu);
+    }
 
     // Idle task must be allocated after PerCPU data is mapped
     bsp_percpu
@@ -444,7 +451,7 @@ pub extern "C" fn svsm_main() {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
 
-    #[cfg(all(feature = "mstpm", not(test)))]
+    #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();

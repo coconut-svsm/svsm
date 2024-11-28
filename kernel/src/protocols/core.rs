@@ -113,11 +113,11 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     let target_cpu = PERCPU_AREAS
-        .get(apic_id)
+        .get_by_apic_id(apic_id)
         .ok_or_else(SvsmReqError::invalid_parameter)?;
 
     // Got valid gPAs and APIC ID, register VMSA immediately to avoid races
-    PERCPU_VMSAS.register(paddr, apic_id, true)?;
+    PERCPU_VMSAS.register(paddr, target_cpu.cpu_index(), true)?;
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
@@ -151,7 +151,7 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     drop(lock);
 
-    assert!(PERCPU_VMSAS.set_used(paddr) == Some(apic_id));
+    assert!(PERCPU_VMSAS.set_used(paddr) == Some(target_cpu.cpu_index()));
     target_cpu.update_guest_vmsa_caa(paddr, pcaa);
 
     Ok(())

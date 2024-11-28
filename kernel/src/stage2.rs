@@ -74,7 +74,9 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
 /// The caller must ensure that the `PerCpu` is never used again.
 unsafe fn shutdown_percpu() {
     let ptr = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-    core::ptr::drop_in_place(ptr);
+    unsafe {
+        core::ptr::drop_in_place(ptr);
+    }
 }
 
 fn setup_env(
@@ -453,9 +455,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     // Shut down the GHCB
     unsafe {
         shutdown_percpu();
-    }
 
-    unsafe {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("r8") &launch_info,

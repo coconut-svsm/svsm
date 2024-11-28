@@ -27,9 +27,6 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
-#[cfg(debug_assertions)]
-use crate::mm::virt_to_phys;
-
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -207,18 +204,6 @@ impl SvsmPlatform for SnpPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        #[cfg(debug_assertions)]
-        {
-            // Ensure that it is possible to translate this virtual address to
-            // a physical address.  This is not necessary for correctness
-            // here, but since other platformss may rely on virtual-to-physical
-            // translation, it is helpful to force a translation here for
-            // debugging purposes just to help catch potential errors when
-            // testing on SNP.
-            for va in region.iter_pages(PageSize::Regular) {
-                let _ = virt_to_phys(va);
-            }
-        }
         pvalidate_range(region, PvalidateOp::from(op))
     }
 

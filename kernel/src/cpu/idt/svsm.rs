@@ -17,8 +17,10 @@ use super::common::{
 };
 use crate::address::VirtAddr;
 use crate::cpu::registers::RFlags;
+use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
+use crate::mm::GuestPtr;
 use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
 use core::arch::global_asm;
@@ -205,6 +207,51 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
     }
 }
 
+// Control-Protection handler
+#[no_mangle]
+extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vector: usize) {
+    // From AMD64 Architecture Programmer's Manual, Volume 2, 8.4.3
+    // Control-Protection Error Code:
+    /// A RET (near) instruction encountered a return address mismatch.
+    const NEAR_RET: usize = 1;
+    /// A RET (far) or IRET instruction encountered a return address mismatch.
+    const FAR_RET_IRET: usize = 2;
+    /// An RSTORSSP instruction encountered an invalid shadow stack restore
+    /// token.
+    const RSTORSSP: usize = 4;
+    /// A SETSSBSY instruction encountered an invalid supervisor shadow stack
+    /// token.
+    const SETSSBSY: usize = 5;
+
+    let rip = ctxt.frame.rip;
+    match ctxt.error_code & 0x7fff {
+        code @ (NEAR_RET | FAR_RET_IRET) => {
+            // Read the return address on the normal stack.
+            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.frame.rsp));
+            let ret = unsafe { ret_ptr.read() }.expect("Failed to read return address");
+
+            // Read the return address on the shadow stack.
+            let prev_rssp_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.ssp));
+            let prev_rssp = unsafe { prev_rssp_ptr.read() }
+                .expect("Failed to read address of previous shadow stack pointer");
+            // The offset to the return pointer is different for RET and IRET.
+            let offset = if code == NEAR_RET { 0 } else { 8 };
+            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(prev_rssp + offset));
+            let ret_on_ssp =
+                unsafe { ret_ptr.read() }.expect("Failed to read return address on shadow stack");
+
+            panic!("thread at {rip:#018x} tried to return to {ret:#x}, but return address on shadow stack was {ret_on_ssp:#x}!");
+        }
+        RSTORSSP => {
+            panic!("rstorssp instruction encountered an unexpected shadow stack restore token at RIP {rip:#018x}");
+        }
+        SETSSBSY => {
+            panic!("setssbsy instruction encountered an unexpected supervisor shadow stack token at RIP {rip:#018x}");
+        }
+        code => unreachable!("unexpected code for #CP exception: {code}"),
+    }
+}
+
 // VMM Communication handler
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
@@ -247,10 +294,13 @@ extern "C" fn ex_handler_system_call(
     };
 
     ctxt.regs.rax = match input {
-        SYS_HELLO => sys_hello(),
-        SYS_EXIT => sys_exit(),
-        _ => !0,
-    };
+        SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
+        SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
+        SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
+        SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
+        _ => Err(SysCallError::EINVAL),
+    }
+    .map_or_else(|e| e as usize, |v| v as usize);
 }
 
 #[no_mangle]
@@ -280,8 +330,13 @@ global_asm!(
         .set const_true, 1
     "#,
     concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
+    concat!(
+        ".set CFG_SHADOW_STACKS, const_",
+        cfg!(feature = "shadow-stacks")
+    ),
     include_str!("../x86/smap.S"),
     include_str!("entry.S"),
     IF = const RFlags::IF.bits(),
+    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     options(att_syntax)
 );

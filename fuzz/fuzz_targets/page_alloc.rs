@@ -68,7 +68,7 @@ fn get_item<T>(v: &[T], idx: usize) -> Option<&T> {
 
 #[inline]
 unsafe fn fill_page(page: VirtAddr, byte: u8) {
-    page.as_mut_ptr::<u8>().write_bytes(byte, PAGE_SIZE)
+    unsafe { page.as_mut_ptr::<u8>().write_bytes(byte, PAGE_SIZE) }
 }
 
 #[inline]

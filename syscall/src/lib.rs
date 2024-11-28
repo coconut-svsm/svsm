@@ -6,9 +6,13 @@
 #![no_std]
 
 mod call;
-mod numbers;
+mod class0;
+mod class1;
+mod def;
 mod obj;
 
 pub use call::SysCallError;
-pub use numbers::*;
+pub use class0::*;
+pub use class1::*;
+pub use def::*;
 pub use obj::*;

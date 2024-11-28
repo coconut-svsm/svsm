@@ -10,10 +10,15 @@ members = [
     "fuzz",
     # ELF loader
     "elf",
-    # Microsoft TPM library
-    "libmstpm",
+    # TPM 2.0 Reference Implementation library
+    "libtcgtpm",
     # syscall interface definitions
     "syscall",
+    # PackIt library and command line utility
+    "packit",
+    # verification libraries for svsm
+    "verify_proof",
+    "verify_external",
 ]
 
 
@@ -24,8 +29,9 @@ cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
-libmstpm = { path = "libmstpm" }
+libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
+packit = { path = "packit" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -42,13 +48,18 @@ libfuzzer-sys = "0.4"
 log = "0.4.17"
 p384 = { version = "0.13.0" }
 sha2 = "0.10.8"
-tdx-tdcall = "0.2.1"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
 
-# other repos
-packit = { git = "https://github.com/coconut-svsm/packit", version = "0.1.1" }
+# Verus repos
+builtin = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
+vstd = { git = "https://github.com/verus-lang/verus", rev ="943ba63", features = ["alloc"], default-features = false }
+
+# Verification libs
+verify_proof = { path = "verify_proof", default-features = false  }
+verify_external = { path = "verify_external", default-features = false  }
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
@@ -57,6 +68,7 @@ rust_2018_idioms = { level = "deny", priority = 1 }
 missing_debug_implementations = { level = "deny", priority = 50 }
 single_use_lifetimes = { level = "warn", priority = 125 }
 trivial-numeric-casts = { level = "deny", priority = 10 }
+unsafe_op_in_unsafe_fn = { level = "deny", priority = 2 }
 
 [workspace.lints.clippy]
 await_holding_lock = "warn"
@@ -81,3 +93,6 @@ suboptimal_flops = "warn"
 # TODO: fires many times, fix then enable.
 # undocumented_unsafe_blocks = "warn"
 unnecessary_box_returns = "warn"
+
+[workspace.metadata.scripts]
+vfmt = "verusfmt `find ./ -name *.verus.rs`"

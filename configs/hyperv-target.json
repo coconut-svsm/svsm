@@ -1,0 +1,32 @@
+{
+    "igvm": {
+        "hyper-v": {
+            "output": "coconut-hyperv.igvm",
+            "platforms": [
+                "native",
+                "snp",
+                "tdp",
+                "vsm"
+            ],
+            "policy": "0x30000",
+            "comport": "3",
+            "measure": "print"
+        }
+    },
+    "kernel": {
+        "svsm": {
+            "features": "vtpm",
+            "binary": true
+        },
+        "stage2": {
+            "manifest": "kernel/Cargo.toml",
+            "binary": true,
+            "objcopy": "binary"
+        },
+        "tdx-stage1": {
+            "type": "make",
+            "output_file": "bin/stage1-trampoline",
+            "objcopy": "binary"
+        }
+    }
+}

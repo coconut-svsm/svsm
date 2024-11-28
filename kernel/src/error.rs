@@ -27,6 +27,7 @@ use crate::sev::msr_protocol::GhcbMsrError;
 use crate::sev::SevSnpError;
 use crate::syscall::ObjError;
 use crate::task::TaskError;
+use crate::tdx::TdxError;
 use elf::ElfError;
 use syscall::SysCallError;
 
@@ -58,7 +59,7 @@ pub enum SvsmError {
     /// Errors related to SEV-SNP operations, like PVALIDATE or RMPUPDATE
     SevSnp(SevSnpError),
     /// Errors related to TDX operations
-    Tdx,
+    Tdx(TdxError),
     /// Generic errors related to memory management
     Mem,
     /// Errors related to the memory allocator

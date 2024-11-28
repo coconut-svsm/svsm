@@ -6,6 +6,7 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
+use crate::mm::virt_to_frame;
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
@@ -67,7 +68,12 @@ pub fn pvalidate_range(
     let end = region.end();
 
     while addr < end {
-        if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
+        // Validation as a 2 MB page can only be attempted if the underlying
+        // mapping is a 2 MB mapping.
+        if addr.is_aligned(PAGE_SIZE_2M)
+            && addr + PAGE_SIZE_2M <= end
+            && virt_to_frame(addr).size() >= PAGE_SIZE_2M
+        {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
             pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
@@ -134,12 +140,15 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
 
 /// Executes the vmmcall instruction.
 /// # Safety
-/// See cpu vendor documentation for what this can do.
+/// By invoking the hypervisor, all register and memory contents can
+/// potentially be modified as a side-effect of the call, and thus memory
+/// safety cannot be guaranteed.
 pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
     let new_eax;
-    asm!(
-            // bx register is reserved by llvm so it can't be passed in directly and must be
-            // restored
+    unsafe {
+        asm!(
+            // bx register is reserved by llvm so it can't be passed in
+            // directly and must be restored
             "xchg %rbx, {0:r}",
             "vmmcall",
             "xchg %rbx, {0:r}",
@@ -148,14 +157,15 @@ pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
             in("ecx") ecx,
             in("edx") edx,
             options(att_syntax));
+    }
     new_eax
 }
 
 /// Sets the dr7 register to the given value
-/// # Safety
-/// See cpu vendor documentation for what this can do.
-pub unsafe fn set_dr7(new_val: u64) {
-    asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
+pub fn set_dr7(new_val: u64) {
+    unsafe {
+        asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
+    }
 }
 
 pub fn get_dr7() -> u64 {
@@ -164,13 +174,19 @@ pub fn get_dr7() -> u64 {
     out
 }
 
-/// # Safety
 /// VMGEXIT operations generally need to be performed with interrupts disabled
 /// to ensure that an interrupt cannot cause the GHCB MSR to change prior to
 /// exiting to the host.  It is the caller's responsibility to ensure that
 /// interrupt handling is configured correctly for the attemtped operation.
-pub unsafe fn raw_vmgexit() {
-    asm!("rep; vmmcall", options(att_syntax));
+///
+/// VMGEXIT does not modify any register state, and the only memory that can be
+/// changed during VMGEXIT is memory that is already visible to the host and
+/// is subject to change even outside of the scope of VMGEXIT.  Therefore,
+/// use of VMGEXIT cannot cause unsafe behavior.
+pub fn raw_vmgexit() {
+    unsafe {
+        asm!("rep; vmmcall", options(att_syntax));
+    }
 }
 
 bitflags::bitflags! {

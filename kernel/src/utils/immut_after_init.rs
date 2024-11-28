@@ -122,14 +122,16 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     // The caller must check the initialization status to avoid double init bugs
     unsafe fn set_inner(&self, v: &T) {
         self.set_init();
-        (*self.data.get())
-            .as_mut_ptr()
-            .copy_from_nonoverlapping(v, 1)
+        unsafe {
+            (*self.data.get())
+                .as_mut_ptr()
+                .copy_from_nonoverlapping(v, 1)
+        }
     }
 
     // The caller must ensure that the cell is initialized
     unsafe fn get_inner(&self) -> &T {
-        (*self.data.get()).assume_init_ref()
+        unsafe { (*self.data.get()).assume_init_ref() }
     }
 
     fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {

@@ -193,7 +193,7 @@ impl<T: Copy> MemMappingGuard<T> {
     pub unsafe fn read(&self, offset: usize) -> Result<T, SvsmError> {
         let size = core::mem::size_of::<T>();
         self.virt_addr_region(offset * size, size)
-            .map_or(Err(SvsmError::Mem), |region| {
+            .map_or(Err(SvsmError::Mem), |region| unsafe {
                 Ok(*(region.start().as_ptr::<T>()))
             })
     }
@@ -221,7 +221,9 @@ impl<T: Copy> MemMappingGuard<T> {
         let size = core::mem::size_of::<T>();
         self.virt_addr_region(offset * size, size)
             .map_or(Err(SvsmError::Mem), |region| {
-                *(region.start().as_mut_ptr::<T>()) = data;
+                unsafe {
+                    *(region.start().as_mut_ptr::<T>()) = data;
+                }
                 Ok(())
             })
     }
@@ -246,11 +248,11 @@ impl<T: Copy> InsnMachineMem for MemMappingGuard<T> {
 
     /// Safety: See the MemMappingGuard's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-        self.read(0).map_err(|_| InsnError::MemRead)
+        unsafe { self.read(0).map_err(|_| InsnError::MemRead) }
     }
 
     /// Safety: See the MemMappingGuard's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-        self.write(0, data).map_err(|_| InsnError::MemWrite)
+        unsafe { self.write(0, data).map_err(|_| InsnError::MemWrite) }
     }
 }

@@ -426,7 +426,7 @@ impl MemoryRegion {
     /// undefined, as the compiler is allowed to optimize assuming there will
     /// be no arithmetic overflows.
     unsafe fn page_info_mut_ptr(&mut self, pfn: usize) -> *mut PageStorageType {
-        self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn)
+        unsafe { self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn) }
     }
 
     /// Gets a pointer to the page information for a given page frame number.
@@ -437,7 +437,7 @@ impl MemoryRegion {
     /// undefined, as the compiler is allowed to optimize assuming there will
     /// be no arithmetic overflows.
     unsafe fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
-        self.start_virt.as_ptr::<PageStorageType>().add(pfn)
+        unsafe { self.start_virt.as_ptr::<PageStorageType>().add(pfn) }
     }
 
     /// Checks if a page frame number is valid.
@@ -1610,6 +1610,7 @@ unsafe impl GlobalAlloc for SvsmAllocator {
 }
 
 #[cfg_attr(any(target_os = "none"), global_allocator)]
+#[allow(dead_code)]
 static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start

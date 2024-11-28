@@ -193,8 +193,8 @@ Building the SVSM itself requires:
 - `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
 - `binutils` >= 2.39
 
-You may also need to install the Microsoft TPM build dependencies. On OpenSUSE
-you can do this by:
+You may also need to install the TPM 2.0 Reference Implementation build
+dependencies. On OpenSUSE you can do this by:
 
 ```
 $ sudo zypper in system-user-mail make gcc curl patterns-devel-base-devel_basis \
@@ -214,13 +214,13 @@ $ cargo install bindgen-cli
 That checks out the SVSM which can be built by
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd make
+$ FW_FILE=/path/to/firmware/OVMF.fd ./build configs/qemu-target.json
 ```
 
 to get a debug build of the SVSM or
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd make RELEASE=1
+$ FW_FILE=/path/to/firmware/OVMF.fd ./build --release configs/qemu-target.json
 ```
 
 to build the SVSM with the release target. When the build is finished
