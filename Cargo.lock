@@ -455,6 +455,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "enumn"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f9ed6b3789237c8a0c1c505af1c7eb2c560df6186f01b098c3a1064ea532f38"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1114,6 +1125,7 @@ dependencies = [
  "test",
  "verify_external",
  "verify_proof",
+ "virtio-drivers",
  "vstd",
  "zerocopy 0.8.10",
 ]
@@ -1312,6 +1324,16 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "virtio-drivers"
+version = "0.7.5"
+dependencies = [
+ "bitflags 2.6.0",
+ "enumn",
+ "log",
+ "zerocopy 0.8.10",
+]
 
 [[package]]
 name = "vstd"
