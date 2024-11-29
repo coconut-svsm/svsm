@@ -90,6 +90,36 @@ impl RawRamFile {
         self.pages[index].read(page_index, buf);
     }
 
+    /// Read data from a file page and store it in a Buffer object.
+    ///
+    /// # Arguments:
+    ///
+    /// - `buffer`: [`Buffer`] object to store read data.
+    /// - `buffer_offset`: Offset into the buffer.
+    /// - `file_offset`: Offset into the file.
+    ///
+    /// # Returns:
+    ///
+    /// [`Result`] with number of bytes read on success, [`SvsmError`] on
+    /// failure.
+    #[inline(always)]
+    fn read_buffer_from_page(
+        &self,
+        buffer: &mut dyn Buffer,
+        buffer_offset: usize,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let page_offset = page_offset(file_offset);
+        let page_index = file_offset / PAGE_SIZE;
+
+        // Minimum of space bytes-to-read on the page and remaining space in buffer
+        let buffer_min = min(buffer.size() - buffer_offset, PAGE_SIZE - page_offset);
+        // Make sure to not read beyond EOF
+        let size = min(self.size.checked_sub(file_offset).unwrap(), buffer_min);
+
+        self.pages[page_index].copy_to_buffer(buffer, buffer_offset, page_offset, size)
+    }
+
     /// Used to write contents to a page corresponding to
     /// the file at a particular offset.
     ///
@@ -104,6 +134,37 @@ impl RawRamFile {
         let page_index = page_offset(offset);
         let index = offset / PAGE_SIZE;
         self.pages[index].write(page_index, buf);
+    }
+
+    /// Write data from [`Buffer`] object to a file page.
+    ///
+    /// # Arguments:
+    ///
+    /// - `buffer`: [`Buffer`] object to read data from.
+    /// - `buffer_offset`: Offset into the buffer.
+    /// - `file_offset`: Offset into the file.
+    ///
+    /// # Returns:
+    ///
+    /// [`Result`] with number of bytes written on success, [`SvsmError`] on
+    /// failure.
+    #[inline(always)]
+    fn write_buffer_to_page(
+        &self,
+        buffer: &dyn Buffer,
+        buffer_offset: usize,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let page_offset = page_offset(file_offset);
+        let page_index = file_offset / PAGE_SIZE;
+
+        // Minimum of space on the page and remaining bytes-to-write in buffer
+        let size = min(
+            buffer.size().checked_sub(buffer_offset).unwrap(),
+            PAGE_SIZE - page_offset,
+        );
+
+        self.pages[page_index].copy_from_buffer(buffer, buffer_offset, page_offset, size)
     }
 
     /// Used to read the file from a particular offset.
@@ -143,6 +204,24 @@ impl RawRamFile {
         Ok(bytes)
     }
 
+    fn read_buffer(&self, buffer: &mut dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        let mut current = min(file_offset, self.size);
+        let mut len = buffer.size();
+        let mut buffer_offset: usize = 0;
+
+        while len > 0 {
+            let read = self.read_buffer_from_page(buffer, buffer_offset, current)?;
+            current += read;
+            buffer_offset += read;
+            len -= read;
+            if current == self.size {
+                break;
+            }
+        }
+
+        Ok(buffer_offset)
+    }
+
     /// Used to write to the file at a particular offset.
     ///
     /// # Arguments
@@ -179,6 +258,31 @@ impl RawRamFile {
         }
 
         Ok(bytes)
+    }
+
+    fn write_buffer(
+        &mut self,
+        buffer: &dyn Buffer,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let mut current = file_offset;
+        let mut len = buffer.size();
+        let mut buffer_offset: usize = 0;
+        let capacity = file_offset
+            .checked_add(len)
+            .ok_or(SvsmError::FileSystem(FsError::inval()))?;
+
+        self.set_capacity(capacity)?;
+
+        while len > 0 {
+            let written = self.write_buffer_to_page(buffer, buffer_offset, current)?;
+            current += written;
+            buffer_offset += written;
+            len -= written;
+            self.size = max(self.size, current);
+        }
+
+        Ok(buffer_offset)
     }
 
     /// Used to truncate the file to a given size.
@@ -258,8 +362,16 @@ impl File for RamFile {
         self.rawfile.lock_read().read(buf, offset)
     }
 
+    fn read_buffer(&self, buffer: &mut dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        self.rawfile.lock_read().read_buffer(buffer, file_offset)
+    }
+
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
         self.rawfile.lock_write().write(buf, offset)
+    }
+
+    fn write_buffer(&self, buffer: &dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        self.rawfile.lock_write().write_buffer(buffer, file_offset)
     }
 
     fn truncate(&self, size: usize) -> Result<usize, SvsmError> {
