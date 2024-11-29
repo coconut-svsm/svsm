@@ -6,6 +6,7 @@
 
 use crate::error::SvsmError;
 use crate::fs::FsError;
+use core::cmp;
 
 pub trait Buffer {
     /// Copy data from the buffer into a slice
@@ -43,4 +44,58 @@ pub trait Buffer {
     ///
     /// Total number of bytes that can be copied from/to the buffer.
     fn size(&self) -> usize;
+}
+
+/// Struct to add a [`Buffer`] interface to a mutable `&[u8]` slice
+#[derive(Debug)]
+pub struct SliceMutRefBuffer<'a> {
+    slice: &'a mut [u8],
+}
+
+impl<'a> SliceMutRefBuffer<'a> {
+    pub fn new(slice: &'a mut [u8]) -> Self {
+        Self { slice }
+    }
+}
+
+impl Buffer for SliceMutRefBuffer<'_> {
+    fn read_buffer(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
+        let size = cmp::min(buf.len(), self.slice.len() - offset);
+        buf[..size].clone_from_slice(&self.slice[offset..offset + size]);
+        Ok(size)
+    }
+
+    fn write_buffer(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
+        let size = cmp::min(buf.len(), self.slice.len() - offset);
+        self.slice[offset..offset + size].clone_from_slice(&buf[..size]);
+        Ok(size)
+    }
+
+    fn size(&self) -> usize {
+        self.slice.len()
+    }
+}
+
+#[derive(Debug)]
+/// Struct to add a [`Buffer`] interface to a non-mutable `&[u8]` slice
+pub struct SliceRefBuffer<'a> {
+    slice: &'a [u8],
+}
+
+impl<'a> SliceRefBuffer<'a> {
+    pub fn new(slice: &'a [u8]) -> Self {
+        Self { slice }
+    }
+}
+
+impl Buffer for SliceRefBuffer<'_> {
+    fn read_buffer(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
+        let size = cmp::min(buf.len(), self.slice.len() - offset);
+        buf[..size].clone_from_slice(&self.slice[offset..offset + size]);
+        Ok(size)
+    }
+
+    fn size(&self) -> usize {
+        self.slice.len()
+    }
 }
