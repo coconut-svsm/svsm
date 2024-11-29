@@ -2,7 +2,12 @@ use cpuarch::vmsa::VMSA;
 use igvm_defs::PAGE_SIZE_4K;
 use core::ffi::CStr;
 use core::str;
-use crate::{address::VirtAddr, cpu::percpu::{this_cpu, this_cpu_unsafe}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_paging::{ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
+use crate::{address::VirtAddr, cpu::percpu::{this_cpu, this_cpu_unsafe}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
+
+use crate::vaddr_as_slice; 
+use crate::types::PageSize;
+use crate::sev::RMPFlags;
+use crate::sev::rmp_adjust;
 
 const TRUSTLET_VMPL: u64 = 1;
 
@@ -217,6 +222,8 @@ impl ProcessRuntime for PALContext  {
         }
         let size = size / 4096;
 
+        let copy = if flags & 0x8 != 0 { true } else { false };
+
         let vaddr = VirtAddr::from(addr);
         let s_vaddr = VirtAddr::from(0x18000000000u64);
 
@@ -226,20 +233,39 @@ impl ProcessRuntime for PALContext  {
         for i in 0..size {
             let t = page_table_ref.virt_to_phys(s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize));
             log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
-            page_table_ref.map_4k_page(vaddr + (i * PAGE_SIZE_4K).try_into().unwrap(), t, flags);
+            if copy {
+                let (_old_mapping, old_page_mapped) = paddr_as_slice!(t);
+                let new_page = allocate_page();
+                let (mapping, new_page_mapped) = paddr_as_slice!(new_page);
+                rmp_adjust(mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX , PageSize::Regular).unwrap();
+                for i in 0..512 {
+                   new_page_mapped[i] = old_page_mapped[i];
+                }
+                page_table_ref.map_4k_page(vaddr + (i* PAGE_SIZE_4K).try_into().unwrap(), new_page, flags);
 
-            let t2 = page_table_ref.virt_to_phys(vaddr + ((i * PAGE_SIZE_4K) as usize) );
+                log::info!("Copy Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
+                           s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
+                           t,
+                           vaddr + ((i*PAGE_SIZE_4K) as usize),
+                           new_page,
+                );
 
-            log::info!("Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
-                       s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
-                       t,
-                       vaddr + ((i*PAGE_SIZE_4K) as usize),
-                       t2
-            );
-            if t != t2 {
-                panic!("Address mapping failed");
+
+            } else {
+                page_table_ref.map_4k_page(vaddr + (i * PAGE_SIZE_4K).try_into().unwrap(), t, flags);
+
+                let t2 = page_table_ref.virt_to_phys(vaddr + ((i * PAGE_SIZE_4K) as usize) );
+
+                log::info!("Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
+                           s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
+                           t,
+                           vaddr + ((i*PAGE_SIZE_4K) as usize),
+                           t2
+                );
+                if t != t2 {
+                    panic!("Address mapping failed");
+                }
             }
-
 
         }
 
