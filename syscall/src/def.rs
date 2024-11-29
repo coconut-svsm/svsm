@@ -14,6 +14,7 @@ pub const SYS_EXEC: u64 = CLASS0 + 4;
 pub const SYS_CLOSE: u64 = CLASS0 + 10;
 
 // Syscall number in class1
+pub const SYS_OPEN: u64 = CLASS1;
 pub const SYS_OPENDIR: u64 = CLASS1 + 4;
 pub const SYS_READDIR: u64 = CLASS1 + 5;
 
@@ -29,6 +30,24 @@ pub enum FileType {
     File,
     Directory,
 }
+
+//
+// Mode flags for Open system call
+//
+/// Open file for reading
+pub const FM_READ: usize = 1 << 0;
+/// Open file for writing
+pub const FM_WRITE: usize = 1 << 1;
+/// Place file pointer at EOF
+pub const FM_APPEND: usize = 1 << 2;
+/// Truncate file to zero
+pub const FM_TRUNC: usize = 1 << 3;
+
+//
+// File flags for Open system call
+//
+/// Create file if it does not exist
+pub const FF_CREATE: usize = 1 << 0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
