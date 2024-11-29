@@ -43,7 +43,7 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 
@@ -80,7 +80,7 @@ pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     if rcx == 0 {
         Ok(())
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 
@@ -109,7 +109,7 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 
@@ -138,7 +138,7 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     if rcx == 0 {
         Ok(ret)
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 
@@ -165,7 +165,7 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     if rcx == 0 {
         Ok(val)
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 
@@ -192,7 +192,7 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     if rcx == 0 {
         Ok(())
     } else {
-        Err(SvsmError::InvalidAddress)
+        Err(SvsmError::Fault)
     }
 }
 

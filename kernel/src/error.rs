@@ -78,6 +78,8 @@ pub enum SvsmError {
     InvalidBytes,
     /// Error reported when converting to UTF-8
     InvalidUtf8,
+    /// A fault occured
+    Fault,
     /// Errors related to firmware parsing
     Firmware,
     /// Errors related to console operation
