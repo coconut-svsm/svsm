@@ -11,6 +11,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use crate::error::SvsmError;
+use crate::fs::Buffer;
 use crate::mm::PageRef;
 use crate::string::FixedString;
 use packit::PackItError;
@@ -82,6 +83,22 @@ pub trait File: Debug + Send + Sync {
     /// during the read operation.
     fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError>;
 
+    /// Read contents of a file into a [`Buffer`]
+    ///
+    /// # Arguments
+    ///
+    /// - `buf`: [`Buffer`] to store the file contents into.
+    /// - `offset`: file offset to read from.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes read if successful, or an [`SvsmError`] if there was a problem
+    /// during the read operation.
+    fn read_buffer(&self, _buf: &mut dyn Buffer, _offset: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
+
     /// Used to write contents to a file
     ///
     /// # Arguments
@@ -95,6 +112,22 @@ pub trait File: Debug + Send + Sync {
     /// bytes written if successful, or an [`SvsmError`] if there was a problem
     /// during the write operation.
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError>;
+
+    /// Write to file from a [`Buffer`]
+    ///
+    /// # Arguments:
+    ///
+    /// - `buffer`: Instance of [`Buffer`] to write data from.
+    /// - `offset`: File offset to write to.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes written if successful, or an [`SvsmError`] if there was a problem
+    /// during the write operation.
+    fn write_buffer(&self, _buffer: &dyn Buffer, _offset: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::FileSystem(FsError::not_supported()))
+    }
 
     /// Used to truncate the file to the specified size.
     ///
