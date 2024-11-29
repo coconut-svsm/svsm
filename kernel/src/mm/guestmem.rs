@@ -170,8 +170,7 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
 }
 
 #[inline]
-unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
-    let size: usize = size_of::<T>();
+unsafe fn copy_bytes(src: usize, dst: usize, size: usize) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
     unsafe {
@@ -194,6 +193,16 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     } else {
         Err(SvsmError::Fault)
     }
+}
+
+#[inline]
+unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
+    let size: usize = size_of::<T>();
+    let s = src as usize;
+    let d = dst as usize;
+
+    // SAFETY: Only safe when safety requirements for do_movsb() are fulfilled.
+    unsafe { copy_bytes(s, d, size) }
 }
 
 #[derive(Debug)]
@@ -376,6 +385,40 @@ impl UserPtr<c_char> {
             }
         }
         Err(SvsmError::InvalidBytes)
+    }
+}
+
+pub fn copy_from_user(src: VirtAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
+    let source = src.bits();
+    let destination = dst.as_mut_ptr() as usize;
+    let size = dst.len();
+
+    if src + size > USER_MEM_END {
+        return Err(SvsmError::InvalidAddress);
+    }
+
+    // SAFETY: Safe because the copy only happens to the memory belonging to
+    // the dst slice from user-mode memory.
+    unsafe {
+        let _guard = UserAccessGuard::new();
+        copy_bytes(source, destination, size)
+    }
+}
+
+pub fn copy_to_user(src: &[u8], dst: VirtAddr) -> Result<(), SvsmError> {
+    let source = src.as_ptr() as usize;
+    let destination = dst.bits();
+    let size = src.len();
+
+    if dst + size > USER_MEM_END {
+        return Err(SvsmError::InvalidAddress);
+    }
+
+    // SAFETY: Only reads data from with the slice and copies to an address
+    // guaranteed to be in user-space.
+    unsafe {
+        let _guard = UserAccessGuard::new();
+        copy_bytes(source, destination, size)
     }
 }
 
