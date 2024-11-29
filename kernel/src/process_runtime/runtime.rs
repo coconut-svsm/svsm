@@ -13,6 +13,7 @@ pub trait ProcessRuntime {
     fn pal_svsm_fail(&mut self) -> bool;
     fn pal_svsm_exit(&mut self) -> bool;
     fn pal_svsm_map(&mut self) -> bool;
+    fn pal_svsm_print_info(&mut self) -> bool;
 }
 
 #[derive(Debug)]
@@ -106,6 +107,9 @@ impl ProcessRuntime for PALContext  {
                 let c_str = core::char::from_digit(c as u32, 10).unwrap();
                 log::info!("{}",c_str);
                 return true
+            }
+            100 => {
+                return self.pal_svsm_print_info();
             }
             _ => {
                 log::info!("Unknown request code: {}", rax);
@@ -223,10 +227,69 @@ impl ProcessRuntime for PALContext  {
             let t = page_table_ref.virt_to_phys(s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize));
             log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
             page_table_ref.map_4k_page(vaddr + (i * PAGE_SIZE_4K).try_into().unwrap(), t, flags);
+
+            let t2 = page_table_ref.virt_to_phys(vaddr + ((i * PAGE_SIZE_4K) as usize) );
+
+            log::info!("Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
+                       s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
+                       t,
+                       vaddr + ((i*PAGE_SIZE_4K) as usize),
+                       t2
+            );
+            if t != t2 {
+                panic!("Address mapping failed");
+            }
+
+
         }
 
         return true;
     }
 
+    fn pal_svsm_print_info(&mut self) -> bool {
+        let addr = self.vmsa.rbx;
+        let len = self.vmsa.rcx;
+        let print_vmsa = if self.vmsa.rdx == 0 { false } else { true };
+
+        let page_table = self.vmsa.cr3;
+        let mut page_table_ref = ProcessPageTableRef::default();
+        page_table_ref.set_external_table(page_table);
+
+        let addr_start = addr & !0xFFF;
+        let paddr = page_table_ref.get_page(VirtAddr::from(addr_start));
+        let (_mapping, addr_mapping) = map_paddr!(paddr);
+        let content: *const u8 = unsafe {{ addr_mapping.as_ptr::<u8>() }.offset((addr & 0xFFF).try_into().unwrap())};
+        let slice = unsafe {core::slice::from_raw_parts(content, len as usize)};
+
+        if addr + len > addr_start + PAGE_SIZE_4K {
+            log::info!("Unable to print -- Not within page");
+        }
+        if len % 8 != 0 {
+            log::info!("Unable to print -- len not multiple of 8")
+        }
+        let mut i:usize = 0;
+        while i != (len as usize){
+
+            log::info!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                       slice[i],
+                       slice[i+1],
+                       slice[i+2],
+                       slice[i+3],
+                       slice[i+4],
+                       slice[i+5],
+                       slice[i+6],
+                       slice[i+7]
+            );
+            i = i + 8;
+
+        }
+        //log::info!(" [Trustlet] PAL Error: {} {}",s.to_str().unwrap(), errno);
+        let rdx = self.vmsa.rdx;
+        log::info!("RDX: {:#x}", rdx);
+
+        return true;
+    }
+
+    
 
 }
