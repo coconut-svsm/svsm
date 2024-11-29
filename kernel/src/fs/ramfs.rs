@@ -73,23 +73,6 @@ impl RawRamFile {
         Ok(())
     }
 
-    /// Used to read a page corresponding to the file from
-    /// a particular offset.
-    ///
-    /// # Arguements
-    ///
-    /// - `buf`: buffer to read the file contents into.
-    /// - `offset`: offset to read the file from.
-    ///
-    /// # Assert
-    ///
-    /// Assert that read operation doesn't extend beyond a page.
-    fn read_from_page(&self, buf: &mut [u8], offset: usize) {
-        let page_index = page_offset(offset);
-        let index = offset / PAGE_SIZE;
-        self.pages[index].read(page_index, buf);
-    }
-
     /// Read data from a file page and store it in a Buffer object.
     ///
     /// # Arguments:
@@ -118,22 +101,6 @@ impl RawRamFile {
         let size = min(self.size.checked_sub(file_offset).unwrap(), buffer_min);
 
         self.pages[page_index].copy_to_buffer(buffer, buffer_offset, page_offset, size)
-    }
-
-    /// Used to write contents to a page corresponding to
-    /// the file at a particular offset.
-    ///
-    /// # Arguments
-    ///
-    /// - `buf`: buffer that contains the data to write to the file.
-    /// - `offset`: file offset to write the data.
-    /// # Assert
-    ///
-    /// Assert that write operation doesn't extend beyond a page.
-    fn write_to_page(&self, buf: &[u8], offset: usize) {
-        let page_index = page_offset(offset);
-        let index = offset / PAGE_SIZE;
-        self.pages[index].write(page_index, buf);
     }
 
     /// Write data from [`Buffer`] object to a file page.
@@ -172,36 +139,14 @@ impl RawRamFile {
     /// # Arguments
     ///
     /// - `buf`: buffer to read the contents of the file into.
-    /// - `offset`: file offset to read from.
+    /// - `file_offset`: file offset to read from.
     ///
     /// # Returns
     ///
     /// [`Result<(), SvsmError>`]: A [Result] containing empty
     /// value if successful, SvsmError otherwise.
-    fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
-        let mut current = min(offset, self.size);
-        let mut len = buf.len();
-        let mut bytes: usize = 0;
-        let mut buf_offset = 0;
-
-        while len > 0 {
-            let page_end = min(page_align_up(current + 1), self.size);
-            let page_len = min(page_end - current, len);
-            let buf_end = buf_offset + page_len;
-
-            if page_len == 0 {
-                break;
-            }
-
-            self.read_from_page(&mut buf[buf_offset..buf_end], current);
-
-            buf_offset = buf_end;
-            current += page_len;
-            len -= page_len;
-            bytes += page_len;
-        }
-
-        Ok(bytes)
+    fn read(&self, buf: &mut [u8], file_offset: usize) -> Result<usize, SvsmError> {
+        self.read_buffer(&mut SliceMutRefBuffer::new(buf), file_offset)
     }
 
     fn read_buffer(&self, buffer: &mut dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
@@ -227,37 +172,14 @@ impl RawRamFile {
     /// # Arguments
     ///
     /// - `buf`: buffer that contains the data to write into the file.
-    /// - `offset`: file offset to read from.
+    /// - `file_offset`: file offset to read from.
     ///
     /// # Returns
     ///
     /// [`Result<(), SvsmError>`]: A [Result] containing empty
     /// value if successful, SvsmError otherwise.
-    fn write(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
-        let mut current = offset;
-        let mut bytes: usize = 0;
-        let mut len = buf.len();
-        let mut buf_offset: usize = 0;
-        let capacity = offset
-            .checked_add(len)
-            .ok_or(SvsmError::FileSystem(FsError::inval()))?;
-
-        self.set_capacity(capacity)?;
-
-        while len > 0 {
-            let page_len = min(PAGE_SIZE - page_offset(current), len);
-            let buf_end = buf_offset + page_len;
-
-            self.write_to_page(&buf[buf_offset..buf_end], current);
-            self.size = max(self.size, current + page_len);
-
-            current += page_len;
-            buf_offset += page_len;
-            len -= page_len;
-            bytes += page_len;
-        }
-
-        Ok(bytes)
+    fn write(&mut self, buf: &[u8], file_offset: usize) -> Result<usize, SvsmError> {
+        self.write_buffer(&SliceRefBuffer::new(buf), file_offset)
     }
 
     fn write_buffer(
