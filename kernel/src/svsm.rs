@@ -17,7 +17,7 @@ use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
-use svsm::cpu::gdt;
+use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::cpu::shadow_stack::{
@@ -155,7 +155,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     // SAFETY: we trust the previous stage to pass a valid pointer
     unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
-    gdt().load();
+    GLOBAL_GDT.load();
+    GLOBAL_GDT.load_selectors();
     early_idt_init();
 
     // Capture the debug serial port before the launch info disappears from

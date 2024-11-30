@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use super::gdt_mut;
+use super::gdt::GDT;
 use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
@@ -773,7 +773,10 @@ impl PerCpu {
     }
 
     pub fn load_tss(&self) {
-        gdt_mut().load_tss(&self.tss);
+        // Create a temporary GDT to use to configure the TSS.
+        let mut gdt = GDT::new();
+        gdt.load();
+        gdt.load_tss(&self.tss);
     }
 
     pub fn load_isst(&self) {

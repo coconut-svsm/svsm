@@ -9,7 +9,7 @@ extern crate alloc;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
-use crate::cpu::gdt::gdt;
+use crate::cpu::gdt::GLOBAL_GDT;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
@@ -95,8 +95,8 @@ impl InsnMachineCtx for X86ExceptionContext {
 
     fn read_seg(&self, seg: SegRegister) -> u64 {
         match seg {
-            SegRegister::CS => gdt().kernel_cs().to_raw(),
-            _ => gdt().kernel_ds().to_raw(),
+            SegRegister::CS => GLOBAL_GDT.kernel_cs().to_raw(),
+            _ => GLOBAL_GDT.kernel_ds().to_raw(),
         }
     }
 
