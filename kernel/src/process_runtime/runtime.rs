@@ -19,6 +19,7 @@ pub trait ProcessRuntime {
     fn pal_svsm_exit(&mut self) -> bool;
     fn pal_svsm_map(&mut self) -> bool;
     fn pal_svsm_print_info(&mut self) -> bool;
+    fn pal_svsm_set_tcb(&mut self) -> bool;
 }
 
 #[derive(Debug)]
@@ -104,6 +105,9 @@ impl ProcessRuntime for PALContext  {
             }
             5 => {
                 return self.pal_svsm_map();
+            }
+            6 => {
+                return self.pal_svsm_set_tcb();
             }
             99 => {
                 let c = vmsa.rbx;
@@ -270,6 +274,12 @@ impl ProcessRuntime for PALContext  {
         }
 
         return true;
+    }
+
+    fn pal_svsm_set_tcb(&mut self) -> bool {
+      let tcb = self.vmsa.rbx;
+      self.vmsa.gs.base = tcb; // Set the base of the GS segment
+      return true;
     }
 
     fn pal_svsm_print_info(&mut self) -> bool {
