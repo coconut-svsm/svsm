@@ -13,6 +13,7 @@ use core::panic::PanicInfo;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
+use svsm::attest::AttestationDriver;
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -450,6 +451,12 @@ pub extern "C" fn svsm_main() {
     if let Some(ref fw_meta) = fw_metadata {
         prepare_fw_launch(fw_meta).expect("Failed to setup guest VMSA/CAA");
     }
+
+    let mut attest_driver = AttestationDriver::try_from(kbs_types::Tee::Snp).unwrap();
+    let secret = attest_driver.attest().unwrap();
+
+    let msg = core::str::from_utf8(&secret).unwrap();
+    log::info!("Decrypted secret from attestation server: {}", msg);
 
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
