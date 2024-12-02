@@ -112,11 +112,12 @@ impl Elf64Phdr {
             return Err(ElfError::InvalidSegmentSize);
         }
 
-        if self.p_align != 0 {
+        if self.p_align > 1 {
             if !self.p_align.is_power_of_two() {
                 return Err(ElfError::InvalidAddressAlignment);
             }
-            if self.p_vaddr & (self.p_align - 1) != 0 {
+
+            if self.p_vaddr % self.p_align != self.p_offset % self.p_align {
                 return Err(ElfError::UnalignedSegmentAddress);
             }
         }

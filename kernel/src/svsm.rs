@@ -46,7 +46,7 @@ use svsm::sev::utils::{rmp_adjust, RMPFlags};
 use svsm::sev::{secrets_page, secrets_page_mut};
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
-use svsm::task::{create_kernel_task, schedule_init};
+use svsm::task::{schedule_init, start_kernel_task};
 use svsm::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -462,7 +462,7 @@ pub extern "C" fn svsm_main() {
         }
     }
 
-    create_kernel_task(request_processing_main).expect("Failed to launch request processing task");
+    start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
 
     #[cfg(test)]
     crate::test_main();

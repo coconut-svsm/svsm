@@ -701,7 +701,7 @@ extern "C" fn task_exit() {
 
 #[cfg(test)]
 mod tests {
-    use crate::task::create_kernel_task;
+    use crate::task::start_kernel_task;
     use core::arch::asm;
     use core::arch::global_asm;
 
@@ -792,7 +792,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        create_kernel_task(task1).expect("Failed to launch request processing task");
+        start_kernel_task(task1).expect("Failed to launch request processing task");
     }
 
     extern "C" fn task1() {
@@ -801,7 +801,7 @@ mod tests {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        create_kernel_task(task2).expect("Failed to launch request processing task");
+        start_kernel_task(task2).expect("Failed to launch request processing task");
 
         unsafe {
             asm!("call check_fpu", out("rax") ret, options(att_syntax));
