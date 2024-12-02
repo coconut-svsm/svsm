@@ -4,10 +4,11 @@
 //
 // Author: Carlos López <carlos.lopez@suse.com>
 
+use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
+
 use core::fmt;
 use core::ops;
-
 use core::slice;
 
 use builtin_macros::*;
@@ -322,6 +323,10 @@ impl VirtAddr {
         VirtAddr::new(self.0 + offset)
     }
 
+    pub const fn const_sub(&self, offset: usize) -> Self {
+        VirtAddr::new(self.0 - offset)
+    }
+
     /// Converts the `VirtAddr` to a slice of a given type
     ///
     /// # Arguments:
@@ -466,5 +471,20 @@ impl Address for VirtAddr {
         self.bits()
             .checked_sub(off)
             .map(|addr| sign_extend(addr).into())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct VirtPhysPair {
+    pub vaddr: VirtAddr,
+    pub paddr: PhysAddr,
+}
+
+impl VirtPhysPair {
+    pub fn new(vaddr: VirtAddr) -> Self {
+        Self {
+            vaddr,
+            paddr: virt_to_phys(vaddr),
+        }
     }
 }

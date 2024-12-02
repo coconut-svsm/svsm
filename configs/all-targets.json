@@ -13,7 +13,6 @@
         "hyper-v": {
             "output": "coconut-hyperv.igvm",
             "platforms": [
-                "native",
                 "snp",
                 "tdp",
                 "vsm"

@@ -355,9 +355,9 @@ impl WriteLockGuard<'static, IDT> {
 }
 
 impl ReadLockGuard<'static, IDT> {
-    pub fn base_limit(&self) -> (u64, u32) {
+    pub fn base_limit(&self) -> (u64, u16) {
         let base: *const IDT = core::ptr::from_ref(self);
-        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u32;
+        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u16;
         (base as u64, limit)
     }
 }

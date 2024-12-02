@@ -11,13 +11,19 @@ use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
 use super::tss::{X86Tss, IST_DF};
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr, VirtPhysPair};
+use crate::cpu::control_regs::{read_cr0, read_cr4};
+use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
+use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
+use crate::hyperv;
+use crate::hyperv::HypercallPagesGuard;
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
+use crate::mm::alloc::allocate_pages;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{
@@ -38,7 +44,9 @@ use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
-use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_FLAGS, SVSM_TSS};
+use crate::types::{
+    PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
+};
 use crate::utils::MemoryRegion;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -47,7 +55,7 @@ use core::mem::size_of;
 use core::ptr;
 use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use cpuarch::vmsa::{VMSASegment, VMSA};
+use cpuarch::vmsa::VMSA;
 
 #[derive(Copy, Clone, Debug)]
 pub struct PerCpuInfo {
@@ -337,6 +345,9 @@ pub struct PerCpu {
     /// GHCB page for this CPU.
     ghcb: OnceCell<GhcbPage>,
 
+    /// Hypercall input/output pages for this CPU if running under Hyper-V.
+    hypercall_pages: RefCell<Option<(VirtPhysPair, VirtPhysPair)>>,
+
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: Cell<Option<&'static HVDoorbell>>,
 
@@ -372,6 +383,7 @@ impl PerCpu {
 
             shared: PerCpuShared::new(apic_id, cpu_index),
             ghcb: OnceCell::new(),
+            hypercall_pages: RefCell::new(None),
             hv_doorbell: Cell::new(None),
             init_stack: Cell::new(None),
             init_shadow_stack: Cell::new(None),
@@ -436,6 +448,28 @@ impl PerCpu {
 
     fn ghcb(&self) -> Option<&GhcbPage> {
         self.ghcb.get()
+    }
+
+    /// Allocates hypercall input/output pages for this CPU.
+    pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
+        let vaddr = allocate_pages(2)?;
+        let pages = (
+            VirtPhysPair::new(vaddr),
+            VirtPhysPair::new(vaddr + PAGE_SIZE),
+        );
+        *self.hypercall_pages.borrow_mut() = Some(pages);
+        Ok(())
+    }
+
+    pub fn get_hypercall_pages(&self) -> HypercallPagesGuard<'_> {
+        // The hypercall page cell is never mutated, but is borrowed mutably
+        // to ensure that only a single reference can ever be taken at a time.
+        let page_ref: RefMut<'_, Option<(VirtPhysPair, VirtPhysPair)>> =
+            self.hypercall_pages.borrow_mut();
+        // SAFETY - the virtual addresses were allocated when the hypercall
+        // pages were configured, and the physical addresses were captured at
+        // that time.
+        unsafe { HypercallPagesGuard::new(RefMut::map(page_ref, |o| o.as_mut().unwrap())) }
     }
 
     pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
@@ -736,10 +770,44 @@ impl PerCpu {
         self.reset_ip.set(reset_ip);
     }
 
+    /// Fill in the initial context structure for the SVSM.
+    pub fn get_initial_context(&self, start_rip: u64) -> hyperv::HvInitialVpContext {
+        let data_segment = svsm_data_segment();
+
+        hyperv::HvInitialVpContext {
+            rip: start_rip,
+            rsp: self.get_top_of_stack().into(),
+            rflags: 2,
+
+            cs: svsm_code_segment(),
+            ss: data_segment,
+            ds: data_segment,
+            es: data_segment,
+            fs: data_segment,
+            gs: data_segment,
+            tr: self.svsm_tr_segment(),
+
+            gdtr: svsm_gdt_segment(),
+            idtr: svsm_idt_segment(),
+
+            cr0: read_cr0().bits(),
+            cr3: self.get_pgtable().cr3_value().into(),
+            cr4: read_cr4().bits(),
+            efer: read_efer().bits(),
+            pat: 0x0007040600070406u64,
+
+            ..Default::default()
+        }
+    }
+
     /// Allocates and initializes a new VMSA for this CPU. Returns its
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
-    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
+    pub fn alloc_svsm_vmsa(
+        &self,
+        vtom: u64,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(PhysAddr, u64), SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -749,11 +817,7 @@ impl PerCpu {
         let paddr = vmsa.paddr();
 
         // Initialize VMSA
-        init_svsm_vmsa(&mut vmsa, vtom);
-        vmsa.tr = self.vmsa_tr_segment();
-        vmsa.rip = start_rip;
-        vmsa.rsp = self.get_top_of_stack().into();
-        vmsa.cr3 = self.get_pgtable().cr3_value().into();
+        init_svsm_vmsa(&mut vmsa, vtom, context);
         vmsa.enable();
 
         let sev_features = vmsa.sev_features;
@@ -886,10 +950,10 @@ impl PerCpu {
         Ok(())
     }
 
-    fn vmsa_tr_segment(&self) -> VMSASegment {
-        VMSASegment {
+    fn svsm_tr_segment(&self) -> hyperv::HvSegmentRegister {
+        hyperv::HvSegmentRegister {
             selector: SVSM_TSS,
-            flags: SVSM_TR_FLAGS,
+            attributes: SVSM_TR_ATTRIBUTES,
             limit: TSS_LIMIT as u32,
             base: &raw const self.tss as u64,
         }

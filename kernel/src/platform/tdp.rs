@@ -9,6 +9,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
+use crate::hyperv;
 use crate::io::IOPort;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::tdx::tdcall::{
@@ -172,7 +173,11 @@ impl SvsmPlatform for TdpPlatform {
         todo!();
     }
 
-    fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
+    fn start_cpu(
+        &self,
+        _cpu: &PerCpu,
+        _context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
         todo!();
     }
 }

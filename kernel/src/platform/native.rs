@@ -10,6 +10,8 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
+use crate::hyperv;
+use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
@@ -21,11 +23,15 @@ use crate::mm::virt_to_phys;
 const APIC_MSR_ICR: u32 = 0x830;
 
 #[derive(Clone, Copy, Debug)]
-pub struct NativePlatform {}
+pub struct NativePlatform {
+    is_hyperv: bool,
+}
 
 impl NativePlatform {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            is_hyperv: is_hyperv_hypervisor(),
+        }
     }
 }
 
@@ -47,10 +53,18 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        if self.is_hyperv {
+            hyperv_setup_hypercalls()?;
+        }
+
         Ok(())
     }
 
-    fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+    fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
+        if self.is_hyperv {
+            cpu.allocate_hypercall_pages()?;
+        }
+
         Ok(())
     }
 
@@ -148,7 +162,15 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
-    fn start_cpu(&self, _cpu: &PerCpu, _start_rip: u64) -> Result<(), SvsmError> {
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError> {
+        if self.is_hyperv {
+            return hyperv_start_cpu(cpu, context);
+        }
+
         todo!();
     }
 }

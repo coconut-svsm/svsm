@@ -22,7 +22,9 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError>
     let percpu = PerCpu::alloc(apic_id)?;
     let pgtable = this_cpu().get_pgtable().clone_shared()?;
     percpu.setup(platform, pgtable)?;
-    platform.start_cpu(percpu, start_rip)?;
+
+    let context = percpu.get_initial_context(start_rip);
+    platform.start_cpu(percpu, &context)?;
 
     let percpu_shared = percpu.shared();
     while !percpu_shared.is_online() {}

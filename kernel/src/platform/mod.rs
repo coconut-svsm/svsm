@@ -10,6 +10,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::error::SvsmError;
+use crate::hyperv;
 use crate::io::IOPort;
 use crate::platform::native::NativePlatform;
 use crate::platform::snp::SnpPlatform;
@@ -141,7 +142,11 @@ pub trait SvsmPlatform {
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
     /// Start an additional processor.
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        context: &hyperv::HvInitialVpContext,
+    ) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait
