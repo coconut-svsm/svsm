@@ -5,7 +5,7 @@
 // Author: Peter Fang <peter.fang@intel.com>
 
 use super::call::{syscall1, syscall3, SysCallError};
-use super::def::{SYS_OPENDIR, SYS_READDIR};
+use super::def::{FileFlags, FileModes, SYS_OPEN, SYS_OPENDIR, SYS_READDIR};
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
 
@@ -34,5 +34,19 @@ pub fn readdir(fs: &FsObjHandle, dirents: &mut [DirEnt]) -> Result<usize, SysCal
             dirents.len() as u64,
         )
         .map(|ret| ret.try_into().unwrap())
+    }
+}
+
+pub fn open(path: &CStr, mode: FileModes, flags: FileFlags) -> Result<FsObjHandle, SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process.
+    unsafe {
+        syscall3(
+            SYS_OPEN,
+            path.as_ptr() as u64,
+            mode.bits() as u64,
+            flags.bits() as u64,
+        )
+        .map(|ret| FsObjHandle(ObjHandle::new(ret as u32)))
     }
 }

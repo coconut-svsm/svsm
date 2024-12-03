@@ -8,13 +8,45 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
-use crate::fs::{find_dir, DirEntry, FileNameArray, FsObj};
+use crate::fs::{create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsObj};
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
 use alloc::sync::Arc;
 use core::ffi::c_char;
 use syscall::SysCallError::*;
-use syscall::{DirEnt, FileType, SysCallError};
+use syscall::*;
+
+pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallError> {
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path = user_path_ptr.read_c_string()?;
+    let file_mode = FileModes::from_bits(mode).ok_or(SysCallError::EINVAL)?;
+    let file_flags = FileFlags::from_bits(flags).ok_or(SysCallError::EINVAL)?;
+    let file_handle = {
+        let open_res = open_root(
+            current_task().rootdir(),
+            user_path.as_str(),
+            file_mode.contains(FileModes::READ),
+            file_mode.contains(FileModes::WRITE),
+        );
+        if open_res.is_ok() || !file_flags.contains(FileFlags::CREATE) {
+            open_res
+        } else {
+            create_root(current_task().rootdir(), user_path.as_str())
+        }
+    }?;
+
+    if file_mode.contains(FileModes::TRUNC) {
+        truncate(&file_handle, 0)?;
+    }
+
+    if file_mode.contains(FileModes::APPEND) {
+        file_handle.seek_end(0);
+    }
+
+    let id = obj_add(Arc::new(FsObj::new_file(file_handle)))?;
+
+    Ok(u32::from(id).into())
+}
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
     let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));

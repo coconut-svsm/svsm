@@ -49,6 +49,12 @@ impl FsObj {
         }
     }
 
+    pub fn new_file(file_handle: FileHandle) -> Self {
+        Self {
+            entry: FsObjEntry::File(file_handle),
+        }
+    }
+
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
         let FsObjEntry::Directory(ref dh) = self.entry else {
             return Err(SvsmError::NotSupported);
