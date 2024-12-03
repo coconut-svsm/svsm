@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 userlib.workspace = true
+syscall = { path = "../../syscall" }
+buddy_system_allocator = { workspace = true }
 
 [lints]
 workspace = true
