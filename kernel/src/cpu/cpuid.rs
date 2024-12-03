@@ -80,7 +80,14 @@ impl CpuidResult {
 pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
     let count: usize = CPUID_PAGE.count as usize;
 
+    //log::info!("cpuid_table_raw: eax: {:#010x}, ecx: {:#010x}, xcr0: {:#018x}, xss: {:#018x}",
+    //           eax, ecx, xcr0, xss);
+
     for i in 0..count {
+        let eax_in = CPUID_PAGE.func[i].eax_in;
+        let ecx_in = CPUID_PAGE.func[i].ecx_in;
+        log::info!("CPUID Table entry: {}, eax: {}, ecx: {}",
+                    i, eax_in, ecx_in);
         if eax == CPUID_PAGE.func[i].eax_in
             && ecx == CPUID_PAGE.func[i].ecx_in
             && xcr0 == CPUID_PAGE.func[i].xcr0_in
