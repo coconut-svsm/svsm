@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use super::{DirEntry, Directory, FileHandle, FileName};
+use super::{Buffer, DirEntry, Directory, FileHandle, FileName};
 use crate::error::SvsmError;
 use crate::syscall::Obj;
 use alloc::sync::Arc;
@@ -53,6 +53,14 @@ impl FsObj {
         Self {
             entry: FsObjEntry::File(file_handle),
         }
+    }
+
+    pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.read_buffer(buffer)
     }
 
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
