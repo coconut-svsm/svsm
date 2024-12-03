@@ -62,6 +62,14 @@ impl FsObj {
         fh.read_buffer(buffer)
     }
 
+    pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.write_buffer(buffer)
+    }
+
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
         let FsObjEntry::Directory(ref dh) = self.entry else {
             return Err(SvsmError::NotSupported);

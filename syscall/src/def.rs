@@ -18,6 +18,7 @@ pub const SYS_CLOSE: u64 = CLASS0 + 10;
 // Syscall number in class1
 pub const SYS_OPEN: u64 = CLASS1;
 pub const SYS_READ: u64 = CLASS1 + 1;
+pub const SYS_WRITE: u64 = CLASS1 + 2;
 pub const SYS_OPENDIR: u64 = CLASS1 + 4;
 pub const SYS_READDIR: u64 = CLASS1 + 5;
 
