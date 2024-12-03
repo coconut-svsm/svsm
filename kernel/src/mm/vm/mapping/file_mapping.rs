@@ -163,7 +163,7 @@ impl VirtualMapping for VMFileMapping {
 mod tests {
     use super::*;
     use crate::{
-        fs::{create, open, unlink, TestFileSystemGuard},
+        fs::{create, open_rw, unlink, TestFileSystemGuard},
         mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
         types::PAGE_SIZE,
     };
@@ -215,7 +215,7 @@ mod tests {
         let offset = PAGE_SIZE + 0x60;
 
         let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, offset, fh2.size() - offset, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
@@ -227,7 +227,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, 0, fh2.size() + 1, VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
@@ -239,7 +239,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, PAGE_SIZE, fh2.size(), VMFileMappingFlags::Read);
         assert!(vm.is_err());
         unlink(name).unwrap();
@@ -257,7 +257,7 @@ mod tests {
             .map(0)
             .expect("Mapping of first VMFileMapping page failed");
 
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         assert_eq!(
             fh2.mapping(0)
                 .expect("Failed to get file page mapping")
@@ -272,7 +272,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
@@ -296,7 +296,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_5000b_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, 0, fh2.size(), flags)
             .expect("Failed to create new VMFileMapping");
 
@@ -323,7 +323,7 @@ mod tests {
         let _test_fs = TestFileSystemGuard::setup();
 
         let (fh, name) = create_16k_test_file();
-        let fh2 = open(name).unwrap();
+        let fh2 = open_rw(name).unwrap();
         let vm = VMFileMapping::new(&fh, 2 * PAGE_SIZE, PAGE_SIZE, flags)
             .expect("Failed to create new VMFileMapping");
 
