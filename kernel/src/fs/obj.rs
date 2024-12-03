@@ -71,6 +71,31 @@ impl FsObj {
         fh.write_buffer(buffer)
     }
 
+    pub fn seek(&self, offset: usize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.seek(offset);
+        Ok(fh.position())
+    }
+
+    pub fn position(&self) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        Ok(fh.position())
+    }
+
+    pub fn file_size(&self) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        Ok(fh.size())
+    }
+
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
         let FsObjEntry::Directory(ref dh) = self.entry else {
             return Err(SvsmError::NotSupported);

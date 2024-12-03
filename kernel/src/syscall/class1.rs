@@ -8,8 +8,10 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
+use crate::error::SvsmError;
 use crate::fs::{
-    create, find_dir, open, position, seek, truncate, DirEntry, FileNameArray, FsObj, UserBuffer,
+    create, find_dir, open, position, seek, truncate, DirEntry, FileNameArray, FsError, FsObj,
+    UserBuffer,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
@@ -72,6 +74,28 @@ pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, Sys
         .write_buffer(&buffer)
         .map(|b| b as u64)
         .map_err(SysCallError::from)
+}
+
+pub fn sys_seek(obj_id: u32, offset: usize, flags: usize) -> Result<u64, SysCallError> {
+    let fs_obj = obj_get(obj_id.into())?;
+    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+
+    let result = match flags {
+        SK_ABS => fs_obj.seek(offset),
+        SK_REL => {
+            let pos = fs_obj.position()?;
+            let new_offset = pos.checked_add_signed(offset as isize).unwrap_or(0);
+            fs_obj.seek(new_offset)
+        }
+        SK_END => {
+            let file_size = fs_obj.file_size()?;
+            let new_offset = file_size.checked_sub(offset).or(Some(0)).unwrap_or(0);
+            fs_obj.seek(new_offset)
+        }
+        _ => Err(SvsmError::FileSystem(FsError::inval())),
+    };
+
+    result.map(|p| p as u64).map_err(SysCallError::from)
 }
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
