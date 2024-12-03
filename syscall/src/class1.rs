@@ -5,7 +5,7 @@
 // Author: Peter Fang <peter.fang@intel.com>
 
 use super::call::{syscall1, syscall3, SysCallError};
-use super::def::{FileFlags, FileModes, SYS_OPEN, SYS_OPENDIR, SYS_READDIR};
+use super::def::{FileFlags, FileModes, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR};
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
 
@@ -48,5 +48,19 @@ pub fn open(path: &CStr, mode: FileModes, flags: FileFlags) -> Result<FsObjHandl
             flags.bits() as u64,
         )
         .map(|ret| FsObjHandle(ObjHandle::new(ret as u32)))
+    }
+}
+
+pub fn read(fd: &FsObjHandle, buffer: &mut [u8]) -> Result<usize, SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process. All memory changes happen from kernel context.
+    unsafe {
+        syscall3(
+            SYS_READ,
+            fd.id().into(),
+            buffer.as_mut_ptr() as u64,
+            buffer.len() as u64,
+        )
+        .map(|ret| ret.try_into().unwrap())
     }
 }

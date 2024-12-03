@@ -8,7 +8,9 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
-use crate::fs::{create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsObj};
+use crate::fs::{
+    create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsObj, UserBuffer,
+};
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
 use alloc::sync::Arc;
@@ -46,6 +48,18 @@ pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallEr
     let id = obj_add(Arc::new(FsObj::new_file(file_handle)))?;
 
     Ok(u32::from(id).into())
+}
+
+pub fn sys_read(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysCallError> {
+    let fs_obj = obj_get(obj_id.into())?;
+    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+
+    let mut buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
+
+    fs_obj
+        .read_buffer(&mut buffer)
+        .map(|b| b as u64)
+        .map_err(SysCallError::from)
 }
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
