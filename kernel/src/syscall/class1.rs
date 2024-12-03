@@ -8,13 +8,45 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
-use crate::fs::{find_dir, DirEntry, FileNameArray, FsObj};
+use crate::fs::{create, find_dir, open, position, seek, truncate, DirEntry, FileNameArray, FsObj};
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
 use alloc::sync::Arc;
 use core::ffi::c_char;
 use syscall::SysCallError::*;
-use syscall::{DirEnt, FileType, SysCallError};
+use syscall::*;
+
+#[inline(always)]
+fn flag_set(flags: usize, flag: usize) -> bool {
+    (flags & flag) == flag
+}
+
+pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallError> {
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path = user_path_ptr.read_c_string()?;
+    let readable = flag_set(mode, FM_READ);
+    let writeable = flag_set(mode, FM_WRITE);
+    let file_handle = {
+        let open_res = open(user_path.as_str(), readable, writeable);
+        if open_res.is_ok() || !flag_set(flags, FF_CREATE) {
+            open_res
+        } else {
+            create(user_path.as_str())
+        }
+    }?;
+
+    if flag_set(mode, FM_TRUNC) {
+        truncate(&file_handle, 0)?;
+    }
+
+    if flag_set(mode, FM_APPEND) {
+        seek(&file_handle, position(&file_handle));
+    }
+
+    let id = obj_add(Arc::new(FsObj::new_file(file_handle)))?;
+
+    Ok(u32::from(id).into())
+}
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
     let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
