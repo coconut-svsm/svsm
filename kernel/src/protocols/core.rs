@@ -312,7 +312,14 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
             // FIXME: This check leaves a window open for the attack described
             // above. Remove the check once OVMF and Linux have been fixed and
             // no longer try to pvalidate MMIO memory.
-            zero_mem_region(vaddr, vaddr + page_size_bytes);
+
+            // SAFETY: paddr is validated at the beginning of the function, and
+            // we trust PerCPUPageMappingGuard::create() to return a valid
+            // vaddr pointing to a mapped region of at least page_size_bytes
+            // size.
+            unsafe {
+                zero_mem_region(vaddr, vaddr + page_size_bytes);
+            }
         } else {
             log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
         }

@@ -208,7 +208,11 @@ fn validate_fw_mem_region(
             PageSize::Regular,
         )?;
 
-        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
+        // valid pointer to a correctly mapped region of size PAGE_SIZE.
+        unsafe {
+            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        }
     }
 
     Ok(())
@@ -322,7 +326,11 @@ fn copy_secrets_page_to_fw(
     let start = guard.virt_addr();
 
     // Zero target
-    zero_mem_region(start, start + PAGE_SIZE);
+    // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
+    // valid pointer to a correctly mapped region of size PAGE_SIZE.
+    unsafe {
+        zero_mem_region(start, start + PAGE_SIZE);
+    }
 
     // Copy secrets page
     let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
@@ -345,7 +353,11 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let vaddr = guard.virt_addr();
 
-    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+    // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
+    // valid pointer to a correctly mapped region of size PAGE_SIZE.
+    unsafe {
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+    }
 
     Ok(())
 }
