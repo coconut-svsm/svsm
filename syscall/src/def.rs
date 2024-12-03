@@ -17,6 +17,7 @@ pub const SYS_CLOSE: u64 = CLASS0 + 10;
 pub const SYS_OPEN: u64 = CLASS1;
 pub const SYS_READ: u64 = CLASS1 + 1;
 pub const SYS_WRITE: u64 = CLASS1 + 2;
+pub const SYS_SEEK: u64 = CLASS1 + 3;
 pub const SYS_OPENDIR: u64 = CLASS1 + 4;
 pub const SYS_READDIR: u64 = CLASS1 + 5;
 
@@ -50,6 +51,41 @@ pub const FM_TRUNC: usize = 1 << 3;
 //
 /// Create file if it does not exist
 pub const FF_CREATE: usize = 1 << 0;
+
+//
+// Modes for Seek system call
+//
+#[derive(Debug)]
+pub enum SeekMode {
+    /// Absolute file position
+    Absolute = 0,
+    /// Relative file position
+    Relative = 1,
+    /// File position relative to EOF
+    End = 2,
+}
+
+impl From<SeekMode> for usize {
+    fn from(mode: SeekMode) -> Self {
+        mode as Self
+    }
+}
+
+impl TryFrom<usize> for SeekMode {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value == SeekMode::Absolute.into() {
+            Ok(SeekMode::Absolute)
+        } else if value == SeekMode::Relative.into() {
+            Ok(SeekMode::Relative)
+        } else if value == SeekMode::End.into() {
+            Ok(SeekMode::End)
+        } else {
+            Err(())
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
