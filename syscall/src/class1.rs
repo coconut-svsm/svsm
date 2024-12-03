@@ -4,8 +4,8 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
-use super::call::{syscall1, syscall3, SysCallError};
-use super::def::{SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_WRITE};
+use super::call::{syscall1, syscall2, syscall3, SysCallError};
+use super::def::{SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_TRUNCATE, SYS_WRITE};
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
 
@@ -78,4 +78,10 @@ pub fn seek(fd: &FsObjHandle, offset: i64, flags: usize) -> Result<u64, SysCallE
     // SAFETY: Invokes a system call and does not directly change any memory of
     // the process.
     unsafe { syscall3(SYS_SEEK, fd.id().into(), offset as u64, flags as u64) }
+}
+
+pub fn truncate(fd: &FsObjHandle, length: u64) -> Result<u64, SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process.
+    unsafe { syscall2(SYS_TRUNCATE, fd.id().into(), length) }
 }
