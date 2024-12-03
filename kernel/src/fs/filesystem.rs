@@ -41,10 +41,26 @@ impl RawFileHandle {
         result
     }
 
+    fn read_buffer(&mut self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        let result = self.file.read_buffer(buffer, self.current);
+        if let Ok(bytes) = result {
+            self.current += bytes;
+        }
+        result
+    }
+
     fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         let result = self.file.write(buf, self.current);
         if let Ok(num) = result {
             self.current += num;
+        }
+        result
+    }
+
+    fn write_buffer(&mut self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        let result = self.file.write_buffer(buffer, self.current);
+        if let Ok(bytes) = result {
+            self.current += bytes;
         }
         result
     }
@@ -98,6 +114,21 @@ impl FileHandle {
         self.handle.lock().read(buf)
     }
 
+    /// Read contents from the file to a [`Buffer`].
+    ///
+    /// # Arguments
+    ///
+    /// - `buffer`: [`Buffer`] Object to store data in.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes read if successful, or an [`SvsmError`] if there was a problem
+    /// during the read operation.
+    pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        self.handle.lock().read_buffer(buffer)
+    }
+
     /// Used to write contents to the file handle
     ///
     /// # Arguments
@@ -111,6 +142,21 @@ impl FileHandle {
     /// during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
         self.handle.lock().write(buf)
+    }
+
+    /// Write data to the file via a [`Buffer`].
+    ///
+    /// # Arguments
+    ///
+    /// - `buffer`: [`Buffer`] Object to write data from.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes written if successful, or an [`SvsmError`] if the operation
+    /// failed.
+    pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        self.handle.lock().write_buffer(buffer)
     }
 
     /// Used to truncate the file to the specified size.
