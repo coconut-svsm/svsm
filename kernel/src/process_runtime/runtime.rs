@@ -137,14 +137,20 @@ impl ProcessRuntime for PALContext  {
 
     fn pal_svsm_cpuid(&mut self) -> bool {
         let eax =  self.vmsa.rax as u32;
-        let ecx = self.vmsa.rcx as u32;
-        /*let res = cpuid_table_raw(eax, ecx,0,0).unwrap();
+        let ecx = if eax == 0x0 {
+            // set zero for cpuid leaf that does not have subleaf (ecx)
+            // TODO: check if this is correct & update checks if so
+            0
+        } else {
+            self.vmsa.rcx as u32
+        };
 
+        let res = cpuid_table_raw(eax, ecx, 0, 0).unwrap();
         self.vmsa.rax = res.eax as u64;
         self.vmsa.rbx = res.ebx as u64;
         self.vmsa.rcx = res.ecx as u64;
         self.vmsa.rdx = res.edx as u64;
-        */
+
         return true;
     }
 
