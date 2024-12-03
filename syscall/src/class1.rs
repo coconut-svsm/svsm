@@ -5,7 +5,10 @@
 // Author: Peter Fang <peter.fang@intel.com>
 
 use super::call::{syscall1, syscall3, SysCallError};
-use super::def::{FileFlags, FileModes, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_WRITE};
+use super::def::{
+    FileFlags, FileModes, SeekMode, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK,
+    SYS_WRITE,
+};
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
 
@@ -77,4 +80,10 @@ pub fn write(fd: &FsObjHandle, buffer: &[u8]) -> Result<usize, SysCallError> {
         )
         .map(|ret| ret.try_into().unwrap())
     }
+}
+
+pub fn seek(fd: &FsObjHandle, offset: i64, mode: SeekMode) -> Result<u64, SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process.
+    unsafe { syscall3(SYS_SEEK, fd.id().into(), offset as u64, mode as u64) }
 }

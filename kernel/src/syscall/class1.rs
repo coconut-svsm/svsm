@@ -8,8 +8,9 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
+use crate::error::SvsmError;
 use crate::fs::{
-    create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsObj, UserBuffer,
+    create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsError, FsObj, UserBuffer,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
@@ -72,6 +73,20 @@ pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, Sys
         .write_buffer(&buffer)
         .map(|b| b as u64)
         .map_err(SysCallError::from)
+}
+
+pub fn sys_seek(obj_id: u32, offset: usize, raw_mode: usize) -> Result<u64, SysCallError> {
+    let fs_obj = obj_get(obj_id.into())?;
+    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+    let mode = SeekMode::try_from(raw_mode).map_err(|_| SvsmError::FileSystem(FsError::inval()))?;
+
+    let result = match mode {
+        SeekMode::Absolute => fs_obj.seek_abs(offset),
+        SeekMode::Relative => fs_obj.seek_rel(offset as isize),
+        SeekMode::End => fs_obj.seek_end(offset),
+    };
+
+    result.map(|p| p as u64).map_err(SysCallError::from)
 }
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
