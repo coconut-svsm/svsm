@@ -91,9 +91,14 @@ impl RawFileHandle {
         result
     }
 
-    fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
+    fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
         self.check_write()?;
-        self.file.truncate(offset)
+        let result = self.file.truncate(offset);
+        let new_size = self.file.size();
+        if result.is_ok() && self.current >= new_size {
+            self.current = new_size;
+        }
+        result
     }
 
     fn seek_abs(&mut self, pos: usize) {
@@ -713,6 +718,34 @@ pub fn read(fh: &FileHandle, buf: &mut [u8]) -> Result<usize, SvsmError> {
 /// of bytes written if successful,  [`SvsmError`] otherwise.
 pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
+}
+
+/// Truncate file at a given offset.
+///
+/// # Arguments:
+///
+/// - `fh`: FileHandle of file to truncate.
+/// - `offset`: File offset to truncate at.
+///
+/// # Returns:
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the file size if
+/// successful,  [`SvsmError`] otherwise.
+pub fn truncate(fh: &FileHandle, offset: usize) -> Result<usize, SvsmError> {
+    fh.truncate(offset)
+}
+
+/// Return position of file read/write pointer.
+///
+/// # Arguments:
+///
+/// - `fh`: FileHandle to get position from.
+///
+/// # Returns:
+///
+/// Current position of the file pointer.
+pub fn position(fh: &FileHandle) -> usize {
+    fh.position()
 }
 
 /// Set the file offset to an absolute position.
