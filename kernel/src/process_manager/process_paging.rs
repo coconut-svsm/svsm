@@ -32,7 +32,8 @@ bitflags! {
         const HUGE_PAGE =       1 << 7;
         const GLOBAL =          1 << 8;
 
-        const NO_EXECUTE =      1 << 63;
+        //const NO_EXECUTE =      1 << 63;
+        const NO_EXECUTE =      0;
     }
 }
 
