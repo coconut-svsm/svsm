@@ -71,7 +71,7 @@ impl<'a> HypercallPagesGuard<'a> {
     fn hypercall_input<H>(&mut self) -> &mut H {
         let header = self.input.vaddr.as_mut_ptr::<H>();
         assert!(size_of::<H>() <= PAGE_SIZE);
-        // SAFETY - the virtual address represents an entire page which is
+        // SAFETY: the virtual address represents an entire page which is
         // exclusively owned by the `HypercallPagesGuard` and can safely be
         // cast to a header of type `H`.
         unsafe { &mut *header }
@@ -93,7 +93,7 @@ impl<'a> HypercallPagesGuard<'a> {
         let rep_count = (PAGE_SIZE - header_size) / size_of::<T>();
         let header = self.input.vaddr.as_mut_ptr::<H>();
         let rep_slice = self.input.vaddr.const_add(header_size).as_mut_ptr::<T>();
-        // SAFETY - the virtual address represents an entire page which is
+        // SAFETY: the virtual address represents an entire page which is
         // exclusively owned by the `HypercallPagesGuard` and can safely be
         // cast to a header of type `H` followed by an array of `T` up to the
         // size of one page.
@@ -116,7 +116,7 @@ impl<'a> HypercallPagesGuard<'a> {
             1
         };
         assert!(count * size_of::<T>() <= PAGE_SIZE);
-        // SAFETY - the virtual address represents an entire page which is
+        // SAFETY: the virtual address represents an entire page which is
         // exclusively owned by the `HypercallPagesGuard` and can safely be
         // cast to an array of `T` up to the size of one page.
         unsafe { slice::from_raw_parts(self.output.vaddr.as_ptr::<T>(), count) }
@@ -219,7 +219,7 @@ unsafe fn hypercall(
 ) -> HvHypercallOutput {
     let hypercall_va = u64::from(*HYPERV_HYPERCALL_CODE_PAGE);
     let mut output: u64;
-    // SAFETY - inline assembly is required to invoke the hypercall.
+    // SAFETY: inline assembly is required to invoke the hypercall.
     unsafe {
         asm!("callq *%rax",
              in("rax") hypercall_va,
@@ -261,7 +261,7 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
     *header = input_header;
     slice[0] = name as u32;
 
-    // SAFETY - the GetVpRegisters hypercall does not write to any memory other
+    // SAFETY: the GetVpRegisters hypercall does not write to any memory other
     // than the hypercall page, and does not consume memory that is not
     // included in the hypercall input.
     let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
@@ -307,7 +307,7 @@ fn enable_vp_vtl_hypercall(
     let header = hypercall_pages.hypercall_input::<HvInputEnableVpVtl>();
     *header = input_header;
 
-    // SAFETY - the EnableVpVtl hypercall does not write to any memory and
+    // SAFETY: the EnableVpVtl hypercall does not write to any memory and
     // does not consume memory that is not included in the hypercall input.
     let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
     let status = call_output.status();
@@ -348,7 +348,7 @@ fn start_vp_hypercall(
     let header = hypercall_pages.hypercall_input::<HvInputStartVirtualProcessor>();
     *header = input_header;
 
-    // SAFETY - the StartVp hypercall does not write to any memory and does not
+    // SAFETY: the StartVp hypercall does not write to any memory and does not
     // consume memory that is not included in the hypercall input.
     let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
     let status = call_output.status();
