@@ -13,7 +13,7 @@ use bitflags::bitflags;
 use super::{VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
-use crate::fs::FileHandle;
+use crate::fs::{FileHandle, FsError};
 use crate::mm::vm::VMR;
 use crate::mm::PageRef;
 use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
@@ -75,11 +75,24 @@ impl VMFileMapping {
     ) -> Result<Self, SvsmError> {
         let page_size = align_up(size, PAGE_SIZE);
         let file_size = align_up(file.size(), PAGE_SIZE);
+
+        // Check whether offset is page-aligned
         if (offset & (PAGE_SIZE - 1)) != 0 {
             return Err(SvsmError::Mem);
         }
+
+        // Attempt to map beyon EOF?
         if (page_size + offset) > file_size {
             return Err(SvsmError::Mem);
+        }
+
+        // Permission checks
+        if (flags.contains(VMFileMappingFlags::Write)
+            && !flags.contains(VMFileMappingFlags::Private)
+            && !file.writable())
+            || (flags.contains(VMFileMappingFlags::Read) && !file.readable())
+        {
+            return Err(SvsmError::FileSystem(FsError::bad_handle()));
         }
 
         // Take references to the file pages
