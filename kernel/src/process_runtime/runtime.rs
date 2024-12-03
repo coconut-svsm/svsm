@@ -2,12 +2,13 @@ use cpuarch::vmsa::VMSA;
 use igvm_defs::PAGE_SIZE_4K;
 use core::ffi::CStr;
 use core::str;
-use crate::{address::VirtAddr, cpu::percpu::{this_cpu, this_cpu_unsafe}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
+use crate::{address::VirtAddr, cpu::{cpuid::{cpuid_table_raw, CpuidResult}, percpu::{this_cpu, this_cpu_unsafe}}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
 
 use crate::vaddr_as_slice; 
 use crate::types::PageSize;
 use crate::sev::RMPFlags;
 use crate::sev::rmp_adjust;
+use core::arch::asm;
 
 const TRUSTLET_VMPL: u64 = 1;
 
@@ -20,6 +21,7 @@ pub trait ProcessRuntime {
     fn pal_svsm_map(&mut self) -> bool;
     fn pal_svsm_print_info(&mut self) -> bool;
     fn pal_svsm_set_tcb(&mut self) -> bool;
+    fn pal_svsm_cpuid(&mut self) -> bool;
 }
 
 #[derive(Debug)]
@@ -80,6 +82,7 @@ pub fn invoke_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 impl ProcessRuntime for PALContext  {
+
     fn handle_process_request(&mut self) -> bool {
         let vmsa = &mut self.vmsa;
         let rax = vmsa.rax;
@@ -91,29 +94,32 @@ impl ProcessRuntime for PALContext  {
         let mut return_value = 0u64;
 
         match rax {
-            0 => {
+            0..=23 => {
+                return self.pal_svsm_cpuid();
+            }
+            0x4FFFFFFF => {
                 return self.pal_svsm_fail();
             }
-            1 => {
+            0x4FFFFFFE => {
                 return self.pal_svsm_exit();
             }
-            2 => {
+            0x4FFFFFFD => {
                 return self.pal_svsm_debug_print();
             }
-            4 => {
+            0x4FFFFFFC => {
                 return self.pal_svsm_virt_alloc();
             }
-            5 => {
+            0x4FFFFFFB => {
                 return self.pal_svsm_map();
             }
-            6 => {
+            0x4FFFFFFA => {
                 return self.pal_svsm_set_tcb();
             }
             99 => {
                 let c = vmsa.rbx;
                 log::info!("{}", c);
 
-                let c_str = core::char::from_digit(c as u32, 10).unwrap();
+                let     c_str = core::char::from_digit(c as u32, 10).unwrap();
                 log::info!("{}",c_str);
                 return true
             }
@@ -127,6 +133,19 @@ impl ProcessRuntime for PALContext  {
 
         }
 
+    }
+
+    fn pal_svsm_cpuid(&mut self) -> bool {
+        let eax =  self.vmsa.rax as u32;
+        let ecx = self.vmsa.rcx as u32;
+        /*let res = cpuid_table_raw(eax, ecx,0,0).unwrap();
+
+        self.vmsa.rax = res.eax as u64;
+        self.vmsa.rbx = res.ebx as u64;
+        self.vmsa.rcx = res.ecx as u64;
+        self.vmsa.rdx = res.edx as u64;
+        */
+        return true;
     }
 
     fn pal_svsm_virt_alloc(&mut self) -> bool {
