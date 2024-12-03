@@ -127,6 +127,8 @@ impl From<SvsmError> for SysCallError {
         match err {
             SvsmError::Alloc(AllocError::OutOfMemory) => SysCallError::ENOMEM,
             SvsmError::FileSystem(FsError::FileExists) => SysCallError::EEXIST,
+            SvsmError::FileSystem(FsError::WriteOnly) => SysCallError::EWRONLY,
+            SvsmError::FileSystem(FsError::ReadOnly) => SysCallError::ERDONLY,
 
             SvsmError::FileSystem(FsError::FileNotFound) | SvsmError::Obj(ObjError::NotFound) => {
                 SysCallError::ENOTFOUND
