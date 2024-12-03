@@ -20,8 +20,9 @@ pub const SYS_OPEN: u64 = CLASS1;
 pub const SYS_READ: u64 = CLASS1 + 1;
 pub const SYS_WRITE: u64 = CLASS1 + 2;
 pub const SYS_SEEK: u64 = CLASS1 + 3;
-pub const SYS_OPENDIR: u64 = CLASS1 + 4;
-pub const SYS_READDIR: u64 = CLASS1 + 5;
+pub const SYS_TRUNCATE: u64 = CLASS1 + 4;
+pub const SYS_OPENDIR: u64 = CLASS1 + 5;
+pub const SYS_READDIR: u64 = CLASS1 + 6;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;

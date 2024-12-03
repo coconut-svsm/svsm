@@ -89,6 +89,16 @@ pub fn sys_seek(obj_id: u32, offset: usize, raw_mode: usize) -> Result<u64, SysC
     result.map(|p| p as u64).map_err(SysCallError::from)
 }
 
+pub fn sys_truncate(obj_id: u32, length: usize) -> Result<u64, SysCallError> {
+    let fs_obj = obj_get(obj_id.into())?;
+    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+
+    fs_obj
+        .truncate(length)
+        .map(|l| l as u64)
+        .map_err(SysCallError::from)
+}
+
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
     let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
     let user_path = user_path_ptr.read_c_string()?;

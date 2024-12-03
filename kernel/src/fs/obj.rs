@@ -113,6 +113,14 @@ impl FsObj {
         Ok(fh.size())
     }
 
+    pub fn truncate(&self, length: usize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.truncate(length)
+    }
+
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
         let FsObjEntry::Directory(ref dh) = self.entry else {
             return Err(SvsmError::NotSupported);
