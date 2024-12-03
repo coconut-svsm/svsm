@@ -17,6 +17,7 @@ pub const SYS_CLOSE: u64 = CLASS0 + 10;
 pub const SYS_OPEN: u64 = CLASS1;
 pub const SYS_READ: u64 = CLASS1 + 1;
 pub const SYS_WRITE: u64 = CLASS1 + 2;
+pub const SYS_SEEK: u64 = CLASS1 + 3;
 pub const SYS_OPENDIR: u64 = CLASS1 + 4;
 pub const SYS_READDIR: u64 = CLASS1 + 5;
 
@@ -50,6 +51,16 @@ pub const FM_TRUNC: usize = 1 << 3;
 //
 /// Create file if it does not exist
 pub const FF_CREATE: usize = 1 << 0;
+
+//
+// Seek Flags for Seek system call
+//
+/// Absolute file position
+pub const SK_ABS: usize = 0;
+/// Relative file position
+pub const SK_REL: usize = 1;
+/// File position relative to EOF
+pub const SK_END: usize = 2;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
