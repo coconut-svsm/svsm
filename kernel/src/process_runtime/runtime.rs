@@ -88,13 +88,14 @@ impl ProcessRuntime for PALContext  {
         let rax = vmsa.rax;
         vmsa.rax = 0;
 
+        let rip = vmsa.rip;
         // The Trustlet exits with cpuid (2 Bytes)
         vmsa.rip += 2;
 
         let mut return_value = 0u64;
 
         match rax {
-            0..=23 => {
+            0..=23 | 0x80000000..=0x80000021 => {
                 return self.pal_svsm_cpuid();
             }
             0x4FFFFFFF => {
@@ -127,7 +128,7 @@ impl ProcessRuntime for PALContext  {
                 return self.pal_svsm_print_info();
             }
             _ => {
-                log::info!("Unknown request code: {}", rax);
+                log::info!("Unknown request code: {} (rip={:x})", rax, rip);
                 return false;
             }
 
