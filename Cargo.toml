@@ -23,6 +23,8 @@ members = [
     "user/lib",
     # Init user-space module
     "user/init",
+    # device model module
+    "user/dm",
 ]
 
 
@@ -38,6 +40,7 @@ syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
+dm = { path = "user/dm" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }

@@ -1,0 +1,11 @@
+[package]
+name = "dm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+userlib.workspace = true
+syscall = { path = "../../syscall" }
+
+[lints]
+workspace = true
