@@ -62,6 +62,18 @@ pub fn sys_read(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysC
         .map_err(SysCallError::from)
 }
 
+pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysCallError> {
+    let fs_obj = obj_get(obj_id.into())?;
+    let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
+
+    let buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
+
+    fs_obj
+        .write_buffer(&buffer)
+        .map(|b| b as u64)
+        .map_err(SysCallError::from)
+}
+
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
     let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
     let user_path = user_path_ptr.read_c_string()?;
