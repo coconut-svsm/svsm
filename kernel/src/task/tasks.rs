@@ -694,7 +694,16 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 /// # Safety
 /// The caller is required to verify the correctness of the save area address.
 #[no_mangle]
-unsafe fn setup_new_task(xsa_addr: u64) {
+unsafe fn setup_user_task(xsa_addr: u64) {
+    // SAFETY: caller needs to make sure xsa_addr is valid and points to a
+    // memory region of sufficient size.
+    unsafe {
+        // Needs to be the first function called here.
+        setup_new_task_common(xsa_addr);
+    }
+}
+
+unsafe fn setup_new_task_common(xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -716,7 +725,7 @@ extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
-        setup_new_task(xsa_addr);
+        setup_new_task_common(xsa_addr);
     }
     entry();
 }
