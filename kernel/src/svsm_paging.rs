@@ -8,6 +8,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::error::SvsmError;
 use crate::igvm_params::IgvmParams;
+use crate::mm::global_memory::init_global_ranges;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::PageBox;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
@@ -88,6 +89,8 @@ pub fn init_page_table(
             PTEntryFlags::data(),
         )
         .expect("Failed to map heap");
+
+    init_global_ranges();
 
     pgtable.load();
 

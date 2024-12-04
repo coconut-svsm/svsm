@@ -60,13 +60,13 @@ impl PerCPUPageMappingGuard {
             let range = VRangeAlloc::new_2m(size, 0)?;
             this_cpu()
                 .get_pgtable()
-                .map_region_2m(range.region(), paddr_start, flags)?;
+                .map_region_2m(range.region(), paddr_start, flags, false)?;
             range
         } else {
             let range = VRangeAlloc::new_4k(size, 0)?;
             this_cpu()
                 .get_pgtable()
-                .map_region_4k(range.region(), paddr_start, flags)?;
+                .map_region_4k(range.region(), paddr_start, flags, false)?;
             range
         };
 
