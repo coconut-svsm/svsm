@@ -86,7 +86,7 @@ impl ProcessRuntime for PALContext  {
     fn handle_process_request(&mut self) -> bool {
         let vmsa = &mut self.vmsa;
         let rax = vmsa.rax;
-        vmsa.rax = 0;
+        //vmsa.rax = 0;
 
         let rip = vmsa.rip;
         // The Trustlet exits with cpuid (2 Bytes)
@@ -133,25 +133,47 @@ impl ProcessRuntime for PALContext  {
             }
 
         }
-
+       
     }
 
     fn pal_svsm_cpuid(&mut self) -> bool {
         let eax =  self.vmsa.rax as u32;
-        let ecx = if eax == 0x0 {
-            // set zero for cpuid leaf that does not have subleaf (ecx)
-            // TODO: check if this is correct & update checks if so
-            0
-        } else {
-            self.vmsa.rcx as u32
+        log::info!("eax value: {:#x}",eax);
+        let eax_tmp = self.vmsa.rax;
+        let ecx_tmp = self.vmsa.rcx;
+        let ecx = match eax {
+            4 | 7 | 0xb | 0xd | 0xf|
+            0x10 | 0x12 | 0x14 | 0x17 |
+            0x18 | 0x1d | 0x1e | 0x1f |
+            0x24 | 0x8000001d => {
+                self.vmsa.rcx as u32
+            }
+            _ => 0
         };
 
-        let res = cpuid_table_raw(eax, ecx, 0, 0).unwrap();
+        //let ecx = if eax == 0x0 || eax == 0x1 || eax == 0xd {
+            // set zero for cpuid leaf that does not have subleaf (ecx)
+            // TODO: check if this is correct & update checks if so
+          //  0
+        //} else {
+        //    self.vmsa.rcx as u32
+        //};
+
+        let res = match cpuid_table_raw(eax, ecx, 0, 0){
+            Some(r) => r,
+            None => CpuidResult{eax: 0,ebx: 0, ecx: 0, edx: 0}
+        };
         self.vmsa.rax = res.eax as u64;
         self.vmsa.rbx = res.ebx as u64;
         self.vmsa.rcx = res.ecx as u64;
         self.vmsa.rdx = res.edx as u64;
-
+        log::info!("Returned CPUID({:#x}/{:#x}) as the following: {:#x} {:#x} {:#x} {:#x}",
+        eax_tmp,
+        ecx_tmp,
+        res.eax,
+        res.ebx,
+        res.ecx,
+        res.edx);
         return true;
     }
 
@@ -181,10 +203,10 @@ impl ProcessRuntime for PALContext  {
         if flags & 0x2 == 0x2 {
             page_flags = page_flags | ProcessPageFlags::WRITABLE;
         }
-        log::info!("Trying to allocate: {:#?}, {} {:?}", addr, size,page_flags);
+        //log::info!("Trying to allocate: {:#?}, {} {:?}", addr, size,page_flags);
         page_table_ref.add_pages(VirtAddr::from(addr), size / 4096, page_flags);
 
-        log::info!("Allocated Memory");
+        //log::info!("Allocated Memory");
         self.vmsa.rcx = u64::from_ne_bytes((0i64).to_ne_bytes());
 
         true
@@ -262,7 +284,7 @@ impl ProcessRuntime for PALContext  {
 
         for i in 0..size {
             let t = page_table_ref.virt_to_phys(s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize));
-            log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
+            //log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
             if copy {
                 let (_old_mapping, old_page_mapped) = paddr_as_slice!(t);
                 let new_page = allocate_page();
@@ -273,12 +295,12 @@ impl ProcessRuntime for PALContext  {
                 }
                 page_table_ref.map_4k_page(vaddr + (i* PAGE_SIZE_4K).try_into().unwrap(), new_page, flags);
 
-                log::info!("Copy Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
-                           s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
-                           t,
-                           vaddr + ((i*PAGE_SIZE_4K) as usize),
-                           new_page,
-                );
+                //log::info!("Copy Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
+                //           s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
+                //           t,
+                //           vaddr + ((i*PAGE_SIZE_4K) as usize),
+                //           new_page,
+                //);
 
 
             } else {
@@ -286,12 +308,12 @@ impl ProcessRuntime for PALContext  {
 
                 let t2 = page_table_ref.virt_to_phys(vaddr + ((i * PAGE_SIZE_4K) as usize) );
 
-                log::info!("Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
-                           s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
-                           t,
-                           vaddr + ((i*PAGE_SIZE_4K) as usize),
-                           t2
-                );
+                //log::info!("Mapping Virt:{:#x} Phys:{:#x} to Virt:{:#x} Phys:{:#x}",
+                //s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize),
+                //           t,
+                //           vaddr + ((i*PAGE_SIZE_4K) as usize),
+                //           t2
+                //);
                 if t != t2 {
                     panic!("Address mapping failed");
                 }
