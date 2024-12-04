@@ -59,11 +59,9 @@ pub fn allocate_hv_doorbell_page(ghcb: &GHCB) -> Result<&'static HVDoorbell, Svs
 
     // Create a static shared reference.
     let ptr = page.leak();
-    let doorbell = unsafe {
-        // SAFETY: Any bit-pattern is valid for `HVDoorbell` and it tolerates
-        // unsynchronized writes from the host.
-        ptr.as_ref()
-    };
+    // SAFETY: Any bit-pattern is valid for `HVDoorbell` and it tolerates
+    // unsynchronized writes from the host.
+    let doorbell = unsafe { ptr.as_ref() };
 
     Ok(doorbell)
 }
@@ -186,8 +184,12 @@ pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     // this point.
     let cpu = this_cpu();
     cpu.irqs_push_nesting(true);
+
+    // SAFETY: the caller is responsible for ensuring that the doorbell pointer
+    // is correct.
     unsafe {
         (*hv_doorbell).process_pending_events();
     }
+
     cpu.irqs_pop_nesting();
 }
