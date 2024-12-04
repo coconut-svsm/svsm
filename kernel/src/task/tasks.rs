@@ -683,7 +683,12 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
 #[no_mangle]
-fn setup_new_task(xsa_addr: u64) {
+extern "C" fn setup_user_task(xsa_addr: u64) {
+    // Needs to be the first function called here.
+    setup_new_task_common(xsa_addr);
+}
+
+fn setup_new_task_common(xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -701,7 +706,7 @@ fn setup_new_task(xsa_addr: u64) {
 }
 
 extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
-    setup_new_task(xsa_addr);
+    setup_new_task_common(xsa_addr);
     entry();
 }
 

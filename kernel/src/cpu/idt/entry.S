@@ -316,7 +316,7 @@ return_user:
 
 .globl return_new_task
 return_new_task:
-	call setup_new_task
+	call setup_user_task
 	jmp default_return
 
 // #DE Divide-by-Zero-Error Exception (Vector 0)
