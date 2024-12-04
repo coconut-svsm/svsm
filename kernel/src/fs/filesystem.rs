@@ -300,7 +300,7 @@ where
 
     for item in path_items {
         let dir_name = FileName::from(item);
-        let dir_entry = current_dir.lookup_entry(dir_name)?;
+        let dir_entry = current_dir.lookup_entry(&dir_name)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
             DirEntry::Directory(dir) => dir,
@@ -356,7 +356,7 @@ where
 
     for item in path_items {
         let dir_name = FileName::from(item);
-        let lookup = current_dir.lookup_entry(dir_name);
+        let lookup = current_dir.lookup_entry(&dir_name);
         let dir_entry = match lookup {
             Ok(entry) => entry,
             Err(_) => DirEntry::Directory(current_dir.create_directory(dir_name)?),
@@ -385,7 +385,7 @@ pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
     let file_name = FileName::from(path_items.next_back().unwrap());
     let current_dir = walk_path_from_root(path_items)?;
 
-    let dir_entry = current_dir.lookup_entry(file_name)?;
+    let dir_entry = current_dir.lookup_entry(&file_name)?;
 
     match dir_entry {
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -445,7 +445,7 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let file_name = FileName::from(path_items.next_back().unwrap());
     let current_dir = walk_path_create(path_items)?;
 
-    if file_name.length() == 0 {
+    if file_name.is_empty() {
         return Err(SvsmError::FileSystem(FsError::inval()));
     }
 
@@ -489,7 +489,7 @@ pub fn unlink(path: &str) -> Result<(), SvsmError> {
     let entry_name = FileName::from(path_items.next_back().unwrap());
     let dir = walk_path_from_root(path_items)?;
 
-    dir.unlink(entry_name)
+    dir.unlink(&entry_name)
 }
 
 /// Used to list the contents of a directory.

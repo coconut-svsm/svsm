@@ -8,9 +8,10 @@ extern crate alloc;
 
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
-use crate::string::FixedString;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem;
+use core::str;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
 /// ACPI Root System Description Pointer (RSDP)
@@ -123,10 +124,10 @@ impl ACPITableHeader {
     /// Print a human-readable summary of the ACPI table header's fields
     #[expect(dead_code)]
     fn print_summary(&self) {
-        let sig = FixedString::from(self.sig);
-        let oem_id = FixedString::from(self.oem_id);
-        let oem_table_id = FixedString::from(self.oem_table_id);
-        let compiler_id = FixedString::from(self.compiler_id);
+        let sig = str::from_utf8(&self.sig).unwrap();
+        let oem_id = str::from_utf8(&self.oem_id).unwrap();
+        let oem_table_id = str::from_utf8(&self.oem_table_id).unwrap();
+        let compiler_id = str::from_utf8(&self.compiler_id).unwrap();
         log::trace!(
             "ACPI: [{} {} {} {} {} {} {} {} {}]",
             sig,
@@ -182,8 +183,8 @@ impl ACPITable {
     ///
     /// This method returns the 4-character signature of the ACPI table, such as "APIC."
     #[expect(dead_code)]
-    fn signature(&self) -> FixedString<4> {
-        FixedString::from(self.header.sig)
+    fn signature(&self) -> String {
+        String::from_utf8(Vec::from(&self.header.sig)).unwrap()
     }
 
     /// Get the content of the ACPI table.
@@ -227,7 +228,7 @@ impl ACPITable {
 #[derive(Debug)]
 struct ACPITableMeta {
     /// 4-character signature of the table
-    sig: FixedString<4>,
+    sig: String,
     /// The offset of the table within the table buffer
     offset: usize,
 }
@@ -246,7 +247,7 @@ impl ACPITableMeta {
     ///
     /// A new [`ACPITableMeta`] instance.
     fn new(header: &RawACPITableHeader, offset: usize) -> Self {
-        let sig = FixedString::from(header.sig);
+        let sig = String::from_utf8(Vec::from(&header.sig)).unwrap();
         Self { sig, offset }
     }
 }
