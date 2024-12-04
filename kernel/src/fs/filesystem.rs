@@ -416,7 +416,7 @@ where
 
     for item in path_items {
         let dir_name = FileName::from(item);
-        let dir_entry = current_dir.lookup_entry(dir_name)?;
+        let dir_entry = current_dir.lookup_entry(&dir_name)?;
         current_dir = match dir_entry {
             DirEntry::File(_) => return Err(SvsmError::FileSystem(FsError::file_not_found())),
             DirEntry::Directory(dir) => dir,
@@ -472,7 +472,7 @@ where
 
     for item in path_items {
         let dir_name = FileName::from(item);
-        let lookup = current_dir.lookup_entry(dir_name);
+        let lookup = current_dir.lookup_entry(&dir_name);
         let dir_entry = match lookup {
             Ok(entry) => entry,
             Err(_) => DirEntry::Directory(current_dir.create_directory(dir_name)?),
@@ -510,7 +510,7 @@ pub fn open_root(
     let file_name = FileName::from(path_items.next_back().unwrap());
     let current_dir = walk_path(root_dir, path_items)?;
 
-    let dir_entry = current_dir.lookup_entry(file_name)?;
+    let dir_entry = current_dir.lookup_entry(&file_name)?;
 
     match dir_entry {
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
@@ -652,7 +652,7 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     let file_name = FileName::from(path_items.next_back().unwrap());
     let current_dir = walk_path_create(path_items)?;
 
-    if file_name.length() == 0 {
+    if file_name.is_empty() {
         return Err(SvsmError::FileSystem(FsError::inval()));
     }
 
@@ -716,8 +716,8 @@ pub fn unlink_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmE
     let entry_name = FileName::from(path_items.next_back().unwrap());
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(entry_name)? {
-        DirEntry::File(_) => dir.unlink(entry_name),
+    match dir.lookup_entry(&entry_name)? {
+        DirEntry::File(_) => dir.unlink(&entry_name),
         DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::is_dir())),
     }
 }
@@ -757,11 +757,11 @@ pub fn rmdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmEr
     let entry_name = FileName::from(path_items.next_back().unwrap());
     let dir = walk_path(root_dir, path_items)?;
 
-    match dir.lookup_entry(entry_name)? {
+    match dir.lookup_entry(&entry_name)? {
         DirEntry::File(_) => Err(SvsmError::FileSystem(FsError::is_file())),
         DirEntry::Directory(target) => {
             target.prepare_remove()?;
-            dir.unlink(entry_name)
+            dir.unlink(&entry_name)
         }
     }
 }

@@ -55,7 +55,7 @@ impl FsObj {
     }
 
     pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -63,7 +63,7 @@ impl FsObj {
     }
 
     pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -71,7 +71,7 @@ impl FsObj {
     }
 
     pub fn seek_abs(&self, offset: usize) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -80,7 +80,7 @@ impl FsObj {
     }
 
     pub fn seek_rel(&self, offset: isize) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -89,7 +89,7 @@ impl FsObj {
     }
 
     pub fn seek_end(&self, offset: usize) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -98,7 +98,7 @@ impl FsObj {
     }
 
     pub fn position(&self) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -106,7 +106,7 @@ impl FsObj {
     }
 
     pub fn file_size(&self) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -114,7 +114,7 @@ impl FsObj {
     }
 
     pub fn truncate(&self, length: usize) -> Result<usize, SvsmError> {
-        let FsObjEntry::File(ref fh) = self.entry else {
+        let FsObjEntry::File(fh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
@@ -122,14 +122,14 @@ impl FsObj {
     }
 
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {
-        let FsObjEntry::Directory(ref dh) = self.entry else {
+        let FsObjEntry::Directory(dh) = &self.entry else {
             return Err(SvsmError::NotSupported);
         };
 
         let next = dh.next.fetch_add(1, Ordering::Relaxed);
-        if let Some(&name) = dh.list.get(next) {
+        if let Some(name) = dh.list.get(next) {
             let dirent = dh.dir.lookup_entry(name)?;
-            Ok(Some((name, dirent)))
+            Ok(Some((name.clone(), dirent)))
         } else {
             dh.next.fetch_sub(1, Ordering::Relaxed);
             Ok(None)

@@ -11,12 +11,14 @@ use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::{
     create_root, find_dir, mkdir_root, open_root, rmdir_root, truncate, unlink_root, DirEntry,
-    FileNameArray, FsError, FsObj, UserBuffer,
+    FsError, FsObj, UserBuffer,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
 use alloc::sync::Arc;
+use core::cmp::min;
 use core::ffi::c_char;
+use core::str;
 use syscall::SysCallError::*;
 use syscall::*;
 
@@ -28,7 +30,7 @@ pub fn sys_open(path: usize, mode: usize, flags: usize) -> Result<u64, SysCallEr
     let file_handle = {
         let open_res = open_root(
             current_task().rootdir(),
-            user_path.as_str(),
+            &user_path,
             file_mode.contains(FileModes::READ),
             file_mode.contains(FileModes::WRITE),
         );
@@ -129,8 +131,19 @@ pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysC
         };
 
         let mut new_entry = DirEnt::default();
-        let fname = FileNameArray::from(name);
-        new_entry.file_name[..fname.len()].copy_from_slice(&fname);
+        // DirEnt.file_name must be nul-terminated
+        let bound = (0..min(name.len() + 1, new_entry.file_name.len()))
+            .rposition(|i| name.is_char_boundary(i))
+            .ok_or(EINVAL)?;
+        new_entry.file_name[..bound].copy_from_slice(&name.as_bytes()[..bound]);
+        if bound != name.len() {
+            // Use unwrap() here since SVSM's filesystem should guarantee
+            // that file names are valid UTF-8
+            log::info!(
+                "sys_readdir: truncation detected: {}",
+                str::from_utf8(&new_entry.file_name[..bound]).unwrap()
+            );
+        }
 
         if let DirEntry::File(f) = dirent {
             new_entry.file_type = FileType::File;
