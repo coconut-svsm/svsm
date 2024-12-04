@@ -51,6 +51,7 @@ pub struct CpuidResult {
 
 impl CpuidResult {
     pub fn get(cpuid_fn: u32, cpuid_subfn: u32) -> Self {
+        log::info!("Calling CPUID");
         let mut result_eax: u32;
         let mut result_ebx: u32;
         let mut result_ecx: u32;
@@ -79,7 +80,7 @@ impl CpuidResult {
 
 pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidResult> {
     let count: usize = CPUID_PAGE.count as usize;
-
+    let count: usize = 64;
     for i in 0..count {
         if eax == CPUID_PAGE.func[i].eax_in
             && ecx == CPUID_PAGE.func[i].ecx_in
