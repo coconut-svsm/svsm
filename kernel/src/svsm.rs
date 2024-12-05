@@ -7,6 +7,8 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
+extern crate alloc;
+
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -50,6 +52,8 @@ use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
+
+use alloc::string::String;
 
 extern "C" {
     pub static bsp_stack_end: u8;
@@ -319,7 +323,8 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to launch FW: {e:#?}");
     }
 
-    start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
+    start_kernel_task(request_processing_main, String::from("request-processing"))
+        .expect("Failed to launch request processing task");
 
     #[cfg(test)]
     crate::test_main();
