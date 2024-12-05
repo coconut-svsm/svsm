@@ -6,12 +6,15 @@
 
 extern crate alloc;
 
-use super::{Buffer, File, FsError};
+use super::{Buffer, File, FileHandle, FsError};
 use crate::console::console_write;
 use crate::cpu::percpu::current_task;
 use crate::error::SvsmError;
+use crate::fs::obj::FsObj;
 use crate::locking::SpinLock;
+use crate::syscall::Obj;
 use alloc::string::String;
+use alloc::sync::Arc;
 
 const CONSOLE_LINE_BUFFER_SIZE: usize = 256;
 
@@ -118,4 +121,11 @@ impl File for ConsoleFile {
     fn size(&self) -> usize {
         0
     }
+}
+
+pub fn stdout_open() -> Arc<dyn Obj> {
+    let console_file: Arc<dyn File> = Arc::new(ConsoleFile::new());
+
+    // Stdout is write-only.
+    Arc::new(FsObj::new_file(FileHandle::new(&console_file, false, true)))
 }
