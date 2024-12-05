@@ -6,7 +6,10 @@
 
 #![no_std]
 
+pub mod locking;
+
 use core::panic::PanicInfo;
+pub use locking::*;
 pub use syscall::*;
 
 #[macro_export]
