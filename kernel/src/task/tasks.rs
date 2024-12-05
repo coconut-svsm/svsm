@@ -17,13 +17,13 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{current_task, PerCpu};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
-use crate::fs::{opendir, Directory, FileHandle};
+use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{
@@ -731,6 +731,14 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
         || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
 }
 
+fn task_attach_console() {
+    let file_handle = stdout_open();
+    let obj_handle = ObjHandle::new(0);
+    current_task()
+        .add_obj_at(file_handle, obj_handle)
+        .expect("Failed to attach console");
+}
+
 /// Runs the first time a new task is scheduled, in the context of the new
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
@@ -744,6 +752,7 @@ unsafe fn setup_user_task(xsa_addr: u64) {
         // Needs to be the first function called here.
         setup_new_task_common(xsa_addr);
     }
+    task_attach_console();
 }
 
 unsafe fn setup_new_task_common(xsa_addr: u64) {
