@@ -4,7 +4,11 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::snp_fw::{
+    copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
+};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
@@ -13,6 +17,7 @@ use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::GHCBIOSize;
@@ -114,6 +119,30 @@ impl SvsmPlatform for SnpPlatform {
         guest_request_driver_init();
         SVSM_ENV_INITIALIZED.store(true, Ordering::Relaxed);
         Ok(())
+    }
+
+    fn prepare_fw(
+        &self,
+        config: &SvsmConfig<'_>,
+        kernel_region: MemoryRegion<PhysAddr>,
+    ) -> Result<(), SvsmError> {
+        if let Some(fw_meta) = &config.get_fw_metadata() {
+            print_fw_meta(fw_meta);
+            write_guest_memory_map(config)?;
+            validate_fw_memory(config, fw_meta, &kernel_region)?;
+            copy_tables_to_fw(fw_meta, &kernel_region)?;
+            validate_fw(config, &kernel_region)?;
+            prepare_fw_launch(fw_meta)?;
+        }
+        Ok(())
+    }
+
+    fn launch_fw(&self, config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+        if config.should_launch_fw() {
+            launch_fw(config)
+        } else {
+            Ok(())
+        }
     }
 
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError> {

@@ -8,7 +8,7 @@
 
 use libfuzzer_sys::{fuzz_target, Corpus};
 use std::hint::black_box;
-use svsm::fw_meta::parse_fw_meta_data;
+use svsm::platform::parse_fw_meta_data;
 use svsm::types::PAGE_SIZE;
 
 fuzz_target!(|data: &[u8]| -> Corpus {

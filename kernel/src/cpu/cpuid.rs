@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::address::VirtAddr;
+use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitRef;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 
@@ -11,10 +13,34 @@ use core::arch::asm;
 
 static CPUID_PAGE: ImmutAfterInitRef<'_, SnpCpuidTable> = ImmutAfterInitRef::uninit();
 
+const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
+
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     CPUID_PAGE
         .init_from_ref(table)
         .expect("Could not initialize CPUID page");
+}
+
+/// Copy a CPUID page's content to memory pointed to by a [`VirtAddr`]
+///
+/// # Safety
+///
+/// The caller should verify that `dst` points to mapped memory whose size is
+/// at least 4K. We assert above at compile time that SnpCpuidTable fits within
+/// a page, so the write is safe.
+///
+/// The caller should verify not to corrupt arbitrary memory, as this function
+/// doesn't make any checks in that regard.
+pub unsafe fn copy_cpuid_table_to(dst: VirtAddr) {
+    let start = dst.as_mut_ptr::<u8>();
+    // SAFETY: caller must ensure the address is valid and not aliased.
+    unsafe {
+        // Zero target and copy data
+        start.write_bytes(0, PAGE_SIZE);
+        start
+            .cast::<SnpCpuidTable>()
+            .copy_from_nonoverlapping(&*CPUID_PAGE, 1);
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -8,19 +8,19 @@ extern crate alloc;
 
 use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
-use crate::cpu::percpu::current_ghcb;
+use crate::cpu::cpuid::copy_cpuid_table_to;
+use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
-use crate::kernel_region::new_kernel_region;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
-use crate::sev::{pvalidate, rmp_adjust, PvalidateOp, RMPFlags};
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::requests::update_mappings;
+use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
+use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
+use crate::utils::fw_meta::{find_table, RawMetaBuffer, Uuid};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
-use bootlib::kernel_launch::KernelLaunchInfo;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
-use core::fmt;
 use core::mem::{size_of, size_of_val};
 use core::str::FromStr;
 
@@ -44,91 +44,6 @@ impl SevFWMetaData {
 
     pub fn add_valid_mem(&mut self, base: PhysAddr, len: usize) {
         self.valid_mem.push(MemoryRegion::new(base, len));
-    }
-}
-
-fn from_hex(c: char) -> Result<u8, SvsmError> {
-    match c.to_digit(16) {
-        Some(d) => Ok(d as u8),
-        None => Err(SvsmError::Firmware),
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct Uuid {
-    data: [u8; 16],
-}
-
-impl Uuid {
-    pub const fn new() -> Self {
-        Uuid { data: [0; 16] }
-    }
-}
-
-impl TryFrom<&[u8]> for Uuid {
-    type Error = ();
-    fn try_from(mem: &[u8]) -> Result<Self, Self::Error> {
-        let arr: &[u8; 16] = mem.try_into().map_err(|_| ())?;
-        Ok(Self::from(arr))
-    }
-}
-
-impl From<&[u8; 16]> for Uuid {
-    fn from(mem: &[u8; 16]) -> Self {
-        Self {
-            data: [
-                mem[3], mem[2], mem[1], mem[0], mem[5], mem[4], mem[7], mem[6], mem[8], mem[9],
-                mem[10], mem[11], mem[12], mem[13], mem[14], mem[15],
-            ],
-        }
-    }
-}
-
-impl FromStr for Uuid {
-    type Err = SvsmError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut uuid = Uuid::new();
-        let mut buf: u8 = 0;
-        let mut index = 0;
-
-        for c in s.chars() {
-            if !c.is_ascii_hexdigit() {
-                continue;
-            }
-
-            if (index % 2) == 0 {
-                buf = from_hex(c)? << 4;
-            } else {
-                buf |= from_hex(c)?;
-                let i = index / 2;
-                if i >= 16 {
-                    break;
-                }
-                uuid.data[i] = buf;
-            }
-
-            index += 1;
-        }
-
-        Ok(uuid)
-    }
-}
-
-impl PartialEq for Uuid {
-    fn eq(&self, other: &Self) -> bool {
-        self.data.iter().zip(&other.data).all(|(a, b)| a == b)
-    }
-}
-
-impl fmt::Display for Uuid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for i in 0..16 {
-            write!(f, "{:02x}", self.data[i])?;
-            if i == 3 || i == 5 || i == 7 || i == 9 {
-                write!(f, "-")?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -158,54 +73,6 @@ const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
-#[derive(Debug, Clone, Copy, FromBytes, KnownLayout, Immutable)]
-#[repr(C, packed)]
-struct RawMetaHeader {
-    len: u16,
-    uuid: [u8; size_of::<Uuid>()],
-}
-
-impl RawMetaHeader {
-    fn data_len(&self) -> Option<usize> {
-        let full_len = self.len as usize;
-        full_len.checked_sub(size_of::<Self>())
-    }
-}
-
-#[derive(Debug, Clone, Copy, FromBytes, KnownLayout, Immutable)]
-#[repr(C, packed)]
-struct RawMetaBuffer {
-    data: [u8; PAGE_SIZE - size_of::<RawMetaHeader>() - 32],
-    header: RawMetaHeader,
-    _pad: [u8; 32],
-}
-
-// Compile-time size checks
-const _: () = assert!(size_of::<RawMetaBuffer>() == PAGE_SIZE);
-const _: () = assert!(size_of::<RawMetaHeader>() == size_of::<u16>() + size_of::<Uuid>());
-
-/// Find a table with the given UUID in the given memory slice, and return a
-/// subslice into its data
-fn find_table<'a>(uuid: &Uuid, mem: &'a [u8]) -> Option<&'a [u8]> {
-    let mut idx = mem.len();
-
-    while idx != 0 {
-        let hdr_start = idx.checked_sub(size_of::<RawMetaHeader>())?;
-        let hdr = RawMetaHeader::ref_from_bytes(&mem[hdr_start..idx]).unwrap();
-
-        let data_len = hdr.data_len()?;
-        idx = hdr_start.checked_sub(data_len)?;
-
-        let raw_uuid = hdr.uuid;
-        let curr_uuid = Uuid::from(&raw_uuid);
-        if *uuid == curr_uuid {
-            return Some(&mem[idx..idx + data_len]);
-        }
-    }
-
-    None
-}
-
 /// Parse the firmware metadata from the given slice.
 pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let mut meta_data = SevFWMetaData::new();
@@ -213,8 +80,7 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let raw_meta = RawMetaBuffer::ref_from_bytes(mem).map_err(|_| SvsmError::Firmware)?;
 
     // Check the UUID
-    let raw_uuid = raw_meta.header.uuid;
-    let uuid = Uuid::from(&raw_uuid);
+    let uuid = raw_meta.header.uuid();
     let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
     if uuid != meta_uuid {
         return Err(SvsmError::Firmware);
@@ -262,7 +128,7 @@ fn parse_sev_meta(
     // padding, and it is computed backwards.
     let bytes: [u8; 4] = tbl.try_into().map_err(|_| SvsmError::Firmware)?;
     let sev_meta_offset = (u32::from_le_bytes(bytes) as usize)
-        .checked_sub(size_of_val(&raw_meta.header) + size_of_val(&raw_meta._pad))
+        .checked_sub(size_of_val(&raw_meta.header) + raw_meta.pad_size())
         .ok_or(SvsmError::Firmware)?;
     // Now compute the start and end of the SEV metadata header
     let sev_meta_start = size_of_val(&raw_meta.data)
@@ -374,7 +240,7 @@ fn validate_fw_memory_vec(
 pub fn validate_fw_memory(
     config: &SvsmConfig<'_>,
     fw_meta: &SevFWMetaData,
-    launch_info: &KernelLaunchInfo,
+    kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     // Initalize vector with regions from the FW
     let mut regions = fw_meta.valid_mem.clone();
@@ -397,9 +263,8 @@ pub fn validate_fw_memory(
     // Sort regions by base address
     regions.sort_unstable_by_key(|a| a.start());
 
-    let kernel_region = new_kernel_region(launch_info);
     for region in regions.iter() {
-        if region.overlap(&kernel_region) {
+        if region.overlap(kernel_region) {
             log::error!("FwMeta region ovelaps with kernel");
             return Err(SvsmError::Firmware);
         }
@@ -433,4 +298,132 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
             region.end()
         );
     }
+}
+
+fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+
+    // SAFETY: this is called from CPU 0, so the underlying physical address
+    // is not being aliased. We are mapping a full page, which is 4K-aligned,
+    // and is enough for SnpCpuidTable.
+    unsafe {
+        copy_cpuid_table_to(guard.virt_addr());
+    }
+
+    Ok(())
+}
+
+fn copy_secrets_page_to_fw(
+    fw_addr: PhysAddr,
+    caa_addr: PhysAddr,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+    let start = guard.virt_addr();
+
+    // Zero target
+    zero_mem_region(start, start + PAGE_SIZE);
+
+    // Copy secrets page
+    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
+
+    fw_secrets_page.set_svsm_data(
+        kernel_region.start().into(),
+        kernel_region.len().try_into().unwrap(),
+        u64::from(caa_addr),
+    );
+
+    // SAFETY: start points to a new allocated and zeroed page.
+    unsafe {
+        fw_secrets_page.copy_to(start);
+    }
+
+    Ok(())
+}
+
+fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
+    let vaddr = guard.virt_addr();
+
+    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+
+    Ok(())
+}
+
+pub fn copy_tables_to_fw(
+    fw_meta: &SevFWMetaData,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    if let Some(addr) = fw_meta.cpuid_page {
+        copy_cpuid_table_to_fw(addr)?;
+    }
+
+    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
+    let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
+
+    copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
+
+    zero_caa_page(caa_page)?;
+
+    Ok(())
+}
+
+pub fn validate_fw(
+    config: &SvsmConfig<'_>,
+    kernel_region: &MemoryRegion<PhysAddr>,
+) -> Result<(), SvsmError> {
+    let flash_regions = config.get_fw_regions(kernel_region);
+
+    for (i, region) in flash_regions.into_iter().enumerate() {
+        log::info!(
+            "Flash region {} at {:#018x} size {:018x}",
+            i,
+            region.start(),
+            region.len(),
+        );
+
+        for paddr in region.iter_pages(PageSize::Regular) {
+            let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
+            let vaddr = guard.virt_addr();
+            if let Err(e) = rmp_adjust(
+                vaddr,
+                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                PageSize::Regular,
+            ) {
+                log::info!("rmpadjust failed for addr {:#018x}", vaddr);
+                return Err(e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
+    if let Some(caa) = fw_meta.caa_page {
+        this_cpu_shared().update_guest_caa(caa);
+    }
+
+    this_cpu().alloc_guest_vmsa()?;
+    update_mappings()?;
+
+    Ok(())
+}
+
+pub fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+    let cpu = this_cpu();
+    let mut vmsa_ref = cpu.guest_vmsa_ref();
+    let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
+    let vmsa = vmsa_ref.vmsa();
+
+    config.initialize_guest_vmsa(vmsa)?;
+
+    log::info!("VMSA PA: {:#x}", vmsa_pa);
+
+    let sev_features = vmsa.sev_features;
+
+    log::info!("Launching Firmware");
+    current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+
+    Ok(())
 }
