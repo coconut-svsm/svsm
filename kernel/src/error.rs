@@ -17,6 +17,7 @@
 //! usually the one corresponding to that module. Each module should provide
 //! a way to convert a leaf error into a SvsmError via the [`From`] trait.
 
+#[cfg(feature = "attest")]
 use crate::attest::AttestationError;
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
@@ -102,6 +103,7 @@ pub enum SvsmError {
     /// Errors related to Hyper-V.
     HyperV(u16),
     /// Errors related to attesting SVSM's launch evidence.
+    #[cfg(feature = "attest")]
     Attestation(AttestationError),
 }
 
