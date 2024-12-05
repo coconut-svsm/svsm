@@ -15,6 +15,12 @@ use core::ffi::CStr;
 #[derive(Debug)]
 pub struct FsObjHandle(ObjHandle);
 
+impl FsObjHandle {
+    pub(crate) const fn new(obj: ObjHandle) -> Self {
+        Self(obj)
+    }
+}
+
 impl Obj for FsObjHandle {
     fn id(&self) -> u32 {
         u32::from(&self.0)
