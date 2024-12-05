@@ -6,7 +6,9 @@
 
 use super::gdt::GDTEntry;
 use crate::address::VirtAddr;
+use core::arch::asm;
 use core::num::NonZeroU8;
+use core::ptr::addr_of;
 
 // IST offsets
 pub const IST_DF: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(1) };
@@ -15,7 +17,7 @@ pub const IST_DF: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(1) };
 #[repr(C, packed(4))]
 pub struct X86Tss {
     reserved0: u32,
-    pub stacks: [VirtAddr; 3],
+    stacks: [VirtAddr; 3],
     reserved1: u64,
     ist_stacks: [VirtAddr; 7],
     reserved2: u64,
@@ -38,10 +40,38 @@ impl X86Tss {
         }
     }
 
-    pub fn set_ist_stack(&mut self, index: NonZeroU8, addr: VirtAddr) {
+    /// # Safety
+    /// No checks are performed on the stack address.  The caller must
+    /// ensure that the address is valid for stack usage.
+    pub unsafe fn set_ist_stack(&self, index: NonZeroU8, addr: VirtAddr) {
         // IST entries start at index 1
         let index = usize::from(index.get() - 1);
-        self.ist_stacks[index] = addr;
+        let stack_ptr = addr_of!(self.ist_stacks[index]);
+        // SAFETY: this move must be done in assembly because the target
+        // address is unaligned, and is not a candidate for using `Cell` to
+        // provide interior mutability on the stack pointer.
+        unsafe {
+            asm!("movq {0}, ({1})",
+                 in(reg) u64::from(addr),
+                 in(reg) stack_ptr,
+                 options(att_syntax));
+        }
+    }
+
+    /// # Safety
+    /// No checks are performed on the stack address.  The caller must
+    /// ensure that the address is valid for stack usage.
+    pub unsafe fn set_rsp0(&self, addr: VirtAddr) {
+        let stack_ptr = addr_of!(self.stacks[0]);
+        // SAFETY: this move must be done in assembly because the target
+        // address is unaligned, and is not a candidate for using `Cell` to
+        // provide interior mutability on the stack pointer.
+        unsafe {
+            asm!("movq {0}, ({1})",
+                 in(reg) u64::from(addr),
+                 in(reg) stack_ptr,
+                 options(att_syntax));
+        }
     }
 
     pub fn to_gdt_entry(&self) -> (GDTEntry, GDTEntry) {

@@ -387,7 +387,10 @@ pub fn schedule() {
             this_cpu().populate_page_table(&mut pt);
         }
 
-        this_cpu().set_tss_rsp0(next.stack_bounds.end());
+        // SAFETY: ths stack pointer is known to be correct.
+        unsafe {
+            this_cpu().set_tss_rsp0(next.stack_bounds.end());
+        }
         if is_cet_ss_supported() {
             write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
         }
