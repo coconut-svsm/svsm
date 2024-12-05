@@ -10,6 +10,7 @@ const CLASS1: u64 = 1 << 32;
 
 // Syscall number in class0
 pub const SYS_EXIT: u64 = CLASS0;
+pub const SYS_EXEC: u64 = CLASS0 + 4;
 pub const SYS_CLOSE: u64 = CLASS0 + 10;
 
 // Syscall number in class1

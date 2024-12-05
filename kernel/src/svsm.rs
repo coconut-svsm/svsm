@@ -29,7 +29,7 @@ use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
-use svsm::fs::{initialize_fs, populate_ram_fs};
+use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::fw_meta::{print_fw_meta, validate_fw_memory, SevFWMetaData};
 use svsm::igvm_params::IgvmParams;
@@ -356,6 +356,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         enable_shadow_stacks!(bsp_percpu);
     }
 
+    initialize_fs();
+
     // Idle task must be allocated after PerCPU data is mapped
     bsp_percpu
         .setup_idle_task(svsm_main)
@@ -417,8 +419,6 @@ pub extern "C" fn svsm_main() {
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
-    initialize_fs();
-
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
@@ -467,8 +467,9 @@ pub extern "C" fn svsm_main() {
     #[cfg(test)]
     crate::test_main();
 
-    if exec_user("/init").is_err() {
-        log::info!("Failed to launch /init");
+    match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
+        Ok(_) => (),
+        Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
     request_loop();

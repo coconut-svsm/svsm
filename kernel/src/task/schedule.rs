@@ -40,6 +40,7 @@ use crate::cpu::sse::sse_restore_context;
 use crate::cpu::sse::sse_save_context;
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
+use crate::fs::Directory;
 use crate::locking::SpinLock;
 use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
 use alloc::sync::Arc;
@@ -265,9 +266,12 @@ pub fn start_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErro
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn create_user_task(user_entry: usize) -> Result<TaskPointer, SvsmError> {
+pub fn create_user_task(
+    user_entry: usize,
+    root: Arc<dyn Directory>,
+) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    Task::create_user(cpu, user_entry)
+    Task::create_user(cpu, user_entry, root)
 }
 
 /// Finished user-space task creation by putting the task on the global
