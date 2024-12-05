@@ -94,6 +94,8 @@ bitflags! {
 pub fn read_cr0() -> CR0Flags {
     let cr0: u64;
 
+    // SAFETY: The inline assembly just reads the processors CR0 register
+    // and does not change any state.
     unsafe {
         asm!("mov %cr0, %rax",
              out("rax") cr0,
@@ -115,6 +117,9 @@ pub fn write_cr0(cr0: CR0Flags) {
 
 pub fn read_cr2() -> usize {
     let ret: usize;
+
+    // SAFETY: The inline assembly just reads the processors CR2 register
+    // and does not change any state.
     unsafe {
         asm!("mov %cr2, %rax",
              out("rax") ret,
@@ -133,6 +138,9 @@ pub fn write_cr2(cr2: usize) {
 
 pub fn read_cr3() -> PhysAddr {
     let ret: usize;
+
+    // SAFETY: The inline assembly just reads the processors CR3 register
+    // and does not change any state.
     unsafe {
         asm!("mov %cr3, %rax",
              out("rax") ret,
@@ -179,6 +187,8 @@ bitflags! {
 pub fn read_cr4() -> CR4Flags {
     let cr4: u64;
 
+    // SAFETY: The inline assembly just reads the processors CR4 register
+    // and does not change any state.
     unsafe {
         asm!("mov %cr4, %rax",
              out("rax") cr4,

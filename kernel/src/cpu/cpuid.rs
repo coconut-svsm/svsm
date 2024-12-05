@@ -81,6 +81,9 @@ impl CpuidResult {
         let mut result_ebx: u32;
         let mut result_ecx: u32;
         let mut result_edx: u32;
+        // SAFETY: Inline assembly to execute the CPUID instruction which does
+        // not change any state. Input registers (EAX, ECX) and output
+        // registers (EAX, EBX, ECX, EDX) are safely managed.
         unsafe {
             asm!("push %rbx",
                  "cpuid",
