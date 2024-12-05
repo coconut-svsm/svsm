@@ -637,6 +637,34 @@ impl Task {
         Ok(id)
     }
 
+    /// Adds an object to the current task and maps it to a given object-id.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The object to be added.
+    /// * `handle` - Object handle to reference the object.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ObjHandle, SvsmError>` - Returns the object handle for the object
+    ///   to be added if successful, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if allocating the object handle
+    /// fails or the object id is already in use.
+    pub fn add_obj_at(&self, obj: Arc<dyn Obj>, handle: ObjHandle) -> Result<ObjHandle, SvsmError> {
+        let mut objs = self.objs.lock_write();
+
+        if objs.get(&handle).is_some() {
+            return Err(SvsmError::from(ObjError::Busy));
+        }
+
+        objs.insert(handle, obj);
+
+        Ok(handle)
+    }
+
     /// Removes an object from the current task.
     ///
     /// # Arguments
