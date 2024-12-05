@@ -136,7 +136,7 @@ impl TrustedProcess {
         let libos_size= zygote_data_struct[5];
 
 
-        // The allocation is always starting at the same virtual address which is why only one allocaiton is valid
+        // The allocation (AllocationRange) is always starting at the same virtual address which is why only one allocaiton is valid
         // at the same time. TODO: Allow for different start addresses
         let (pal_data, pal_range) = ProcessPageTableRef::copy_data_from_guest(pal, pal_size, pgt);
         let mut base = ProcessBaseContext::default();

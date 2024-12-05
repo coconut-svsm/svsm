@@ -15,6 +15,11 @@ use crate::process_manager::allocation::AllocationRange;
 
 use super::memory_helper::{ZERO_PAGE};
 
+// TP: Trusted Process
+const TP_STACK_START_VADDR: u64 = 0x80_0000_0000;
+const TP_MANIFEST_START_VADDR: u64 = 0x100_0000_0000;
+const TP_LIBOS_START_VADDR: u64 = 0x180_0000_0000;
+
 // Flags for the Page Table
 // In general all Trusted Processes need to
 // have user accessable set
@@ -269,7 +274,7 @@ impl ProcessPageTableRef {
             self.add_region(program_header, elf_file );
         }
         //Add stack
-        self.add_stack(VirtAddr::from(0x8000000000usize), 8);
+        self.add_stack(VirtAddr::from(TP_STACK_START_VADDR), 8);
         self.print_table();
         VirtAddr::from(elf.elf_hdr.e_entry)
     }
@@ -277,13 +282,13 @@ impl ProcessPageTableRef {
     pub fn add_manifest(&self, data: VirtAddr, size: u64) {
         let data: *mut u8 = data.as_mut_ptr::<u8>();
         let data = unsafe { slice::from_raw_parts(data, size as usize) };
-        self.add_region_vaddr(VirtAddr::from(0x10000000000u64), data);
+        self.add_region_vaddr(VirtAddr::from(TP_MANIFEST_START_VADDR), data);
     }
 
     pub fn add_libos(&self, data: VirtAddr, size: u64) {
         let data: *mut u8 = data.as_mut_ptr::<u8>();
         let data = unsafe { slice::from_raw_parts(data, size as usize) };
-        self.add_region_vaddr(VirtAddr::from(0x18000000000u64), data);
+        self.add_region_vaddr(VirtAddr::from(TP_LIBOS_START_VADDR), data);
     }
 
     pub fn add_pages(&self, start: VirtAddr, size: u64, flags: ProcessPageFlags) {
