@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::Address;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
@@ -16,6 +18,8 @@ use crate::platform::SVSM_PLATFORM;
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{schedule_init, start_kernel_task};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
+
+use alloc::string::String;
 
 fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
@@ -70,7 +74,8 @@ fn start_ap() {
 
 #[no_mangle]
 pub extern "C" fn ap_request_loop() {
-    start_kernel_task(request_processing_main).expect("Failed to launch request processing task");
+    start_kernel_task(request_processing_main, String::from("request-processing"))
+        .expect("Failed to launch request processing task");
     request_loop();
     panic!("Returned from request_loop!");
 }
