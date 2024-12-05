@@ -30,10 +30,7 @@ pub enum NegotiationHash {
 /// attestation server.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum NegotiationKey {
-    RSA3072,
-    RSA4096,
-    ECP384,
-    ECP521,
+    Ecdh384Sha256Aes128,
 }
 
 /// A parameter that must be hashed into the negotiation hash.

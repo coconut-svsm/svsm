@@ -25,21 +25,23 @@ libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true
 
+aes = { workspace = true, optional = true }
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 base64 = { workspace = true, optional = true }
 bitfield-struct.workspace = true
 bitflags.workspace = true
+elliptic-curve = { workspace = true, optional = true }
 gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }
 igvm_defs = { workspace = true, features = ["unstable"] }
 intrusive-collections.workspace = true
 kbs-types = { workspace = true, optional = true }
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
+p384 = { workspace = true, optional = true }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
 rdrand = { workspace = true, optional = true }
-rsa = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
@@ -56,8 +58,9 @@ verify_external = { workspace = true, optional = true}
 test.workspace = true
 
 [features]
-attest = ["dep:libaproxy", "dep:base64", "dep:kbs-types", "dep:rand_chacha",
-          "dep:rdrand", "dep:rsa", "dep:serde", "dep:serde_json", "dep:sha2"]
+attest = ["dep:aes", "dep:libaproxy", "dep:base64", "dep:kbs-types",
+          "dep:p384", "dep:rand_chacha", "dep:rdrand", "dep:serde",
+          "dep:serde_json", "dep:sha2", "dep:elliptic-curve"]
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]

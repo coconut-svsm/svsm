@@ -63,7 +63,7 @@ impl AttestationProtocol for KbsProtocol {
 
         let resp = NegotiationResponse {
             hash,
-            key_type: NegotiationKey::RSA3072,
+            key_type: NegotiationKey::Ecdh384Sha256Aes128,
             params,
         };
 
@@ -82,12 +82,12 @@ impl AttestationProtocol for KbsProtocol {
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
             tee_pubkey: match request.key {
-                AttestationKey::RSA { n, e } => TeePubKey::RSA {
-                    alg: "RSA".to_string(),
-                    k_mod: n,
-                    k_exp: e,
+                AttestationKey::EC { crv, x, y } => TeePubKey::EC {
+                    crv,
+                    alg: "EC".to_string(),
+                    x,
+                    y,
                 },
-                _ => panic!("invalid key type"),
             },
             tee_evidence: Value::String(request.evidence),
         };
@@ -108,6 +108,7 @@ impl AttestationProtocol for KbsProtocol {
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
+                pub_key: None,
             });
         }
 
@@ -124,21 +125,21 @@ impl AttestationProtocol for KbsProtocol {
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
+                pub_key: None,
             });
         }
 
-        // Get encrypted secret from "ciphertext" member of KBS response.
-        let secret = {
-            let text = http_resp.text().unwrap();
+        let text = http_resp
+            .text()
+            .context("unable to read KBS /resource response")?;
 
-            let resp: Response = serde_json::from_str(&text).unwrap();
-
-            resp.ciphertext
-        };
+        let resp: Response = serde_json::from_str(&text)
+            .context("unable to convert KBS /resource response to KBS Response object")?;
 
         Ok(AttestationResponse {
             success: true,
-            secret: Some(secret),
+            secret: Some(resp.ciphertext),
+            pub_key: Some(resp.encrypted_key),
         })
     }
 }

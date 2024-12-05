@@ -16,19 +16,19 @@ use crate::{
     io::{Read, Write, DEFAULT_IO_DRIVER},
     serial::SerialPort,
 };
-use alloc::{
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+use aes::{cipher::BlockDecrypt, Aes128};
+use aes_gcm::KeyInit;
+use alloc::{string::ToString, vec, vec::Vec};
 use base64::prelude::*;
+use core::{cmp::min, fmt, str::FromStr};
+use elliptic_curve::JwkEcKey;
 use kbs_types::Tee;
 use libaproxy::*;
+use p384::{ecdh, NistP384};
 use rand_chacha::{rand_core::SeedableRng, ChaChaRng};
 use rdrand::RdSeed;
-use rsa::{traits::PublicKeyParts, Pkcs1v15Encrypt, RsaPrivateKey};
 use serde::Serialize;
-use sha2::{Digest, Sha384, Sha512};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
@@ -37,7 +37,6 @@ use zerocopy::{FromBytes, IntoBytes};
 pub struct AttestationDriver<'a> {
     sp: SerialPort<'a>,
     tee: Tee,
-    key: Option<TeeKey>,
 }
 
 impl TryFrom<Tee> for AttestationDriver<'_> {
@@ -52,7 +51,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
             _ => return Err(AttestationError::UnsupportedTee.into()),
         }
 
-        Ok(Self { sp, tee, key: None })
+        Ok(Self { sp, tee })
     }
 }
 
@@ -87,15 +86,12 @@ impl AttestationDriver<'_> {
         negotiation: NegotiationResponse,
     ) -> Result<Vec<u8>, AttestationError> {
         // Generate TEE key and evidence for serialization to proxy.
-        self.tee_key_generate(&negotiation)?;
-        let evidence = self.evidence(negotiation)?;
-
-        // Safe to unwrap at this point.
-        let key = &self.key.clone().unwrap();
+        let key = self.tee_key_generate(&negotiation)?;
+        let evidence = self.evidence(negotiation, &key)?;
 
         let request = AttestationRequest {
             evidence: BASE64_URL_SAFE.encode(evidence),
-            key: AttestationKey::from(key),
+            key: AttestationKey::try_from(&key)?,
         };
 
         self.write(request)?;
@@ -108,32 +104,30 @@ impl AttestationDriver<'_> {
             return Err(AttestationError::Failed);
         }
 
-        let secret = response.secret.ok_or(AttestationError::SecretNotFound)?;
-
-        self.secret_decrypt(secret)
+        self.secret_decrypt(response, &key)
     }
 
     /// Generate the TEE attestation key.
     fn tee_key_generate(
-        &mut self,
+        &self,
         negotiation: &NegotiationResponse,
-    ) -> Result<(), AttestationError> {
+    ) -> Result<TeeKey, AttestationError> {
         let key = match negotiation.key_type {
-            NegotiationKey::RSA3072 => TeeKey::rsa(3072)?,
-            NegotiationKey::RSA4096 => TeeKey::rsa(4096)?,
-            _ => return Err(AttestationError::UnsupportedTeeKeyAlg),
+            NegotiationKey::Ecdh384Sha256Aes128 => TeeKey::ec(384)?,
         };
 
-        self.key = Some(key);
-
-        Ok(())
+        Ok(key)
     }
 
     /// Hash negotiation parameters and fetch TEE evidence.
-    fn evidence(&self, negotiation: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    fn evidence(
+        &self,
+        negotiation: NegotiationResponse,
+        key: &TeeKey,
+    ) -> Result<Vec<u8>, AttestationError> {
         let mut hash = match negotiation.hash {
-            NegotiationHash::SHA384 => self.hash(&negotiation, Sha384::new())?,
-            NegotiationHash::SHA512 => self.hash(&negotiation, Sha512::new())?,
+            NegotiationHash::SHA384 => self.hash(&negotiation, key, Sha384::new())?,
+            NegotiationHash::SHA512 => self.hash(&negotiation, key, Sha512::new())?,
         };
 
         let evidence = match self.tee {
@@ -188,6 +182,7 @@ impl AttestationDriver<'_> {
     fn hash(
         &self,
         n: &NegotiationResponse,
+        key: &TeeKey,
         mut sha: impl Digest,
     ) -> Result<Vec<u8>, AttestationError> {
         for p in &n.params {
@@ -200,7 +195,6 @@ impl AttestationDriver<'_> {
                     sha.update(decoded);
                 }
                 NegotiationParam::TeeKeyPublicComponents => {
-                    let key = &self.key.clone().unwrap(); // Safe to unwrap.
                     key.hash(&mut sha);
                 }
             }
@@ -210,16 +204,56 @@ impl AttestationDriver<'_> {
     }
 
     /// Decrypt a secret from the attestation server with the TEE private key.
-    fn secret_decrypt(&self, encrypted: String) -> Result<Vec<u8>, AttestationError> {
+    fn secret_decrypt(
+        &self,
+        resp: AttestationResponse,
+        key: &TeeKey,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let secret = resp.secret.ok_or(AttestationError::SecretNotFound)?;
+
         let bytes = BASE64_STANDARD
-            .decode(encrypted)
+            .decode(secret)
             .or(Err(AttestationError::SecretDecode))?;
 
-        // Safe to unwrap.
-        match self.key.clone().unwrap() {
-            TeeKey::Rsa(rsa) => rsa
-                .decrypt(Pkcs1v15Encrypt, &bytes)
-                .or(Err(AttestationError::SecretDecryption)),
+        match key {
+            TeeKey::Ecdh384Sha256Aes128(ec) => {
+                // Get the shared ECDH secret between the client/server EC keys.
+                let shared = {
+                    let s = resp.pub_key.ok_or(AttestationError::SecretDecode)?;
+                    let jwk = JwkEcKey::from_str(&s[..]).or(Err(AttestationError::SecretDecode))?;
+
+                    let pub_key = jwk
+                        .to_public_key::<NistP384>()
+                        .or(Err(AttestationError::SecretDecode))?;
+
+                    ec.diffie_hellman(&pub_key)
+                };
+
+                // Extract the HKDF bytes and use to build an AES-128 symmetric key.
+                let mut sha_bytes = [0u8; 16];
+                let empty: [u8; 0] = [];
+
+                let hkdf = shared.extract::<Sha256>(None);
+                hkdf.expand(&empty, &mut sha_bytes)
+                    .or(Err(AttestationError::SecretDecode))?;
+                let x =
+                    Aes128::new_from_slice(&sha_bytes).or(Err(AttestationError::SecretDecode))?;
+
+                // Decrypt each 16-byte block of the ciphertext with the symmetric key.
+                let mut ptr = 0;
+                let len = bytes.len();
+                let mut vec: Vec<u8> = Vec::new();
+                while ptr < len {
+                    let remain = min(16, len - ptr);
+                    let mut arr: [u8; 16] = [0u8; 16];
+                    arr[..remain].copy_from_slice(&bytes[ptr..ptr + remain]);
+                    x.decrypt_block((&mut arr).into());
+                    vec.append(&mut arr[..remain].to_vec());
+                    ptr += remain;
+                }
+
+                Ok(vec)
+            }
         }
     }
 
@@ -260,45 +294,63 @@ impl AttestationDriver<'_> {
 }
 
 /// TEE key used to decrypt secrets sent from the attestation server.
-#[derive(Clone, Debug)]
 pub enum TeeKey {
-    Rsa(RsaPrivateKey),
+    Ecdh384Sha256Aes128(ecdh::EphemeralSecret),
 }
 
 impl TeeKey {
-    /// Generate an RSA key as the TEE key.
-    fn rsa(bits: usize) -> Result<Self, AttestationError> {
+    /// Generate an Elliptic Curve key as the TEE key.
+    fn ec(curve: usize) -> Result<Self, AttestationError> {
         let mut rdseed = RdSeed::new().or(Err(AttestationError::RdRandUsage))?;
         let mut rng = ChaChaRng::from_rng(&mut rdseed).or(Err(AttestationError::TeeKeyGenerate))?;
 
-        let rsa = RsaPrivateKey::new(&mut rng, bits).or(Err(AttestationError::TeeKeyGenerate))?;
+        let key = match curve {
+            384 => ecdh::EphemeralSecret::random(&mut rng),
+            _ => unreachable!(),
+        };
 
-        Ok(Self::Rsa(rsa))
+        Ok(Self::Ecdh384Sha256Aes128(key))
     }
 
     /// Hash the public components of the TEE key.
     fn hash(&self, sha: &mut impl Digest) {
         match self {
-            Self::Rsa(rsa) => {
-                let public = rsa.to_public_key();
-
-                sha.update(public.n().to_bytes_be());
-                sha.update(public.e().to_bytes_be());
+            Self::Ecdh384Sha256Aes128(k) => {
+                let sec1 = k.public_key().to_sec1_bytes();
+                sha.update(sec1);
             }
         }
     }
 }
 
-impl From<&TeeKey> for AttestationKey {
-    fn from(key: &TeeKey) -> AttestationKey {
-        match key {
-            TeeKey::Rsa(rsa) => {
-                let public = rsa.to_public_key();
+impl fmt::Debug for TeeKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            Self::Ecdh384Sha256Aes128(_) => write!(f, "EC384"),
+        }
+    }
+}
 
-                AttestationKey::RSA {
-                    n: BASE64_URL_SAFE.encode(public.n().to_bytes_be()),
-                    e: BASE64_URL_SAFE.encode(public.e().to_bytes_be()),
-                }
+impl TryFrom<&TeeKey> for AttestationKey {
+    type Error = AttestationError;
+
+    fn try_from(key: &TeeKey) -> Result<AttestationKey, Self::Error> {
+        match key {
+            TeeKey::Ecdh384Sha256Aes128(k) => {
+                let jwk = k.public_key().to_jwk();
+                let crv = jwk.crv().to_string();
+                let epoint = jwk
+                    .to_encoded_point::<NistP384>()
+                    .or(Err(AttestationError::EcKeyAffineEncode))?;
+
+                let x = epoint.x().ok_or(AttestationError::EcKeyAffineEncode)?;
+                let y = epoint.y().ok_or(AttestationError::EcKeyAffineEncode)?;
+
+                Ok(AttestationKey::EC {
+                    crv,
+                    x: BASE64_URL_SAFE.encode(x),
+                    y: BASE64_URL_SAFE.encode(y),
+                })
             }
         }
     }
@@ -311,6 +363,8 @@ pub enum AttestationError {
     AttestationRespDeserialize,
     // Unable to decode bytes from Base64 standard.
     Base64StdDecode,
+    // Unable to encode EC key affine point.
+    EcKeyAffineEncode,
     // Attestation was invalid.
     Failed,
     // Error serializing an object to a JSON Vec.
