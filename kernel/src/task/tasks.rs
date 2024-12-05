@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use alloc::collections::btree_map::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
@@ -145,6 +146,9 @@ pub struct Task {
     /// State relevant for scheduler
     sched_state: RWLock<TaskSchedState>,
 
+    /// User-visible name of task
+    name: String,
+
     /// ID of the task
     id: u32,
 
@@ -189,7 +193,11 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(cpu: &PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+    pub fn create(
+        cpu: &PerCpu,
+        entry: extern "C" fn(),
+        name: String,
+    ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -256,6 +264,7 @@ impl Task {
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
             }),
+            name,
             id: TASK_ID_ALLOCATOR.next_id(),
             rootdir: opendir("/")?,
             list_link: LinkedListAtomicLink::default(),
@@ -268,6 +277,7 @@ impl Task {
         cpu: &PerCpu,
         user_entry: usize,
         root: Arc<dyn Directory>,
+        name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
@@ -339,6 +349,7 @@ impl Task {
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
             }),
+            name,
             id: TASK_ID_ALLOCATOR.next_id(),
             rootdir: root,
             list_link: LinkedListAtomicLink::default(),
@@ -349,6 +360,10 @@ impl Task {
 
     pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
         self.stack_bounds
+    }
+
+    pub fn get_task_name(&self) -> &String {
+        &self.name
     }
 
     pub fn get_task_id(&self) -> u32 {
@@ -767,7 +782,9 @@ extern "C" fn task_exit() {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use crate::task::start_kernel_task;
+    use alloc::string::String;
     use core::arch::asm;
     use core::arch::global_asm;
 
@@ -858,7 +875,8 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        start_kernel_task(task1).expect("Failed to launch request processing task");
+        start_kernel_task(task1, String::from("task1"))
+            .expect("Failed to launch request processing task");
     }
 
     extern "C" fn task1() {
@@ -867,7 +885,8 @@ mod tests {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        start_kernel_task(task2).expect("Failed to launch request processing task");
+        start_kernel_task(task2, String::from("task2"))
+            .expect("Failed to launch request processing task");
 
         unsafe {
             asm!("call check_fpu", out("rax") ret, options(att_syntax));

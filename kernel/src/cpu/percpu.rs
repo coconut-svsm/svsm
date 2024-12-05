@@ -48,6 +48,7 @@ use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
 use crate::utils::MemoryRegion;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
@@ -763,7 +764,7 @@ impl PerCpu {
     }
 
     pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry)?;
+        let idle_task = Task::create(self, entry, String::from("idle"))?;
         self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }

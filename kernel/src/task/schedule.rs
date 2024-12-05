@@ -43,6 +43,7 @@ use crate::error::SvsmError;
 use crate::fs::Directory;
 use crate::locking::SpinLock;
 use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::arch::{asm, global_asm};
 use core::cell::OnceCell;
@@ -243,9 +244,9 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn start_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+pub fn start_kernel_task(entry: extern "C" fn(), name: String) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    let task = Task::create(cpu, entry)?;
+    let task = Task::create(cpu, entry, name)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
@@ -269,9 +270,10 @@ pub fn start_kernel_task(entry: extern "C" fn()) -> Result<TaskPointer, SvsmErro
 pub fn create_user_task(
     user_entry: usize,
     root: Arc<dyn Directory>,
+    name: String,
 ) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    Task::create_user(cpu, user_entry, root)
+    Task::create_user(cpu, user_entry, root, name)
 }
 
 /// Finished user-space task creation by putting the task on the global
