@@ -37,7 +37,7 @@ HV_DOORBELL_ADDR:
 	pushq	%rax
 .endm
 
-.macro default_entry_no_ist name: req handler:req error_code:req vector:req
+.macro default_entry_with_ist name: req handler:req error_code:req vector:req
 	.globl asm_entry_\name
 asm_entry_\name:
 	asm_clac
@@ -53,6 +53,26 @@ asm_entry_\name:
 	jmp	default_return
 .endm
 
+.macro default_entry_no_ist name: req handler:req error_code:req vector:req
+	.globl asm_entry_\name
+asm_entry_\name:
+	asm_clac
+
+	.if \error_code == 0
+	pushq $0
+	.endif
+	push_regs
+	testl 	${IF}, 0xC0(%rsp)
+	jz	L\@
+	sti
+L\@:
+	movl	$\vector, %esi
+	movq	%rsp, %rdi
+	xorl	%edx, %edx
+	call	ex_handler_\handler
+	jmp	default_return
+.endm
+
 .macro irq_entry name:req vector:req
 	.globl asm_entry_irq_\name
 asm_entry_irq_\name:
@@ -61,7 +81,7 @@ asm_entry_irq_\name:
 	pushq	$0
 	push_regs
 	movl	$\vector, %edi
-	call	common_isr_handler
+	call	common_isr_handler_entry
 	jmp	default_return
 .endm
 
@@ -344,7 +364,7 @@ default_entry_no_ist	name=ud		handler=panic			error_code=0	vector=6
 default_entry_no_ist	name=nm		handler=panic			error_code=0	vector=7
 
 // #DF Double-Fault Exception (Vector 8)
-default_entry_no_ist	name=df		handler=double_fault		error_code=1	vector=8
+default_entry_with_ist	name=df		handler=double_fault		error_code=1	vector=8
 
 // Coprocessor-Segment-Overrun Exception (Vector 9)
 // No handler - reserved vector
