@@ -159,7 +159,7 @@ impl ProcessPageTableRef {
         }
     }
 
-    fn init_vmpl1(&mut self){
+    pub fn init_vmpl1(&mut self){
         self.process_page_table = allocate_page();
         let (mapping, table) = paddr_as_u64_slice!(self.process_page_table);
         for i in 0..512 {
@@ -492,5 +492,73 @@ impl ProcessPageTableRef {
                 }
             }
         }
+    }
+
+    fn _copy_page_table(&self, src: PhysAddr, dst: PhysAddr, level: u64) {
+        // Copy the page table and its memory recursively
+
+        assert!(level <= 4 && level >= 1);
+
+        let (_src_table_mapping, src_table) = paddr_as_table!(src);
+        let (_dst_table_mapping, dst_table) = paddr_as_table!(dst);
+
+        for i in 0..512 {
+            let src_entry = src_table[i].0.bits();
+            // FIXME: use proper mask for the physical address
+            let phys_mask = 0xFFFF_FFFF_F000;
+            let src_entry_attr = src_entry & !phys_mask;
+            let src_entry_phys = PhysAddr::from(src_entry & phys_mask);
+            let is_present = (src_entry_attr & ProcessPageFlags::PRESENT.bits() as usize) != 0;
+            let is_huge_page = (src_entry_attr & ProcessPageFlags::HUGE_PAGE.bits() as usize) != 0;
+
+            if !is_present {
+                // XXX: we don't copy un-present pages, is this OK?
+                continue;
+            }
+
+            let new_page_phys = if is_huge_page {
+                unimplemented!();
+            } else {
+                allocate_page()
+            };
+            assert!(new_page_phys != PhysAddr::null());
+
+            // copy the entry
+            dst_table[i] = ProcessPageTableEntry(PhysAddr::from(new_page_phys.bits() | src_entry_attr));
+
+            if level > 1 && !is_huge_page {
+                let (_new_mapping, _) = paddr_as_table!(new_page_phys);
+                rmp_adjust(_new_mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
+
+                // copy the next level
+                self._copy_page_table(src_entry_phys, new_page_phys, level - 1);
+            } else {
+                // this is the last level, copy the data into the new page
+                let (_src_mapping, src_data) = paddr_as_slice!(src_entry_phys, u64);
+                let (_dst_mapping, dst_data) = paddr_as_slice!(new_page_phys, u64);
+                rmp_adjust(_dst_mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular).unwrap();
+
+                let size = if level == 1 {
+                    4096
+                } else if level == 2 {
+                    512 * 4096 // 2MB
+                } else if level == 3 {
+                    512 * 512 * 4096 // 1GB
+                } else {
+                    unreachable!();
+                } / core::mem::size_of::<u64>();
+
+                for j in 0..size {
+                    dst_data[j] = src_data[j];
+                }
+            }
+        }
+    }
+
+    pub fn copy_from(&mut self, other: &ProcessPageTableRef) {
+        // Copy the page table and its memory from the other ProcessPageTableRef
+        assert!(self.process_page_table != PhysAddr::null());
+        assert!(other.process_page_table != PhysAddr::null());
+        self._copy_page_table(other.process_page_table, self.process_page_table, 4);
     }
 }
