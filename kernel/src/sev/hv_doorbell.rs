@@ -3,12 +3,14 @@
 
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::percpu::this_cpu;
+use crate::cpu::IrqState;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::virt_to_phys;
 use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
+use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
@@ -112,10 +114,24 @@ impl HVDoorbell {
         // is performed.
     }
 
-    pub fn process_if_required(&self) {
+    /// This function must always be called with interrupts enabled.
+    pub fn process_if_required(&self, irq_state: &IrqState) {
         let flags = HVDoorbellFlags::from(self.flags.load(Ordering::Relaxed));
-        if flags.no_further_signal() {
+        while flags.no_further_signal() {
+            // #HV event processing must always be performed with interrupts
+            // disabled.
+            irq_state.disable();
             self.process_pending_events();
+
+            // Do not call the standard enable routine, because that could
+            // recursively call to process new events, resulting in unbounded
+            // nesting.  Intead, decrement the nesting count and directly
+            // enable interrupts here before continuing the loop to see
+            // whether additional events have arrived.
+            assert_eq!(irq_state.pop_nesting(), 0);
+            unsafe {
+                asm!("sti");
+            }
         }
     }
 
@@ -163,7 +179,15 @@ pub fn current_hv_doorbell() -> &'static HVDoorbell {
 /// Rust code.
 #[no_mangle]
 pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
+    // Update the IRQ nesting state of the current CPU so calls to common
+    // code recognize that interrupts have been disabled.  Proceed as if
+    // interrupts were previously enabled, so that any code that deals with
+    // maskable interrupts knows that interrupts were enabled prior to reaching
+    // this point.
+    let cpu = this_cpu();
+    cpu.irqs_push_nesting(true);
     unsafe {
         (*hv_doorbell).process_pending_events();
     }
+    cpu.irqs_pop_nesting();
 }

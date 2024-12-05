@@ -295,6 +295,7 @@ extern "C" fn ex_handler_system_call(
 
     ctxt.regs.rax = match input {
         SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
+        SYS_EXEC => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
         SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
         SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
@@ -316,7 +317,24 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize)
 }
 
 #[no_mangle]
-pub extern "C" fn common_isr_handler(_vector: usize) {
+pub extern "C" fn common_isr_handler_entry(vector: usize) {
+    // Since interrupt handlers execute with interrupts disabled, it is
+    // necessary to increment the per-CPU interrupt disable nesting state
+    // while the handler is running in case common code attempts to disable
+    // interrupts temporarily.  The fact that this interrupt was received
+    // means that the previous state must have had interrupts enabled.
+    let cpu = this_cpu();
+    cpu.irqs_push_nesting(true);
+
+    common_isr_handler(vector);
+
+    // Decrement the interrupt disable nesting count, but do not permit
+    // interrupts to be reenabled.  They will be reenabled during the IRET
+    // flow.
+    cpu.irqs_pop_nesting();
+}
+
+pub fn common_isr_handler(_vector: usize) {
     // Interrupt injection requests currently require no processing; they occur
     // simply to ensure an exit from the guest.
 

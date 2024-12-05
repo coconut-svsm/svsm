@@ -6,6 +6,7 @@
 
 pub mod address_space;
 pub mod alloc;
+pub mod global_memory;
 pub mod guestmem;
 pub mod mappings;
 pub mod memory;
@@ -27,4 +28,8 @@ pub use pagetable::PageTablePart;
 
 pub use alloc::{allocate_file_page, PageRef};
 
+pub use global_memory::{
+    map_global_range, map_global_range_2m_private, map_global_range_2m_shared,
+    map_global_range_4k_private, map_global_range_4k_shared, GlobalRangeGuard,
+};
 pub use mappings::{mmap_kernel, mmap_user, munmap_kernel, munmap_user, VMMappingGuard};

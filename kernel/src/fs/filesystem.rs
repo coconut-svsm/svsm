@@ -506,6 +506,29 @@ pub fn list_dir(path: &str) -> Result<Vec<FileName>, SvsmError> {
     Ok(dir.list())
 }
 
+/// Looks for a directory entry using a relative path.
+///
+/// # Argument
+///
+/// - `dir`: directory to be found in the relative path.
+/// - `relative_path`: contains items in the relative path.
+///
+/// # Returns
+///
+/// [`Result<Arc<dyn Directory>, SvsmError>`]: [`Result`] containing the
+/// directory corresponding to the relative path if successful,
+/// or [`SvsmError`] if there is an error.
+pub fn find_dir(
+    dir: Arc<dyn Directory>,
+    relative_path: &str,
+) -> Result<Arc<dyn Directory>, SvsmError> {
+    if relative_path.is_empty() {
+        return Err(SvsmError::FileSystem(FsError::inval()));
+    }
+    let items = split_path_allow_empty(relative_path);
+    walk_path(dir, items)
+}
+
 /// Used to read from a file handle.
 ///
 /// # Arguments
