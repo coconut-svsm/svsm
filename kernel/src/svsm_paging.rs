@@ -92,8 +92,6 @@ pub fn init_page_table(
 
     init_global_ranges();
 
-    pgtable.load();
-
     Ok(pgtable)
 }
 
