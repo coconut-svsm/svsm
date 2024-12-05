@@ -85,9 +85,6 @@ pub fn sse_init() {
 /// no other part of the code is accessing this memory at the same time.
 pub unsafe fn sse_save_context(addr: u64) {
     let save_bits = SVSM_XCR0.load(Ordering::Relaxed);
-    // SAFETY: Inline assembly used to save the SSE/FPU context. This context
-    // store is specific to a task and no other part of the code is accessing
-    // this memory at the same time.
     unsafe {
         asm!(
             r#"
@@ -106,9 +103,6 @@ pub unsafe fn sse_save_context(addr: u64) {
 /// no other part of the code is accessing this memory at the same time.
 pub unsafe fn sse_restore_context(addr: u64) {
     let save_bits = SVSM_XCR0.load(Ordering::Relaxed);
-    // SAFETY: Inline assembly used to restore the SSE/FPU context. This context
-    // store is specific to a task and no other part of the code is accessing
-    // this memory at the same time.
     unsafe {
         asm!(
             r#"
