@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SvsmConfig"],"fn":["check_ovmf_regions"]};

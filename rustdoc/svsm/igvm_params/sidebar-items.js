@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IGVM_MEMORY_ENTRIES_PER_PAGE","STAGE2_END_ADDR"],"struct":["IgvmMemoryMap","IgvmParams"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONTEXT_SWITCH_RESTORE_TOKEN","CONTEXT_SWITCH_STACK"],"fn":["create_user_task","current_task","current_task_terminated","finish_user_task","is_current_task","preemption_checks","schedule","schedule_init","schedule_task","start_kernel_task","switch_to","task_pointer","terminate"],"static":["TASKLIST"],"struct":["RunQueue","TaskList"]};
