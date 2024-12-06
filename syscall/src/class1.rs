@@ -19,6 +19,7 @@ impl Obj for FsObjHandle {
 }
 
 pub fn opendir(path: &CStr) -> Result<FsObjHandle, SysCallError> {
+    // SAFETY: SYS_OPENDIR is supported syscall number by the svsm kernel.
     unsafe {
         syscall1(SYS_OPENDIR, path.as_ptr() as u64)
             .map(|ret| FsObjHandle(ObjHandle::new(ret as u32)))
@@ -26,6 +27,7 @@ pub fn opendir(path: &CStr) -> Result<FsObjHandle, SysCallError> {
 }
 
 pub fn readdir(fs: &FsObjHandle, dirents: &mut [DirEnt]) -> Result<usize, SysCallError> {
+    // SAFETY: SYS_READDIR is supported syscall number by the svsm kernel.
     unsafe {
         syscall3(
             SYS_READDIR,

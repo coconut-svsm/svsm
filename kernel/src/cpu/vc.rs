@@ -235,7 +235,11 @@ fn snp_cpuid(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
 
 fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCtx>) {
     let new_rip = ctx.frame.rip + insn_ctx.as_ref().map_or(0, |d| d.size());
-    ctx.set_rip(new_rip);
+    // SAFETY: we are advancing the instruction pointer from the RIP generate by
+    // the exception plus the size of the decoded instruction.
+    unsafe {
+        ctx.set_rip(new_rip);
+    }
 }
 
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
