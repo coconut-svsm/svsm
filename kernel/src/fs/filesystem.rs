@@ -100,6 +100,16 @@ impl RawFileHandle {
         self.current = min(pos, self.file.size());
     }
 
+    fn seek_rel(&mut self, offset: isize) {
+        let pos = self.current.checked_add_signed(offset).unwrap_or(0);
+        self.seek_abs(pos);
+    }
+
+    fn seek_end(&mut self, offset: usize) {
+        let pos = self.file.size().saturating_sub(offset);
+        self.seek_abs(pos);
+    }
+
     fn size(&self) -> usize {
         self.file.size()
     }
@@ -219,6 +229,24 @@ impl FileHandle {
     /// - `pos`: intended new file offset value.
     pub fn seek_abs(&self, pos: usize) {
         self.handle.lock().seek_abs(pos);
+    }
+
+    /// Change the current file offset relative to the current position.
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: Signed value to add to current file position.
+    pub fn seek_rel(&self, offset: isize) {
+        self.handle.lock().seek_rel(offset);
+    }
+
+    /// Set the current file offset relative to the end of file.
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: Value to subtract from end-of-file position.
+    pub fn seek_end(&self, offset: usize) {
+        self.handle.lock().seek_end(offset);
     }
 
     /// Used to get the size of the file.
@@ -695,6 +723,26 @@ pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
 /// - `pos`: new file offset value to be set.
 pub fn seek_abs(fh: &FileHandle, pos: usize) {
     fh.seek_abs(pos)
+}
+
+/// Set the file offset relative to the current offset
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `offset`: Signed value to add to current file offset.
+pub fn seek_rel(fh: &FileHandle, offset: isize) {
+    fh.seek_rel(offset)
+}
+
+/// Set the file offset relative to end-of-file
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `offset`: Value to subtract from end-of-file offset.
+pub fn seek_end(fh: &FileHandle, offset: usize) {
+    fh.seek_end(offset)
 }
 
 #[cfg(test)]
