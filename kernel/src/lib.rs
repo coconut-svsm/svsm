@@ -12,6 +12,7 @@
 
 pub mod acpi;
 pub mod address;
+pub mod block;
 pub mod config;
 pub mod console;
 pub mod cpu;
@@ -40,6 +41,7 @@ pub mod task;
 pub mod tdx;
 pub mod types;
 pub mod utils;
+pub mod virtio;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 

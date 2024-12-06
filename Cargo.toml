@@ -50,7 +50,7 @@ p384 = { version = "0.13.0" }
 sha2 = "0.10.8"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
-zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
+zerocopy = { version = "0.8.10", features = ["alloc", "derive"] }
 
 # Verus repos
 builtin = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
