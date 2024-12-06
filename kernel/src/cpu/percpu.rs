@@ -47,7 +47,7 @@ use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueu
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
-use crate::utils::MemoryRegion;
+use crate::utils::{is_sync, MemoryRegion};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
@@ -227,7 +227,7 @@ pub struct PerCpuShared {
 
 impl PerCpuShared {
     fn new(apic_id: u32, cpu_index: usize) -> Self {
-        PerCpuShared {
+        let cpu_shared = PerCpuShared {
             apic_id,
             cpu_index,
             guest_vmsa: SpinLock::new(GuestVmsaRef::new()),
@@ -235,7 +235,9 @@ impl PerCpuShared {
             ipi_irr: core::array::from_fn(|_| AtomicU32::new(0)),
             ipi_pending: AtomicBool::new(false),
             nmi_pending: AtomicBool::new(false),
-        }
+        };
+        assert!(is_sync(&cpu_shared));
+        cpu_shared
     }
 
     pub const fn apic_id(&self) -> u32 {
