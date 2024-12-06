@@ -11,6 +11,7 @@ use crate::platform::SvsmPlatform;
 use bitflags::bitflags;
 use core::arch::asm;
 
+#[inline]
 pub fn cr0_init() {
     let mut cr0 = read_cr0();
 
@@ -21,6 +22,7 @@ pub fn cr0_init() {
     write_cr0(cr0);
 }
 
+#[inline]
 pub fn cr4_init(platform: &dyn SvsmPlatform) {
     let mut cr4 = read_cr4();
 
@@ -46,6 +48,7 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
     write_cr4(cr4);
 }
 
+#[inline]
 pub fn cr0_sse_enable() {
     let mut cr0 = read_cr0();
 
@@ -58,6 +61,7 @@ pub fn cr0_sse_enable() {
     write_cr0(cr0);
 }
 
+#[inline]
 pub fn cr4_osfxsr_enable() {
     let mut cr4 = read_cr4();
 
@@ -66,6 +70,7 @@ pub fn cr4_osfxsr_enable() {
     write_cr4(cr4);
 }
 
+#[inline]
 pub fn cr4_xsave_enable() {
     let mut cr4 = read_cr4();
 
@@ -91,6 +96,7 @@ bitflags! {
     }
 }
 
+#[inline]
 pub fn read_cr0() -> CR0Flags {
     let cr0: u64;
 
@@ -103,6 +109,7 @@ pub fn read_cr0() -> CR0Flags {
     CR0Flags::from_bits_truncate(cr0)
 }
 
+#[inline]
 pub fn write_cr0(cr0: CR0Flags) {
     let reg = cr0.bits();
 
@@ -113,6 +120,7 @@ pub fn write_cr0(cr0: CR0Flags) {
     }
 }
 
+#[inline]
 pub fn read_cr2() -> usize {
     let ret: usize;
     unsafe {
@@ -123,6 +131,7 @@ pub fn read_cr2() -> usize {
     ret
 }
 
+#[inline]
 pub fn write_cr2(cr2: usize) {
     unsafe {
         asm!("mov %rax, %cr2",
@@ -131,6 +140,7 @@ pub fn write_cr2(cr2: usize) {
     }
 }
 
+#[inline]
 pub fn read_cr3() -> PhysAddr {
     let ret: usize;
     unsafe {
@@ -141,6 +151,7 @@ pub fn read_cr3() -> PhysAddr {
     PhysAddr::from(ret)
 }
 
+#[inline]
 pub fn write_cr3(cr3: PhysAddr) {
     unsafe {
         asm!("mov %rax, %cr3",
@@ -176,6 +187,7 @@ bitflags! {
     }
 }
 
+#[inline]
 pub fn read_cr4() -> CR4Flags {
     let cr4: u64;
 
@@ -188,6 +200,7 @@ pub fn read_cr4() -> CR4Flags {
     CR4Flags::from_bits_truncate(cr4)
 }
 
+#[inline]
 pub fn write_cr4(cr4: CR4Flags) {
     let reg = cr4.bits();
 

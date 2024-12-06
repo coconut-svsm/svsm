@@ -52,14 +52,22 @@ where
     x1 <= y2 && y1 <= x2
 }
 
-pub fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
-    let size = end - start;
+/// # Safety
+///
+/// Caller should ensure [`core::ptr::write_bytes`] safety rules.
+pub unsafe fn zero_mem_region(start: VirtAddr, end: VirtAddr) {
     if start.is_null() {
         panic!("Attempted to zero out a NULL pointer");
     }
 
+    let count = end
+        .checked_sub(start.as_usize())
+        .expect("Invalid size calculation")
+        .as_usize();
+
     // Zero region
-    unsafe { start.as_mut_ptr::<u8>().write_bytes(0, size) }
+    // SAFETY: the safety rules must be upheld by the caller.
+    unsafe { start.as_mut_ptr::<u8>().write_bytes(0, count) }
 }
 
 /// Obtain bit for a given position
@@ -117,7 +125,11 @@ mod tests {
         let start = VirtAddr::from(data.as_mut_ptr());
         let end = start + core::mem::size_of_val(&data);
 
-        zero_mem_region(start, end);
+        // SAFETY: start and end correctly point respectively to the start and
+        // end of data.
+        unsafe {
+            zero_mem_region(start, end);
+        }
 
         for byte in &data {
             assert_eq!(*byte, 0);
