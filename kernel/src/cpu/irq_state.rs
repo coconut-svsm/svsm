@@ -36,7 +36,9 @@ pub fn raw_irqs_enable() {
 
     // Now that interrupts are enabled, process any #HV events that may be
     // pending.
-    this_cpu().process_hv_events_if_required();
+    if let Some(doorbell) = this_cpu().hv_doorbell() {
+        doorbell.process_if_required();
+    }
 }
 
 /// Query IRQ state on current CPU
@@ -99,32 +101,6 @@ impl IrqState {
         }
     }
 
-    /// Increase IRQ-disable nesting level by 1. The method will not disable
-    /// interrupts because it is assumed to be called when interrupts are
-    /// already disabled.
-    ///
-    /// The caller needs to make sure to match the number of `push_nesting`
-    /// calls with the number of `pop_nesting` calls.
-    ///
-    /// * `was_enabled` - indicates whether interrupts were enabled at the
-    ///   time of nesting.  This may not be the current state of interrupts
-    ///   because interrupts may have been disabled for architectural reasons
-    ///   prior to his function being called.
-    ///
-    /// # Returns
-    ///
-    /// The previous nesting level.
-    pub fn push_nesting(&self, was_enabled: bool) {
-        debug_assert!(irqs_disabled());
-        let val = self.count.fetch_add(1, Ordering::Relaxed);
-
-        assert!(val >= 0);
-
-        if val == 0 {
-            self.state.store(was_enabled, Ordering::Relaxed)
-        }
-    }
-
     /// Increase IRQ-disable nesting level by 1. The method will disable IRQs.
     ///
     /// The caller needs to make sure to match the number of `disable` calls
@@ -134,27 +110,13 @@ impl IrqState {
         let state = irqs_enabled();
 
         raw_irqs_disable();
+        let val = self.count.fetch_add(1, Ordering::Relaxed);
 
-        self.push_nesting(state);
-    }
+        assert!(val >= 0);
 
-    /// Decrease IRQ-disable nesting level by 1. The method will not restore
-    /// the original IRQ state when the nesting level reaches 0.
-    ///
-    /// The caller needs to make sure to match the number of `pop_nesting`
-    /// calls with the number of `push_nesting` calls.
-    ///
-    /// # Returns
-    ///
-    /// The new IRQ nesting level.
-    pub fn pop_nesting(&self) -> isize {
-        debug_assert!(irqs_disabled());
-
-        let val = self.count.fetch_sub(1, Ordering::Relaxed);
-
-        assert!(val > 0);
-
-        val - 1
+        if val == 0 {
+            self.state.store(state, Ordering::Relaxed)
+        }
     }
 
     /// Decrease IRQ-disable nesting level by 1. The method will restore the
@@ -164,7 +126,13 @@ impl IrqState {
     /// with the number of `enable` calls.
     #[inline(always)]
     pub fn enable(&self) {
-        if self.pop_nesting() == 0 {
+        debug_assert!(irqs_disabled());
+
+        let val = self.count.fetch_sub(1, Ordering::Relaxed);
+
+        assert!(val > 0);
+
+        if val == 1 {
             let state = self.state.load(Ordering::Relaxed);
             if state {
                 raw_irqs_enable();
