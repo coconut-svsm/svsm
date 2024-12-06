@@ -16,9 +16,9 @@ use core::ffi::CStr;
 use super::memory_helper::{ZERO_PAGE};
 
 // TP: Trusted Process
-const TP_STACK_START_VADDR: u64 = 0x80_0000_0000;
-const TP_MANIFEST_START_VADDR: u64 = 0x100_0000_0000;
-const TP_LIBOS_START_VADDR: u64 = 0x180_0000_0000;
+pub const TP_STACK_START_VADDR: u64 = 0x80_0000_0000;
+pub const TP_MANIFEST_START_VADDR: u64 = 0x100_0000_0000;
+pub const TP_LIBOS_START_VADDR: u64 = 0x180_0000_0000;
 
 // Gramine PAL protection flags (pal_prot_flags_t)
 bitflags! {

@@ -3,6 +3,7 @@ use igvm_defs::PAGE_SIZE_4K;
 use core::ffi::CStr;
 use core::str;
 use crate::{address::VirtAddr, cpu::{cpuid::{cpuid_table_raw, CpuidResult}, percpu::{this_cpu, this_cpu_unsafe}}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{GraminePalProtFlags, ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
+use crate::process_manager::process_paging::TP_LIBOS_START_VADDR;
 
 use crate::vaddr_as_slice; 
 use crate::types::PageSize;
@@ -66,38 +67,39 @@ pub fn invoke_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
         string_pos: string_pos,
     };
 
-
+    // Execution loop of the trustlet
+    // Currently the trustlet runs to completion
     loop {
         unsafe {(*(*this_cpu_unsafe()).ghcb).ap_create(vmsa_paddr,
                                                        u64::from(apic_id),
                                                        TRUSTLET_VMPL,
                                                        sev_features).unwrap()}
-        /*if !handle_process_request(vmsa, &mut string_buf, &mut string_pos){
-            break;
-        }*/
         if !rc.handle_process_request() {
             break;
         }
     }
-
-
     Ok(())
-
-
 }
 
 impl ProcessRuntime for PALContext  {
 
+    /// Handle request from the trustlet
+    /// 
+    /// CPUID instructions in a trustlet (VMPL1) results in control being passed to the SVSM
+    /// We use this mechanism to implement monitor-call from the trustlet
+    /// We use some part of (unused) cpuid leaf range for monitor calls
+    /// Otherwise treat it as normal cpuid request and return the result
+    /// 
+    /// Monitor call arguments are passed in the trustlet's registers
+    /// * rax: Monitor call code / cpuid leaf
+    /// * others: arguments to the monitor call (depends on the call)
     fn handle_process_request(&mut self) -> bool {
         let vmsa = &mut self.vmsa;
         let rax = vmsa.rax;
-        //vmsa.rax = 0;
-
         let rip = vmsa.rip;
-        // The Trustlet exits with cpuid (2 Bytes)
-        vmsa.rip += 2;
 
-        let mut return_value = 0u64;
+        // Advance the trustlet's rip for the next execution (cpuid instruction is 2 bytes)
+        vmsa.rip += 2;
 
         match rax {
             0..=23 | 0x80000000..=0x80000021 => {
@@ -144,11 +146,24 @@ impl ProcessRuntime for PALContext  {
        
     }
 
+    /// Handle CPUID instruction from the trustlet
+    /// 
+    /// Register arguments:
+    /// * rax: cpuid leaf
+    /// * rcx: subleaf (if applicable)
+    /// 
+    /// Return:
+    /// * rax: eax value of the cpuid result
+    /// * rbx: ebx value of the cpuid result
+    /// * rcx: ecx value of the cpuid result
+    /// * rdx: edx value of the cpuid result
     fn pal_svsm_cpuid(&mut self) -> bool {
         let eax =  self.vmsa.rax as u32;
         log::info!("eax value: {:#x}",eax);
         let eax_tmp = self.vmsa.rax;
         let ecx_tmp = self.vmsa.rcx;
+        // Some cpuid leafs have subleaf (ecx) and some don't
+        // for the ones that don't we set ecx to 0 (otherwise CPUID table lookup fails)
         let ecx = match eax {
             4 | 7 | 0xb | 0xd | 0xf|
             0x10 | 0x12 | 0x14 | 0x17 |
@@ -159,14 +174,7 @@ impl ProcessRuntime for PALContext  {
             _ => 0
         };
 
-        //let ecx = if eax == 0x0 || eax == 0x1 || eax == 0xd {
-            // set zero for cpuid leaf that does not have subleaf (ecx)
-            // TODO: check if this is correct & update checks if so
-          //  0
-        //} else {
-        //    self.vmsa.rcx as u32
-        //};
-
+        // NOTE: we must consult the cpuid table or make explict VMGEXIT, otherwise we'll get another #VC
         let res = match cpuid_table_raw(eax, ecx, 0, 0){
             Some(r) => r,
             None => CpuidResult{eax: 0,ebx: 0, ecx: 0, edx: 0}
@@ -185,6 +193,16 @@ impl ProcessRuntime for PALContext  {
         return true;
     }
 
+    /// Allocate virtual memory in the trustlet's page table
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFC)
+    /// * rbx: trustlet's virtual address to allocate
+    /// * rcx: size of memory to allocate
+    /// * rdx: flags (GraminePalProtFlags)
+    /// 
+    /// Retrun:
+    /// * rcx: 0 on success, -1 on failure
     fn pal_svsm_virt_alloc(&mut self) -> bool {
 
         // Getting the Page Table of the current Trustlet being executed
@@ -220,7 +238,18 @@ impl ProcessRuntime for PALContext  {
         true
     }
 
+    /// Handle a PAL error
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFF)
+    /// * rbx: error string address
+    /// * rcx: error number
+    /// 
+    /// Return:
+    /// * no return to the trustlet (exit the trustlet)
     fn pal_svsm_fail(&mut self) -> bool{
+        // PAL reports error, exit the trustlet
+
         let page_table = self.vmsa.cr3;
         let string = self.vmsa.rbx;
         let errno = self.vmsa.rcx;
@@ -237,12 +266,32 @@ impl ProcessRuntime for PALContext  {
         false
     }
 
+    /// Exit the trustlet
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFE)
+    /// * rbx: exit code
+    /// 
+    /// Return:
+    /// * no return to the trustlet (exit the trustlet)
     fn pal_svsm_exit(&mut self) -> bool{
+        // PAL exits, exit the trustlet
         let exit_code = self.vmsa.rbx;
         log::info!(" [Trustlet] Exit with Status Code: {}", exit_code);
         false
     }
 
+    /// Print debug message from the trustlet
+    /// 
+    /// This function expects that the trustlet calls this function with each character,
+    /// and the final character is 0
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFD)
+    /// * rbx: character to print
+    /// 
+    /// Return:
+    /// * no return value
     fn pal_svsm_debug_print(&mut self) -> bool {
         let c = self.vmsa.rbx;
         if self.string_pos < 255{
@@ -262,11 +311,26 @@ impl ProcessRuntime for PALContext  {
         true
     }
 
+    /// Map a file into the trustlet's memory space
+    /// 
+    /// FIXME: For now, this functions only supports mapping the libos file into the specified address.
+    /// (this works because that is the only callee of this function at the moment)
+    /// As the monitor loads the libos file into the predefined address (TP_LIBOS_START_VADDR) at the start,
+    /// this functions copy data from that region and create a new page table entry.
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFB)
+    /// * rbx: virtual address to map
+    /// * rcx: size of memory to map
+    /// * rdx: flags (GraminePalProtFlags)
+    /// * r8: file descriptor (unused)
+    /// * r9: offset
+    /// 
+    /// Return:
+    /// * rcx: 0 on success, -1 on failure
     fn pal_svsm_map(&mut self) -> bool {
         let addr = self.vmsa.rbx;
         let size = self.vmsa.rcx;
-        //let prot = self.vmsa.rdx >> 32;
-        //let flags = self.vmsa.rdx & 0xFFFFFFFF;
         let flags = self.vmsa.rdx;
         let fd = self.vmsa.r8;
         let offset = self.vmsa.r9;
@@ -278,22 +342,30 @@ impl ProcessRuntime for PALContext  {
         page_table_ref.set_external_table(page_table);
 
         if size % 4096 != 0 {
+            self.vmsa.rcx = u64::from_ne_bytes((-1i64).to_ne_bytes());
             return false;
         }
-        let size = size / 4096;
-
-        let copy = (flags & GraminePalProtFlags::WRITECOPY.bits()) != 0;
+        let num_pages = size / 4096;
 
         let vaddr = VirtAddr::from(addr);
-        let s_vaddr = VirtAddr::from(0x18000000000u64);
+        let s_vaddr = VirtAddr::from(TP_LIBOS_START_VADDR);
 
-        let flags = ProcessPageFlags::PRESENT | ProcessPageFlags::WRITABLE |
-        ProcessPageFlags::USER_ACCESSIBLE | ProcessPageFlags::ACCESSED;
+        let writable = (flags & GraminePalProtFlags::WRITE.bits()) != 0;
+        let executable = (flags & GraminePalProtFlags::EXEC.bits()) != 0;
+        let writecopy = (flags & GraminePalProtFlags::WRITECOPY.bits()) != 0;
+        let mut flags = ProcessPageFlags::PRESENT | ProcessPageFlags::USER_ACCESSIBLE | ProcessPageFlags::ACCESSED;
+        if writable || writecopy {
+            flags |= ProcessPageFlags::WRITABLE;
+        }
+        if !executable {
+            flags |= ProcessPageFlags::NO_EXECUTE;
+        }
 
-        for i in 0..size {
+        for i in 0..num_pages {
             let t = page_table_ref.virt_to_phys(s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize));
             //log::info!("{:#x}, {:#x}, {:#} {:#?}",s_vaddr,offset, s_vaddr + ((i * PAGE_SIZE_4K) as usize) + (offset as usize), t);
-            if copy {
+            if writecopy {
+                // FIXME: for now we do not support CoW, so copy the page at this point
                 let (_old_mapping, old_page_mapped) = paddr_as_slice!(t);
                 let new_page = allocate_page();
                 let (mapping, new_page_mapped) = paddr_as_slice!(new_page);
@@ -309,7 +381,6 @@ impl ProcessRuntime for PALContext  {
                 //           vaddr + ((i*PAGE_SIZE_4K) as usize),
                 //           new_page,
                 //);
-
 
             } else {
                 page_table_ref.map_4k_page(vaddr + (i * PAGE_SIZE_4K).try_into().unwrap(), t, flags);
@@ -329,12 +400,21 @@ impl ProcessRuntime for PALContext  {
 
         }
 
+        self.vmsa.rcx = u64::from_ne_bytes((0i64).to_ne_bytes());
         return true;
     }
 
+    /// Update the trusted process' page entry permissions
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFF9)
+    /// * rbx: virtual address
+    /// * rcx: size of memory to update
+    /// * rdx: flags (GraminePalProtFlags)
+    /// 
+    /// Return:
+    /// * rcx: 0 on success, -1 on failure
     fn pal_svsm_mprotect(&mut self) -> bool {
-        // Update the trusted process' page entry permissions
-
         let addr = self.vmsa.rbx;
         let size = self.vmsa.rcx;
         let flags = self.vmsa.rdx;
@@ -364,6 +444,14 @@ impl ProcessRuntime for PALContext  {
         return true;
     }
 
+    /// Set the TCB (Thread Control Block) for the trustlet
+    /// 
+    /// Register arguments:
+    /// * rax: monitor call code (0x4FFFFFFA)
+    /// * rbx: TCB address
+    /// 
+    /// Return:
+    /// * no return value
     fn pal_svsm_set_tcb(&mut self) -> bool {
       let tcb = self.vmsa.rbx;
       self.vmsa.gs.base = tcb; // Set the base of the GS segment
@@ -413,7 +501,4 @@ impl ProcessRuntime for PALContext  {
 
         return true;
     }
-
-    
-
 }
