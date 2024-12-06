@@ -1,0 +1,10 @@
+[package]
+name = "userlib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+syscall.workspace = true
+
+[lints]
+workspace = true

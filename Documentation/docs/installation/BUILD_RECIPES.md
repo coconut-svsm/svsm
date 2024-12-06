@@ -20,8 +20,62 @@ The currently recognized attributes are:
 * `kernel`: Configuration for compiling the COCONUT kernel and its boot stages.
 * `firmware`: Information on how to retrieve the guest firmware to put into the
    IGVM output file (optional).
+* `fs`: Specification of the file-system layout for running user-space modules.
 
-The objects these attributes point to are described in more detail below:
+The next section describes a common JSON object format for specifying how to
+build a single part of COCONUT-SVSM. The format is called COBI and is used for
+the `kernel` and `fs` parts of the build recipe.
+
+### COCONUT Build Item (COBI) Object Format
+
+Build recipe files contain a JSON object for each component to be built. All
+the objects have a common set of attributes recognized, which are described
+below. This object format is used for building the COCONUT kernel parts and the
+user-space modules.
+
+#### `type`: The Build Type
+
+This attribute currently has two supported values:
+
+* `cargo`: Build the component with cargo.
+* `make`: Run GNU make to build the component.
+
+The default is `cargo`. Some of the other attributes are specific to either
+build type.
+
+#### `output_file`: Expected Build Output File
+
+This is the expected output filename of the build run. It is only recognized
+for `make` builds and used as the make target.
+
+#### `manifest`: Build Manifest to use for Cargo.
+
+Path to the `Cargo.toml` file to pass as the build manifest when running cargo.
+Default is `None`.
+
+#### `features`: Cargo Features to use for Kernel Component
+
+This attribute points to a comma-separated list of cargo features to enable
+when building the specified component. Default is empty.
+
+#### `binary`: Whether to Build a Package or Binary
+
+This is a boolean value and defines the way cargo is invoked:
+
+* If `true`, the component is build with the `--bin` parameter to cargo.
+* If `false`, the component is build from the cargo workspace with the
+  `--package` parameter.
+
+#### `objcopy`: Output Target for Objcopy run
+
+Each binary built using cargo or make will be processed and copied to the
+`bin/` directory using `objcopy`. This attribute specifies the output target
+used for the processing. Default is `elf64-x86-64`.
+
+#### `path`: User-Space Module Location
+
+This attribute is only recognized for user-space modules. It points to a string
+specifying the relative path of the module in the COCONUT file-system image.
 
 ## `igvm`: Parameter for IGVM File Creation
 
@@ -96,48 +150,8 @@ build the individual parts of the COCONUT kernel. The recognized attributes are:
 * `stage2`: The stage2 loader of the COCONUT kernel
 * `svsm`: The COCONUT kernel itself.
 
-Each attribute points to another object describing the build parameters. For
-all three parts of the kernel recognize the same build parameters. They are
-described in the following sections.
-
-### `type`: The Build Type
-
-This attribute currently has two supported values:
-
-* `cargo`: Build the component with cargo.
-* `make`: Run GNU make to build the component.
-
-The default is `cargo`. Some of the other attributes are specific to either
-build type.
-
-### `output_file`: Expected Build Output File
-
-This is the expected output filename of the build run. It is only recognized
-for `make` builds and used as the make target.
-
-### `manifest`: Build Manifest to use for Cargo.
-
-Path to the `Cargo.toml` file to pass as the build manifest when running cargo.
-Default is `None`.
-
-### `features`: Cargo Features to use for Kernel Component
-
-This attribute points to a comma-separated list of cargo features to enable
-when building the specified component. Default is empty.
-
-### `binary`: Whether to Build a Package or Binary
-
-This is a boolean value and defines the way cargo is invoked:
-
-* If `true`, the component is built with the `--bin` parameter to cargo.
-* If `false`, the component is built from the cargo workspace with the
-  `--package` parameter.
-
-### `objcopy`: Output Target for Objcopy run
-
-Each binary built using cargo or make will be processed and copied to the
-`bin/` directory using `objcopy`. This attribute specifies the output target
-used for the processing. Default is `elf64-x86-64`.
+Each attribute points to a COBI object, describing the individual build
+parameters for each component.
 
 ## `firmware`: Retrieval Information for Guest Firmware Image
 
@@ -160,6 +174,23 @@ present, it takes precedence over `env`.
 This optional attribute points to a JSON array describing a command to execute
 before the firmware is retrieved either via `env` or `file`. The command can be
 used to build a firmware image and place it at the expected location.
+
+## `fs`: File-system Image Build Information
+
+The `fs` attribute is optional and used to describe the build process and
+layout of the file-system image to place into the IGVM file.
+
+There is one recognized attribute: `modules`. It points to a JSON object where
+each attribute names a module to build and include into the file-system image.
+
+The attribute name is by default treated as a cargo workspace package name and
+points to a JSON object in COBI format. The COBI object can override how the
+attribute name is treated during build, e.g. it can be treated as a binary
+to build with cargo.
+
+The script will build all user-space components and package them into a
+file-system image using the `packit` utility. The image file is then added to
+the IGVM file.
 
 ## Examples
 

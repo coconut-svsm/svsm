@@ -19,6 +19,10 @@ members = [
     # verification libraries for svsm
     "verify_proof",
     "verify_external",
+    # User-space support library
+    "user/lib",
+    # Init user-space module
+    "user/init",
 ]
 
 
@@ -32,6 +36,8 @@ elf = { path = "elf" }
 libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
+userlib = { path = "user/lib" }
+userinit = { path = "user/init" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -60,6 +66,12 @@ vstd = { git = "https://github.com/verus-lang/verus", rev ="943ba63", features =
 # Verification libs
 verify_proof = { path = "verify_proof", default-features = false  }
 verify_external = { path = "verify_external", default-features = false  }
+
+[profile.release]
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
