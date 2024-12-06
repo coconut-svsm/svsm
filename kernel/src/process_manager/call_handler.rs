@@ -4,8 +4,9 @@ use crate::attestation;
 use crate::process_manager::process::TrustedProcessType;
 
 const MONITOR_INIT: u32 = 0;
-const ATTEST_MONITOR: u32 = 1;
-//const LOAD_POLICY: u32 = 2;
+// const MONITOR: u32 = 1;
+const DIFF_ATTEST: u32 = 2;
+//const LOAD_POLICY: u32 = 3;
 const CREATE_ZYGOTE: u32 = 4;
 const DELETE_ZYGOTE: u32 = 5;
 const CREATE_TRUSTLET: u32 = 6;
@@ -14,8 +15,8 @@ const INVOKE_TRUSTLET: u32 = 8;
 
 const GET_PUBLIC_KEY: u32 = 30;
 const SEND_POLICY: u32 = 31;
-pub fn attest_monitor(params: &mut RequestParams) -> Result<(), SvsmReqError>{
-    attestation::monitor::attest_monitor(params)
+pub fn diff_attestation(params: &mut RequestParams) -> Result<(), SvsmReqError>{
+    attestation::monitor::diff_attestation(params)
 }
 
 fn monitor_init(_params: &mut RequestParams) -> Result<(), SvsmReqError>{
@@ -60,7 +61,7 @@ pub fn monitor_call_handler(request: u32, params: &mut RequestParams) -> Result<
     log::info!("request: {}",request);
     match request {
         MONITOR_INIT => monitor_init(params),
-        ATTEST_MONITOR => attest_monitor(params),
+        DIFF_ATTEST => diff_attestation(params),
         CREATE_ZYGOTE => create_zygote(params),
         DELETE_ZYGOTE => delete_zygote(params),
         CREATE_TRUSTLET => create_trustlet(params),
