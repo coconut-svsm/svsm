@@ -173,9 +173,14 @@ impl TrustedProcess {
 
     }
 
-    pub fn trustlet(parent: ProcessID, _data: u64, _size: u64, _pgt: u64) -> Self{
+    pub fn trustlet(parent: ProcessID, data: u64, size: u64, pgt: u64) -> Self{
         // Inherit the data from the Zygote
         let trustlet = TrustedProcess::dublicate(parent);
+        if data != 0 {
+            let (function_code, function_code_range) = ProcessPageTableRef::copy_data_from_guest(data, size, pgt);
+            trustlet.base.page_table_ref.add_function(function_code, size);
+            function_code_range.delete();
+        }
         trustlet
     }
 
@@ -419,6 +424,11 @@ impl ProcessContext {
         self.sev_features = vmsa.sev_features;
         self.base = base;
 
+    }
+
+    pub fn add_function(&mut self, function: VirtAddr, size: u64) {
+        let size = size + PAGE_SIZE_4K - (size % PAGE_SIZE_4K);
+        self.base.page_table_ref.add_function(function, size);
     }
 
     pub fn test_run(&self) {

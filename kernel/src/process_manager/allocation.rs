@@ -84,7 +84,7 @@ impl AllocationRange {
     }
 
     pub fn delete(&self) {
-        todo!("Not implemented");
+
     }
 
 }

@@ -286,6 +286,12 @@ impl ProcessPageTableRef {
         self.add_region_vaddr(VirtAddr::from(0x18000000000u64), data);
     }
 
+    pub fn add_function(&self, data:VirtAddr, size: u64) {
+        let data: *mut u8 = data.as_mut_ptr::<u8>();
+        let data = unsafe { slice::from_raw_parts(data, size as usize) };
+        self.add_region_vaddr(VirtAddr::from(0xFE8000000000u64), data);
+    }
+
     pub fn add_pages(&self, start: VirtAddr, size: u64, flags: ProcessPageFlags) {
         for i in 0..(size as usize) {
             let new_page = allocate_page();
@@ -394,7 +400,7 @@ impl ProcessPageTableRef {
     pub fn virt_to_phys(&self, vaddr: VirtAddr) -> PhysAddr {
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
         let mut current_mapping = self.page_walk(&pgd_table, self.process_page_table, vaddr);
-        log::info!("Current Mapping {:?}", current_mapping);
+        //log::info!("Current Mapping {:?}", current_mapping);
         match current_mapping {
             ProcessTableLevelMapping::PTE(addr, index) => {
                 let (_mapping, table) = paddr_as_u64_slice!(addr);
