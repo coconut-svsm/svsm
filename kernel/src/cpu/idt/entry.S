@@ -62,7 +62,7 @@ asm_entry_\name:
 	pushq $0
 	.endif
 	push_regs
-	testl 	${IF}, 0xC0(%rsp)
+	testl 	${IF}, 0xA0(%rsp)
 	jz	L\@
 	sti
 L\@:
