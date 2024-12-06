@@ -11,7 +11,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 /// Interrupt flag in RFLAGS register
-const EFLAGS_IF: u64 = 1 << 9;
+pub const EFLAGS_IF: u64 = 1 << 9;
 
 /// Unconditionally disable IRQs
 ///
