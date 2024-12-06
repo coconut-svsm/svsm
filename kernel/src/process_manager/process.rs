@@ -2,9 +2,11 @@ extern crate alloc;
 
 use core::cell::UnsafeCell;
 use alloc::vec::Vec;
+use igvm_defs::PAGE_SIZE_4K;
 use crate::address::PhysAddr;
 use crate::cpu::percpu::this_cpu_shared;
 use crate::cpu::percpu::this_cpu_unsafe;
+use crate::mm::PAGE_SIZE;
 use crate::mm::SVSM_PERCPU_VMSA_BASE;
 use crate::process_manager::process_memory::allocate_page;
 use crate::process_manager::allocation::AllocationRange;
@@ -24,6 +26,8 @@ use crate::vaddr_as_u64_slice;
 
 use cpuarch::vmsa::VMSA;
 use core::mem::replace;
+
+use super::memory_channels::MemoryChannel;
 
 trait FromVAddr {
     fn from_virt_addr(v: VirtAddr) -> &'static mut VMSA;
@@ -103,7 +107,7 @@ impl ProcessData {
     }
 }
 
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone,Copy,Debug, Default)]
 pub struct ProcessID(pub usize);
 
 #[derive(Clone,Copy,Debug)]
@@ -113,9 +117,7 @@ pub struct TrustedProcess {
     pub base: ProcessBaseContext,
     #[allow(dead_code)]
     pub context: ProcessContext,
-    /*input: VirtAddr,
-    output: VirtAddr,
-    pub hash: [u8; 32]i,*/
+    //pub channel: MemoryChannel,
 }
 
 impl TrustedProcess {
@@ -346,6 +348,7 @@ impl ProcessBaseContext {
 pub struct ProcessContext {
     pub base: ProcessBaseContext,
     pub vmsa: PhysAddr,
+    pub channel: MemoryChannel,
     pub sev_features: u64,
 }
 
@@ -354,6 +357,7 @@ impl Default for ProcessContext {
         return ProcessContext {
             base: ProcessBaseContext::default(),
             vmsa: PhysAddr::null(),
+            channel: MemoryChannel::default(),
             sev_features: 0,
         }
     }
@@ -401,6 +405,15 @@ impl ProcessContext {
             log::info!("SEV features: {}", vmsa.sev_features == vmsa.sev_features);
             panic!("Failed to create new VMSA");
         }
+
+
+        //Memory Channel setup -- No chain setup here
+        let page_table_addr = vmsa.cr3;
+        let mut pptr = ProcessPageTableRef::default();
+        pptr.set_external_table(page_table_addr);
+        self.channel.allocate_input(&mut pptr, PAGE_SIZE);
+        self.channel.allocate_output(&mut pptr, PAGE_SIZE);
+
 
         self.vmsa = new_vmsa_page;
         self.sev_features = vmsa.sev_features;

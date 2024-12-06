@@ -10,6 +10,7 @@ pub mod process_memory;
 pub mod process_paging;
 pub mod memory_helper;
 pub mod allocation;
+pub mod memory_channels;
 
 static MONITOR_INIT_STATE: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
 const MONITOR_INIT_STATE_TRUE: bool = true;
