@@ -1,0 +1,12 @@
+[package]
+name = "userinit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+userlib.workspace = true
+syscall = { path = "../../syscall" }
+buddy_system_allocator = { workspace = true }
+
+[lints]
+workspace = true

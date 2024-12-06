@@ -19,6 +19,12 @@ members = [
     # verification libraries for svsm
     "verify_proof",
     "verify_external",
+    # User-space support library
+    "user/lib",
+    # Init user-space module
+    "user/init",
+    # device model module
+    "user/dm",
 ]
 
 
@@ -32,6 +38,9 @@ elf = { path = "elf" }
 libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
+userlib = { path = "user/lib" }
+userinit = { path = "user/init" }
+dm = { path = "user/dm" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -51,6 +60,7 @@ sha2 = "0.10.8"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["alloc", "derive"] }
+buddy_system_allocator = "0.10.0"
 
 # Verus repos
 builtin = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
@@ -60,6 +70,12 @@ vstd = { git = "https://github.com/verus-lang/verus", rev ="943ba63", features =
 # Verification libs
 verify_proof = { path = "verify_proof", default-features = false  }
 verify_external = { path = "verify_external", default-features = false  }
+
+[profile.release]
+panic = 'abort'
+
+[profile.dev]
+panic = 'abort'
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }

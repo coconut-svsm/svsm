@@ -27,5 +27,15 @@
             "output_file": "bin/stage1-trampoline",
             "objcopy": "binary"
         }
+    },
+    "fs": {
+        "modules": {
+            "userinit": {
+                "path": "/init"
+            },
+            "dm": {
+                "path": "/dm"
+            }
+        }
     }
 }
