@@ -20,6 +20,19 @@ const TP_STACK_START_VADDR: u64 = 0x80_0000_0000;
 const TP_MANIFEST_START_VADDR: u64 = 0x100_0000_0000;
 const TP_LIBOS_START_VADDR: u64 = 0x180_0000_0000;
 
+// Gramine PAL protection flags (pal_prot_flags_t)
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct GraminePalProtFlags: u64 {
+        const READ = 0x1;
+        const WRITE = 0x2;
+        const EXEC = 0x4;
+        const WRITECOPY = 0x8;
+        const MASK = 0xF;
+    }
+}
+
 // Flags for the Page Table
 // In general all Trusted Processes need to
 // have user accessable set
@@ -37,8 +50,7 @@ bitflags! {
         const HUGE_PAGE =       1 << 7;
         const GLOBAL =          1 << 8;
 
-        //const NO_EXECUTE =      1 << 63;
-        const NO_EXECUTE =      0;
+        const NO_EXECUTE =      1 << 63;
     }
 }
 
@@ -406,7 +418,6 @@ impl ProcessPageTableRef {
     pub fn virt_to_phys(&self, vaddr: VirtAddr) -> PhysAddr {
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
         let mut current_mapping = self.page_walk(&pgd_table, self.process_page_table, vaddr);
-        //log::info!("Current Mapping {:?}", current_mapping);
         match current_mapping {
             ProcessTableLevelMapping::PTE(addr, index) => {
                 let (_mapping, table) = paddr_as_u64_slice!(addr);
@@ -415,6 +426,61 @@ impl ProcessPageTableRef {
             _ => return PhysAddr::null()
         }
 
+    }
+
+    pub fn change_attr(&self, vaddr: VirtAddr, readable: bool, writable: bool,
+                       executable: bool, writecopy: bool) {
+        // Change page table attributes
+        // NOTE: this function assumes that we operate on the trusted process's page table
+        // specifically, this function is called to handle Gramine's PAL mprotect request
+
+        let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
+        let current_mapping = self.page_walk(&pgd_table, self.process_page_table, vaddr);
+
+        match current_mapping {
+            ProcessTableLevelMapping::PTE(addr, index) => {
+                let (_mapping, table) = paddr_as_u64_slice!(addr);
+                if readable {
+                    // XXX: for now all pages are readable, do nothing
+                }
+                if writable || writecopy {
+                    // XXX: see below the reason for setting writable if writecopy here
+                    table[index] |= ProcessPageFlags::WRITABLE.bits();
+                } else {
+                    table[index] &= !ProcessPageFlags::WRITABLE.bits();
+                }
+                if executable {
+                    table[index] &= !ProcessPageFlags::NO_EXECUTE.bits();
+                } else {
+                    table[index] |= ProcessPageFlags::NO_EXECUTE.bits();
+                }
+                if writecopy {
+                    // FIXME: currently we skip this as we only support single process for now & don't have #PF handler
+                    // TODO: implement proper CoW
+
+                    // the following copies the page immidiately at this handler
+                    // confiremd to work, but for single process program it's not necessary (I think)
+                    // so skip this to prefer performance & smaller memory footprint
+                    /*
+                    let phys_mask = 0xFFFF_FFFF_F000;
+                    let entry_attr = table[index] & !phys_mask;
+                    let entry_phys = PhysAddr::from(table[index] & phys_mask);
+                    let new_page = allocate_page();
+                    let (_src_mapping, src_data) = paddr_as_slice!(entry_phys, u64);
+                    let (new_page_mapping, new_page_mapped) = paddr_as_slice!(new_page);
+                    rmp_adjust(new_page_mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX , PageSize::Regular).unwrap();
+                    for i in 0..512 {
+                        new_page_mapped[i] = src_data[i];
+                    }
+                    let new_entry = new_page.bits() as u64 | entry_attr | ProcessPageFlags::WRITABLE.bits();
+                    table[index] = new_entry;
+                    */
+                }
+            }
+            _ => {
+                // page non-present, skip (XXX: should we handle this?)
+            }
+        }
     }
 
 

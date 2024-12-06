@@ -2,7 +2,7 @@ use cpuarch::vmsa::VMSA;
 use igvm_defs::PAGE_SIZE_4K;
 use core::ffi::CStr;
 use core::str;
-use crate::{address::VirtAddr, cpu::{cpuid::{cpuid_table_raw, CpuidResult}, percpu::{this_cpu, this_cpu_unsafe}}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
+use crate::{address::VirtAddr, cpu::{cpuid::{cpuid_table_raw, CpuidResult}, percpu::{this_cpu, this_cpu_unsafe}}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::{process::{ProcessID, TrustedProcess, PROCESS_STORE}, process_memory::allocate_page, process_paging::{GraminePalProtFlags, ProcessPageFlags, ProcessPageTableRef}}, protocols::{errors::SvsmReqError, RequestParams}};
 
 use crate::vaddr_as_slice; 
 use crate::types::PageSize;
@@ -19,6 +19,7 @@ pub trait ProcessRuntime {
     fn pal_svsm_fail(&mut self) -> bool;
     fn pal_svsm_exit(&mut self) -> bool;
     fn pal_svsm_map(&mut self) -> bool;
+    fn pal_svsm_mprotect(&mut self) -> bool;
     fn pal_svsm_print_info(&mut self) -> bool;
     fn pal_svsm_set_tcb(&mut self) -> bool;
     fn pal_svsm_cpuid(&mut self) -> bool;
@@ -119,6 +120,9 @@ impl ProcessRuntime for PALContext  {
             }
             0x4FFFFFFA => {
                 return self.pal_svsm_set_tcb();
+            }
+            0x4FFFFFF9 => {
+                return self.pal_svsm_mprotect();
             }
             99 => {
                 let c = vmsa.rbx;
@@ -278,7 +282,7 @@ impl ProcessRuntime for PALContext  {
         }
         let size = size / 4096;
 
-        let copy = if flags & 0x8 != 0 { true } else { false };
+        let copy = (flags & GraminePalProtFlags::WRITECOPY.bits()) != 0;
 
         let vaddr = VirtAddr::from(addr);
         let s_vaddr = VirtAddr::from(0x18000000000u64);
@@ -323,6 +327,38 @@ impl ProcessRuntime for PALContext  {
                 }
             }
 
+        }
+
+        return true;
+    }
+
+    fn pal_svsm_mprotect(&mut self) -> bool {
+        // Update the trusted process' page entry permissions
+
+        let addr = self.vmsa.rbx;
+        let size = self.vmsa.rcx;
+        let flags = self.vmsa.rdx;
+
+        // log::info!("svsm_mprotect: addr={:#}, size={}, flags={}", addr, size, flags);
+
+        let process_page_table = self.vmsa.cr3;
+        let mut process_page_table_ref = ProcessPageTableRef::default();
+        process_page_table_ref.set_external_table(process_page_table);
+
+        let offset = addr & 0xFFF;
+        let page_num = (offset + size + 4095) / PAGE_SIZE_4K;
+        let aligned_addr = addr & !0xFFF;
+        let vaddr = VirtAddr::from(aligned_addr);
+
+        let readbable = flags & GraminePalProtFlags::READ.bits() != 0;
+        let writable = flags & GraminePalProtFlags::WRITE.bits() != 0;
+        let executable = flags & GraminePalProtFlags::EXEC.bits() != 0;
+        let writecopy = flags & GraminePalProtFlags::WRITECOPY.bits() != 0;
+
+        // FIXME: this walks the page table every time. we can optimize this by updating entries while walking
+        for i in 0..page_num {
+            let target = vaddr + (i* PAGE_SIZE_4K).try_into().unwrap();
+            process_page_table_ref.change_attr(target, readbable, writable, executable, writecopy);
         }
 
         return true;
