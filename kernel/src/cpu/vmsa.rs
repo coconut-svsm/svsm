@@ -10,7 +10,7 @@ use crate::sev::status::{sev_flags, SEVStatusFlags};
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
 use cpuarch::vmsa::{VMSASegment, VMSA};
 
-use super::gdt;
+use super::gdt::GLOBAL_GDT;
 use super::idt::common::idt;
 
 pub fn svsm_code_segment() -> hyperv::HvSegmentRegister {
@@ -32,7 +32,7 @@ pub fn svsm_data_segment() -> hyperv::HvSegmentRegister {
 }
 
 pub fn svsm_gdt_segment() -> hyperv::HvTableRegister {
-    let (base, limit) = gdt().base_limit();
+    let (base, limit) = GLOBAL_GDT.base_limit();
     hyperv::HvTableRegister {
         limit,
         base,
