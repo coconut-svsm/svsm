@@ -34,7 +34,7 @@ intrusive-collections.workspace = true
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
-zerocopy.workspace = true
+zerocopy = { workspace = true, features = ["alloc", "derive"] }
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }

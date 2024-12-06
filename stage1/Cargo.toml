@@ -1,0 +1,17 @@
+[package]
+name = "stage1"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82.0"
+
+[[bin]]
+name = "stage1"
+path = "src/stage1.rs"
+test = false
+
+[features]
+default = []
+load-stage2 = []
+
+[dependencies]
+bootlib.workspace = true
