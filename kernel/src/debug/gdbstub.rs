@@ -191,7 +191,9 @@ pub mod svsm_gdbstub {
                 let cr3 = read_cr3();
                 let task = tl.get_task(id);
                 if let Some(task) = task {
-                    task.page_table.lock().load();
+                    unsafe {
+                        task.page_table.lock().load();
+                    }
                     cr3.bits()
                 } else {
                     0
