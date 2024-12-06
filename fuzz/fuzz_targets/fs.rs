@@ -188,7 +188,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
 
                 // Reset the buffer and the file position
                 buf.fill(POISON_BYTE);
-                file.fd.seek(start_pos);
+                file.fd.seek_abs(start_pos);
 
                 // Read back the bytes and sanity check them
                 assert!(num <= len);
@@ -203,7 +203,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
             }
             FsAction::Seek(idx, pos) => {
                 if let Some(file) = get_item(&files, *idx) {
-                    file.fd.seek(*pos);
+                    file.fd.seek_abs(*pos);
                 }
             }
             FsAction::Truncate(idx, off) => {

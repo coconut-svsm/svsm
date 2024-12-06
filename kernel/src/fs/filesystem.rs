@@ -96,7 +96,7 @@ impl RawFileHandle {
         self.file.truncate(offset)
     }
 
-    fn seek(&mut self, pos: usize) {
+    fn seek_abs(&mut self, pos: usize) {
         self.current = min(pos, self.file.size());
     }
 
@@ -212,13 +212,13 @@ impl FileHandle {
         self.handle.lock().truncate(offset)
     }
 
-    /// Used to change the current file offset.
+    /// Change the current file offset to an absolute position.
     ///
     /// # Arguments
     ///
     /// - `pos`: intended new file offset value.
-    pub fn seek(&self, pos: usize) {
-        self.handle.lock().seek(pos);
+    pub fn seek_abs(&self, pos: usize) {
+        self.handle.lock().seek_abs(pos);
     }
 
     /// Used to get the size of the file.
@@ -687,14 +687,14 @@ pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
 }
 
-/// Used to set the file offset
+/// Set the file offset to an absolute position.
 ///
 /// # Arguements
 ///
 /// - `fh`: Filehandle for the seek operation.
 /// - `pos`: new file offset value to be set.
-pub fn seek(fh: &FileHandle, pos: usize) {
-    fh.seek(pos)
+pub fn seek_abs(fh: &FileHandle, pos: usize) {
+    fh.seek_abs(pos)
 }
 
 #[cfg(test)]
@@ -845,7 +845,7 @@ mod tests {
 
         assert_eq!(fh.size(), 512);
 
-        fh.seek(256);
+        fh.seek_abs(256);
         let buf2: [u8; 512] = [0xcc; 512];
         let result = write(&fh, &buf2).unwrap();
         assert_eq!(result, 512);
@@ -853,7 +853,7 @@ mod tests {
         assert_eq!(fh.size(), 768);
 
         let mut buf3: [u8; 1024] = [0; 1024];
-        fh.seek(0);
+        fh.seek_abs(0);
         let result = read(&fh, &mut buf3).unwrap();
         assert_eq!(result, 768);
 
