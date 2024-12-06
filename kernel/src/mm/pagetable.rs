@@ -496,11 +496,12 @@ pub struct PageTable {
 
 impl PageTable {
     /// Load the current page table into the CR3 register.
-    pub fn load(&self) {
-        // FIXME: mark this function unsafe and add safety comments in the callers
-        // see https://github.com/coconut-svsm/svsm/pull/537#discussion_r1871355405
-        // The caller must ensure to take other actions to make sure a memory safe
-        // execution state is warranted (e.g. changing the stack and register state)
+    ///
+    /// # Safety
+    /// The caller must ensure to take other actions to make sure a memory safe
+    /// execution state is warranted (e.g. changing the stack and register state)
+    pub unsafe fn load(&self) {
+        // SAFETY: demanded to the caller
         unsafe {
             write_cr3(self.cr3_value());
         }
