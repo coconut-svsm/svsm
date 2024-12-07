@@ -15,16 +15,22 @@ const INVOKE_TRUSTLET: u32 = 8;
 
 const GET_PUBLIC_KEY: u32 = 30;
 const SEND_POLICY: u32 = 31;
+
 pub fn diff_attestation(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     attestation::monitor::diff_attestation(params)
 }
 
-fn monitor_init(_params: &mut RequestParams) -> Result<(), SvsmReqError>{
+fn monitor_init(params: &mut RequestParams) -> Result<(), SvsmReqError>{
 
     log::info!("Initilization Monitor");
+
+    /* Request a monitor measurement upon initialization */
+    params.rdx = attestation::monitor::MONITOR_ATTESTATION;
+    params.rcx = 0;
+    let _ = attestation::monitor::diff_attestation(params);
     //add_monitor_memory();
     //super::process::PROCESS_STORE.init(10);
-//    crate::sp_pagetable::set_ecryption_mask_address_size();
+    //crate::sp_pagetable::set_ecryption_mask_address_size();
     log::info!("Initilization Done");
     Ok(())
 }

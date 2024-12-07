@@ -44,7 +44,7 @@ const HASH_SIZE: usize = 64;
 const KEY_SIZE: usize = 32;
 const NONCE_SIZE: usize = 24;
 
-const MONITOR_ATTESTATION: u64 = 0;
+pub const MONITOR_ATTESTATION: u64 = 0;
 const ZYGOTE_ATTESTATION: u64 = 1;
 const TRUSTLET_ATTESTATION: u64 = 2;
 const FUNCTION_ATTESTATION: u64 = 3;
@@ -140,7 +140,7 @@ fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
         let report_size = snp_response.get_report_size() as usize;
         let report = snp_response.get_report();
-        log::info!("actual report size { }", snp_response.get_report_size());
+        log::debug!("actual report size { }", snp_response.get_report_size());
 
         let report_bytes = unsafe {
           core::slice::from_raw_parts(
@@ -151,8 +151,11 @@ fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 
         // Store the report and its size
         store_snp_report(report_bytes, report_size);
-        // Return the report
-        copy_back_report(params.rcx, report_bytes, report_size);
+
+        // Return the report (if requested)
+        if params.rdx != 0 {
+          copy_back_report(params.rcx, report_bytes, report_size);
+        }
     }
     Ok(())
 }
