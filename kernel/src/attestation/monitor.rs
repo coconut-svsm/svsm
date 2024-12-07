@@ -222,7 +222,7 @@ fn trustlet_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
 
     // Now new_report holds the existing report data + measurements
     let new_report_size = new_report.len();
-    log::info!{"zygote report size: { } original size: { }", new_report_size, REPORT_RESPONSE_SIZE};
+
     // Perform the copy_back_report with the new cumulative report
     copy_back_report(params.rcx, &new_report, new_report_size);
     return Ok(());
@@ -281,7 +281,7 @@ fn function_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
 
     // Now new_report holds the existing report data + measurements
     let new_report_size = new_report.len();
-    log::info!{"function report size: { }", new_report_size};
+
     // Perform the copy_back_report with the new cumulative report
     copy_back_report(params.rcx, &new_report, new_report_size);
     return Ok(());
