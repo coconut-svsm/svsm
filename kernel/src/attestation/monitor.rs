@@ -1,10 +1,9 @@
 use crate::{address::PhysAddr, greq::services::{get_regular_report, REPORT_RESPONSE_SIZE} };
-use crate::greq::pld_report::SnpReportResponse;
+use crate::greq::pld_report::{SnpReportResponse, AttestationReport};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::mm::PerCPUPageMappingGuard;
 use core::slice;
-use core::ptr::addr_of;
 extern crate alloc;
 use alloc::vec::Vec;
 use crate::vaddr_as_u64_slice;
@@ -20,16 +19,16 @@ use crate::process_manager::process_paging::ProcessPageTableRef;
 use crate::mm::PAGE_SIZE;
 
 struct StoredSNPReport {
-  data: [u8; REPORT_RESPONSE_SIZE],
+  data: Vec<u8>, // Dynamically sized to hold only the actual report
   size: usize,
 }
 
 static mut SNP_REPORT_STORE: Option<StoredSNPReport> = None;
 
-fn store_snp_report(report_data: [u8; REPORT_RESPONSE_SIZE], report_size: usize) {
+fn store_snp_report(report_data: &[u8], report_size: usize) {
   unsafe {
     SNP_REPORT_STORE = Some(StoredSNPReport {
-          data: report_data,
+          data: report_data.to_vec(),
           size: report_size,
       });
   }
@@ -49,15 +48,6 @@ const MONITOR_ATTESTATION: u64 = 0;
 const ZYGOTE_ATTESTATION: u64 = 1;
 const TRUSTLET_ATTESTATION: u64 = 2;
 const FUNCTION_ATTESTATION: u64 = 3;
-
-#[repr(C, packed)]
-struct FunctionData {
-    trustlet_id: u64,
-    fn_input_size: u64,
-    fn_input_addr: usize,
-    fn_output_size: u64,
-    fn_output_addr: usize,
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct ProcessMeasurements {
@@ -125,21 +115,8 @@ fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError> {
         log::debug!("Monitor retrieves the SNP report");
         let mut rep: [u8; REPORT_RESPONSE_SIZE] = [0; REPORT_RESPONSE_SIZE];
 
-        // Calculate they key hash
-        let mut pub_key: [u8; 32] = unsafe { (*get_keys()).public_key };
-        let mut hash: [u8; 64] = [0; 64];
-        let _n: i32 = unsafe {
-            my_SHA512(pub_key.as_mut_ptr(), pub_key.len().try_into().unwrap(), hash.as_mut_ptr())
-                .try_into()
-                .unwrap()
-        };
-
-        // Include the key hash in report
-        for (i, byte) in hash.iter().enumerate() {
-            rep[i] = *byte;
-        }
-
-        let rep_size = match get_regular_report(&mut rep) {
+        /* Get a regular report of type struct SnpReportResponse */
+        let _rep_struct_size = match get_regular_report(&mut rep) {
             Ok(e) => e,
             Err(e) => {
                 log::info!("Error from get report: {:?}", e);
@@ -147,10 +124,35 @@ fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             }
         };
 
+        // Cast the raw bytes into an SnpReportResponse
+        let snp_response: &SnpReportResponse = unsafe {
+          &*(rep.as_ptr() as *const SnpReportResponse)
+        };
+
+        // Check the response for validation
+        match snp_response.validate() {
+          Ok(e) => e,
+          Err(e) => {
+              log::info!("Invalid SNP report: {:?}", e);
+              panic!();
+          }
+        };
+
+        let report_size = snp_response.get_report_size() as usize;
+        let report = snp_response.get_report();
+        log::info!("actual report size { }", snp_response.get_report_size());
+
+        let report_bytes = unsafe {
+          core::slice::from_raw_parts(
+              (report as *const AttestationReport) as *const u8,
+              report_size,
+          )
+        };
+
         // Store the report and its size
-        store_snp_report(rep, rep_size);
+        store_snp_report(report_bytes, report_size);
         // Return the report
-        copy_back_report(params.rcx, &rep, rep_size);
+        copy_back_report(params.rcx, report_bytes, report_size);
     }
     Ok(())
 }
@@ -167,7 +169,7 @@ fn zygote_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     // Construct the new report
     let mut new_report: Vec<u8> = Vec::new();
 
-    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+    if let Some((existing_report, _existing_report_size)) = get_snp_report() {
         // Copy the existing report data into the new report
         new_report.extend_from_slice(existing_report);
     }
@@ -201,7 +203,7 @@ fn trustlet_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     // Construct the new report
     let mut new_report: Vec<u8> = Vec::new();
 
-    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+    if let Some((existing_report, _existing_report_size)) = get_snp_report() {
         // Copy the existing report data into the new report
         new_report.extend_from_slice(existing_report);
     }
@@ -258,7 +260,7 @@ fn function_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     // Construct the new report
     let mut new_report: Vec<u8> = Vec::new();
 
-    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+    if let Some((existing_report, _existing_report_size)) = get_snp_report() {
       // Copy the existing report data into the new report
       new_report.extend_from_slice(existing_report);
     }

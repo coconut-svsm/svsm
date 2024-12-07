@@ -111,6 +111,14 @@ impl SnpReportResponse {
 
         Ok(())
     }
+
+    pub fn get_report(&self) -> &AttestationReport {
+          &self.report
+    }
+
+    pub fn get_report_size(&self) -> u32 {
+          self.report_size
+    }
 }
 
 /// The `TCB_VERSION` contains the security version numbers of each
