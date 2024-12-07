@@ -4,6 +4,9 @@ use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 use crate::mm::PerCPUPageMappingGuard;
 use core::slice;
+use core::ptr::addr_of;
+extern crate alloc;
+use alloc::vec::Vec;
 use crate::vaddr_as_u64_slice;
 
 use crate::my_crypto_wrapper::my_SHA512;
@@ -15,6 +18,28 @@ use crate::process_manager::PROCESS_STORE;
 use crate::process_manager::process::ProcessID;
 use crate::process_manager::process_paging::ProcessPageTableRef;
 use crate::mm::PAGE_SIZE;
+
+struct StoredSNPReport {
+  data: [u8; REPORT_RESPONSE_SIZE],
+  size: usize,
+}
+
+static mut SNP_REPORT_STORE: Option<StoredSNPReport> = None;
+
+fn store_snp_report(report_data: [u8; REPORT_RESPONSE_SIZE], report_size: usize) {
+  unsafe {
+    SNP_REPORT_STORE = Some(StoredSNPReport {
+          data: report_data,
+          size: report_size,
+      });
+  }
+}
+
+fn get_snp_report() -> Option<(&'static [u8], usize)> {
+  unsafe {
+      SNP_REPORT_STORE.as_ref().map(|report| (&report.data[..], report.size))
+  }
+}
 
 const HASH_SIZE: usize = 64;
 const KEY_SIZE: usize = 32;
@@ -74,43 +99,60 @@ pub fn measure(start_address: u64, size: u64) -> [u8; HASH_SIZE] {
     hash
 }
 
-#[allow(non_snake_case)]
-fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
-    return Ok(());
-    // Original SNP report buffer
-    let mut rep: [u8; REPORT_RESPONSE_SIZE] = [0; REPORT_RESPONSE_SIZE];
+fn copy_back_report(report_buffer: u64, report_data: &[u8], report_size: usize) {
+  // Ensure the size is within limits to avoid out-of-bounds access
+  assert!(report_size <= PAGE_SIZE, "Report size exceeds the allowed page size.");
 
-    // TODO: Change VMPL level before writing hash s.t. guest can't tamper with it
-    let mut pub_key: [u8; 32] = unsafe{(*get_keys()).public_key};
-    let mut hash: [u8; 64] = [0; 64];
-    let _n: i32 = unsafe{my_SHA512(pub_key.as_mut_ptr(), pub_key.len().try_into().unwrap(), hash.as_mut_ptr()).try_into().unwrap()};
-
-    // Include hash in report
-    let mut i = 0;
-    while i < HASH_SIZE {
-        rep[i] = hash[i];
-        i += 1;
-    }
-
-    let rep_size = match get_regular_report(&mut rep) {
-        Ok(e) => e,
-        Err(e) => {log::info!("Error from get report: {:?}", e); panic!(); }
+  let report_address = PhysAddr::from(report_buffer);
+  let mapped_report_page = PerCPUPageMappingGuard::create_4k(report_address).unwrap();
+  let report = unsafe {
+        mapped_report_page.virt_addr()
+            .as_mut_ptr::<[u8; PAGE_SIZE]>()
+            .as_mut()
+            .unwrap()
     };
+  report[0..report_size].copy_from_slice(&report_data[0..report_size]);
+}
 
-    if params.rdx == 0 {
-        /* Here we only query for the size of the report */
-        params.rdx = rep_size.try_into().unwrap();
-        return Ok(());
+#[allow(non_snake_case)]
+fn monitor_report(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    if let Some((stored_report, stored_report_size)) = get_snp_report() {
+        // If the report exists, just return it
+        log::debug!("Monitor has cached the SNP report");
+        copy_back_report(params.rcx, stored_report, stored_report_size);
+    } else {
+        // The report does not exist so, retrieve and store the Original SNP report
+        log::debug!("Monitor retrieves the SNP report");
+        let mut rep: [u8; REPORT_RESPONSE_SIZE] = [0; REPORT_RESPONSE_SIZE];
+
+        // Calculate they key hash
+        let mut pub_key: [u8; 32] = unsafe { (*get_keys()).public_key };
+        let mut hash: [u8; 64] = [0; 64];
+        let _n: i32 = unsafe {
+            my_SHA512(pub_key.as_mut_ptr(), pub_key.len().try_into().unwrap(), hash.as_mut_ptr())
+                .try_into()
+                .unwrap()
+        };
+
+        // Include the key hash in report
+        for (i, byte) in hash.iter().enumerate() {
+            rep[i] = *byte;
+        }
+
+        let rep_size = match get_regular_report(&mut rep) {
+            Ok(e) => e,
+            Err(e) => {
+                log::info!("Error from get report: {:?}", e);
+                panic!();
+            }
+        };
+
+        // Store the report and its size
+        store_snp_report(rep, rep_size);
+        // Return the report
+        copy_back_report(params.rcx, &rep, rep_size);
     }
-
-    params.rdx = rep_size.try_into().unwrap();
-
-    let _r = SnpReportResponse::try_from_as_ref(&mut rep)?;
-
-    let target_address = PhysAddr::from(params.rcx);
-    let mapped_target_page = PerCPUPageMappingGuard::create_4k(target_address).unwrap();
-    let target = unsafe {mapped_target_page.virt_addr().as_mut_ptr::<[u8;PAGE_SIZE]>().as_mut().unwrap()};
-    target[0..rep_size].copy_from_slice(&rep);
+    Ok(())
 }
 
 #[allow(non_snake_case)]
@@ -121,12 +163,29 @@ fn zygote_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     let init_measurement = zygote.measurements.init_measurement;
     let manifest_measurement = zygote.measurements.manifest_measurement;
     let libos_measurement = zygote.measurements.libos_measurement;
-    // let mut i = 0;
-    // while i < HASH_SIZE {
-    //     log::info!("{:02x} | {:02x} | {:02x}", init_measurement[i], manifest_measurement[i], libos_measurement[i]);
-    //     i += 1;
-    // }
 
+    // Construct the new report
+    let mut new_report: Vec<u8> = Vec::new();
+
+    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+        // Copy the existing report data into the new report
+        new_report.extend_from_slice(existing_report);
+    }
+    else {
+        log::info!("SNP report is missing");
+        panic!();
+    }
+
+    // Append the measurements to the new report
+    new_report.extend_from_slice(&init_measurement);
+    new_report.extend_from_slice(&manifest_measurement);
+    new_report.extend_from_slice(&libos_measurement);
+
+    // Now new_report holds the existing report data + measurements
+    let new_report_size = new_report.len();
+
+    // Perform the copy_back_report with the new cumulative report
+    copy_back_report(params.rcx, &new_report, new_report_size);
     return Ok(());
 }
 
@@ -138,12 +197,29 @@ fn trustlet_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     let init_measurement = trustlet.measurements.init_measurement;
     let manifest_measurement = trustlet.measurements.manifest_measurement;
     let libos_measurement = trustlet.measurements.libos_measurement;
-    // let mut i = 0;
-    // while i < HASH_SIZE {
-    //   log::info!("{:02x} | {:02x} | {:02x}", init_measurement[i], manifest_measurement[i], libos_measurement[i]);
-    //   i += 1;
-    // }
 
+    // Construct the new report
+    let mut new_report: Vec<u8> = Vec::new();
+
+    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+        // Copy the existing report data into the new report
+        new_report.extend_from_slice(existing_report);
+    }
+    else {
+        log::info!("SNP report is missing");
+        panic!();
+    }
+
+    // Append the measurements to the new report
+    new_report.extend_from_slice(&init_measurement);
+    new_report.extend_from_slice(&manifest_measurement);
+    new_report.extend_from_slice(&libos_measurement);
+
+    // Now new_report holds the existing report data + measurements
+    let new_report_size = new_report.len();
+    log::info!{"zygote report size: { } original size: { }", new_report_size, REPORT_RESPONSE_SIZE};
+    // Perform the copy_back_report with the new cumulative report
+    copy_back_report(params.rcx, &new_report, new_report_size);
     return Ok(());
 }
 
@@ -167,6 +243,10 @@ fn function_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     let trustlet_id = ProcessID(trustlet_id as usize);
     let trustlet = PROCESS_STORE.get(trustlet_id);
 
+    let init_measurement = trustlet.measurements.init_measurement;
+    let manifest_measurement = trustlet.measurements.manifest_measurement;
+    let libos_measurement = trustlet.measurements.libos_measurement;
+
     // Get and measure the input data of the function
     let (input_data, _) = ProcessPageTableRef::copy_data_from_guest(fn_input_addr, fn_input_size, guest_pgt);
     let input_hash = measure(input_data.into(), fn_input_size);
@@ -175,7 +255,30 @@ fn function_report(params: &mut RequestParams) -> Result<(), SvsmReqError>{
     let (output_data, _) = ProcessPageTableRef::copy_data_from_guest(fn_output_addr, fn_output_size, guest_pgt);
     let output_hash = measure(output_data.into(), fn_output_size);
 
-    // produce_differential_report(trustlet, input_hash, output_hash);
+    // Construct the new report
+    let mut new_report: Vec<u8> = Vec::new();
+
+    if let Some((existing_report, existing_report_size)) = get_snp_report() {
+      // Copy the existing report data into the new report
+      new_report.extend_from_slice(existing_report);
+    }
+    else {
+        log::info!("SNP report is missing");
+        panic!();
+    }
+
+    // Append the measurements to the new report
+    new_report.extend_from_slice(&init_measurement);
+    new_report.extend_from_slice(&manifest_measurement);
+    new_report.extend_from_slice(&libos_measurement);
+    new_report.extend_from_slice(&input_hash);
+    new_report.extend_from_slice(&output_hash);
+
+    // Now new_report holds the existing report data + measurements
+    let new_report_size = new_report.len();
+    log::info!{"function report size: { }", new_report_size};
+    // Perform the copy_back_report with the new cumulative report
+    copy_back_report(params.rcx, &new_report, new_report_size);
     return Ok(());
 }
 
