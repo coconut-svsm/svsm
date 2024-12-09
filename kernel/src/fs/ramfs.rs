@@ -312,6 +312,7 @@ impl File for RamFile {
 #[derive(Debug)]
 struct RawRamDirectory {
     entries: Vec<DirectoryEntry>,
+    remove_in_progress: bool,
 }
 
 impl RawRamDirectory {
@@ -319,6 +320,7 @@ impl RawRamDirectory {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            remove_in_progress: false,
         }
     }
 
@@ -334,8 +336,27 @@ impl RawRamDirectory {
         self.entries.iter().any(|entry| entry.name == *name)
     }
 
+    fn check_remove(&self) -> Result<(), SvsmError> {
+        if self.remove_in_progress {
+            Err(SvsmError::FileSystem(FsError::busy()))
+        } else {
+            Ok(())
+        }
+    }
+
     fn list(&self) -> Vec<FileName> {
         self.entries.iter().map(|e| e.name).collect::<Vec<_>>()
+    }
+
+    fn prepare_remove(&mut self) -> Result<(), SvsmError> {
+        self.check_remove()?;
+        // Only report success if directory is empty.
+        if self.entries.is_empty() {
+            self.remove_in_progress = true;
+            Ok(())
+        } else {
+            Err(SvsmError::FileSystem(FsError::not_empty()))
+        }
     }
 
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
@@ -349,6 +370,8 @@ impl RawRamDirectory {
     }
 
     fn create_file(&mut self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+        self.check_remove()?;
+
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
@@ -361,6 +384,8 @@ impl RawRamDirectory {
     }
 
     fn create_directory(&mut self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+        self.check_remove()?;
+
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
@@ -405,6 +430,10 @@ impl RamDirectory {
 impl Directory for RamDirectory {
     fn list(&self) -> Vec<FileName> {
         self.directory.lock_read().list()
+    }
+
+    fn prepare_remove(&self) -> Result<(), SvsmError> {
+        self.directory.lock_write().prepare_remove()
     }
 
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {

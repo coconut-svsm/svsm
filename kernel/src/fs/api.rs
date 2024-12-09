@@ -33,6 +33,8 @@ pub enum FsError {
     BadHandle,
     ReadOnly,
     WriteOnly,
+    Busy,
+    NotEmpty,
     PackIt(PackItError),
 }
 
@@ -71,6 +73,8 @@ impl FsError {
     impl_fs_err!(bad_handle, BadHandle);
     impl_fs_err!(read_only, ReadOnly);
     impl_fs_err!(write_only, WriteOnly);
+    impl_fs_err!(busy, Busy);
+    impl_fs_err!(not_empty, NotEmpty);
 }
 
 /// Represents file operations
@@ -179,6 +183,14 @@ pub trait Directory: Debug + Send + Sync {
     ///
     /// A [`Vec<FileName>`] containing all the entries in the directory.
     fn list(&self) -> Vec<FileName>;
+
+    /// Prepare the directory for removal.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the directory is ready for removal, an `SvsmError`
+    /// value otherwise.
+    fn prepare_remove(&self) -> Result<(), SvsmError>;
 
     /// Used to lookup for an entry in the directory.
     ///
