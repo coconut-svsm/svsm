@@ -589,7 +589,12 @@ impl MemoryRegion {
     fn allocate_zeroed_page(&mut self) -> Result<VirtAddr, AllocError> {
         let vaddr = self.allocate_page()?;
 
-        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        // SAFETY: we trust allocate_page() to return a pointer to a valid
+        // page. vaddr + PAGE_SIZE also correctly points to the end of the
+        // page.
+        unsafe {
+            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+        }
 
         Ok(vaddr)
     }
@@ -1091,7 +1096,14 @@ pub fn allocate_zeroed_page() -> Result<VirtAddr, SvsmError> {
 /// `SvsmError` if allocation fails.
 pub fn allocate_file_page() -> Result<VirtAddr, SvsmError> {
     let vaddr = ROOT_MEM.lock().allocate_file_page()?;
-    zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+
+    // SAFETY: we trust allocate_file_page() to return a pointer to a valid
+    // page. vaddr + PAGE_SIZE also correctly points to the end of the
+    // page.
+    unsafe {
+        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+    }
+
     Ok(vaddr)
 }
 
