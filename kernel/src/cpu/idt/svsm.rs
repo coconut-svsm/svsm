@@ -308,6 +308,7 @@ extern "C" fn ex_handler_system_call(
         SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
         SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_MKDIR => sys_mkdir(ctxt.regs.rdi),
+        SYS_RMDIR => sys_mkdir(ctxt.regs.rdi),
         _ => Err(SysCallError::EINVAL),
     }
     .map_or_else(|e| e as usize, |v| v as usize);

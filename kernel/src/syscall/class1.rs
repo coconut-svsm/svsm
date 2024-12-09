@@ -10,8 +10,8 @@ use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::{
-    create_root, find_dir, mkdir_root, open_root, truncate, unlink_root, DirEntry, FileNameArray,
-    FsError, FsObj, UserBuffer,
+    create_root, find_dir, mkdir_root, open_root, rmdir_root, truncate, unlink_root, DirEntry,
+    FileNameArray, FsError, FsObj, UserBuffer,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
@@ -151,6 +151,15 @@ pub fn sys_mkdir(path: usize) -> Result<u64, SysCallError> {
     let user_path = user_path_ptr.read_c_string()?;
 
     mkdir_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;
+
+    Ok(0)
+}
+
+pub fn sys_rmdir(path: usize) -> Result<u64, SysCallError> {
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path = user_path_ptr.read_c_string()?;
+
+    rmdir_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;
 
     Ok(0)
 }

@@ -25,6 +25,7 @@ pub const SYS_UNLINK: u64 = CLASS1 + 5;
 pub const SYS_OPENDIR: u64 = CLASS1 + 6;
 pub const SYS_READDIR: u64 = CLASS1 + 7;
 pub const SYS_MKDIR: u64 = CLASS1 + 8;
+pub const SYS_RMDIR: u64 = CLASS1 + 9;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;
