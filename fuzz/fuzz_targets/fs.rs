@@ -11,7 +11,7 @@ use core::hint::black_box;
 use libfuzzer_sys::fuzz_target;
 use std::sync::OnceLock;
 use svsm::fs::FileHandle;
-use svsm::fs::{create, create_all, list_dir, mkdir, open, unlink, TestFileSystemGuard};
+use svsm::fs::{create, create_all, list_dir, mkdir, open_rw, unlink, TestFileSystemGuard};
 use svsm::mm::alloc::TestRootMem;
 
 const ROOT_MEM_SIZE: usize = 0x10000;
@@ -102,7 +102,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
                 }
             }
             FsAction::Open(name) => {
-                if let Ok(fh) = open(name) {
+                if let Ok(fh) = open_rw(name) {
                     files.push(Handle::new(fh, name));
                 }
             }
@@ -110,7 +110,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
                 let Some(file) = get_item(&files, *idx) else {
                     continue;
                 };
-                if let Ok(fh) = open(file.name) {
+                if let Ok(fh) = open_rw(file.name) {
                     files.push(Handle::new(fh, file.name));
                 }
             }
@@ -188,7 +188,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
 
                 // Reset the buffer and the file position
                 buf.fill(POISON_BYTE);
-                file.fd.seek(start_pos);
+                file.fd.seek_abs(start_pos);
 
                 // Read back the bytes and sanity check them
                 assert!(num <= len);
@@ -203,7 +203,7 @@ fuzz_target!(|actions: Vec<FsAction<'_>>| {
             }
             FsAction::Seek(idx, pos) => {
                 if let Some(file) = get_item(&files, *idx) {
-                    file.fd.seek(*pos);
+                    file.fd.seek_abs(*pos);
                 }
             }
             FsAction::Truncate(idx, off) => {
