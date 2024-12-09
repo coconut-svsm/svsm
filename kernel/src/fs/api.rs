@@ -35,6 +35,8 @@ pub enum FsError {
     WriteOnly,
     Busy,
     NotEmpty,
+    IsFile,
+    IsDir,
     PackIt(PackItError),
 }
 
@@ -75,6 +77,8 @@ impl FsError {
     impl_fs_err!(write_only, WriteOnly);
     impl_fs_err!(busy, Busy);
     impl_fs_err!(not_empty, NotEmpty);
+    impl_fs_err!(is_dir, IsDir);
+    impl_fs_err!(is_file, IsFile);
 }
 
 /// Represents file operations
