@@ -303,6 +303,7 @@ extern "C" fn ex_handler_system_call(
         SYS_READ => sys_read(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_WRITE => sys_write(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_SEEK => sys_seek(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
+        SYS_UNLINK => sys_unlink(ctxt.regs.rdi),
         SYS_TRUNCATE => sys_truncate(ctxt.regs.rdi as u32, ctxt.regs.rsi),
         SYS_OPENDIR => sys_opendir(ctxt.regs.rdi),
         SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),

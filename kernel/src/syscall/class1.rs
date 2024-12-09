@@ -10,7 +10,8 @@ use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::{
-    create_root, find_dir, open_root, truncate, DirEntry, FileNameArray, FsError, FsObj, UserBuffer,
+    create_root, find_dir, open_root, truncate, unlink_root, DirEntry, FileNameArray, FsError,
+    FsObj, UserBuffer,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
@@ -97,6 +98,15 @@ pub fn sys_truncate(obj_id: u32, length: usize) -> Result<u64, SysCallError> {
         .truncate(length)
         .map(|l| l as u64)
         .map_err(SysCallError::from)
+}
+
+pub fn sys_unlink(path: usize) -> Result<u64, SysCallError> {
+    let user_path_ptr = UserPtr::<c_char>::new(VirtAddr::from(path));
+    let user_path = user_path_ptr.read_c_string()?;
+
+    unlink_root(current_task().rootdir(), &user_path).map_err(SysCallError::from)?;
+
+    Ok(0)
 }
 
 pub fn sys_opendir(path: usize) -> Result<u64, SysCallError> {
