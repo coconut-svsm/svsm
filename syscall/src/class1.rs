@@ -6,7 +6,8 @@
 
 use super::call::{syscall1, syscall2, syscall3, SysCallError};
 use super::def::{
-    SeekMode, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_TRUNCATE, SYS_WRITE,
+    SeekMode, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_TRUNCATE, SYS_UNLINK,
+    SYS_WRITE,
 };
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
@@ -86,4 +87,10 @@ pub fn truncate(fd: &FsObjHandle, length: u64) -> Result<u64, SysCallError> {
     // SAFETY: Invokes a system call and does not directly change any memory of
     // the process.
     unsafe { syscall2(SYS_TRUNCATE, fd.id().into(), length) }
+}
+
+pub fn unlink(path: &CStr) -> Result<(), SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process.
+    unsafe { syscall1(SYS_UNLINK, path.as_ptr() as u64).map(|_| ()) }
 }
