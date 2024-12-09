@@ -15,6 +15,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
+use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
@@ -469,9 +470,9 @@ impl Task {
         // Do not run user-mode with IRQs enabled on platforms which are not
         // ready for it.
         let iret_rflags: usize = if SVSM_PLATFORM.use_interrupts() {
-            0x202
+            2 | EFLAGS_IF
         } else {
-            0x2
+            2
         };
 
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;

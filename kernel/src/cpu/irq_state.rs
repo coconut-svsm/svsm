@@ -11,7 +11,7 @@ use core::marker::PhantomData;
 use core::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
 /// Interrupt flag in RFLAGS register
-const EFLAGS_IF: u64 = 1 << 9;
+pub const EFLAGS_IF: usize = 1 << 9;
 
 /// Unconditionally disable IRQs
 ///
@@ -49,7 +49,7 @@ pub fn raw_irqs_enable() {
 pub fn irqs_enabled() -> bool {
     // SAFETY: The inline assembly just reads the processors RFLAGS register
     // and does not change any state.
-    let state: u64;
+    let state: usize;
     unsafe {
         asm!("pushfq",
              "popq {}",
