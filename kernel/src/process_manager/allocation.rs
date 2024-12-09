@@ -3,6 +3,7 @@ use crate::mm::PAGE_SIZE;
 use crate::address::{Address, VirtAddr};
 use crate::process_manager::process_paging::ProcessPageTableRef;
 use crate::process_manager::process_paging::ProcessPageFlags;
+use super::process_memory::{ALLOCATION_RANGE_VIRT_START, PGD};
 use crate::cpu::control_regs::read_cr3;
 use crate::sev::{rmp_adjust, RMPFlags};
 use crate::types::PageSize;
@@ -19,6 +20,9 @@ pub struct AllocationRange(pub u64, pub u64);
 impl AllocationRange {
 
     pub fn allocate(&mut self, pages: u64){
+        // Allocates a new memory range for the Monitor
+        // Currently the start virtual address is fixed to ALLOCATION_RANGE_VIRT_START
+        // Reuses the Process page managment to add new memory to the Monitor
         let mut page_table_ref = ProcessPageTableRef::default();
         page_table_ref.set_external_table(read_cr3().bits() as u64);
         self.allocate_(&mut page_table_ref, pages, ALLOCATION_VADDR_START, true, false);
@@ -54,9 +58,9 @@ impl AllocationRange {
             self.0 = pgd[DEFAULT_ALLOCATION_RANGE_MOUNT];
             self.1 = pages;
         } else {
-            let offset = start_addr >> PGD_SHIFT;
+            let offset: usize = start_address.to_pgtbl_idx::<PGD>();
             let (_mapping, pgd) = paddr_as_slice!(page_table_ref.process_page_table);
-            self.0 = pgd[offset as usize];
+            self.0 = pgd[offset];
             self.1 = pages;
         }
     }

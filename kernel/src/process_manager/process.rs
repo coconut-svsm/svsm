@@ -28,6 +28,7 @@ use cpuarch::vmsa::VMSA;
 use core::mem::replace;
 
 use super::memory_channels::MemoryChannel;
+use crate::attestation::monitor::{ProcessMeasurements, measure};
 
 trait FromVAddr {
     fn from_virt_addr(v: VirtAddr) -> &'static mut VMSA;
@@ -114,7 +115,9 @@ pub struct ProcessID(pub usize);
 pub struct TrustedProcess {
     pub process_type: TrustedProcessType,
     pub id: u64,
+    pub parent_id: u64,
     pub base: ProcessBaseContext,
+    pub measurements: ProcessMeasurements,
     #[allow(dead_code)]
     pub context: ProcessContext,
     //pub channel: MemoryChannel,
@@ -138,22 +141,30 @@ impl TrustedProcess {
         let libos_size= zygote_data_struct[5];
 
 
-        // The allocation is always starting at the same virtual address which is why only one allocaiton is valid
+        // The allocation (AllocationRange) is always starting at the same virtual address which is why only one allocaiton is valid
         // at the same time. TODO: Allow for different start addresses
-        let (pal_data, pal_range) = ProcessPageTableRef::copy_data_from_guest(pal, pal_size, pgt);
         let mut base = ProcessBaseContext::default();
+        let mut measurements = ProcessMeasurements::default();
+
+        let (pal_data, pal_range) = ProcessPageTableRef::copy_data_from_guest(pal, pal_size, pgt);
         base.init_with_data(pal_data, pal_size, pal_range);
+        measurements.init_measurement = measure(pal_data.into(), pal_size);
+
         let (manifest_data, manifest_range) = ProcessPageTableRef::copy_data_from_guest(manifest, manifest_size, pgt);
         base.add_manifest(manifest_data, manifest_size, manifest_range);
+        measurements.manifest_measurement = measure(manifest_data.into(), manifest_size);
+
         let(libos_data, libos_range) = ProcessPageTableRef::copy_data_from_guest(libos, libos_size, pgt);
         base.add_libos(libos_data, libos_size, libos_range);
-
+        measurements.libos_measurement = measure(libos_data.into(), libos_size);
 
         // TODO: Free zygote data
         Self {
             process_type: TrustedProcessType::Zygote,
             id: 0,
+            parent_id: 0,
             base,
+            measurements,
             context: ProcessContext::default(),
         }
     }
@@ -161,13 +172,16 @@ impl TrustedProcess {
     fn dublicate(pid: ProcessID) -> TrustedProcess {
         let process = PROCESS_STORE.get(pid);
         let base: ProcessBaseContext = process.base;
+        let measurements: ProcessMeasurements = process.measurements;
         let mut context = ProcessContext::default();
-        context.init(base);
+        context.init(base, measurements);
 
         TrustedProcess {
             process_type: TrustedProcessType::Trustlet,
             id: 0,
+            parent_id: pid.0 as u64, // set the id of the parent zygote
             base,
+            measurements,
             context,
         }
 
@@ -189,7 +203,9 @@ impl TrustedProcess {
         Self {
             process_type: TrustedProcessType::Undefined,
             id: 0,
+            parent_id: 0,
             base: ProcessBaseContext::default(),
+            measurements: ProcessMeasurements::default(),
             context: ProcessContext::default(),
         }
     }
@@ -337,9 +353,9 @@ impl ProcessBaseContext {
         self.alloc_range_manifest = data;
     }
 
-    pub fn add_libos(&mut self, manifest: VirtAddr, size: u64, data: AllocationRange){
+    pub fn add_libos(&mut self, libos: VirtAddr, size: u64, data: AllocationRange){
         let size = (4096 - (size & 0xFFF)) + size;
-        self.page_table_ref.add_libos(manifest,size);
+        self.page_table_ref.add_libos(libos,size);
         self.alloc_range_libos = data;
     }
 
@@ -356,6 +372,7 @@ pub struct ProcessContext {
     pub vmsa: PhysAddr,
     pub channel: MemoryChannel,
     pub sev_features: u64,
+    pub measurements: ProcessMeasurements,
 }
 
 impl Default for ProcessContext {
@@ -365,6 +382,7 @@ impl Default for ProcessContext {
             vmsa: PhysAddr::null(),
             channel: MemoryChannel::default(),
             sev_features: 0,
+            measurements: ProcessMeasurements::default(),
         }
     }
 }
@@ -372,7 +390,7 @@ impl Default for ProcessContext {
 
 impl ProcessContext {
 
-    pub fn init(&mut self, base: ProcessBaseContext) {
+    pub fn init(&mut self, base: ProcessBaseContext, measurements: ProcessMeasurements) {
 
         //Creating new VMSA for the Process
         let new_vmsa_page = allocate_page();
@@ -424,7 +442,7 @@ impl ProcessContext {
         self.vmsa = new_vmsa_page;
         self.sev_features = vmsa.sev_features;
         self.base = base;
-
+        self.measurements = measurements;
     }
 
     pub fn add_function(&mut self, function: VirtAddr, size: u64) {

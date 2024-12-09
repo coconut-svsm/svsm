@@ -40,7 +40,7 @@ pub struct ProcessMemConfig {
     free_page_list_table_entry: u64,
 }
 
-pub const ALLOCATION_RANGE_VIRT_START: u64 = 0x30000000000u64;
+pub const ALLOCATION_RANGE_VIRT_START: u64 = 0x300_0000_0000u64;
 
 static PROCESS_MEM_CONFIG: SpinLock<ProcessMemConfig> = SpinLock::new(ProcessMemConfig::new());
 pub static CPU_COUNT: ImmutAfterInitCell<u64> = ImmutAfterInitCell::new(0);
@@ -52,7 +52,7 @@ const MiB: usize = KiB * 1024;
 #[allow(non_upper_case_globals)]
 const GiB: usize = MiB * 1024;
 
-const ADDRESS_START_FREE_PAGE_LIST: usize = 0x8000000000;
+const ADDRESS_START_FREE_PAGE_LIST: usize = 0x80_0000_0000;
 
 const CONDITION_MIN_MEM_SIZE: usize = 1 * GiB;
 
@@ -74,7 +74,7 @@ impl ProcessMemConfig{
             initilized: false,
             total_size: 0,
             free: 0,
-            free_page_list: 0x8000000000u64,
+            free_page_list: ADDRESS_START_FREE_PAGE_LIST as u64,
             free_page_list_used_len: 0,
             page_top: PhysAddr::null(),
             page_base: PhysAddr::null(),

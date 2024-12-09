@@ -1,6 +1,6 @@
 use memory_helper::set_ecryption_mask_address_size;
-use process::PROCESS_STORE;
 use process_memory::additional_monitor_memory_init;
+pub use process::PROCESS_STORE;
 
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
