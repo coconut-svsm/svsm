@@ -10,6 +10,10 @@
 /// TPM 2.0 Reference Implementation
 pub mod tcgtpm;
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use crate::vtpm::tcgtpm::TcgTpm as Vtpm;
 use crate::{locking::LockGuard, protocols::vtpm::TpmPlatformCommand};
 use crate::{locking::SpinLock, protocols::errors::SvsmReqError};
@@ -66,6 +70,31 @@ pub trait VtpmInterface: TcgTpmSimulatorInterface {
     /// Prepare the TPM to be used for the first time. At this stage,
     /// the TPM is manufactured.
     fn init(&mut self) -> Result<(), SvsmReqError>;
+
+    /// Create RSA 2048 Endorsement Key (EK) and cache the public key
+    ///
+    /// This function creates an RSA 2048-bit Endorsement Key (EK) from the TPM's Endorsement
+    /// Primary Seed (EPS) and caches the public key as TMPT_PUBLIC structure. The cached EK
+    /// public key can be retrieved later and used to  provide  vTPM service attestation. The
+    /// EK is created with the TCG default EK template as shown in Table 4 of the "TCG EK
+    /// Credential Profile For TPM Family 2.0; Level 0 Version 2.5 Revision 2.0".
+    ///
+    /// Since the EK is created from the EPS, following the TCG EK Credential Profile, the EK can
+    /// be recreated at any time. For example, one can recreate the same EK in an OS using TSS2
+    /// "tpm2_createek -c ek.ctx -G rsa -u ek.pub command".
+    ///
+    /// Retrieve the EK public key with get_ekpub() function.
+    fn create_ek_rsa2048(&mut self) -> Result<(), SvsmReqError>;
+
+    /// Returns the cached EK public key if it exists, otherwise it returns an error indicating
+    /// that the EK public key does not exist.
+    fn get_ekpub(&self) -> Result<Vec<u8>, SvsmReqError>;
+
+    /// Run the TPM self-test command
+    fn run_selftest_cmd(&self) -> Result<(), SvsmReqError>;
+
+    // Run the TPM startup command
+    fn run_startup_cmd(&self) -> Result<(), SvsmReqError>;
 }
 
 static VTPM: SpinLock<Vtpm> = SpinLock::new(Vtpm::new());
@@ -83,4 +112,11 @@ pub fn vtpm_init() -> Result<(), SvsmReqError> {
 
 pub fn vtpm_get_locked<'a>() -> LockGuard<'a, Vtpm> {
     VTPM.lock()
+}
+
+/// Get the TPM EK public key by calling the get_ekpub() implementation of the
+/// [`VtpmInterface`]
+pub fn vtpm_get_ekpub() -> Result<Vec<u8>, SvsmReqError> {
+    let vtpm = VTPM.lock();
+    vtpm.get_ekpub()
 }

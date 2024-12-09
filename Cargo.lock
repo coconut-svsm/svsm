@@ -947,6 +947,7 @@ dependencies = [
  "log",
  "packit",
  "rustc_version",
+ "sha2",
  "syscall",
  "test",
  "verify_external",
