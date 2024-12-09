@@ -486,6 +486,38 @@ where
     Ok(current_dir)
 }
 
+/// Open a file to get the file handle for further file operations. Starts
+/// file-name search from a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Pointer to root directory object.
+/// `path`: Path of the file to be opened.
+/// `read`: When true, file is open for reading.
+/// `write`: When true, file is open for writing.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
+pub fn open_root(
+    root_dir: Arc<dyn Directory>,
+    path: &str,
+    read: bool,
+    write: bool,
+) -> Result<FileHandle, SvsmError> {
+    let mut path_items = split_path(path)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+
+    let dir_entry = current_dir.lookup_entry(file_name)?;
+
+    match dir_entry {
+        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
+        DirEntry::File(f) => Ok(FileHandle::new(&f, read, write)),
+    }
+}
+
 /// Open a file to get the file handle for further file operations.
 ///
 /// # Argument
@@ -499,16 +531,11 @@ where
 /// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
 /// of the opened file if the file exists, [`SvsmError`] otherwise.
 pub fn open(path: &str, read: bool, write: bool) -> Result<FileHandle, SvsmError> {
-    let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
 
-    let dir_entry = current_dir.lookup_entry(file_name)?;
-
-    match dir_entry {
-        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
-        DirEntry::File(f) => Ok(FileHandle::new(&f, read, write)),
-    }
+    open_root(root_dir, path, read, write)
 }
 
 /// Open a file to get the file handle for reading.
@@ -571,7 +598,28 @@ pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
     walk_path_from_root(items)
 }
 
-/// Used to create a file with the given path.
+/// Create a file with the given path from a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Pointer to root directory object.
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
+pub fn create_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<FileHandle, SvsmError> {
+    let mut path_items = split_path(path)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+    let file = current_dir.create_file(file_name)?;
+
+    // File open for reading and writing
+    Ok(FileHandle::new(&file, true, true))
+}
+
+/// Create a file with the given path from the file-system root.
 ///
 /// # Argument
 ///
@@ -582,13 +630,11 @@ pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
 /// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
 /// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
-    let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
-    let file = current_dir.create_file(file_name)?;
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
 
-    // File open for reading and writing
-    Ok(FileHandle::new(&file, true, true))
+    create_root(root_dir, path)
 }
 
 /// Used to create a file and the missing subdirectories in the given path.
@@ -615,7 +661,28 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
     Ok(FileHandle::new(&file, true, true))
 }
 
-/// Used to create a directory with the given path.
+/// Create a directory with the given path relative to a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Directory to start walking `path` from.
+/// `path`: path of the directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
+pub fn mkdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
+    let mut path_items = split_path(path)?;
+    let dir_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+
+    current_dir.create_directory(dir_name)?;
+
+    Ok(())
+}
+
+/// Create a directory with the given path relative to the file-system root.
 ///
 /// # Argument
 ///
@@ -626,13 +693,11 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 /// [`Result<(), SvsmError>`]: [`Result`] containing the unit
 /// value if successful,  [`SvsmError`] otherwise.
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
-    let mut path_items = split_path(path)?;
-    let dir_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
 
-    current_dir.create_directory(dir_name)?;
-
-    Ok(())
+    mkdir_root(root_dir, path)
 }
 
 /// Used to delete a file or a directory.
