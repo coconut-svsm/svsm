@@ -309,17 +309,16 @@ impl File for RamFile {
     }
 }
 
-/// Represents a SVSM directory with synchronized access
 #[derive(Debug)]
-pub struct RamDirectory {
-    entries: RWLock<Vec<DirectoryEntry>>,
+struct RawRamDirectory {
+    entries: Vec<DirectoryEntry>,
 }
 
-impl RamDirectory {
+impl RawRamDirectory {
     /// Used to get a new instance of [`RamDirectory`]
     pub fn new() -> Self {
-        RamDirectory {
-            entries: RWLock::new(Vec::new()),
+        Self {
+            entries: Vec::new(),
         }
     }
 
@@ -332,24 +331,15 @@ impl RamDirectory {
     ///  # Returns
     ///  [`true`] if the entry is present, [`false`] otherwise.
     fn has_entry(&self, name: &FileName) -> bool {
-        self.entries
-            .lock_read()
-            .iter()
-            .any(|entry| entry.name == *name)
+        self.entries.iter().any(|entry| entry.name == *name)
     }
-}
 
-impl Directory for RamDirectory {
     fn list(&self) -> Vec<FileName> {
-        self.entries
-            .lock_read()
-            .iter()
-            .map(|e| e.name)
-            .collect::<Vec<_>>()
+        self.entries.iter().map(|e| e.name).collect::<Vec<_>>()
     }
 
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
-        for e in self.entries.lock_read().iter() {
+        for e in self.entries.iter() {
             if e.name == name {
                 return Ok(e.entry.clone());
             }
@@ -358,26 +348,25 @@ impl Directory for RamDirectory {
         Err(SvsmError::FileSystem(FsError::file_not_found()))
     }
 
-    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+    fn create_file(&mut self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
 
         let new_file = Arc::new(RamFile::new());
         self.entries
-            .lock_write()
             .push(DirectoryEntry::new(name, DirEntry::File(new_file.clone())));
 
         Ok(new_file)
     }
 
-    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+    fn create_directory(&mut self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
 
         let new_dir = Arc::new(RamDirectory::new());
-        self.entries.lock_write().push(DirectoryEntry::new(
+        self.entries.push(DirectoryEntry::new(
             name,
             DirEntry::Directory(new_dir.clone()),
         ));
@@ -385,17 +374,53 @@ impl Directory for RamDirectory {
         Ok(new_dir)
     }
 
-    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
-        let mut vec = self.entries.lock_write();
-        let pos = vec.iter().position(|e| e.name == name);
+    fn unlink(&mut self, name: FileName) -> Result<(), SvsmError> {
+        let pos = self.entries.iter().position(|e| e.name == name);
 
         match pos {
             Some(idx) => {
-                vec.swap_remove(idx);
+                self.entries.swap_remove(idx);
                 Ok(())
             }
             None => Err(SvsmError::FileSystem(FsError::file_not_found())),
         }
+    }
+}
+
+/// Represents a SVSM directory with synchronized access
+#[derive(Debug)]
+pub struct RamDirectory {
+    directory: RWLock<RawRamDirectory>,
+}
+
+impl RamDirectory {
+    /// Used to get a new instance of [`RamDirectory`]
+    pub fn new() -> Self {
+        RamDirectory {
+            directory: RWLock::new(RawRamDirectory::new()),
+        }
+    }
+}
+
+impl Directory for RamDirectory {
+    fn list(&self) -> Vec<FileName> {
+        self.directory.lock_read().list()
+    }
+
+    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+        self.directory.lock_read().lookup_entry(name)
+    }
+
+    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+        self.directory.lock_write().create_file(name)
+    }
+
+    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+        self.directory.lock_write().create_directory(name)
+    }
+
+    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
+        self.directory.lock_write().unlink(name)
     }
 }
 
