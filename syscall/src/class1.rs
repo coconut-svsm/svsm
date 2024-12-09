@@ -6,7 +6,8 @@
 
 use super::call::{syscall1, syscall2, syscall3, SysCallError};
 use super::def::{
-    SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_TRUNCATE, SYS_UNLINK, SYS_WRITE,
+    SYS_MKDIR, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_SEEK, SYS_TRUNCATE, SYS_UNLINK,
+    SYS_WRITE,
 };
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;
@@ -92,4 +93,10 @@ pub fn unlink(path: &CStr) -> Result<(), SysCallError> {
     // SAFETY: Invokes a system call and does not directly change any memory of
     // the process.
     unsafe { syscall1(SYS_UNLINK, path.as_ptr() as u64).map(|_| ()) }
+}
+
+pub fn mkdir(path: &CStr) -> Result<(), SysCallError> {
+    // SAFETY: Invokes a system call and does not directly change any memory of
+    // the process.
+    unsafe { syscall1(SYS_MKDIR, path.as_ptr() as u64).map(|_| ()) }
 }
