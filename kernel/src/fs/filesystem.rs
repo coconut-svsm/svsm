@@ -700,22 +700,89 @@ pub fn mkdir(path: &str) -> Result<(), SvsmError> {
     mkdir_root(root_dir, path)
 }
 
-/// Used to delete a file or a directory.
+/// Unlink a file from its parent directory.
 ///
 /// # Argument
 ///
+/// `root_dir`: Directory to start walking `path` from.
 /// `path`: path of the file or directory to be created.
 ///
 /// # Returns
 ///
 /// [`Result<(), SvsmError>`]: [`Result`] containing the unit
 /// value if successful,  [`SvsmError`] otherwise.
-pub fn unlink(path: &str) -> Result<(), SvsmError> {
+pub fn unlink_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let entry_name = FileName::from(path_items.next_back().unwrap());
-    let dir = walk_path_from_root(path_items)?;
+    let dir = walk_path(root_dir, path_items)?;
 
-    dir.unlink(entry_name)
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => dir.unlink(entry_name),
+        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::is_dir())),
+    }
+}
+
+/// Unlink a file from its parent directory.
+///
+/// # Arguments
+///
+/// `path`: path of the file to unlink relative to the file-system root.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
+pub fn unlink(path: &str) -> Result<(), SvsmError> {
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
+
+    unlink_root(root_dir, path)
+}
+
+/// Removes a directory
+///
+/// # Arguments
+///
+/// `root_dir`: Directory to start walking `path` from.
+/// `path`: path of the directory to be removed.
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success and an `SvsmError` value otherwise. Failure
+/// cases can be if the directory is not empty or there is a concurrent removal
+/// in progress.
+pub fn rmdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
+    let mut path_items = split_path(path)?;
+    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let dir = walk_path(root_dir, path_items)?;
+
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => Err(SvsmError::FileSystem(FsError::is_file())),
+        DirEntry::Directory(target) => {
+            target.prepare_remove()?;
+            dir.unlink(entry_name)
+        }
+    }
+}
+
+/// Removes a directory relative to file-system root.
+///
+/// # Arguments
+///
+/// `path`: path of the directory to be removed.
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success and an `SvsmError` value otherwise. Failure
+/// cases can be if the directory is not empty or there is a concurrent removal
+/// in progress.
+pub fn rmdir(path: &str) -> Result<(), SvsmError> {
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
+
+    rmdir_root(root_dir, path)
 }
 
 /// Used to list the contents of a directory.
@@ -871,7 +938,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file1").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
@@ -902,7 +969,7 @@ mod tests {
         assert_eq!(root_list, [FileName::from("test2")]);
 
         // Cleanup
-        unlink("test2").unwrap();
+        rmdir("test2").unwrap();
     }
 
     #[test]
@@ -932,8 +999,8 @@ mod tests {
 
         // Cleanup
         unlink("test1/test2/file1").unwrap();
-        unlink("test1/test2").unwrap();
-        unlink("test1/").unwrap();
+        rmdir("test1/test2").unwrap();
+        rmdir("test1/").unwrap();
     }
 
     #[test]
@@ -964,7 +1031,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file2").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
@@ -1016,7 +1083,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file1").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
