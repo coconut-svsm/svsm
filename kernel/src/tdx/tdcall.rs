@@ -48,6 +48,8 @@ impl From<PageFrame> for EptMappingInfo {
 /// for acceptance.
 unsafe fn tdg_mem_page_accept(frame: PageFrame) -> u64 {
     loop {
+        // SAFETY: executing TDCALL requires the use of assembly.  The caller
+        // takes responsibility for correctness of the parameters.
         let err = unsafe {
             let mut ret: u64;
             asm!("tdcall",
@@ -78,17 +80,21 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 
     while addr < end {
         if addr.is_aligned(PAGE_SIZE_2M) && addr + PAGE_SIZE_2M <= end {
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the physical address.
             let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(addr))) };
             match ret {
                 Ok(s) => {
                     if s == TdxSuccess::PageAlreadyAccepted {
-                        // The caller is expected not to accept a page twice unless
-                        // doing so is known to be safe.  If the TDX module
-                        // indicates that the page was already accepted, it must
-                        // mean that the page was not removed after a previous
-                        // attempt to accept.  In this case, the page must be
-                        // zeroed now because the caller expects every accepted
-                        // page to be zeroed.
+                        // The caller is expected not to accept a page twice
+                        // unless doing so is known to be safe.  If the TDX
+                        // module indicates that the page was already accepted,
+                        // it must mean that the page was not removed after a
+                        // previous attempt to accept.  In this case, the page
+                        // must be zeroed now because the caller expects every
+                        // accepted page to be zeroed.
+                        // SAFETY: the caller takes responsibility for the
+                        // correct usage of the physical address.
                         unsafe {
                             let mapping =
                                 PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
@@ -110,11 +116,15 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
             }
         }
 
+        // SAFETY: the caller takes responsibility for the correct usage of the
+        // physical address.
         let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(addr))) };
         match ret {
             Ok(s) => {
                 if s == TdxSuccess::PageAlreadyAccepted {
                     // Zero the 4 KB page.
+                    // SAFETY: the caller takes responsibility for the correct
+                    // usage of the physical address.
                     unsafe {
                         let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
                         mapping
@@ -138,11 +148,15 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
+    // SAFETY: the caller takes responsibility for the correct usage of the
+    // physical address.
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size4K(paddr))) };
     match ret {
         Ok(s) => {
             if s == TdxSuccess::PageAlreadyAccepted {
                 // Zero the 4 KB page.
+                // SAFETY: the caller takes responsibility for the correct
+                // usage of the virtual address.
                 unsafe {
                     vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE);
                 }
@@ -159,11 +173,15 @@ unsafe fn td_accept_virtual_4k(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
 /// acceptance.  The caller is additionally required to ensure that the address
 /// range is appropriate aligned to 4 KB boundaries.
 unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), SvsmError> {
+    // SAFETY: the caller takes responsibility for the correct usage of the
+    // physical address.
     let ret = unsafe { tdx_result(tdg_mem_page_accept(PageFrame::Size2M(paddr))) };
     match ret {
         Ok(s) => {
             if s == TdxSuccess::PageAlreadyAccepted {
                 // Zero the 2M page.
+                // SAFETY: the caller takes responsibility for the correct
+                // usage of the virtual address.
                 unsafe {
                     vaddr.as_mut_ptr::<u8>().write_bytes(0, PAGE_SIZE_2M);
                 }
@@ -173,6 +191,8 @@ unsafe fn td_accept_virtual_2m(vaddr: VirtAddr, paddr: PhysAddr) -> Result<(), S
         Err(TdxError::PageSizeMismatch) => {
             // Process this 2 MB page as a series of 4 KB pages.
             for offset in 0usize..512usize {
+                // SAFETY: the caller takes responsibility for the correct
+                // usage of the physical address.
                 unsafe {
                     td_accept_virtual_4k(
                         vaddr + (offset << PAGE_SHIFT),
@@ -204,11 +224,15 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
             && vaddr + PAGE_SIZE_2M <= vaddr_end
             && frame.size() >= PAGE_SIZE_2M
         {
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the virtual address.
             unsafe {
                 td_accept_virtual_2m(vaddr, frame.address())?;
             }
             PAGE_SIZE_2M
         } else {
+            // SAFETY: the caller takes responsibility for the correct usage of
+            // the virtual address.
             unsafe {
                 td_accept_virtual_4k(vaddr, frame.address())?;
             }
@@ -224,6 +248,7 @@ pub fn tdvmcall_halt() {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
     let mut ret: u64;
     let mut vmcall_ret: u64;
+    // SAFETY: executing TDCALL requires the use of assembly.
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
@@ -248,6 +273,7 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     let mut ret: u64;
     let mut vmcall_ret: u64;
     let mut output: u32;
+    // SAFETY: executing TDCALL requires the use of assembly.
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
