@@ -4,6 +4,8 @@ use crate::address::{Address, VirtAddr};
 use crate::process_manager::process_paging::ProcessPageTableRef;
 use crate::process_manager::process_paging::ProcessPageFlags;
 use crate::cpu::control_regs::read_cr3;
+use crate::sev::{rmp_adjust, RMPFlags};
+use crate::types::PageSize;
 use crate::{paddr_as_slice, map_paddr, vaddr_as_slice};
 use crate::mm::PerCPUPageMappingGuard;
 
@@ -19,24 +21,32 @@ impl AllocationRange {
     pub fn allocate(&mut self, pages: u64){
         let mut page_table_ref = ProcessPageTableRef::default();
         page_table_ref.set_external_table(read_cr3().bits() as u64);
-        self.allocate_(&mut page_table_ref, pages, ALLOCATION_VADDR_START, true);
+        self.allocate_(&mut page_table_ref, pages, ALLOCATION_VADDR_START, true, false);
     }
 
     pub fn allocate_with_start_addr(&mut self, page_table_ref: &mut ProcessPageTableRef, pages: u64, start_addr: u64){
-        self.allocate_(page_table_ref, pages, start_addr, false);
+        self.allocate_(page_table_ref, pages, start_addr, false, true);
     }
 
-    fn allocate_(&mut self, page_table_ref: &mut ProcessPageTableRef, pages: u64, start_addr: u64, mount: bool){
+    fn allocate_(&mut self, page_table_ref: &mut ProcessPageTableRef, pages: u64, start_addr: u64, mount: bool, user: bool){
         // Reuses the Process page managment to add new memory to the Monitor
         //let mut page_table_ref = ProcessPageTableRef::default();
         //page_table_ref.set_external_table(read_cr3().bits() as u64);
-        let table_flags = ProcessPageFlags::PRESENT | ProcessPageFlags::WRITABLE |
+        let mut table_flags = ProcessPageFlags::PRESENT | ProcessPageFlags::WRITABLE |
         ProcessPageFlags::DIRTY | ProcessPageFlags::ACCESSED;
+
+        if user {
+            table_flags = table_flags | ProcessPageFlags::USER_ACCESSIBLE;
+        }
 
         let start_address = VirtAddr::from(start_addr);
 
         for i in 0..(pages as usize) {
             let current_page = allocate_page();
+            if !mount {
+                let (mapping, _page_mapped) = paddr_as_slice!(current_page);
+                rmp_adjust(mapping.virt_addr(), RMPFlags::VMPL1 | RMPFlags::RWX, PageSize::Regular);
+            }
             page_table_ref.map_4k_page(start_address + i * PAGE_SIZE, current_page, table_flags);
         };
         if mount {

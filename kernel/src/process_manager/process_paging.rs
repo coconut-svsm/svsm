@@ -12,7 +12,7 @@ use core::mem::replace;
 use crate::types::PageSize;
 use super::process_memory::{ALLOCATION_RANGE_VIRT_START, PGD, PMD, PTE, PUD};
 use crate::process_manager::allocation::AllocationRange;
-
+use core::ffi::CStr;
 use super::memory_helper::{ZERO_PAGE};
 
 // Flags for the Page Table
@@ -289,7 +289,7 @@ impl ProcessPageTableRef {
     pub fn add_function(&self, data:VirtAddr, size: u64) {
         let data: *mut u8 = data.as_mut_ptr::<u8>();
         let data = unsafe { slice::from_raw_parts(data, size as usize) };
-        self.add_region_vaddr(VirtAddr::from(0xFE8000000000u64), data);
+        self.add_region_vaddr(VirtAddr::from(0x140_0000_0000u64), data);
     }
 
     pub fn add_pages(&self, start: VirtAddr, size: u64, flags: ProcessPageFlags) {
@@ -345,6 +345,7 @@ impl ProcessPageTableRef {
         let mut table: &mut ProcessPageTablePage = pgd_table;
         let mut index = ProcessPageTable::index::<PGD>(addr);
         let mut table_entry = table[index];
+
 
         let mut _mapping: PerCPUPageMappingGuard;
         //let mut prev_addr = table_entry.0;
@@ -424,12 +425,24 @@ impl ProcessPageTableRef {
         let target = VirtAddr::from(ALLOCATION_RANGE_VIRT_START);
 
         let mut page_table_ref = ProcessPageTableRef::default();
+
         page_table_ref.set_external_table(page_table);
 
         page_table_ref.copy_address_range(VirtAddr::from(addr), copy_size, target);
 
         (target, alloc_range)
     }
+
+    pub fn copy_data_from_guest_to(addr: u64, size: u64, page_table: u64, dst: u64) {
+        let copy_size = size + (PAGE_SIZE_4K - size % PAGE_SIZE_4K);
+        let copy_page_count = copy_size / PAGE_SIZE_4K;
+        let target = VirtAddr::from(dst);
+
+        let mut page_table_ref = ProcessPageTableRef::default();
+        page_table_ref.set_external_table(page_table);
+        page_table_ref.copy_address_range(VirtAddr::from(addr), copy_size, target);
+    }
+
 
     pub fn map_4k_page(&self, target: VirtAddr, addr: PhysAddr, flags: ProcessPageFlags) {
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);

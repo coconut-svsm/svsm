@@ -39,6 +39,7 @@ pub fn invoke_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let id = params.rcx;
     let function_arg = params.r8;
     let function_arg_size = params.r9;
+    let guest_page_table = params.rdx;
 
     let trustlet = PROCESS_STORE.get(ProcessID(id.try_into().unwrap()));
 
@@ -55,8 +56,7 @@ pub fn invoke_trustlet(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let mut string_pos: usize = 0;
     let sev_features = trustlet.context.sev_features;
 
-    trustlet.context.channel.copy_into(function_arg, vmsa.cr3, function_arg_size as usize);
-
+    trustlet.context.channel.copy_into(function_arg, guest_page_table, function_arg_size as usize);
 
     let mut rc = PALContext{
         process: trustlet,

@@ -178,6 +178,7 @@ impl TrustedProcess {
         let trustlet = TrustedProcess::dublicate(parent);
         if data != 0 {
             let (function_code, function_code_range) = ProcessPageTableRef::copy_data_from_guest(data, size, pgt);
+            let size = (4096 - (size & 0xFFF)) + size;
             trustlet.base.page_table_ref.add_function(function_code, size);
             function_code_range.delete();
         }
