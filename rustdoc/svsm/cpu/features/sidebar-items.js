@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["X86_FEATURE_PGE","X86_FEATURE_SMAP","X86_FEATURE_SMEP"],"fn":["cpu_has_pge","cpu_has_smap","cpu_has_smep"]};

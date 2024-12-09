@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TDG_MEM_PAGE_ACCEPT","TDG_VP_TDVMCALL","TDVMCALL_HLT","TDVMCALL_IO"],"fn":["td_accept_physical_memory","td_accept_virtual_2m","td_accept_virtual_4k","td_accept_virtual_memory","tdg_mem_page_accept","tdvmcall_halt","tdvmcall_io","tdvmcall_io_read","tdvmcall_io_write"],"struct":["EptMappingInfo"]};
