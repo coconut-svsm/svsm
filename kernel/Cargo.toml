@@ -35,6 +35,7 @@ log = { workspace = true, features = ["max_level_info", "release_max_level_info"
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
 zerocopy.workspace = true
+virtio-drivers = { git = "https://github.com/osteffenrh/virtio-drivers", branch = "virtio-pr-2" }
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
