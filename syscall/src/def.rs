@@ -14,8 +14,16 @@ pub const SYS_EXEC: u64 = CLASS0 + 4;
 pub const SYS_CLOSE: u64 = CLASS0 + 10;
 
 // Syscall number in class1
-pub const SYS_OPENDIR: u64 = CLASS1 + 4;
-pub const SYS_READDIR: u64 = CLASS1 + 5;
+pub const SYS_OPEN: u64 = CLASS1;
+pub const SYS_READ: u64 = CLASS1 + 1;
+pub const SYS_WRITE: u64 = CLASS1 + 2;
+pub const SYS_SEEK: u64 = CLASS1 + 3;
+pub const SYS_TRUNCATE: u64 = CLASS1 + 4;
+pub const SYS_UNLINK: u64 = CLASS1 + 5;
+pub const SYS_OPENDIR: u64 = CLASS1 + 6;
+pub const SYS_READDIR: u64 = CLASS1 + 7;
+pub const SYS_MKDIR: u64 = CLASS1 + 8;
+pub const SYS_RMDIR: u64 = CLASS1 + 9;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;
@@ -28,6 +36,59 @@ pub const F_NAME_SIZE: usize = 256;
 pub enum FileType {
     File,
     Directory,
+}
+
+//
+// Mode flags for Open system call
+//
+/// Open file for reading
+pub const FM_READ: usize = 1 << 0;
+/// Open file for writing
+pub const FM_WRITE: usize = 1 << 1;
+/// Place file pointer at EOF
+pub const FM_APPEND: usize = 1 << 2;
+/// Truncate file to zero
+pub const FM_TRUNC: usize = 1 << 3;
+
+//
+// File flags for Open system call
+//
+/// Create file if it does not exist
+pub const FF_CREATE: usize = 1 << 0;
+
+//
+// Modes for Seek system call
+//
+#[derive(Debug)]
+pub enum SeekMode {
+    /// Absolute file position
+    Absolute = 0,
+    /// Relative file position
+    Relative = 1,
+    /// File position relative to EOF
+    End = 2,
+}
+
+impl From<SeekMode> for usize {
+    fn from(mode: SeekMode) -> Self {
+        mode as Self
+    }
+}
+
+impl TryFrom<usize> for SeekMode {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value == SeekMode::Absolute.into() {
+            Ok(SeekMode::Absolute)
+        } else if value == SeekMode::Relative.into() {
+            Ok(SeekMode::Relative)
+        } else if value == SeekMode::End.into() {
+            Ok(SeekMode::End)
+        } else {
+            Err(())
+        }
+    }
 }
 
 #[repr(C)]

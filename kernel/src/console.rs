@@ -18,10 +18,16 @@ struct Console {
 
 impl fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for ch in s.bytes() {
-            self.writer.put_byte(ch);
-        }
+        self.write_bytes(s.as_bytes());
         Ok(())
+    }
+}
+
+impl Console {
+    pub fn write_bytes(&self, buffer: &[u8]) {
+        for b in buffer.iter() {
+            self.writer.put_byte(*b);
+        }
     }
 }
 
@@ -53,6 +59,18 @@ pub fn _print(args: fmt::Arguments<'_>) {
         return;
     }
     WRITER.lock().write_fmt(args).unwrap();
+}
+
+/// Writes all bytes from the slice to the console
+///
+/// # Arguments:
+///
+/// * `buffer`: u8 slice with bytes to write.
+pub fn console_write(buffer: &[u8]) {
+    if !*CONSOLE_INITIALIZED {
+        return;
+    }
+    WRITER.lock().write_bytes(buffer);
 }
 
 #[derive(Clone, Copy, Debug)]

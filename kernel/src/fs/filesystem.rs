@@ -23,17 +23,40 @@ struct RawFileHandle {
     file: Arc<dyn File>,
     /// current file offset for the read/write operation
     current: usize,
+    /// True when file is open for reading
+    read: bool,
+    /// True when file is open for writing
+    write: bool,
 }
 
 impl RawFileHandle {
-    fn new(file: &Arc<dyn File>) -> Self {
-        RawFileHandle {
+    fn new(file: &Arc<dyn File>, read: bool, write: bool) -> Self {
+        Self {
             file: file.clone(),
             current: 0,
+            read,
+            write,
+        }
+    }
+
+    fn check_read(&self) -> Result<(), SvsmError> {
+        if !self.read {
+            Err(SvsmError::FileSystem(FsError::write_only()))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn check_write(&self) -> Result<(), SvsmError> {
+        if !self.write {
+            Err(SvsmError::FileSystem(FsError::read_only()))
+        } else {
+            Ok(())
         }
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
+        self.check_read()?;
         let result = self.file.read(buf, self.current);
         if let Ok(v) = result {
             self.current += v;
@@ -41,7 +64,17 @@ impl RawFileHandle {
         result
     }
 
+    fn read_buffer(&mut self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        self.check_read()?;
+        let result = self.file.read_buffer(buffer, self.current);
+        if let Ok(bytes) = result {
+            self.current += bytes;
+        }
+        result
+    }
+
     fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
+        self.check_write()?;
         let result = self.file.write(buf, self.current);
         if let Ok(num) = result {
             self.current += num;
@@ -49,12 +82,37 @@ impl RawFileHandle {
         result
     }
 
-    fn truncate(&self, offset: usize) -> Result<usize, SvsmError> {
-        self.file.truncate(offset)
+    fn write_buffer(&mut self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        self.check_write()?;
+        let result = self.file.write_buffer(buffer, self.current);
+        if let Ok(bytes) = result {
+            self.current += bytes;
+        }
+        result
     }
 
-    fn seek(&mut self, pos: usize) {
+    fn truncate(&mut self, offset: usize) -> Result<usize, SvsmError> {
+        self.check_write()?;
+        let result = self.file.truncate(offset);
+        let new_size = self.file.size();
+        if result.is_ok() && self.current >= new_size {
+            self.current = new_size;
+        }
+        result
+    }
+
+    fn seek_abs(&mut self, pos: usize) {
         self.current = min(pos, self.file.size());
+    }
+
+    fn seek_rel(&mut self, offset: isize) {
+        let pos = self.current.checked_add_signed(offset).unwrap_or(0);
+        self.seek_abs(pos);
+    }
+
+    fn seek_end(&mut self, offset: usize) {
+        let pos = self.file.size().saturating_sub(offset);
+        self.seek_abs(pos);
     }
 
     fn size(&self) -> usize {
@@ -77,10 +135,20 @@ pub struct FileHandle {
 
 impl FileHandle {
     /// Create a new file handle instance.
-    pub fn new(file: &Arc<dyn File>) -> Self {
+    pub fn new(file: &Arc<dyn File>, read: bool, write: bool) -> Self {
         FileHandle {
-            handle: SpinLock::new(RawFileHandle::new(file)),
+            handle: SpinLock::new(RawFileHandle::new(file, read, write)),
         }
+    }
+
+    /// Check whether FileHandle is open for reading.
+    pub fn readable(&self) -> bool {
+        self.handle.lock().check_read().is_ok()
+    }
+
+    /// Check whether FileHandle is open for writing.
+    pub fn writable(&self) -> bool {
+        self.handle.lock().check_write().is_ok()
     }
 
     /// Used to read contents from the file handle.
@@ -98,6 +166,21 @@ impl FileHandle {
         self.handle.lock().read(buf)
     }
 
+    /// Read contents from the file to a [`Buffer`].
+    ///
+    /// # Arguments
+    ///
+    /// - `buffer`: [`Buffer`] Object to store data in.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes read if successful, or an [`SvsmError`] if there was a problem
+    /// during the read operation.
+    pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        self.handle.lock().read_buffer(buffer)
+    }
+
     /// Used to write contents to the file handle
     ///
     /// # Arguments
@@ -111,6 +194,21 @@ impl FileHandle {
     /// during the write operation.
     pub fn write(&self, buf: &[u8]) -> Result<usize, SvsmError> {
         self.handle.lock().write(buf)
+    }
+
+    /// Write data to the file via a [`Buffer`].
+    ///
+    /// # Arguments
+    ///
+    /// - `buffer`: [`Buffer`] Object to write data from.
+    ///
+    /// # Returns
+    ///
+    /// [`Result<usize, SvsmError>`]: A [`Result`] containing the number of
+    /// bytes written if successful, or an [`SvsmError`] if the operation
+    /// failed.
+    pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        self.handle.lock().write_buffer(buffer)
     }
 
     /// Used to truncate the file to the specified size.
@@ -129,13 +227,31 @@ impl FileHandle {
         self.handle.lock().truncate(offset)
     }
 
-    /// Used to change the current file offset.
+    /// Change the current file offset to an absolute position.
     ///
     /// # Arguments
     ///
     /// - `pos`: intended new file offset value.
-    pub fn seek(&self, pos: usize) {
-        self.handle.lock().seek(pos);
+    pub fn seek_abs(&self, pos: usize) {
+        self.handle.lock().seek_abs(pos);
+    }
+
+    /// Change the current file offset relative to the current position.
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: Signed value to add to current file position.
+    pub fn seek_rel(&self, offset: isize) {
+        self.handle.lock().seek_rel(offset);
+    }
+
+    /// Set the current file offset relative to the end of file.
+    ///
+    /// # Arguments
+    ///
+    /// - `offset`: Value to subtract from end-of-file position.
+    pub fn seek_end(&self, offset: usize) {
+        self.handle.lock().seek_end(offset);
     }
 
     /// Used to get the size of the file.
@@ -370,7 +486,59 @@ where
     Ok(current_dir)
 }
 
-/// Used to open a file to get the file handle for further file operations.
+/// Open a file to get the file handle for further file operations. Starts
+/// file-name search from a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Pointer to root directory object.
+/// `path`: Path of the file to be opened.
+/// `read`: When true, file is open for reading.
+/// `write`: When true, file is open for writing.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
+pub fn open_root(
+    root_dir: Arc<dyn Directory>,
+    path: &str,
+    read: bool,
+    write: bool,
+) -> Result<FileHandle, SvsmError> {
+    let mut path_items = split_path(path)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+
+    let dir_entry = current_dir.lookup_entry(file_name)?;
+
+    match dir_entry {
+        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
+        DirEntry::File(f) => Ok(FileHandle::new(&f, read, write)),
+    }
+}
+
+/// Open a file to get the file handle for further file operations.
+///
+/// # Argument
+///
+/// `path`: path of the file to be opened.
+/// `read`: When true, file is open for reading.
+/// `write`: When true, file is open for writing.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
+pub fn open(path: &str, read: bool, write: bool) -> Result<FileHandle, SvsmError> {
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
+
+    open_root(root_dir, path, read, write)
+}
+
+/// Open a file to get the file handle for reading.
 ///
 /// # Argument
 ///
@@ -380,17 +548,36 @@ where
 ///
 /// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
 /// of the opened file if the file exists, [`SvsmError`] otherwise.
-pub fn open(path: &str) -> Result<FileHandle, SvsmError> {
-    let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
+pub fn open_read(path: &str) -> Result<FileHandle, SvsmError> {
+    open(path, true, false)
+}
 
-    let dir_entry = current_dir.lookup_entry(file_name)?;
+/// Open a file to get the file handle for writing.
+///
+/// # Argument
+///
+/// `path`: path of the file to be opened.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
+pub fn open_write(path: &str) -> Result<FileHandle, SvsmError> {
+    open(path, false, true)
+}
 
-    match dir_entry {
-        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::file_not_found())),
-        DirEntry::File(f) => Ok(FileHandle::new(&f)),
-    }
+/// Open a file to get the file handle for reading and writing.
+///
+/// # Argument
+///
+/// `path`: path of the file to be opened.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// of the opened file if the file exists, [`SvsmError`] otherwise.
+pub fn open_rw(path: &str) -> Result<FileHandle, SvsmError> {
+    open(path, true, true)
 }
 
 /// Used to open a directory object.
@@ -411,7 +598,28 @@ pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
     walk_path_from_root(items)
 }
 
-/// Used to create a file with the given path.
+/// Create a file with the given path from a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Pointer to root directory object.
+/// `path`: path of the file to be created.
+///
+/// # Returns
+///
+/// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
+/// for the opened file if successful, [`SvsmError`] otherwise.
+pub fn create_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<FileHandle, SvsmError> {
+    let mut path_items = split_path(path)?;
+    let file_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+    let file = current_dir.create_file(file_name)?;
+
+    // File open for reading and writing
+    Ok(FileHandle::new(&file, true, true))
+}
+
+/// Create a file with the given path from the file-system root.
 ///
 /// # Argument
 ///
@@ -422,12 +630,11 @@ pub fn opendir(path: &str) -> Result<Arc<dyn Directory>, SvsmError> {
 /// [`Result<FileHandle, SvsmError>`]: [`Result`] containing the [`FileHandle`]
 /// for the opened file if successful, [`SvsmError`] otherwise.
 pub fn create(path: &str) -> Result<FileHandle, SvsmError> {
-    let mut path_items = split_path(path)?;
-    let file_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
-    let file = current_dir.create_file(file_name)?;
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
 
-    Ok(FileHandle::new(&file))
+    create_root(root_dir, path)
 }
 
 /// Used to create a file and the missing subdirectories in the given path.
@@ -451,10 +658,31 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 
     let file = current_dir.create_file(file_name)?;
 
-    Ok(FileHandle::new(&file))
+    Ok(FileHandle::new(&file, true, true))
 }
 
-/// Used to create a directory with the given path.
+/// Create a directory with the given path relative to a given root directory.
+///
+/// # Argument
+///
+/// `root_dir`: Directory to start walking `path` from.
+/// `path`: path of the directory to be created.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
+pub fn mkdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
+    let mut path_items = split_path(path)?;
+    let dir_name = FileName::from(path_items.next_back().unwrap());
+    let current_dir = walk_path(root_dir, path_items)?;
+
+    current_dir.create_directory(dir_name)?;
+
+    Ok(())
+}
+
+/// Create a directory with the given path relative to the file-system root.
 ///
 /// # Argument
 ///
@@ -465,31 +693,96 @@ pub fn create_all(path: &str) -> Result<FileHandle, SvsmError> {
 /// [`Result<(), SvsmError>`]: [`Result`] containing the unit
 /// value if successful,  [`SvsmError`] otherwise.
 pub fn mkdir(path: &str) -> Result<(), SvsmError> {
-    let mut path_items = split_path(path)?;
-    let dir_name = FileName::from(path_items.next_back().unwrap());
-    let current_dir = walk_path_from_root(path_items)?;
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
 
-    current_dir.create_directory(dir_name)?;
-
-    Ok(())
+    mkdir_root(root_dir, path)
 }
 
-/// Used to delete a file or a directory.
+/// Unlink a file from its parent directory.
 ///
 /// # Argument
 ///
+/// `root_dir`: Directory to start walking `path` from.
 /// `path`: path of the file or directory to be created.
 ///
 /// # Returns
 ///
 /// [`Result<(), SvsmError>`]: [`Result`] containing the unit
 /// value if successful,  [`SvsmError`] otherwise.
-pub fn unlink(path: &str) -> Result<(), SvsmError> {
+pub fn unlink_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
     let mut path_items = split_path(path)?;
     let entry_name = FileName::from(path_items.next_back().unwrap());
-    let dir = walk_path_from_root(path_items)?;
+    let dir = walk_path(root_dir, path_items)?;
 
-    dir.unlink(entry_name)
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => dir.unlink(entry_name),
+        DirEntry::Directory(_) => Err(SvsmError::FileSystem(FsError::is_dir())),
+    }
+}
+
+/// Unlink a file from its parent directory.
+///
+/// # Arguments
+///
+/// `path`: path of the file to unlink relative to the file-system root.
+///
+/// # Returns
+///
+/// [`Result<(), SvsmError>`]: [`Result`] containing the unit
+/// value if successful,  [`SvsmError`] otherwise.
+pub fn unlink(path: &str) -> Result<(), SvsmError> {
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
+
+    unlink_root(root_dir, path)
+}
+
+/// Removes a directory
+///
+/// # Arguments
+///
+/// `root_dir`: Directory to start walking `path` from.
+/// `path`: path of the directory to be removed.
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success and an `SvsmError` value otherwise. Failure
+/// cases can be if the directory is not empty or there is a concurrent removal
+/// in progress.
+pub fn rmdir_root(root_dir: Arc<dyn Directory>, path: &str) -> Result<(), SvsmError> {
+    let mut path_items = split_path(path)?;
+    let entry_name = FileName::from(path_items.next_back().unwrap());
+    let dir = walk_path(root_dir, path_items)?;
+
+    match dir.lookup_entry(entry_name)? {
+        DirEntry::File(_) => Err(SvsmError::FileSystem(FsError::is_file())),
+        DirEntry::Directory(target) => {
+            target.prepare_remove()?;
+            dir.unlink(entry_name)
+        }
+    }
+}
+
+/// Removes a directory relative to file-system root.
+///
+/// # Arguments
+///
+/// `path`: path of the directory to be removed.
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success and an `SvsmError` value otherwise. Failure
+/// cases can be if the directory is not empty or there is a concurrent removal
+/// in progress.
+pub fn rmdir(path: &str) -> Result<(), SvsmError> {
+    let fs_root = FS_ROOT.lock_read();
+    let root_dir = fs_root.root_dir();
+    drop(fs_root);
+
+    rmdir_root(root_dir, path)
 }
 
 /// Used to list the contents of a directory.
@@ -559,14 +852,62 @@ pub fn write(fh: &FileHandle, buf: &[u8]) -> Result<usize, SvsmError> {
     fh.write(buf)
 }
 
-/// Used to set the file offset
+/// Truncate file at a given offset.
+///
+/// # Arguments:
+///
+/// - `fh`: FileHandle of file to truncate.
+/// - `offset`: File offset to truncate at.
+///
+/// # Returns:
+///
+/// [`Result<usize, SvsmError>`]: [`Result`] containing the file size if
+/// successful,  [`SvsmError`] otherwise.
+pub fn truncate(fh: &FileHandle, offset: usize) -> Result<usize, SvsmError> {
+    fh.truncate(offset)
+}
+
+/// Return position of file read/write pointer.
+///
+/// # Arguments:
+///
+/// - `fh`: FileHandle to get position from.
+///
+/// # Returns:
+///
+/// Current position of the file pointer.
+pub fn position(fh: &FileHandle) -> usize {
+    fh.position()
+}
+
+/// Set the file offset to an absolute position.
 ///
 /// # Arguements
 ///
 /// - `fh`: Filehandle for the seek operation.
 /// - `pos`: new file offset value to be set.
-pub fn seek(fh: &FileHandle, pos: usize) {
-    fh.seek(pos)
+pub fn seek_abs(fh: &FileHandle, pos: usize) {
+    fh.seek_abs(pos)
+}
+
+/// Set the file offset relative to the current offset
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `offset`: Signed value to add to current file offset.
+pub fn seek_rel(fh: &FileHandle, offset: isize) {
+    fh.seek_rel(offset)
+}
+
+/// Set the file offset relative to end-of-file
+///
+/// # Arguements
+///
+/// - `fh`: Filehandle for the seek operation.
+/// - `offset`: Value to subtract from end-of-file offset.
+pub fn seek_end(fh: &FileHandle, offset: usize) {
+    fh.seek_end(offset)
 }
 
 #[cfg(test)]
@@ -597,7 +938,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file1").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
@@ -628,7 +969,7 @@ mod tests {
         assert_eq!(root_list, [FileName::from("test2")]);
 
         // Cleanup
-        unlink("test2").unwrap();
+        rmdir("test2").unwrap();
     }
 
     #[test]
@@ -658,8 +999,8 @@ mod tests {
 
         // Cleanup
         unlink("test1/test2/file1").unwrap();
-        unlink("test1/test2").unwrap();
-        unlink("test1/").unwrap();
+        rmdir("test1/test2").unwrap();
+        rmdir("test1/").unwrap();
     }
 
     #[test]
@@ -690,7 +1031,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file2").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
@@ -705,9 +1046,9 @@ mod tests {
         create("test1/file1").unwrap();
 
         // Try to open non-existent file
-        open("test1/file2").unwrap_err();
+        open_rw("test1/file2").unwrap_err();
 
-        let fh = open("test1/file1").unwrap();
+        let fh = open_rw("test1/file1").unwrap();
 
         assert!(fh.size() == 0);
 
@@ -717,7 +1058,7 @@ mod tests {
 
         assert_eq!(fh.size(), 512);
 
-        fh.seek(256);
+        fh.seek_abs(256);
         let buf2: [u8; 512] = [0xcc; 512];
         let result = write(&fh, &buf2).unwrap();
         assert_eq!(result, 512);
@@ -725,7 +1066,7 @@ mod tests {
         assert_eq!(fh.size(), 768);
 
         let mut buf3: [u8; 1024] = [0; 1024];
-        fh.seek(0);
+        fh.seek_abs(0);
         let result = read(&fh, &mut buf3).unwrap();
         assert_eq!(result, 768);
 
@@ -742,7 +1083,7 @@ mod tests {
 
         // Cleanup
         unlink("test1/file1").unwrap();
-        unlink("test1").unwrap();
+        rmdir("test1").unwrap();
     }
 
     #[test]
@@ -760,7 +1101,7 @@ mod tests {
         assert_eq!(fh1.size(), 6144);
 
         // Another handle to the same file
-        let fh2 = open("file").unwrap();
+        let fh2 = open_rw("file").unwrap();
         assert_eq!(fh2.size(), 6144);
 
         let mut buf2: [u8; 4096] = [0; 4096];

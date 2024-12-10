@@ -18,7 +18,7 @@ use super::SYS_CLOSE;
 pub struct ObjHandle(u32);
 
 impl ObjHandle {
-    pub(crate) fn new(id: u32) -> Self {
+    pub(crate) const fn new(id: u32) -> Self {
         Self(id)
     }
 }
