@@ -194,7 +194,7 @@ impl TrustedProcess {
         if data != 0 {
             let (function_code, function_code_range) = ProcessPageTableRef::copy_data_from_guest(data, size, pgt);
             let size = (4096 - (size & 0xFFF)) + size;
-            trustlet.base.page_table_ref.add_function(function_code, size);
+            trustlet.context.page_table_ref.add_function(function_code, size);
             function_code_range.delete();
         }
         trustlet
@@ -373,6 +373,7 @@ pub struct ProcessContext {
     pub channel: MemoryChannel,
     pub sev_features: u64,
     pub measurements: ProcessMeasurements,
+    pub page_table_ref: ProcessPageTableRef,
 }
 
 impl Default for ProcessContext {
@@ -383,6 +384,7 @@ impl Default for ProcessContext {
             channel: MemoryChannel::default(),
             sev_features: 0,
             measurements: ProcessMeasurements::default(),
+            page_table_ref: ProcessPageTableRef::default(),
         }
     }
 }
@@ -453,6 +455,7 @@ impl ProcessContext {
         self.sev_features = vmsa.sev_features;
         self.base = base;
         self.measurements = measurements;
+        self.page_table_ref = page_table_ref;
     }
 
     pub fn add_function(&mut self, function: VirtAddr, size: u64) {
