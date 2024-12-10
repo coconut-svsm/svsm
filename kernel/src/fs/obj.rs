@@ -55,9 +55,9 @@ impl FsObj {
         };
 
         let next = dh.next.fetch_add(1, Ordering::Relaxed);
-        if let Some(&name) = dh.list.get(next) {
+        if let Some(name) = dh.list.get(next) {
             let dirent = dh.dir.lookup_entry(name)?;
-            Ok(Some((name, dirent)))
+            Ok(Some((name.clone(), dirent)))
         } else {
             dh.next.fetch_sub(1, Ordering::Relaxed);
             Ok(None)

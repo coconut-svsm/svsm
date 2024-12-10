@@ -310,13 +310,13 @@ impl Directory for RamDirectory {
         self.entries
             .lock_read()
             .iter()
-            .map(|e| e.name)
+            .map(|e| e.name.clone())
             .collect::<Vec<_>>()
     }
 
-    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError> {
         for e in self.entries.lock_read().iter() {
-            if e.name == name {
+            if &e.name == name {
                 return Ok(e.entry.clone());
             }
         }
@@ -351,9 +351,9 @@ impl Directory for RamDirectory {
         Ok(new_dir)
     }
 
-    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
+    fn unlink(&self, name: &FileName) -> Result<(), SvsmError> {
         let mut vec = self.entries.lock_write();
-        let pos = vec.iter().position(|e| e.name == name);
+        let pos = vec.iter().position(|e| &e.name == name);
 
         match pos {
             Some(idx) => {
@@ -454,23 +454,27 @@ mod tests {
 
         let ram_dir = RamDirectory::new();
 
-        ram_dir.create_file(f_name).expect("Failed to create file");
         ram_dir
-            .create_directory(d_name)
+            .create_file(f_name.clone())
+            .expect("Failed to create file");
+        ram_dir
+            .create_directory(d_name.clone())
             .expect("Failed to create directory");
 
         let list = ram_dir.list();
-        assert_eq!(list, [f_name, d_name]);
+        assert_eq!(list, [f_name.clone(), d_name.clone()]);
 
-        let entry = ram_dir.lookup_entry(f_name).expect("Failed to lookup file");
+        let entry = ram_dir
+            .lookup_entry(&f_name)
+            .expect("Failed to lookup file");
         assert!(entry.is_file());
 
         let entry = ram_dir
-            .lookup_entry(d_name)
+            .lookup_entry(&d_name)
             .expect("Failed to lookup directory");
         assert!(entry.is_dir());
 
-        ram_dir.unlink(d_name).expect("Failed to unlink directory");
+        ram_dir.unlink(&d_name).expect("Failed to unlink directory");
 
         let list = ram_dir.list();
         assert_eq!(list, [f_name]);
