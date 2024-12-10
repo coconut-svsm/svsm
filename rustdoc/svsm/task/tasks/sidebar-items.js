@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["INITIAL_TASK_ID","TASK_FLAG_SHARE_PT"],"enum":["TaskError","TaskState"],"fn":["is_task_fault","run_kernel_task","setup_new_task","task_exit"],"static":["TASK_ID_ALLOCATOR"],"struct":["Task","TaskContext","TaskIDAllocator","TaskListAdapter","TaskRunListAdapter","TaskSchedState"],"type":["TaskPointer"]};
