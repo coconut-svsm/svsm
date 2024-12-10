@@ -73,37 +73,65 @@ impl RawRamFile {
         Ok(())
     }
 
-    /// Used to read a page corresponding to the file from
-    /// a particular offset.
+    /// Read data from a file page and store it in a Buffer object.
     ///
-    /// # Arguements
+    /// # Arguments:
     ///
-    /// - `buf`: buffer to read the file contents into.
-    /// - `offset`: offset to read the file from.
+    /// - `buffer`: [`Buffer`] object to store read data.
+    /// - `buffer_offset`: Offset into the buffer.
+    /// - `file_offset`: Offset into the file.
     ///
-    /// # Assert
+    /// # Returns:
     ///
-    /// Assert that read operation doesn't extend beyond a page.
-    fn read_from_page(&self, buf: &mut [u8], offset: usize) {
-        let page_index = page_offset(offset);
-        let index = offset / PAGE_SIZE;
-        self.pages[index].read(page_index, buf);
+    /// [`Result`] with number of bytes read on success, [`SvsmError`] on
+    /// failure.
+    #[inline(always)]
+    fn read_buffer_from_page(
+        &self,
+        buffer: &mut dyn Buffer,
+        buffer_offset: usize,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let page_offset = page_offset(file_offset);
+        let page_index = file_offset / PAGE_SIZE;
+
+        // Minimum of space bytes-to-read on the page and remaining space in buffer
+        let buffer_min = min(buffer.size() - buffer_offset, PAGE_SIZE - page_offset);
+        // Make sure to not read beyond EOF
+        let size = min(self.size.checked_sub(file_offset).unwrap(), buffer_min);
+
+        self.pages[page_index].copy_to_buffer(buffer, buffer_offset, page_offset, size)
     }
 
-    /// Used to write contents to a page corresponding to
-    /// the file at a particular offset.
+    /// Write data from [`Buffer`] object to a file page.
     ///
-    /// # Arguments
+    /// # Arguments:
     ///
-    /// - `buf`: buffer that contains the data to write to the file.
-    /// - `offset`: file offset to write the data.
-    /// # Assert
+    /// - `buffer`: [`Buffer`] object to read data from.
+    /// - `buffer_offset`: Offset into the buffer.
+    /// - `file_offset`: Offset into the file.
     ///
-    /// Assert that write operation doesn't extend beyond a page.
-    fn write_to_page(&self, buf: &[u8], offset: usize) {
-        let page_index = page_offset(offset);
-        let index = offset / PAGE_SIZE;
-        self.pages[index].write(page_index, buf);
+    /// # Returns:
+    ///
+    /// [`Result`] with number of bytes written on success, [`SvsmError`] on
+    /// failure.
+    #[inline(always)]
+    fn write_buffer_to_page(
+        &self,
+        buffer: &dyn Buffer,
+        buffer_offset: usize,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let page_offset = page_offset(file_offset);
+        let page_index = file_offset / PAGE_SIZE;
+
+        // Minimum of space on the page and remaining bytes-to-write in buffer
+        let size = min(
+            buffer.size().checked_sub(buffer_offset).unwrap(),
+            PAGE_SIZE - page_offset,
+        );
+
+        self.pages[page_index].copy_from_buffer(buffer, buffer_offset, page_offset, size)
     }
 
     /// Used to read the file from a particular offset.
@@ -111,36 +139,32 @@ impl RawRamFile {
     /// # Arguments
     ///
     /// - `buf`: buffer to read the contents of the file into.
-    /// - `offset`: file offset to read from.
+    /// - `file_offset`: file offset to read from.
     ///
     /// # Returns
     ///
     /// [`Result<(), SvsmError>`]: A [Result] containing empty
     /// value if successful, SvsmError otherwise.
-    fn read(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
-        let mut current = min(offset, self.size);
-        let mut len = buf.len();
-        let mut bytes: usize = 0;
-        let mut buf_offset = 0;
+    fn read(&self, buf: &mut [u8], file_offset: usize) -> Result<usize, SvsmError> {
+        self.read_buffer(&mut SliceMutRefBuffer::new(buf), file_offset)
+    }
+
+    fn read_buffer(&self, buffer: &mut dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        let mut current = min(file_offset, self.size);
+        let mut len = buffer.size();
+        let mut buffer_offset: usize = 0;
 
         while len > 0 {
-            let page_end = min(page_align_up(current + 1), self.size);
-            let page_len = min(page_end - current, len);
-            let buf_end = buf_offset + page_len;
-
-            if page_len == 0 {
+            let read = self.read_buffer_from_page(buffer, buffer_offset, current)?;
+            current += read;
+            buffer_offset += read;
+            len -= read;
+            if current == self.size {
                 break;
             }
-
-            self.read_from_page(&mut buf[buf_offset..buf_end], current);
-
-            buf_offset = buf_end;
-            current += page_len;
-            len -= page_len;
-            bytes += page_len;
         }
 
-        Ok(bytes)
+        Ok(buffer_offset)
     }
 
     /// Used to write to the file at a particular offset.
@@ -148,37 +172,39 @@ impl RawRamFile {
     /// # Arguments
     ///
     /// - `buf`: buffer that contains the data to write into the file.
-    /// - `offset`: file offset to read from.
+    /// - `file_offset`: file offset to read from.
     ///
     /// # Returns
     ///
     /// [`Result<(), SvsmError>`]: A [Result] containing empty
     /// value if successful, SvsmError otherwise.
-    fn write(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
-        let mut current = offset;
-        let mut bytes: usize = 0;
-        let mut len = buf.len();
-        let mut buf_offset: usize = 0;
-        let capacity = offset
+    fn write(&mut self, buf: &[u8], file_offset: usize) -> Result<usize, SvsmError> {
+        self.write_buffer(&SliceRefBuffer::new(buf), file_offset)
+    }
+
+    fn write_buffer(
+        &mut self,
+        buffer: &dyn Buffer,
+        file_offset: usize,
+    ) -> Result<usize, SvsmError> {
+        let mut current = file_offset;
+        let mut len = buffer.size();
+        let mut buffer_offset: usize = 0;
+        let capacity = file_offset
             .checked_add(len)
             .ok_or(SvsmError::FileSystem(FsError::inval()))?;
 
         self.set_capacity(capacity)?;
 
         while len > 0 {
-            let page_len = min(PAGE_SIZE - page_offset(current), len);
-            let buf_end = buf_offset + page_len;
-
-            self.write_to_page(&buf[buf_offset..buf_end], current);
-            self.size = max(self.size, current + page_len);
-
-            current += page_len;
-            buf_offset += page_len;
-            len -= page_len;
-            bytes += page_len;
+            let written = self.write_buffer_to_page(buffer, buffer_offset, current)?;
+            current += written;
+            buffer_offset += written;
+            len -= written;
+            self.size = max(self.size, current);
         }
 
-        Ok(bytes)
+        Ok(buffer_offset)
     }
 
     /// Used to truncate the file to a given size.
@@ -258,8 +284,16 @@ impl File for RamFile {
         self.rawfile.lock_read().read(buf, offset)
     }
 
+    fn read_buffer(&self, buffer: &mut dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        self.rawfile.lock_read().read_buffer(buffer, file_offset)
+    }
+
     fn write(&self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
         self.rawfile.lock_write().write(buf, offset)
+    }
+
+    fn write_buffer(&self, buffer: &dyn Buffer, file_offset: usize) -> Result<usize, SvsmError> {
+        self.rawfile.lock_write().write_buffer(buffer, file_offset)
     }
 
     fn truncate(&self, size: usize) -> Result<usize, SvsmError> {
@@ -275,17 +309,18 @@ impl File for RamFile {
     }
 }
 
-/// Represents a SVSM directory with synchronized access
 #[derive(Debug)]
-pub struct RamDirectory {
-    entries: RWLock<Vec<DirectoryEntry>>,
+struct RawRamDirectory {
+    entries: Vec<DirectoryEntry>,
+    remove_in_progress: bool,
 }
 
-impl RamDirectory {
+impl RawRamDirectory {
     /// Used to get a new instance of [`RamDirectory`]
     pub fn new() -> Self {
-        RamDirectory {
-            entries: RWLock::new(Vec::new()),
+        Self {
+            entries: Vec::new(),
+            remove_in_progress: false,
         }
     }
 
@@ -298,24 +333,34 @@ impl RamDirectory {
     ///  # Returns
     ///  [`true`] if the entry is present, [`false`] otherwise.
     fn has_entry(&self, name: &FileName) -> bool {
-        self.entries
-            .lock_read()
-            .iter()
-            .any(|entry| entry.name == *name)
+        self.entries.iter().any(|entry| entry.name == *name)
     }
-}
 
-impl Directory for RamDirectory {
+    fn check_remove(&self) -> Result<(), SvsmError> {
+        if self.remove_in_progress {
+            Err(SvsmError::FileSystem(FsError::busy()))
+        } else {
+            Ok(())
+        }
+    }
+
     fn list(&self) -> Vec<FileName> {
-        self.entries
-            .lock_read()
-            .iter()
-            .map(|e| e.name)
-            .collect::<Vec<_>>()
+        self.entries.iter().map(|e| e.name).collect::<Vec<_>>()
+    }
+
+    fn prepare_remove(&mut self) -> Result<(), SvsmError> {
+        self.check_remove()?;
+        // Only report success if directory is empty.
+        if self.entries.is_empty() {
+            self.remove_in_progress = true;
+            Ok(())
+        } else {
+            Err(SvsmError::FileSystem(FsError::not_empty()))
+        }
     }
 
     fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
-        for e in self.entries.lock_read().iter() {
+        for e in self.entries.iter() {
             if e.name == name {
                 return Ok(e.entry.clone());
             }
@@ -324,26 +369,29 @@ impl Directory for RamDirectory {
         Err(SvsmError::FileSystem(FsError::file_not_found()))
     }
 
-    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+    fn create_file(&mut self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+        self.check_remove()?;
+
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
 
         let new_file = Arc::new(RamFile::new());
         self.entries
-            .lock_write()
             .push(DirectoryEntry::new(name, DirEntry::File(new_file.clone())));
 
         Ok(new_file)
     }
 
-    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+    fn create_directory(&mut self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+        self.check_remove()?;
+
         if self.has_entry(&name) {
             return Err(SvsmError::FileSystem(FsError::file_exists()));
         }
 
         let new_dir = Arc::new(RamDirectory::new());
-        self.entries.lock_write().push(DirectoryEntry::new(
+        self.entries.push(DirectoryEntry::new(
             name,
             DirEntry::Directory(new_dir.clone()),
         ));
@@ -351,17 +399,57 @@ impl Directory for RamDirectory {
         Ok(new_dir)
     }
 
-    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
-        let mut vec = self.entries.lock_write();
-        let pos = vec.iter().position(|e| e.name == name);
+    fn unlink(&mut self, name: FileName) -> Result<(), SvsmError> {
+        let pos = self.entries.iter().position(|e| e.name == name);
 
         match pos {
             Some(idx) => {
-                vec.swap_remove(idx);
+                self.entries.swap_remove(idx);
                 Ok(())
             }
             None => Err(SvsmError::FileSystem(FsError::file_not_found())),
         }
+    }
+}
+
+/// Represents a SVSM directory with synchronized access
+#[derive(Debug)]
+pub struct RamDirectory {
+    directory: RWLock<RawRamDirectory>,
+}
+
+impl RamDirectory {
+    /// Used to get a new instance of [`RamDirectory`]
+    pub fn new() -> Self {
+        RamDirectory {
+            directory: RWLock::new(RawRamDirectory::new()),
+        }
+    }
+}
+
+impl Directory for RamDirectory {
+    fn list(&self) -> Vec<FileName> {
+        self.directory.lock_read().list()
+    }
+
+    fn prepare_remove(&self) -> Result<(), SvsmError> {
+        self.directory.lock_write().prepare_remove()
+    }
+
+    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+        self.directory.lock_read().lookup_entry(name)
+    }
+
+    fn create_file(&self, name: FileName) -> Result<Arc<dyn File>, SvsmError> {
+        self.directory.lock_write().create_file(name)
+    }
+
+    fn create_directory(&self, name: FileName) -> Result<Arc<dyn Directory>, SvsmError> {
+        self.directory.lock_write().create_directory(name)
+    }
+
+    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
+        self.directory.lock_write().unlink(name)
     }
 }
 
