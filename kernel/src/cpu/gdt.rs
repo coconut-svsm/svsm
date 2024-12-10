@@ -6,7 +6,6 @@
 
 use super::tss::X86Tss;
 use crate::address::VirtAddr;
-use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::types::{SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
 use core::mem;
@@ -35,11 +34,11 @@ impl GDTEntry {
     }
 
     pub const fn code_64_kernel() -> Self {
-        Self(0x00af9a000000ffffu64)
+        Self(0x00af9b000000ffffu64)
     }
 
     pub const fn data_64_kernel() -> Self {
-        Self(0x00cf92000000ffffu64)
+        Self(0x00cf93000000ffffu64)
     }
 
     pub const fn code_64_user() -> Self {
@@ -47,13 +46,15 @@ impl GDTEntry {
     }
 
     pub const fn data_64_user() -> Self {
-        Self(0x00cff2000000ffffu64)
+        Self(0x00cff3000000ffffu64)
     }
 }
 
 const GDT_SIZE: u16 = 8;
 
-#[derive(Copy, Clone, Debug, Default)]
+pub static GLOBAL_GDT: GDT = GDT::new();
+
+#[derive(Clone, Debug, Default)]
 pub struct GDT {
     entries: [GDTEntry; GDT_SIZE as usize],
 }
@@ -106,16 +107,30 @@ impl GDT {
     pub fn kernel_ds(&self) -> GDTEntry {
         self.entries[(SVSM_DS / 8) as usize]
     }
-}
 
-impl ReadLockGuard<'static, GDT> {
-    /// Load a GDT. Its lifetime must be static so that its entries are
-    /// always available to the CPU.
+    /// Makes this GDT the active GDT.
     pub fn load(&self) {
         let gdt_desc = self.descriptor();
+        // SAFETY: loading the GDT must be done in assembly.  Use of the GDT
+        // descriptor is safe because it describes a valid objct which
+        // implements Drop to clean up if the GDT object ever ceases to be
+        // valid.
+        unsafe {
+            asm!("lgdt ({0})",
+                 in(reg) &gdt_desc,
+                 options(att_syntax));
+        }
+    }
+
+    /// Loads all selectors from the current GDT.
+    pub fn load_selectors(&self) {
+        self.load();
+        // SAFETY: assembly is required to load segments from the GDT.  In the
+        // x86-64 architecture, the chosen selector values do not affect the
+        // validity of any memory addresses and thus cannot impact memory
+        // safety.
         unsafe {
             asm!(r#" /* Load GDT */
-                 lgdt   (%rax)
 
                  /* Reload data segments */
                  movw   %cx, %ds
@@ -131,7 +146,6 @@ impl ReadLockGuard<'static, GDT> {
                  lretq
             1:
                  "#,
-                in("rax") &gdt_desc,
                 in("rdx") SVSM_CS,
                 in("rcx") SVSM_DS,
                 options(att_syntax));
@@ -153,12 +167,24 @@ impl ReadLockGuard<'static, GDT> {
     }
 }
 
-static GDT: RWLock<GDT> = RWLock::new(GDT::new());
+impl Drop for GDT {
+    fn drop(&mut self) {
+        // Check to see whether the GDT being dropped is the one currently
+        // loaded on this CPU.  If so, reload the global GDT.
+        let gdt_desc: GDTDesc = Default::default();
+        // SAFETY: assembly is required to obtain the current GDT descriptor.
+        // The address of the returned descriptor is only used as a comparison
+        // to `self` and not for data access, so memory safety is not affected
+        // by the returned address.
+        unsafe {
+            asm!("sgdt ({0})",
+                 in(reg) &gdt_desc,
+                 options(att_syntax));
+        }
 
-pub fn gdt() -> ReadLockGuard<'static, GDT> {
-    GDT.lock_read()
-}
-
-pub fn gdt_mut() -> WriteLockGuard<'static, GDT> {
-    GDT.lock_write()
+        let gdt_addr = gdt_desc.addr;
+        if gdt_addr == VirtAddr::from(self as *const GDT) {
+            GLOBAL_GDT.load();
+        }
+    }
 }
