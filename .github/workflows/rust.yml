@@ -166,9 +166,8 @@ jobs:
           submodules: recursive
           ref: ${{ github.event.pull_request.base.sha }}
 
-      #TODO remove after PR is merged
-      #- name: Build base branch
-      #run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
+      - name: Build base branch
+        run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
 
       - name: Clippy with undocumented_unsafe_blocks for base branch
         run: |
