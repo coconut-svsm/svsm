@@ -1,3 +1,4 @@
+use crate::cpu::flush_tlb_global;
 use crate::process_manager::process_memory::allocate_page;
 use crate::mm::PAGE_SIZE;
 use crate::address::{Address, VirtAddr};
@@ -63,6 +64,7 @@ impl AllocationRange {
             self.0 = pgd[offset];
             self.1 = pages;
         }
+        flush_tlb_global();
     }
 
     pub fn inflate(&mut self, page_table_ref: &mut ProcessPageTableRef, pages: u64, start_addr: u64) {
@@ -83,6 +85,7 @@ impl AllocationRange {
     pub fn mount(&self) {
         let (_mapping, pgd) = paddr_as_slice!(read_cr3());
         pgd[DEFAULT_ALLOCATION_RANGE_MOUNT] = self.0;
+        flush_tlb_global();
     }
 
     pub fn mount_at(&self, loc: usize) -> u64 {

@@ -356,6 +356,23 @@ impl ProcessPageTableRef {
         }
     }
 
+    pub fn copy_address_range_to_guest(&self, dst: VirtAddr, size: u64, source: VirtAddr) {
+        let copy_page_count = size / PAGE_SIZE_4K;
+        for i in 0..copy_page_count {
+            let dst_phys = self.get_page(dst + 4096usize * (i as usize));
+            if dst_phys == PhysAddr::null() {
+                break;
+            }
+            let (_mapping,dst_slice) = paddr_as_slice!(dst_phys);
+
+            let source_vaddr = source + 4096usize * (i as usize);
+            let source_slice = vaddr_as_slice!(source_vaddr);
+            _ = replace(dst_slice, *source_slice);
+        }
+
+    }
+
+
     pub fn get_page(&self, addr: VirtAddr) -> PhysAddr{
         //Mapping the page table into Memory and get the next layer based on the address
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);
@@ -506,7 +523,6 @@ impl ProcessPageTableRef {
 
     pub fn copy_data_from_guest_to(addr: u64, size: u64, page_table: u64, dst: u64) {
         let copy_size = size + (PAGE_SIZE_4K - size % PAGE_SIZE_4K);
-        let copy_page_count = copy_size / PAGE_SIZE_4K;
         let target = VirtAddr::from(dst);
 
         let mut page_table_ref = ProcessPageTableRef::default();
@@ -514,6 +530,16 @@ impl ProcessPageTableRef {
         page_table_ref.copy_address_range(VirtAddr::from(addr), copy_size, target);
     }
 
+    pub fn copy_data_to_guest(dst_addr: u64, size: u64, page_table: u64) {
+
+        let source = VirtAddr::from(ALLOCATION_RANGE_VIRT_START);
+
+        let mut page_table_ref = ProcessPageTableRef::default();
+
+        page_table_ref.set_external_table(page_table);
+
+        page_table_ref.copy_address_range_to_guest(VirtAddr::from(dst_addr), size, source);
+    }
 
     pub fn map_4k_page(&self, target: VirtAddr, addr: PhysAddr, flags: ProcessPageFlags) {
         let (_pgd_mapping, pgd_table) = paddr_as_table!(self.process_page_table);

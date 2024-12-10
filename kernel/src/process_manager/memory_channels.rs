@@ -1,6 +1,6 @@
 use log::Metadata;
 
-use crate::{address::{PhysAddr, VirtAddr}, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::process_memory::ALLOCATION_RANGE_VIRT_START, vaddr_as_slice};
+use crate::{address::{PhysAddr, VirtAddr}, cpu::flush_tlb_global, map_paddr, mm::{PerCPUPageMappingGuard, PAGE_SIZE}, paddr_as_slice, process_manager::process_memory::ALLOCATION_RANGE_VIRT_START, vaddr_as_slice};
 
 use super::{allocation::AllocationRange, process::ProcessID, process_paging::ProcessPageTableRef};
 
@@ -37,27 +37,18 @@ impl MemoryChannel {
     }
 
     pub fn copy_into(&mut self, source_addr: u64, page_table: u64, size: usize) {
-        let copy_size = size + PAGE_SIZE - (size % PAGE_SIZE);
-        let copy_page_count = copy_size / PAGE_SIZE;
         let target = VirtAddr::from(ALLOCATION_RANGE_VIRT_START);
-        let mut page_table_ref = ProcessPageTableRef::default();
-        page_table_ref.set_external_table(page_table);
-
         self.input.mount();
         ProcessPageTableRef::copy_data_from_guest_to(source_addr, size as u64, page_table, ALLOCATION_RANGE_VIRT_START);
     }
 
     pub fn copy_out(&mut self, target_addr: u64, page_table: u64, size: usize) {
         let copy_size = size + PAGE_SIZE - (size % PAGE_SIZE);
-        let copy_page_count = copy_size / PAGE_SIZE;
-        let target = VirtAddr::from(ALLOCATION_RANGE_VIRT_START);
-        let mut page_table_ref = ProcessPageTableRef::default();
-        page_table_ref.set_external_table(page_table);
-
+        let source = VirtAddr::from(ALLOCATION_RANGE_VIRT_START);
         self.output.mount();
-
-        page_table_ref.copy_address_range(VirtAddr::from(target), copy_size as u64, VirtAddr::from(target_addr));
+        ProcessPageTableRef::copy_data_to_guest(target_addr, copy_size as u64, page_table);
     }
+
 
     fn allocate_range(&mut self, page_table_ref: &mut ProcessPageTableRef, size: usize, start: u64) -> AllocationRange{
         let mut r = AllocationRange::default();
