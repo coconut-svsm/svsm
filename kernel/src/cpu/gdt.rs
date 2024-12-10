@@ -35,11 +35,11 @@ impl GDTEntry {
     }
 
     pub const fn code_64_kernel() -> Self {
-        Self(0x00af9a000000ffffu64)
+        Self(0x00af9b000000ffffu64)
     }
 
     pub const fn data_64_kernel() -> Self {
-        Self(0x00cf92000000ffffu64)
+        Self(0x00cf93000000ffffu64)
     }
 
     pub const fn code_64_user() -> Self {
@@ -47,7 +47,7 @@ impl GDTEntry {
     }
 
     pub const fn data_64_user() -> Self {
-        Self(0x00cff2000000ffffu64)
+        Self(0x00cff3000000ffffu64)
     }
 }
 
