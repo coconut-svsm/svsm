@@ -92,7 +92,7 @@ bin/coconut-test-vanadium.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampol
 	$(IGVMMEASURE) --check-kvm --native-zero $@ measure
 
 test:
-	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --target=x86_64-unknown-linux-gnu
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --exclude=user* --target=x86_64-unknown-linux-gnu
 
 test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 
@@ -174,10 +174,10 @@ bin/svsm-test.bin: bin/svsm-test
 
 clippy:
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude 'user*' --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
+  cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy --workspace --all-features --exclude packit --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude 'user*' --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
 clean:
 	cargo clean

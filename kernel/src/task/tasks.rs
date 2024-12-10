@@ -15,6 +15,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
+use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
@@ -32,6 +33,7 @@ use crate::mm::{
     SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
     SVSM_PERTASK_SHADOW_STACK_BASE, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
 };
+use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::MemoryRegion;
@@ -465,6 +467,13 @@ impl Task {
         xsa_addr: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
+        // Do not run user-mode with IRQs enabled on platforms which are not
+        // ready for it.
+        let iret_rflags: usize = if SVSM_PLATFORM.use_interrupts() {
+            2 | EFLAGS_IF
+        } else {
+            2
+        };
 
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
 
@@ -481,7 +490,7 @@ impl Task {
             let mut iret_frame = X86ExceptionContext::default();
             iret_frame.frame.rip = user_entry;
             iret_frame.frame.cs = (SVSM_USER_CS | 3).into();
-            iret_frame.frame.flags = 0x202;
+            iret_frame.frame.flags = iret_rflags;
             iret_frame.frame.rsp = (USER_MEM_END - 8).into();
             iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
 

@@ -4,6 +4,7 @@
 import subprocess
 import argparse
 import platform
+import shutil
 import json
 import os
 
@@ -112,7 +113,7 @@ class CargoRunner:
         binary_dir = os.path.join(target_dir, "release" if self.release else "debug")
         return os.path.join(binary_dir, self.package)
 
-def parse_kernel(recipe):
+def parse_components(recipe):
     """
     Parse a recipe for a single kernel component like tdx-stage1, stage2 or svsm.
 
@@ -131,7 +132,8 @@ def parse_kernel(recipe):
             "manifest": settings.get("manifest", None),
             "features": settings.get("features", "").split(),
             "binary": settings.get("binary", False),
-            "objcopy": settings.get("objcopy", get_svsm_elf_target())
+            "objcopy": settings.get("objcopy", get_svsm_elf_target()),
+            "path": settings.get("path", None),
         }
 
     return kernel_config
@@ -149,7 +151,7 @@ def kernel_recipe(config):
 
     kernel_json = config.get("kernel", {})
 
-    return parse_kernel(kernel_json)
+    return parse_components(kernel_json)
 
 
 def parse_igvm_config(target, config):
@@ -219,6 +221,24 @@ def firmware_recipe(config):
         raise ValueError("Value of firmware.command must be a JSON array")
 
     return firmware_config
+
+def fs_recipe(config):
+    """
+    Parse a parameters for retrieving the file-system image
+
+    Args:
+      config: A Python dictionary from a parsed JSON document.
+
+    Returns:
+      A sanitized dictionary with parameters for building the file-system
+      image.
+    """
+    fs_json = config.get("fs", {})
+
+    fs_config = {
+        "modules": parse_components(fs_json.get("modules", {})),
+    }
+    return fs_config
 
 def read_recipe(file_path):
     """
@@ -378,7 +398,8 @@ def build_helpers(args):
     """
     helpers = {
         "igvmbuilder": {},
-        "igvmmeasure": {}
+        "igvmmeasure": {},
+        "packit": { "features": ["cli"] }
     }
     return recipe_build(helpers, get_host_target(), args)
 
@@ -426,6 +447,47 @@ def build_firmware(args, firmware_config):
         return os.getenv(firmware_config["env"])
     else:
         return None
+
+def build_fs_image(args, fs_config, helpers):
+    """
+    Builds the user-space binaries for the file-system image and packs them up
+    into an image file.
+
+    Args:
+      args: A structure initialized from command line options.
+      fs_config: A Python dictionary with options about which user-space
+                 modules to build and where to place them in the file-system
+                 image.
+      helpers: A Python dictionary with the helper tools to use, as returned by
+               build_helpers().
+
+    Returns:
+      Path to the file-system image.
+    """
+    fs_path = "bin/fs"
+    if os.path.exists(fs_path):
+        print("File-system image path already exists ... deleting")
+        shutil.rmtree(fs_path)
+    os.mkdir(fs_path)
+
+    m_recipe = fs_config.get("modules")
+    if len(m_recipe) == 0:
+        return None
+
+    binaries = recipe_build(m_recipe, get_svsm_user_target(), args)
+    for binary, source_path in binaries.items():
+        bin_target = m_recipe[binary].get("objcopy", get_svsm_elf_target());
+        fs_binary = m_recipe[binary].get("path", binary)
+        target_path = "{}/{}".format(fs_path, fs_binary)
+        objcopy_kernel(source_path, target_path, bin_target, args)
+
+    fs_image_file = "bin/svsm-fs.bin"
+
+    # Run PackIt to create the image file
+    command = [ helpers["packit"], "pack", "--input", fs_path, "--output", fs_image_file ]
+    subprocess.run(command, check=True)
+
+    return fs_image_file
 
 def build_igvm_files(args, helpers, igvm_config, parts_config):
     """
@@ -496,6 +558,9 @@ def build_igvm_file_one(args, helpers, igvm_config, parts_config):
     if parts_config["firmware"]:
         command.extend(["--firmware", parts_config["firmware"]])
 
+    if parts_config["fs"]:
+        command.extend(["--filesystem", parts_config["fs"]])
+
     command.append(igvm_config["target"])
 
     # Run igvmbuilder
@@ -542,6 +607,7 @@ def build_one(recipe, helpers, args):
     k_recipe = kernel_recipe(config)
     igvm_config = igvm_recipe(config)
     firmware_config = firmware_recipe(config)
+    fs_config = fs_recipe(config)
 
     # Build all parts of the COCONUT kernel
     kernel_parts = build_kernel_parts(k_recipe, args)
@@ -554,6 +620,9 @@ def build_one(recipe, helpers, args):
 
     # Build/Retrieve firmware to include into IGVM file
     parts_cfg["firmware"] = build_firmware(args, firmware_config)
+
+    # Build user-space file-system image
+    parts_cfg["fs"] = build_fs_image(args, fs_config, helpers)
 
     # Create the IGVM file
     build_igvm_files(args, helpers, igvm_config, parts_cfg)

@@ -428,6 +428,29 @@ impl PerCpu {
         self.irq_state.enable();
     }
 
+    /// Increments IRQ-disable nesting level on the current CPU without
+    /// disabling interrupts.  This is used by exception and interrupt dispatch
+    /// routines that have already disabled interrupts.
+    ///
+    /// Caller needs to make sure to match every `push_nesting()` call with a
+    /// `pop_nesting()` call.
+    #[inline(always)]
+    pub fn irqs_push_nesting(&self, was_enabled: bool) {
+        self.irq_state.push_nesting(was_enabled);
+    }
+
+    /// Reduces IRQ-disable nesting level on the current CPU without restoring
+    /// the original IRQ state original IRQ state.  This is used by exception
+    /// and interrupt dispatch routines that will restore interrupt state
+    /// naturally.
+    ///
+    /// Caller needs to make sure to match every `disable()` call with a
+    /// `pop_state()` call.
+    #[inline(always)]
+    pub fn irqs_pop_nesting(&self) {
+        let _ = self.irq_state.pop_nesting();
+    }
+
     /// Get IRQ-disable nesting count on the current CPU
     ///
     /// # Returns
@@ -474,6 +497,12 @@ impl PerCpu {
 
     pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
         self.hv_doorbell.get()
+    }
+
+    pub fn process_hv_events_if_required(&self) {
+        if let Some(doorbell) = self.hv_doorbell.get() {
+            doorbell.process_if_required(&self.irq_state);
+        }
     }
 
     /// Gets a pointer to the location of the HV doorbell pointer in the
