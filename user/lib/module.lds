@@ -48,12 +48,19 @@ SECTIONS
 	} :rodata
 	_erodata = .;
 	. = ALIGN(4096);
-	.bss : {
+	.bss (NOLOAD) : {
 		_bss = .;
 		*(.bss) *(.bss.[0-9a-zA-Z_]*)
 		. = ALIGN(16);
 		_ebss = .;
 	} :bss
+
+	/* Fallback dummy section if `.bss` is empty */
+	. = ALIGN(4096);
+	.bss_dummy (NOLOAD) : {
+		LONG(0);
+	} :bss
+
 	. = ALIGN(4096);
 	heap_start = .;
 }
