@@ -38,7 +38,7 @@ const fn sign_extend(addr: InnerAddr) -> InnerAddr {
 pub trait Address:
     Copy + From<InnerAddr> + Into<InnerAddr> + PartialEq + Eq + PartialOrd + Ord
 {
-    // Transform the address into its inner representation for easier
+    /// Transform the address into its inner representation for easier
     /// arithmetic manipulation
     #[inline]
     #[verus_verify]
@@ -296,6 +296,8 @@ impl VirtAddr {
     #[verus_verify(external_body)]
     pub unsafe fn aligned_ref<'a, T>(&self) -> Option<&'a T> {
         self.is_aligned_to::<T>()
+            // SAFETY: caller should already provide safety requirements for
+            // pointers that should be null or convertible to a reference.
             .then(|| unsafe { self.as_ptr::<T>().as_ref() })
             .flatten()
     }
@@ -311,6 +313,8 @@ impl VirtAddr {
     #[verus_verify(external)]
     pub unsafe fn aligned_mut<'a, T>(&self) -> Option<&'a mut T> {
         self.is_aligned_to::<T>()
+            // SAFETY: caller should already provide safety requirements for
+            // pointers that should be null or convertible to a reference.
             .then(|| unsafe { self.as_mut_ptr::<T>().as_mut() })
             .flatten()
     }
@@ -343,6 +347,8 @@ impl VirtAddr {
     /// data pointed to by the `VirtAddr` apply here as well.
     #[verus_verify(external_body)]
     pub unsafe fn to_slice<T>(&self, len: usize) -> &[T] {
+        // SAFETY: caller should already provide safety requirements for
+        // [`core::slice::from_raw_parts`]
         unsafe { slice::from_raw_parts::<T>(self.as_ptr::<T>(), len) }
     }
 }

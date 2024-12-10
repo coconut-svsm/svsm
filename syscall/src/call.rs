@@ -20,6 +20,9 @@ macro_rules! syscall {
             #[allow(dead_code)]
             pub unsafe fn $name($a: u64, $($b: u64, $($c: u64, $($d: u64, $($e: u64, $($f: u64)?)?)?)?)?) -> Result<u64, SysCallError> {
                 let mut ret = $a;
+                // SAFETY: This block is required to perform a raw system call.
+                // The caller must ensure that the syscall number and arguments
+                // are valid.
                 unsafe {
                     asm!(
                         "int 0x80",

@@ -58,8 +58,12 @@ pub fn flush_tlb_global_sync() {
 
 pub fn flush_tlb_global_percpu() {
     let cr4 = read_cr4();
-    write_cr4(cr4 ^ CR4Flags::PGE);
-    write_cr4(cr4);
+
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr4(cr4 ^ CR4Flags::PGE);
+        write_cr4(cr4);
+    }
 }
 
 pub fn flush_address_percpu(va: VirtAddr) {
