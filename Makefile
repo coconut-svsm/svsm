@@ -175,7 +175,7 @@ bin/svsm-test.bin: bin/svsm-test
 clippy:
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude 'user*' --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
-  cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
+	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --exclude 'user*' --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
