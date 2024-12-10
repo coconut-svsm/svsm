@@ -176,9 +176,8 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     // We trust stage 2 to give the value provided by IGVM.
     unsafe {
         secrets_page_mut().copy_from(secrets_page_virt);
+        zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
     }
-
-    zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
 
     cr0_init();
     cr4_init(&*platform);
