@@ -348,6 +348,8 @@ impl WriteLockGuard<'static, IDT> {
             address: VirtAddr::from(self.entries.as_ptr()),
         };
 
+        // SAFETY: Inline assembly to load an IDT. `'static` lifetime ensures
+        // that address is always available for the CPU.
         unsafe {
             asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
         }
@@ -378,6 +380,8 @@ pub fn triple_fault() {
         address: VirtAddr::from(0u64),
     };
 
+    // SAFETY: This ends execution, this function will not return so memory
+    // safety is not an issue.
     unsafe {
         asm!("lidt (%rax)
               int3", in("rax") &desc, options(att_syntax));

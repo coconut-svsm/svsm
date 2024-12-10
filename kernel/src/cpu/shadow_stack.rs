@@ -25,6 +25,8 @@ pub fn determine_cet_support() {
     }
 
     let rcx: u64;
+    // SAFETY: Inline assembly to enable CET bit in CR4, which does not change
+    // any state related to memory safety.
     unsafe {
         asm!(// Try to enable CET in CR4.
              "   mov %cr4, %rax",

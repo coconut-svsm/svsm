@@ -18,6 +18,8 @@ pub const EFLAGS_IF: usize = 1 << 9;
 /// Callers need to take care of re-enabling IRQs.
 #[inline(always)]
 pub fn raw_irqs_disable() {
+    // SAFETY: Inline assembly to disable IRQs, which does not change any state
+    // related to memory safety.
     unsafe {
         asm!("cli", options(att_syntax, preserves_flags, nomem));
     }
@@ -30,6 +32,8 @@ pub fn raw_irqs_disable() {
 /// have been enabled.
 #[inline(always)]
 pub fn raw_irqs_enable() {
+    // SAFETY: Inline assembly to enable IRQs, which does not change any state
+    // related to memory safety.
     unsafe {
         asm!("sti", options(att_syntax, preserves_flags, nomem));
     }
