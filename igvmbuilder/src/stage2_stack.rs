@@ -23,7 +23,7 @@ const _: () = assert!((size_of::<Stage2Stack>() as u64) <= PAGE_SIZE_4K);
 impl Stage2Stack {
     pub fn new(gpa_map: &GpaMap, vtom: u64) -> Self {
         let stage2_stack = Stage2LaunchInfo {
-            stage2_end: gpa_map.kernel_elf.get_start() as u32,
+            stage2_end: gpa_map.stage2_image.get_end() as u32,
             kernel_elf_start: gpa_map.kernel_elf.get_start() as u32,
             kernel_elf_end: (gpa_map.kernel_elf.get_start() + gpa_map.kernel_elf.get_size()) as u32,
             kernel_fs_start: gpa_map.kernel_fs.get_start() as u32,

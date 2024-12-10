@@ -9,7 +9,7 @@
 
 pub mod boot_stage2;
 
-use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
+use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo, STAGE2_START};
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -94,9 +94,9 @@ fn setup_env(
         .expect("Early environment setup failed");
 
     let kernel_mapping = FixedAddressMappingRange::new(
-        VirtAddr::from(0x808000u64),
-        VirtAddr::from(launch_info.stage2_end as u64),
-        PhysAddr::from(0x808000u64),
+        VirtAddr::from(u64::from(STAGE2_START)),
+        VirtAddr::from(u64::from(launch_info.stage2_end)),
+        PhysAddr::from(u64::from(STAGE2_START)),
     );
 
     // Use the low 640 KB of memory as the heap.

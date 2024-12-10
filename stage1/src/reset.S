@@ -6,15 +6,11 @@
  * Author: Joerg Roedel <jroedel@suse.de>
  */
 
-#define	ENTRY(name)	\
-	.globl	name;	\
-	name:
-#define END(name)	ENTRY(end_##name)
-
 	.code16gcc
 	.section .init
 /* to_pm_mode must be at 0xfffffe00 */
-ENTRY(to_pm_mode)
+	.globl	to_pm_mode
+to_pm_mode:
 	xor	%bx, %bx
 	mov	%bx, %ds
 	mov	%bx, %es
@@ -56,7 +52,8 @@ gdt32_descr:
 	.word	gdt32_end - gdt32 - 1
 	.long	gdt32
 
-END(to_pm_mode)
+	.globl	end_to_pm_mode
+end_to_pm_mode:
 
 	.section .sevmeta
 	.incbin "bin/meta.bin"

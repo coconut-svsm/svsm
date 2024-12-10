@@ -5,8 +5,17 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::platform::SvsmPlatformType;
-
+use core::mem::size_of;
 use zerocopy::{Immutable, IntoBytes};
+
+pub const STAGE2_STACK_END: u32 = 0x805000;
+pub const STAGE2_INFO_SZ: u32 = size_of::<Stage2LaunchInfo>() as u32;
+pub const STAGE2_STACK: u32 = STAGE2_STACK_END + 0x1000 - STAGE2_INFO_SZ;
+pub const SECRETS_PAGE: u32 = 0x806000;
+pub const CPUID_PAGE: u32 = 0x807000;
+// Stage2 is loaded at 8 MB + 32 KB
+pub const STAGE2_START: u32 = 0x808000;
+pub const STAGE2_MAXLEN: u32 = 0x8D0000 - STAGE2_START;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -45,7 +54,7 @@ impl KernelLaunchInfo {
 
 // Stage 2 launch info from stage1
 // The layout has to match the order in which the parts are pushed to the stack
-// in stage1/stage1.S
+// in stage1.rs
 #[derive(IntoBytes, Immutable, Default, Debug, Clone, Copy)]
 #[repr(C, packed)]
 pub struct Stage2LaunchInfo {

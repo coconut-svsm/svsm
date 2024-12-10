@@ -7,6 +7,7 @@
 use std::error::Error;
 use std::fs::metadata;
 
+use bootlib::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_STACK_END, STAGE2_START};
 use igvm_defs::PAGE_SIZE_4K;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
@@ -105,7 +106,7 @@ impl GpaMap {
             0
         };
 
-        let stage2_image = GpaRange::new(0x808000, stage2_len as u64)?;
+        let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
 
         // The kernel image is loaded beyond the end of the stage2 image,
         // rounded up to a 4 KB boundary.
@@ -154,10 +155,10 @@ impl GpaMap {
         let gpa_map = Self {
             base_addr: 0x800000,
             stage1_image,
-            stage2_stack: GpaRange::new_page(0x805000)?,
+            stage2_stack: GpaRange::new_page(STAGE2_STACK_END.into())?,
             stage2_image,
-            secrets_page: GpaRange::new_page(0x806000)?,
-            cpuid_page: GpaRange::new_page(0x807000)?,
+            secrets_page: GpaRange::new_page(SECRETS_PAGE.into())?,
+            cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_elf,
             kernel_fs,
             igvm_param_block,

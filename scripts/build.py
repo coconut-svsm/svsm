@@ -345,6 +345,8 @@ def make_build(package, config, args):
     """
     if config["file"]:
         command = ["make", config["file"]]
+        if args.release:
+            command.append("RELEASE=1")
         if args.verbose:
             command.append("V=2")
             print(command)
