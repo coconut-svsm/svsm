@@ -8,11 +8,13 @@ extern crate alloc;
 
 use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
-use crate::fs::{find_dir, DirEntry, FileNameArray, FsObj};
+use crate::fs::{find_dir, DirEntry, FsObj};
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;
 use alloc::sync::Arc;
+use core::cmp::min;
 use core::ffi::c_char;
+use core::str;
 use syscall::SysCallError::*;
 use syscall::{DirEnt, FileType, SysCallError};
 
@@ -36,8 +38,17 @@ pub fn sys_readdir(obj_id: u32, dirents: usize, size: usize) -> Result<u64, SysC
         };
 
         let mut new_entry = DirEnt::default();
-        let fname = FileNameArray::from(name);
-        new_entry.file_name[..fname.len()].copy_from_slice(&fname);
+        // DirEnt.file_name must be nul-terminated
+        let bound = (0..min(name.len() + 1, new_entry.file_name.len()))
+            .rposition(|i| name.is_char_boundary(i))
+            .unwrap();
+        new_entry.file_name[..bound].copy_from_slice(&name.as_bytes()[..bound]);
+        if bound != name.len() {
+            log::info!(
+                "sys_readdir: truncation detected: {}",
+                str::from_utf8(&new_entry.file_name[..bound]).unwrap()
+            );
+        }
 
         if let DirEntry::File(f) = dirent {
             new_entry.file_type = FileType::File;
