@@ -8,7 +8,7 @@ extern crate alloc;
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::fs::{open, Directory};
+use crate::fs::{open_read, Directory};
 use crate::mm::vm::VMFileMappingFlags;
 use crate::mm::USER_MEM_END;
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
@@ -41,7 +41,7 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
 ///
 /// `()` on success, [`SvsmError`] on failure.
 pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmError> {
-    let fh = open(binary)?;
+    let fh = open_read(binary)?;
     let file_size = fh.size();
 
     let current_task = current_task();

@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use super::{DirEntry, Directory, FileHandle, FileName};
+use super::{Buffer, DirEntry, Directory, FileHandle, FileName};
 use crate::error::SvsmError;
 use crate::syscall::Obj;
 use alloc::sync::Arc;
@@ -30,7 +30,6 @@ impl DirectoryHandle {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum FsObjEntry {
     File(FileHandle),
@@ -47,6 +46,79 @@ impl FsObj {
         FsObj {
             entry: FsObjEntry::Directory(DirectoryHandle::new(dir)),
         }
+    }
+
+    pub fn new_file(file_handle: FileHandle) -> Self {
+        Self {
+            entry: FsObjEntry::File(file_handle),
+        }
+    }
+
+    pub fn read_buffer(&self, buffer: &mut dyn Buffer) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.read_buffer(buffer)
+    }
+
+    pub fn write_buffer(&self, buffer: &dyn Buffer) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.write_buffer(buffer)
+    }
+
+    pub fn seek_abs(&self, offset: usize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.seek_abs(offset);
+        Ok(fh.position())
+    }
+
+    pub fn seek_rel(&self, offset: isize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.seek_rel(offset);
+        Ok(fh.position())
+    }
+
+    pub fn seek_end(&self, offset: usize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.seek_end(offset);
+        Ok(fh.position())
+    }
+
+    pub fn position(&self) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        Ok(fh.position())
+    }
+
+    pub fn file_size(&self) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        Ok(fh.size())
+    }
+
+    pub fn truncate(&self, length: usize) -> Result<usize, SvsmError> {
+        let FsObjEntry::File(ref fh) = self.entry else {
+            return Err(SvsmError::NotSupported);
+        };
+
+        fh.truncate(length)
     }
 
     pub fn readdir(&self) -> Result<Option<(FileName, DirEntry)>, SvsmError> {

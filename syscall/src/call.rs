@@ -74,6 +74,8 @@ pub enum SysCallError {
     ENOTFOUND = -7,
     ENOTSUPP = -8,
     EEXIST = -9,
+    ERDONLY = -10,
+    EWRONLY = -11,
     UNKNOWN = -128,
 }
 
@@ -89,6 +91,8 @@ impl From<i32> for SysCallError {
             -7 => SysCallError::ENOTFOUND,
             -8 => SysCallError::ENOTSUPP,
             -9 => SysCallError::EEXIST,
+            -10 => SysCallError::ERDONLY,
+            -11 => SysCallError::EWRONLY,
             _ => SysCallError::UNKNOWN,
         }
     }
