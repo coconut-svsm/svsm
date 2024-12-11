@@ -322,6 +322,10 @@ pub struct PerCpu {
     /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
 
+    /// Reference to the `PerCpuShared` that is valid in the global, shared
+    /// address space.
+    shared_global: OnceCell<&'static PerCpuShared>,
+
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
@@ -383,6 +387,7 @@ impl PerCpu {
             apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id, cpu_index),
+            shared_global: OnceCell::new(),
             ghcb: OnceCell::new(),
             hypercall_pages: RefCell::new(None),
             hv_doorbell: Cell::new(None),
@@ -401,12 +406,21 @@ impl PerCpu {
         let cpu_index = PERCPU_AREAS.next_cpu_index();
         let page = PageBox::try_new(Self::new(apic_id, cpu_index))?;
         let percpu = PageBox::leak(page);
+        percpu.set_shared_global();
         unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
         Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
         &self.shared
+    }
+
+    fn set_shared_global(&'static self) {
+        self.shared_global.set(&self.shared).expect("shared global set more than once");
+    }
+
+    pub fn shared_global(&self) -> &'static PerCpuShared {
+        self.shared_global.get().unwrap()
     }
 
     /// Disables IRQs on the current CPU. Keeps track of the nesting level and
