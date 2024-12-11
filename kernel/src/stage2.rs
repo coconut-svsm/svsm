@@ -21,7 +21,7 @@ use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
-use svsm::cpu::gdt;
+use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::error::SvsmError;
@@ -84,7 +84,7 @@ fn setup_env(
     platform: &mut dyn SvsmPlatform,
     launch_info: &Stage2LaunchInfo,
 ) {
-    gdt().load();
+    GLOBAL_GDT.load();
     early_idt_init_no_ghcb();
 
     let debug_serial_port = config.debug_serial_port();
