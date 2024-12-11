@@ -691,8 +691,10 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 /// Runs the first time a new task is scheduled, in the context of the new
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
+/// # Safety
+/// The caller is required to verify the correctness of the save area address.
 #[no_mangle]
-fn setup_new_task(xsa_addr: u64) {
+unsafe fn setup_new_task(xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -701,16 +703,21 @@ fn setup_new_task(xsa_addr: u64) {
     // subsequent task switches will go through schedule() and there the guard
     // is dropped, re-enabling IRQs.
 
-    // SAFETY: Safe because this matches the IrqGuard drop in
-    // schedule()/schedule_init(). See description above.
+    irqs_enable();
+
+    // SAFETY: The caller takes responsibility for the correctness of the save
+    // area address.
     unsafe {
-        irqs_enable();
         sse_restore_context(xsa_addr);
     }
 }
 
 extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
-    setup_new_task(xsa_addr);
+    // SAFETY: the save area address is provided by the context switch assembly
+    // code.
+    unsafe {
+        setup_new_task(xsa_addr);
+    }
     entry();
 }
 
