@@ -9,6 +9,7 @@ pub mod hv_doorbell;
 pub mod msr_protocol;
 pub mod secrets_page;
 pub mod status;
+pub mod tlb;
 pub mod vmsa;
 
 pub mod utils;
