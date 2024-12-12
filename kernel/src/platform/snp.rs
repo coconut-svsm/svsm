@@ -12,6 +12,7 @@ use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
+use crate::cpu::tlb::TlbFlushScope;
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -26,6 +27,7 @@ use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
 };
 use crate::sev::status::vtom_enabled;
+use crate::sev::tlb::flush_tlb_scope;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
@@ -229,6 +231,10 @@ impl SvsmPlatform for SnpPlatform {
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
         pvalidate_range(region, PvalidateOp::from(op))
+    }
+
+    fn flush_tlb(&self, flush_scope: &TlbFlushScope) {
+        flush_tlb_scope(flush_scope);
     }
 
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {

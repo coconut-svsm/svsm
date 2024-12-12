@@ -27,6 +27,7 @@ use svsm::cpu::shadow_stack::{
 };
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
+use svsm::cpu::tlb::set_tlb_flush_smp;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
@@ -310,6 +311,10 @@ pub extern "C" fn svsm_main() {
     }
 
     log::info!("{} CPU(s) present", nr_cpus);
+
+    // Advise the TLB package that future TLB flushes will have to be done with
+    // SMP scope.
+    set_tlb_flush_smp();
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
 
