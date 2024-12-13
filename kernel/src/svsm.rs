@@ -97,7 +97,7 @@ global_asm!(
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
+fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
@@ -105,7 +105,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-pub fn boot_stack_info() {
+fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
     // static, but we're simply printing its address. We are not creating a
     // reference so this is safe.
