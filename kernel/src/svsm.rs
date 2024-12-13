@@ -40,9 +40,7 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
-use svsm::platform::{
-    init_platform_type, request_loop, request_processing_main, SvsmPlatformCell, SVSM_PLATFORM,
-};
+use svsm::platform::{init_platform_type, request_task_main, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
@@ -324,7 +322,7 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to launch FW: {e:#?}");
     }
 
-    start_kernel_task(request_processing_main, String::from("request-processing"))
+    start_kernel_task(request_task_main, String::from("request-processing"))
         .expect("Failed to launch request processing task");
 
     #[cfg(test)]
@@ -335,7 +333,7 @@ pub extern "C" fn svsm_main() {
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
-    request_loop();
+    SVSM_PLATFORM.request_loop();
 
     panic!("Road ends here!");
 }

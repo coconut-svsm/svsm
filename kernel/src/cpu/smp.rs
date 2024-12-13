@@ -13,7 +13,7 @@ use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET
 use crate::cpu::sse::sse_init;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
-use crate::platform::{request_loop, request_processing_main, SvsmPlatform, SVSM_PLATFORM};
+use crate::platform::{request_task_main, SvsmPlatform, SVSM_PLATFORM};
 use crate::task::{schedule_init, start_kernel_task};
 use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
@@ -72,8 +72,8 @@ fn start_ap() {
 
 #[no_mangle]
 pub extern "C" fn ap_request_loop() {
-    start_kernel_task(request_processing_main, String::from("request-processing"))
+    start_kernel_task(request_task_main, String::from("request-processing"))
         .expect("Failed to launch request processing task");
-    request_loop();
+    SVSM_PLATFORM.request_loop();
     panic!("Returned from request_loop!");
 }

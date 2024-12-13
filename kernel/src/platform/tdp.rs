@@ -183,6 +183,10 @@ impl SvsmPlatform for TdpPlatform {
     ) -> Result<(), SvsmError> {
         todo!();
     }
+
+    fn request_loop(&self) {
+        todo!();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
