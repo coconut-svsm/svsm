@@ -7,6 +7,7 @@
 extern crate alloc;
 
 use alloc::collections::btree_map::BTreeMap;
+use alloc::string::String;
 use alloc::sync::Arc;
 use core::fmt;
 use core::mem::size_of;
@@ -16,13 +17,13 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{current_task, PerCpu};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
 use crate::cpu::X86ExceptionContext;
 use crate::cpu::{irqs_enable, X86GeneralRegs};
 use crate::error::SvsmError;
-use crate::fs::{opendir, Directory, FileHandle};
+use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{
@@ -145,6 +146,9 @@ pub struct Task {
     /// State relevant for scheduler
     sched_state: RWLock<TaskSchedState>,
 
+    /// User-visible name of task
+    name: String,
+
     /// ID of the task
     id: u32,
 
@@ -189,7 +193,11 @@ impl fmt::Debug for Task {
 }
 
 impl Task {
-    pub fn create(cpu: &PerCpu, entry: extern "C" fn()) -> Result<TaskPointer, SvsmError> {
+    pub fn create(
+        cpu: &PerCpu,
+        entry: extern "C" fn(),
+        name: String,
+    ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -256,6 +264,7 @@ impl Task {
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
             }),
+            name,
             id: TASK_ID_ALLOCATOR.next_id(),
             rootdir: opendir("/")?,
             list_link: LinkedListAtomicLink::default(),
@@ -268,6 +277,7 @@ impl Task {
         cpu: &PerCpu,
         user_entry: usize,
         root: Arc<dyn Directory>,
+        name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
@@ -339,6 +349,7 @@ impl Task {
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
             }),
+            name,
             id: TASK_ID_ALLOCATOR.next_id(),
             rootdir: root,
             list_link: LinkedListAtomicLink::default(),
@@ -349,6 +360,10 @@ impl Task {
 
     pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
         self.stack_bounds
+    }
+
+    pub fn get_task_name(&self) -> &String {
+        &self.name
     }
 
     pub fn get_task_id(&self) -> u32 {
@@ -637,6 +652,34 @@ impl Task {
         Ok(id)
     }
 
+    /// Adds an object to the current task and maps it to a given object-id.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The object to be added.
+    /// * `handle` - Object handle to reference the object.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ObjHandle, SvsmError>` - Returns the object handle for the object
+    ///   to be added if successful, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if allocating the object handle
+    /// fails or the object id is already in use.
+    pub fn add_obj_at(&self, obj: Arc<dyn Obj>, handle: ObjHandle) -> Result<ObjHandle, SvsmError> {
+        let mut objs = self.objs.lock_write();
+
+        if objs.get(&handle).is_some() {
+            return Err(SvsmError::from(ObjError::Busy));
+        }
+
+        objs.insert(handle, obj);
+
+        Ok(handle)
+    }
+
     /// Removes an object from the current task.
     ///
     /// # Arguments
@@ -688,13 +731,31 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
         || (vaddr >= SVSM_PERTASK_BASE && vaddr < SVSM_PERTASK_END)
 }
 
+fn task_attach_console() {
+    let file_handle = stdout_open();
+    let obj_handle = ObjHandle::new(0);
+    current_task()
+        .add_obj_at(file_handle, obj_handle)
+        .expect("Failed to attach console");
+}
+
 /// Runs the first time a new task is scheduled, in the context of the new
 /// task. Any first-time initialization and setup work for a new task that
 /// needs to happen in its context must be done here.
 /// # Safety
 /// The caller is required to verify the correctness of the save area address.
 #[no_mangle]
-unsafe fn setup_new_task(xsa_addr: u64) {
+unsafe fn setup_user_task(xsa_addr: u64) {
+    // SAFETY: caller needs to make sure xsa_addr is valid and points to a
+    // memory region of sufficient size.
+    unsafe {
+        // Needs to be the first function called here.
+        setup_new_task_common(xsa_addr);
+    }
+    task_attach_console();
+}
+
+unsafe fn setup_new_task_common(xsa_addr: u64) {
     // Re-enable IRQs here, as they are still disabled from the
     // schedule()/sched_init() functions. After the context switch the IrqGuard
     // from the previous task is not dropped, which causes IRQs to stay
@@ -716,7 +777,7 @@ extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
-        setup_new_task(xsa_addr);
+        setup_new_task_common(xsa_addr);
     }
     entry();
 }
@@ -730,7 +791,9 @@ extern "C" fn task_exit() {
 
 #[cfg(test)]
 mod tests {
+    extern crate alloc;
     use crate::task::start_kernel_task;
+    use alloc::string::String;
     use core::arch::asm;
     use core::arch::global_asm;
 
@@ -821,7 +884,8 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        start_kernel_task(task1).expect("Failed to launch request processing task");
+        start_kernel_task(task1, String::from("task1"))
+            .expect("Failed to launch request processing task");
     }
 
     extern "C" fn task1() {
@@ -830,7 +894,8 @@ mod tests {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        start_kernel_task(task2).expect("Failed to launch request processing task");
+        start_kernel_task(task2, String::from("task2"))
+            .expect("Failed to launch request processing task");
 
         unsafe {
             asm!("call check_fpu", out("rax") ret, options(att_syntax));

@@ -26,6 +26,8 @@ fn write(arr: &mut [u64; 128], val: u64) {
 declare_main!(main);
 
 fn main() -> u32 {
+    println!("COCONUT-SVSM init process starting");
+
     // SAFETY: Single-threaded process, so no data races. Safe to access global
     // mutable data.
     unsafe {

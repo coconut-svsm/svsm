@@ -6,7 +6,12 @@
 
 #![no_std]
 
+pub mod console;
+pub mod locking;
+
+pub use console::*;
 use core::panic::PanicInfo;
+pub use locking::*;
 pub use syscall::*;
 
 #[macro_export]
@@ -24,6 +29,7 @@ macro_rules! declare_main {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo<'_>) -> ! {
+fn panic(info: &PanicInfo<'_>) -> ! {
+    println!("Panic: {}", info);
     exit(!0);
 }

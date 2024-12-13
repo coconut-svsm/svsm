@@ -15,6 +15,7 @@ use alloc::sync::Arc;
 pub enum ObjError {
     InvalidHandle,
     NotFound,
+    Busy,
 }
 
 /// An object represents the type of resource like file, VM, vCPU in the

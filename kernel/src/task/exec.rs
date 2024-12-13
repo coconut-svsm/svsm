@@ -17,6 +17,8 @@ use crate::utils::align_up;
 use alloc::sync::Arc;
 use elf::{Elf64File, Elf64PhdrFlags};
 
+use alloc::string::String;
+
 fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     let mut vm_flags = VMFileMappingFlags::Fixed;
 
@@ -29,6 +31,16 @@ fn convert_elf_phdr_flags(flags: Elf64PhdrFlags) -> VMFileMappingFlags {
     }
 
     vm_flags
+}
+
+/// Returns the name of the binary file without preceeding directories. This is
+/// used as the official task name.
+fn task_name(binary: &str) -> String {
+    let mut items = binary.split('/').filter(|x| !x.is_empty());
+    match items.nth_back(0) {
+        Some(p) => String::from(p),
+        None => String::from("unknown"),
+    }
 }
 
 /// Loads and executes an ELF binary in user-mode.
@@ -59,7 +71,7 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmErro
     let virt_base = alloc_info.range.vaddr_begin;
     let entry = elf_bin.get_entry(virt_base);
 
-    let new_task = create_user_task(entry.try_into().unwrap(), root)?;
+    let new_task = create_user_task(entry.try_into().unwrap(), root, task_name(binary))?;
 
     for seg in elf_bin.image_load_segment_iter(virt_base) {
         let virt_start = VirtAddr::from(seg.vaddr_range.vaddr_begin);

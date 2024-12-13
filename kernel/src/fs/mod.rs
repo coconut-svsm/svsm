@@ -6,6 +6,7 @@
 
 mod api;
 mod buffer;
+mod console;
 mod filesystem;
 mod init;
 mod obj;
@@ -13,6 +14,7 @@ mod ramfs;
 
 pub use api::*;
 pub use buffer::*;
+pub use console::{stdout_open, ConsoleFile};
 pub use filesystem::*;
 pub use init::populate_ram_fs;
 pub use obj::FsObj;
