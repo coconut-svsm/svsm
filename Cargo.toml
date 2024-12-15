@@ -24,6 +24,8 @@ members = [
     "user/lib",
     # Init user-space module
     "user/init",
+    # Library defining common types between SVSM and attestation proxy
+    "libaproxy",
 ]
 
 
@@ -35,6 +37,7 @@ test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
 libtcgtpm = { path = "libtcgtpm" }
+libaproxy = { path = "libaproxy" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
@@ -51,9 +54,12 @@ gdbstub_arch = { version = "0.2.4" }
 igvm = { version = "0.3.2", default-features = false }
 igvm_defs = { version = "0.3.2", default-features = false }
 intrusive-collections = "0.9.6"
+kbs-types = { version = "0.9.2", default-features = false, features = ["alloc"] }
 libfuzzer-sys = "0.4"
 log = "0.4.17"
 p384 = { version = "0.13.0" }
+serde = { version = "1.0.215", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 sha2 = "0.10.8"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
