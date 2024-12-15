@@ -9,10 +9,10 @@ extern crate alloc;
 
 use crate::{
     error::SvsmError,
-    io::{Write, DEFAULT_IO_DRIVER},
+    io::{Read, Write, DEFAULT_IO_DRIVER},
     serial::SerialPort,
 };
-use alloc::{string::ToString, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -61,8 +61,28 @@ impl AttestationDriver<'_> {
         };
 
         self.write(request)?;
+        let payload = self.read()?;
 
-        todo!();
+        serde_json::from_slice(&payload).or(Err(AttestationError::NegotiationDeserialize))
+    }
+
+    /// Read attestation data from the serial port.
+    fn read(&mut self) -> Result<Vec<u8>, AttestationError> {
+        let len = {
+            let mut bytes = [0u8; 8];
+            self.sp
+                .read(&mut bytes)
+                .or(Err(AttestationError::ProxyRead))?;
+
+            usize::from_ne_bytes(bytes)
+        };
+
+        let mut buf = vec![0u8; len];
+        self.sp
+            .read(&mut buf)
+            .or(Err(AttestationError::ProxyRead))?;
+
+        Ok(buf)
     }
 
     /// Write attestation data over the serial port.
@@ -85,8 +105,12 @@ impl AttestationDriver<'_> {
 /// Possible errors when attesting TEE evidence.
 #[derive(Clone, Copy, Debug)]
 pub enum AttestationError {
+    /// Error deserializing the negotiation response from JSON bytes.
+    NegotiationDeserialize,
     /// Error serializing the negotiation request to JSON bytes.
     NegotiationSerialize,
+    /// Error reading from the attestation proxy transport channel.
+    ProxyRead,
     /// Error writing over the attestation proxy transport channel.
     ProxyWrite,
     /// Unsupported TEE architecture.
