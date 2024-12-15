@@ -16,16 +16,18 @@ use crate::{
     io::{Read, Write, DEFAULT_IO_DRIVER},
     serial::SerialPort,
 };
+use aes::{cipher::BlockDecrypt, Aes128};
+use aes_gcm::KeyInit;
 use alloc::{string::ToString, vec, vec::Vec};
 use base64::prelude::*;
-use core::fmt;
+use core::{cmp::min, fmt};
 use kbs_types::Tee;
 use libaproxy::*;
-use p384::{ecdh, NistP384};
+use p384::{ecdh, NistP384, PublicKey};
 use rand_chacha::{rand_core::SeedableRng, ChaChaRng};
 use rdrand::RdSeed;
 use serde::Serialize;
-use sha2::{Digest, Sha384, Sha512};
+use sha2::{Digest, Sha256, Sha384, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
@@ -95,7 +97,15 @@ impl AttestationDriver<'_> {
 
         self.write(request)?;
 
-        todo!();
+        let payload = self.read()?;
+        let response: AttestationResponse =
+            serde_json::from_slice(&payload).or(Err(AttestationError::AttestationDeserialize))?;
+
+        if !response.success {
+            return Err(AttestationError::Failed);
+        }
+
+        self.secret_decrypt(response, &key)
     }
 
     /// Read attestation data from the serial port.
@@ -233,6 +243,53 @@ impl AttestationDriver<'_> {
 
         Ok(sha.finalize().to_vec())
     }
+
+    /// Decrypt a secret from the attestation server with the TEE private key.
+    fn secret_decrypt(
+        &self,
+        resp: AttestationResponse,
+        key: &TeeKey,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let secret = resp.secret.ok_or(AttestationError::SecretMissing)?;
+
+        match key {
+            TeeKey::Ecdh384Sha256Aes128(ec) => {
+                // Get the shared ECDH secret between the client/server EC keys.
+                let shared = {
+                    let s = resp.pub_key.ok_or(AttestationError::SecretDecrypt)?;
+                    let pub_key =
+                        PublicKey::from_sec1_bytes(&s).or(Err(AttestationError::SecretDecrypt))?;
+
+                    ec.diffie_hellman(&pub_key)
+                };
+
+                // Extract the HKDF bytes and use to build an AES-128 symmetric key.
+                let mut sha_bytes = [0u8; 16];
+                let empty: [u8; 0] = [];
+
+                let hkdf = shared.extract::<Sha256>(None);
+                hkdf.expand(&empty, &mut sha_bytes)
+                    .or(Err(AttestationError::SecretDecrypt))?;
+                let aes =
+                    Aes128::new_from_slice(&sha_bytes).or(Err(AttestationError::SecretDecrypt))?;
+
+                // Decrypt each 16-byte block of the ciphertext with the symmetric key.
+                let mut ptr = 0;
+                let len = secret.len();
+                let mut vec: Vec<u8> = Vec::new();
+                while ptr < len {
+                    let remain = min(16, len - ptr);
+                    let mut arr: [u8; 16] = [0u8; 16];
+                    arr[..remain].copy_from_slice(&secret[ptr..ptr + remain]);
+                    aes.decrypt_block((&mut arr).into());
+                    vec.append(&mut arr.to_vec());
+                    ptr += remain;
+                }
+
+                Ok(vec)
+            }
+        }
+    }
 }
 
 /// TEE key used to decrypt secrets sent from the attestation server.
@@ -305,6 +362,10 @@ pub enum AttestationError {
     ProxyRead,
     /// Error writing over the attestation proxy transport channel.
     ProxyWrite,
+    /// Attestation successful, but unable to decrypt secret.
+    SecretDecrypt,
+    /// Attestation successful, but no secret found.
+    SecretMissing,
     /// Error fetching the SEV-SNP attestation report.
     SnpGetReport,
     /// Error encoding the TEE public key to JSON.
