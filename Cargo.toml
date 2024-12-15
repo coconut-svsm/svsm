@@ -46,6 +46,7 @@ userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 
 # crates.io
+aes = "0.8.4"
 aes-gcm = { version = "0.10.3", default-features = false }
 arbitrary = "1.3.0"
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
