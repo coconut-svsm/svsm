@@ -7,6 +7,8 @@
 
 #![no_std]
 
+mod attestation;
 mod negotiation;
 
+pub use attestation::*;
 pub use negotiation::*;
