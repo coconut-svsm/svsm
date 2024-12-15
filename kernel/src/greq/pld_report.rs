@@ -8,7 +8,7 @@
 
 use core::mem::size_of;
 
-use zerocopy::{FromBytes, Immutable, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::protocols::errors::SvsmReqError;
 
@@ -17,22 +17,22 @@ pub const USER_DATA_SIZE: usize = 64;
 
 /// MSG_REPORT_REQ payload format (AMD SEV-SNP spec. table 20)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable, IntoBytes)]
 pub struct SnpReportRequest {
     /// Guest-provided data to be included in the attestation report
     /// REPORT_DATA (512 bits)
-    user_data: [u8; USER_DATA_SIZE],
+    pub user_data: [u8; USER_DATA_SIZE],
     /// The VMPL to put in the attestation report
-    vmpl: u32,
+    pub vmpl: u32,
     /// 31:2 - Reserved
     ///  1:0 - KEY_SEL. Selects which key to use for derivation
     ///        0: If VLEK is installed, sign with VLEK. Otherwise, sign with VCEK
     ///        1: Sign with VCEK
     ///        2: Sign with VLEK
     ///        3: Reserved
-    flags: u32,
+    pub flags: u32,
     /// Reserved, must be zero
-    rsvd: [u8; 24],
+    pub rsvd: [u8; 24],
 }
 
 impl SnpReportRequest {
@@ -105,7 +105,7 @@ impl SnpReportResponse {
 /// component in the trusted computing base (TCB) of the SNP firmware.
 /// (AMD SEV-SNP spec. table 3)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, FromBytes, Immutable)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes)]
 struct TcbVersion {
     /// Version of the Microcode, SNP firmware, PSP and boot loader
     raw: u64,
@@ -113,7 +113,7 @@ struct TcbVersion {
 
 /// Format for an ECDSA P-384 with SHA-384 signature (AMD SEV-SNP spec. table 115)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable, IntoBytes)]
 struct Signature {
     /// R component of this signature
     r: [u8; 72],
@@ -125,7 +125,7 @@ struct Signature {
 
 /// ATTESTATION_REPORT format (AMD SEV-SNP spec. table 21)
 #[repr(C, packed)]
-#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
+#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable, IntoBytes)]
 pub struct AttestationReport {
     /// Version number of this attestation report
     version: u32,
