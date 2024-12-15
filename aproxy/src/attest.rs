@@ -17,6 +17,16 @@ use std::{
 /// Attest an SVSM client session.
 pub fn attest(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
     negotiation(stream, http)?;
+    attestation(stream, http)?;
+
+    // FIXME: When this function returns, the thread is terminated and the socket connection is
+    // closed. However, there is currently a bug in QEMU in which the attestation driver is unable
+    // to read the response from the proxy after the connection is closed.
+    //
+    // For now, effectively block the proxy process by waiting on a read from the driver that will
+    // never occur. Instead, the read will terminate once the driver closes the socket connection.
+    let mut buf = Vec::new();
+    stream.read_to_end(&mut buf)?;
 
     Ok(())
 }
@@ -37,6 +47,25 @@ fn negotiation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyho
 
     // Gather negotiation parameters from the attestation server.
     let response: NegotiationResponse = http.negotiation(request)?;
+
+    // Write the response from the attestation server to SVSM.
+    proxy_write(stream, response)?;
+
+    Ok(())
+}
+
+/// Attestation phase of SVSM attestation. SVSM will send an attestation request containing the TEE
+/// evidence. Proxy will respond with an attestation response containing the status
+/// (success/failure) and an optional secret upon successful attestation.
+fn attestation(stream: &mut UnixStream, http: &backend::HttpClient) -> anyhow::Result<()> {
+    let request: AttestationRequest = {
+        let payload = proxy_read(stream)?;
+        serde_json::from_slice(&payload)
+            .context("unable to deserialize attestation request from JSON")?
+    };
+
+    // Attest the TEE evidence with the server.
+    let response: AttestationResponse = http.attestation(request)?;
 
     // Write the response from the attestation server to SVSM.
     proxy_write(stream, response)?;
