@@ -25,6 +25,7 @@ libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true
 
+aes = { workspace = true, optional = true }
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 base64 = { workspace = true, optional = true, features = ["alloc"] }
 bitfield-struct.workspace = true
@@ -58,7 +59,7 @@ verify_external = { workspace = true, optional = true}
 test.workspace = true
 
 [features]
-attest = ["dep:base64", "dep:kbs-types", "dep:libaproxy", "dep:p384",
+attest = ["dep:aes", "dep:base64", "dep:kbs-types", "dep:libaproxy", "dep:p384",
           "dep:rand_chacha", "dep:rdrand", "dep:serde", "dep:serde_json",
           "dep:sha2"]
 default = []
