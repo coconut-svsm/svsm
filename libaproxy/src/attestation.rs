@@ -6,7 +6,7 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 extern crate alloc;
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 /// The format of the public key that is used to encrypt secrets sent to SVSM upon successful
