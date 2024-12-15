@@ -17,6 +17,7 @@ use std::{
 /// Attest an SVSM client session.
 pub fn attest(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
     negotiation(stream, http)?;
+    attestation(stream, http)?;
 
     Ok(())
 }
@@ -37,6 +38,25 @@ fn negotiation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyho
 
     // Gather negotiation parameters from the attestation server.
     let response: NegotiationResponse = http.negotiation(request)?;
+
+    // Write the response from the attestation server to SVSM.
+    proxy_write(stream, response)?;
+
+    Ok(())
+}
+
+/// Attestation phase of SVSM attestation. SVSM will send an attestation request containing the TEE
+/// evidence. Proxy will respond with an attestation response containing the status
+/// (success/failure) and an optional secret upon successful attestation.
+fn attestation(stream: &mut UnixStream, http: &backend::HttpClient) -> anyhow::Result<()> {
+    let request: AttestationRequest = {
+        let payload = proxy_read(stream)?;
+        serde_json::from_slice(&payload)
+            .context("unable to deserialize attestation request from JSON")?
+    };
+
+    // Attest the TEE evidence with the server.
+    let response: AttestationResponse = http.attestation(request)?;
 
     // Write the response from the attestation server to SVSM.
     proxy_write(stream, response)?;
