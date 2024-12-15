@@ -21,6 +21,7 @@ doctest = true
 [dependencies]
 bootlib.workspace = true
 cpuarch.workspace = true
+libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true
 
@@ -31,9 +32,15 @@ gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }
 igvm_defs = { workspace = true, features = ["unstable"] }
 intrusive-collections.workspace = true
+kbs-types = { workspace = true, optional = true, features = ["alloc"] }
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["alloc", "derive"] }
+serde_json = { workspace = true, optional = true, features = ["alloc"] }
+# NOTE: The `force-soft` feature is required in sha2 to support this crate in a
+#       no_std environment due to a LLVM issue with x86_64-unknown-none targets.
+sha2 = { workspace = true, optional = true, features = ["force-soft"] }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
 
@@ -47,6 +54,7 @@ verify_external = { workspace = true, optional = true}
 test.workspace = true
 
 [features]
+attest = ["dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
