@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2024 Red Hat, Inc
+//
+// Author: Stefano Garzarella <sgarzare@redhat.com>
+// Author: Tyler Fanelli <tfanelli@redhat.com>
+
+use crate::backend;
+use anyhow::Context;
+use libaproxy::*;
+use serde::Serialize;
+use std::{
+    io::{Read, Write},
+    os::unix::net::UnixStream,
+};
+
+/// Attest an SVSM client session.
+pub fn attest(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
+    negotiation(stream, http)?;
+
+    Ok(())
+}
+
+/// Negotiation phase of SVSM attestation. SVSM will send a negotiation request indicating the
+/// version that it would like to use. The proxy will then reach out to the respective attestation
+/// server and gather all data required (i.e. a nonce) that should be hashed into the attestation
+/// evidence. The proxy will also reply with the type of hash algorithm to use for the negotiation
+/// parameters.
+fn negotiation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
+    // Read the negotiation parameters from SVSM.
+    let request: NegotiationRequest = {
+        let payload = proxy_read(stream)?;
+
+        serde_json::from_slice(&payload)
+            .context("unable to deserialize negotiation request from JSON")?
+    };
+
+    // Gather negotiation parameters from the attestation server.
+    let response: NegotiationResponse = http.negotiation(request)?;
+
+    // Write the response from the attestation server to SVSM.
+    proxy_write(stream, response)?;
+
+    Ok(())
+}
+
+/// Read bytes from the UNIX socket connected to SVSM. With each write, SVSM first writes an 8-byte
+/// header indicating the length of the buffer. Once the length is read, the buffer can be read.
+fn proxy_read(stream: &mut UnixStream) -> anyhow::Result<Vec<u8>> {
+    let len = {
+        let mut bytes = [0u8; 8];
+
+        stream
+            .read_exact(&mut bytes)
+            .context("unable to read request buffer length from socket")?;
+
+        usize::from_ne_bytes(bytes)
+    };
+
+    let mut bytes = vec![0u8; len];
+
+    stream
+        .read_exact(&mut bytes)
+        .context("unable to read request buffer from socket")?;
+
+    Ok(bytes)
+}
+
+/// Write bytes to the UNIX socket connected to SVSM. With each write, an 8-byte header indicating
+/// the length of the buffer is written. Once the length is written, the buffer is written.
+fn proxy_write(stream: &mut UnixStream, buf: impl Serialize) -> anyhow::Result<()> {
+    let bytes = serde_json::to_vec(&buf).context("unable to convert buffer to JSON bytes")?;
+    let len = bytes.len().to_ne_bytes();
+
+    stream
+        .write_all(&len)
+        .context("unable to write buffer length to socket")?;
+    stream
+        .write_all(&bytes)
+        .context("unable to write buffer to socket")?;
+
+    Ok(())
+}
