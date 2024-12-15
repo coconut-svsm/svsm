@@ -15,11 +15,11 @@ impl TryFrom<u32> for Cap {
     type Error = ();
 
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value == Cap::AvailableVmBitmap.into() {
+        if value == (Cap::AvailableVmBitmap as u32) {
             Ok(Cap::AvailableVmBitmap)
-        } else if value == Cap::GlobalFeatureBitmap.into() {
+        } else if value == (Cap::GlobalFeatureBitmap as u32) {
             Ok(Cap::GlobalFeatureBitmap)
-        } else if value == Cap::NrCaps.into() {
+        } else if value == (Cap::NrCaps as u32) {
             Ok(Cap::NrCaps)
         } else {
             Err(())

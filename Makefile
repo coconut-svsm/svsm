@@ -45,15 +45,26 @@ IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
 
+APROXY = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/aproxy"
+APROXYBIN = bin/aproxy
+
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
 
 all: bin/svsm.bin igvm
 
+aproxy: $(APROXY) $(APROXYBIN)
+
 igvm: $(IGVM_FILES) $(IGVMBIN) $(IGVMMEASUREBIN)
 
 bin:
 	mkdir -v -p bin
+
+$(APROXYBIN): $(APROXY) bin
+	cp -f $(APROXY) $@
+
+$(APROXY):
+	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p aproxy
 
 $(IGVMBIN): $(IGVMBUILDER) bin
 	cp -f $(IGVMBUILDER) $@
@@ -175,7 +186,7 @@ bin/svsm-test.bin: bin/svsm-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
+	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 --exclude aproxy -- -D warnings
 	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude 'user*' --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
 	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
 	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
