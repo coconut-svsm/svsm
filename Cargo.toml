@@ -48,6 +48,7 @@ userinit = { path = "user/init" }
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
 arbitrary = "1.3.0"
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 bitfield-struct = "0.6.2"
 bitflags = "2.4"
 clap = { version = "4.4.14", default-features = false }
@@ -59,10 +60,12 @@ intrusive-collections = "0.9.6"
 kbs-types = { version = "0.9.2", default-features = false, features = ["alloc"] }
 libfuzzer-sys = "0.4"
 log = "0.4.17"
-p384 = { version = "0.13.0" }
+p384 = { version = "0.13.0", default-features = false, features = ["alloc", "arithmetic", "ecdh", "jwk"] }
+rand_chacha = { version = "0.3.1", default-features = false }
+rdrand = { version = "0.8.3", default-features = false }
 serde = { version = "1.0.215", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-sha2 = "0.10.8"
+sha2 = { version = "0.10.8", default-features = false, features = ["force-soft"] }
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["derive"] }
