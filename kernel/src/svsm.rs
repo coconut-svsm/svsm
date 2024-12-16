@@ -297,9 +297,6 @@ pub extern "C" fn svsm_main() {
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
-        .expect("Failed to invalidate early boot memory");
-
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;
 
@@ -312,6 +309,9 @@ pub extern "C" fn svsm_main() {
     log::info!("{} CPU(s) present", nr_cpus);
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
+
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
+        .expect("Failed to invalidate early boot memory");
 
     if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, new_kernel_region(&LAUNCH_INFO)) {
         panic!("Failed to prepare guest FW: {e:#?}");

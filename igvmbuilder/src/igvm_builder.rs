@@ -28,6 +28,7 @@ use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
 use crate::paging::construct_init_page_tables;
 use crate::platform::PlatformMask;
+use crate::sipi::add_sipi_stub;
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::{construct_native_start_context, construct_start_context, construct_vmsa};
 use crate::GpaMap;
@@ -525,6 +526,12 @@ impl IgvmBuilder {
                 VSM_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
+        }
+
+        // If the target includes a non-isolated platform, then insert the
+        // SIPI startup stub.
+        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
+            add_sipi_stub(ANY_NATIVE_COMPATIBILITY_MASK, &mut self.directives);
         }
 
         Ok(())

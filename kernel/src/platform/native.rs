@@ -6,16 +6,23 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
+use crate::cpu::apic::{ApicIcr, IcrMessageType};
+use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::smp::create_ap_start_context;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
+use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
+use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
+
+use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use core::{mem, ptr};
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
@@ -32,6 +39,7 @@ const APIC_MSR_ICR: u32 = 0x830;
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {
     is_hyperv: bool,
+    transition_cr3: u32,
 }
 
 impl NativePlatform {
@@ -43,6 +51,7 @@ impl NativePlatform {
         }
         Self {
             is_hyperv: is_hyperv_hypervisor(),
+            transition_cr3: u64::from(read_cr3()).try_into().unwrap(),
         }
     }
 }
@@ -191,6 +200,34 @@ impl SvsmPlatform for NativePlatform {
             return hyperv_start_cpu(cpu, context);
         }
 
-        todo!();
+        // Translate this context into an AP start context and place it it in
+        // the AP startup transition page.
+        let ap_context = create_ap_start_context(context, self.transition_cr3);
+
+        let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
+        let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;
+
+        // SAFETY: the address of the transition page was made valid when the
+        // `PerCPUPageMappingGuard` was created.
+        unsafe {
+            let size = mem::size_of::<ApStartContext>();
+            let context_va = context_mapping.virt_addr() + PAGE_SIZE - size;
+            let context_ptr = context_va.as_mut_ptr::<ApStartContext>();
+            ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
+        }
+
+        // Now that the AP startup transition page has been configured, send
+        // INIT-SIPI to start the processor.  No second SIPI is required when
+        // running virtualized.
+        let icr = ApicIcr::new().with_destination(cpu.shared().apic_id());
+        let init_icr = icr.with_message_type(IcrMessageType::Init);
+        self.post_irq(init_icr.into())?;
+        let sipi_vector = SIPI_STUB_GPA >> 12;
+        let sipi_icr = icr
+            .with_message_type(IcrMessageType::Sipi)
+            .with_vector(sipi_vector.try_into().unwrap());
+        self.post_irq(sipi_icr.into())?;
+
+        Ok(())
     }
 }
