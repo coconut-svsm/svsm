@@ -313,12 +313,23 @@ impl IgvmBuilder {
         }
 
         // Describe the kernel RAM region
-        self.directives.push(IgvmDirectiveHeader::RequiredMemory {
-            gpa: param_block.kernel_base,
-            compatibility_mask: COMPATIBILITY_MASK.get(),
-            number_of_bytes: param_block.kernel_size,
-            vtl2_protectable: false,
-        });
+        if COMPATIBILITY_MASK.contains(!VSM_COMPATIBILITY_MASK) {
+            self.directives.push(IgvmDirectiveHeader::RequiredMemory {
+                gpa: param_block.kernel_base,
+                compatibility_mask: COMPATIBILITY_MASK.get() & !VSM_COMPATIBILITY_MASK,
+                number_of_bytes: param_block.kernel_size,
+                vtl2_protectable: false,
+            });
+        }
+
+        if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
+            self.directives.push(IgvmDirectiveHeader::RequiredMemory {
+                gpa: param_block.kernel_base,
+                compatibility_mask: VSM_COMPATIBILITY_MASK,
+                number_of_bytes: param_block.kernel_size,
+                vtl2_protectable: true,
+            });
+        }
 
         // Create the two parameter areas for memory map and general parameters.
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
