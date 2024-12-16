@@ -34,6 +34,8 @@ pub enum AllocError {
     InvalidFilePage(VirtAddr),
     /// The page frame number (PFN) is invalid.
     InvalidPfn(usize),
+    /// The specified size causes an error when creating the layout.
+    InvalidLayout,
 }
 
 impl From<AllocError> for SvsmError {
@@ -1720,7 +1722,7 @@ static TEST_ROOT_MEM_LOCK: SpinLock<()> = SpinLock::new(());
 
 pub const MIN_ALIGN: usize = 32;
 
-pub fn layout_from_size(size: usize) -> Layout {
+pub fn layout_from_size(size: usize) -> Result<Layout, AllocError> {
     let align: usize = {
         if (size % PAGE_SIZE) == 0 {
             PAGE_SIZE
@@ -1728,7 +1730,7 @@ pub fn layout_from_size(size: usize) -> Layout {
             MIN_ALIGN
         }
     };
-    Layout::from_size_align(size, align).unwrap()
+    Layout::from_size_align(size, align).map_err(|_| AllocError::InvalidLayout)
 }
 
 pub fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {

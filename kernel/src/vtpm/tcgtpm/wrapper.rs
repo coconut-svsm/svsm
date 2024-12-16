@@ -16,7 +16,6 @@ use crate::{
 };
 
 use core::{
-    alloc::Layout,
     ffi::{c_char, c_int, c_ulong, c_void},
     ptr,
     slice::from_raw_parts,
@@ -28,15 +27,18 @@ use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
 
 #[no_mangle]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
-    let layout: Layout = layout_from_size(size as usize);
-    unsafe { alloc(layout).cast() }
+    if let Ok(layout) = layout_from_size(size as usize) {
+        return unsafe { alloc(layout).cast() };
+    }
+    ptr::null_mut()
 }
 
 #[no_mangle]
 pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
     if let Some(new_size) = items.checked_mul(size) {
-        let layout = layout_from_size(new_size as usize);
-        return unsafe { alloc_zeroed(layout).cast() };
+        if let Ok(layout) = layout_from_size(new_size as usize) {
+            return unsafe { alloc_zeroed(layout).cast() };
+        }
     }
     ptr::null_mut()
 }
