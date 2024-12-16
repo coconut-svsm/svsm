@@ -47,7 +47,20 @@ pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
 pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
     let ptr = p as *mut u8;
     let new_size = size as usize;
+
+    if p.is_null() {
+        return malloc(size);
+    }
+
     if let Some(layout) = layout_from_ptr(ptr) {
+        if new_size == 0 {
+            // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
+            // with this allocator and we are using the same `layout` used to
+            // allocate `ptr`.
+            unsafe { dealloc(ptr, layout) };
+            return ptr::null_mut();
+        }
+
         return unsafe { _realloc(ptr, layout, new_size).cast() };
     }
     ptr::null_mut()
