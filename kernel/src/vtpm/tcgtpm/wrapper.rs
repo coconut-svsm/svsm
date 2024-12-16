@@ -16,6 +16,7 @@ use crate::{
 };
 
 use core::{
+    alloc::Layout,
     ffi::{c_char, c_int, c_ulong, c_void},
     ptr,
     slice::from_raw_parts,
@@ -27,7 +28,13 @@ use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
 
 #[no_mangle]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
+    if size == 0 {
+        return ptr::null_mut();
+    }
+
     if let Ok(layout) = layout_from_size(size as usize) {
+        // SAFETY: layout is guaranteed to be non-zero size. Memory may not be
+        // initiatlized, but that's what the caller expects.
         return unsafe { alloc(layout).cast() };
     }
     ptr::null_mut()
@@ -36,7 +43,12 @@ pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
 #[no_mangle]
 pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
     if let Some(new_size) = items.checked_mul(size) {
+        if new_size == 0 {
+            return ptr::null_mut();
+        }
+
         if let Ok(layout) = layout_from_size(new_size as usize) {
+            // SAFETY: layout is guaranteed to be non-zero size.
             return unsafe { alloc_zeroed(layout).cast() };
         }
     }
@@ -61,6 +73,15 @@ pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
             return ptr::null_mut();
         }
 
+        // This will fail if `new_size` rounded value exceeds `isize::MAX`
+        if Layout::from_size_align(new_size, layout.align()).is_err() {
+            return ptr::null_mut();
+        }
+
+        // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated with
+        // this allocator and we are using the same `layout` used to allocate
+        // `ptr`. We also checked that `new_size` aligned does not overflow and
+        // it is not 0.
         return unsafe { _realloc(ptr, layout, new_size).cast() };
     }
     ptr::null_mut()
@@ -73,12 +94,17 @@ pub unsafe extern "C" fn free(p: *mut c_void) {
     }
     let ptr = p as *mut u8;
     if let Some(layout) = layout_from_ptr(ptr.cast()) {
+        // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
+        // with this allocator and we are using the same `layout` used to
+        // allocate `ptr`.
         unsafe { dealloc(ptr, layout) }
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
+    // SAFETY: caller must provide safety requirements for
+    // [`core::slice::from_raw_parts`]
     let str_slice: &[u8] = unsafe { from_raw_parts(s as *const u8, size as usize) };
     if let Ok(rust_str) = from_utf8(str_slice) {
         _print(format_args!("[SVSM] {}", rust_str));
