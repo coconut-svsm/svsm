@@ -117,7 +117,7 @@ pub struct DirEnt {
 impl Default for DirEnt {
     fn default() -> Self {
         DirEnt {
-            file_name: [0; F_NAME_SIZE],
+            file_name: [b'\0'; F_NAME_SIZE],
             file_type: FileType::File,
             file_size: 0,
         }

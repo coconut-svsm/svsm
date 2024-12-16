@@ -345,7 +345,10 @@ impl RawRamDirectory {
     }
 
     fn list(&self) -> Vec<FileName> {
-        self.entries.iter().map(|e| e.name).collect::<Vec<_>>()
+        self.entries
+            .iter()
+            .map(|e| e.name.clone())
+            .collect::<Vec<_>>()
     }
 
     fn prepare_remove(&mut self) -> Result<(), SvsmError> {
@@ -359,9 +362,9 @@ impl RawRamDirectory {
         }
     }
 
-    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError> {
         for e in self.entries.iter() {
-            if e.name == name {
+            if &e.name == name {
                 return Ok(e.entry.clone());
             }
         }
@@ -399,8 +402,8 @@ impl RawRamDirectory {
         Ok(new_dir)
     }
 
-    fn unlink(&mut self, name: FileName) -> Result<(), SvsmError> {
-        let pos = self.entries.iter().position(|e| e.name == name);
+    fn unlink(&mut self, name: &FileName) -> Result<(), SvsmError> {
+        let pos = self.entries.iter().position(|e| &e.name == name);
 
         match pos {
             Some(idx) => {
@@ -436,7 +439,7 @@ impl Directory for RamDirectory {
         self.directory.lock_write().prepare_remove()
     }
 
-    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError> {
+    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError> {
         self.directory.lock_read().lookup_entry(name)
     }
 
@@ -448,7 +451,7 @@ impl Directory for RamDirectory {
         self.directory.lock_write().create_directory(name)
     }
 
-    fn unlink(&self, name: FileName) -> Result<(), SvsmError> {
+    fn unlink(&self, name: &FileName) -> Result<(), SvsmError> {
         self.directory.lock_write().unlink(name)
     }
 }
@@ -542,23 +545,27 @@ mod tests {
 
         let ram_dir = RamDirectory::new();
 
-        ram_dir.create_file(f_name).expect("Failed to create file");
         ram_dir
-            .create_directory(d_name)
+            .create_file(f_name.clone())
+            .expect("Failed to create file");
+        ram_dir
+            .create_directory(d_name.clone())
             .expect("Failed to create directory");
 
         let list = ram_dir.list();
-        assert_eq!(list, [f_name, d_name]);
+        assert_eq!(list, [f_name.clone(), d_name.clone()]);
 
-        let entry = ram_dir.lookup_entry(f_name).expect("Failed to lookup file");
+        let entry = ram_dir
+            .lookup_entry(&f_name)
+            .expect("Failed to lookup file");
         assert!(entry.is_file());
 
         let entry = ram_dir
-            .lookup_entry(d_name)
+            .lookup_entry(&d_name)
             .expect("Failed to lookup directory");
         assert!(entry.is_dir());
 
-        ram_dir.unlink(d_name).expect("Failed to unlink directory");
+        ram_dir.unlink(&d_name).expect("Failed to unlink directory");
 
         let list = ram_dir.list();
         assert_eq!(list, [f_name]);

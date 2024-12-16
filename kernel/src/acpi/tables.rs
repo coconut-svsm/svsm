@@ -8,9 +8,10 @@ extern crate alloc;
 
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
-use crate::string::FixedString;
+use alloc::string::{FromUtf8Error, String};
 use alloc::vec::Vec;
 use core::mem;
+use core::str;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
 /// ACPI Root System Description Pointer (RSDP)
@@ -122,11 +123,11 @@ impl ACPITableHeader {
 
     /// Print a human-readable summary of the ACPI table header's fields
     #[expect(dead_code)]
-    fn print_summary(&self) {
-        let sig = FixedString::from(self.sig);
-        let oem_id = FixedString::from(self.oem_id);
-        let oem_table_id = FixedString::from(self.oem_table_id);
-        let compiler_id = FixedString::from(self.compiler_id);
+    fn print_summary(&self) -> Result<(), str::Utf8Error> {
+        let sig = str::from_utf8(&self.sig)?;
+        let oem_id = str::from_utf8(&self.oem_id)?;
+        let oem_table_id = str::from_utf8(&self.oem_table_id)?;
+        let compiler_id = str::from_utf8(&self.compiler_id)?;
         log::trace!(
             "ACPI: [{} {} {} {} {} {} {} {} {}]",
             sig,
@@ -139,6 +140,7 @@ impl ACPITableHeader {
             compiler_id,
             self.compiler_rev
         );
+        Ok(())
     }
 }
 
@@ -182,8 +184,8 @@ impl ACPITable {
     ///
     /// This method returns the 4-character signature of the ACPI table, such as "APIC."
     #[expect(dead_code)]
-    fn signature(&self) -> FixedString<4> {
-        FixedString::from(self.header.sig)
+    fn signature(&self) -> Result<String, FromUtf8Error> {
+        String::from_utf8(Vec::from(&self.header.sig))
     }
 
     /// Get the content of the ACPI table.
@@ -227,7 +229,7 @@ impl ACPITable {
 #[derive(Debug)]
 struct ACPITableMeta {
     /// 4-character signature of the table
-    sig: FixedString<4>,
+    sig: String,
     /// The offset of the table within the table buffer
     offset: usize,
 }
@@ -245,9 +247,9 @@ impl ACPITableMeta {
     /// # Returns
     ///
     /// A new [`ACPITableMeta`] instance.
-    fn new(header: &RawACPITableHeader, offset: usize) -> Self {
-        let sig = FixedString::from(header.sig);
-        Self { sig, offset }
+    fn new(header: &RawACPITableHeader, offset: usize) -> Result<Self, SvsmError> {
+        let sig = String::from_utf8(Vec::from(&header.sig)).map_err(|_| SvsmError::Acpi)?;
+        Ok(Self { sig, offset })
     }
 }
 
@@ -322,7 +324,7 @@ impl ACPITableBuffer {
             let raw_header = self.buf.get(offset..).ok_or(SvsmError::Acpi)?;
             let (raw_header, _) =
                 RawACPITableHeader::ref_from_prefix(raw_header).map_err(|_| SvsmError::Acpi)?;
-            let meta = ACPITableMeta::new(raw_header, offset);
+            let meta = ACPITableMeta::new(raw_header, offset)?;
             self.tables.push(meta);
         }
 

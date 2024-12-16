@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 extern crate alloc;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -13,13 +14,9 @@ use core::fmt::Debug;
 use crate::error::SvsmError;
 use crate::fs::Buffer;
 use crate::mm::PageRef;
-use crate::string::FixedString;
 use packit::PackItError;
 
-/// Maximum supported length for a single filename
-const MAX_FILENAME_LENGTH: usize = 64;
-pub type FileName = FixedString<MAX_FILENAME_LENGTH>;
-pub type FileNameArray = [u8; MAX_FILENAME_LENGTH];
+pub type FileName = String;
 
 /// Represents the type of error occured
 /// while doing SVSM filesystem operations.
@@ -207,7 +204,7 @@ pub trait Directory: Debug + Send + Sync {
     /// [`Result<DirEntry, SvsmError>`]: A [`Result`] containing the [`DirEntry`]
     /// corresponding to the entry being looked up in the directory if present, or
     /// an [`SvsmError`] if not present.
-    fn lookup_entry(&self, name: FileName) -> Result<DirEntry, SvsmError>;
+    fn lookup_entry(&self, name: &FileName) -> Result<DirEntry, SvsmError>;
 
     /// Used to create a new file in the directory.
     ///
@@ -243,7 +240,7 @@ pub trait Directory: Debug + Send + Sync {
     ///
     /// [`Result<(), SvsmError>`]: A [`Result`] containing the empty
     /// value on success, or an [`SvsmError`] on failure
-    fn unlink(&self, name: FileName) -> Result<(), SvsmError>;
+    fn unlink(&self, name: &FileName) -> Result<(), SvsmError>;
 }
 
 /// Represents a directory entry which could
