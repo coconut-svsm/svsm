@@ -36,6 +36,7 @@ pub trait Obj {
 
 impl Drop for ObjHandle {
     fn drop(&mut self) {
+        // SAFETY: SYS_CLOSE is supported syscall number by the svsm kernel.
         unsafe {
             let _ = syscall1(SYS_CLOSE, self.0.into());
         }

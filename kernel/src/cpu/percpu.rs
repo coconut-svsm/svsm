@@ -769,10 +769,6 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn load_pgtable(&self) {
-        self.get_pgtable().load();
-    }
-
     pub fn load_tss(&self) {
         // Create a temporary GDT to use to configure the TSS.
         let mut gdt = GDT::new();
@@ -786,7 +782,9 @@ impl PerCpu {
     }
 
     pub fn load(&self) {
-        self.load_pgtable();
+        // SAFETY: along with the page table we are also uploading the right
+        // TSS and ISST to ensure a memory safe execution state
+        unsafe { self.get_pgtable().load() };
         self.load_tss();
         if is_cet_ss_supported() {
             self.load_isst();

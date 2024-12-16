@@ -19,7 +19,10 @@ pub fn cr0_init() {
     cr0.remove(CR0Flags::NW); // Enable caches ...
     cr0.remove(CR0Flags::CD); // ... if not already happened
 
-    write_cr0(cr0);
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr0(cr0);
+    }
 }
 
 #[inline]
@@ -45,7 +48,10 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
         cr4.insert(CR4Flags::SMAP);
     }
 
-    write_cr4(cr4);
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr4(cr4);
+    }
 }
 
 #[inline]
@@ -58,7 +64,10 @@ pub fn cr0_sse_enable() {
     // No Lazy context switching
     cr0.remove(CR0Flags::TS);
 
-    write_cr0(cr0);
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr0(cr0);
+    }
 }
 
 #[inline]
@@ -67,7 +76,10 @@ pub fn cr4_osfxsr_enable() {
 
     cr4.insert(CR4Flags::OSFXSR);
 
-    write_cr4(cr4);
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr4(cr4);
+    }
 }
 
 #[inline]
@@ -76,7 +88,10 @@ pub fn cr4_xsave_enable() {
 
     cr4.insert(CR4Flags::OSXSAVE);
 
-    write_cr4(cr4);
+    // SAFETY: we are not changing any execution-state relevant flags
+    unsafe {
+        write_cr4(cr4);
+    }
 }
 
 bitflags! {
@@ -111,10 +126,17 @@ pub fn read_cr0() -> CR0Flags {
     CR0Flags::from_bits_truncate(cr0)
 }
 
+/// # Safety
+///
+/// The caller must ensure to not change any execution-state relevant flags
+/// like PE or PG.
 #[inline]
-pub fn write_cr0(cr0: CR0Flags) {
+pub unsafe fn write_cr0(cr0: CR0Flags) {
     let reg = cr0.bits();
 
+    // SAFETY: The inline assembly set the processors CR0 register with flags
+    // defined by `struct CR0Flags`. The caller must ensure to not change any
+    // execution-state relevant flags.
     unsafe {
         asm!("mov %rax, %cr0",
              in("rax") reg,
@@ -137,15 +159,6 @@ pub fn read_cr2() -> usize {
 }
 
 #[inline]
-pub fn write_cr2(cr2: usize) {
-    unsafe {
-        asm!("mov %rax, %cr2",
-             in("rax") cr2,
-             options(att_syntax));
-    }
-}
-
-#[inline]
 pub fn read_cr3() -> PhysAddr {
     let ret: usize;
 
@@ -159,8 +172,14 @@ pub fn read_cr3() -> PhysAddr {
     PhysAddr::from(ret)
 }
 
+/// # Safety
+///
+/// The caller must ensure to take other actions to make sure a memory safe
+/// execution state is warranted (e.g. changing the stack and register state).
 #[inline]
-pub fn write_cr3(cr3: PhysAddr) {
+pub unsafe fn write_cr3(cr3: PhysAddr) {
+    // SAFETY: The inline assembly set the processors CR3 register. The safety
+    // of the CR3 value is delegated to the caller of this function which is unsafe.
     unsafe {
         asm!("mov %rax, %cr3",
              in("rax") cr3.bits(),
@@ -210,10 +229,17 @@ pub fn read_cr4() -> CR4Flags {
     CR4Flags::from_bits_truncate(cr4)
 }
 
+/// # Safety
+///
+/// The caller must ensure to not change any execution-state relevant flags
+/// (e.g. PSE or PAE).
 #[inline]
-pub fn write_cr4(cr4: CR4Flags) {
+pub unsafe fn write_cr4(cr4: CR4Flags) {
     let reg = cr4.bits();
 
+    // SAFETY: The inline assembly set the processors CR4 register with flags
+    // defined by `struct CR4Flags`. The caller must ensure to not change any
+    // execution-state relevant flags.
     unsafe {
         asm!("mov %rax, %cr4",
              in("rax") reg,

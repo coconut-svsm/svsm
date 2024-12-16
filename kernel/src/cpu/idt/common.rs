@@ -70,13 +70,20 @@ pub struct X86ExceptionContext {
 }
 
 impl X86ExceptionContext {
-    pub fn set_rip(&mut self, new_rip: usize) {
+    /// # Safety
+    ///
+    /// The caller must ensure to update the rest of the execution state as
+    /// actual hardware would have done it (e.g. for MMIO emulation, CPUID,
+    /// MSR, etc.).
+    pub unsafe fn set_rip(&mut self, new_rip: usize) {
         self.frame.rip = new_rip;
 
         if is_cet_ss_supported() {
-            // Update the instruction pointer on the shadow stack.
             let return_on_stack = (self.ssp + 8) as *const usize;
             let return_on_stack_val = new_rip;
+            // SAFETY: Inline assembly to update the instruction pointer on
+            // the shadow stack. The safety of the RIP value is delegated to
+            // the caller of this function which is unsafe.
             unsafe {
                 asm!(
                     "wrssq [{}], {}",

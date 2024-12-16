@@ -212,7 +212,10 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     paging_init(&*platform).expect("Failed to initialize paging");
     let init_pgtable =
         init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
-    init_pgtable.load();
+    // SAFETY: we are initializing the state, including stack and registers
+    unsafe {
+        init_pgtable.load();
+    }
 
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
