@@ -20,6 +20,7 @@ use crate::utils::MemoryRegion;
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
 
+const APIC_MSR_EOI: u32 = 0x80B;
 const APIC_MSR_ICR: u32 = 0x830;
 
 #[derive(Clone, Copy, Debug)]
@@ -152,7 +153,7 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn eoi(&self) {
-        todo!();
+        write_msr(APIC_MSR_EOI, 0);
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {
