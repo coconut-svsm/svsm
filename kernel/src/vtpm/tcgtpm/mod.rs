@@ -191,7 +191,7 @@ impl VtpmInterface for TcgTpm {
     }
 
     fn create_ek_rsa2048(&mut self) -> Result<(), SvsmReqError> {
-        // Creates RSA 2048-bit EK using TPM2_CreatePrimary command and TCG default EK template
+        // Create RSA 2048-bit EK with TPM2_CreatePrimary command and TCG default EK template
         //
         // TPM2_CreatePrimary command is defined in Table 173 — TPM2_CreatePrimary Command, 365 of
         // "Trusted Platform Module Library Part 3: Commands-Codes, Family “2.0”, Level 00,
@@ -328,7 +328,7 @@ impl VtpmInterface for TcgTpm {
         // 5. Power it on indicating it requires startup. By default, OVMF will start
         //    and selftest it.
         // 6. Selftest it
-        // 7. Start it up  on for next step
+        // 7. Start it up on for next step
         // 8. Create RSA2004 EK and cache EKpub for VTPM service attestation requests
         //
         // Since we have already run TPM2_Startup here, when OVMF runs TPM2_Startup, it will
