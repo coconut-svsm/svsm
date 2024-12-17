@@ -270,9 +270,10 @@ guest:
 
 ```
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1 \
-  -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false\
-  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=/path/to/coconut-qemu.igvm \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
+  -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
+  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1 \
+  -object igvm-cfg,id=igvm0,file=/path/to/coconut-qemu.igvm
 ```
 
 This selects the ```EPYC-v4``` CPU type which will pass the CPUID validation
@@ -293,9 +294,10 @@ $ export IGVM=/path/to/coconut-qemu.igvm
 $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -enable-kvm \
   -cpu EPYC-v4 \
-  -machine q35,confidential-guest-support=sev0,memory-backend=ram1 \
+  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
   -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
-  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1,igvm-file=$IGVM \
+  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1 \
+  -object igvm-cfg,id=igvm0,file=$IGVM \
   -smp 8 \
   -no-reboot \
   -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
