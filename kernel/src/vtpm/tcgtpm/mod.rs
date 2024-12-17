@@ -162,11 +162,11 @@ impl VtpmInterface for TcgTpm {
         // 5. Power it on indicating it requires startup. By default, OVMF will start
         //    and selftest it.
 
-        unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>()) };
+        unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
 
         let mut rc = self.manufacture(1)?;
         if rc != 0 {
-            unsafe { _plat__NVDisable(1) };
+            unsafe { _plat__NVDisable(1 as *mut c_void, 0) };
             return Err(SvsmReqError::incomplete());
         }
 
