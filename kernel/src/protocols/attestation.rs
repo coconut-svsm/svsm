@@ -220,7 +220,6 @@ fn attest_single_vtpm(
 
     // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
     let report = get_attestation_report(hash.as_slice())?;
-    // Validate that the report is not empty
 
     // Get attestation report buffer's gPA from call's Attest Single Service Operation structure
     let (report_gpa, _) = ops.get_report_gpa_and_size()?;
