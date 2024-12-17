@@ -13,7 +13,7 @@ use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::PageBox;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
-use crate::utils::MemoryRegion;
+use crate::utils::{page_align_up, MemoryRegion};
 use bootlib::kernel_launch::KernelLaunchInfo;
 
 struct IgvmParamInfo<'a> {
@@ -100,17 +100,23 @@ fn invalidate_boot_memory_region(
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
+    // Caller must ensure the memory region's starting address is page-aligned
+    let aligned_region = MemoryRegion::new(region.start(), page_align_up(region.len()));
     log::info!(
         "Invalidating boot region {:018x}-{:018x}",
-        region.start(),
-        region.end()
+        aligned_region.start(),
+        aligned_region.end()
     );
 
-    if !region.is_empty() {
-        platform.validate_physical_page_range(region, PageValidateOp::Invalidate)?;
+    if !aligned_region.is_empty() {
+        platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)?;
 
         if config.page_state_change_required() {
-            platform.page_state_change(region, PageSize::Regular, PageStateChangeOp::Shared)?;
+            platform.page_state_change(
+                aligned_region,
+                PageSize::Regular,
+                PageStateChangeOp::Shared,
+            )?;
         }
     }
 
