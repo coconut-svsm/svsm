@@ -10,6 +10,7 @@ kbs-types = "0.10.0"
 [dependencies]
 anyhow = "1.0.93"
 clap = { version = "4.5", features = ["derive"] }
+lazy_static = "1.5.0"
 libaproxy.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -123,7 +123,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kbs-types 0.9.3",
+ "kbs-types",
+ "lazy_static",
  "libaproxy",
  "reqwest",
  "serde",
@@ -1272,18 +1273,6 @@ dependencies = [
 
 [[package]]
 name = "kbs-types"
-version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9325eafd240baa7380d48abe3fdcc4797435f4fa920699f66c464611582429b5"
-dependencies = [
- "base64",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
-]
-
-[[package]]
-name = "kbs-types"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6db954f164e19a63a1eb7c04c46511167d68a5eb5025d4a435c1ba297f00dbf4"
@@ -1295,10 +1284,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+
+[[package]]
 name = "libaproxy"
 version = "0.1.0"
 dependencies = [
- "kbs-types 0.10.0",
+ "kbs-types",
  "serde",
 ]
 
@@ -2171,7 +2166,7 @@ dependencies = [
  "gdbstub_arch",
  "igvm_defs",
  "intrusive-collections",
- "kbs-types 0.10.0",
+ "kbs-types",
  "libaproxy",
  "libtcgtpm",
  "log",
