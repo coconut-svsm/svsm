@@ -21,7 +21,7 @@ use crate::sev::ghcb::GHCB;
 use core::fmt;
 
 #[cfg(test)]
-use crate::testutils::is_qemu_test_env;
+use crate::testutils::{is_qemu_test_env, is_test_platform_type};
 
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
@@ -308,6 +308,7 @@ mod tests {
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
+    use bootlib::platform::SvsmPlatformType;
     use core::arch::asm;
     use core::arch::x86_64::__cpuid_count;
 
@@ -323,15 +324,17 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_has_amd_cpuid() {
-        const CPUID_VENDOR_INFO: u32 = 0;
+        if is_test_platform_type(SvsmPlatformType::Snp) {
+            const CPUID_VENDOR_INFO: u32 = 0;
 
-        let vendor_info = unsafe { __cpuid_count(CPUID_VENDOR_INFO, 0) };
+            let vendor_info = unsafe { __cpuid_count(CPUID_VENDOR_INFO, 0) };
 
-        let vendor_name_bytes = [vendor_info.ebx, vendor_info.edx, vendor_info.ecx]
-            .map(|v| v.to_le_bytes())
-            .concat();
+            let vendor_name_bytes = [vendor_info.ebx, vendor_info.edx, vendor_info.ecx]
+                .map(|v| v.to_le_bytes())
+                .concat();
 
-        assert_eq!(core::str::from_utf8(&vendor_name_bytes), Ok("AuthenticAMD"));
+            assert_eq!(core::str::from_utf8(&vendor_name_bytes), Ok("AuthenticAMD"));
+        }
     }
 
     const GHCB_FILL_TEST_VALUE: u8 = b'1';
@@ -445,7 +448,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u8 = 0x12;
             verify_ghcb_gets_altered(|| outb(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
             assert_eq!(
@@ -458,7 +461,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u16 = 0x4321;
             verify_ghcb_gets_altered(|| outw(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
             assert_eq!(
@@ -471,7 +474,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u32 = 0xabcd1234;
             verify_ghcb_gets_altered(|| outl(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
             assert_eq!(
@@ -484,7 +487,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8_hardcoded() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u8 = 0x12;
             verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
             assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inb_from_testdev_echo));
@@ -494,7 +497,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16_hardcoded() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u16 = 0x4321;
             verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
             assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inw_from_testdev_echo));
@@ -504,7 +507,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32_hardcoded() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u32 = 0xabcd1234;
             verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
             assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inl_from_testdev_echo));
@@ -514,7 +517,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_string_16_get_last() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
             verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
             assert_eq!(
@@ -533,11 +536,13 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_sev_snp_enablement_msr() {
-        const MSR_SEV_STATUS: u32 = 0xc0010131;
-        const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b10;
+        if is_test_platform_type(SvsmPlatformType::Snp) {
+            const MSR_SEV_STATUS: u32 = 0xc0010131;
+            const MSR_SEV_STATUS_SEV_SNP_ENABLED: u64 = 0b10;
 
-        let sev_status = read_msr(MSR_SEV_STATUS);
-        assert_ne!(sev_status & MSR_SEV_STATUS_SEV_SNP_ENABLED, 0);
+            let sev_status = read_msr(MSR_SEV_STATUS);
+            assert_ne!(sev_status & MSR_SEV_STATUS_SEV_SNP_ENABLED, 0);
+        }
     }
 
     const MSR_APIC_BASE: u32 = 0x1b;
@@ -548,7 +553,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_apic() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
             assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
         }
@@ -557,7 +562,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_debug_ctl() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const MSR_DEBUG_CTL: u32 = 0x1d9;
             let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
             assert_eq!(apic_base, 0);
@@ -569,7 +574,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             let test_val = 0x1234;
             verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
             let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
@@ -589,7 +594,7 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_vapic_poll_irq() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
 
             let res = verify_ghcb_gets_altered(|| unsafe {
@@ -603,7 +608,7 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_read_write_dr7() {
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const DR7_DEFAULT: u64 = 0x400;
             const DR7_TEST: u64 = 0x401;
 
@@ -630,21 +635,23 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdtscp() {
-        let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
-            .expect("pid should be 32 bits");
-        let RdtscpOut {
-            timestamp: mut prev,
-            pid,
-        } = rdtscp();
-        assert_eq!(pid, expected_pid);
-        for _ in 0..50 {
+        if is_test_platform_type(SvsmPlatformType::Snp) {
+            let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
+                .expect("pid should be 32 bits");
             let RdtscpOut {
-                timestamp: cur,
+                timestamp: mut prev,
                 pid,
             } = rdtscp();
             assert_eq!(pid, expected_pid);
-            assert!(cur > prev);
-            prev = cur;
+            for _ in 0..50 {
+                let RdtscpOut {
+                    timestamp: cur,
+                    pid,
+                } = rdtscp();
+                assert_eq!(pid, expected_pid);
+                assert!(cur > prev);
+                prev = cur;
+            }
         }
     }
 

@@ -21,6 +21,9 @@ use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
 
+#[cfg(test)]
+use bootlib::platform::SvsmPlatformType;
+
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
@@ -40,6 +43,11 @@ impl Default for TdpPlatform {
 }
 
 impl SvsmPlatform for TdpPlatform {
+    #[cfg(test)]
+    fn platform_type(&self) -> SvsmPlatformType {
+        SvsmPlatformType::Tdp
+    }
+
     fn halt() {
         tdvmcall_halt();
     }

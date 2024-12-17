@@ -121,11 +121,12 @@ mod tests {
 
         use crate::serial::Terminal;
         use crate::testing::{assert_eq_warn, svsm_test_io, IORequest};
-        use crate::testutils::is_qemu_test_env;
+        use crate::testutils::{is_qemu_test_env, is_test_platform_type};
 
         use alloc::vec;
+        use bootlib::platform::SvsmPlatformType;
 
-        if is_qemu_test_env() {
+        if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             let sp = svsm_test_io().unwrap();
 
             sp.put_byte(IORequest::GetLaunchMeasurement as u8);
