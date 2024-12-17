@@ -8,9 +8,11 @@
 mod attest;
 mod backend;
 
+use crate::backend::{kbs::KbsProtocol, *};
 use anyhow::Context;
 use clap::Parser;
-use std::{fs, os::unix::net::UnixListener};
+use reqwest::{blocking::Client, cookie::Jar};
+use std::{fs, mem, os::unix::net::UnixListener, sync::Arc, thread};
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
@@ -21,7 +23,7 @@ struct Args {
 
     /// Backend attestation protocol that the server implements.
     #[clap(long = "protocol")]
-    backend: backend::Protocol,
+    backend: Protocol,
 
     /// UNIX domain socket path to the SVSM serial port
     #[clap(long)]
@@ -39,13 +41,33 @@ fn main() -> anyhow::Result<()> {
         let _ = fs::remove_file(args.unix.clone());
     }
 
+    // Initialize UNIX listener for attestation requests from SVSM.
     let listener = UnixListener::bind(args.unix).context("unable to bind to UNIX socket")?;
+
+    // Initialize HTTP socket for attestation server (with specific protocol).
+    let (negotiation, attestation) = match args.backend {
+        Protocol::Kbs => (KbsProtocol::negotiation, KbsProtocol::attestation),
+    };
+
+    let http = HttpClient {
+        cli: Client::builder()
+            .cookie_provider(Arc::new(Jar::default()))
+            .build()
+            .context("unable to build HTTP client to interact with attestation server")?,
+        url: args.url,
+        attestation,
+        negotiation,
+    };
+
+    thread::spawn(move || {
+        let mut backend = BACKEND.lock().unwrap();
+        let _ = mem::replace(&mut *backend, Some(http));
+    });
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
-                attest::attest(&mut stream, &mut http_client)?;
+                attest::attest(&mut stream)?;
             }
             Err(_) => {
                 panic!("error");

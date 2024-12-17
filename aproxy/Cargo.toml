@@ -10,6 +10,7 @@ reqwest = { version = "0.12.9", features = ["blocking", "cookies", "json"] }
 anyhow = "1.0.93"
 clap = { version = "4.5", features = ["derive"] }
 kbs-types.workspace = true
+lazy_static = "1.5.0"
 libaproxy.workspace = true
 serde.workspace = true
 serde_json.workspace = true

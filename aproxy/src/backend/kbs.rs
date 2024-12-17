@@ -22,8 +22,8 @@ impl AttestationProtocol for KbsProtocol {
     /// Make this request to /auth, gather the nonce, and return this in the negotiation
     /// parameter for SVSM to hash these components in the attestation evidence.
     fn negotiation(
-        &mut self,
-        http: &mut HttpClient,
+        cli: &Client,
+        url: &str,
         request: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse> {
         let req = Request {
@@ -33,9 +33,8 @@ impl AttestationProtocol for KbsProtocol {
         };
 
         // Fetch challenge containing a nonce from the KBS /auth endpoint.
-        let http_resp = http
-            .cli
-            .post(format!("{}/kbs/v0/auth", http.url))
+        let http_resp = cli
+            .post(format!("{}/kbs/v0/auth", url))
             .json(&req)
             .send()
             .context("unable to POST to KBS /auth endpoint")?;
@@ -75,8 +74,8 @@ impl AttestationProtocol for KbsProtocol {
     /// a secret (identified as "svsm_secret"). If able to successfully fetch the secret, return a
     /// successful AttestationResponse with the secret included.
     fn attestation(
-        &self,
-        http: &HttpClient,
+        cli: &Client,
+        url: &str,
         request: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse> {
         // Create a KBS attestation object from the TEE evidence and key.
@@ -97,9 +96,8 @@ impl AttestationProtocol for KbsProtocol {
         };
 
         // Attest TEE evidence at KBS /attest endpoint.
-        let http_resp = http
-            .cli
-            .post(format!("{}/kbs/v0/attest", http.url))
+        let http_resp = cli
+            .post(format!("{}/kbs/v0/attest", url))
             .json(&attestation)
             .send()
             .context("unable to POST to KBS /attest endpoint")?;
@@ -118,9 +116,8 @@ impl AttestationProtocol for KbsProtocol {
 
         // Successful attestation. Fetch the secret (which should be stored as "svsm_secret" within
         // the KBS's RVPS.
-        let http_resp = http
-            .cli
-            .post(format!("{}/kbs/v0/svsm_secret", http.url))
+        let http_resp = cli
+            .post(format!("{}/kbs/v0/svsm_secret", url))
             .send()
             .context("unable to POST to KBS /attest endpoint")?;
 
