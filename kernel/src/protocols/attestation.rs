@@ -123,7 +123,7 @@ impl AttestSingleServiceOp {
         }
 
         // Won't panic on amd64 as usize > u32 always
-        let size = self.nonce_size as usize;
+        let size = self.nonce_size.into();
 
         Ok((gpa, size))
     }
@@ -137,7 +137,7 @@ impl AttestSingleServiceOp {
         }
 
         // Won't panic on amd64 as usize > u32 always
-        let size = self.manifest_size as usize;
+        let size = self.nonce_size.into();
 
         Ok((gpa, size))
     }
@@ -151,7 +151,7 @@ impl AttestSingleServiceOp {
         }
 
         // Won't panic on amd64 as usize > u32 always
-        let size = self.report_size as usize;
+        let size = self.nonce_size.into();
 
         Ok((gpa, size))
     }
