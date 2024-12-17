@@ -536,7 +536,8 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    //#[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[ignore = "DBG_CTL access no longer intercepted"]
     fn test_rdmsr_debug_ctl() {
         const MSR_DEBUG_CTL: u32 = 0x1d9;
         let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
