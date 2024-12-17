@@ -838,7 +838,7 @@ impl PerCpu {
             return Err(SvsmError::Mem);
         }
 
-        let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
+        let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
         let paddr = vmsa.paddr();
 
         // Initialize VMSA
