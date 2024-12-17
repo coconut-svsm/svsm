@@ -20,6 +20,9 @@ use crate::mm::GuestPtr;
 use crate::sev::ghcb::GHCB;
 use core::fmt;
 
+#[cfg(test)]
+use crate::testutils::is_qemu_test_env;
+
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
 pub const SVM_EXIT_RDTSC: usize = 0x6e;
@@ -442,74 +445,88 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8() {
-        const TEST_VAL: u8 = 0x12;
-        verify_ghcb_gets_altered(|| outb(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-        assert_eq!(
-            TEST_VAL,
-            verify_ghcb_gets_altered(|| inb(TESTDEV_ECHO_LAST_PORT))
-        );
+        if is_qemu_test_env() {
+            const TEST_VAL: u8 = 0x12;
+            verify_ghcb_gets_altered(|| outb(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+            assert_eq!(
+                TEST_VAL,
+                verify_ghcb_gets_altered(|| inb(TESTDEV_ECHO_LAST_PORT))
+            );
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16() {
-        const TEST_VAL: u16 = 0x4321;
-        verify_ghcb_gets_altered(|| outw(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-        assert_eq!(
-            TEST_VAL,
-            verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
-        );
+        if is_qemu_test_env() {
+            const TEST_VAL: u16 = 0x4321;
+            verify_ghcb_gets_altered(|| outw(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+            assert_eq!(
+                TEST_VAL,
+                verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
+            );
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32() {
-        const TEST_VAL: u32 = 0xabcd1234;
-        verify_ghcb_gets_altered(|| outl(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-        assert_eq!(
-            TEST_VAL,
-            verify_ghcb_gets_altered(|| inl(TESTDEV_ECHO_LAST_PORT))
-        );
+        if is_qemu_test_env() {
+            const TEST_VAL: u32 = 0xabcd1234;
+            verify_ghcb_gets_altered(|| outl(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+            assert_eq!(
+                TEST_VAL,
+                verify_ghcb_gets_altered(|| inl(TESTDEV_ECHO_LAST_PORT))
+            );
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_8_hardcoded() {
-        const TEST_VAL: u8 = 0x12;
-        verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
-        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inb_from_testdev_echo));
+        if is_qemu_test_env() {
+            const TEST_VAL: u8 = 0x12;
+            verify_ghcb_gets_altered(|| outb_to_testdev_echo(TEST_VAL));
+            assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inb_from_testdev_echo));
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_16_hardcoded() {
-        const TEST_VAL: u16 = 0x4321;
-        verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
-        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inw_from_testdev_echo));
+        if is_qemu_test_env() {
+            const TEST_VAL: u16 = 0x4321;
+            verify_ghcb_gets_altered(|| outw_to_testdev_echo(TEST_VAL));
+            assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inw_from_testdev_echo));
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_32_hardcoded() {
-        const TEST_VAL: u32 = 0xabcd1234;
-        verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
-        assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inl_from_testdev_echo));
+        if is_qemu_test_env() {
+            const TEST_VAL: u32 = 0xabcd1234;
+            verify_ghcb_gets_altered(|| outl_to_testdev_echo(TEST_VAL));
+            assert_eq!(TEST_VAL, verify_ghcb_gets_altered(inl_from_testdev_echo));
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_port_io_string_16_get_last() {
-        const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
-        verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
-        assert_eq!(
-            TEST_DATA.last().unwrap(),
-            &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
-        );
+        if is_qemu_test_env() {
+            const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
+            verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
+            assert_eq!(
+                TEST_DATA.last().unwrap(),
+                &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
+            );
 
-        let mut test_data: [u16; 4] = [0; 4];
-        verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
-        for d in test_data.iter() {
-            assert_eq!(d, TEST_DATA.last().unwrap());
+            let mut test_data: [u16; 4] = [0; 4];
+            verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
+            for d in test_data.iter() {
+                assert_eq!(d, TEST_DATA.last().unwrap());
+            }
         }
     }
 
@@ -531,16 +548,20 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_apic() {
-        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
-        assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
+        if is_qemu_test_env() {
+            let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
+            assert_eq!(apic_base & APIC_BASE_PHYS_ADDR_MASK, APIC_DEFAULT_PHYS_BASE);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdmsr_debug_ctl() {
-        const MSR_DEBUG_CTL: u32 = 0x1d9;
-        let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
-        assert_eq!(apic_base, 0);
+        if is_qemu_test_env() {
+            const MSR_DEBUG_CTL: u32 = 0x1d9;
+            let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_DEBUG_CTL));
+            assert_eq!(apic_base, 0);
+        }
     }
 
     const MSR_TSC_AUX: u32 = 0xc0000103;
@@ -548,10 +569,12 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
-        let test_val = 0x1234;
-        verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
-        let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
-        assert_eq!(test_val, readback);
+        if is_qemu_test_env() {
+            let test_val = 0x1234;
+            verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
+            let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
+            assert_eq!(test_val, readback);
+        }
     }
 
     #[test]
@@ -566,26 +589,31 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_vapic_poll_irq() {
-        const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
+        if is_qemu_test_env() {
+            const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
 
-        let res =
-            verify_ghcb_gets_altered(|| unsafe { raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0) });
-        assert_eq!(res, 0);
+            let res = verify_ghcb_gets_altered(|| unsafe {
+                raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0)
+            });
+            assert_eq!(res, 0);
+        }
     }
 
     #[test]
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_read_write_dr7() {
-        const DR7_DEFAULT: u64 = 0x400;
-        const DR7_TEST: u64 = 0x401;
+        if is_qemu_test_env() {
+            const DR7_DEFAULT: u64 = 0x400;
+            const DR7_TEST: u64 = 0x401;
 
-        let old_dr7 = verify_ghcb_gets_altered(get_dr7);
-        assert_eq!(old_dr7, DR7_DEFAULT);
+            let old_dr7 = verify_ghcb_gets_altered(get_dr7);
+            assert_eq!(old_dr7, DR7_DEFAULT);
 
-        verify_ghcb_gets_altered(|| set_dr7(DR7_TEST));
-        let new_dr7 = verify_ghcb_gets_altered(get_dr7);
-        assert_eq!(new_dr7, DR7_TEST);
+            verify_ghcb_gets_altered(|| set_dr7(DR7_TEST));
+            let new_dr7 = verify_ghcb_gets_altered(get_dr7);
+            assert_eq!(new_dr7, DR7_TEST);
+        }
     }
 
     #[test]

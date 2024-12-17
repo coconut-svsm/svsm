@@ -216,6 +216,11 @@ impl IgvmBuilder {
             (fw_info, vtom)
         };
 
+        let is_qemu: u8 = match self.options.hypervisor {
+            Hypervisor::Qemu => 1,
+            _ => 0,
+        };
+
         // Most of the parameter block can be initialised with constants.
         Ok(IgvmParamBlock {
             param_area_size,
@@ -231,6 +236,7 @@ impl IgvmBuilder {
             kernel_base: self.gpa_map.kernel.get_start(),
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
+            is_qemu,
             ..Default::default()
         })
     }

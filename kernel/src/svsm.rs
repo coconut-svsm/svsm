@@ -330,7 +330,12 @@ pub extern "C" fn svsm_main() {
         .expect("Failed to launch request processing task");
 
     #[cfg(test)]
-    crate::test_main();
+    {
+        if config.is_qemu() {
+            crate::testutils::set_qemu_test_env();
+        }
+        crate::test_main();
+    }
 
     match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
         Ok(_) => (),

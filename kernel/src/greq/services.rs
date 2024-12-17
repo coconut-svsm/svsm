@@ -121,26 +121,29 @@ mod tests {
 
         use crate::serial::Terminal;
         use crate::testing::{assert_eq_warn, svsm_test_io, IORequest};
+        use crate::testutils::is_qemu_test_env;
 
         use alloc::vec;
 
-        let sp = svsm_test_io().unwrap();
+        if is_qemu_test_env() {
+            let sp = svsm_test_io().unwrap();
 
-        sp.put_byte(IORequest::GetLaunchMeasurement as u8);
+            sp.put_byte(IORequest::GetLaunchMeasurement as u8);
 
-        let mut expected_measurement = [0u8; 48];
-        for byte in &mut expected_measurement {
-            *byte = sp.get_byte();
+            let mut expected_measurement = [0u8; 48];
+            for byte in &mut expected_measurement {
+                *byte = sp.get_byte();
+            }
+
+            let mut buf = vec![0; size_of::<SnpReportResponse>()];
+            let size = get_regular_report(&mut buf).unwrap();
+            assert_eq!(size, buf.len());
+
+            let (response, _rest) = SnpReportResponse::ref_from_prefix(&buf).unwrap();
+            response.validate().unwrap();
+            // FIXME: we still have some cases where the precalculated value does
+            // not match, so for now we just issue a warning until we fix the problem.
+            assert_eq_warn!(expected_measurement, *response.measurement());
         }
-
-        let mut buf = vec![0; size_of::<SnpReportResponse>()];
-        let size = get_regular_report(&mut buf).unwrap();
-        assert_eq!(size, buf.len());
-
-        let (response, _rest) = SnpReportResponse::ref_from_prefix(&buf).unwrap();
-        response.validate().unwrap();
-        // FIXME: we still have some cases where the precalculated value does
-        // not match, so for now we just issue a warning until we fix the problem.
-        assert_eq_warn!(expected_measurement, *response.measurement());
     }
 }

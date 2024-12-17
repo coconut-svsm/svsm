@@ -179,4 +179,11 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.use_alternate_injection(),
         }
     }
+
+    pub fn is_qemu(&self) -> bool {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => true,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.is_qemu(),
+        }
+    }
 }
