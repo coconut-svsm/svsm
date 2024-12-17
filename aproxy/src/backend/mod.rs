@@ -5,53 +5,48 @@
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
-mod kbs;
+pub mod kbs;
 
-use anyhow::{anyhow, Context};
-use kbs::KbsProtocol;
+use anyhow::anyhow;
+use lazy_static::lazy_static;
 use libaproxy::*;
-use reqwest::{blocking::Client, cookie::Jar};
-use std::{str::FromStr, sync::Arc};
+use reqwest::blocking::Client;
+use std::{str::FromStr, sync::Mutex};
+
+lazy_static! {
+    pub static ref BACKEND: Mutex<Option<ProtocolDispatcher>> = Mutex::new(None);
+}
 
 /// HTTP client and protocol identifier.
 #[derive(Clone, Debug)]
-pub struct HttpClient {
-    pub cli: Client,
+pub struct ProtocolDispatcher {
     pub url: String,
-    protocol: Protocol,
+    pub negotiation: fn(&Client, &str, NegotiationRequest) -> anyhow::Result<NegotiationResponse>,
+    pub attestation: fn(&Client, &str, AttestationRequest) -> anyhow::Result<AttestationResponse>,
 }
 
-impl HttpClient {
-    pub fn new(url: String, protocol: Protocol) -> anyhow::Result<Self> {
-        let cli = Client::builder()
-            .cookie_provider(Arc::new(Jar::default()))
-            .build()
-            .context("unable to build HTTP client to interact with attestation server")?;
-
-        Ok(Self { cli, url, protocol })
+impl ProtocolDispatcher {
+    pub fn negotiation(
+        &self,
+        cli: &Client,
+        n: NegotiationRequest,
+    ) -> anyhow::Result<NegotiationResponse> {
+        (self.negotiation)(cli, &self.url, n)
     }
 
-    pub fn negotiation(&mut self, req: NegotiationRequest) -> anyhow::Result<NegotiationResponse> {
-        // Depending on the underlying protocol of the attestation server, gather negotiation
-        // parameters accordingly.
-        match self.protocol {
-            Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
-        }
-    }
-
-    pub fn attestation(&self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
-        // Depending on the underlying protocol of the attestation server, attest TEE evidence
-        // accoridngly.
-        match self.protocol {
-            Protocol::Kbs(kbs) => kbs.attestation(self, req),
-        }
+    pub fn attestation(
+        &self,
+        cli: &Client,
+        a: AttestationRequest,
+    ) -> anyhow::Result<AttestationResponse> {
+        (self.attestation)(cli, &self.url, a)
     }
 }
 
 /// Attestation Protocol identifier.
 #[derive(Clone, Copy, Debug)]
 pub enum Protocol {
-    Kbs(KbsProtocol),
+    Kbs,
 }
 
 impl FromStr for Protocol {
@@ -59,7 +54,7 @@ impl FromStr for Protocol {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match &s.to_lowercase()[..] {
-            "kbs" => Ok(Self::Kbs(KbsProtocol)),
+            "kbs" => Ok(Self::Kbs),
             _ => Err(anyhow!("invalid backend attestation protocol selected")),
         }
     }
@@ -69,13 +64,13 @@ impl FromStr for Protocol {
 /// protocols.
 pub trait AttestationProtocol {
     fn negotiation(
-        &mut self,
-        client: &mut HttpClient,
+        client: &Client,
+        url: &str,
         req: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse>;
     fn attestation(
-        &self,
-        client: &HttpClient,
+        client: &Client,
+        url: &str,
         req: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse>;
 }
