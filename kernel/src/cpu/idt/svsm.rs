@@ -16,6 +16,7 @@ use super::common::{
     TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
+use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
 use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
@@ -351,11 +352,28 @@ pub extern "C" fn common_isr_handler_entry(vector: usize) {
     cpu.irqs_pop_nesting();
 }
 
-pub fn common_isr_handler(_vector: usize) {
-    // Interrupt injection requests currently require no processing; they occur
-    // simply to ensure an exit from the guest.
+pub fn common_isr_handler(vector: usize) {
+    // Set TPR based on the vector being handled and reenable interrupts to
+    // permit delivery of higher priority interrupts.  Because this routine
+    // dispatches interrupts which should only be observable if interrupts
+    // are enabled, the IRQ nesting count must be zero at this point.
+    let previous_tpr = raw_get_tpr();
+    raw_set_tpr(tpr_from_vector(vector));
 
-    // Treat any unhandled interrupt as a spurious interrupt.
+    let cpu = this_cpu();
+    cpu.irqs_enable();
+
+    // Treat any unhandled interrupt as a spurious interrupt.  Interrupt
+    // injection requests currently require no processing; they occur simply
+    // to ensure an exit from the guest.
+
+    // Disable interrupts before restoring TPR.
+    cpu.irqs_disable();
+    raw_set_tpr(previous_tpr);
+
+    // Perform the EOI cycle after the interrupt processing state has been
+    // restored so that recurrent interrupts will not introduce recursion at
+    // this point.
     SVSM_PLATFORM.eoi();
 }
 

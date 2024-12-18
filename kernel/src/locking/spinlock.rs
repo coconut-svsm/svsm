@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::common::*;
+use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -29,7 +30,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// ```
 #[derive(Debug)]
 #[must_use = "if unused the SpinLock will immediately unlock"]
-pub struct RawLockGuard<'a, T, I = IrqUnsafeLocking> {
+pub struct RawLockGuard<'a, T, I> {
     holder: &'a AtomicU64,
     data: &'a mut T,
     #[expect(dead_code)]
@@ -64,7 +65,8 @@ impl<T, I> DerefMut for RawLockGuard<'_, T, I> {
 }
 
 pub type LockGuard<'a, T> = RawLockGuard<'a, T, IrqUnsafeLocking>;
-pub type LockGuardIrqSafe<'a, T> = RawLockGuard<'a, T, IrqSafeLocking>;
+pub type LockGuardIrqSafe<'a, T> = RawLockGuard<'a, T, IrqGuardLocking>;
+pub type LockGuardAnyTpr<'a, T, const TPR: usize> = RawLockGuard<'a, T, TprGuardLocking<TPR>>;
 
 /// A simple ticket-spinlock implementation for protecting concurrent data
 /// access.
@@ -95,7 +97,7 @@ pub type LockGuardIrqSafe<'a, T> = RawLockGuard<'a, T, IrqSafeLocking>;
 /// };
 /// ```
 #[derive(Debug, Default)]
-pub struct RawSpinLock<T, I = IrqUnsafeLocking> {
+pub struct RawSpinLock<T, I> {
     /// This atomic counter is incremented each time a thread attempts to
     /// acquire the lock. It helps to determine the order in which threads
     /// acquire the lock.
@@ -150,7 +152,7 @@ impl<T, I: IrqLocking> RawSpinLock<T, I> {
     /// }; // Lock is automatically released when `guard` goes out of scope.
     /// ```
     pub fn lock(&self) -> RawLockGuard<'_, T, I> {
-        let irq_state = I::irqs_disable();
+        let irq_state = I::acquire_lock();
 
         let ticket = self.current.fetch_add(1, Ordering::Relaxed);
         loop {
@@ -172,7 +174,7 @@ impl<T, I: IrqLocking> RawSpinLock<T, I> {
     /// successfully acquired, it returns a [`LockGuard`] that automatically
     /// releases the lock when it goes out of scope.
     pub fn try_lock(&self) -> Option<RawLockGuard<'_, T, I>> {
-        let irq_state = I::irqs_disable();
+        let irq_state = I::acquire_lock();
 
         let current = self.current.load(Ordering::Relaxed);
         let holder = self.holder.load(Ordering::Acquire);
@@ -198,13 +200,16 @@ impl<T, I: IrqLocking> RawSpinLock<T, I> {
 }
 
 pub type SpinLock<T> = RawSpinLock<T, IrqUnsafeLocking>;
-pub type SpinLockIrqSafe<T> = RawSpinLock<T, IrqSafeLocking>;
+pub type SpinLockIrqSafe<T> = RawSpinLock<T, IrqGuardLocking>;
+pub type SpinLockAnyTpr<T, const TPR: usize> = RawSpinLock<T, TprGuardLocking<TPR>>;
+pub type SpinLockTpr<T> = SpinLockAnyTpr<T, { TPR_LOCK }>;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
+    use crate::cpu::irq_state::{raw_get_tpr, raw_irqs_disable, raw_irqs_enable};
     use crate::cpu::{irqs_disabled, irqs_enabled};
+    use crate::types::TPR_LOCK;
 
     #[test]
     fn test_spin_lock() {
@@ -276,5 +281,22 @@ mod tests {
         if !was_enabled {
             raw_irqs_disable();
         }
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn spin_trylock_tpr() {
+        assert_eq!(raw_get_tpr(), 0);
+
+        let spin_lock = SpinLockTpr::new(0);
+
+        // TPR is zero - taking the lock must succeed and raise TPR.
+        let g1 = spin_lock.try_lock();
+        assert!(g1.is_some());
+        assert_eq!(raw_get_tpr(), TPR_LOCK);
+
+        // Release lock and check if that resets TPR.
+        drop(g1);
+        assert_eq!(raw_get_tpr(), 0);
     }
 }

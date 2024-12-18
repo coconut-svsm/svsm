@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::common::*;
+use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
@@ -41,7 +42,9 @@ impl<T, I> Deref for RawReadLockGuard<'_, T, I> {
 }
 
 pub type ReadLockGuard<'a, T> = RawReadLockGuard<'a, T, IrqUnsafeLocking>;
-pub type ReadLockGuardIrqSafe<'a, T> = RawReadLockGuard<'a, T, IrqSafeLocking>;
+pub type ReadLockGuardIrqSafe<'a, T> = RawReadLockGuard<'a, T, IrqGuardLocking>;
+pub type ReadLockGuardAnyTpr<'a, T, const TPR: usize> =
+    RawReadLockGuard<'a, T, TprGuardLocking<TPR>>;
 
 /// A guard that provides exclusive write access to the data protected by [`RWLock`]
 #[derive(Debug)]
@@ -81,7 +84,9 @@ impl<T, I> DerefMut for RawWriteLockGuard<'_, T, I> {
 }
 
 pub type WriteLockGuard<'a, T> = RawWriteLockGuard<'a, T, IrqUnsafeLocking>;
-pub type WriteLockGuardIrqSafe<'a, T> = RawWriteLockGuard<'a, T, IrqSafeLocking>;
+pub type WriteLockGuardIrqSafe<'a, T> = RawWriteLockGuard<'a, T, IrqGuardLocking>;
+pub type WriteLockGuardAnyTpr<'a, T, const TPR: usize> =
+    RawWriteLockGuard<'a, T, TprGuardLocking<TPR>>;
 
 /// A simple Read-Write Lock (RWLock) that allows multiple readers or
 /// one exclusive writer.
@@ -216,7 +221,7 @@ impl<T, I: IrqLocking> RawRWLock<T, I> {
     ///
     /// A [`ReadLockGuard`] that provides read access to the protected data.
     pub fn lock_read(&self) -> RawReadLockGuard<'_, T, I> {
-        let irq_state = I::irqs_disable();
+        let irq_state = I::acquire_lock();
         loop {
             let val = self.wait_for_writers();
             let (readers, _) = split_val(val);
@@ -246,7 +251,7 @@ impl<T, I: IrqLocking> RawRWLock<T, I> {
     ///
     /// A [`WriteLockGuard`] that provides write access to the protected data.
     pub fn lock_write(&self) -> RawWriteLockGuard<'_, T, I> {
-        let irq_state = I::irqs_disable();
+        let irq_state = I::acquire_lock();
 
         // Waiting for current writer to finish
         loop {
@@ -277,7 +282,9 @@ impl<T, I: IrqLocking> RawRWLock<T, I> {
 }
 
 pub type RWLock<T> = RawRWLock<T, IrqUnsafeLocking>;
-pub type RWLockIrqSafe<T> = RawRWLock<T, IrqSafeLocking>;
+pub type RWLockIrqSafe<T> = RawRWLock<T, IrqGuardLocking>;
+pub type RWLockAnyTpr<T, const TPR: usize> = RawRWLock<T, TprGuardLocking<TPR>>;
+pub type RWLockTpr<T> = RWLockAnyTpr<T, { TPR_LOCK }>;
 
 mod tests {
     #[test]
@@ -380,7 +387,7 @@ mod tests {
 
         // Lock for read
         let guard = lock.lock_read();
-        // IRQs must still be enabled;
+        // IRQs must be disabled
         assert!(irqs_disabled());
         // Unlock
         drop(guard);
@@ -390,5 +397,34 @@ mod tests {
         if !was_enabled {
             raw_irqs_disable();
         }
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn rw_lock_tpr() {
+        use crate::cpu::irq_state::raw_get_tpr;
+        use crate::locking::*;
+        use crate::types::TPR_LOCK;
+
+        assert_eq!(raw_get_tpr(), 0);
+        let lock = RWLockTpr::new(0);
+
+        // Lock for write
+        let guard = lock.lock_write();
+        // TPR must be raised
+        assert_eq!(raw_get_tpr(), TPR_LOCK);
+        // Unlock
+        drop(guard);
+        // TPR must be restored
+        assert_eq!(raw_get_tpr(), 0);
+
+        // Lock for read
+        let guard = lock.lock_read();
+        // TPR must be raised
+        assert_eq!(raw_get_tpr(), TPR_LOCK);
+        // Unlock
+        drop(guard);
+        // TPR must be restored
+        assert_eq!(raw_get_tpr(), 0);
     }
 }

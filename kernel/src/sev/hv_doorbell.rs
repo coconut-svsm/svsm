@@ -2,6 +2,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::cpu::idt::svsm::common_isr_handler;
+use crate::cpu::irq_state::{raw_get_tpr, tpr_from_vector};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::IrqState;
 use crate::error::SvsmError;
@@ -98,24 +99,49 @@ impl HVDoorbell {
             panic!("#MC exception delivered via #HV");
         }
 
-        // Consume interrupts as long as they are available.
+        // Consume interrupts as long as they are available and as long as
+        // they are appropriate for the current task priority.
+        let tpr = raw_get_tpr();
+        let mut vector = self.vector.load(Ordering::Relaxed);
         loop {
-            // Consume any interrupt that may be present.
-            let vector = self.vector.swap(0, Ordering::Relaxed);
-            if vector == 0 {
+            // Check whether an interrupt is present.  If it is at or below
+            // the current task priority, then it will not be dispatched.
+            // If the interrupt is not dispatched, then the vector must remain
+            // in the #HV doorbell page so the hypervisor knows it has not been
+            // placed into service.
+            if (tpr_from_vector(vector as usize)) <= tpr {
                 break;
             }
-            common_isr_handler(vector as usize);
+            match self
+                .vector
+                .compare_exchange_weak(vector, 0, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => common_isr_handler(vector as usize),
+                Err(new) => vector = new,
+            }
         }
 
         // Ignore per-VMPL events; these will be consumed when APIC emulation
         // is performed.
     }
 
+    fn events_to_process(&self) -> bool {
+        // If NoFurtherSignal is set, it means the hypervisor has posted a
+        // new event, and there must be an event that requires processing.  If
+        // NoFurtherSignal is not set, then processing is required if the
+        // pending vector is a higher priority than the current TPR.
+        let flags = HVDoorbellFlags::from(self.flags.load(Ordering::Relaxed));
+        if flags.no_further_signal() {
+            true
+        } else {
+            let min_vector = (raw_get_tpr() + 1) << 4;
+            self.vector.load(Ordering::Relaxed) as usize >= min_vector
+        }
+    }
+
     /// This function must always be called with interrupts enabled.
     pub fn process_if_required(&self, irq_state: &IrqState) {
-        let flags = HVDoorbellFlags::from(self.flags.load(Ordering::Relaxed));
-        while flags.no_further_signal() {
+        while self.events_to_process() {
             // #HV event processing must always be performed with interrupts
             // disabled.
             irq_state.disable();
