@@ -35,6 +35,9 @@ use crate::utils::MemoryRegion;
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+#[cfg(test)]
+use bootlib::platform::SvsmPlatformType;
+
 static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
@@ -93,6 +96,11 @@ impl Default for SnpPlatform {
 }
 
 impl SvsmPlatform for SnpPlatform {
+    #[cfg(test)]
+    fn platform_type(&self) -> SvsmPlatformType {
+        SvsmPlatformType::Snp
+    }
+
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
         VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;

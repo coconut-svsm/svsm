@@ -388,4 +388,8 @@ impl IgvmParams<'_> {
     pub fn use_alternate_injection(&self) -> bool {
         self.igvm_param_block.use_alternate_injection != 0
     }
+
+    pub fn is_qemu(&self) -> bool {
+        self.igvm_param_block.is_qemu != 0
+    }
 }

@@ -99,6 +99,8 @@ test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-t
 test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
 	./scripts/test-in-svsm.sh
 
+test-in-hyperv: bin/coconut-test-hyperv.igvm
+
 doc:
 	cargo doc -p svsm --open --all-features --document-private-items
 

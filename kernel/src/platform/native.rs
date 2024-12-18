@@ -20,6 +20,9 @@ use crate::utils::MemoryRegion;
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
 
+#[cfg(test)]
+use bootlib::platform::SvsmPlatformType;
+
 const APIC_MSR_EOI: u32 = 0x80B;
 const APIC_MSR_ICR: u32 = 0x830;
 
@@ -43,6 +46,11 @@ impl Default for NativePlatform {
 }
 
 impl SvsmPlatform for NativePlatform {
+    #[cfg(test)]
+    fn platform_type(&self) -> SvsmPlatformType {
+        SvsmPlatformType::Native
+    }
+
     fn env_setup(&mut self, debug_serial_port: u16, _vtom: usize) -> Result<(), SvsmError> {
         // In the native platform, console output does not require the use of
         // any platform services, so it can be initialized immediately.

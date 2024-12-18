@@ -112,8 +112,12 @@ pub struct IgvmParamBlock {
     /// Indicates whether the guest can support alternate injection.
     pub use_alternate_injection: u8,
 
+    /// Indicates whether the guest can assume firmware services specific to
+    /// QEMU.
+    pub is_qemu: u8,
+
     #[doc(hidden)]
-    pub _reserved: [u8; 5],
+    pub _reserved: [u8; 4],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
