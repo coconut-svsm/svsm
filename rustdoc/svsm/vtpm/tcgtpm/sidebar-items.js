@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TPM_BUFFER_MAX_SIZE","TPM_CMDS_SUPPORTED"],"mod":["wrapper"],"struct":["TcgTpm"]};

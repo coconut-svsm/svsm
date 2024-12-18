@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VMPCK_SIZE"],"fn":["secrets_page","secrets_page_mut"],"static":["SECRETS_PAGE"],"struct":["SecretsPage"]};

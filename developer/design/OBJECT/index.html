@@ -1,0 +1,983 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Background - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.6f8fc17f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#background" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Background
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Building and launching
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Building and launching
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/INSTALL/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installing the COCONUT-SVSM
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Build Recipe Documentation
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Build Recipe Documentation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/BUILD_RECIPES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT Build Recipes Format
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Developer Information
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Developer Information
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Guidelines
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../DEVELOPMENT-PLAN/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Development Plan Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Rustdoc Guidelines
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../FUZZING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Fuzzing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing to COCONUT-SVSM
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT-SVSM Rustdoc
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="background">Background</h1>
+<p>The syscalls design philosophy is to provide a unified interface for the user to
+access system resources, which are represented by object handles. This makes
+objects a fundamental concept in the COCONUT-SVSM kernel</p>
+<p>This document describes the object and object handle from both the user mode's
+and the COCONUT-SVSM kernel's point of view.</p>
+<h1 id="key-data-structures">Key Data Structures</h1>
+<h2 id="object">Object</h2>
+<p>An object represents the type of resource like file, VM, vCPU in the
+COCONUT-SVSM kernel, that can be accessible by the user mode. A trait named Obj
+is defined for such type of resource, which defines the common functionalities
+of the object. The Obj trait is defined with the trait bounds of Send and Sync,
+which means the object implementing Obj trait could be sent to another thread
+and shared between threads safely.</p>
+<pre><code class="language-Rust">trait Obj: Send + Sync {
+    /// Convert to a virtual machine object if is supported.
+    fn as_vm(&amp;self) -&gt; Option&lt;&amp;VmObj&gt; {
+        None
+    }
+
+    /// Convert to a virtual cpu object if is supported.
+    fn as_vcpu(&amp;self) -&gt; Option&lt;&amp;VcpuObj&gt; {
+        None
+    }
+
+    /// Get a mappable file handle if the object is mappable.
+    fn mappable(&amp;self) -&gt; Option&lt;&amp;FileHandle&gt; {
+        None
+    }
+
+    /// Convert to an object which implements EventObj trait.
+    fn as_event(&amp;self) -&gt; Option&lt;&amp;dyn EventObj&gt; {
+        None
+    }
+    ...
+}
+</code></pre>
+<p>In order for the user mode to access the resources in the COCONUT-SVSM kernel,
+the kernel needs to implement the <code>Obj</code> trait to represent the resources as
+objects. Some objects may need to implement multiple methods in the Obj trait
+for multiple purposes. For example, a vcpu object needs to implement <code>as_vcpu()</code>
+to represent it as a vcpu object, <code>mappable()</code> to provide a file handle for its
+user-mode-mappable backing 4k page, and <code>as_event()</code> to represent it as an event
+object which can be used by the WAIT_FOR_EVENT syscall.</p>
+<pre><code class="language-Rust">struct VcpuObj {
+    id: VmId,
+    ...
+}
+
+/// The trait for the object which can be used as an event.
+trait EventObj {
+    ...
+}
+
+impl EventObj for VcpuObj {
+    ...
+}
+
+impl Obj for VcpuObj {
+    fn as_vcpu(&amp;self) -&gt; Option&lt;&amp;VcpuObj&gt; {
+        Some(self)
+    }
+
+    fn mappable(&amp;self) -&gt; Option&lt;&amp;FileHandle&gt; {
+        Some(&amp;self.run_page_file_handle)
+    }
+
+    fn as_event(&amp;self) -&gt; Option&lt;&amp;dyn EventObj&gt; {
+        Some(self)
+    }
+    ...
+}
+
+</code></pre>
+<p>Objects without special requirements can fall back to the default implementation
+in the Obj trait, which returns None.</p>
+<h2 id="object-handle">Object Handle</h2>
+<p>When the user mode is trying to open a particular kernel resource via the
+syscalls, the COCONUT-SVSM kernel creates a corresponding object which
+implements Obj trait, and allocates an object handle with a unique id for that
+object. The object handle is defined as below:</p>
+<pre><code class="language-Rust">#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ObjHandle(u32);
+
+impl ObjHandle {
+    /// Create a new object handle with the allocated id
+    pub fn new(id: u32) -&gt; Self {
+        Self(id)
+    }
+}
+
+impl From&lt;u32&gt; for ObjHandle {
+    #[inline]
+    fn from(id: u32) -&gt; Self {
+        Self(id)
+    }
+}
+
+impl From&lt;ObjHandle&gt; for u32 {
+    #[inline]
+    fn from(obj_handle: ObjHandle) -&gt; Self {
+        obj_handle.0
+    }
+}
+</code></pre>
+<p>An <code>ObjHandle</code> can be converted to a <code>u32</code> id which is returned to the user
+mode, and the subsequent syscalls use this id to access this object. The passed
+id from the syscalls can be converted to an <code>ObjHandle</code>, which is used to access
+the object in the COCONUT-SVSM kernel.</p>
+<h3 id="user-mode-object-handle">User Mode Object Handle</h3>
+<p>The object is exposed to the user mode via the object-opening related syscalls,
+which returns the id of the object created by the COCONUT-SVSM kernel. The user
+mode can make use this id to access the corresponding object via other syscalls.
+From the user mode's point of view, the object handle is defined as below:</p>
+<pre><code class="language-Rust">/// User mode object handle received from syscalls.
+pub struct ObjHandle(u32);
+
+impl ObjHandle {
+    /// Create a new object handle with the id returned from a syscall.
+    pub(crate) fn new(id: u32) -&gt; Self {
+        Self(id)
+    }
+}
+
+impl From&lt;&amp;ObjHandle&gt; for u32 {
+    #[inline]
+    fn from(obj_handle: &amp;ObjHandle) -&gt; Self {
+        obj_handle.0
+    }
+}
+
+impl Drop for ObjHandle {
+    fn drop(&amp;mut self) {
+        // Close the object when drop the ObjHandle.
+        unsafe { syscall1(SYS_CLOSE, self.0.into()) };
+    }
+}
+
+</code></pre>
+<p>The user mode <code>ObjHandle</code> doesn't implement Copy/Clone trait, and dropping
+<code>ObjHandle</code> will automatically close the underlying object via the syscall.</p>
+<p>For a syscall class which is associated with a particular object handle type,
+e.g. VM object handles for VMM subsystem syscalls, VCPU object handles for VCPU
+subsystem syscalls, can be defined as:</p>
+<pre><code class="language-Rust">pub struct VmObjHandle(ObjHandle);
+</code></pre>
+<pre><code class="language-Rust">pub struct VcpuObjHandle(ObjHandle);
+</code></pre>
+<h1 id="object-management-in-coconut-svsm-kernel">Object Management in COCONUT-SVSM Kernel</h1>
+<p>To facilitate the user mode using the object, the COCONUT-SVSM kernel should:</p>
+<ul>
+<li>
+<p>Manage the object's lifecycle properly. The underlying object should be
+  dropped when the user mode closes the object handle via syscalls, or the user
+  mode is terminated without closing.</p>
+</li>
+<li>
+<p>Prevent one user mode process from misusing the object handle opened by
+  another. But the object handles are shared among the threads within the same
+  process.</p>
+</li>
+</ul>
+<p>To achieve the above goals, the opened object should be associated with the
+process which creates it. The task structure is extended to hold the created
+objects.</p>
+<pre><code class="language-Rust">pub struct Task {
+    ...
+
+    /// Objects shared among threads within the same process
+    objs: Arc&lt;RWLock&lt;BTreeMap&lt;ObjHandle, Arc&lt;dyn Obj&gt;&gt;&gt;&gt;,
+}
+</code></pre>
+<p>The objs is a BTreeMap with the object handle id as the key and the Arc<dyn Obj>
+as the value. It is wrapped by an Arc and protected by a RWLock, to make it
+shared among the threads within the same process.</p>
+<p>The task structure will provide 3 new functions:</p>
+<ul>
+<li>
+<p><code>add_obj(&amp;self, obj: Arc&lt;dyn Obj&gt;) -&gt; Result&lt;ObjHandle, SvsmError&gt;;</code> It
+  allocates a unique ObjHandle which is local to the process for the object. The
+  object is added to the BTreeMap with the <code>ObjHandle</code> as the key. This method
+  will be used by the syscalls which open an object.</p>
+</li>
+<li>
+<p><code>remove_obj(&amp;self, id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;;</code> It
+  removes the object from the BTreeMap. This method will be used by the CLOSE
+  syscall to remove the corresponding object from process and drop it.</p>
+</li>
+<li>
+<p><code>get_obj(&amp;self, id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;;</code> It gets
+  the object from the BTreeMap, which increases the reference counter. This
+  method will be used by the syscalls which access an object.</p>
+</li>
+</ul>
+<p>When a task is terminated while it still has opened objects, these objects will
+be dropped automatically when the <code>objs</code> is dropped, if <code>objs</code> held the last
+reference to the objects.</p>
+<h1 id="opening-an-object-in-user-mode">Opening an Object in User Mode</h1>
+<p>The user mode can open a particular object via syscalls. For example, VM_OPEN
+syscall is used to open a virtual machine object. The COCONUT-SVSM kernel
+provides <code>obj_add()</code> function to facilitate opening an object in user mode.</p>
+<pre><code class="language-Rust">pub fn sys_vm_open(idx: u32) -&gt; Result&lt;u64, i32&gt; {
+    // Get the VmObj
+    let vm_obj = get_vm_obj(idx)?;
+
+    // Add the VmObj to the current process and return the
+    // object handle id to the user mode.
+    obj_add(vm_obj).map_or(Err(EINVAL), |id| Ok(u32::from(id).into()))
+}
+
+</code></pre>
+<pre><code class="language-Rust">/// Add an object to the current process and assigns it an `ObjHandle`.
+///
+/// # Arguments
+///
+/// * `obj` - An Arc&lt;dyn Obj&gt; representing the object to be added.
+///
+/// # Returns
+///
+/// * `Result&lt;ObjHandle, SvsmError&gt;` - Returns the object handle of the
+///   added object if successful, or an `SvsmError` on failure.
+///
+/// # Errors
+///
+/// This function will return an error if adding the object to the
+/// current task fails.
+pub fn obj_add(obj: Arc&lt;dyn Obj&gt;) -&gt; Result&lt;ObjHandle, SvsmError&gt; {
+    current_task().add_obj(obj)
+}
+</code></pre>
+<pre><code class="language-Rust">impl Task {
+    ...
+
+    /// Adds an object to the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `obj` - The object to be added.
+    ///
+    /// # Returns
+    ///
+    /// * `Result&lt;ObjHandle, SvsmError&gt;` - Returns the object handle for the object
+    ///   to be added if successful, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if allocating the object handle fails.
+    pub fn add_obj(&amp;self, obj: Arc&lt;dyn Obj&gt;) -&gt; Result&lt;ObjHandle, SvsmError&gt; {
+        let mut objs = self.objs.lock_write();
+        let last_key = objs
+            .keys()
+            .last()
+            .map_or(Some(0), |k| u32::from(*k).checked_add(1))
+            .ok_or(SvsmError::from(ObjError::InvalidHandle))?;
+        let id = ObjHandle::new(if last_key != objs.len() as u32 {
+            objs.keys()
+                .enumerate()
+                .find(|(i, &amp;key)| *i as u32 != u32::from(key))
+                .unwrap()
+                .0 as u32
+        } else {
+            last_key
+        });
+
+        objs.insert(id, obj);
+
+        Ok(id)
+    }
+}
+</code></pre>
+<p>The <code>obj_add()</code> takes the <code>Arc&lt;dyn Obj&gt;</code> as an input, which represents the
+particular object to be added, and stores the object in the current task via the
+<code>add_obj()</code> method. An <code>ObjHandle</code> is allocated by the <code>add_obj()</code> which is
+local to the process, and returned to the syscall. It is converted to a <code>u32</code>
+and returned to the user mode as the user mode <code>ObjHandle</code>.</p>
+<h1 id="closing-an-object-in-user-mode">Closing an Object in User Mode</h1>
+<p>The CLOSE syscall can close an object, taking the object handle id as the input
+parameter. The COCONUT-SVSM kernel provides <code>obj_close()</code> function to facilitate
+closing an object in the syscall.</p>
+<pre><code class="language-Rust">pub fn sys_close(obj_id: u32) -&gt; Result&lt;u64, i32&gt; {
+    // Close the object by the object handle id.
+    let _ = obj_close(obj_id.into());
+    Ok(0)
+}
+</code></pre>
+<pre><code class="language-Rust">/// Closes an object identified by its unique identifier.
+///
+/// # Arguments
+///
+/// * `id` - The ObjHandle for the object to be closed.
+///
+/// # Returns
+///
+/// * `Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;` - Returns the object pointer
+///   on success, or an `SvsmError` on failure.
+///
+/// # Errors
+///
+/// This function will return an error if removing the object from the
+/// current task fails.
+pub fn obj_close(id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt; {
+    current_task().remove_obj(id)
+}
+
+</code></pre>
+<pre><code class="language-Rust">impl Task {
+    ...
+
+    /// Removes an object from the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ObjHandle for the object to be removed.
+    ///
+    /// # Returns
+    ///
+    /// * `Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;` - Returns the removed object
+    ///   pointer on success, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the object handle id does not
+    /// exist in the current task.
+    pub fn remove_obj(&amp;self, id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt; {
+        self.objs
+            .lock_write()
+            .remove(&amp;id)
+            .ok_or(ObjError::NotFound.into())
+    }
+}
+
+</code></pre>
+<p>After removing the <code>Arc&lt;dyn Obj&gt;</code> from the current task, the object will be
+dropped by the CLOSE syscall if this is the last reference to the object.</p>
+<h1 id="accessing-an-object-in-user-mode">Accessing an Object in User Mode</h1>
+<p>Certain syscalls can access the objects by taking the object handle id as an
+input. For example, VM_CAPABILITIES syscall takes an object handle id as input,
+and returns the corresponding capability of the virtual machine object. The
+COCONUT-SVSM kernel provides <code>obj_get()</code> function to facilitate accessing an
+object in a syscall.</p>
+<pre><code class="language-Rust">pub fn sys_vm_capabilities(obj_id: u32, idx: u32) -&gt; Result&lt;u64, i32&gt; {
+   // Get the object according to the id
+   if let Ok(obj) = obj_get(obj_id.into()) {
+        // Try to convert to the VmObj if it is.
+        if let Some(vm) = obj.as_vm() {
+            ...
+        }
+    }
+}
+</code></pre>
+<pre><code class="language-Rust">/// Retrieves the Arc&lt;dyn Obj&gt; by its unique identifier.
+///
+/// # Arguments
+///
+/// * `id` - The ObjHandle for the object to be retrieved.
+///
+/// # Returns
+///
+/// * `Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;` - Returns the Arc&lt;dyn Obj&gt; on
+///   success, or an `SvsmError` on failure.
+///
+/// # Errors
+///
+/// This function will return an error if retrieving the object from the
+/// current task fails.
+pub fn obj_get(id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt; {
+    current_task().get_obj(id)
+}
+</code></pre>
+<pre><code class="language-Rust">impl Task {
+    ...
+
+    /// Retrieves an object from the current task.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The ObjHandle for the object to be retrieved.
+    ///
+    /// # Returns
+    ///
+    /// * `Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt;` - Returns the Arc&lt;dyn Obj&gt; on
+    ///   success, or an `SvsmError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the object handle id does not exist
+    /// in the current task.
+    pub fn get_obj(&amp;self, id: ObjHandle) -&gt; Result&lt;Arc&lt;dyn Obj&gt;, SvsmError&gt; {
+        self.objs
+            .lock_read()
+            .get(&amp;id)
+            .cloned()
+            .ok_or(ObjError::NotFound.into())
+        )
+    }
+}
+</code></pre>
+<p>The <code>obj_get()</code> gets a cloned <code>Arc&lt;dyn Obj&gt;</code> in the current task through the
+<code>ObjHandle</code>, which increases the reference count. Once the syscall completes the
+operation, the <code>Arc&lt;dyn Obj&gt;</code> will be dropped and the reference count will be
+decreased.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../..", "features": [], "search": "../../../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>

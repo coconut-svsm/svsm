@@ -1,0 +1,2386 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../DOC-GUIDELINES/">
+      
+      
+        <link rel="next" href="../RUSTDOC-GUIDELINES/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Development Plan Overview - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.6f8fc17f.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#coconut-svsm-development-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Development Plan Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Home
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Building and launching
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Building and launching
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/INSTALL/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Installing the COCONUT-SVSM
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Build Recipe Documentation
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Build Recipe Documentation
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/BUILD_RECIPES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT Build Recipes Format
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Developer Information
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Developer Information
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Documentation Guidelines
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Development Plan Overview
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Development Plan Overview
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#first-principles-of-coconut-svsm-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      First Principles of COCONUT-SVSM Design
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="First Principles of COCONUT-SVSM Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mission" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mission
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Execution Modes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#multiple-platform-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multiple Platform Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust-is-the-default-programming-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rust is the Default Programming Language
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bldsys-build-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      [BldSys] Build System
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-core-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Core] Core Code
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Core] Core Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#falliblealloc-convert-to-fallible-allocators" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FallibleAlloc] Convert to Fallible Allocators
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#smartallocpointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SmartAllocPointers]
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ptselfmap-page-table-self-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      [PtSelfMap] Page Table Self Map
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nodirectmap-getting-rid-of-kernel-direct-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      [NoDirectMap] Getting Rid of Kernel Direct-Map
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logbuffer-bring-logbuffer-code-upstream" class="md-nav__link">
+    <span class="md-ellipsis">
+      [LogBuffer] Bring LogBuffer Code Upstream
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#obersev-implement-observability-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Obersev] Implement Observability Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fwcfg-design-and-implement-firmware-configuration-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FwCfg] Design and Implement Firmware Configuration Interface
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usrmode-user-mode-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UsrMode] User-Mode Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[UsrMode] User-Mode Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#heapalloc-heap-allocator" class="md-nav__link">
+    <span class="md-ellipsis">
+      [HeapAlloc] Heap Allocator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syscallabi-define-a-system-call-abi" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SyscallAbi] Define a System Call ABI
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#userlib-user-mode-support-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UserLib] User-mode Support Library
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syscallbatch-define-syscall-batching-mechanism" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SysCallBatch] Define SYSCALL batching Mechanism
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fssyscall-file-system-system-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FsSysCall] File-System System Calls
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipcevt-ipc-and-event-delivery-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IpcEvt] IPC and Event Delivery Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inittask-create-init-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      [InitTask] Create Init Task
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reqloopuser-move-request-loop-to-user-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ReqLoopUser] Move Request-Loop to User-Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#idletask-let-the-idle-task-idle" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IdleTask] Let the Idle Task idle
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fpu-support-fpu-instructions" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Fpu] Support FPU Instructions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vtpmuser-move-vtpm-to-user-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [VTpmUser] Move vTPM to User-Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vmmif-define-vmm-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [VmmIf] Define VMM Interface
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#irqsec-irq-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqSec] IRQ Security
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[IrqSec] IRQ Security">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hvirqsig-specify-platform-agnostic-hypervisor-to-svsm-irq-signaling-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [HvIrqSig] Specify Platform-Agnostic Hypervisor to SVSM IRQ Signaling Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apic4svsm-x2apic-support-for-coconut-svsm" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Apic4Svsm] X2APIC Support for COCONUT-SVSM
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apicemul-vxapic-and-vx2apic-emulation-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ApicEmul] vXAPIC and vX2APIC Emulation Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#irqdispsvsm-coconut-svsm-irq-dispatch-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqDispSvsm] COCONUT-SVSM IRQ Dispatch Code
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#irqdispguest-guest-irq-dispatch-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqDispGuest] Guest IRQ Dispatch Code
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sevsnp-support-for-amd-sev-snp-with-vmpls" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SevSnp] Support for AMD SEV-SNP with VMPLs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[SevSnp] Support for AMD SEV-SNP with VMPLs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#enlightos-finish-enlightened-os-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EnlightOS] Finish Enlightened OS Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snpaltinj-alternate-injection-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SnpAltInj] Alternate Injection Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snpparav-support-paravisor-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SnpParaV] Support Paravisor Mode
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdxpart-support-for-intel-tdx-partioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxPart] Support for Intel TDX-Partioning
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[TdxPart] Support for Intel TDX-Partioning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#igvm-igvm-boot" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Igvm] IGVM Boot
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platabstr-platform-abstractions" class="md-nav__link">
+    <span class="md-ellipsis">
+      [PlatAbstr] Platform Abstractions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tdxsmp-multi-processor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxSmp] Multi-processor Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boot-tdx-boot-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Boot] TDX Boot support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tdxparav-tdx-paravisor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxParaV] TDX Paravisor Support
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parav-paravisor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ParaV] Paravisor Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[ParaV] Paravisor Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#syscall-syscall-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SysCall] SYSCALL Interfaces
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instrdec-x86-instruction-decoder" class="md-nav__link">
+    <span class="md-ellipsis">
+      [InstrDec] X86 Instruction Decoder
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mmiodisp-mmioioio-event-dispatch-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [MmioDisp] MMIO/IOIO Event Dispatch Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#evthndlr-userkernel-vevc-event-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EvtHndlr] User/Kernel VE/VC Event Handlers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crypto-cryptography-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Crypto] Cryptography Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Crypto] Cryptography Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lib-provide-crypto-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Lib] Provide Crypto Library
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#context-design-isolation-context-for-cryptographic-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Context] Design Isolation Context for Cryptographic Code
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persist-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Persist] Persistence
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Persist] Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#earlyattest-define-and-implement-early-attestation-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EarlyAttest] Define and Implement Early Attestation Architecture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blklyr-block-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      [BlkLyr] Block Layer
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fs-file-system-for-persistent-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FS] File System for Persistent Data
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fsperm-permission-model-for-file-system-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FsPerm] Permission Model for File System Data
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stdrust-coconut-svsm-as-rust-tier32-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      [StdRust] COCONUT-SVSM as Rust Tier3/2 Target
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[StdRust] COCONUT-SVSM as Rust Tier3/2 Target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tier3-initial-support-as-a-rust-tier-3-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Tier3] Initial Support as a Rust Tier-3 Target
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier2-towards-tier-2-target-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Tier2] Towards Tier-2 Target Support
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sec-securing-coconut-svsm-code-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Sec] Securing COCONUT-SVSM Code Base
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Sec] Securing COCONUT-SVSM Code Base">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usrsec-user-mode-security-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UsrSec] User-mode Security Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validstate-track-validation-state-per-4kib-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ValidState] Track Validation State per 4KiB Page
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codepatterns-fixing-unsound-code-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      [CodePatterns] Fixing Unsound Code Patterns
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fuzzing-improve-fuzzing" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Fuzzing] Improve Fuzzing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stress-adding-stress-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Stress] Adding Stress-Tests
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Rustdoc Guidelines
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FUZZING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Fuzzing
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing to COCONUT-SVSM
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    COCONUT-SVSM Rustdoc
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#first-principles-of-coconut-svsm-design" class="md-nav__link">
+    <span class="md-ellipsis">
+      First Principles of COCONUT-SVSM Design
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="First Principles of COCONUT-SVSM Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mission" class="md-nav__link">
+    <span class="md-ellipsis">
+      Mission
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#execution-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Execution Modes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#multiple-platform-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      Multiple Platform Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rust-is-the-default-programming-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rust is the Default Programming Language
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bldsys-build-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      [BldSys] Build System
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-core-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Core] Core Code
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Core] Core Code">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#falliblealloc-convert-to-fallible-allocators" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FallibleAlloc] Convert to Fallible Allocators
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#smartallocpointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SmartAllocPointers]
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ptselfmap-page-table-self-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      [PtSelfMap] Page Table Self Map
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nodirectmap-getting-rid-of-kernel-direct-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      [NoDirectMap] Getting Rid of Kernel Direct-Map
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logbuffer-bring-logbuffer-code-upstream" class="md-nav__link">
+    <span class="md-ellipsis">
+      [LogBuffer] Bring LogBuffer Code Upstream
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#obersev-implement-observability-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Obersev] Implement Observability Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fwcfg-design-and-implement-firmware-configuration-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FwCfg] Design and Implement Firmware Configuration Interface
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usrmode-user-mode-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UsrMode] User-Mode Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[UsrMode] User-Mode Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#heapalloc-heap-allocator" class="md-nav__link">
+    <span class="md-ellipsis">
+      [HeapAlloc] Heap Allocator
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syscallabi-define-a-system-call-abi" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SyscallAbi] Define a System Call ABI
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#userlib-user-mode-support-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UserLib] User-mode Support Library
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#syscallbatch-define-syscall-batching-mechanism" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SysCallBatch] Define SYSCALL batching Mechanism
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fssyscall-file-system-system-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FsSysCall] File-System System Calls
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ipcevt-ipc-and-event-delivery-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IpcEvt] IPC and Event Delivery Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inittask-create-init-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      [InitTask] Create Init Task
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reqloopuser-move-request-loop-to-user-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ReqLoopUser] Move Request-Loop to User-Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#idletask-let-the-idle-task-idle" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IdleTask] Let the Idle Task idle
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fpu-support-fpu-instructions" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Fpu] Support FPU Instructions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vtpmuser-move-vtpm-to-user-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [VTpmUser] Move vTPM to User-Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vmmif-define-vmm-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [VmmIf] Define VMM Interface
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#irqsec-irq-security" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqSec] IRQ Security
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[IrqSec] IRQ Security">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hvirqsig-specify-platform-agnostic-hypervisor-to-svsm-irq-signaling-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      [HvIrqSig] Specify Platform-Agnostic Hypervisor to SVSM IRQ Signaling Interface
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apic4svsm-x2apic-support-for-coconut-svsm" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Apic4Svsm] X2APIC Support for COCONUT-SVSM
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apicemul-vxapic-and-vx2apic-emulation-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ApicEmul] vXAPIC and vX2APIC Emulation Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#irqdispsvsm-coconut-svsm-irq-dispatch-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqDispSvsm] COCONUT-SVSM IRQ Dispatch Code
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#irqdispguest-guest-irq-dispatch-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [IrqDispGuest] Guest IRQ Dispatch Code
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sevsnp-support-for-amd-sev-snp-with-vmpls" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SevSnp] Support for AMD SEV-SNP with VMPLs
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[SevSnp] Support for AMD SEV-SNP with VMPLs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#enlightos-finish-enlightened-os-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EnlightOS] Finish Enlightened OS Mode
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snpaltinj-alternate-injection-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SnpAltInj] Alternate Injection Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snpparav-support-paravisor-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SnpParaV] Support Paravisor Mode
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tdxpart-support-for-intel-tdx-partioning" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxPart] Support for Intel TDX-Partioning
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[TdxPart] Support for Intel TDX-Partioning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#igvm-igvm-boot" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Igvm] IGVM Boot
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platabstr-platform-abstractions" class="md-nav__link">
+    <span class="md-ellipsis">
+      [PlatAbstr] Platform Abstractions
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tdxsmp-multi-processor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxSmp] Multi-processor Support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#boot-tdx-boot-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Boot] TDX Boot support
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tdxparav-tdx-paravisor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [TdxParaV] TDX Paravisor Support
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parav-paravisor-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ParaV] Paravisor Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[ParaV] Paravisor Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#syscall-syscall-interfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      [SysCall] SYSCALL Interfaces
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instrdec-x86-instruction-decoder" class="md-nav__link">
+    <span class="md-ellipsis">
+      [InstrDec] X86 Instruction Decoder
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mmiodisp-mmioioio-event-dispatch-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [MmioDisp] MMIO/IOIO Event Dispatch Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#evthndlr-userkernel-vevc-event-handlers" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EvtHndlr] User/Kernel VE/VC Event Handlers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crypto-cryptography-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Crypto] Cryptography Support
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Crypto] Cryptography Support">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lib-provide-crypto-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Lib] Provide Crypto Library
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#context-design-isolation-context-for-cryptographic-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Context] Design Isolation Context for Cryptographic Code
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persist-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Persist] Persistence
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Persist] Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#earlyattest-define-and-implement-early-attestation-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      [EarlyAttest] Define and Implement Early Attestation Architecture
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#blklyr-block-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      [BlkLyr] Block Layer
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fs-file-system-for-persistent-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FS] File System for Persistent Data
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fsperm-permission-model-for-file-system-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      [FsPerm] Permission Model for File System Data
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stdrust-coconut-svsm-as-rust-tier32-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      [StdRust] COCONUT-SVSM as Rust Tier3/2 Target
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[StdRust] COCONUT-SVSM as Rust Tier3/2 Target">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tier3-initial-support-as-a-rust-tier-3-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Tier3] Initial Support as a Rust Tier-3 Target
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tier2-towards-tier-2-target-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Tier2] Towards Tier-2 Target Support
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sec-securing-coconut-svsm-code-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Sec] Securing COCONUT-SVSM Code Base
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[Sec] Securing COCONUT-SVSM Code Base">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usrsec-user-mode-security-framework" class="md-nav__link">
+    <span class="md-ellipsis">
+      [UsrSec] User-mode Security Framework
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#validstate-track-validation-state-per-4kib-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      [ValidState] Track Validation State per 4KiB Page
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codepatterns-fixing-unsound-code-patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      [CodePatterns] Fixing Unsound Code Patterns
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fuzzing-improve-fuzzing" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Fuzzing] Improve Fuzzing
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stress-adding-stress-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      [Stress] Adding Stress-Tests
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="coconut-svsm-development-plan">COCONUT-SVSM Development Plan</h1>
+<h2 id="first-principles-of-coconut-svsm-design">First Principles of COCONUT-SVSM Design</h2>
+<p>The first section contains the overall principles applied when creating the
+design of COCONUT-SVSM. The following sections break down known development
+items and their dependencies to achieve these principles.</p>
+<h3 id="mission">Mission</h3>
+<p>The mission of COCONUT-SVSM is <strong>be a platform to provide secure services to
+Confidential Virtual Machines (CVMs)</strong>. </p>
+<p>The services provided by COCONUT-SVSM aim to increase the security of the CVM by:</p>
+<ul>
+<li>Moving hypervisor services from the untrusted host into the trusted CVM context.</li>
+<li>Handle CVM specifics in the SVSM instead of the requiring additional support
+  in the OS to reduce the attack surface of the guest operating system.</li>
+</ul>
+<h3 id="security">Security</h3>
+<p>COCONUT-SVSM is one of the most critical parts in the security architecture of
+a CVM. Therefore any design decisions have to take security implications into
+account.</p>
+<p>The main tool used to achieve better security properties within its own
+code-base is <em>Isolation</em>. In particular, this means:</p>
+<ul>
+<li>Services provided to the CVM run as <strong>user-mode processes</strong> by default. Only
+  when there are very good reasons parts or whole services can be implemented in
+  the COCONUT kernel.</li>
+<li>Memory isolation within the COCONUT kernel. Provide per-CPU and per-Task
+  memory which is not accessible outside of its context.</li>
+<li>Cryptographic isolation: Isolate the cryptographic code and data (keys) from
+  the rest of the system and between contexts.</li>
+</ul>
+<h3 id="execution-modes">Execution Modes</h3>
+<p>The COCONUT-SVSM platform aims to support three execution modes:</p>
+<ul>
+<li><strong>Enlightened OS mode</strong>: In this mode the guest OS is aware of the
+  environment and can handle most CVM specifics itself. The guest OS has a VE/VC
+  exception handler and manages private and shared memory. The SVSM provides
+  services to the guest OS which can not be securely provided by the
+  hypervisor, like emulating devices with security-sensitive state.</li>
+<li><strong>Paravisor mode</strong>: This mode is for running guest operating systems which
+  have limited or no support for handling CVM specifics. The SVSM is
+  responsible for handling VE/VC exceptions on behalf of the guest OS and
+  manage private and shared memory. In addition to that the SVSM will still
+  emulate security sensitive devices on behalf of the host hypervisor.</li>
+<li><strong>Service-VM mode</strong>: When running in this mode, the SVSM is the operating
+  system of the CVM and does not run alongside another guest OS in the same
+  TEE.  The services are provided to other CVMs via a hypervisor-provided
+  communication channel.</li>
+</ul>
+<h3 id="multiple-platform-support">Multiple Platform Support</h3>
+<p>Support for multiple platforms is another major goal of COCONUT-SVSM. Platforms
+include multiple hardware platforms like AMD SEV-SNP, Intel TDX and ARM CCA as
+well as multiple hypervisor platforms like QEMU/KVM and Hyper-V.</p>
+<p>The following sections list the planned or in-progress development items needed
+for COCONUT-SVSM to achieve its mission and principles.</p>
+<h3 id="rust-is-the-default-programming-language">Rust is the Default Programming Language</h3>
+<p>Unless otherwise noted the whole COCONUT-SVSM code base is written in the Rust
+programming language. This includes the COCONUT kernel and all user-space
+libraries and binaries.</p>
+<h2 id="bldsys-build-system">[BldSys] Build System</h2>
+<p>The COCONUT-SVSM platform needs a powerful build system which is capable of
+building the kernel and user-mode components as specified by a build recipe.
+The recipe is provided in a editable and machine readable format, e.g JSON or
+YAML. The build system will package user-mode components into the RAM
+file-system image and bundle it with the kernel and firmware into the output
+IGVM file.</p>
+<p>As an enhancement (not needed in the first step) the build system also needs
+the capability to build or include user-mode components which are not part of
+the COCONUT-SVSM repository.</p>
+<h2 id="core-core-code">[Core] Core Code</h2>
+<p>This sections lists proposed work items on the COCONUT-SVSM core parts.</p>
+<h3 id="falliblealloc-convert-to-fallible-allocators">[FallibleAlloc] Convert to Fallible Allocators</h3>
+<ul>
+<li>Owner: Carlos López (<a href="https://www.github.com/00xc">@00xc</a>).</li>
+</ul>
+<p>The current COCONUT kernel uses the standard Rust allocator interface. This
+comes with implicit panics on allocations failures and only supports one
+backend allocator. A panic on a memory allocation failure is not acceptable in a
+kernel environment so a conversion to a better allocator interface is required.
+The interface needs to return an errors for allocation failures.</p>
+<p>This is currently blocked by the Rust language, as fallible allocations are
+gated by the nightly <a href="https://github.com/rust-lang/rust/issues/32838"><code>allocator_api</code></a>
+feature.</p>
+<h3 id="smartallocpointers">[SmartAllocPointers]</h3>
+<ul>
+<li>Owner: Carlos López (<a href="https://www.github.com/00xc">@00xc</a>).</li>
+</ul>
+<p>Design and implement new smart pointer-like safe interfaces that make use of
+different memory pools other than the global memory allocator (e.g. per-cpu,
+per-task, page-sized &amp; physically contiguous, etc.).</p>
+<h3 id="ptselfmap-page-table-self-map">[PtSelfMap] Page Table Self Map</h3>
+<p>Implement a self-mapping of the page-table to simplify modifications. This
+allows to implement a fast <code>virt_to_phys()</code> mapping without a direct-map.</p>
+<h3 id="nodirectmap-getting-rid-of-kernel-direct-map">[NoDirectMap] Getting Rid of Kernel Direct-Map</h3>
+<p>Depends on: <strong>Sec.PtSelfMap</strong>, <strong>UsrMode.HeapAlloc</strong></p>
+<p>The COCONUT kernel currently uses a direct map of VMPL0 physical memory. The
+direct map is contrary to the isolation goals of COCONUT-SVSM and should be
+removed in order to increase security of the overall architecture and achieve
+actual isolation.</p>
+<p>This is a multi-step approach which requires a rewrite of the page allocator
+and the way heap allocation works. Allocation and usage of shared memory will
+also fundamentally change.</p>
+<h3 id="logbuffer-bring-logbuffer-code-upstream">[LogBuffer] Bring LogBuffer Code Upstream</h3>
+<p>The COCONUT kernel needs to put its log messages into a log buffer which is not
+printed to the console by default. Anything printed to the serial console is
+visible to the untrusted hypervisor and might reveal information to attack the
+SVSM.</p>
+<p>There is a pending PR to implement a log buffer. Review that PR and bring it
+upstream.</p>
+<h3 id="obersev-implement-observability-interface">[Obersev] Implement Observability Interface</h3>
+<p>Specify a protocol to allow to observe the state of COCONUT-SVSM from the guest
+OS. This includes information like log-files, memory usage information, and
+more.</p>
+<p>Implement a handler for the protocol in COCONUT-SVSM and a driver plus tooling
+on the guest OS side.</p>
+<h3 id="fwcfg-design-and-implement-firmware-configuration-interface">[FwCfg] Design and Implement Firmware Configuration Interface</h3>
+<p>Make the SVSM a proxy for firmware and machine configuration information
+between the host hypervisor and the guest operating system. Information
+includes, but is not limited to:</p>
+<ul>
+<li>Memory map</li>
+<li>ACPI tables</li>
+<li>Device tree</li>
+<li>CPUID information</li>
+</ul>
+<p>COCONUT-SVSM is responsible for sanitizing the untrusted hypervisor input and
+make it accessible to the guest OS in a secure way.</p>
+<h2 id="usrmode-user-mode-support">[UsrMode] User-Mode Support</h2>
+<p>This section lists the work items to implement support for running services in
+user-mode.</p>
+<h3 id="heapalloc-heap-allocator">[HeapAlloc] Heap Allocator</h3>
+<p>User-mode binaries need dynamic memory allocation. This will be provided by a
+heap allocator which supports all necessary allocation sizes and can be used
+from non-rust user-mode code as well. This means that the size of the
+allocation is not required as an input to a free operation.</p>
+<h3 id="syscallabi-define-a-system-call-abi">[SyscallAbi] Define a System Call ABI</h3>
+<p>Make definitions for how system call parameters are communicated between
+user-space and the COCONUT kernel. Design all data structures for user-kernel
+communication in a way that is usable with other programming languages as well.</p>
+<h3 id="userlib-user-mode-support-library">[UserLib] User-mode Support Library</h3>
+<p>Depends on: <strong>UsrMode.HeapAlloc</strong>, <strong>UsrMode.SyscallAbi</strong></p>
+<p>The user-mode support library provides support to develop and build user-mode
+binaries for COCONUT-SVSM. The library contains:</p>
+<ul>
+<li>Linker script.</li>
+<li>Platform setup code</li>
+<li>Heap allocator</li>
+<li>Syscall APIs</li>
+<li>All future SVSM specific user-mode interfaces</li>
+</ul>
+<p>While the library will be written in Rust, it should support to be used from
+other programming languages like C and C++. This has implications for the
+public data structures and function names.</p>
+<h3 id="syscallbatch-define-syscall-batching-mechanism">[SysCallBatch] Define SYSCALL batching Mechanism</h3>
+<p>Depends on: <strong>UsrMode.SyscallAbi</strong></p>
+<p>In a paravisor setup it will become necessary to handle a larger number of
+system calls to fulfill requests. Issuing single system calls can become a
+performance problem, so a batching mechanism to allow sending multiple system
+calls within one request is needed.</p>
+<h3 id="fssyscall-file-system-system-calls">[FsSysCall] File-System System Calls</h3>
+<p>Depends on: <strong>UsrMode.SyscallAbi</strong></p>
+<p>Implement user-mode APIs to interact with the filesystem. This includes
+opening, reading, writing, memory-mapping, and closing files.</p>
+<h3 id="ipcevt-ipc-and-event-delivery-framework">[IpcEvt] IPC and Event Delivery Framework</h3>
+<p>Depends on: <strong>UsrMode.SyscallAbi</strong></p>
+<p>User-mode and kernel components in COCONUT-SVSM need communication
+interfaces to send and receive data and events. A framework enabling the
+communication needs to be designed and implemented in the COCONUT kernel.</p>
+<h3 id="inittask-create-init-task">[InitTask] Create Init Task</h3>
+<p>Depends on: <strong>UsrMode.UserLib</strong>, <strong>UsrMode.FsSysCall</strong></p>
+<p>Implement an user-mode process for the SVSM which is launched as the first
+user-mode process by the COCONUT kernel. It is responsible for setting up the
+execution environment and launches other user-mode services as specified by a
+configuration file provided with the RAM file-system.</p>
+<h3 id="reqloopuser-move-request-loop-to-user-mode">[ReqLoopUser] Move Request-Loop to User-Mode</h3>
+<p>Depends on: <strong>UsrMode.InitTask</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>Create a simple user-mode process which executes the request-loop for SVSM
+protocol requests in user-mode. Initially most of the actual handling can stay
+in kernel-mode, but this process is a starting point to move most of request
+parsing and handling to user-mode as well.</p>
+<h3 id="idletask-let-the-idle-task-idle">[IdleTask] Let the Idle Task idle</h3>
+<p>Depends on: <strong>UsrMode.ReqLoopUser</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>Currently the idle tasks in COCONUT-SVSM are the ones switching to the guest OS
+in a less privileged level. Move that code into a system call and execute it in
+the request-loop service. The idle tasks should then just idle and halt the
+execution.</p>
+<h3 id="fpu-support-fpu-instructions">[Fpu] Support FPU Instructions</h3>
+<p>Implement support to save and restore FPU state for user-mode processes and
+switch FPU state at task-switch. Also implement an API to enable FPU usage in
+the COCONUT kernel.</p>
+<h3 id="vtpmuser-move-vtpm-to-user-mode">[VTpmUser] Move vTPM to User-Mode</h3>
+<p>Depends on: <strong>UsrMode.InitTask</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>Move the vTPM emulation code into a user-mode service.</p>
+<h3 id="vmmif-define-vmm-interface">[VmmIf] Define VMM Interface</h3>
+<p>The COCONUT kernel needs to provide a VMM-like interface for user-mode
+processes to control the execution of the guest operating system. This
+interface should be flexible enough to support the <strong>Enlightened OS Mode</strong> and
+<strong>Paravisor Mode</strong> of operation.</p>
+<p>This interface will also allow to run deployment specific versions of VM
+management tasks in user-mode.</p>
+<h2 id="irqsec-irq-security">[IrqSec] IRQ Security</h2>
+<p>COCONUT-SVSM can help to provide secure IRQs to guest operating systems.</p>
+<h3 id="hvirqsig-specify-platform-agnostic-hypervisor-to-svsm-irq-signaling-interface">[HvIrqSig] Specify Platform-Agnostic Hypervisor to SVSM IRQ Signaling Interface</h3>
+<p>The SVSM targets an architecture where each CVM privilege level is provided an
+independent IRQ vector space. The host hypervisor or the hardware does not or
+can not always emulate a separate LAPIC for each privilege level, which means a
+defined communication standard between the hypervisor and the CVM is needed.
+The standard needs to define data structures and algorithms for the hypervisor
+to report IRQ events for individual CVM privilege levels.</p>
+<h3 id="apic4svsm-x2apic-support-for-coconut-svsm">[Apic4Svsm] X2APIC Support for COCONUT-SVSM</h3>
+<p>On the x86 architecture, the SVSM runs in the highest privilege level of the
+CVM and has its own IRQ vector space, usually provided via a hardware- or
+hypervisor-provided APIC.  Support code for the APIC is required so that the
+SVSM can send IPIs between VCPUs.</p>
+<h3 id="apicemul-vxapic-and-vx2apic-emulation-support">[ApicEmul] vXAPIC and vX2APIC Emulation Support</h3>
+<ul>
+<li>Owners:<ul>
+<li>Jon Lange (<a href="https://github.com/msft-jlange">@msft-jlange</a>)</li>
+<li>Vijay Dhanraj (<a href="https://github.com/vijaydhanraj">@vijaydhanraj</a>)</li>
+</ul>
+</li>
+<li>Tracking issue: <a href="https://github.com/coconut-svsm/svsm/issues/328">#328</a></li>
+</ul>
+<p>Depends on: <strong>IrqSec.HvIrqSig</strong>, <strong>IrqSec.Apic4Svsm</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>Add an emulation for vXAPIC and vX2APIC to the SVSM for use by the guest OS.</p>
+<h3 id="irqdispsvsm-coconut-svsm-irq-dispatch-code">[IrqDispSvsm] COCONUT-SVSM IRQ Dispatch Code</h3>
+<p>Depends on: <strong>IrqSec.Apic4Svsm</strong></p>
+<p>COCONUT-SVSM needs infrastructure to dispatch injected IRQ events to itself.
+This includes the ability to register IRQ handlers for specific vectors. For
+the AMD platform IRQ delivery in the presence of <em>Restricted Injection</em> is also
+needed.</p>
+<h3 id="irqdispguest-guest-irq-dispatch-code">[IrqDispGuest] Guest IRQ Dispatch Code</h3>
+<p>Depends on: <strong>IrqSec.HvIrqSig</strong>, <strong>SevSnp.SnpAltInj</strong></p>
+<p>For setups where COCONUT-SVSM forwards injected IRQs to guest operating systems
+it needs support to determine when a guest OS is ready to accept the IRQ and
+inject it into the corresponding privilege level.</p>
+<h2 id="sevsnp-support-for-amd-sev-snp-with-vmpls">[SevSnp] Support for AMD SEV-SNP with VMPLs</h2>
+<p>The AMD SEV-SNP hardware extension is the bring-up platform for COCONUT-SVSM
+and support is not yet finished.</p>
+<h3 id="enlightos-finish-enlightened-os-mode">[EnlightOS] Finish Enlightened OS Mode</h3>
+<p>Depends on: <strong>UsrMode.VTpmUser</strong>, <strong>UsrMode.VmmIf</strong></p>
+<p>Finish support to run COCONUT-SVSM as a service platform for enlightened guest
+operating systems. This mostly relies on moving the existing services to
+user-mode.</p>
+<h3 id="snpaltinj-alternate-injection-support">[SnpAltInj] Alternate Injection Support</h3>
+<p>Depends on: <strong>IrqSec</strong></p>
+<p>Support taking notifications for IRQs to lower privilege levels in the COCONUT
+kernel and use the <em>Alternate Injection</em> feature to inject the IRQs into the
+guest OS.</p>
+<h3 id="snpparav-support-paravisor-mode">[SnpParaV] Support Paravisor Mode</h3>
+<p>Depends on: <strong>ParaV</strong>, <strong>UsrMode.VmmIf</strong></p>
+<p>Enable support for the <em>ReflectVC</em> feature of AMD SEV-SNP to allow
+offloading VC exception handling from the guest OS into COCONUT-SVSM an run
+(mostly) un-enlightened operating systems.</p>
+<h2 id="tdxpart-support-for-intel-tdx-partioning">[TdxPart] Support for Intel TDX-Partioning</h2>
+<p>The Intel TDX with Partitioning support is the second major platform
+COCONUT-SVSM aims to support.</p>
+<h3 id="igvm-igvm-boot">[Igvm] IGVM Boot</h3>
+<p>The first step to support the TDX platform in COCONUT-SVSM is to implement boot
+support via an IGVM platform file. This needs support in the COCONUT kernel as
+well as in the QEMU IGVM loader.</p>
+<ul>
+<li>Owner: Peter Fang (<a href="https://github.com/peterfang">@peterfang</a>).</li>
+</ul>
+<h3 id="platabstr-platform-abstractions">[PlatAbstr] Platform Abstractions</h3>
+<p>The COCONUT kernel contains a lot of hard-coded SEV-SNP assumptions.  These
+need to be abstracted into a generic API which can be implemented for multiple
+platforms.</p>
+<h3 id="tdxsmp-multi-processor-support">[TdxSmp] Multi-processor Support</h3>
+<p>Booting multiple CPUs in a TD guest needs some modifications in the COCONUT
+kernel as on Intel the TD vCPUs start from a fixed address.</p>
+<ul>
+<li>Owner: Peter Fang (<a href="https://github.com/peterfang">@peterfang</a>).</li>
+</ul>
+<h3 id="boot-tdx-boot-support">[Boot] TDX Boot support</h3>
+<p>Depends on: <strong>TdxPart.Igvm</strong>, <strong>TdxPart.PlatAbstr</strong>, <strong>IrqSec.Apic4Svsm</strong>, <strong>TdxPart.TdxSmp</strong></p>
+<p>Implement a platform API backend to boot COCONUT-SVSM in an Intel TD with
+partitioning support.</p>
+<ul>
+<li>Owner: Peter Fang (<a href="https://github.com/peterfang">@peterfang</a>).</li>
+</ul>
+<h3 id="tdxparav-tdx-paravisor-support">[TdxParaV] TDX Paravisor Support</h3>
+<ul>
+<li>Owner: Chuanxiao Dong (<a href="https://www.github.com/cxdong">@cxdong</a>).</li>
+</ul>
+<p>Depends on: <strong>ParaV</strong>, <strong>UsrMode.VmmIf</strong></p>
+<p>Implement support for running un-enlightened guest operating systems in an
+Intel TD using TDX partitioning. It is fine to implement this alongside generic
+paravisor support.</p>
+<h2 id="parav-paravisor-support">[ParaV] Paravisor Support</h2>
+<p>Besides enlightened guest operating systems COCONUT-SVSM should support
+un-enlightened operating systems as well. This requires a lot of new
+functionality to offload CVM specific handling from the OS into the SVSM.</p>
+<h3 id="syscall-syscall-interfaces">[SysCall] SYSCALL Interfaces</h3>
+<p>Depends on: <strong>UsrMode.SysCallBatch</strong>, <strong>UsrMode.UserLib</strong></p>
+<p>Part of: <strong>UsrMode.VmmIf</strong></p>
+<p>Define and implement system call interfaces which user-mode code can use to
+read and modify state of the guest OS. This includes CPU, memory, and IRQ
+states.</p>
+<h3 id="instrdec-x86-instruction-decoder">[InstrDec] X86 Instruction Decoder</h3>
+<ul>
+<li>Owner: Chuanxiao Dong (<a href="https://www.github.com/cxdong">@cxdong</a>).</li>
+</ul>
+<p>The SVSM needs an instruction decoder to handle events from the guest OS which
+were triggered by specific instructions. An incomplete lists of events:</p>
+<ul>
+<li>CPUID</li>
+<li>RD/WRMSR</li>
+<li>MMIO</li>
+<li>IOIO</li>
+</ul>
+<p>For MMIO only a minimal subset of instructions is supposed to be supported to
+keep the instruction decoder and its attack surface small.</p>
+<p>Later, and if more instructions need to be supported, a user-mode extension to
+the SVSM in-kernel instruction decoder can be discussed.</p>
+<h3 id="mmiodisp-mmioioio-event-dispatch-framework">[MmioDisp] MMIO/IOIO Event Dispatch Framework</h3>
+<p>Depends on: <strong>ParaV.InstrDec</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>Part of: <strong>UsrMode.VmmIf</strong></p>
+<p>A framework is needed to dispatch MMIO and IOIO events to different user-mode
+services or kernel-mode components, based on the MMIO address or IOIO
+port-range targeted by the access.</p>
+<h3 id="evthndlr-userkernel-vevc-event-handlers">[EvtHndlr] User/Kernel VE/VC Event Handlers</h3>
+<p>Depends on: <strong>UsrMode</strong>, <strong>UsrMode.SysCallBatch</strong>, <strong>ParaV.MmioDisp</strong></p>
+<p>Implement handlers in user- or kernel-mode for all possible VE/VC events
+triggered by the guest OS. The default target is user-mode, only handling
+events in kernel mode when there are very good reasons for it (e.g.
+performance).</p>
+<h2 id="crypto-cryptography-support">[Crypto] Cryptography Support</h2>
+<p>The development items in this section are no pre-requisite to items in other
+sections which need cryptography. Initially other parts of COCONUT-SVSM can use
+their own cryptography libraries and be converted to a common implementation
+once it is ready to use.</p>
+<p>There are two major design goals for the cryptography layer:</p>
+<ul>
+<li><em>Isolation</em>: Make sure the cryptographic keys are not accessible outside of
+  the crypto layer. The keys of different users also need to be isolated from
+  each other.</li>
+<li><em>FIPS certification</em>: The crypto layer and library needs to be designed in a
+  way the can be certified by FIPS. This means the library needs to be a
+  standalone binary which can be executed separately for any given context in
+  need for cryptography.</li>
+</ul>
+<h3 id="lib-provide-crypto-library">[Lib] Provide Crypto Library</h3>
+<p>Implement or port a crypto library to the COCONUT-SVSM platform. FIPS
+certifiability is not initially required, but development should be targeted
+towards this goal.</p>
+<p>Ideally a crypto library is written in Rust, but that is not a strict
+requirement.</p>
+<h3 id="context-design-isolation-context-for-cryptographic-code">[Context] Design Isolation Context for Cryptographic Code</h3>
+<p>Depends on: <strong>Crypto.Lib</strong></p>
+<p>Design and implement an execution context and interfaces to interact with it.
+The implementation needs to provide the isolation capabilities listed above.</p>
+<h2 id="persist-persistence">[Persist] Persistence</h2>
+<p>One of the main use-cases for the SVSM is to emulate devices containing
+security sensitive state in a trusted environment. In order for the security
+sensitive state to be persistent across restarts of the CVM instance, a
+persistency layer is needed.</p>
+<h3 id="earlyattest-define-and-implement-early-attestation-architecture">[EarlyAttest] Define and Implement Early Attestation Architecture</h3>
+<p>A process for early attestation and key delivery, based on hardware attestation
+capabilities, is needed. The attestation is used as a proof to a Key Broker
+Service (KBS, the relying party) that the CVM is in an expected state. Based on
+the attestation result the KBS will provide secrets (like a key for persistent
+storage) to the SVSM.</p>
+<h3 id="blklyr-block-layer">[BlkLyr] Block Layer</h3>
+<p>The COCONUT-SVSM will need to support different storage backends for
+persistent storage. In order to have a common interface to all supported
+hypervisors, a generic block layer is needed which is the front-end to specific
+backend implementations. Encryption and integrity protection of the storage
+will also be implemented on the block layer.</p>
+<h3 id="fs-file-system-for-persistent-data">[FS] File System for Persistent Data</h3>
+<p>Depends on: <strong>Persist.EarlyAttest</strong>, <strong>Persist.BlkLyr</strong></p>
+<p>A simple file-system driver is needed to support persistence for multiple
+services and device emulations. Design is TBD, but there is likely no need to
+support directories.</p>
+<h3 id="fsperm-permission-model-for-file-system-data">[FsPerm] Permission Model for File System Data</h3>
+<p>Design and implement a permission model for data on the file system which
+allows to limit which persistent data is accessible by a given user-mode
+process.</p>
+<h2 id="stdrust-coconut-svsm-as-rust-tier32-target">[StdRust] COCONUT-SVSM as Rust Tier3/2 Target</h2>
+<p>Depends on: <strong>UsrMode.UserLib</strong>, esp. <strong>UsrMode.HeapAlloc</strong></p>
+<p>To make it easier to develop new user-mode modules and bring the Rust standard
+library to the COCONUT-SVSM ecosystem, support for a COCONUT platform target in
+the upstream Rust project is desired.</p>
+<h3 id="tier3-initial-support-as-a-rust-tier-3-target">[Tier3] Initial Support as a Rust Tier-3 Target</h3>
+<p>Depends on: <strong>UsrMode.HeapAlloc</strong>, <strong>UsrMode.FsSysCall</strong>, <strong>UsrMode.IpcEvt</strong></p>
+<p>This will be the initial step of supporting COCONUT-SVSM as a platform target
+in Rust. Minimal support is needed from the SVSM side, like a heap allocator
+and basic file-system APIs. The interfaces to the SVSM kernel do not need to be
+stabilized yet.</p>
+<h3 id="tier2-towards-tier-2-target-support">[Tier2] Towards Tier-2 Target Support</h3>
+<p>Depends on: <strong>StdRust.Tier3</strong></p>
+<p>Stabilize the SVSM kernel interfaces and organize code in a way to reach status
+as a Rust Tier-2 target platform.</p>
+<h2 id="sec-securing-coconut-svsm-code-base">[Sec] Securing COCONUT-SVSM Code Base</h2>
+<p>This section lists a loosely coupled list of work items to improve the security
+of the COCONUT-SVSM platform.</p>
+<h3 id="usrsec-user-mode-security-framework">[UsrSec] User-mode Security Framework</h3>
+<p>Define and implement a security framework which allows to limit the
+capabilities of user-mode processes to interact with the SVSM kernel. In Linux
+terms this would be similar to SELinux.</p>
+<h3 id="validstate-track-validation-state-per-4kib-page">[ValidState] Track Validation State per 4KiB Page</h3>
+<p>In order to mitigate a various possible double-validation attacks for memory
+pages, the COCONUT kernel needs to track the validation state of each 4KiB page
+in the system. Implement the data structures and integrate the checks in the
+page validation backends.</p>
+<h3 id="codepatterns-fixing-unsound-code-patterns">[CodePatterns] Fixing Unsound Code Patterns</h3>
+<ul>
+<li>Owners:<ul>
+<li>Carlos López (<a href="https://www.github.com/00xc">@00xc</a>)</li>
+<li>Thomas Leroy (<a href="https://www.github.com/p4zuu">@p4zuu</a>)</li>
+<li>Tom Dohrmann (<a href="https://github.com/Freax13">@Freax13</a>)</li>
+</ul>
+</li>
+<li>Tracking issue: <a href="https://github.com/coconut-svsm/svsm/issues/359">#359</a></li>
+</ul>
+<p>The GitHub issues for the COCONUT-SVSM contains an issue which lists unsound
+code patterns. This list needs to be updated, evaluated and the patterns need
+to be fixed.</p>
+<h3 id="fuzzing-improve-fuzzing">[Fuzzing] Improve Fuzzing</h3>
+<ul>
+<li>Owner: Carlos López (<a href="https://www.github.com/00xc">@00xc</a>).</li>
+<li>Tracking issue: <a href="https://github.com/coconut-svsm/svsm/issues/34">#34</a>.</li>
+</ul>
+<p>The COCONUT-SVSM repository contains a good number of fuzzers already for parts
+of the code-base. Build on that and extended the fuzzers over time to cover
+more or most code of the COCONUT-SVSM platform.</p>
+<p>As part of this effort, identify security-critical interfaces to be fuzzed.</p>
+<h3 id="stress-adding-stress-tests">[Stress] Adding Stress-Tests</h3>
+<p>This is related to fuzzing, but targeted at a fully running COCONUT-SVSM
+instead of individual parts of the code. Stress tests need to be implemented to
+find any kind of issues in the kernel and user-mode code, especially race
+conditions, lock inversions, and so on.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>
