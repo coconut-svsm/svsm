@@ -1,11 +1,10 @@
 [package]
-name = "userinit"
+name = "userdm"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 userlib.workspace = true
-buddy_system_allocator = { workspace = true }
 
 [lints]
 workspace = true
