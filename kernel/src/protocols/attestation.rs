@@ -293,7 +293,7 @@ fn attest_single_vtpm(
     Ok(())
 }
 
-fn attest_multiple_service(_params: &RequestParams) -> Result<(), SvsmReqError> {
+fn attest_multiple_services(_params: &RequestParams) -> Result<(), SvsmReqError> {
     Err(SvsmReqError::unsupported_protocol())
 }
 
@@ -341,7 +341,7 @@ pub fn attestation_protocol_request(
     params: &mut RequestParams,
 ) -> Result<(), SvsmReqError> {
     match request {
-        SVSM_ATTEST_SERVICES => attest_multiple_service(params),
+        SVSM_ATTEST_SERVICES => attest_multiple_services(params),
         SVSM_ATTEST_SINGLE_SERVICE => attest_single_service_handler(params),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
