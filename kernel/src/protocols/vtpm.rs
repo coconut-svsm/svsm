@@ -239,6 +239,7 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
+    // SAFETY: vaddr is just mapped, and its size is PAGE_SIZE
     let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
 
     let response_size = match cmd {
