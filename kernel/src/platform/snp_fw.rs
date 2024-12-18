@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use super::snp_requests::update_mappings;
 use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
 use crate::cpu::cpuid::copy_cpuid_table_to;
@@ -13,7 +14,6 @@ use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
-use crate::requests::update_mappings;
 use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use crate::utils::fw_meta::{find_table, RawMetaBuffer, Uuid};

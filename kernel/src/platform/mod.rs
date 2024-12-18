@@ -10,6 +10,7 @@ pub mod snp;
 pub mod tdp;
 
 mod snp_fw;
+mod snp_requests;
 pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
 
 use native::NativePlatform;
@@ -166,6 +167,12 @@ pub trait SvsmPlatform {
         cpu: &PerCpu,
         context: &hyperv::HvInitialVpContext,
     ) -> Result<(), SvsmError>;
+
+    /// Entry point for the kernel request task.
+    fn request_task(&self) {}
+
+    /// Enter the main vCPU loop.
+    fn request_loop(&self);
 }
 
 //FIXME - remove Copy trait
@@ -222,4 +229,8 @@ pub fn halt() {
         SvsmPlatformType::Snp => SnpPlatform::halt(),
         SvsmPlatformType::Tdp => TdpPlatform::halt(),
     }
+}
+
+pub extern "C" fn request_task_main() {
+    SVSM_PLATFORM.request_task();
 }

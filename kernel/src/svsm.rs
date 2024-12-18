@@ -40,8 +40,7 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
-use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::{request_loop, request_processing_main};
+use svsm::platform::{init_platform_type, request_task_main, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
@@ -98,7 +97,7 @@ global_asm!(
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
 static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
+fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
@@ -106,7 +105,7 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-pub fn boot_stack_info() {
+fn boot_stack_info() {
     // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
     // static, but we're simply printing its address. We are not creating a
     // reference so this is safe.
@@ -326,7 +325,7 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to launch FW: {e:#?}");
     }
 
-    start_kernel_task(request_processing_main, String::from("request-processing"))
+    start_kernel_task(request_task_main, String::from("request-processing"))
         .expect("Failed to launch request processing task");
 
     #[cfg(test)]
@@ -337,7 +336,7 @@ pub extern "C" fn svsm_main() {
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
-    request_loop();
+    SVSM_PLATFORM.request_loop();
 
     panic!("Road ends here!");
 }

@@ -7,6 +7,7 @@
 use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
+use super::{snp_requests, PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
@@ -19,7 +20,6 @@ use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{
@@ -329,6 +329,14 @@ impl SvsmPlatform for SnpPlatform {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, context)?;
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
+    }
+
+    fn request_task(&self) {
+        snp_requests::request_processing_main();
+    }
+
+    fn request_loop(&self) {
+        snp_requests::request_loop();
     }
 }
 
