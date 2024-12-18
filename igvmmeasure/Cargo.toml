@@ -10,7 +10,7 @@ clap = { workspace = true, default-features = true, features = ["derive"] }
 sha2.workspace = true
 igvm.workspace = true
 igvm_defs.workspace = true
-p384.workspace = true
+p384 = { version = "0.13.0" }
 zerocopy.workspace = true
 # igvm_defs still uses 0.7, so we need to import the zerocopy 0.7 traits to use them.
 zerocopy07 = { package = "zerocopy", version = "0.7" }
