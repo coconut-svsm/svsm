@@ -78,3 +78,23 @@ pub struct Stage2LaunchInfo {
     pub igvm_params: u32,
     pub _reserved: u32,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ApStartContext {
+    pub cr0: usize,
+    pub cr3: usize,
+    pub cr4: usize,
+    pub efer: usize,
+
+    // The last four fields of this context must remain in the same order
+    // because they are referenced from assembly.
+    pub start_rip: usize,
+    pub initial_rip: usize,
+    pub rsp: usize,
+    pub transition_cr3: u32,
+    pub context_size: u32,
+}
+
+// The SIPI stub is placed immediately below the stage 2 heap are.
+pub const SIPI_STUB_GPA: u32 = 0xF000;

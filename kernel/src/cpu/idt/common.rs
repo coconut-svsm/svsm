@@ -20,6 +20,7 @@ use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
 use core::mem;
+use core::ops::Deref;
 
 pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
@@ -338,18 +339,12 @@ impl IDT {
 
         self
     }
-}
 
-impl Default for IDT {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl WriteLockGuard<'static, IDT> {
-    /// Load an IDT. Its lifetime must be static so that its entries are
-    /// always available to the CPU.
-    pub fn load(&self) {
+    /// Load an IDT.
+    /// # Safety
+    /// The caller must guarantee that the IDT lifetime must be static so that
+    /// its entries are always available to the CPU.
+    pub unsafe fn load(&self) {
         let desc: IdtDesc = IdtDesc {
             size: (IDT_ENTRIES * 16) as u16,
             address: VirtAddr::from(self.entries.as_ptr()),
@@ -363,7 +358,31 @@ impl WriteLockGuard<'static, IDT> {
     }
 }
 
+impl Default for IDT {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WriteLockGuard<'static, IDT> {
+    pub fn load(&self) {
+        // SAFETY: the lifetime of the lock guard is static, so the safety
+        // requirement of IDT::load are met.
+        unsafe {
+            self.deref().load();
+        }
+    }
+}
+
 impl ReadLockGuard<'static, IDT> {
+    pub fn load(&self) {
+        // SAFETY: the lifetime of the lock guard is static, so the safety
+        // requirement of IDT::load are met.
+        unsafe {
+            self.deref().load();
+        }
+    }
+
     pub fn base_limit(&self) -> (u64, u16) {
         let base: *const IDT = core::ptr::from_ref(self);
         let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u16;
