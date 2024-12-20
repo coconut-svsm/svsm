@@ -32,3 +32,9 @@ pub fn write_efer(efer: EFERFlags) {
     let val = efer.bits();
     write_msr(EFER, val);
 }
+
+impl From<usize> for EFERFlags {
+    fn from(bits: usize) -> Self {
+        EFERFlags::from_bits_truncate(bits as u64)
+    }
+}

@@ -17,6 +17,7 @@ mod igvm_builder;
 mod igvm_firmware;
 mod ovmf_firmware;
 mod platform;
+mod sipi;
 mod stage2_stack;
 mod vmsa;
 
