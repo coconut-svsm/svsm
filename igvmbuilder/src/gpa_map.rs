@@ -66,6 +66,7 @@ pub struct GpaMap {
     pub guest_context: GpaRange,
     pub kernel: GpaRange,
     pub vmsa: GpaRange,
+    pub init_page_tables: GpaRange,
 }
 
 impl GpaMap {
@@ -73,6 +74,7 @@ impl GpaMap {
         options: &CmdOptions,
         firmware: &Option<Box<dyn Firmware>>,
     ) -> Result<Self, Box<dyn Error>> {
+        //   0x010000-0x010FFF: initial page tables for VSM platforms
         //   0x800000-0x804FFF: zero-filled (must be pre-validated)
         //   0x805000-0x805FFF: initial stage 2 stack page
         //   0x806000-0x806FFF: Secrets page
@@ -167,6 +169,7 @@ impl GpaMap {
             guest_context,
             kernel,
             vmsa,
+            init_page_tables: GpaRange::new(0x10000, 2 * PAGE_SIZE_4K)?,
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");

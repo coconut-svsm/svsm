@@ -12,7 +12,11 @@ use zerocopy07::FromZeroes;
 
 use crate::cmd_options::{Hypervisor, SevExtraFeatures};
 
-pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Vec<X86Register> {
+pub fn construct_start_context(
+    start_rip: u64,
+    start_rsp: u64,
+    initial_cr3: u64,
+) -> Vec<X86Register> {
     let mut vec: Vec<X86Register> = Vec::new();
 
     // Establish CS as a 32-bit code selector.
@@ -38,10 +42,18 @@ pub fn construct_start_context(start_rip: u64, start_rsp: u64) -> Vec<X86Registe
     vec.push(X86Register::Gs(ds));
 
     // CR0.PE | CR0.NE | CR0.ET.
-    vec.push(X86Register::Cr0(0x31));
+    // CR0.PG is also always included, but will be stripped on platforms that
+    // must recalculate the page tables.
+    vec.push(X86Register::Cr0(0x80000031));
 
-    // CR4.MCE.
-    vec.push(X86Register::Cr4(0x40));
+    vec.push(X86Register::Cr3(initial_cr3));
+
+    // CR4.MCE | CR4.PAE.
+    vec.push(X86Register::Cr4(0x60));
+
+    // EFER.LME | EFER.LMA are always included but will be stripped on
+    // platforms that need to start with paging disabled.
+    vec.push(X86Register::Efer(0x500));
 
     vec.push(X86Register::Rflags(2));
     vec.push(X86Register::Rip(start_rip));
@@ -240,7 +252,8 @@ pub fn construct_vmsa(
                 vmsa.tr = convert_vmsa_segment(segment);
             }
             X86Register::Cr0(r) => {
-                vmsa.cr0 = *r;
+                // Remove CR0.PG.
+                vmsa.cr0 = *r & !0x8000_0000;
             }
             X86Register::Cr3(r) => {
                 vmsa.cr3 = *r;
@@ -249,7 +262,8 @@ pub fn construct_vmsa(
                 vmsa.cr4 = *r;
             }
             X86Register::Efer(r) => {
-                vmsa.efer = *r;
+                // Remove EFER.LMA and EFER.LME.
+                vmsa.efer = *r & !0x500;
             }
             X86Register::Pat(r) => {
                 vmsa.pat = *r;
