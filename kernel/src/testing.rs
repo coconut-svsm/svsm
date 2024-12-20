@@ -1,3 +1,4 @@
+use core::arch::asm;
 use log::info;
 use test::ShouldPanic;
 
@@ -7,6 +8,7 @@ use crate::{
     platform::SVSM_PLATFORM,
     serial::SerialPort,
     sev::ghcb::GHCBIOSize,
+    testutils::is_qemu_test_env,
 };
 
 #[macro_export]
@@ -86,9 +88,15 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 }
 
 fn exit() -> ! {
-    const QEMU_EXIT_PORT: u16 = 0xf4;
-    current_ghcb()
-        .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)
-        .unwrap();
+    if is_qemu_test_env() {
+        const QEMU_EXIT_PORT: u16 = 0xf4;
+        current_ghcb()
+            .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)
+            .unwrap();
+    }
+    // SAFETY: HLT instruction does not affect memory.
+    unsafe {
+        asm!("hlt");
+    }
     unreachable!();
 }
