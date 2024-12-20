@@ -28,6 +28,12 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      - name: Install bindgen-cli
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: bindgen-cli
+
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
@@ -142,6 +148,12 @@ jobs:
             profile: minimal
             override: true
             components: rustfmt, rust-src, clippy
+
+      - name: Install bindgen-cli
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: bindgen-cli
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
