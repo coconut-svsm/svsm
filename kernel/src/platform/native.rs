@@ -156,12 +156,14 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        write_msr(APIC_MSR_ICR, icr);
+        // SAFETY: writing to ICR MSR doesn't break memory safety.
+        unsafe { write_msr(APIC_MSR_ICR, icr) };
         Ok(())
     }
 
     fn eoi(&self) {
-        write_msr(APIC_MSR_EOI, 0);
+        // SAFETY: writing to EOI MSR doesn't break memory safety.
+        unsafe { write_msr(APIC_MSR_EOI, 0) };
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

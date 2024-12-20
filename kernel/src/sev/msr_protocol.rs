@@ -78,7 +78,8 @@ pub fn verify_ghcb_version() {
     // used.
     assert!(!irqs_enabled());
     // Request SEV information.
-    write_msr(SEV_GHCB, GHCBMsr::SEV_INFO_REQ);
+    // SAFETY: Requesting info through the GHCB MSR protocol is safe.
+    unsafe { write_msr(SEV_GHCB, GHCBMsr::SEV_INFO_REQ) };
     raw_vmgexit();
     let sev_info = read_msr(SEV_GHCB);
 
@@ -107,7 +108,8 @@ pub fn hypervisor_ghcb_features() -> GHCBHvFeatures {
 
 pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, GHCBMsr::SNP_HV_FEATURES_REQ);
+    // SAFETY: Requesting HV features through the GHCB MSR protocol is safe.
+    unsafe { write_msr(SEV_GHCB, GHCBMsr::SNP_HV_FEATURES_REQ) };
     raw_vmgexit();
     let result = read_msr(SEV_GHCB);
     drop(guard);
@@ -143,7 +145,7 @@ pub fn register_ghcb_gpa_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
 
     info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, info);
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     info = read_msr(SEV_GHCB);
     drop(guard);
@@ -170,7 +172,7 @@ fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrE
 
     info |= GHCBMsr::SNP_STATE_CHANGE_REQ;
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, info);
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     let response = read_msr(SEV_GHCB);
     drop(guard);
@@ -201,7 +203,8 @@ pub fn request_termination_msr() -> ! {
     // no reason to preserve interrupt state.  Interrupts can be disabled
     // outright prior to shutdown.
     raw_irqs_disable();
-    write_msr(SEV_GHCB, info);
+    // SAFETY: Requesting termination doesn't break memory safety.
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     loop {
         halt();
