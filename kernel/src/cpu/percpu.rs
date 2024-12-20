@@ -876,7 +876,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn load_gdt_tss(&self, init_gdt: bool) {
+    pub fn load_gdt_tss(&'static self, init_gdt: bool) {
         // Create a temporary GDT to use to configure the TSS.
         let mut gdt = GDT::new();
         gdt.load();
@@ -893,7 +893,7 @@ impl PerCpu {
         unsafe { write_msr(ISST_ADDR, isst as u64) };
     }
 
-    pub fn load(&self) {
+    pub fn load(&'static self) {
         // SAFETY: along with the page table we are also uploading the right
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
