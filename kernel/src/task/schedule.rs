@@ -451,7 +451,11 @@ pub fn schedule() {
             this_cpu().set_tss_rsp0(next.stack_bounds.end());
         }
         if is_cet_ss_supported() {
-            write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
+            // SAFETY: Task::exception_shadow_stack is always initialized when
+            // creating a new Task.
+            unsafe {
+                write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
+            }
         }
 
         // Get task-pointers, consuming the Arcs and release their reference

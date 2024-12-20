@@ -889,7 +889,8 @@ impl PerCpu {
 
     pub fn load_isst(&self) {
         let isst = self.isst.as_ptr();
-        write_msr(ISST_ADDR, isst as u64);
+        // SAFETY: ISST is already setup when this is called.
+        unsafe { write_msr(ISST_ADDR, isst as u64) };
     }
 
     pub fn load(&self) {

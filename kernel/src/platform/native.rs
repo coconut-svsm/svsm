@@ -93,7 +93,12 @@ impl SvsmPlatform for NativePlatform {
         let apic_base = read_msr(MSR_APIC_BASE);
         let apic_base_x2_enabled = apic_base | APIC_X2_ENABLE_MASK;
         if apic_base != apic_base_x2_enabled {
-            write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
+            // SAFETY: enabling X2APIC mode allows accessing APIC's control
+            // registers through MSR accesses, so enabling it doesn't break
+            // memory safety itself.
+            unsafe {
+                write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
+            }
         }
 
         Ok(())
@@ -174,12 +179,14 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        write_msr(APIC_MSR_ICR, icr);
+        // SAFETY: writing to ICR MSR doesn't break memory safety.
+        unsafe { write_msr(APIC_MSR_ICR, icr) };
         Ok(())
     }
 
     fn eoi(&self) {
-        write_msr(APIC_MSR_EOI, 0);
+        // SAFETY: writing to EOI MSR doesn't break memory safety.
+        unsafe { write_msr(APIC_MSR_EOI, 0) };
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {
