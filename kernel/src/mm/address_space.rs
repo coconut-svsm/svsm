@@ -133,7 +133,7 @@ pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
 
-const fn virt_from_idx(idx: usize) -> VirtAddr {
+pub const fn virt_from_idx(idx: usize) -> VirtAddr {
     VirtAddr::new(idx << ((3 * 9) + 12))
 }
 

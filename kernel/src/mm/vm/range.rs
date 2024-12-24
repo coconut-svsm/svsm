@@ -9,6 +9,7 @@ use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
+use crate::mm::virt_from_idx;
 use crate::types::{PageSize, PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{align_down, align_up};
 
@@ -102,9 +103,12 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn alloc_page_tables(&self, lazy: bool) -> Result<(), SvsmError> {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        let count = end.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
+        let first = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
+        let first_idx = first.to_pgtbl_idx::<3>();
+        let start = virt_from_idx(first_idx);
+        let last = VirtAddr::from(self.end_pfn << PAGE_SHIFT) - 1;
+        let last_idx = last.to_pgtbl_idx::<3>();
+        let count = last_idx + 1 - first_idx;
         let mut vec = self.pgtbl_parts.lock_write();
 
         for idx in 0..count {
@@ -144,6 +148,12 @@ impl VMR {
     /// Initialize this [`VMR`] by checking the `start` and `end` values and
     /// allocating the [`PageTablePart`]s required for the mappings.
     ///
+    /// # Safety
+    /// Callers must ensure that the bounds of the address range are
+    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// ranges may attempt to share top-level paging entries.  If any overlap
+    /// is attempted, page tables may be corrupted.
+    ///
     /// # Arguments
     ///
     /// * `lazy` - When `true`, use lazy allocation of [`PageTablePart`] pages.
@@ -151,30 +161,48 @@ impl VMR {
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn initialize_common(&self, lazy: bool) -> Result<(), SvsmError> {
+    unsafe fn initialize_common(&self, lazy: bool) -> Result<(), SvsmError> {
         let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
         let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(start < end && start.is_aligned(VMR_GRANULE) && end.is_aligned(VMR_GRANULE));
+        assert!(start < end);
 
         self.alloc_page_tables(lazy)
     }
 
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = false`
     ///
+    /// # Safety
+    /// Callers must ensure that the bounds of the address range are
+    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// ranges may attempt to share top-level paging entries.  If any overlap
+    /// is attempted, page tables may be corrupted.
+    ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    pub fn initialize(&self) -> Result<(), SvsmError> {
-        self.initialize_common(false)
+    pub unsafe fn initialize(&self) -> Result<(), SvsmError> {
+        // SAFETY: The caller takes responsibilty for ensuring that the address
+        // bounds of the range have appropriate alignment with respect to
+        // the page table alignment boundaries.
+        unsafe { self.initialize_common(false) }
     }
 
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = true`
     ///
+    /// # Safety
+    /// Callers must ensure that the bounds of the address range are
+    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// ranges may attempt to share top-level paging entries.  If any overlap
+    /// is attempted, page tables may be corrupted.
+    ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    pub fn initialize_lazy(&self) -> Result<(), SvsmError> {
-        self.initialize_common(true)
+    pub unsafe fn initialize_lazy(&self) -> Result<(), SvsmError> {
+        // SAFETY: The caller takes responsibilty for ensuring that the address
+        // bounds of the range have appropriate alignment with respect to
+        // the page table alignment boundaries.
+        unsafe { self.initialize_common(true) }
     }
 
     /// Returns the virtual start and end addresses for this region

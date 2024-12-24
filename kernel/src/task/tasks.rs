@@ -215,7 +215,11 @@ impl Task {
         cpu.populate_page_table(&mut pgtable);
 
         let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
-        vm_kernel_range.initialize()?;
+        // SAFETY: The kernel mode task address range is fully aligned to
+        // top-level paging boundaries.
+        unsafe {
+            vm_kernel_range.initialize()?;
+        }
 
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
@@ -319,7 +323,11 @@ impl Task {
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
-        vm_user_range.initialize_lazy()?;
+        // SAFETY: the user address range is fully aligned to top-level paging
+        // boundaries.
+        unsafe {
+            vm_user_range.initialize_lazy()?;
+        }
         let create_args = CreateTaskArguments {
             entry: user_entry,
             name,
