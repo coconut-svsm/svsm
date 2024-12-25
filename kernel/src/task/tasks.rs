@@ -20,8 +20,7 @@ use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::{current_task, PerCpu};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
-use crate::cpu::X86ExceptionContext;
-use crate::cpu::{irqs_enable, X86GeneralRegs};
+use crate::cpu::{irqs_enable, X86ExceptionContext, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
@@ -30,19 +29,54 @@ use crate::mm::vm::{
     Mapping, ShadowStackInit, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR,
 };
 use crate::mm::{
-    mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
-    SVSM_PERTASK_SHADOW_STACK_BASE, SVSM_PERTASK_STACK_BASE, USER_MEM_END, USER_MEM_START,
+    alloc::AllocError, mappings::create_anon_mapping, mappings::create_file_mapping, PageBox,
+    VMMappingGuard, SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END,
+    SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET, SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
+    SVSM_PERTASK_STACK_BASE_OFFSET, USER_MEM_END, USER_MEM_START,
 };
 use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
+use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::MemoryRegion;
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{current_task_terminated, schedule};
 
+pub static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
+    SpinLock::new(BitmapAllocator1024::new_empty());
+
 pub const INITIAL_TASK_ID: u32 = 1;
+
+// The task virtual range guard manages the allocation of a task virtual
+// address range within the task address space.  The address range is reserved
+// as long as the guard continues to exist.
+#[derive(Debug)]
+struct TaskVirtualRegionGuard {
+    index: usize,
+}
+
+impl TaskVirtualRegionGuard {
+    fn alloc() -> Result<Self, SvsmError> {
+        let index = KTASK_VADDR_BITMAP
+            .lock()
+            .alloc(1, 1)
+            .ok_or(SvsmError::Alloc(AllocError::OutOfMemory))?;
+        Ok(Self { index })
+    }
+
+    fn vaddr_region(&self) -> MemoryRegion<VirtAddr> {
+        const SPAN: usize = SIZE_LEVEL3 / BitmapAllocator1024::CAPACITY;
+        let base = SVSM_PERTASK_BASE + (self.index * SPAN);
+        MemoryRegion::<VirtAddr>::new(base, SPAN)
+    }
+}
+
+impl Drop for TaskVirtualRegionGuard {
+    fn drop(&mut self) {
+        KTASK_VADDR_BITMAP.lock().free(self.index, 1);
+    }
+}
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
@@ -137,6 +171,11 @@ pub struct Task {
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageBox<PageTable>>,
 
+    /// Virtual address region that has been allocated for this task.
+    /// This is not referenced but must be stored so that it is dropped when
+    /// the Task is dropped.
+    _ktask_region: TaskVirtualRegionGuard,
+
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
 
@@ -168,7 +207,10 @@ pub struct Task {
 // SAFETY: Send + Sync is required for Arc<Task> to implement Send. All members
 // of  `Task` are Send + Sync except for the intrusive_collection links, which
 // are only Send. The only access to these is via the intrusive_adapter!
-// generated code which does not use them concurrently across threads.
+// generated code which does not use them concurrently across threads.  The
+// kernal address cell is also not Sync, but this is only populated during
+// task creation, and can safely be accessed by multiple threads once it has
+// been populated.
 unsafe impl Sync for Task {}
 
 pub type TaskPointer = Arc<Task>;
@@ -214,9 +256,16 @@ impl Task {
 
         cpu.populate_page_table(&mut pgtable);
 
-        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
-        // SAFETY: The kernel mode task address range is fully aligned to
-        // top-level paging boundaries.
+        let ktask_region = TaskVirtualRegionGuard::alloc()?;
+        let vaddr_region = ktask_region.vaddr_region();
+        let vm_kernel_range = VMR::new(
+            vaddr_region.start(),
+            vaddr_region.end(),
+            PTEntryFlags::empty(),
+        );
+        // SAFETY: The selected kernel mode task address range is the only
+        // range that will live within the top-level entry associated with the
+        // task address space.
         unsafe {
             vm_kernel_range.initialize()?;
         }
@@ -237,24 +286,24 @@ impl Task {
         if is_cet_ss_supported() {
             let shadow_stack;
             (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
-                SVSM_PERTASK_SHADOW_STACK_BASE,
+                vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
                 },
             )?;
             vm_kernel_range.insert_at(
-                SVSM_PERTASK_SHADOW_STACK_BASE,
+                vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
                 Arc::new(Mapping::new(shadow_stack)),
             )?;
 
             let shadow_stack;
             (shadow_stack, exception_shadow_stack) = VMKernelShadowStack::new(
-                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                vaddr_region.start() + SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET,
                 ShadowStackInit::Exception,
             )?;
             vm_kernel_range.insert_at(
-                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
+                vaddr_region.start() + SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET,
                 Arc::new(Mapping::new(shadow_stack)),
             )?;
         }
@@ -265,15 +314,13 @@ impl Task {
         } else {
             Self::allocate_ktask_stack(cpu, args.entry, xsa_addr)?
         };
-        vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
+        let stack_start = vaddr_region.start() + SVSM_PERTASK_STACK_BASE_OFFSET;
+        vm_kernel_range.insert_at(stack_start, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
 
         // Remap at the per-task offset
-        let bounds = MemoryRegion::new(
-            SVSM_PERTASK_STACK_BASE + raw_bounds.start().into(),
-            raw_bounds.len(),
-        );
+        let bounds = MemoryRegion::new(stack_start + raw_bounds.start().into(), raw_bounds.len());
 
         Ok(Arc::new(Task {
             rsp: bounds
@@ -286,6 +333,7 @@ impl Task {
             stack_bounds: bounds,
             exception_shadow_stack,
             page_table: SpinLock::new(pgtable),
+            _ktask_region: ktask_region,
             vm_kernel_range,
             vm_user_range: args.vm_user_range,
             sched_state: RWLock::new(TaskSchedState {
