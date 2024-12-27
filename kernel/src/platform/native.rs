@@ -182,4 +182,6 @@ impl SvsmPlatform for NativePlatform {
 
         todo!();
     }
+
+    fn request_loop(&self) {}
 }

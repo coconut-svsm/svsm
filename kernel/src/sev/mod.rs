@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+pub mod caa;
 pub mod ghcb;
 pub mod hv_doorbell;
 pub mod msr_protocol;

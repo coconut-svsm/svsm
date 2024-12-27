@@ -68,11 +68,11 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+        Ok(())
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+        Ok(())
     }
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
@@ -189,6 +189,10 @@ impl SvsmPlatform for TdpPlatform {
         _cpu: &PerCpu,
         _context: &hyperv::HvInitialVpContext,
     ) -> Result<(), SvsmError> {
+        todo!();
+    }
+
+    fn request_loop(&self) {
         todo!();
     }
 }
