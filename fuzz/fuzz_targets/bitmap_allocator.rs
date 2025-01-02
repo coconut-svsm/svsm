@@ -149,8 +149,8 @@ impl TestBitmapAllocator for BitmapAllocator1024 {
 }
 
 fuzz_target!(|actions: Vec<BmaAction>| {
-    let mut bma64 = BitmapAllocator64::new();
-    let mut bma1024 = BitmapAllocator1024::new();
+    let mut bma64 = BitmapAllocator64::new_full();
+    let mut bma1024 = BitmapAllocator1024::new_full();
     for action in actions.iter() {
         let bma64_before = bma64;
         let bma1024_before = bma1024.clone();

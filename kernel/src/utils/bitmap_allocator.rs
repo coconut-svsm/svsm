@@ -32,8 +32,12 @@ pub struct BitmapAllocator64 {
 }
 
 impl BitmapAllocator64 {
-    pub const fn new() -> Self {
+    pub const fn new_full() -> Self {
         Self { bits: u64::MAX }
+    }
+
+    pub const fn new_empty() -> Self {
+        Self { bits: 0 }
     }
 
     #[cfg(fuzzing)]
@@ -101,10 +105,17 @@ pub struct BitmapAllocatorTree<T: BitmapAllocator + Debug> {
 }
 
 impl BitmapAllocatorTree<BitmapAllocator64> {
-    pub const fn new() -> Self {
+    pub const fn new_full() -> Self {
         Self {
             bits: u16::MAX,
-            child: [BitmapAllocator64::new(); 16],
+            child: [BitmapAllocator64::new_full(); 16],
+        }
+    }
+
+    pub const fn new_empty() -> Self {
+        Self {
+            bits: 0,
+            child: [BitmapAllocator64::new_empty(); 16],
         }
     }
 
@@ -362,7 +373,7 @@ mod tests {
 
     #[test]
     fn tree_set_all() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, 64 * 16, false);
         for i in 0..16 {
             assert_eq!(b.child[i].bits, 0);
@@ -373,7 +384,7 @@ mod tests {
 
     #[test]
     fn tree_clear_all() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, 64 * 16, true);
         for i in 0..16 {
             assert_eq!(b.child[i].bits, u64::MAX);
@@ -384,7 +395,7 @@ mod tests {
 
     #[test]
     fn tree_set_some() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
 
         // First child
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
@@ -430,7 +441,7 @@ mod tests {
 
     #[test]
     fn tree_alloc_simple() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         for i in 0..256 {
             assert_eq!(b.alloc(1, 0), Some(i));
@@ -439,8 +450,17 @@ mod tests {
     }
 
     #[test]
+    fn tree_alloc_empty_simple() {
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_empty();
+        for i in 0..256 {
+            assert_eq!(b.alloc(1, 0), Some(i));
+        }
+        assert_eq!(b.used(), 256);
+    }
+
+    #[test]
     fn tree_alloc_aligned() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 5 bits : 32 bit alignment
         assert_eq!(b.alloc(1, 5), Some(0));
@@ -454,7 +474,7 @@ mod tests {
 
     #[test]
     fn tree_alloc_large_aligned() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 4 bits : 16 bit alignment
         assert_eq!(b.alloc(500, 4), Some(0));
@@ -464,7 +484,7 @@ mod tests {
 
     #[test]
     fn tree_alloc_out_of_space() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 4 bits : 16 bit alignment
         assert_eq!(b.alloc(1000, 4), Some(0));
@@ -477,7 +497,7 @@ mod tests {
 
     #[test]
     fn tree_free_space() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, false);
         // Alignment of 1 << 4 bits : 16 bit alignment
         assert_eq!(
@@ -492,7 +512,7 @@ mod tests {
 
     #[test]
     fn tree_free_multiple() {
-        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new();
+        let mut b = BitmapAllocatorTree::<BitmapAllocator64>::new_full();
         b.set(0, BitmapAllocatorTree::<BitmapAllocator64>::CAPACITY, true);
         b.free(0, 16);
         b.free(765, 16);
