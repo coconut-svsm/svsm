@@ -192,12 +192,24 @@ impl fmt::Debug for Task {
     }
 }
 
+struct CreateTaskArguments {
+    // The entry point of the task.  For user tasks, this is a user-mode
+    // address, and for kernel tasks, it is a kernel address,
+    entry: usize,
+
+    // The name of the task.
+    name: String,
+
+    // For a user task, supplies the `VMR` that will represent the user-mode
+    // address space.
+    vm_user_range: Option<VMR>,
+
+    // The root directory that will be associated with this task.
+    rootdir: Arc<dyn Directory>,
+}
+
 impl Task {
-    pub fn create(
-        cpu: &PerCpu,
-        entry: extern "C" fn(),
-        name: String,
-    ) -> Result<TaskPointer, SvsmError> {
+    fn create_common(cpu: &PerCpu, args: CreateTaskArguments) -> Result<TaskPointer, SvsmError> {
         let mut pgtable = cpu.get_pgtable().clone_shared()?;
 
         cpu.populate_page_table(&mut pgtable);
@@ -208,6 +220,14 @@ impl Task {
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
 
+        // Determine which kernel-mode entry/exit routines will be used for
+        // this task.
+        let (entry_return, exit_return) = if args.vm_user_range.is_some() {
+            (return_new_task as usize, None)
+        } else {
+            (run_kernel_task as usize, Some(task_exit as usize))
+        };
+
         let mut shadow_stack_offset = VirtAddr::null();
         let mut exception_shadow_stack = VirtAddr::null();
         if is_cet_ss_supported() {
@@ -215,8 +235,8 @@ impl Task {
             (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
                 SVSM_PERTASK_SHADOW_STACK_BASE,
                 ShadowStackInit::Normal {
-                    entry_return: run_kernel_task as usize,
-                    exit_return: Some(task_exit as usize),
+                    entry_return,
+                    exit_return,
                 },
             )?;
             vm_kernel_range.insert_at(
@@ -235,7 +255,12 @@ impl Task {
             )?;
         }
 
-        let (stack, raw_bounds, rsp_offset) = Self::allocate_ktask_stack(cpu, entry, xsa_addr)?;
+        // Call the correct stack creation routine for this task.
+        let (stack, raw_bounds, rsp_offset) = if args.vm_user_range.is_some() {
+            Self::allocate_utask_stack(cpu, args.entry, xsa_addr)?
+        } else {
+            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr)?
+        };
         vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
 
         vm_kernel_range.populate(&mut pgtable);
@@ -250,7 +275,7 @@ impl Task {
             rsp: bounds
                 .end()
                 .checked_sub(rsp_offset)
-                .expect("Invalid stack offset from task::allocate_ktask_stack()")
+                .expect("Invalid stack offset from task stack allocator")
                 .bits() as u64,
             ssp: shadow_stack_offset,
             xsa,
@@ -258,19 +283,33 @@ impl Task {
             exception_shadow_stack,
             page_table: SpinLock::new(pgtable),
             vm_kernel_range,
-            vm_user_range: None,
+            vm_user_range: args.vm_user_range,
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
                 cpu: cpu.get_apic_id(),
             }),
-            name,
+            name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
-            rootdir: opendir("/")?,
+            rootdir: args.rootdir,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
             objs: Arc::new(RWLock::new(BTreeMap::new())),
         }))
+    }
+
+    pub fn create(
+        cpu: &PerCpu,
+        entry: extern "C" fn(),
+        name: String,
+    ) -> Result<TaskPointer, SvsmError> {
+        let create_args = CreateTaskArguments {
+            entry: entry as usize,
+            name,
+            vm_user_range: None,
+            rootdir: opendir("/")?,
+        };
+        Self::create_common(cpu, create_args)
     }
 
     pub fn create_user(
@@ -279,83 +318,15 @@ impl Task {
         root: Arc<dyn Directory>,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
-        let mut pgtable = cpu.get_pgtable().clone_shared()?;
-
-        cpu.populate_page_table(&mut pgtable);
-
-        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
-        vm_kernel_range.initialize()?;
-
-        let xsa = Self::allocate_xsave_area();
-        let xsa_addr = u64::from(xsa.vaddr()) as usize;
-
-        let mut shadow_stack_offset = VirtAddr::null();
-        let mut exception_shadow_stack = VirtAddr::null();
-        if is_cet_ss_supported() {
-            let shadow_stack;
-            (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
-                SVSM_PERTASK_SHADOW_STACK_BASE,
-                ShadowStackInit::Normal {
-                    entry_return: return_new_task as usize,
-                    exit_return: None,
-                },
-            )?;
-            vm_kernel_range.insert_at(
-                SVSM_PERTASK_SHADOW_STACK_BASE,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
-
-            let shadow_stack;
-            (shadow_stack, exception_shadow_stack) = VMKernelShadowStack::new(
-                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
-                ShadowStackInit::Exception,
-            )?;
-            vm_kernel_range.insert_at(
-                SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
-        }
-
-        let (stack, raw_bounds, stack_offset) =
-            Self::allocate_utask_stack(cpu, user_entry, xsa_addr)?;
-        vm_kernel_range.insert_at(SVSM_PERTASK_STACK_BASE, stack)?;
-
-        vm_kernel_range.populate(&mut pgtable);
-
         let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
         vm_user_range.initialize_lazy()?;
-
-        // Remap at the per-task offset
-        let bounds = MemoryRegion::new(
-            SVSM_PERTASK_STACK_BASE + raw_bounds.start().into(),
-            raw_bounds.len(),
-        );
-
-        Ok(Arc::new(Task {
-            rsp: bounds
-                .end()
-                .checked_sub(stack_offset)
-                .expect("Invalid stack offset from task::allocate_utask_stack()")
-                .bits() as u64,
-            ssp: shadow_stack_offset,
-            xsa,
-            stack_bounds: bounds,
-            exception_shadow_stack,
-            page_table: SpinLock::new(pgtable),
-            vm_kernel_range,
-            vm_user_range: Some(vm_user_range),
-            sched_state: RWLock::new(TaskSchedState {
-                idle_task: false,
-                state: TaskState::RUNNING,
-                cpu: cpu.get_apic_id(),
-            }),
+        let create_args = CreateTaskArguments {
+            entry: user_entry,
             name,
-            id: TASK_ID_ALLOCATOR.next_id(),
+            vm_user_range: Some(vm_user_range),
             rootdir: root,
-            list_link: LinkedListAtomicLink::default(),
-            runlist_link: LinkedListAtomicLink::default(),
-            objs: Arc::new(RWLock::new(BTreeMap::new())),
-        }))
+        };
+        Self::create_common(cpu, create_args)
     }
 
     pub fn stack_bounds(&self) -> MemoryRegion<VirtAddr> {
@@ -442,7 +413,7 @@ impl Task {
 
     fn allocate_ktask_stack(
         cpu: &PerCpu,
-        entry: extern "C" fn(),
+        entry: usize,
         xsa_addr: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
@@ -465,7 +436,7 @@ impl Task {
             // task with interrupts disabled.
             (*task_context).flags = 2;
             // ret_addr
-            (*task_context).regs.rdi = entry as *const () as usize;
+            (*task_context).regs.rdi = entry;
             // xsave area addr
             (*task_context).regs.rsi = xsa_addr;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
