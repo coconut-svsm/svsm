@@ -789,7 +789,7 @@ extern "C" fn task_exit() {
     schedule();
 }
 
-#[cfg(test)]
+#[cfg(all(test, test_in_svsm))]
 mod tests {
     extern crate alloc;
     use crate::task::start_kernel_task;
