@@ -26,6 +26,7 @@ use zerocopy::IntoBytes;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{parse_firmware, Firmware};
+use crate::paging::construct_init_page_tables;
 use crate::platform::PlatformMask;
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::{construct_native_start_context, construct_start_context, construct_vmsa};
@@ -130,7 +131,11 @@ impl IgvmBuilder {
         // Construct a native context object to capture the start context.
         let start_rip = self.gpa_map.stage2_image.get_start();
         let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
-        let start_context = construct_start_context(start_rip, start_rsp);
+        let start_context = construct_start_context(
+            start_rip,
+            start_rsp,
+            self.gpa_map.init_page_tables.get_start(),
+        );
 
         self.build_directives(&param_block, &start_context)?;
         self.build_initialization()?;
@@ -509,6 +514,15 @@ impl IgvmBuilder {
                 self.gpa_map.stage2_stack.get_start(),
                 SvsmPlatformType::Native,
                 ANY_NATIVE_COMPATIBILITY_MASK,
+                &mut self.directives,
+            );
+        }
+
+        if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
+            // Include initial page tables.
+            construct_init_page_tables(
+                self.gpa_map.init_page_tables.get_start(),
+                VSM_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
         }
