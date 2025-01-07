@@ -32,27 +32,31 @@ pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
         return ptr::null_mut();
     }
 
-    if let Ok(layout) = layout_from_size(size as usize) {
-        // SAFETY: layout is guaranteed to be non-zero size. Memory may not be
-        // initiatlized, but that's what the caller expects.
-        return unsafe { alloc(layout).cast() };
-    }
-    ptr::null_mut()
+    let Ok(layout) = layout_from_size(size as usize) else {
+        return ptr::null_mut();
+    };
+
+    // SAFETY: layout is guaranteed to be non-zero size. Memory may not be
+    // initiatlized, but that's what the caller expects.
+    unsafe { alloc(layout).cast() }
 }
 
 #[no_mangle]
 pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
-    if let Some(new_size) = items.checked_mul(size) {
-        if new_size == 0 {
-            return ptr::null_mut();
-        }
+    let Some(new_size) = items.checked_mul(size) else {
+        return ptr::null_mut();
+    };
 
-        if let Ok(layout) = layout_from_size(new_size as usize) {
-            // SAFETY: layout is guaranteed to be non-zero size.
-            return unsafe { alloc_zeroed(layout).cast() };
-        }
+    if new_size == 0 {
+        return ptr::null_mut();
     }
-    ptr::null_mut()
+
+    let Ok(layout) = layout_from_size(new_size as usize) else {
+        return ptr::null_mut();
+    };
+
+    // SAFETY: layout is guaranteed to be non-zero size.
+    unsafe { alloc_zeroed(layout).cast() }
 }
 
 #[no_mangle]
@@ -64,27 +68,28 @@ pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
         return malloc(size);
     }
 
-    if let Some(layout) = layout_from_ptr(ptr) {
-        if new_size == 0 {
-            // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
-            // with this allocator and we are using the same `layout` used to
-            // allocate `ptr`.
-            unsafe { dealloc(ptr, layout) };
-            return ptr::null_mut();
-        }
+    let Some(layout) = layout_from_ptr(ptr) else {
+        return ptr::null_mut();
+    };
 
-        // This will fail if `new_size` rounded value exceeds `isize::MAX`
-        if Layout::from_size_align(new_size, layout.align()).is_err() {
-            return ptr::null_mut();
-        }
-
-        // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated with
-        // this allocator and we are using the same `layout` used to allocate
-        // `ptr`. We also checked that `new_size` aligned does not overflow and
-        // it is not 0.
-        return unsafe { _realloc(ptr, layout, new_size).cast() };
+    if new_size == 0 {
+        // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
+        // with this allocator and we are using the same `layout` used to
+        // allocate `ptr`.
+        unsafe { dealloc(ptr, layout) };
+        return ptr::null_mut();
     }
-    ptr::null_mut()
+
+    // This will fail if `new_size` rounded value exceeds `isize::MAX`
+    if Layout::from_size_align(new_size, layout.align()).is_err() {
+        return ptr::null_mut();
+    }
+
+    // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated with
+    // this allocator and we are using the same `layout` used to allocate
+    // `ptr`. We also checked that `new_size` aligned does not overflow and
+    // it is not 0.
+    unsafe { _realloc(ptr, layout, new_size).cast() }
 }
 
 #[no_mangle]
@@ -93,12 +98,13 @@ pub unsafe extern "C" fn free(p: *mut c_void) {
         return;
     }
     let ptr = p as *mut u8;
-    if let Some(layout) = layout_from_ptr(ptr.cast()) {
-        // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
-        // with this allocator and we are using the same `layout` used to
-        // allocate `ptr`.
-        unsafe { dealloc(ptr, layout) }
-    }
+    let Some(layout) = layout_from_ptr(ptr.cast()) else {
+        return;
+    };
+    // SAFETY: layout_from_ptr() call ensures that `ptr` was allocated
+    // with this allocator and we are using the same `layout` used to
+    // allocate `ptr`.
+    unsafe { dealloc(ptr, layout) }
 }
 
 #[no_mangle]
