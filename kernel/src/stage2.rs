@@ -352,7 +352,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 
     init_platform_type(platform_type);
-    let mut platform = SvsmPlatformCell::new(platform_type);
+    let mut platform = SvsmPlatformCell::new(platform_type, true);
 
     let config =
         get_svsm_config(launch_info, &*platform).expect("Failed to get SVSM configuration");
@@ -406,6 +406,13 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
     )
     .expect("Failed to map and validate heap");
 
+    // Determine whether use of interrupts n the SVSM should be suppressed.
+    // This is required when running SNP under KVM/QEMU.
+    let suppress_svsm_interrupts = match platform_type {
+        SvsmPlatformType::Snp => config.is_qemu(),
+        _ => false,
+    };
+
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
     let launch_info = KernelLaunchInfo {
@@ -430,6 +437,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
+        suppress_svsm_interrupts,
         platform_type,
     };
 

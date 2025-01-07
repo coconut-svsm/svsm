@@ -31,14 +31,8 @@ static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 pub struct TdpPlatform {}
 
 impl TdpPlatform {
-    pub fn new() -> Self {
+    pub fn new(_suppress_svsm_interrupts: bool) -> Self {
         Self {}
-    }
-}
-
-impl Default for TdpPlatform {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

@@ -171,7 +171,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .init(li)
         .expect("Already initialized launch info");
 
-    let mut platform = SvsmPlatformCell::new(li.platform_type);
+    let mut platform = SvsmPlatformCell::new(li.platform_type, li.suppress_svsm_interrupts);
 
     init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
 

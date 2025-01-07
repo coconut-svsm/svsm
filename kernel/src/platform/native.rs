@@ -35,21 +35,15 @@ pub struct NativePlatform {
 }
 
 impl NativePlatform {
-    pub fn new() -> Self {
-        Self {
-            is_hyperv: is_hyperv_hypervisor(),
-        }
-    }
-}
-
-impl Default for NativePlatform {
-    fn default() -> Self {
+    pub fn new(_suppress_svsm_interrupts: bool) -> Self {
         // Execution is not possible unless X2APIC is supported.
         let features = CpuidResult::get(1, 0);
         if (features.ecx & 0x200000) == 0 {
             panic!("X2APIC is not supported");
         }
-        Self::new()
+        Self {
+            is_hyperv: is_hyperv_hypervisor(),
+        }
     }
 }
 
