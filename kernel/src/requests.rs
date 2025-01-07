@@ -71,7 +71,12 @@ pub fn update_mappings() -> Result<(), SvsmError> {
     let mut ret = Ok(());
 
     if !locked.needs_update() {
-        return Ok(());
+        // If there is no VMSA, then the update request must be considered a
+        // failure even though no work was required.
+        return match locked.vmsa_phys() {
+            Some(_) => Ok(()),
+            None => Err(SvsmError::MissingVMSA),
+        };
     }
 
     cpu.unmap_guest_vmsa();
