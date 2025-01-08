@@ -136,11 +136,18 @@ pub struct IgvmParamBlock {
     /// memory region (e.g. for VMSA contents).
     pub kernel_reserved_size: u32,
 
-    /// The number of bytes in the kernel memory region.
-    pub kernel_size: u32,
-
     /// The guest physical address of the base of the kernel memory region.
     pub kernel_base: u64,
+
+    /// The minimum size to allocate for the kernel in bytes. If the hypervisor supplies a memory
+    /// region in the memory map that starts at kernel_base and is larger, that size will be used
+    /// instead.
+    pub kernel_min_size: u32,
+
+    /// The maximum size to allocate for the kernel in bytes. If the hypervisor supplies a memory
+    /// region in the memory map that starts at kernel_base and is larger, this maximum size will
+    /// be used instead.
+    pub kernel_max_size: u32,
 
     /// The value of vTOM used by the guest, or zero if not used.
     pub vtom: u64,
