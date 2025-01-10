@@ -212,7 +212,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(&*platform).expect("Failed to initialize paging");
+    paging_init(&*platform, false).expect("Failed to initialize paging");
     let init_pgtable =
         init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
     // SAFETY: we are initializing the state, including stack and registers

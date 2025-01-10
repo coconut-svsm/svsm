@@ -28,7 +28,7 @@ use svsm::error::SvsmError;
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
-use svsm::mm::pagetable::{paging_init_early, PTEntryFlags, PageTable};
+use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
 };
@@ -101,6 +101,10 @@ fn setup_env(
         PhysAddr::from(u64::from(STAGE2_START)),
     );
 
+    let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
+    register_cpuid_table(cpuid_page);
+    paging_init(platform, true).expect("Failed to initialize early paging");
+
     // Use the low 640 KB of memory as the heap.
     let lowmem_region = MemoryRegion::new(VirtAddr::from(0u64), 640 * 1024);
     let heap_mapping = FixedAddressMappingRange::new(
@@ -115,11 +119,6 @@ fn setup_env(
     platform
         .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
         .expect("failed to validate low 640 KB");
-
-    let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
-
-    register_cpuid_table(cpuid_page);
-    paging_init_early(platform).expect("Failed to initialize early paging");
 
     // Configure the heap to exist from 64 KB to 640 KB.
     setup_stage2_allocator(0x10000, 0xA0000);

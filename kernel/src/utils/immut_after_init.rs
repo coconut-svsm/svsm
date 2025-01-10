@@ -56,19 +56,6 @@ pub enum ImmutAfterInitError {
 ///     assert_eq!(*X, 123);
 /// }
 /// ```
-///
-/// Also, to support early/late initialization scenarios, a
-/// `ImmutAfterInitCell`'s value may get reset after having been initialized
-/// already:
-/// ```
-/// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
-/// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::new(0);
-/// pub fn main() {
-///     assert_eq!(*X, 0);
-///     unsafe { X.reinit(&123) };
-///     assert_eq!(*X, 123);
-/// }
-/// ```
 #[derive(Debug)]
 pub struct ImmutAfterInitCell<T: Copy> {
     #[doc(hidden)]
@@ -150,29 +137,6 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         unsafe { self.set_inner(v) };
         Ok(())
     }
-
-    /// Reinitialize an initialized `ImmutAfterInitCell` instance from a value.
-    ///
-    /// Must **not** get called while any borrow via [`Self::deref()`] or
-    /// [`ImmutAfterInitRef::deref()`] is alive!
-    ///
-    /// * `v` - Initialization value.
-    pub fn reinit(&self, v: &T) -> ImmutAfterInitResult<()> {
-        self.check_single_threaded()?;
-        unsafe { self.set_inner(v) }
-        Ok(())
-    }
-
-    /// Create an initialized `ImmutAfterInitCell` instance from a value.
-    ///
-    /// * `v` - Initialization value.
-    pub const fn new(v: T) -> Self {
-        Self {
-            data: UnsafeCell::new(MaybeUninit::new(v)),
-            #[cfg(debug_assertions)]
-            init: AtomicBool::new(true),
-        }
-    }
 }
 
 impl<T: Copy> Deref for ImmutAfterInitCell<T> {
@@ -232,7 +196,9 @@ unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitCell<T> {}
 /// static X : i32 = 123;
 ///
 /// fn main() {
-///     init_rx(ImmutAfterInitRef::new_from_ref(&X));
+///     let local = ImmutAfterInitRef::<i32>::uninit();
+///     local.init_from_ref(&X);
+///     init_rx(local);
 ///     assert_eq!(*RX, 123);
 /// }
 /// ```
@@ -270,19 +236,6 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
         'b: 'a,
     {
         self.ptr.init(&(r as *const T))
-    }
-
-    /// Create an initialized `ImmutAfterInitRef` instance pointing to a value
-    /// specified by a regular reference.
-    ///
-    /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
-    ///         to. By convention, the referenced value must have been
-    ///         initialized already.
-    pub const fn new_from_ref(r: &'a T) -> Self {
-        Self {
-            ptr: ImmutAfterInitCell::new(r as *const T),
-            _phantom: PhantomData,
-        }
     }
 
     /// Dereference the referenced value with lifetime propagation. Must **only

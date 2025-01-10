@@ -10,6 +10,7 @@ use crate::locking::SpinLock;
 use crate::serial::{SerialPort, Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
+use core::sync::atomic::{AtomicBool, Ordering};
 use release::COCONUT_VERSION;
 
 #[derive(Clone, Copy, Debug)]
@@ -35,12 +36,16 @@ impl Console {
 static WRITER: SpinLock<Console> = SpinLock::new(Console {
     writer: &DEFAULT_SERIAL_PORT,
 });
-static CONSOLE_INITIALIZED: ImmutAfterInitCell<bool> = ImmutAfterInitCell::new(false);
+
+// CONSOLE_INITIALIZED is only ever written during the single-proc phase of
+// boot, so it can safely be written with relaxed ordering.  FOr the same
+// reason, it can always safely be read with relaxed ordering.
+static CONSOLE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
 fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
     WRITER.lock().writer = writer;
-    CONSOLE_INITIALIZED.reinit(&true)?;
+    CONSOLE_INITIALIZED.store(true, Ordering::Relaxed);
     log::info!(
         "COCONUT Secure Virtual Machine Service Module Version {}",
         COCONUT_VERSION
@@ -59,7 +64,7 @@ pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), S
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    if !*CONSOLE_INITIALIZED {
+    if !CONSOLE_INITIALIZED.load(Ordering::Relaxed) {
         return;
     }
     WRITER.lock().write_fmt(args).unwrap();
@@ -71,7 +76,7 @@ pub fn _print(args: fmt::Arguments<'_>) {
 ///
 /// * `buffer`: u8 slice with bytes to write.
 pub fn console_write(buffer: &[u8]) {
-    if !*CONSOLE_INITIALIZED {
+    if !CONSOLE_INITIALIZED.load(Ordering::Relaxed) {
         return;
     }
     WRITER.lock().write_bytes(buffer);
