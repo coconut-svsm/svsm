@@ -8,24 +8,14 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
-#[cfg(debug_assertions)]
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering};
 
-#[cfg(not(debug_assertions))]
-pub type ImmutAfterInitResult<T> = Result<T, core::convert::Infallible>;
-
-#[cfg(debug_assertions)]
 pub type ImmutAfterInitResult<T> = Result<T, ImmutAfterInitError>;
 
-#[cfg(debug_assertions)]
-static MULTI_THREADED: AtomicBool = AtomicBool::new(false);
-
-#[cfg(debug_assertions)]
 #[derive(Clone, Copy, Debug)]
 pub enum ImmutAfterInitError {
     AlreadyInit,
     Uninitialized,
-    NotSingleThreaded,
 }
 
 /// A memory location which is effectively immutable after initalization code
@@ -60,11 +50,13 @@ pub enum ImmutAfterInitError {
 pub struct ImmutAfterInitCell<T: Copy> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
-    // Used to keep track of the initialization state. Even though this
-    // is atomic, the data structure does not guarantee thread safety.
-    #[cfg(debug_assertions)]
-    init: AtomicBool,
+    #[doc(hidden)]
+    init: AtomicU8,
 }
+
+const IMMUT_UNINIT: u8 = 0;
+const IMMUT_INIT_IN_PROGRESS: u8 = 1;
+const IMMUT_INITIALIZED: u8 = 2;
 
 impl<T: Copy> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
@@ -72,69 +64,57 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     pub const fn uninit() -> Self {
         Self {
             data: UnsafeCell::new(MaybeUninit::uninit()),
-            #[cfg(debug_assertions)]
-            init: AtomicBool::new(false),
+            init: AtomicU8::new(IMMUT_UNINIT),
         }
-    }
-
-    fn set_init(&self) {
-        #[cfg(debug_assertions)]
-        self.init.store(true, Ordering::Relaxed);
     }
 
     fn check_init(&self) -> ImmutAfterInitResult<()> {
-        #[cfg(debug_assertions)]
-        if !self.init.load(Ordering::Relaxed) {
-            return Err(ImmutAfterInitError::Uninitialized);
+        if self.init.load(Ordering::Acquire) == IMMUT_INITIALIZED {
+            Ok(())
+        } else {
+            Err(ImmutAfterInitError::Uninitialized)
         }
+    }
+
+    fn try_init(&self) -> ImmutAfterInitResult<()> {
+        self.init
+            .compare_exchange(
+                IMMUT_UNINIT,
+                IMMUT_INIT_IN_PROGRESS,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .map_err(|_| ImmutAfterInitError::AlreadyInit)?;
         Ok(())
     }
 
-    fn check_uninit(&self) -> ImmutAfterInitResult<()> {
-        #[cfg(debug_assertions)]
-        if self.init.load(Ordering::Relaxed) {
-            return Err(ImmutAfterInitError::AlreadyInit);
-        }
-        Ok(())
-    }
-
-    fn check_single_threaded(&self) -> ImmutAfterInitResult<()> {
-        #[cfg(debug_assertions)]
-        if MULTI_THREADED.load(Ordering::Relaxed) {
-            return Err(ImmutAfterInitError::NotSingleThreaded);
-        }
-        Ok(())
-    }
-
-    // The caller must check the initialization status to avoid double init bugs
-    unsafe fn set_inner(&self, v: &T) {
-        self.set_init();
-        unsafe {
-            (*self.data.get())
-                .as_mut_ptr()
-                .copy_from_nonoverlapping(v, 1)
-        }
-    }
-
-    // The caller must ensure that the cell is initialized
-    unsafe fn get_inner(&self) -> &T {
-        unsafe { (*self.data.get()).assume_init_ref() }
+    /// # Safety
+    /// The caller must ensure that the cell is in the init-in-progress phase
+    /// and that the contents of the cell have been populated.
+    unsafe fn complete_init(&self) {
+        self.init.store(IMMUT_INITIALIZED, Ordering::Release);
     }
 
     fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
         self.check_init()?;
-        unsafe { Ok(self.get_inner()) }
+        let r = unsafe { (*self.data.get()).assume_init_ref() };
+        Ok(r)
     }
 
     /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
-    ///
-    /// Must **not** get called on an already initialized instance!
+    /// Will fail if called on an initialized instance.
     ///
     /// * `v` - Initialization value.
     pub fn init(&self, v: &T) -> ImmutAfterInitResult<()> {
-        self.check_uninit()?;
-        self.check_single_threaded()?;
-        unsafe { self.set_inner(v) };
+        self.try_init()?;
+        // SAFETY: Successful completion of `try_init` conveys the exclusive
+        // right to populate the contents of the cell.
+        unsafe {
+            (*self.data.get())
+                .as_mut_ptr()
+                .copy_from_nonoverlapping(v, 1);
+            self.complete_init();
+        }
         Ok(())
     }
 }
@@ -142,8 +122,8 @@ impl<T: Copy> ImmutAfterInitCell<T> {
 impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
-    /// Dereference the wrapped value. Must **only ever** get called on an
-    /// initialized instance!
+    /// Dereference the wrapped value.  Will panic if called on an
+    /// uninitialized instance.
     fn deref(&self) -> &T {
         self.try_get_inner().unwrap()
     }
@@ -223,10 +203,8 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     }
 
     /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to value
-    /// specified by a regular reference.
-    ///
-    /// Must **not** get called on an already initialized `ImmutAfterInitRef`
-    /// instance!
+    /// specified by a regular reference.  Will fail if called on an
+    /// initialized instance.
     ///
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
     ///         to. By convention, the referenced value must have been
@@ -238,15 +216,12 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
         self.ptr.init(&(r as *const T))
     }
 
-    /// Dereference the referenced value with lifetime propagation. Must **only
-    /// ever** get called on an initialized `ImmutAfterInitRef` instance! Moreover,
-    /// the value referenced must have been initialized as well.
+    /// Dereference the referenced value with lifetime propagation.  Will panic
+    /// if called on an uninitialized instance.
     pub fn get(&self) -> &'a T {
         unsafe { &**self.ptr }
     }
-}
 
-impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to
     /// value wrapped in a [`ImmutAfterInitCell`].
     ///
@@ -277,8 +252,3 @@ impl<T: Copy> Deref for ImmutAfterInitRef<'_, T> {
 
 unsafe impl<T: Copy + Send> Send for ImmutAfterInitRef<'_, T> {}
 unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitRef<'_, T> {}
-
-pub fn immut_after_init_set_multithreaded() {
-    #[cfg(debug_assertions)]
-    MULTI_THREADED.store(true, Ordering::Relaxed);
-}
