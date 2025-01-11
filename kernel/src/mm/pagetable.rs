@@ -57,15 +57,15 @@ pub fn paging_init(platform: &dyn SvsmPlatform, suppress_global: bool) -> ImmutA
     if suppress_global {
         feature_mask.remove(PTEntryFlags::GLOBAL);
     }
-    FEATURE_MASK.init(&feature_mask)
+    FEATURE_MASK.init(feature_mask)
 }
 
 /// Initializes the encrypt mask.
 fn init_encrypt_mask(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
     let masks = platform.get_page_encryption_masks();
 
-    PRIVATE_PTE_MASK.init(&masks.private_pte_mask)?;
-    SHARED_PTE_MASK.init(&masks.shared_pte_mask)?;
+    PRIVATE_PTE_MASK.init(masks.private_pte_mask)?;
+    SHARED_PTE_MASK.init(masks.shared_pte_mask)?;
 
     let guest_phys_addr_size = (masks.phys_addr_sizes >> 16) & 0xff;
     let host_phys_addr_size = masks.phys_addr_sizes & 0xff;
@@ -78,7 +78,7 @@ fn init_encrypt_mask(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
         guest_phys_addr_size
     };
 
-    PHYS_ADDR_SIZE.init(&phys_addr_size)?;
+    PHYS_ADDR_SIZE.init(phys_addr_size)?;
 
     // If the C-bit is a physical address bit however, the guest physical
     // address space is effectively reduced by 1 bit.
@@ -86,7 +86,7 @@ fn init_encrypt_mask(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
     let effective_phys_addr_size = cmp::min(masks.addr_mask_width, phys_addr_size);
 
     let max_addr = 1 << effective_phys_addr_size;
-    MAX_PHYS_ADDR.init(&max_addr)
+    MAX_PHYS_ADDR.init(max_addr)
 }
 
 /// Returns the private encrypt mask value.

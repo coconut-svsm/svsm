@@ -48,7 +48,7 @@ impl SvsmPlatform for TdpPlatform {
 
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         assert_ne!(vtom, 0);
-        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
+        VTOM.init(vtom).map_err(|_| SvsmError::PlatformInit)?;
         // Serial console device can be initialized immediately
         init_svsm_console(&GHCI_IO_DRIVER, debug_serial_port)
     }

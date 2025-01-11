@@ -130,7 +130,7 @@ pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
         }
 
         GHCB_HV_FEATURES
-            .init(&features)
+            .init(features)
             .expect("Already initialized GHCB HV features");
         Ok(())
     } else {

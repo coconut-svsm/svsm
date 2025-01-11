@@ -145,7 +145,7 @@ fn init_cpuid_table(addr: VirtAddr) {
     }
 
     CPUID_PAGE
-        .init(table)
+        .init_from_ref(table)
         .expect("Already initialized CPUID page");
     register_cpuid_table(&CPUID_PAGE);
 }
@@ -171,7 +171,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     let debug_serial_port = li.debug_serial_port;
 
     LAUNCH_INFO
-        .init(li)
+        .init_from_ref(li)
         .expect("Already initialized launch info");
 
     let mut platform = SvsmPlatformCell::new(li.platform_type, li.suppress_svsm_interrupts);
@@ -258,7 +258,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
         .expect("Alternate injection required but not available");
 
     SVSM_PLATFORM
-        .init(&platform)
+        .init(platform)
         .expect("Failed to initialize SVSM platform object");
 
     sse_init();

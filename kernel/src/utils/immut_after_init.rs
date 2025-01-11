@@ -42,12 +42,12 @@ pub enum ImmutAfterInitError {
 /// # use svsm::utils::immut_after_init::ImmutAfterInitCell;
 /// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
 /// pub fn main() {
-///     unsafe { X.init(&123) };
+///     unsafe { X.init_from_ref(&123) };
 ///     assert_eq!(*X, 123);
 /// }
 /// ```
 #[derive(Debug)]
-pub struct ImmutAfterInitCell<T: Copy> {
+pub struct ImmutAfterInitCell<T> {
     #[doc(hidden)]
     data: UnsafeCell<MaybeUninit<T>>,
     #[doc(hidden)]
@@ -58,7 +58,7 @@ const IMMUT_UNINIT: u8 = 0;
 const IMMUT_INIT_IN_PROGRESS: u8 = 1;
 const IMMUT_INITIALIZED: u8 = 2;
 
-impl<T: Copy> ImmutAfterInitCell<T> {
+impl<T> ImmutAfterInitCell<T> {
     /// Create an unitialized `ImmutAfterInitCell` instance. The value must get
     /// initialized by means of [`Self::init()`] before first usage.
     pub const fn uninit() -> Self {
@@ -107,21 +107,41 @@ impl<T: Copy> ImmutAfterInitCell<T> {
     /// Will fail if called on an initialized instance.
     ///
     /// * `v` - Initialization value.
-    pub fn init(&self, v: &T) -> ImmutAfterInitResult<()> {
+    pub fn init(&self, v: T) -> ImmutAfterInitResult<()> {
+        self.try_init()?;
+        // SAFETY: Successful completion of `try_init` conveys the exclusive
+        // right to populate the contents of the cell.
+        unsafe {
+            let data = &mut *self.data.get();
+            data.write(v);
+            self.complete_init();
+        }
+        Ok(())
+    }
+
+    /// Initialize an uninitialized `ImmutAfterInitCell` instance from a
+    /// reference.
+    /// Will fail if called on an initialized instance.
+    ///
+    /// * `v` - Initialization reference.
+    pub fn init_from_ref(&self, r: &T) -> ImmutAfterInitResult<()>
+    where
+        T: Copy,
+    {
         self.try_init()?;
         // SAFETY: Successful completion of `try_init` conveys the exclusive
         // right to populate the contents of the cell.
         unsafe {
             (*self.data.get())
                 .as_mut_ptr()
-                .copy_from_nonoverlapping(v, 1);
+                .copy_from_nonoverlapping(r, 1);
             self.complete_init();
         }
         Ok(())
     }
 }
 
-impl<T: Copy> Deref for ImmutAfterInitCell<T> {
+impl<T> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
     /// Dereference the wrapped value.  Will panic if called on an
@@ -131,8 +151,27 @@ impl<T: Copy> Deref for ImmutAfterInitCell<T> {
     }
 }
 
-unsafe impl<T: Copy + Send> Send for ImmutAfterInitCell<T> {}
-unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitCell<T> {}
+impl<T> Drop for ImmutAfterInitCell<T> {
+    fn drop(&mut self) {
+        // Dropping is only required if the cell has been initialized.
+        if self.init.load(Ordering::Relaxed) == IMMUT_INITIALIZED {
+            // SAFETY: the initialization check ensures that the cell holds
+            // initialized data.
+            unsafe {
+                let cell = &mut *self.data.get();
+                // This drop will never occur for a cell that was initialized
+                // from a reference, because initialization from a reference
+                // requires `Copy` and types that implement `Copy` do not
+                // implement `Drop`, and thus this will have no effect for such
+                // types.
+                cell.assume_init_drop();
+            }
+        }
+    }
+}
+
+unsafe impl<T: Send> Send for ImmutAfterInitCell<T> {}
+unsafe impl<T: Send + Sync> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
@@ -149,7 +188,7 @@ unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitCell<T> {}
 /// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
 /// static RX: ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
 /// fn main() {
-///     unsafe { X.init(&123) };
+///     unsafe { X.init_from_ref(&123) };
 ///     unsafe { RX.init_from_cell(&X) };
 ///     assert_eq!(*RX, 123);
 /// }
@@ -215,7 +254,7 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     where
         'b: 'a,
     {
-        self.ptr.init(&(r as *const T))
+        self.ptr.init(r as *const T)
     }
 
     /// Dereference the referenced value with lifetime propagation.  Will panic
@@ -236,7 +275,7 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     where
         'b: 'a,
     {
-        self.ptr.init(&(cell.try_get_inner()? as *const T))
+        self.ptr.init(cell.try_get_inner()? as *const T)
     }
 }
 

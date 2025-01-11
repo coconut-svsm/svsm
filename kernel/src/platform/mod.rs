@@ -225,7 +225,7 @@ impl DerefMut for SvsmPlatformCell {
 }
 
 pub fn init_platform_type(platform_type: SvsmPlatformType) {
-    SVSM_PLATFORM_TYPE.init(&platform_type).unwrap();
+    SVSM_PLATFORM_TYPE.init(platform_type).unwrap();
 }
 
 pub fn halt() {

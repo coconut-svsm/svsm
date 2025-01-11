@@ -55,7 +55,7 @@ fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
 
 pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
     CONSOLE_SERIAL
-        .init(&SerialPort::new(writer, port))
+        .init_from_ref(&SerialPort::new(writer, port))
         .map_err(|_| SvsmError::Console)?;
     (*CONSOLE_SERIAL).init();
     init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
@@ -138,7 +138,7 @@ impl log::Log for ConsoleLogger {
 static CONSOLE_LOGGER: ImmutAfterInitCell<ConsoleLogger> = ImmutAfterInitCell::uninit();
 
 pub fn install_console_logger(component: &'static str) -> ImmutAfterInitResult<()> {
-    CONSOLE_LOGGER.init(&ConsoleLogger::new(component))?;
+    CONSOLE_LOGGER.init_from_ref(&ConsoleLogger::new(component))?;
 
     if let Err(e) = log::set_logger(&*CONSOLE_LOGGER) {
         // Failed to install the ConsoleLogger, presumably because something had
