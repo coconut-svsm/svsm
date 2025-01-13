@@ -24,6 +24,8 @@ members = [
     "user/lib",
     # Init user-space module
     "user/init",
+    # device model module
+    "user/dm",
 ]
 
 
@@ -39,6 +41,7 @@ syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
+userdm = { path = "user/dm" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
@@ -58,6 +61,7 @@ sha2 = "0.10.8"
 uuid = "1.6.1"
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["derive"] }
+buddy_system_allocator = "0.10.0"
 
 # Verus repos
 builtin = { git = "https://github.com/verus-lang/verus", rev ="943ba63", default-features = false }
