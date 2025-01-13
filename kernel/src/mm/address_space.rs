@@ -133,7 +133,7 @@ pub const STACK_SIZE: usize = PAGE_SIZE * STACK_PAGES;
 pub const STACK_GUARD_SIZE: usize = STACK_SIZE;
 pub const STACK_TOTAL_SIZE: usize = STACK_SIZE + STACK_GUARD_SIZE;
 
-const fn virt_from_idx(idx: usize) -> VirtAddr {
+pub const fn virt_from_idx(idx: usize) -> VirtAddr {
     VirtAddr::new(idx << ((3 * 9) + 12))
 }
 
@@ -219,19 +219,19 @@ pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
 pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Kernel stack for a task
-pub const SVSM_PERTASK_STACK_BASE: VirtAddr = SVSM_PERTASK_BASE;
+pub const SVSM_PERTASK_STACK_BASE_OFFSET: usize = 0;
 
 /// Kernel shadow stack for normal execution of a task
-pub const SVSM_PERTASK_SHADOW_STACK_BASE: VirtAddr =
-    SVSM_PERTASK_STACK_BASE.const_add(STACK_TOTAL_SIZE);
+pub const SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET: usize =
+    SVSM_PERTASK_STACK_BASE_OFFSET + STACK_TOTAL_SIZE;
 
 /// Kernel shadow stack for exception handling
-pub const SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE: VirtAddr =
-    SVSM_PERTASK_SHADOW_STACK_BASE.const_add(PAGE_SIZE);
+pub const SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET: usize =
+    SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET + PAGE_SIZE;
 
 /// SSE context save area for a task
-pub const SVSM_PERTASK_XSAVE_AREA_BASE: VirtAddr =
-    SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE.const_add(PAGE_SIZE);
+pub const SVSM_PERTASK_XSAVE_AREA_BASE: usize =
+    SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET + PAGE_SIZE;
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;

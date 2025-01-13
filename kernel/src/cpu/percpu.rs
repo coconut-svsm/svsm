@@ -641,7 +641,11 @@ impl PerCpu {
     }
 
     pub fn init_page_table(&self, pgtable: PageBox<PageTable>) -> Result<(), SvsmError> {
-        self.vm_range.initialize()?;
+        // SAFETY: The per-CPU address range is fully aligned to top-level
+        // paging boundaries.
+        unsafe {
+            self.vm_range.initialize()?;
+        }
         self.set_pgtable(PageBox::leak(pgtable));
 
         Ok(())

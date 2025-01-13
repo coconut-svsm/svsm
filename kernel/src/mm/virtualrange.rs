@@ -36,7 +36,7 @@ impl VirtualRange {
             start_virt: VirtAddr::null(),
             page_count: 0,
             page_shift: PAGE_SHIFT,
-            bits: BitmapAllocator1024::new(),
+            bits: BitmapAllocator1024::new_full(),
         }
     }
 
