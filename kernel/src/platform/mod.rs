@@ -22,6 +22,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
@@ -139,6 +140,11 @@ pub trait SvsmPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError>;
+
+    /// Performs a system-wide TLB flush.
+    fn flush_tlb(&self, flush_scope: &TlbFlushScope) {
+        flush_tlb(flush_scope);
+    }
 
     /// Configures the use of alternate injection as requested.
     fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError>;
