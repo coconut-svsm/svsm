@@ -6,7 +6,12 @@
 
 extern crate alloc;
 
+use super::cpuset::AtomicCpuSet;
 use super::gdt::GDT;
+use super::ipi::{
+    handle_ipi_interrupt, send_ipi, IpiBoard, IpiHelperMut, IpiHelperShared, IpiMessage,
+    IpiMessageMut, IpiTarget,
+};
 use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
@@ -224,6 +229,13 @@ pub struct PerCpuShared {
     ipi_irr: [AtomicU32; 8],
     ipi_pending: AtomicBool,
     nmi_pending: AtomicBool,
+
+    // A set of CPUs that have requested IPI handling by this CPU.
+    ipi_requests: AtomicCpuSet,
+
+    // A bulletin board holding the state of an IPI message to send to other
+    // CPUs.
+    ipi_board: IpiBoard,
 }
 
 impl PerCpuShared {
@@ -236,6 +248,8 @@ impl PerCpuShared {
             ipi_irr: core::array::from_fn(|_| AtomicU32::new(0)),
             ipi_pending: AtomicBool::new(false),
             nmi_pending: AtomicBool::new(false),
+            ipi_requests: Default::default(),
+            ipi_board: IpiBoard::default(),
         }
     }
 
@@ -307,6 +321,18 @@ impl PerCpuShared {
     pub fn nmi_pending(&self) -> bool {
         self.nmi_pending.swap(false, Ordering::Relaxed)
     }
+
+    pub fn ipi_from(&self, cpu_index: usize) {
+        self.ipi_requests.add(cpu_index, Ordering::Release);
+    }
+
+    /// # Safety
+    /// The IPI board is not `Sync`, so the caller is responsible for ensuring
+    /// that a reference to the IPI board is only obtained when it is safe to
+    /// do so.
+    pub unsafe fn ipi_board(&self) -> &IpiBoard {
+        &self.ipi_board
+    }
 }
 
 const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
@@ -321,6 +347,10 @@ const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 pub struct PerCpu {
     /// Per-CPU storage that might be accessed from other CPUs.
     shared: PerCpuShared,
+
+    /// Reference to the `PerCpuShared` that is valid in the global, shared
+    /// address space.
+    shared_global: OnceCell<&'static PerCpuShared>,
 
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
@@ -383,6 +413,7 @@ impl PerCpu {
             apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id, cpu_index),
+            shared_global: OnceCell::new(),
             ghcb: OnceCell::new(),
             hypercall_pages: RefCell::new(None),
             hv_doorbell: Cell::new(None),
@@ -401,12 +432,23 @@ impl PerCpu {
         let cpu_index = PERCPU_AREAS.next_cpu_index();
         let page = PageBox::try_new(Self::new(apic_id, cpu_index))?;
         let percpu = PageBox::leak(page);
+        percpu.set_shared_global();
         unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
         Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
         &self.shared
+    }
+
+    fn set_shared_global(&'static self) {
+        self.shared_global
+            .set(&self.shared)
+            .expect("shared global set more than once");
+    }
+
+    pub fn shared_global(&self) -> &'static PerCpuShared {
+        self.shared_global.get().unwrap()
     }
 
     /// Disables IRQs on the current CPU. Keeps track of the nesting level and
@@ -481,6 +523,45 @@ impl PerCpu {
     #[inline(always)]
     pub fn lower_tpr(&self, tpr_value: usize) {
         self.irq_state.lower_tpr(tpr_value);
+    }
+
+    /// Sends an IPI message to multiple CPUs.
+    ///
+    /// * `target_set` - The set of CPUs to which to send the IPI.
+    /// * `ipi_message` - The message to send.
+    pub fn send_multicast_ipi<M: IpiMessage + Sync>(
+        &self,
+        target_set: IpiTarget<'_>,
+        ipi_message: &M,
+    ) {
+        let mut ipi_helper = IpiHelperShared::new(ipi_message);
+        send_ipi(
+            target_set,
+            self.shared.cpu_index,
+            &mut ipi_helper,
+            &self.shared_global().ipi_board,
+        );
+    }
+
+    /// Sends an IPI message to a single CPU.  Because only a single CPU can
+    /// receive the message, the message object can be mutable.
+    ///
+    /// # Arguments
+    /// * `cpu_index` - The index of the CPU to receive the message.
+    /// * `ipi_message` - The message to send.
+    pub fn send_unicast_ipi<M: IpiMessageMut>(&self, cpu_index: usize, ipi_message: &mut M) {
+        let mut ipi_helper = IpiHelperMut::new(ipi_message);
+        send_ipi(
+            IpiTarget::Single(cpu_index),
+            self.shared.cpu_index,
+            &mut ipi_helper,
+            &self.shared_global().ipi_board,
+        );
+    }
+
+    /// Handles an IPI interrupt.
+    pub fn handle_ipi_interrupt(&self) {
+        handle_ipi_interrupt(&self.shared.ipi_requests);
     }
 
     /// Sets up the CPU-local GHCB page.

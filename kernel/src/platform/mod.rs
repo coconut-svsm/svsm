@@ -180,12 +180,18 @@ pub enum SvsmPlatformCell {
 }
 
 impl SvsmPlatformCell {
-    pub fn new(platform_type: SvsmPlatformType) -> Self {
+    pub fn new(platform_type: SvsmPlatformType, suppress_svsm_interrupts: bool) -> Self {
         assert_eq!(platform_type, *SVSM_PLATFORM_TYPE);
         match platform_type {
-            SvsmPlatformType::Native => SvsmPlatformCell::Native(NativePlatform::new()),
-            SvsmPlatformType::Snp => SvsmPlatformCell::Snp(SnpPlatform::new()),
-            SvsmPlatformType::Tdp => SvsmPlatformCell::Tdp(TdpPlatform::new()),
+            SvsmPlatformType::Native => {
+                SvsmPlatformCell::Native(NativePlatform::new(suppress_svsm_interrupts))
+            }
+            SvsmPlatformType::Snp => {
+                SvsmPlatformCell::Snp(SnpPlatform::new(suppress_svsm_interrupts))
+            }
+            SvsmPlatformType::Tdp => {
+                SvsmPlatformCell::Tdp(TdpPlatform::new(suppress_svsm_interrupts))
+            }
         }
     }
 }
