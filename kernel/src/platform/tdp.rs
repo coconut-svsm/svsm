@@ -64,11 +64,11 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+        Ok(())
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+        Ok(())
     }
 
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
@@ -151,8 +151,12 @@ impl SvsmPlatform for TdpPlatform {
         }
     }
 
-    fn configure_alternate_injection(&mut self, _alt_inj_requested: bool) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+    fn configure_alternate_injection(&mut self, alt_inj_requested: bool) -> Result<(), SvsmError> {
+        if alt_inj_requested {
+            Err(SvsmError::NotSupported)
+        } else {
+            Ok(())
+        }
     }
 
     fn change_apic_registration_state(&self, _incr: bool) -> Result<bool, SvsmError> {
