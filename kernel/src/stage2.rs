@@ -348,7 +348,7 @@ fn prepare_heap(
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
+pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 
     init_platform_type(platform_type);
@@ -477,7 +477,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
              options(att_syntax))
     };
 
-    panic!("Road ends here!");
+    unreachable!("Road ends here!");
 }
 
 #[panic_handler]
