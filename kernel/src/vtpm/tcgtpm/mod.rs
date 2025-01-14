@@ -40,6 +40,7 @@ impl TcgTpm {
     }
 
     fn teardown(&self) -> Result<(), SvsmReqError> {
+        // SAFETY: FFI call. Return value is checked.
         let result = unsafe { TPM_TearDown() };
         match result {
             0 => Ok(()),
@@ -51,6 +52,7 @@ impl TcgTpm {
     }
 
     fn manufacture(&self, first_time: i32) -> Result<i32, SvsmReqError> {
+        // SAFETY: FFI call. Parameter and return values are checked.
         let result = unsafe { TPM_Manufacture(first_time) };
         match result {
             // TPM manufactured successfully
@@ -96,6 +98,9 @@ impl TcgTpmSimulatorInterface for TcgTpm {
         let mut response_ffi_p = response_ffi.as_mut_ptr();
         let mut response_ffi_size = TPM_BUFFER_MAX_SIZE as u32;
 
+        // SAFETY: FFI calls. Parameters are checked. Both calls are void,
+        // _plat__RunCommand() returns `response_ffi_size` value by reference
+        // and it is validated.
         unsafe {
             _plat__LocalitySet(locality);
             _plat__RunCommand(
@@ -128,10 +133,20 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             return Err(SvsmReqError::invalid_request());
         }
         if !only_reset {
-            unsafe { _plat__Signal_PowerOn() };
+            // SAFETY: FFI call. No parameter, return value is checked.
+            let result = unsafe { _plat__Signal_PowerOn() };
+            if result != 0 {
+                log::error!("_plat__Signal_PowerOn failed rc={}", result);
+                return Err(SvsmReqError::incomplete());
+            }
         }
         // It calls TPM_init() within to indicate that a TPM2_Startup is required.
-        unsafe { _plat__Signal_Reset() };
+        // SAFETY: FFI call. No parameter, return value is checked.
+        let result = unsafe { _plat__Signal_Reset() };
+        if result != 0 {
+            log::error!("_plat__Signal_Reset failed rc={}", result);
+            return Err(SvsmReqError::incomplete());
+        }
         self.is_powered_on = true;
 
         Ok(())
@@ -141,6 +156,7 @@ impl TcgTpmSimulatorInterface for TcgTpm {
         if !self.is_powered_on {
             return Err(SvsmReqError::invalid_request());
         }
+        // SAFETY: FFI call. No Parameters or return values.
         unsafe { _plat__SetNvAvail() };
 
         Ok(())
@@ -162,10 +178,16 @@ impl VtpmInterface for TcgTpm {
         // 5. Power it on indicating it requires startup. By default, OVMF will start
         //    and selftest it.
 
-        unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
-
-        let mut rc = self.manufacture(1)?;
+        // SAFETY: FFI call. Parameters and return values are checked.
+        let mut rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
         if rc != 0 {
+            log::error!("_plat__NVEnable failed rc={}", rc);
+            return Err(SvsmReqError::incomplete());
+        }
+
+        rc = self.manufacture(1)?;
+        if rc != 0 {
+            // SAFETY: FFI call. Parameter checked, no return value.
             unsafe { _plat__NVDisable(1 as *mut c_void, 0) };
             return Err(SvsmReqError::incomplete());
         }
