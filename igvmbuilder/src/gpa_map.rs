@@ -64,6 +64,9 @@ pub struct GpaMap {
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
     pub guest_context: GpaRange,
+    // The kernel region represents the maximum allowable size. The hypervisor may request that it
+    // be smaller to save memory on smaller machine shapes. However, the entire region should not
+    // overlap any other regions.
     pub kernel: GpaRange,
     pub vmsa: GpaRange,
     pub init_page_tables: GpaRange,
@@ -116,19 +119,19 @@ impl GpaMap {
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
         let kernel_fs = GpaRange::new(kernel_elf.get_end(), kernel_fs_len as u64)?;
 
-        // Calculate the kernel size and base.
+        // Choose the kernel base and maximum size.
         let kernel = match options.hypervisor {
             Hypervisor::Qemu => {
-                // Place the kernel area at 512 GB with a size of 16 MB.
+                // Place the kernel area at 512 GB with a maximum size of 16 MB.
                 GpaRange::new(0x0000008000000000, 0x01000000)?
             }
             Hypervisor::HyperV => {
-                // Place the kernel area at 64 MB with a size of 16 MB.
+                // Place the kernel area at 64 MB with a maximum size of 16 MB.
                 GpaRange::new(0x04000000, 0x01000000)?
             }
             Hypervisor::Vanadium => {
-                // Place the kernel area at 8TiB-2GiB with a size of 16 MB.
-                GpaRange::new(0x7ff80000000, 0x01000000)?
+                // Place the kernel area at 8TiB-2GiB with a maximum size of 2 GiB.
+                GpaRange::new(0x7ff80000000, 0x80000000)?
             }
         };
 

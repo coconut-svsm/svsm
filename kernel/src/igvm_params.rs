@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
@@ -76,8 +76,34 @@ impl IgvmParams<'_> {
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         let kernel_base = PhysAddr::from(self.igvm_param_block.kernel_base);
-        let kernel_size: usize = self.igvm_param_block.kernel_size.try_into().unwrap();
-        Ok(MemoryRegion::<PhysAddr>::new(kernel_base, kernel_size))
+        let mut kernel_size = self.igvm_param_block.kernel_min_size;
+
+        // Check the untrusted hypervisor-provided memory map to see if the size of the kernel
+        // should be adjusted. The base location and mimimum and maximum size specified by the
+        // measured igvm_param_block are still respected to ensure a malicious memory map cannot
+        // cause the SVSM kernel to overlap anything important or be so small it causes weird
+        // failures. But if the hypervisor gives a memory map entry of type HIDDEN that starts at
+        // kernel_start, use the size of that entry as a guide. This allows the hypervisor to
+        // adjust the size of the SVSM kernel to what it expects will be needed based on the
+        // machine shape.
+        if let Some(memory_map_region) = self.igvm_memory_map.memory_map.iter().find(|region| {
+            region.entry_type == MemoryMapEntryType::HIDDEN
+                && region.starting_gpa_page_number.try_into() == Ok(kernel_base.pfn())
+        }) {
+            let region_size_bytes = memory_map_region
+                .number_of_pages
+                .try_into()
+                .unwrap_or(u32::MAX)
+                .saturating_mul(PAGE_SIZE as u32);
+            kernel_size = region_size_bytes.clamp(
+                self.igvm_param_block.kernel_min_size,
+                self.igvm_param_block.kernel_max_size,
+            );
+        }
+        Ok(MemoryRegion::<PhysAddr>::new(
+            kernel_base,
+            kernel_size.try_into().unwrap(),
+        ))
     }
 
     pub fn reserved_kernel_area_size(&self) -> usize {
