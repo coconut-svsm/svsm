@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::VirtualMapping;
-use crate::address::{PhysAddr, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::address_space::STACK_SIZE;
 use crate::mm::pagetable::PTEntryFlags;
@@ -38,7 +38,9 @@ impl VMKernelStack {
     /// Virtual address to program into the hardware stack register
     pub fn top_of_stack(&self, base: VirtAddr) -> VirtAddr {
         let guard_size = self.guard_pages * PAGE_SIZE;
-        base + guard_size + self.alloc.mapping_size()
+        let tos = (base + guard_size + self.alloc.mapping_size()).align_down(16);
+        debug_assert!(tos > base + guard_size);
+        tos
     }
 
     /// Returns the stack bounds of this kernel stack
