@@ -215,14 +215,23 @@ fn attest_single_vtpm(
     params: &mut RequestParams,
     ops: &AttestSingleServiceOp,
 ) -> Result<(), SvsmReqError> {
-    let nonce = ops.get_nonce()?;
-
-    // Get the cached EKpub from the VTPM. Returns an error if the EKpub is not cached.
+    // Get manifest from the VTPM.
     let manifest = vtpm_get_manifest()?;
+
+    attest_single_service(manifest.as_slice(), params, ops)
+}
+
+#[cfg(all(feature = "vtpm", not(test)))]
+fn attest_single_service(
+    manifest: &[u8],
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOp,
+) -> Result<(), SvsmReqError> {
+    let nonce = ops.get_nonce()?;
 
     // Concatenate nonce and manifest and hash per page 29 of
     // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
-    let nonce_and_manifest = [&nonce[..], &manifest[..]].concat();
+    let nonce_and_manifest = [&nonce[..], manifest].concat();
     let hash = Sha512::digest(&nonce_and_manifest);
 
     // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
@@ -296,7 +305,7 @@ fn attest_single_vtpm(
     // 4. manifest.len() is checked to be within manifest_size, preventing out-of-bounds writes.
     let guest_manifest_buffer =
         unsafe { from_raw_parts_mut(manifest_vaddr.as_mut_ptr::<u8>(), manifest_size) };
-    guest_manifest_buffer[..manifest.len()].copy_from_slice(&manifest);
+    guest_manifest_buffer[..manifest.len()].copy_from_slice(manifest);
 
     // Set the manifest size in bytes in rcx register
     // TODO use try_from or try_into to converts usize to u32
