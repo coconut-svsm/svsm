@@ -51,7 +51,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
 }
 
 #[no_mangle]
-fn start_ap_setup() {
+extern "C" fn start_ap_setup() {
     // Initialize the GDT, TSS, and IDT.
     this_cpu().load_gdt_tss(true);
     idt().load();
@@ -65,13 +65,16 @@ global_asm!(
     r#"
         .globl start_ap_indirect
     start_ap_indirect:
-        /* Load fields from the context structure */
+        /*
+         * %rdi stores the address of ApStartContext
+         * Load fields from the context structure
+         */
         movq    (%rdi), %r8     /* CR0 */
         movq    8(%rdi), %r9    /* CR3 */
         movq    16(%rdi), %r10  /* CR4 */
         movl    24(%rdi), %eax  /* Low bits of EFER */
         movl    28(%rdi), %edx  /* High bits of EFER */
-        movq    32(%rdi), %r11  /* Start RIP */
+        movq    32(%rdi), %r12  /* Start RIP */
         movq    40(%rdi), %rsp  /* Initial RSP */
 
         /* Switch to the target environment.  This will remove the transition
@@ -82,16 +85,20 @@ global_asm!(
         wrmsr
         movq    %r9, %cr3
 
-        /* Save the start RIP on the stack. */
-        pushq   %r11
+        /* Make sure stack frames are 16b-aligned */
+        andq    $~0xf, %rsp
 
-        /* Call a startup function to complete setup in the local
-         * environment. */
+        /*
+         * Call a startup function to complete setup in the local
+         * environment.
+         *
+         * %r12 is preserved per x86-64 calling convention.
+         */
         call    start_ap_setup
 
-        /* Begin execution from the starting RIP, which is at the top of the
-         * stack. */
-        ret
+        /* Begin execution from the starting RIP */
+        call    *%r12
+        int3
         "#,
     options(att_syntax)
 );
@@ -114,7 +121,7 @@ pub fn create_ap_start_context(
 }
 
 #[no_mangle]
-fn start_ap() {
+extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
 
     if is_cet_ss_supported() {
@@ -137,6 +144,8 @@ fn start_ap() {
 
     sse_init();
     schedule_init();
+
+    unreachable!("Road ends here!");
 }
 
 #[no_mangle]
