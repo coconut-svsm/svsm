@@ -19,7 +19,7 @@ use crate::{
         pld_report::{SnpReportResponse, USER_DATA_SIZE},
         services::get_regular_report,
     },
-    vtpm::vtpm_get_ekpub,
+    vtpm::vtpm_get_manifest,
 };
 use alloc::vec::Vec;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -153,7 +153,7 @@ impl AttestSingleServiceOp {
     pub fn get_report_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
         let gpa = PhysAddr::from(self.report_gpa);
         // Won't fail on amd64 as usize > u32 always
-        //TODO return protocol specific error code
+        // TODO return protocol specific error code
         let size =
             usize::try_from(self.report_size).map_err(|_| SvsmReqError::invalid_parameter())?;
         if !gpa.is_page_aligned() || !valid_phys_address(gpa) {
@@ -220,7 +220,7 @@ fn attest_single_vtpm(
     let nonce = ops.get_nonce()?;
 
     // Get the cached EKpub from the VTPM. Returns an error if the EKpub is not cached.
-    let manifest = vtpm_get_ekpub()?;
+    let manifest = vtpm_get_manifest()?;
 
     // Concatenate nonce and manifest and hash per page 29 of
     // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
@@ -266,6 +266,7 @@ fn attest_single_vtpm(
     guest_report_buffer[..report.len()].copy_from_slice(&report);
 
     // Set report size in bytes in r8 register
+    // TODO use try_from or try_into to converts usize to u32
     params.r8 = report.len() as u64;
 
     // Get manifest buffer's GPA from call's Attest Single Service Operation structure
@@ -302,6 +303,7 @@ fn attest_single_vtpm(
     guest_manifest_buffer[..manifest.len()].copy_from_slice(&manifest);
 
     // Set the manifest size in bytes in rcx register
+    // TODO use try_from or try_into to converts usize to u32
     params.rcx = manifest.len() as u64;
 
     // Does not support certificate currently, so setting certificate size to 0

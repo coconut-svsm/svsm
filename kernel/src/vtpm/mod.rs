@@ -114,9 +114,9 @@ pub fn vtpm_get_locked<'a>() -> LockGuard<'a, Vtpm> {
     VTPM.lock()
 }
 
-/// Get the TPM EK public key by calling the get_ekpub() implementation of the
+/// Get the TPM manifest i.e the EK public key by calling the get_ekpub() implementation of the
 /// [`VtpmInterface`]
-pub fn vtpm_get_ekpub() -> Result<Vec<u8>, SvsmReqError> {
+pub fn vtpm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
     let vtpm = VTPM.lock();
     vtpm.get_ekpub()
 }
