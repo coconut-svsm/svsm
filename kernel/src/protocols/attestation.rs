@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Copyright (c) 2024  Hewlett Packard Enterprise Development LP
+// Copyright (c) 2025  Hewlett Packard Enterprise Development LP
 //
 // Author: Geoffrey Ndu (gtn@hpe.com)
 
@@ -8,6 +8,8 @@
 
 extern crate alloc;
 
+#[cfg(all(feature = "vtpm", not(test)))]
+use crate::error::{AttestationError, SvsmError};
 use crate::protocols::{errors::SvsmReqError, RequestParams};
 use crate::{
     address::{Address, PhysAddr},
@@ -136,8 +138,6 @@ impl AttestSingleServiceOp {
     /// Manifest buffer size can be greater than 4k, so it can cross page boundary.
     pub fn get_manifest_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
         let gpa = PhysAddr::from(self.manifest_gpa);
-        // Won't fail on amd64 as usize > u32 always
-        // TODO return protocol specific error code
         let size =
             usize::try_from(self.manifest_size).map_err(|_| SvsmReqError::invalid_parameter())?;
         if !gpa.is_page_aligned() || !valid_phys_address(gpa) {
@@ -152,8 +152,6 @@ impl AttestSingleServiceOp {
     /// Report buffer size can be greater than 4k, so it can cross page boundary.
     pub fn get_report_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
         let gpa = PhysAddr::from(self.report_gpa);
-        // Won't fail on amd64 as usize > u32 always
-        // TODO return protocol specific error code
         let size =
             usize::try_from(self.report_size).map_err(|_| SvsmReqError::invalid_parameter())?;
         if !gpa.is_page_aligned() || !valid_phys_address(gpa) {
@@ -248,8 +246,7 @@ fn attest_single_vtpm(
     // In either case, return an error.
     if report.len() > report_size {
         log::error!("Malformed VTPM service attestation report");
-        // TODO: Return a more protocol specific error code
-        return Err(SvsmReqError::unsupported_protocol());
+        return Err(SvsmError::Attestation(AttestationError::Report).into());
     }
 
     // SAFETY: Writing to guest_report_buffer via report_vaddr is safe due to the following checks:
@@ -287,8 +284,7 @@ fn attest_single_vtpm(
     // small. In either case, return an error.
     if manifest.len() > manifest_size {
         log::error!("Malformed VTPM service attestation manifest");
-        // TODO: Return a more protocol specific error code
-        return Err(SvsmReqError::unsupported_protocol());
+        return Err(SvsmError::Attestation(AttestationError::Manifest).into());
     }
 
     // SAFETY: Writing to guest_manifest_buffer via manifest_vaddr is safe due to the following checks:

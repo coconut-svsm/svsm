@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::error::ApicError;
+use crate::error::AttestationError;
 use crate::error::SvsmError;
 
 #[derive(Debug, Clone, Copy)]
@@ -40,6 +41,9 @@ impl From<SvsmResultCode> for u64 {
 }
 
 const SVSM_ERR_APIC_CANNOT_REGISTER: u64 = 0;
+
+const SVSM_ERR_ATTESTATION_CANNOT_PROCESS_REPORT: u64 = 0;
+const SVSM_ERR_ATTESTATION_CANNOT_PROCESS_MANIFEST: u64 = 1;
 
 #[derive(Debug, Clone, Copy)]
 pub enum SvsmReqError {
@@ -81,6 +85,14 @@ impl From<SvsmError> for SvsmReqError {
                 ApicError::Disabled => Self::unsupported_protocol(),
                 ApicError::Emulation => Self::invalid_parameter(),
                 ApicError::Registration => Self::protocol(SVSM_ERR_APIC_CANNOT_REGISTER),
+            },
+            SvsmError::Attestation(e) => match e {
+                AttestationError::Report => {
+                    Self::protocol(SVSM_ERR_ATTESTATION_CANNOT_PROCESS_REPORT)
+                }
+                AttestationError::Manifest => {
+                    Self::protocol(SVSM_ERR_ATTESTATION_CANNOT_PROCESS_MANIFEST)
+                }
             },
             // Use a fatal error for now
             _ => Self::FatalError(err),
