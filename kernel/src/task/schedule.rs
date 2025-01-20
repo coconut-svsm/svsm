@@ -42,7 +42,7 @@ use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::fs::Directory;
 use crate::locking::SpinLock;
-use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
+use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -338,16 +338,27 @@ unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
 #[inline(always)]
 unsafe fn switch_to(prev: *const Task, next: *const Task) {
     unsafe {
-        let cr3: u64 = (*next).page_table.lock().cr3_value().bits() as u64;
+        let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
+
+        // The location of a cpu-local stack that's mapped into every set of
+        // page tables for use during context switches.
+        //
+        // If an IRQ is raised after switching the page tables but before
+        // switching to the new stack, the CPU will try to access the old stack
+        // in the new page tables. To protect against this, we switch to another
+        // stack that's mapped into both the old and the new set of page tables.
+        // That way we always have a valid stack to handle exceptions on.
+        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().into();
 
         // Switch to new task
         asm!(
             r#"
             call switch_context
             "#,
-            in("rsi") prev as u64,
-            in("rdi") next as u64,
-            in("rdx") cr3,
+            in("r12") prev as u64,
+            in("r13") next as u64,
+            in("r14") tos_cs,
+            in("r15") cr3,
             options(att_syntax));
     }
 }
@@ -427,6 +438,11 @@ pub fn schedule_task(task: TaskPointer) {
     schedule();
 }
 
+#[no_mangle]
+extern "C" fn free_init_stack() {
+    this_cpu().free_init_stack().unwrap();
+}
+
 global_asm!(
     // Make the value of the `shadow-stacks` feature usable in assembly.
     ".set const_false, 0",
@@ -459,25 +475,25 @@ global_asm!(
         pushq   %rsp
 
         // If `prev` is not null...
-        testq   %rsi, %rsi
-        jz      1f
+        testq   %r12, %r12
+        jz      3f
 
         // Save the current stack pointer
-        movq    %rsp, {TASK_RSP_OFFSET}(%rsi)
+        movq    %rsp, {TASK_RSP_OFFSET}(%r12)
 
         // Switch to a stack pointer that's valid in both the old and new page tables.
-        mov ${CONTEXT_SWITCH_STACK}, %rsp
+        mov     %r14, %rsp
 
         .if CFG_SHADOW_STACKS
-	cmpb $0, {IS_CET_SUPPORTED}(%rip)
-        je 1f
+        cmpb    $0, {IS_CET_SUPPORTED}(%rip)
+        je      1f
         // Save the current shadow stack pointer
         rdssp   %rax
-        sub $8, %rax
-        movq    %rax, {TASK_SSP_OFFSET}(%rsi)
+        sub     $8, %rax
+        movq    %rax, {TASK_SSP_OFFSET}(%r12)
         // Switch to a shadow stack that's valid in both page tables and move
         // the "shadow stack restore token" to the old shadow stack.
-        mov ${CONTEXT_SWITCH_RESTORE_TOKEN}, %rax
+        mov     ${CONTEXT_SWITCH_RESTORE_TOKEN}, %rax
         rstorssp (%rax)
         saveprevssp
         .endif
@@ -486,62 +502,57 @@ global_asm!(
         // Switch to the new task state
 
         // Switch to the new task page tables
-        mov     %rdx, %cr3
+        mov     %r15, %cr3
 
         .if CFG_SHADOW_STACKS
-	cmpb $0, {IS_CET_SUPPORTED}(%rip)
-        je 2f
+        cmpb    $0, {IS_CET_SUPPORTED}(%rip)
+        je      2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
-        mov     {TASK_SSP_OFFSET}(%rdi), %rdx
+        mov     {TASK_SSP_OFFSET}(%r13), %rdx
         rstorssp (%rdx)
         saveprevssp
     2:
         .endif
 
         // Switch to the new task stack
-        movq    {TASK_RSP_OFFSET}(%rdi), %rsp
+        movq    {TASK_RSP_OFFSET}(%r13), %rsp
 
         // We've already restored rsp
-        addq        $8, %rsp
+        addq    $8, %rsp
 
         // Restore the task context
-        popq        %r15
-        popq        %r14
-        popq        %r13
-        popq        %r12
-        popq        %r11
-        popq        %r10
-        popq        %r9
-        popq        %r8
-        popq        %rbp
-        popq        %rdi
-        popq        %rsi
-        popq        %rdx
-        popq        %rcx
-        popq        %rbx
-        popq        %rax
+        popq    %r15
+        popq    %r14
+        popq    %r13
+        popq    %r12
+        popq    %r11
+        popq    %r10
+        popq    %r9
+        popq    %r8
+        popq    %rbp
+        popq    %rdi
+        popq    %rsi
+        popq    %rdx
+        popq    %rcx
+        popq    %rbx
+        popq    %rax
         popfq
 
         ret
+
+    3:
+        // Switch to a stack pointer that's valid after init stack is freed.
+        mov     %r14, %rsp
+        call    free_init_stack
+        jmp     1b
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
     IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
-    CONTEXT_SWITCH_STACK = const CONTEXT_SWITCH_STACK.as_usize(),
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
 );
-
-/// The location of a cpu-local stack that's mapped into every set of page
-/// tables for use during context switches.
-///
-/// If an IRQ is raised after switching the page tables but before switching
-/// to the new stack, the CPU will try to access the old stack in the new page
-/// tables. To protect against this, we switch to another stack that's mapped
-/// into both the old and the new set of page tables. That way we always have a
-/// valid stack to handle exceptions on.
-const CONTEXT_SWITCH_STACK: VirtAddr = SVSM_CONTEXT_SWITCH_STACK.const_add(STACK_TOTAL_SIZE);
 
 /// The location of a cpu-local shadow stack restore token that's mapped into
 /// every set of page tables for use during context switches.

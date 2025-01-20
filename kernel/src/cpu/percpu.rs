@@ -384,6 +384,7 @@ pub struct PerCpu {
 
     init_stack: Cell<Option<VirtAddr>>,
     init_shadow_stack: Cell<Option<VirtAddr>>,
+    context_switch_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
 
     /// Stack boundaries of the currently running task.
@@ -419,6 +420,7 @@ impl PerCpu {
             hv_doorbell: Cell::new(None),
             init_stack: Cell::new(None),
             init_shadow_stack: Cell::new(None),
+            context_switch_stack: Cell::new(None),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
@@ -624,6 +626,10 @@ impl PerCpu {
         self.init_shadow_stack.get().unwrap()
     }
 
+    pub fn get_top_of_context_switch_stack(&self) -> VirtAddr {
+        self.context_switch_stack.get().unwrap()
+    }
+
     pub fn get_top_of_df_stack(&self) -> VirtAddr {
         self.ist.double_fault_stack.get().unwrap()
     }
@@ -682,6 +688,12 @@ impl PerCpu {
         Ok(())
     }
 
+    pub fn free_init_stack(&self) -> Result<(), SvsmError> {
+        let _ = self.vm_range.remove(SVSM_STACKS_INIT_TASK)?;
+        self.init_stack.set(None);
+        Ok(())
+    }
+
     fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
         let init_stack =
             Some(self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)?);
@@ -690,7 +702,8 @@ impl PerCpu {
     }
 
     fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
-        self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?;
+        let cs_stack = Some(self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?);
+        self.context_switch_stack.set(cs_stack);
         Ok(())
     }
 
