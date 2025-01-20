@@ -273,7 +273,10 @@ fn attest_single_service(
 
     // Set report size in bytes in r8 register
     // TODO use try_from or try_into to converts usize to u32
-    params.r8 = report.len() as u64;
+    params.r8 = report
+        .len()
+        .try_into()
+        .map_err(|_| SvsmError::Attestation(AttestationError::Report))?;
 
     // Get manifest buffer's GPA from call's Attest Single Service Operation structure
     // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
@@ -309,7 +312,10 @@ fn attest_single_service(
 
     // Set the manifest size in bytes in rcx register
     // TODO use try_from or try_into to converts usize to u32
-    params.rcx = manifest.len() as u64;
+    params.rcx = manifest
+        .len()
+        .try_into()
+        .map_err(|_| SvsmError::Attestation(AttestationError::Manifest))?;
 
     // Does not support certificate currently, so setting certificate size to 0
     params.rdx = 0;
