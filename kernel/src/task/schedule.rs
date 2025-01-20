@@ -42,7 +42,7 @@ use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::fs::Directory;
 use crate::locking::SpinLock;
-use crate::mm::{STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK};
+use crate::mm::SVSM_CONTEXT_SWITCH_SHADOW_STACK;
 use crate::platform::SVSM_PLATFORM;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -338,7 +338,17 @@ unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
 #[inline(always)]
 unsafe fn switch_to(prev: *const Task, next: *const Task) {
     unsafe {
-        let cr3: u64 = (*next).page_table.lock().cr3_value().bits() as u64;
+        let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
+
+        // The location of a cpu-local stack that's mapped into every set of
+        // page tables for use during context switches.
+        //
+        // If an IRQ is raised after switching the page tables but before
+        // switching to the new stack, the CPU will try to access the old stack
+        // in the new page tables. To protect against this, we switch to another
+        // stack that's mapped into both the old and the new set of page tables.
+        // That way we always have a valid stack to handle exceptions on.
+        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().into();
 
         // Switch to new task
         asm!(
@@ -347,6 +357,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
             "#,
             in("rsi") prev as u64,
             in("rdi") next as u64,
+            in("r14") tos_cs,
             in("rdx") cr3,
             options(att_syntax));
     }
@@ -466,7 +477,7 @@ global_asm!(
         movq    %rsp, {TASK_RSP_OFFSET}(%rsi)
 
         // Switch to a stack pointer that's valid in both the old and new page tables.
-        mov ${CONTEXT_SWITCH_STACK}, %rsp
+        mov     %r14, %rsp
 
         .if CFG_SHADOW_STACKS
 	cmpb $0, {IS_CET_SUPPORTED}(%rip)
@@ -528,20 +539,9 @@ global_asm!(
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
     IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
-    CONTEXT_SWITCH_STACK = const CONTEXT_SWITCH_STACK.as_usize(),
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
 );
-
-/// The location of a cpu-local stack that's mapped into every set of page
-/// tables for use during context switches.
-///
-/// If an IRQ is raised after switching the page tables but before switching
-/// to the new stack, the CPU will try to access the old stack in the new page
-/// tables. To protect against this, we switch to another stack that's mapped
-/// into both the old and the new set of page tables. That way we always have a
-/// valid stack to handle exceptions on.
-const CONTEXT_SWITCH_STACK: VirtAddr = SVSM_CONTEXT_SWITCH_STACK.const_add(STACK_TOTAL_SIZE);
 
 /// The location of a cpu-local shadow stack restore token that's mapped into
 /// every set of page tables for use during context switches.
