@@ -29,14 +29,16 @@ use core::slice::from_raw_parts_mut;
 use core::{mem::size_of, slice::from_raw_parts};
 #[cfg(all(feature = "vtpm", not(test)))]
 use sha2::{Digest, Sha512};
+#[cfg(all(feature = "vtpm", not(test)))]
+use uuid::uuid;
+use uuid::Uuid;
+
 const SVSM_ATTEST_SERVICES: u32 = 0;
 const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 const ATTEST_SINGLE_SERVICE_OP_SIZE: usize = size_of::<AttestSingleServiceOp>();
 
 #[cfg(all(feature = "vtpm", not(test)))]
-const SVSM_ATTEST_VTPM_GUID: u128 = u128::from_le_bytes([
-    0xeb, 0xf1, 0x76, 0xc4, 0x23, 0x01, 0xa5, 0x45, 0x96, 0x41, 0xb4, 0xe7, 0xdd, 0xe5, 0xbf, 0xe3,
-]);
+const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
 
 // Attest Single Service Operation structure, as defined in
 // Table 13 of Secure VM Service Module for SEV-SNP Guests
@@ -171,8 +173,8 @@ impl AttestSingleServiceOp {
     }
 
     /// Returns the guid
-    pub fn get_guid(&self) -> u128 {
-        u128::from_le_bytes(self.guid)
+    pub fn get_guid(&self) -> uuid::Uuid {
+        Uuid::from_bytes_le(self.guid)
     }
 }
 
