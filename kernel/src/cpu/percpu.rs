@@ -688,6 +688,12 @@ impl PerCpu {
         Ok(())
     }
 
+    pub fn free_init_stack(&self) -> Result<(), SvsmError> {
+        let _ = self.vm_range.remove(SVSM_STACKS_INIT_TASK)?;
+        self.init_stack.set(None);
+        Ok(())
+    }
+
     fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
         let init_stack =
             Some(self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)?);
