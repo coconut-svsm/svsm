@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 pub type ImmutAfterInitResult<T> = Result<T, ImmutAfterInitError>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImmutAfterInitError {
     AlreadyInit,
     Uninitialized,
@@ -293,3 +293,60 @@ impl<T: Copy> Deref for ImmutAfterInitRef<'_, T> {
 
 unsafe impl<T: Copy + Send> Send for ImmutAfterInitRef<'_, T> {}
 unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitRef<'_, T> {}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::utils::immut_after_init::*;
+    use core::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    fn test_with_move() {
+        let v = AtomicU32::new(5);
+        let immut = ImmutAfterInitCell::<AtomicU32>::uninit();
+        match immut.try_get_inner() {
+            Ok(_) => panic!("uninitialized cell returned Ok()"),
+            Err(e) => assert_eq!(e, ImmutAfterInitError::Uninitialized),
+        }
+        let init = immut.init(v);
+        if init.is_err() {
+            panic!("initializing uninitialized cell returned {:?}", init);
+        }
+        match immut.init(AtomicU32::new(0)) {
+            Ok(_) => panic!("reinitializing initialized cell returned Ok()"),
+            Err(e) => assert_eq!(e, ImmutAfterInitError::AlreadyInit),
+        }
+
+        assert_eq!(immut.load(Ordering::Relaxed), 5);
+    }
+
+    #[test]
+    fn test_with_copy() {
+        let v: u32 = 5;
+        let immut = ImmutAfterInitCell::<u32>::uninit();
+        immut.init_from_ref(&v).expect("init failed");
+        assert_eq!(*immut, 5);
+    }
+
+    struct ItemWithDrop<'a> {
+        pub drop_count: &'a mut u32,
+    }
+
+    impl Drop for ItemWithDrop<'_> {
+        fn drop(&mut self) {
+            *self.drop_count += 1;
+        }
+    }
+
+    #[test]
+    fn test_with_drop() {
+        let mut local_drop_count: u32 = 0;
+        let item = ItemWithDrop {
+            drop_count: &mut local_drop_count,
+        };
+        let immut = ImmutAfterInitCell::<ItemWithDrop<'_>>::uninit();
+        immut.init(item).expect("init failed");
+        drop(immut);
+        assert_eq!(local_drop_count, 1);
+    }
+}
