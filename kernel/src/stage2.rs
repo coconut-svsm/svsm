@@ -40,6 +40,8 @@ use svsm::platform::{
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{is_aligned, MemoryRegion};
 
+use release::COCONUT_VERSION;
+
 extern "C" {
     static mut pgtable: PageTable;
 }
@@ -482,7 +484,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    log::error!("Panic: {}", info);
+    log::error!("Panic! COCONUT-SVSM Version: {}", COCONUT_VERSION);
+    log::error!("Info: {}", info);
     loop {
         platform::halt();
     }

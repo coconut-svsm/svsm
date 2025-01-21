@@ -119,6 +119,11 @@ jobs:
       - name: Touch libtcgtpm bindings
         run: echo "" > libtcgtpm/src/bindings.rs
 
+      # release/src/git_version.rs is auto-generated via a build.rs file. Touch
+      # it here to avoid CI failures.
+      - name: Touch release/src/git_version.rs
+        run: echo "" > release/src/git_version.rs
+
       - name: Format doctests
         uses: actions-rs/cargo@v1
         with:
