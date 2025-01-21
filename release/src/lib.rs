@@ -6,7 +6,10 @@
 
 #![no_std]
 
+mod git_version;
+
 use core::fmt;
+use git_version::GIT_VERSION;
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -28,15 +31,20 @@ pub struct SvsmVersion {
 
 impl fmt::Display for SvsmVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.release_type {
-            ReleaseType::Development => {
-                write!(f, "{}.{:#02}-devel", self.year, self.month)
-            }
-            ReleaseType::Candidate(counter) => {
-                write!(f, "{}.{:#02}-rc{}", self.year, self.month, counter)
-            }
-            ReleaseType::Stable(counter) => {
-                write!(f, "{}.{:#02}.{}", self.year, self.month, counter)
+        #[allow(clippy::const_is_empty)]
+        if !GIT_VERSION.is_empty() {
+            write!(f, "{}", GIT_VERSION)
+        } else {
+            match self.release_type {
+                ReleaseType::Development => {
+                    write!(f, "{}.{:#02}-devel", self.year, self.month)
+                }
+                ReleaseType::Candidate(counter) => {
+                    write!(f, "{}.{:#02}-rc{}", self.year, self.month, counter)
+                }
+                ReleaseType::Stable(counter) => {
+                    write!(f, "{}.{:#02}.{}", self.year, self.month, counter)
+                }
             }
         }
     }

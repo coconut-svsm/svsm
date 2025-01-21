@@ -9,6 +9,7 @@ verus*.log
 gen_meta
 stage1/stage1
 stage1/stage1-test
+release/src/git_version.rs
 print-meta
 cbit
 .idea/
