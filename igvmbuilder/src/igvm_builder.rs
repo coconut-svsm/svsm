@@ -193,6 +193,7 @@ impl IgvmBuilder {
     fn create_param_block(&self) -> Result<IgvmParamBlock, Box<dyn Error>> {
         let param_page_offset = PAGE_SIZE_4K as u32;
         let memory_map_offset = param_page_offset + PAGE_SIZE_4K as u32;
+        let kernel_min_size = 0x1000000; // 16 MiB
         let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
         {
             (0, memory_map_offset + PAGE_SIZE_4K as u32)
@@ -238,8 +239,9 @@ impl IgvmBuilder {
             stage1_size: self.gpa_map.stage1_image.get_size() as u32,
             stage1_base: self.gpa_map.stage1_image.get_start(),
             kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
-            kernel_size: self.gpa_map.kernel.get_size() as u32,
             kernel_base: self.gpa_map.kernel.get_start(),
+            kernel_min_size,
+            kernel_max_size: self.gpa_map.kernel.get_size() as u32,
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
             is_qemu,
@@ -329,7 +331,7 @@ impl IgvmBuilder {
             self.directives.push(IgvmDirectiveHeader::RequiredMemory {
                 gpa: param_block.kernel_base,
                 compatibility_mask: COMPATIBILITY_MASK.get() & !VSM_COMPATIBILITY_MASK,
-                number_of_bytes: param_block.kernel_size,
+                number_of_bytes: param_block.kernel_min_size,
                 vtl2_protectable: false,
             });
         }
@@ -338,7 +340,7 @@ impl IgvmBuilder {
             self.directives.push(IgvmDirectiveHeader::RequiredMemory {
                 gpa: param_block.kernel_base,
                 compatibility_mask: VSM_COMPATIBILITY_MASK,
-                number_of_bytes: param_block.kernel_size,
+                number_of_bytes: param_block.kernel_min_size,
                 vtl2_protectable: true,
             });
         }

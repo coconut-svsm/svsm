@@ -363,6 +363,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
         .find_kernel_region()
         .expect("Failed to find memory region for SVSM kernel");
 
+    log::info!("SVSM memory region: {kernel_region:?}");
+
     init_valid_bitmap_alloc(kernel_region).expect("Failed to allocate valid-bitmap");
 
     // The physical memory region we've loaded so far
