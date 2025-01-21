@@ -111,6 +111,12 @@ bitflags! {
     }
 }
 
+impl From<usize> for CR0Flags {
+    fn from(bits: usize) -> Self {
+        CR0Flags::from_bits_truncate(bits as u64)
+    }
+}
+
 #[inline]
 pub fn read_cr0() -> CR0Flags {
     let cr0: u64;
@@ -211,6 +217,12 @@ bitflags! {
         const SMAP      = 1 << 21; // Supervisor Mode Access Protection
         const PKE       = 1 << 22; // Protection Key Enable
         const CET       = 1 << 23; // Control-flow Enforcement Technology
+    }
+}
+
+impl From<usize> for CR4Flags {
+    fn from(bits: usize) -> Self {
+        CR4Flags::from_bits_truncate(bits as u64)
     }
 }
 
