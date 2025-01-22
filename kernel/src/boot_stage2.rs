@@ -5,14 +5,25 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use core::arch::global_asm;
+use core::mem::{offset_of, size_of};
 
+use bootlib::kernel_launch::{ApStartContext, STAGE2_HEAP_START};
 use svsm::{
     cpu::{
         efer::EFERFlags,
         msr::{EFER, SEV_STATUS},
     },
     mm::PGTABLE_LVL3_IDX_PTE_SELFMAP,
+    platform::tdp::TdMailbox,
+    types::PAGE_SIZE,
 };
+
+const MAILBOX_ADDR: u32 = bootlib::kernel_launch::SIPI_STUB_GPA;
+const AP_CTXT_ADDR: u32 = MAILBOX_ADDR + PAGE_SIZE as u32 - size_of::<ApStartContext>() as u32;
+
+// The mailbox page must be within the first 640 KB of memory so it can be
+// validated by the BSP in stage2. It also can't be in stage2's heap area.
+const _: () = assert!(MAILBOX_ADDR + (PAGE_SIZE as u32) <= STAGE2_HEAP_START);
 
 global_asm!(
     r#"
@@ -26,6 +37,7 @@ global_asm!(
 
         /* Save pointer to startup structure in EBP */
         movl %esp, %ebp
+
         /*
          * Load a GDT. Despite the naming, it contains valid
          * entries for both, "legacy" 32bit and long mode each.
@@ -98,19 +110,16 @@ global_asm!(
         orl %edx, %eax
         movl %eax, 0xF6C(%edi)
 
-        /* Signal APs */
-        movl $setup_flag, %edi
-        movl $1, (%edi)
         jmp 2f
 
-.Lskip_paging_setup:
-        movl $setup_flag, %edi
-.Lap_wait:
-        movl (%edi), %eax
-        test %eax, %eax
-        jz .Lap_wait
+    .Lskip_paging_setup:
+        movl $ap_flag, %edi
+    .Lap_wait_for_env:
+        cmpl $0, (%edi)
+        pause
+        je .Lap_wait_for_env
 
-2:
+    2:
         /* Enable 64bit PTEs, CR4.PAE. */
         movl %cr4, %eax
         bts $5, %eax
@@ -122,10 +131,9 @@ global_asm!(
         movl %eax, %ebx
         orl $({LME} | {NXE}), %eax
         cmp %eax, %ebx
-        jz 2f
+        jz 3f
         wrmsr
-        2:
-
+    3:
         /* Load the static page table root. */
         movl $pgtable, %eax
         movl %eax, %cr3
@@ -241,9 +249,23 @@ global_asm!(
         test %esi, %esi
         jz .Lbsp_main
 
-    .Lcheck_command:
-        /* TODO */
-        jmp .Lcheck_command
+        movl ${MAILBOX_VPIDX_ADDR}, %eax
+
+        /*
+         * The following wait-for-signal code must be written in asm because
+         * APs run stacklessly here.
+         */
+    .Lap_wait_for_signal:
+        /* vCPU index */
+        cmpl %esi, (%eax)
+        pause
+        jne .Lap_wait_for_signal
+
+        /* See smp.rs for prerequisites. */
+        movl ${AP_CTXT_ADDR}, %edi
+        movl ${AP_STARTUP_RIP_ADDR}, %eax
+        movq (%rax), %rax
+        jmp *%rax
 
     .Lbsp_main:
         /* Clear out .bss and transfer control to the main stage2 code. */
@@ -268,7 +290,8 @@ global_asm!(
         .data
 
         .align 4
-    setup_flag:
+        .globl ap_flag
+    ap_flag:
         .long 0
 
     idt32:
@@ -304,15 +327,19 @@ global_asm!(
         .word gdt64_end - gdt64 - 1
         .quad gdt64
 
-        .align 4096
+        .align {PAGE_SIZE}
         .globl pgtable
     pgtable:
-        .fill 7 * 4096, 1, 0
+        .fill 7*{PAGE_SIZE}, 1, 0
     pgtable_end:"#,
+    PAGE_SIZE = const PAGE_SIZE,
     PGTABLE_LVL3_IDX_PTE_SELFMAP = const PGTABLE_LVL3_IDX_PTE_SELFMAP,
     EFER = const EFER,
     LME = const EFERFlags::LME.bits(),
     NXE = const EFERFlags::NXE.bits(),
     SEV_STATUS = const SEV_STATUS,
+    MAILBOX_VPIDX_ADDR = const MAILBOX_ADDR + offset_of!(TdMailbox, vcpu_index) as u32,
+    AP_CTXT_ADDR = const AP_CTXT_ADDR,
+    AP_STARTUP_RIP_ADDR = const AP_CTXT_ADDR + offset_of!(ApStartContext, initial_rip) as u32,
     options(att_syntax)
 );

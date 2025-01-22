@@ -29,6 +29,12 @@ use bootlib::platform::SvsmPlatformType;
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
+#[derive(Debug)]
+#[repr(C, packed)]
+pub struct TdMailbox {
+    pub vcpu_index: u32,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct TdpPlatform {}
 

@@ -18,6 +18,7 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::addr_of_mut;
 use core::slice;
+use core::sync::atomic::{AtomicU32, Ordering};
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
 use svsm::address::{Address, PhysAddr, VirtAddr};
@@ -46,6 +47,7 @@ use svsm::utils::{is_aligned, MemoryRegion};
 use release::COCONUT_VERSION;
 
 extern "C" {
+    static ap_flag: AtomicU32; // 4-byte aligned
     static mut pgtable: PageTable;
 }
 
@@ -123,6 +125,19 @@ fn setup_env(
     platform
         .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
         .expect("failed to validate low 640 KB");
+
+    // SAFETY: ap_flag is an extern static and this is the only place where we
+    // get a reference to it.
+    unsafe {
+        // Allow APs to proceed as the environment is now ready.
+        //
+        // Although APs use non-atomic loads in the ap_wait_for_env spin loop,
+        // the language and architectural guarantees of this atomic store (e.g.
+        // the compiler cannot move the previous stores past this atomic
+        // store-release, and x86 is a strongly-ordered system) make setting
+        // this flag more deterministic.
+        ap_flag.store(1, Ordering::Release);
+    }
 
     // Configure the heap.
     setup_stage2_allocator(STAGE2_HEAP_START.into(), STAGE2_HEAP_END.into());
