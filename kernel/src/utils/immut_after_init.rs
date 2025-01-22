@@ -95,7 +95,9 @@ impl<T: Copy> ImmutAfterInitCell<T> {
         self.init.store(IMMUT_INITIALIZED, Ordering::Release);
     }
 
-    fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
+    /// Obtains the inner value of the cell, returning `Ok(T)` if the cell is
+    /// initialized or `Err(ImmutAfterInitError)` if not.
+    pub fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
         self.check_init()?;
         let r = unsafe { (*self.data.get()).assume_init_ref() };
         Ok(r)
