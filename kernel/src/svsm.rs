@@ -251,9 +251,6 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
 
     boot_stack_info();
 
-    let bp = this_cpu().get_top_of_stack();
-    log::info!("BSP Runtime stack starts @ {:#018x}", bp);
-
     platform
         .configure_alternate_injection(launch_info.use_alternate_injection)
         .expect("Alternate injection required but not available");
