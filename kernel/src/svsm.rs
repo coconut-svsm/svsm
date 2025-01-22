@@ -80,7 +80,11 @@ global_asm!(
         /* Setup stack */
         leaq bsp_stack_end(%rip), %rsp
 
-        jmp svsm_start
+        /*
+         * Make sure (%rsp + 8) is 16b-aligned when control is transferred
+         * to svsm_start as required by the C calling convention for x86-64.
+         */
+        call svsm_start
 
         .bss
 
@@ -146,7 +150,7 @@ fn init_cpuid_table(addr: VirtAddr) {
 }
 
 #[no_mangle]
-pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
+extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     let launch_info: KernelLaunchInfo = *li;
     init_platform_type(launch_info.platform_type);
 
@@ -259,7 +263,7 @@ pub extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) {
     sse_init();
     schedule_init();
 
-    panic!("SVSM entry point terminated unexpectedly");
+    unreachable!("SVSM entry point terminated unexpectedly");
 }
 
 #[no_mangle]
