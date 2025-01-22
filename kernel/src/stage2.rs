@@ -472,8 +472,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
-             in("r8") &launch_info,
-             in("r9") valid_bitmap.bits(),
+             in("rdi") &launch_info,
+             in("rsi") valid_bitmap.bits(),
              options(att_syntax))
     };
 

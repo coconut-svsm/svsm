@@ -66,8 +66,8 @@ extern "C" {
  * The stage2 loader will map and load the svsm binary image and jump to
  * startup_64.
  *
- * %r8  Pointer to the KernelLaunchInfo structure
- * %r9  Pointer to the valid-bitmap from stage2
+ * %rdi  Pointer to the KernelLaunchInfo structure
+ * %rsi  Pointer to the valid-bitmap from stage2
  */
 global_asm!(
     r#"
@@ -80,9 +80,6 @@ global_asm!(
         /* Setup stack */
         leaq bsp_stack_end(%rip), %rsp
 
-        /* Jump to rust code */
-        movq    %r8, %rdi
-        movq    %r9, %rsi
         jmp svsm_start
 
         .bss
