@@ -9,10 +9,12 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::read_msr;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::apic::{apic_register_bit, APIC_MSR_ISR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdvmcall_halt, tdvmcall_io_read,
@@ -22,6 +24,8 @@ use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
+use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use core::{mem, ptr};
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -33,6 +37,18 @@ static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 #[repr(C, packed)]
 pub struct TdMailbox {
     pub vcpu_index: u32,
+}
+
+// Both structures must fit in a page
+const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
+
+// SAFETY: caller must ensure `mailbox` points to a valid memory address.
+unsafe fn wakeup_ap(mailbox: *mut TdMailbox, index: usize) {
+    // SAFETY: caller must ensure the address is valid and not aliased.
+    unsafe {
+        // PerCpu's CPU index has a direct mapping to TD vCPU index
+        (*mailbox).vcpu_index = index.try_into().expect("CPU index too large");
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,10 +204,31 @@ impl SvsmPlatform for TdpPlatform {
 
     fn start_cpu(
         &self,
-        _cpu: &PerCpu,
-        _context: &hyperv::HvInitialVpContext,
+        cpu: &PerCpu,
+        context: &hyperv::HvInitialVpContext,
     ) -> Result<(), SvsmError> {
-        todo!();
+        // Translate this context into an AP start context and place it in the
+        // AP startup transition page.
+        //
+        // transition_cr3 is not needed since all TD APs are using the stage2
+        // page table set up by the BSP.
+        let ap_context = create_ap_start_context(context, 0);
+
+        // The mailbox page was already accepted by the BSP in stage2 and
+        // therefore it's been initialized as a zero page.
+        let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
+        let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;
+
+        // SAFETY: the address of the mailbox page was made valid when the
+        // `PerCPUPageMappingGuard` was created.
+        unsafe {
+            let mbx_va = context_mapping.virt_addr();
+            let size = mem::size_of::<ApStartContext>();
+            let context_ptr = (mbx_va + PAGE_SIZE - size).as_mut_ptr::<ApStartContext>();
+            ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
+            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.shared().cpu_index());
+        }
+        Ok(())
     }
 }
 
