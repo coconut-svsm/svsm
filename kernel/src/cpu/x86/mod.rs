@@ -4,4 +4,5 @@
 //
 // Authors: Thomas Leroy <tleroy@suse.de>
 
+pub mod apic;
 pub mod smap;

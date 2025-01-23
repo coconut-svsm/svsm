@@ -12,6 +12,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
+use crate::cpu::x86::apic::{APIC_MSR_EOI, APIC_MSR_ICR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
@@ -32,9 +33,6 @@ use bootlib::platform::SvsmPlatformType;
 
 const MSR_APIC_BASE: u32 = 0x1B;
 const APIC_X2_ENABLE_MASK: u64 = 0xC00;
-
-const APIC_MSR_EOI: u32 = 0x80B;
-const APIC_MSR_ICR: u32 = 0x830;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {
