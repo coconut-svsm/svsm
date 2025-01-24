@@ -10,6 +10,7 @@ use crate::locking::SpinLock;
 use crate::serial::{SerialPort, Terminal, DEFAULT_SERIAL_PORT};
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
+use release::COCONUT_VERSION;
 
 #[derive(Clone, Copy, Debug)]
 struct Console {
@@ -40,7 +41,10 @@ static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::
 fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
     WRITER.lock().writer = writer;
     CONSOLE_INITIALIZED.reinit(&true)?;
-    log::info!("COCONUT Secure Virtual Machine Service Module");
+    log::info!(
+        "COCONUT Secure Virtual Machine Service Module Version {}",
+        COCONUT_VERSION
+    );
     Ok(())
 }
 

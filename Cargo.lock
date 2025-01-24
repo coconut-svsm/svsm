@@ -817,6 +817,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cc2191ec1fd850e3ede4cf09ccfd40a33df561111f73e96e1b7c3f9eee31328"
 
 [[package]]
+name = "release"
+version = "0.1.0"
+
+[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -953,6 +957,7 @@ dependencies = [
  "libtcgtpm",
  "log",
  "packit",
+ "release",
  "rustc_version",
  "syscall",
  "test",

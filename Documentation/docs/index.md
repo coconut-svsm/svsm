@@ -27,3 +27,7 @@ list](https://mail.8bytes.org/cgi-bin/mailman/listinfo/svsm-devel)
 (svsm-devel@coconut-svsm.dev). Regular development calls are scheduled via the
 mailing list.
 
+## Release Process
+
+The process for making releases is documented in the [Release
+Process](RELEASE-PROCESS.md) document.
