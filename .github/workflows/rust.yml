@@ -167,7 +167,7 @@ jobs:
 
       # Required because after the next checkout everything is removed.
       - name: Upload PR warnings artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: clippy-warnings-pr
           path: clippy_warnings_pr.txt
@@ -186,7 +186,7 @@ jobs:
           cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt
 
       - name: Download PR warnings artifact
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: clippy-warnings-pr
 
