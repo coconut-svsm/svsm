@@ -8,13 +8,16 @@
 
 extern crate alloc;
 
-use core::{mem::size_of, slice::from_raw_parts_mut};
+use core::mem::size_of;
 
 use alloc::vec::Vec;
 
 use crate::{
     address::{Address, PhysAddr},
-    mm::{valid_phys_address, GuestPtr, PerCPUPageMappingGuard},
+    mm::{
+        guestmem::{copy_slice_to_guest, read_bytes_from_guest},
+        valid_phys_address, GuestPtr, PerCPUPageMappingGuard,
+    },
     protocols::{errors::SvsmReqError, RequestParams},
     types::PAGE_SIZE,
     vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
@@ -229,10 +232,13 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
-    let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
-
     let response_size = match cmd {
-        TpmPlatformCommand::SendCommand => tpm_send_command_request(buffer)?,
+        TpmPlatformCommand::SendCommand => {
+            let mut buffer = read_bytes_from_guest(paddr, PAGE_SIZE)?;
+            let response_size = tpm_send_command_request(&mut buffer[..])?;
+            copy_slice_to_guest(&buffer[..], paddr)?;
+            response_size
+        }
     };
 
     // SAFETY: vaddr points to a new mapped region.
