@@ -12,6 +12,7 @@ use crate::cpu::idt::idt;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
+use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -44,6 +45,13 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
+
+        // If this is the first AP being started, then advise the TLB package
+        // that future TLB flushes will have to be done with SMP scope.
+        if count == 0 {
+            set_tlb_flush_smp();
+        }
+
         start_cpu(platform, c.apic_id).expect("Failed to bring CPU online");
         count += 1;
     }
