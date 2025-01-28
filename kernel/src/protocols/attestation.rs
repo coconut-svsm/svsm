@@ -274,7 +274,6 @@ fn attest_single_service(
     guest_report_buffer[..report.len()].copy_from_slice(&report);
 
     // Set report size in bytes in r8 register
-    // TODO use try_from or try_into to converts usize to u32
     params.r8 = report
         .len()
         .try_into()
@@ -313,7 +312,6 @@ fn attest_single_service(
     guest_manifest_buffer[..manifest.len()].copy_from_slice(manifest);
 
     // Set the manifest size in bytes in rcx register
-    // TODO use try_from or try_into to converts usize to u32
     params.rcx = manifest
         .len()
         .try_into()
