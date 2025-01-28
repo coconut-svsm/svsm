@@ -14,9 +14,11 @@ use alloc::vec::Vec;
 
 use crate::{
     address::{Address, PhysAddr},
+    cpu::flush_tlb_global_sync,
     mm::{valid_phys_address, GuestPtr, PerCPUPageMappingGuard},
     protocols::{errors::SvsmReqError, RequestParams},
-    types::PAGE_SIZE,
+    sev::utils::{rmp_grant_guest_access, rmp_revoke_guest_access},
+    types::{PageSize, PAGE_SIZE},
     vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
 };
 
@@ -239,11 +241,25 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
-    let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
+    // Make sure the guest can't make modifications to the buffer
+    rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
+    // TLB flush needed to propagate new permissions
+    flush_tlb_global_sync();
 
     let response_size = match cmd {
-        TpmPlatformCommand::SendCommand => tpm_send_command_request(buffer)?,
+        TpmPlatformCommand::SendCommand => {
+            // SAFETY: vaddr is just mapped, we are sure the guest can't modify it
+            // because we revoked the access, and its size is PAGE_SIZE
+            let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
+
+            tpm_send_command_request(buffer)
+        }
     };
+
+    // Allow guest to access the buffer again
+    rmp_grant_guest_access(vaddr, PageSize::Regular)?;
+    // TLB flush needed to propagate new permissions
+    flush_tlb_global_sync();
 
     // SAFETY: vaddr points to a new mapped region.
     // if paddr + sizeof::<u32>() goes to the folowing page, it should
@@ -252,7 +268,7 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     // write(response_size) can only happen on valid memory, mapped
     // by PerCPUPageMappingGuard::create().
     unsafe {
-        GuestPtr::<u32>::new(vaddr).write(response_size)?;
+        GuestPtr::<u32>::new(vaddr).write(response_size?)?;
     }
 
     Ok(())
