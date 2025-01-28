@@ -350,7 +350,7 @@ fn prepare_heap(
 }
 
 #[no_mangle]
-pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
+pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 
     init_platform_type(platform_type);
@@ -474,12 +474,12 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) {
 
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
-             in("r8") &launch_info,
-             in("r9") valid_bitmap.bits(),
+             in("rdi") &launch_info,
+             in("rsi") valid_bitmap.bits(),
              options(att_syntax))
     };
 
-    panic!("Road ends here!");
+    unreachable!("Road ends here!");
 }
 
 #[panic_handler]

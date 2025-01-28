@@ -254,8 +254,16 @@ global_asm!(
         shrq $3, %rcx
         rep stosq
 
+        /*
+         * Follow the C calling convention for x86-64:
+         *
+         * - Pass &Stage2LaunchInfo as the first argument (%rdi)
+         * - Make sure (%rsp + 8) is 16b-aligned when control is transferred
+         *   to stage2_main
+         */
         movl %ebp, %edi
-        jmp stage2_main
+        andq $~0xf, %rsp
+        call stage2_main
 
         .data
 

@@ -6,6 +6,7 @@
 
 use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
+use crate::utils::{align_down, align_up, is_aligned};
 
 use core::fmt;
 use core::ops;
@@ -59,7 +60,15 @@ pub trait Address:
     #[requires(align_up_requires(from_spec(*self), align))]
     #[ensures(|ret: Self| ret === addr_align_up(*self, align))]
     fn align_up(&self, align: InnerAddr) -> Self {
-        Self::from((self.bits() + (align - 1)) & !(align - 1))
+        Self::from(align_up(self.bits(), align))
+    }
+
+    #[inline]
+    #[verus_verify]
+    #[requires(align_requires(align))]
+    #[ensures(|ret: Self| ret === addr_align_down(*self, align))]
+    fn align_down(&self, align: InnerAddr) -> Self {
+        Self::from(align_down(self.bits(), align))
     }
 
     #[inline]
@@ -75,7 +84,7 @@ pub trait Address:
     #[requires(align_requires(PAGE_SIZE))]
     #[ensures(|ret: Self| ret === addr_page_align_down(*self))]
     fn page_align(&self) -> Self {
-        Self::from(self.bits() & !(PAGE_SIZE - 1))
+        self.align_down(PAGE_SIZE)
     }
 
     #[inline]
@@ -83,7 +92,7 @@ pub trait Address:
     #[requires(align_requires(align))]
     #[ensures(|ret: bool| ret == addr_is_aligned_spec(*self, align))]
     fn is_aligned(&self, align: InnerAddr) -> bool {
-        (self.bits() & (align - 1)) == 0
+        is_aligned(self.bits(), align)
     }
 
     #[inline]

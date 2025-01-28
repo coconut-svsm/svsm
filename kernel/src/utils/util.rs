@@ -26,9 +26,9 @@ where
 
 pub fn is_aligned<T>(addr: T, align: T) -> bool
 where
-    T: Sub<Output = T> + BitAnd<Output = T> + PartialEq + From<u32>,
+    T: Sub<Output = T> + BitAnd<Output = T> + PartialEq + From<u8>,
 {
-    (addr & (align - T::from(1))) == T::from(0)
+    (addr & (align - T::from(1u8))) == T::from(0u8)
 }
 
 pub fn halt() {

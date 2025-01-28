@@ -38,7 +38,7 @@ use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
-use crate::utils::MemoryRegion;
+use crate::utils::{is_aligned, MemoryRegion};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{current_task_terminated, schedule};
@@ -126,7 +126,7 @@ impl TaskIDAllocator {
 
 static TASK_ID_ALLOCATOR: TaskIDAllocator = TaskIDAllocator::new();
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct TaskContext {
     pub rsp: u64,
@@ -321,6 +321,8 @@ impl Task {
 
         // Remap at the per-task offset
         let bounds = MemoryRegion::new(stack_start + raw_bounds.start().into(), raw_bounds.len());
+        // Stack frames should be 16b-aligned
+        debug_assert!(bounds.end().is_aligned(16));
 
         Ok(Arc::new(Task {
             rsp: bounds
@@ -478,14 +480,26 @@ impl Task {
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
-        let stack_ptr = (percpu_mapping.virt_addr() + bounds.end().bits()).as_mut_ptr::<u64>();
+        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
+        // Make space for the task termination handler
+        let stack_offset = size_of::<u64>();
+        let stack_ptr = stack_tos
+            .checked_sub(stack_offset)
+            .unwrap()
+            .as_mut_ptr::<u8>();
+        // To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
+        // so that (%rsp + 8) is 16b-aligned after the ret instruction in
+        // switch_context
+        debug_assert!(VirtAddr::from(stack_ptr)
+            .checked_sub(8)
+            .unwrap()
+            .is_aligned(16));
 
         // 'Push' the task frame onto the stack
         unsafe {
-            let tc_offset: isize = ((size_of::<TaskContext>() / size_of::<u64>()) + 1)
-                .try_into()
-                .unwrap();
-            let task_context = stack_ptr.offset(-tc_offset).cast::<TaskContext>();
+            let task_context = stack_ptr
+                .sub(size_of::<TaskContext>())
+                .cast::<TaskContext>();
             // The processor flags must always be in a default state, unrelated
             // to the flags of the caller.  In particular, interrupts must be
             // disabled because the task switch code expects to execute a new
@@ -497,10 +511,10 @@ impl Task {
             (*task_context).regs.rsi = xsa_addr;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
             // Task termination handler for when entry point returns
-            stack_ptr.offset(-1).write(task_exit as *const () as u64);
+            stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
         }
 
-        Ok((mapping, bounds, size_of::<TaskContext>() + size_of::<u64>()))
+        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
     }
 
     fn allocate_utask_stack(
@@ -521,9 +535,20 @@ impl Task {
 
         // We need to setup a context on the stack that matches the stack layout
         // defined in switch_context below.
-        let stack_ptr = (percpu_mapping.virt_addr() + bounds.end().bits()).as_mut_ptr::<u8>();
-
-        let mut stack_offset = size_of::<X86ExceptionContext>();
+        let stack_tos = percpu_mapping.virt_addr() + bounds.end().bits();
+        // Make space for the IRET frame
+        let stack_offset = size_of::<X86ExceptionContext>();
+        let stack_ptr = stack_tos
+            .checked_sub(stack_offset)
+            .unwrap()
+            .as_mut_ptr::<u8>();
+        // To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
+        // so that (%rsp + 8) is 16b-aligned after the ret instruction in
+        // switch_context
+        debug_assert!(VirtAddr::from(stack_ptr)
+            .checked_sub(8)
+            .unwrap()
+            .is_aligned(16));
 
         // 'Push' the task frame onto the stack
         unsafe {
@@ -535,12 +560,11 @@ impl Task {
             iret_frame.frame.flags = iret_rflags;
             iret_frame.frame.rsp = (USER_MEM_END - 8).into();
             iret_frame.frame.ss = (SVSM_USER_DS | 3).into();
+            debug_assert!(is_aligned(iret_frame.frame.rsp + 8, 16));
 
             // Copy IRET frame to stack
-            let stack_iret_frame = stack_ptr.sub(stack_offset).cast::<X86ExceptionContext>();
+            let stack_iret_frame = stack_ptr.cast::<X86ExceptionContext>();
             *stack_iret_frame = iret_frame;
-
-            stack_offset += size_of::<TaskContext>();
 
             let mut task_context = TaskContext {
                 ret_addr: VirtAddr::from(return_new_task as *const ())
@@ -552,11 +576,13 @@ impl Task {
 
             // xsave area addr
             task_context.regs.rdi = xsa_addr;
-            let stack_task_context = stack_ptr.sub(stack_offset).cast::<TaskContext>();
+            let stack_task_context = stack_ptr
+                .sub(size_of::<TaskContext>())
+                .cast::<TaskContext>();
             *stack_task_context = task_context;
         }
 
-        Ok((mapping, bounds, stack_offset))
+        Ok((mapping, bounds, stack_offset + size_of::<TaskContext>()))
     }
 
     fn allocate_xsave_area() -> PageBox<[u8]> {
