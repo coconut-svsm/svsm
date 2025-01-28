@@ -59,7 +59,7 @@ pub fn init_kernel_mapping_info(
         heap_mapping,
     };
     FIXED_MAPPING
-        .init(&mapping)
+        .init_from_ref(&mapping)
         .expect("Already initialized fixed mapping info");
 }
 
@@ -273,7 +273,7 @@ mod tests {
             kernel_mapping,
             heap_mapping: None,
         };
-        KERNEL_MAPPING_TEST.init(&mapping).unwrap();
+        KERNEL_MAPPING_TEST.init_from_ref(&mapping).unwrap();
         *initialized = true;
     }
 

@@ -99,7 +99,7 @@ impl SvsmPlatform for SnpPlatform {
 
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
-        VTOM.init(&vtom).map_err(|_| SvsmError::PlatformInit)?;
+        VTOM.init(vtom).map_err(|_| SvsmError::PlatformInit)?;
         Ok(())
     }
 

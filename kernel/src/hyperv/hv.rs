@@ -186,7 +186,7 @@ pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
         .map_4k(hypercall_va, virt_to_phys(page), PTEntryFlags::exec())?;
 
     HYPERV_HYPERCALL_CODE_PAGE
-        .init(&hypercall_va)
+        .init(hypercall_va)
         .expect("Hypercall code page already allocated");
 
     // Set the guest OS ID.  The value is arbitrary.
@@ -202,7 +202,7 @@ pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
     let vsm_status = hyperv::HvRegisterVsmVpStatus::from(vsm_status_value);
     let current_vtl = vsm_status.active_vtl();
     CURRENT_VTL
-        .init(&current_vtl)
+        .init(current_vtl)
         .expect("Current VTL already initialized");
 
     Ok(())

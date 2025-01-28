@@ -142,7 +142,7 @@ pub fn sev_flags() -> SEVStatusFlags {
 pub fn sev_status_init() {
     let status: SEVStatusFlags = read_sev_status();
     SEV_FLAGS
-        .init(&status)
+        .init(status)
         .expect("Already initialized SEV flags");
 }
 

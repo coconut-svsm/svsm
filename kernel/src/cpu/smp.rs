@@ -19,7 +19,6 @@ use crate::hyperv;
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{schedule_init, start_kernel_task};
-use crate::utils::immut_after_init::immut_after_init_set_multithreaded;
 
 use alloc::string::String;
 use bootlib::kernel_launch::ApStartContext;
@@ -41,7 +40,6 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError>
 }
 
 pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
-    immut_after_init_set_multithreaded();
     let mut count: usize = 0;
     for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
         log::info!("Launching AP with APIC-ID {}", c.apic_id);
