@@ -296,11 +296,7 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     };
 
     for region in &fw_meta.valid_mem {
-        log::info!(
-            "  Pre-Validated Region {:#018x}-{:#018x}",
-            region.start(),
-            region.end()
-        );
+        log::info!("  Pre-Validated Region {region:#018x}");
     }
 }
 
