@@ -9,7 +9,10 @@
 
 pub mod boot_stage2;
 
-use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo, STAGE2_START};
+use bootlib::kernel_launch::{
+    KernelLaunchInfo, Stage2LaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START,
+    STAGE2_START,
+};
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -106,7 +109,8 @@ fn setup_env(
     paging_init(platform, true).expect("Failed to initialize early paging");
 
     // Use the low 640 KB of memory as the heap.
-    let lowmem_region = MemoryRegion::new(VirtAddr::from(0u64), 640 * 1024);
+    let lowmem_region =
+        MemoryRegion::from_addresses(VirtAddr::from(0u64), VirtAddr::from(u64::from(LOWMEM_END)));
     let heap_mapping = FixedAddressMappingRange::new(
         lowmem_region.start(),
         lowmem_region.end(),
@@ -120,8 +124,8 @@ fn setup_env(
         .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
         .expect("failed to validate low 640 KB");
 
-    // Configure the heap to exist from 64 KB to 640 KB.
-    setup_stage2_allocator(0x10000, 0xA0000);
+    // Configure the heap.
+    setup_stage2_allocator(STAGE2_HEAP_START.into(), STAGE2_HEAP_END.into());
 
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 

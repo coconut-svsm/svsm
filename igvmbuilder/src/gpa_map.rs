@@ -7,7 +7,9 @@
 use std::error::Error;
 use std::fs::metadata;
 
-use bootlib::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_STACK_END, STAGE2_START};
+use bootlib::kernel_launch::{
+    CPUID_PAGE, SECRETS_PAGE, STAGE2_BASE, STAGE2_STACK_END, STAGE2_START,
+};
 use igvm_defs::PAGE_SIZE_4K;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
@@ -158,7 +160,7 @@ impl GpaMap {
         };
 
         let gpa_map = Self {
-            base_addr: 0x800000,
+            base_addr: STAGE2_BASE.into(),
             stage1_image,
             stage2_stack: GpaRange::new_page(STAGE2_STACK_END.into())?,
             stage2_image,
