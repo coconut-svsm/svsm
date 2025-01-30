@@ -208,7 +208,6 @@ Then checkout the SVSM repository and build the SVSM binary:
 $ git clone https://github.com/coconut-svsm/svsm
 $ cd svsm
 $ git submodule update --init
-$ cargo install bindgen-cli
 ```
 
 That checks out the SVSM which can be built by
