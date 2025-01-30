@@ -36,5 +36,4 @@ ENV PATH="${PATH}:${CARGO_HOME}/bin"
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > /tmp/rustup-init.sh && \
     sh /tmp/rustup-init.sh -y \
         --default-toolchain stable-x86_64-unknown-linux-gnu \
-        --target x86_64-unknown-none && \
-    cargo install bindgen-cli
+        --target x86_64-unknown-none
