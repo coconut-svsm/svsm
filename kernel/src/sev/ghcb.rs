@@ -377,7 +377,10 @@ impl GHCB {
         // Disable interrupts between writing the MSR and making the GHCB call
         // to prevent reentrant use of the GHCB MSR.
         let guard = IrqGuard::new();
-        write_msr(SEV_GHCB, ghcb_pa);
+        // SAFETY: GHCB is already allocated and setup so this is safe.
+        unsafe {
+            write_msr(SEV_GHCB, ghcb_pa);
+        }
         raw_vmgexit();
         drop(guard);
 

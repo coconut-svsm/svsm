@@ -28,9 +28,16 @@ pub fn read_efer() -> EFERFlags {
     EFERFlags::from_bits_truncate(read_msr(EFER))
 }
 
-pub fn write_efer(efer: EFERFlags) {
+/// # Safety
+///
+/// The caller should ensure that the new value written to EFER MSR doesn't
+/// break memory safety.
+pub unsafe fn write_efer(efer: EFERFlags) {
     let val = efer.bits();
-    write_msr(EFER, val);
+    // SAFETY: requirements should be verified by the caller.
+    unsafe {
+        write_msr(EFER, val);
+    }
 }
 
 impl From<usize> for EFERFlags {
