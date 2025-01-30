@@ -28,6 +28,7 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      # bindgen-cli is required to generate bindings for TPM 2.0 Reference Implementation
       - name: Install bindgen-cli
         uses: actions-rs/cargo@v1
         with:
@@ -154,6 +155,7 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      # bindgen-cli is required to generate bindings for TPM 2.0 Reference Implementation
       - name: Install bindgen-cli
         uses: actions-rs/cargo@v1
         with:
