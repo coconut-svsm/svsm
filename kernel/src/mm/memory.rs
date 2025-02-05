@@ -82,7 +82,7 @@ pub fn init_memory_map(
 
     log::info!("Guest Memory Regions:");
     for r in regions.iter() {
-        log::info!("  {:018x}-{:018x}", r.start(), r.end());
+        log::info!("  {r:#018x}");
     }
 
     let mut map = MEMORY_MAP.lock_write();

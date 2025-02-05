@@ -6,6 +6,7 @@
 
 use crate::address::Address;
 use crate::types::PageSize;
+use core::fmt;
 
 /// An abstraction over a memory region, expressed in terms of physical
 /// ([`PhysAddr`](crate::address::PhysAddr)) or virtual
@@ -14,6 +15,28 @@ use crate::types::PageSize;
 pub struct MemoryRegion<A> {
     start: A,
     end: A,
+}
+
+impl<A> fmt::Display for MemoryRegion<A>
+where
+    A: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}-{}]", self.start, self.end)
+    }
+}
+
+impl<A> fmt::LowerHex for MemoryRegion<A>
+where
+    A: fmt::LowerHex,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[")?;
+        self.start.fmt(f)?;
+        f.write_str("-")?;
+        self.end.fmt(f)?;
+        f.write_str("]")
+    }
 }
 
 impl<A> MemoryRegion<A>

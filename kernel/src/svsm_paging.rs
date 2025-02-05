@@ -102,11 +102,7 @@ fn invalidate_boot_memory_region(
 ) -> Result<(), SvsmError> {
     // Caller must ensure the memory region's starting address is page-aligned
     let aligned_region = MemoryRegion::new(region.start(), page_align_up(region.len()));
-    log::info!(
-        "Invalidating boot region {:018x}-{:018x}",
-        aligned_region.start(),
-        aligned_region.end()
-    );
+    log::info!("Invalidating boot region {aligned_region:#018x}");
 
     if !aligned_region.is_empty() {
         platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)?;
