@@ -14,7 +14,7 @@ use crate::mm::PageBox;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
 use crate::utils::{page_align_up, MemoryRegion};
-use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 
 struct IgvmParamInfo<'a> {
     virt_addr: VirtAddr,
@@ -133,7 +133,10 @@ pub fn invalidate_early_boot_memory(
     // invalidate stage 2 memory, unless firmware is loaded into low memory.
     // Also invalidate the boot data if required.
     if !config.fw_in_low_memory() {
-        let lowmem_region = MemoryRegion::new(PhysAddr::null(), 640 * 1024);
+        let lowmem_region = MemoryRegion::from_addresses(
+            PhysAddr::from(0u64),
+            PhysAddr::from(u64::from(LOWMEM_END)),
+        );
         invalidate_boot_memory_region(platform, config, lowmem_region)?;
     }
 

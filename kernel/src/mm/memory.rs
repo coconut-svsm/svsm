@@ -13,7 +13,7 @@ use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
-use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 
 use super::pagetable::LAUNCH_VMSA_ADDR;
 
@@ -115,7 +115,7 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
 }
 
 /// The starting address of the ISA range.
-const ISA_RANGE_START: PhysAddr = PhysAddr::new(0xa0000);
+const ISA_RANGE_START: PhysAddr = PhysAddr::new(LOWMEM_END as usize);
 
 /// The ending address of the ISA range.
 const ISA_RANGE_END: PhysAddr = PhysAddr::new(0x100000);

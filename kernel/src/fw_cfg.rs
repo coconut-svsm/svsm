@@ -10,6 +10,7 @@ use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::mm::pagetable::max_phys_addr;
 use crate::utils::MemoryRegion;
+use bootlib::kernel_launch::{STAGE2_MAXLEN, STAGE2_START};
 
 use super::io::IOPort;
 use alloc::string::String;
@@ -214,7 +215,7 @@ impl<'a> FwCfg<'a> {
             .or_else(|_| self.find_kernel_region_e820())?;
 
         // Make sure that the kernel region doesn't overlap with the loader.
-        if kernel_region.start() < PhysAddr::from(640 * 1024u64) {
+        if kernel_region.start() < PhysAddr::from(u64::from(STAGE2_START + STAGE2_MAXLEN)) {
             return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
         }
 

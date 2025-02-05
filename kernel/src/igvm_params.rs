@@ -18,12 +18,11 @@ use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
+use bootlib::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
-
-const STAGE2_END_ADDR: usize = 0xA0000;
 
 #[derive(Clone, Debug)]
 #[repr(C, align(64))]
@@ -323,9 +322,12 @@ impl IgvmParams<'_> {
         let mut regions = Vec::new();
 
         if self.igvm_param_block.firmware.in_low_memory != 0 {
-            // Add the stage 2 region to the firmware region list so
+            // Add the lowmem region to the firmware region list so
             // permissions can be granted to the guest VMPL for that range.
-            regions.push(MemoryRegion::new(PhysAddr::new(0), STAGE2_END_ADDR));
+            regions.push(MemoryRegion::from_addresses(
+                PhysAddr::from(0u64),
+                PhysAddr::from(u64::from(LOWMEM_END)),
+            ));
         }
 
         regions.push(MemoryRegion::new(

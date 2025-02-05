@@ -8,6 +8,15 @@ use crate::platform::SvsmPlatformType;
 use core::mem::size_of;
 use zerocopy::{Immutable, IntoBytes};
 
+// The SIPI stub is placed immediately below the stage 2 heap.
+pub const SIPI_STUB_GPA: u32 = 0xF000;
+
+// The first 640 KB of RAM (low memory)
+pub const LOWMEM_END: u32 = 0xA0000;
+
+pub const STAGE2_HEAP_START: u32 = 0x10000; // 64 KB
+pub const STAGE2_HEAP_END: u32 = LOWMEM_END; // 640 KB
+pub const STAGE2_BASE: u32 = 0x800000; // Start of stage2 area excluding heap
 pub const STAGE2_STACK_END: u32 = 0x805000;
 pub const STAGE2_INFO_SZ: u32 = size_of::<Stage2LaunchInfo>() as u32;
 pub const STAGE2_STACK: u32 = STAGE2_STACK_END + 0x1000 - STAGE2_INFO_SZ;
@@ -95,6 +104,3 @@ pub struct ApStartContext {
     pub transition_cr3: u32,
     pub context_size: u32,
 }
-
-// The SIPI stub is placed immediately below the stage 2 heap are.
-pub const SIPI_STUB_GPA: u32 = 0xF000;

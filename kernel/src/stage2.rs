@@ -9,12 +9,16 @@
 
 pub mod boot_stage2;
 
-use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo, STAGE2_START};
+use bootlib::kernel_launch::{
+    KernelLaunchInfo, Stage2LaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START,
+    STAGE2_START,
+};
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::ptr::addr_of_mut;
 use core::slice;
+use core::sync::atomic::{AtomicU32, Ordering};
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
 use svsm::address::{Address, PhysAddr, VirtAddr};
@@ -43,6 +47,7 @@ use svsm::utils::{is_aligned, MemoryRegion};
 use release::COCONUT_VERSION;
 
 extern "C" {
+    static ap_flag: AtomicU32; // 4-byte aligned
     static mut pgtable: PageTable;
 }
 
@@ -106,7 +111,8 @@ fn setup_env(
     paging_init(platform, true).expect("Failed to initialize early paging");
 
     // Use the low 640 KB of memory as the heap.
-    let lowmem_region = MemoryRegion::new(VirtAddr::from(0u64), 640 * 1024);
+    let lowmem_region =
+        MemoryRegion::from_addresses(VirtAddr::from(0u64), VirtAddr::from(u64::from(LOWMEM_END)));
     let heap_mapping = FixedAddressMappingRange::new(
         lowmem_region.start(),
         lowmem_region.end(),
@@ -120,8 +126,21 @@ fn setup_env(
         .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
         .expect("failed to validate low 640 KB");
 
-    // Configure the heap to exist from 64 KB to 640 KB.
-    setup_stage2_allocator(0x10000, 0xA0000);
+    // SAFETY: ap_flag is an extern static and this is the only place where we
+    // get a reference to it.
+    unsafe {
+        // Allow APs to proceed as the environment is now ready.
+        //
+        // Although APs use non-atomic loads in the ap_wait_for_env spin loop,
+        // the language and architectural guarantees of this atomic store (e.g.
+        // the compiler cannot move the previous stores past this atomic
+        // store-release, and x86 is a strongly-ordered system) make setting
+        // this flag more deterministic.
+        ap_flag.store(1, Ordering::Release);
+    }
+
+    // Configure the heap.
+    setup_stage2_allocator(STAGE2_HEAP_START.into(), STAGE2_HEAP_END.into());
 
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
