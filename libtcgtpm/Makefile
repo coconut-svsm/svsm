@@ -28,7 +28,7 @@ LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBTPM) $(LIBPLATFORM)
 
 OUT_DIR ?= $(CWD)
 
-all: $(OUT_DIR)/libtcgtpm.a $(OUT_DIR)/bindings.rs
+all: $(OUT_DIR)/libtcgtpm.a
 
 $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 	rm -f $@
@@ -134,19 +134,11 @@ $(TCGTPM_MAKEFILE):
 			LIBCRYPTO_LIBS="$(LIBCRT) $(LIBCRYPTO)" \
 			LIBCRYPTO_CFLAGS="${TCGTPM_CFLAGS}")
 
-# bindings.rs
-BINDGEN_FLAGS = --use-core
-CLANG_FLAGS = -Wno-incompatible-library-redeclaration
-
-$(OUT_DIR)/bindings.rs: deps/libtcgtpm.h $(LIBTPM)
-	bindgen $(BINDGEN_FLAGS) --output $@ deps/libtcgtpm.h -- $(CLANG_FLAGS)
-
 clean: $(OPENSSL_MAKEFILE) $(TCGTPM_MAKEFILE)
 	make -C $(LIBCRT_DIR) clean
 	make -C $(OPENSSL_DIR) clean
 	make -C $(TCGTPM_DIR) clean
 	rm -f libtcgtpm.a
-	rm -f src/bindings.rs
 
 distclean: clean
 	rm -f $(OPENSSL_MAKEFILE)
