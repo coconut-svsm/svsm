@@ -39,7 +39,7 @@ release.workspace = true
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
-vstd = { workspace = true, optional = true }
+vstd = { workspace = true }
 verify_proof = { workspace = true, optional = true}
 verify_external = { workspace = true, optional = true}
 
@@ -52,7 +52,7 @@ enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
 nosmep = []
 nosmap = []
-verus_all = ["vstd", "builtin", "verify_proof/verus", "verify_external/verus"]
+verus_all = ["builtin", "verify_proof/verus", "verify_external/verus"]
 verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
 
