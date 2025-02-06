@@ -225,7 +225,15 @@ impl IgvmBuilder {
 
         let is_qemu: u8 = match self.options.hypervisor {
             Hypervisor::Qemu => 1,
+            // Vanadium also supports qemu firmware services
+            Hypervisor::Vanadium => 1,
             _ => 0,
+        };
+
+        let hypervisor: bootlib::igvm_params::Hypervisor = match self.options.hypervisor {
+            Hypervisor::Qemu => bootlib::igvm_params::Hypervisor::Qemu,
+            Hypervisor::HyperV => bootlib::igvm_params::Hypervisor::HyperV,
+            Hypervisor::Vanadium => bootlib::igvm_params::Hypervisor::Vanadium,
         };
 
         // Most of the parameter block can be initialised with constants.
@@ -245,6 +253,7 @@ impl IgvmBuilder {
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
             is_qemu,
+            hypervisor,
             ..Default::default()
         })
     }

@@ -420,4 +420,8 @@ impl IgvmParams<'_> {
     pub fn is_qemu(&self) -> bool {
         self.igvm_param_block.is_qemu != 0
     }
+
+    pub fn hypervisor(&self) -> bootlib::igvm_params::Hypervisor {
+        self.igvm_param_block.hypervisor
+    }
 }

@@ -116,6 +116,9 @@ pub struct IgvmParamBlock {
     /// QEMU.
     pub is_qemu: u8,
 
+    /// Indicates the hypervisor SVSM expects to run on.
+    pub hypervisor: Hypervisor,
+
     #[doc(hidden)]
     pub _reserved: [u8; 4],
 
@@ -151,6 +154,23 @@ pub struct IgvmParamBlock {
 
     /// The value of vTOM used by the guest, or zero if not used.
     pub vtom: u64,
+}
+
+/// This Hypervisor enum is same as in igvm_builder, but we create this new definition since the
+/// enum in igvm_builder needs to derive parsing functions with clap, which is not compatible with
+/// the no_std environment in bootlib.
+#[derive(IntoBytes, Immutable, PartialEq, Clone, Copy, Debug, Default)]
+#[repr(C)]
+pub enum Hypervisor {
+    /// Build an IGVM file compatible with QEMU
+    #[default]
+    Qemu,
+
+    /// Build an IGVM file compatible with Hyper-V
+    HyperV,
+
+    /// Build an IGVM file compatible with Google's Vanadium
+    Vanadium,
 }
 
 /// The IGVM context page is a measured page that is used to specify the start

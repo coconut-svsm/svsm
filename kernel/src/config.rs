@@ -186,4 +186,11 @@ impl SvsmConfig<'_> {
             SvsmConfig::IgvmConfig(igvm_params) => igvm_params.is_qemu(),
         }
     }
+
+    pub fn hypervisor(&self) -> bootlib::igvm_params::Hypervisor {
+        match self {
+            SvsmConfig::FirmwareConfig(_) => bootlib::igvm_params::Hypervisor::Qemu,
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.hypervisor(),
+        }
+    }
 }
