@@ -14,7 +14,10 @@ use core::ffi::c_char;
 use syscall::SysCallError;
 
 pub fn sys_exit(exit_code: u32) -> ! {
-    log::info!("Terminating current task, exit_code {exit_code}");
+    log::info!(
+        "Terminating task {}, exit_code {exit_code}",
+        current_task().get_task_name()
+    );
     unsafe {
         current_task_terminated();
     }
