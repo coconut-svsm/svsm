@@ -331,7 +331,7 @@ pub extern "C" fn svsm_main() {
 
     #[cfg(test)]
     {
-        if config.is_qemu() {
+        if config.has_qemu_fw_services() {
             crate::testutils::set_qemu_test_env();
         }
         crate::test_main();

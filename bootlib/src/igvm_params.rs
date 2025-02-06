@@ -114,7 +114,7 @@ pub struct IgvmParamBlock {
 
     /// Indicates whether the guest can assume firmware services specific to
     /// QEMU.
-    pub is_qemu: u8,
+    pub has_qemu_fw_services: u8,
 
     /// Indicates the hypervisor SVSM expects to run on.
     pub hypervisor: Hypervisor,

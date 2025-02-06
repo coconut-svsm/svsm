@@ -223,7 +223,7 @@ impl IgvmBuilder {
             (fw_info, vtom)
         };
 
-        let is_qemu: u8 = match self.options.hypervisor {
+        let has_qemu_fw_services: u8 = match self.options.hypervisor {
             Hypervisor::Qemu => 1,
             // Vanadium also supports qemu firmware services
             Hypervisor::Vanadium => 1,
@@ -252,7 +252,7 @@ impl IgvmBuilder {
             kernel_max_size: self.gpa_map.kernel.get_size() as u32,
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
-            is_qemu,
+            has_qemu_fw_services,
             hypervisor,
             ..Default::default()
         })

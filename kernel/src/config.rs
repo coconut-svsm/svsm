@@ -180,10 +180,10 @@ impl SvsmConfig<'_> {
         }
     }
 
-    pub fn is_qemu(&self) -> bool {
+    pub fn has_qemu_fw_services(&self) -> bool {
         match self {
             SvsmConfig::FirmwareConfig(_) => true,
-            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.is_qemu(),
+            SvsmConfig::IgvmConfig(igvm_params) => igvm_params.has_qemu_fw_services(),
         }
     }
 

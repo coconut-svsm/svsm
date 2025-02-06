@@ -417,8 +417,8 @@ impl IgvmParams<'_> {
         self.igvm_param_block.use_alternate_injection != 0
     }
 
-    pub fn is_qemu(&self) -> bool {
-        self.igvm_param_block.is_qemu != 0
+    pub fn has_qemu_fw_services(&self) -> bool {
+        self.igvm_param_block.has_qemu_fw_services != 0
     }
 
     pub fn hypervisor(&self) -> bootlib::igvm_params::Hypervisor {
