@@ -40,7 +40,7 @@ use crate::mm::{
     SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M,
     SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K,
     SVSM_PERCPU_VMSA_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_SHADOW_STACK_ISST_DF_BASE,
-    SVSM_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
@@ -382,7 +382,6 @@ pub struct PerCpu {
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: Cell<Option<&'static HVDoorbell>>,
 
-    init_stack: Cell<Option<VirtAddr>>,
     init_shadow_stack: Cell<Option<VirtAddr>>,
     context_switch_stack: Cell<Option<VirtAddr>>,
     ist: IstStacks,
@@ -418,7 +417,6 @@ impl PerCpu {
             ghcb: OnceCell::new(),
             hypercall_pages: RefCell::new(None),
             hv_doorbell: Cell::new(None),
-            init_stack: Cell::new(None),
             init_shadow_stack: Cell::new(None),
             context_switch_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -618,10 +616,6 @@ impl PerCpu {
         self.hv_doorbell.as_ptr().cast()
     }
 
-    pub fn get_top_of_stack(&self) -> VirtAddr {
-        self.init_stack.get().unwrap()
-    }
-
     pub fn get_top_of_shadow_stack(&self) -> VirtAddr {
         self.init_shadow_stack.get().unwrap()
     }
@@ -680,18 +674,6 @@ impl PerCpu {
         self.vm_range
             .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
         Ok(ssp)
-    }
-
-    fn allocate_init_stack(&self) -> Result<(), SvsmError> {
-        let init_stack = Some(self.allocate_stack(SVSM_STACKS_INIT_TASK)?);
-        self.init_stack.set(init_stack);
-        Ok(())
-    }
-
-    pub fn free_init_stack(&self) -> Result<(), SvsmError> {
-        let _ = self.vm_range.remove(SVSM_STACKS_INIT_TASK)?;
-        self.init_stack.set(None);
-        Ok(())
     }
 
     fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
@@ -839,9 +821,6 @@ impl PerCpu {
         // Reserve ranges for temporary mappings
         self.initialize_vm_ranges()?;
 
-        // Allocate per-cpu init stack
-        self.allocate_init_stack()?;
-
         if is_cet_ss_supported() {
             self.allocate_init_shadow_stack()?;
         }
@@ -925,7 +904,13 @@ impl PerCpu {
 
         hyperv::HvInitialVpContext {
             rip: start_rip,
-            rsp: self.get_top_of_stack().into(),
+            // Use the context switch stack as its initial stack. This stack
+            // will later serve as the transitory stack during context
+            // switching. It is accessible after switching to the first task's
+            // page table because it resides in the PerCpu virtual range.
+            //
+            // See switch_to() for details.
+            rsp: self.get_top_of_context_switch_stack().into(),
             rflags: 2,
 
             cs: svsm_code_segment(),
