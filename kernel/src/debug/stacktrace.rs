@@ -46,14 +46,14 @@ impl StackUnwinder {
         };
 
         let cpu = this_cpu();
-        let top_of_init_stack = cpu.get_top_of_stack();
-        let top_of_df_stack = cpu.get_top_of_df_stack();
         let current_stack = cpu.get_current_stack();
+        let top_of_cs_stack = cpu.get_top_of_context_switch_stack();
+        let top_of_df_stack = cpu.get_top_of_df_stack();
 
         let stacks: StacksBounds = [
-            MemoryRegion::from_addresses(top_of_init_stack - STACK_SIZE, top_of_init_stack),
-            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
             current_stack,
+            MemoryRegion::from_addresses(top_of_cs_stack - STACK_SIZE, top_of_cs_stack),
+            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
         ];
 
         Self::new(VirtAddr::from(rbp), stacks)
@@ -146,7 +146,7 @@ impl StackUnwinder {
         // A new task is launched with RBP = 0, which is pushed onto the stack
         // immediatly and can serve as a marker when the end of the stack has
         // been reached.
-        rbp == VirtAddr::new(0)
+        rbp == VirtAddr::null()
     }
 }
 

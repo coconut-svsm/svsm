@@ -78,7 +78,15 @@ global_asm!(
 
         .globl  startup_64
     startup_64:
-        /* Setup stack */
+        /*
+         * Setup stack.
+         *
+         * bsp_stack is always mapped across all page tables because it
+         * uses the shared PML4E, making it accessible after switching to
+         * the first task's page table.
+         *
+         * See switch_to() for details.
+         */
         leaq bsp_stack_end(%rip), %rsp
 
         /*
