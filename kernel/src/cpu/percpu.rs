@@ -636,6 +636,10 @@ impl PerCpu {
         self.current_stack.get()
     }
 
+    pub fn set_current_stack(&self, stack: MemoryRegion<VirtAddr>) {
+        self.current_stack.set(stack);
+    }
+
     pub fn get_apic_id(&self) -> u32 {
         self.shared().apic_id()
     }
@@ -1149,14 +1153,14 @@ impl PerCpu {
             self.irq_state.set_restore_state(true);
         }
         let task = self.runqueue.lock_write().schedule_init();
-        self.current_stack.set(task.stack_bounds());
+        self.set_current_stack(task.stack_bounds());
         task
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
         let ret = self.runqueue.lock_write().schedule_prepare();
         if let Some((_, ref next)) = ret {
-            self.current_stack.set(next.stack_bounds());
+            self.set_current_stack(next.stack_bounds());
         };
         ret
     }
