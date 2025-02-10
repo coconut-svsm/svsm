@@ -170,12 +170,8 @@ pub const SVSM_PERCPU_VMSA_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(4 * SIZE_
 /// Region for PerCPU Stacks
 pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL1);
 
-/// Stack address of the per-cpu init task
-pub const SVSM_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
-
 /// Shadow stack address of the per-cpu init task
-pub const SVSM_SHADOW_STACKS_INIT_TASK: VirtAddr =
-    SVSM_STACKS_INIT_TASK.const_add(STACK_TOTAL_SIZE);
+pub const SVSM_SHADOW_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
 
 /// Stack address to use during context switches
 pub const SVSM_CONTEXT_SWITCH_STACK: VirtAddr = SVSM_SHADOW_STACKS_INIT_TASK.const_add(PAGE_SIZE);

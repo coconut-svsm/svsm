@@ -438,11 +438,6 @@ pub fn schedule_task(task: TaskPointer) {
     schedule();
 }
 
-#[no_mangle]
-extern "C" fn free_init_stack() {
-    this_cpu().free_init_stack().unwrap();
-}
-
 global_asm!(
     // Make the value of the `shadow-stacks` feature usable in assembly.
     ".set const_false, 0",
@@ -476,7 +471,7 @@ global_asm!(
 
         // If `prev` is not null...
         testq   %r12, %r12
-        jz      3f
+        jz      1f
 
         // Save the current stack pointer
         movq    %rsp, {TASK_RSP_OFFSET}(%r12)
@@ -540,12 +535,6 @@ global_asm!(
         popfq
 
         ret
-
-    3:
-        // Switch to a stack pointer that's valid after init stack is freed.
-        mov     %r14, %rsp
-        call    free_init_stack
-        jmp     1b
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
