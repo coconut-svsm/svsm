@@ -26,6 +26,7 @@ const SEV_META_DESC_TYPE_MEM: u32 = 1;
 const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
 const SEV_META_DESC_TYPE_CPUID: u32 = 3;
 const SEV_META_DESC_TYPE_CAA: u32 = 4;
+const SEV_META_DESC_TYPE_KERNEL_HASHES: u32 = 16;
 
 // Offset from the end of the file where the OVMF table footer GUID should be.
 const FOOTER_OFFSET: usize = 32;
@@ -143,7 +144,7 @@ fn parse_sev_metadata(
         let metadata_desc =
             MetadataDesc::try_from(&data[desc_offset..desc_offset + MetadataDesc::size()])?;
         match metadata_desc.metadata_type {
-            SEV_META_DESC_TYPE_MEM => {
+            SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
                 if firmware.prevalidated_count as usize == firmware.prevalidated.len() {
                     return Err("OVMF metadata defines too many memory regions".into());
                 }
