@@ -43,12 +43,15 @@ use crate::mm::{
     SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
+use crate::requests::{request_loop, request_processing_main};
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
+use crate::task::{
+    schedule, schedule_task, start_kernel_task, RunQueue, Task, TaskPointer, WaitQueue,
+};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -1357,4 +1360,14 @@ pub fn process_requests() {
 
 pub fn current_task() -> TaskPointer {
     this_cpu().runqueue.lock_read().current_task()
+}
+
+#[no_mangle]
+pub extern "C" fn cpu_idle_loop() {
+    // Start request processing on this CPU.
+    start_kernel_task(request_processing_main, String::from("request-processing"))
+        .expect("Failed to launch request processing task");
+    request_loop();
+
+    panic!("Road ends here");
 }
