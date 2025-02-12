@@ -13,12 +13,12 @@ use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::sev::ghcb::switch_to_vmpl;
 
+use crate::platform::halt;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
 use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
-use crate::utils::halt;
 use cpuarch::vmsa::GuestVMExit;
 
 /// The SVSM Calling Area (CAA)

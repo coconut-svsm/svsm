@@ -16,6 +16,7 @@ use native::NativePlatform;
 use snp::SnpPlatform;
 use tdp::TdpPlatform;
 
+use core::arch::asm;
 use core::ops::{Deref, DerefMut};
 
 use crate::address::{PhysAddr, VirtAddr};
@@ -27,7 +28,6 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::types::PageSize;
-use crate::utils;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
@@ -69,7 +69,10 @@ pub trait SvsmPlatform {
     where
         Self: Sized,
     {
-        utils::halt();
+        // SAFETY: executing HLT in assembly is always safe.
+        unsafe {
+            asm!("hlt");
+        }
     }
 
     /// Performs basic early initialization of the runtime environment.
