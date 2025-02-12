@@ -326,17 +326,17 @@ pub fn terminate() {
     schedule();
 }
 
-// SAFETY: This function returns a raw pointer to a task. It is safe
-// because this function is only used in the task switch code, which also only
-// takes a single reference to the next and previous tasks. Also, this
-// function works on an Arc, which ensures that only a single mutable reference
-// can exist.
-unsafe fn task_pointer(taskptr: TaskPointer) -> *const Task {
+fn task_pointer(taskptr: TaskPointer) -> *const Task {
     Arc::as_ptr(&taskptr)
 }
 
+// SAFETY: The caller is required to provide correct pointers for the previous
+// and current tasks.
 #[inline(always)]
 unsafe fn switch_to(prev: *const Task, next: *const Task) {
+    // SAFETY: Assuming the caller has provided the correct task pointers,
+    // the page table and stack information in those tasks are correct and
+    // can be used to switch to the correct page table and execution stack.
     unsafe {
         let cr3 = (*next).page_table.lock().cr3_value().bits() as u64;
 
@@ -366,13 +366,22 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
 /// Initializes the [RunQueue] on the current CPU. It will switch to the idle
 /// task and initialize the current_task field of the RunQueue. After this
 /// function has ran it is safe to call [`schedule()`] on the current CPU.
-pub fn schedule_init() {
+///
+/// # Safety
+///
+/// This function can only be called when it is known that there is no current
+/// task.  Otherwise, the run state can become corrupted, and thus future
+/// calculation of task pointers can be incorrect.
+pub unsafe fn schedule_init() {
+    let guard = IrqGuard::new();
+    // SAFETY: The caller guarantees that there is no current task, and the
+    // pointer obtained for the next task will always be correct, thus
+    // providing a guarantee that the task switch will be safe.
     unsafe {
-        let guard = IrqGuard::new();
         let next = task_pointer(this_cpu().schedule_init());
         switch_to(null_mut(), next);
-        drop(guard);
     }
+    drop(guard);
 }
 
 fn preemption_checks() {

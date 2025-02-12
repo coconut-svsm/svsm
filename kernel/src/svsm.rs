@@ -262,7 +262,12 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .expect("Failed to initialize SVSM platform object");
 
     sse_init();
-    schedule_init();
+
+    // SAFETY: there is no current task running on this processor yet, so
+    // initializing the scheduler is safe.
+    unsafe {
+        schedule_init();
+    }
 
     unreachable!("SVSM entry point terminated unexpectedly");
 }
