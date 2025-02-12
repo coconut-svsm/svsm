@@ -19,10 +19,13 @@ use core::arch::asm;
 const TDG_VP_TDVMCALL: u32 = 0;
 const TDG_VP_VEINFO_GET: u32 = 3;
 const TDG_MEM_PAGE_ACCEPT: u32 = 6;
+const TDG_VM_RD: u32 = 7;
 
 const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+
+pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
 
 /// Virtualization exception information
 #[derive(Clone, Copy, Debug)]
@@ -290,6 +293,32 @@ pub fn tdcall_get_ve_info() -> Option<TdVeInfo> {
         Err(TdxError::NoVeInfo) => None,
         Err(e) => panic!("Unknown TD error: {e:?}"),
     }
+}
+
+pub fn tdcall_vm_read(field: u64) -> u64 {
+    let (val, err) = loop {
+        let mut val: u64;
+        // SAFETY: executing TDCALL requires the use of assembly.
+        let err = unsafe {
+            let mut ret: u64;
+            asm!("tdcall",
+                 in("rax") TDG_VM_RD,
+                 in("rcx") 0,
+                 in("rdx") field,
+                 lateout("rax") ret,
+                 lateout("rdx") _,
+                 out("r8") val,
+                 options(att_syntax));
+            ret
+        };
+        if !tdx_recoverable_error(err) {
+            break (val, err);
+        }
+    };
+    // Ignore errors here since the caller cannot handle them.
+    debug_assert!(tdx_result(err).is_ok());
+    // val = 0 in case of no success.
+    val
 }
 
 pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
