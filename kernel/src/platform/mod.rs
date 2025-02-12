@@ -178,6 +178,11 @@ pub trait SvsmPlatform {
         cpu: &PerCpu,
         context: &hyperv::HvInitialVpContext,
     ) -> Result<(), SvsmError>;
+
+    /// Indicates whether this platform should invoke the SVSM request loop.
+    fn start_svsm_request_loop(&self) -> bool {
+        false
+    }
 }
 
 //FIXME - remove Copy trait

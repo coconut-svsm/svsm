@@ -1365,14 +1365,17 @@ pub fn current_task() -> TaskPointer {
 
 #[no_mangle]
 pub extern "C" fn cpu_idle_loop() {
-    // Start request processing on this CPU.
-    let apic_id = this_cpu().get_apic_id();
-    let processing_name = format!("request-processing on CPU {}", apic_id);
-    start_kernel_task(request_processing_main, processing_name)
-        .expect("Failed to launch request processing task");
-    let loop_name = format!("request-loop on CPU {}", apic_id);
-    start_kernel_task(request_loop_main, loop_name)
-        .expect("Failed to launch request loop task");
+    // Start request processing on this CPU if required.
+    if SVSM_PLATFORM.start_svsm_request_loop() {
+        // Start request processing on this CPU.
+        let apic_id = this_cpu().get_apic_id();
+        let processing_name = format!("request-processing on CPU {}", apic_id);
+        start_kernel_task(request_processing_main, processing_name)
+            .expect("Failed to launch request processing task");
+        let loop_name = format!("request-loop on CPU {}", apic_id);
+        start_kernel_task(request_loop_main, loop_name)
+            .expect("Failed to launch request loop task");
+    }
 
     loop {
         // Go idle

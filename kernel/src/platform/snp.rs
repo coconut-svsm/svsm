@@ -330,6 +330,10 @@ impl SvsmPlatform for SnpPlatform {
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)
     }
+
+    fn start_svsm_request_loop(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
