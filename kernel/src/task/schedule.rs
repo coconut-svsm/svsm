@@ -67,6 +67,9 @@ pub struct RunQueue {
 
     /// Temporary storage for tasks which are about to be terminated
     terminated_task: Option<TaskPointer>,
+
+    /// Pointer to a task that should be woken when returning from idle
+    wake_from_idle: Option<TaskPointer>,
 }
 
 impl RunQueue {
@@ -79,6 +82,7 @@ impl RunQueue {
             current_task: None,
             idle_task: OnceCell::new(),
             terminated_task: None,
+            wake_from_idle: None,
         }
     }
 
@@ -190,6 +194,16 @@ impl RunQueue {
     /// Panics if there is no current task.
     pub fn current_task(&self) -> TaskPointer {
         self.current_task.as_ref().unwrap().clone()
+    }
+
+    /// Wakes a task from idle if required.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<TaskPointer>` indicating which task should be woken, if
+    /// any.
+    pub fn wake_from_idle(&mut self) -> Option<TaskPointer> {
+        self.wake_from_idle.take()
     }
 }
 
@@ -326,6 +340,27 @@ pub fn terminate() {
     schedule();
 }
 
+pub fn go_idle() {
+    // Mark this task as blocked and indicate that it is waiting for wake after
+    // idle.  Only one task on each CPU can be in the wake-from-idle state at
+    // one time.
+    let task = this_cpu().current_task();
+    task.set_task_blocked();
+    let mut runqueue = this_cpu().runqueue().lock_write();
+    assert!(runqueue.wake_from_idle.is_none());
+    runqueue.wake_from_idle = Some(task);
+    drop(runqueue);
+
+    // Find another task to run.  If no other task is runnable, then the idle
+    // thread will execute.
+    schedule();
+}
+
+// SAFETY: This function returns a raw pointer to a task. It is safe
+// because this function is only used in the task switch code, which also only
+// takes a single reference to the next and previous tasks. Also, this
+// function works on an Arc, which ensures that only a single mutable reference
+// can exist.
 fn task_pointer(taskptr: TaskPointer) -> *const Task {
     Arc::as_ptr(&taskptr)
 }

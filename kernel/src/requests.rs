@@ -12,8 +12,8 @@ use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::sev::ghcb::switch_to_vmpl;
+use crate::task::go_idle;
 
-use crate::platform::halt;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
@@ -144,7 +144,11 @@ fn check_requests() -> Result<bool, SvsmReqError> {
     }
 }
 
-pub fn request_loop() {
+#[no_mangle]
+pub extern "C" fn request_loop_main() {
+    let apic_id = this_cpu().get_apic_id();
+    log::info!("Launching request loop task on CPU {}", apic_id);
+
     loop {
         // Determine whether the guest is runnable.  If not, halt and wait for
         // the guest to execute.  When halting, assume that the hypervisor
@@ -181,7 +185,7 @@ pub fn request_loop() {
             drop(guard);
         } else {
             log::debug!("No VMSA or CAA! Halting");
-            halt();
+            go_idle();
         }
 
         // Update mappings again on return from the guest VMPL or halt. If this
