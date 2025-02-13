@@ -133,14 +133,12 @@ asm_entry_hv:
 	// RIP is in the return window, so update RIP to the cancel point.
 	leaq	switch_vmpl_cancel(%rip), %rbx
 	movq	%rbx, 0x20(%rsp)
-	.if CFG_SHADOW_STACKS
 	// Update RIP on the shadow stack to the cancel point.
 	cmpb    $0, {IS_CET_SUPPORTED}(%rip)
         je 2f
 	rdsspq  %rax
         wrssq	%rbx, 8(%rax)
     2:
-	.endif
 	// Defer any further processing until interrupts can be processed.
 	jmp	postpone_hv
 hv_not_vmpl_switch:
@@ -181,7 +179,6 @@ hv_not_vmpl_switch:
 	// points to the register save area, and continue with #HV
 	// processing.
 	movq	%rcx, %rsp
-        .if CFG_SHADOW_STACKS
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
 	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
@@ -189,7 +186,6 @@ hv_not_vmpl_switch:
 	movl	$3, %eax
 	incsspq	%rax
     2:
-	.endif
 	jmp	handle_as_hv
 
 postpone_hv:
@@ -232,7 +228,6 @@ restart_hv:
 	movq	2*8(%rsp), %rax
 	movq	%rax, -2*8(%rcx)
 	leaq	-4*8(%rcx), %rsp
-        .if CFG_SHADOW_STACKS
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
 	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
@@ -240,7 +235,6 @@ restart_hv:
 	movl	$3, %eax
 	incsspq	%rax
     2:
-	.endif
 	
 continue_hv:
 	// At this point, only the dummy error code and first three registers
@@ -401,11 +395,7 @@ default_entry_no_ist	name=xf		handler=panic			error_code=0	vector=19
 // Vector 20 not defined
 
 // #CP Control-Protection Exception (Vector 21)
-.if CFG_SHADOW_STACKS
 default_entry_no_ist	name=cp		handler=control_protection			error_code=1	vector=21
-.else
-default_entry_no_ist	name=cp		handler=panic			error_code=1	vector=21
-.endif
 
 // Vectors 22-27 not defined
 

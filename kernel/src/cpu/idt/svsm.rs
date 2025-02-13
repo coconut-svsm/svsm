@@ -390,10 +390,6 @@ global_asm!(
         .set const_true, 1
     "#,
     concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
-    concat!(
-        ".set CFG_SHADOW_STACKS, const_",
-        cfg!(feature = "shadow-stacks")
-    ),
     include_str!("../x86/smap.S"),
     include_str!("entry.S"),
     IF = const RFlags::IF.bits(),
