@@ -521,11 +521,11 @@ impl IgvmBuilder {
             );
         }
 
-        if COMPATIBILITY_MASK.contains(VSM_COMPATIBILITY_MASK) {
+        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
             // Include initial page tables.
             construct_init_page_tables(
                 self.gpa_map.init_page_tables.get_start(),
-                VSM_COMPATIBILITY_MASK,
+                ANY_NATIVE_COMPATIBILITY_MASK,
                 &mut self.directives,
             );
         }
