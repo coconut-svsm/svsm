@@ -62,11 +62,9 @@ fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     let bsp_percpu = PerCpu::alloc(0)?;
-    let init_pgtable = unsafe {
-        // SAFETY: pgtable is a static mut and this is the only place where we
-        // get a reference to it.
-        &mut *addr_of_mut!(pgtable)
-    };
+    // SAFETY: pgtable is a static mut and this is the only place where we
+    // get a reference to it.
+    let init_pgtable = unsafe { &mut *addr_of_mut!(pgtable) };
     bsp_percpu.set_pgtable(init_pgtable);
     bsp_percpu.map_self_stage2()?;
     platform.setup_guest_host_comm(bsp_percpu, true);
@@ -81,6 +79,7 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
 /// The caller must ensure that the `PerCpu` is never used again.
 unsafe fn shutdown_percpu() {
     let ptr = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
+    // SAFETY: demanded to the caller
     unsafe {
         core::ptr::drop_in_place(ptr);
     }

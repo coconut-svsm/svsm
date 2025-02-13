@@ -32,6 +32,8 @@ where
 }
 
 pub fn halt() {
+    // SAFETY: Inline assembly to call HLT instruction, which does not change
+    // any state related to memory safety.
     unsafe {
         asm!("hlt", options(att_syntax));
     }

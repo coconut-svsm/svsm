@@ -64,6 +64,8 @@ pub fn exec_user(binary: &str, root: Arc<dyn Directory>) -> Result<u32, SvsmErro
         file_size,
         VMFileMappingFlags::Read,
     )?;
+    // SAFETY: `vstart` has just been mapped using `file_size` as the size,
+    // so it is safe to create a slice of the same size.
     let buf = unsafe { vstart.to_slice::<u8>(file_size) };
     let elf_bin = Elf64File::read(buf).map_err(|_| SvsmError::Mem)?;
 
