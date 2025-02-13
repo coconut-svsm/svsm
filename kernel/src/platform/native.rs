@@ -23,6 +23,7 @@ use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
+use syscall::GlobalFeatureFlags;
 
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
 use core::{mem, ptr};
@@ -102,7 +103,8 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn capabilities(&self) -> Caps {
-        Caps::new(0, 0)
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_NATIVE;
+        Caps::new(0, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {

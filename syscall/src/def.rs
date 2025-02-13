@@ -123,3 +123,37 @@ impl Default for DirEnt {
         }
     }
 }
+
+bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct GlobalFeatureFlags: u64 {
+        const _ = 0x7; // Define bits used for platform type since
+                       // multi-bit flags should be avoided
+    }
+}
+
+impl GlobalFeatureFlags {
+    pub const PLATFORM_TYPE_NATIVE: u64 = 0;
+    pub const PLATFORM_TYPE_SNP: u64 = 1;
+    pub const PLATFORM_TYPE_TDP: u64 = 2;
+
+    pub fn is_snp(&self) -> bool {
+        (self.bits() & 0x7) == Self::PLATFORM_TYPE_SNP
+    }
+
+    pub fn is_tdp(&self) -> bool {
+        (self.bits() & 0x7) == Self::PLATFORM_TYPE_TDP
+    }
+}
+
+impl From<u64> for GlobalFeatureFlags {
+    fn from(flags: u64) -> Self {
+        GlobalFeatureFlags::from_bits_truncate(flags)
+    }
+}
+
+impl From<GlobalFeatureFlags> for u64 {
+    fn from(flags: GlobalFeatureFlags) -> Self {
+        flags.bits() & GlobalFeatureFlags::all().bits()
+    }
+}
