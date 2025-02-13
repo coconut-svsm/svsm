@@ -35,6 +35,7 @@ use crate::sev::{
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use syscall::GlobalFeatureFlags;
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -200,7 +201,8 @@ impl SvsmPlatform for SnpPlatform {
     fn capabilities(&self) -> Caps {
         // VMPL0 is SVSM. VMPL1 to VMPL3 are guest.
         let vm_bitmap: u64 = 0xE;
-        Caps::new(vm_bitmap, 0)
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_SNP;
+        Caps::new(vm_bitmap, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {

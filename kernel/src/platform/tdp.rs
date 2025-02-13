@@ -26,6 +26,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
 use core::{mem, ptr};
+use syscall::GlobalFeatureFlags;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -109,7 +110,8 @@ impl SvsmPlatform for TdpPlatform {
         let num_vms = tdcall_vm_read(MD_TDCS_NUM_L2_VMS);
         // VM 0 is always L1 itself
         let vm_bitmap = ((1 << num_vms) - 1) << 1;
-        Caps::new(vm_bitmap, 0)
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_TDP;
+        Caps::new(vm_bitmap, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
