@@ -664,9 +664,9 @@ impl GHCB {
     #[inline]
     #[cfg(test)]
     pub fn fill(&self, val: u8) {
+        // SAFETY: All bytes in `Self` are part of an atomic integer type.
+        // This allows us to cast `Self` to a slice of `AtomicU8`s.
         let bytes = unsafe {
-            // SAFETY: All bytes in `Self` are part of an atomic integer type.
-            // This allows us to cast `Self` to a slice of `AtomicU8`s.
             core::slice::from_raw_parts(self as *const _ as *const AtomicU8, size_of::<Self>())
         };
         for byte in bytes {
@@ -688,6 +688,7 @@ pub fn switch_to_vmpl(vmpl: u32) {
         Some(doorbell) => ptr::from_ref(doorbell),
         None => ptr::null(),
     };
+    // SAFETY: FFI call. Parameters and return values are checked.
     unsafe {
         if !switch_to_vmpl_unsafe(ptr, vmpl) {
             panic!("Failed to switch to VMPL {}", vmpl);

@@ -66,6 +66,7 @@ impl SecretsPage {
     pub unsafe fn copy_from(&mut self, source: VirtAddr) {
         let from = source.as_ptr::<SecretsPage>();
 
+        // SAFETY: demanded to the caller
         unsafe {
             *self = *from;
         }
@@ -83,6 +84,7 @@ impl SecretsPage {
     pub unsafe fn copy_to(&self, target: VirtAddr) {
         let to = target.as_mut_ptr::<SecretsPage>();
 
+        // SAFETY: demanded to the caller
         unsafe {
             *to = *self;
         }
