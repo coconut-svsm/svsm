@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::acpi::tables::ACPICPUInfo;
-use crate::address::Address;
+use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::idt;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
@@ -16,9 +16,11 @@ use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
+use crate::mm::STACK_SIZE;
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::requests::{request_loop, request_processing_main};
 use crate::task::{schedule_init, start_kernel_task};
+use crate::utils::MemoryRegion;
 
 use alloc::string::String;
 use bootlib::kernel_launch::ApStartContext;
@@ -57,10 +59,17 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
 }
 
 #[no_mangle]
-extern "C" fn start_ap_setup() {
+extern "C" fn start_ap_setup(top_of_stack: u64) {
     // Initialize the GDT, TSS, and IDT.
     this_cpu().load_gdt_tss(true);
     idt().load();
+    // Now the stack unwinder can be used
+    this_cpu().set_current_stack(MemoryRegion::new(
+        VirtAddr::from(top_of_stack)
+            .checked_sub(STACK_SIZE)
+            .unwrap(),
+        STACK_SIZE,
+    ));
 }
 
 extern "C" {
@@ -94,12 +103,16 @@ global_asm!(
         /* Make sure stack frames are 16b-aligned */
         andq    $~0xf, %rsp
 
+        /* Mark the next stack frame as the bottom frame */
+        xor     %rbp, %rbp
+
         /*
          * Call a startup function to complete setup in the local
          * environment.
          *
          * %r12 is preserved per x86-64 calling convention.
          */
+        mov     %rsp, %rdi
         call    start_ap_setup
 
         /* Begin execution from the starting RIP */

@@ -47,7 +47,7 @@ use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
 use svsm::task::{schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -58,6 +58,7 @@ use release::COCONUT_VERSION;
 use alloc::string::String;
 
 extern "C" {
+    pub static bsp_stack: u8;
     pub static bsp_stack_end: u8;
 }
 
@@ -76,16 +77,28 @@ global_asm!(
         .section ".startup.text","ax"
         .code64
 
-        .globl  startup_64
+        .globl startup_64
     startup_64:
-        /* Setup stack */
+        /*
+         * Setup stack.
+         *
+         * bsp_stack is always mapped across all page tables because it
+         * uses the shared PML4E, making it accessible after switching to
+         * the first task's page table.
+         *
+         * See switch_to() for details.
+         */
         leaq bsp_stack_end(%rip), %rsp
+
+        /* Mark the next stack frame as the bottom frame */
+        xor %rbp, %rbp
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
          * to svsm_start as required by the C calling convention for x86-64.
          */
         call svsm_start
+        int3
 
         .bss
 
@@ -109,12 +122,9 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     );
 }
 
-pub fn boot_stack_info() {
-    // SAFETY: this is only unsafe because `bsp_stack_end` is an extern
-    // static, but we're simply printing its address. We are not creating a
-    // reference so this is safe.
-    let vaddr = VirtAddr::from(&raw const bsp_stack_end);
-    log::info!("Boot stack starts        @ {:#018x}", vaddr);
+fn boot_stack_info() {
+    let bs = this_cpu().get_current_stack();
+    log::info!("Boot stack @ {bs:#018x}");
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
@@ -229,6 +239,11 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .setup_on_cpu(&*platform)
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
+    // Now the stack unwinder can be used
+    bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
+        VirtAddr::from(&raw const bsp_stack),
+        VirtAddr::from(&raw const bsp_stack_end),
+    ));
 
     if is_cet_ss_supported() {
         enable_shadow_stacks!(bsp_percpu);

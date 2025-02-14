@@ -5,7 +5,7 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 use crate::{
-    address::VirtAddr,
+    address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::this_cpu,
     mm::address_space::STACK_SIZE,
@@ -18,6 +18,7 @@ struct StackFrame {
     rbp: VirtAddr,
     rsp: VirtAddr,
     rip: VirtAddr,
+    is_aligned: bool,
     is_last: bool,
     is_exception_frame: bool,
     _stack_depth: usize, // Not needed for frame unwinding, only as diagnostic information.
@@ -46,14 +47,14 @@ impl StackUnwinder {
         };
 
         let cpu = this_cpu();
-        let top_of_init_stack = cpu.get_top_of_stack();
-        let top_of_df_stack = cpu.get_top_of_df_stack();
         let current_stack = cpu.get_current_stack();
+        let top_of_cs_stack = cpu.get_top_of_context_switch_stack();
+        let top_of_df_stack = cpu.get_top_of_df_stack();
 
         let stacks: StacksBounds = [
-            MemoryRegion::from_addresses(top_of_init_stack - STACK_SIZE, top_of_init_stack),
-            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
             current_stack,
+            MemoryRegion::from_addresses(top_of_cs_stack - STACK_SIZE, top_of_cs_stack),
+            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
         ];
 
         Self::new(VirtAddr::from(rbp), stacks)
@@ -83,6 +84,8 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         };
 
+        // The x86-64 ABI requires stack frames to be 16b-aligned
+        let is_aligned = rbp.is_aligned(16);
         let is_last = Self::frame_is_last(rbp);
         let is_exception_frame = is_exception_handler_return_site(rip);
 
@@ -97,8 +100,9 @@ impl StackUnwinder {
 
         UnwoundStackFrame::Valid(StackFrame {
             rbp,
-            rip,
             rsp,
+            rip,
+            is_aligned,
             is_last,
             is_exception_frame,
             _stack_depth,
@@ -146,7 +150,7 @@ impl StackUnwinder {
         // A new task is launched with RBP = 0, which is pushed onto the stack
         // immediatly and can serve as a marker when the end of the stack has
         // been reached.
-        rbp == VirtAddr::new(0)
+        rbp == VirtAddr::null()
     }
 }
 
@@ -186,7 +190,11 @@ pub fn print_stack(skip: usize) {
     log::info!("---BACKTRACE---:");
     for frame in unwinder.skip(skip) {
         match frame {
-            UnwoundStackFrame::Valid(item) => log::info!("  [{:#018x}]", item.rip),
+            UnwoundStackFrame::Valid(item) => log::info!(
+                "  [{:#018x}]{}",
+                item.rip,
+                if !item.is_aligned { " #" } else { "" }
+            ),
             UnwoundStackFrame::Invalid => log::info!("  Invalid frame"),
         }
     }
