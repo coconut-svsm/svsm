@@ -9,6 +9,7 @@ use bitflags::bitflags;
 // Syscall classes
 const CLASS0: u64 = 0;
 const CLASS1: u64 = 1 << 32;
+const CLASS3: u64 = 3 << 32;
 
 // Syscall number in class0
 pub const SYS_EXIT: u64 = CLASS0;
@@ -26,6 +27,9 @@ pub const SYS_OPENDIR: u64 = CLASS1 + 6;
 pub const SYS_READDIR: u64 = CLASS1 + 7;
 pub const SYS_MKDIR: u64 = CLASS1 + 8;
 pub const SYS_RMDIR: u64 = CLASS1 + 9;
+
+// Syscall number in class3
+pub const SYS_CAPABILITIES: u64 = CLASS3;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;
