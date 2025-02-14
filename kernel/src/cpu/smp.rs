@@ -162,7 +162,12 @@ extern "C" fn start_ap() -> ! {
     this_cpu_shared().set_online();
 
     sse_init();
-    schedule_init();
+
+    // SAFETY: there is no current task running on this processor yet, so
+    // initializing the scheduler is safe.
+    unsafe {
+        schedule_init();
+    }
 
     unreachable!("Road ends here!");
 }
