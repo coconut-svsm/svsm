@@ -6,6 +6,8 @@
 // Author: Jon Lange <jlange@microsoft.com>
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::capabilities::Caps;
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
@@ -19,7 +21,6 @@ use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
@@ -98,6 +99,10 @@ impl SvsmPlatform for NativePlatform {
             addr_mask_width: 64,
             phys_addr_sizes: res.eax,
         }
+    }
+
+    fn capabilities(&self) -> Caps {
+        Caps::new(0, 0)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {

@@ -4,6 +4,8 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
+use super::capabilities::Caps;
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
@@ -14,10 +16,9 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::tdx::tdcall::{
-    td_accept_physical_memory, td_accept_virtual_memory, tdvmcall_halt, tdvmcall_io_read,
-    tdvmcall_io_write,
+    td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
+    tdvmcall_io_read, tdvmcall_io_write, MD_TDCS_NUM_L2_VMS,
 };
 use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -102,6 +103,13 @@ impl SvsmPlatform for TdpPlatform {
             addr_mask_width: vtom.trailing_zeros(),
             phys_addr_sizes: res.eax,
         }
+    }
+
+    fn capabilities(&self) -> Caps {
+        let num_vms = tdcall_vm_read(MD_TDCS_NUM_L2_VMS);
+        // VM 0 is always L1 itself
+        let vm_bitmap = ((1 << num_vms) - 1) << 1;
+        Caps::new(vm_bitmap, 0)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
