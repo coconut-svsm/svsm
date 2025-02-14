@@ -28,12 +28,6 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
-      - name: Install bindgen-cli
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: bindgen-cli
-
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
@@ -112,13 +106,6 @@ jobs:
             override: true
             components: rustfmt
 
-      # The bindings.rs is auto-generated during make, but we are not
-      # building the code with nightly. So we initialize bindings.rs here
-      # for cargo-fmt in the next workflow, otherwise it will fail reporting
-      # that bindings.rs does not exist.
-      - name: Touch libtcgtpm bindings
-        run: echo "" > libtcgtpm/src/bindings.rs
-
       # release/src/git_version.rs is auto-generated via a build.rs file. Touch
       # it here to avoid CI failures.
       - name: Touch release/src/git_version.rs
@@ -154,6 +141,9 @@ jobs:
             override: true
             components: rustfmt, rust-src, clippy
 
+      # TODO: remove this step after merging https://github.com/coconut-svsm/svsm/pull/606
+      # This is still required because here we checkout the `base` branch that
+      # still requires `bindgen-cli` to build libtcgtpm
       - name: Install bindgen-cli
         uses: actions-rs/cargo@v1
         with:

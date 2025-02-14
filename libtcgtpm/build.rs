@@ -5,6 +5,7 @@
 // Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
 
 use std::env::current_dir;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -17,8 +18,23 @@ fn main() {
         .unwrap();
     assert!(status.success());
 
-    // Tell cargo to link libtcgtpm and where to find it.
     let out_dir = std::env::var("OUT_DIR").unwrap();
+    let out_path = PathBuf::from(out_dir.clone());
+
+    let bindings = bindgen::Builder::default()
+        .header("deps/libtcgtpm.h".to_string())
+        .allowlist_file("deps/libtcgtpm.h")
+        .use_core()
+        .clang_arg("-Wno-incompatible-library-redeclaration")
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .generate()
+        .unwrap_or_else(|_| panic!("Unable to generate bindings for deps/libtcgtpm.h"));
+
+    bindings
+        .write_to_file(out_path.join("bindings.rs"))
+        .unwrap_or_else(|_| panic!("Unable to write bindings.rs"));
+
+    // Tell cargo to link libtcgtpm and where to find it.
     println!("cargo:rustc-link-search={out_dir}");
     println!("cargo:rustc-link-lib=tcgtpm");
 
