@@ -6,7 +6,6 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::types::PAGE_SIZE;
-use core::arch::asm;
 use core::ops::{Add, BitAnd, Not, Sub};
 
 pub fn align_up<T>(addr: T, align: T) -> T
@@ -29,14 +28,6 @@ where
     T: Sub<Output = T> + BitAnd<Output = T> + PartialEq + From<u8>,
 {
     (addr & (align - T::from(1u8))) == T::from(0u8)
-}
-
-pub fn halt() {
-    // SAFETY: Inline assembly to call HLT instruction, which does not change
-    // any state related to memory safety.
-    unsafe {
-        asm!("hlt", options(att_syntax));
-    }
 }
 
 pub fn page_align_up(x: usize) -> usize {

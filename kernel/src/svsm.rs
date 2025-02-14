@@ -7,8 +7,6 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-extern crate alloc;
-
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -21,7 +19,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{this_cpu, PerCpu};
+use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, PerCpu};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -41,11 +39,10 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::{request_loop, request_processing_main};
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
-use svsm::task::{schedule_init, start_kernel_task};
+use svsm::task::schedule_init;
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -54,8 +51,6 @@ use svsm::vtpm::vtpm_init;
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use release::COCONUT_VERSION;
-
-use alloc::string::String;
 
 extern "C" {
     pub static bsp_stack: u8;
@@ -346,9 +341,6 @@ pub extern "C" fn svsm_main() {
         panic!("Failed to launch FW: {e:#?}");
     }
 
-    start_kernel_task(request_processing_main, String::from("request-processing"))
-        .expect("Failed to launch request processing task");
-
     #[cfg(test)]
     {
         if config.is_qemu() {
@@ -362,9 +354,7 @@ pub extern "C" fn svsm_main() {
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
-    request_loop();
-
-    panic!("Road ends here!");
+    cpu_idle_loop();
 }
 
 #[panic_handler]

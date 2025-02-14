@@ -4,12 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-extern crate alloc;
-
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::idt;
-use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu};
+use crate::cpu::percpu::{cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
@@ -18,11 +16,9 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::STACK_SIZE;
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
-use crate::requests::{request_loop, request_processing_main};
-use crate::task::{schedule_init, start_kernel_task};
+use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
 
-use alloc::string::String;
 use bootlib::kernel_launch::ApStartContext;
 use core::arch::global_asm;
 use core::mem;
@@ -152,8 +148,8 @@ extern "C" fn start_ap() -> ! {
         .expect("setup_on_cpu() failed");
 
     percpu
-        .setup_idle_task(ap_request_loop)
-        .expect("Failed to allocated idle task for AP");
+        .setup_idle_task(cpu_idle_loop)
+        .expect("Failed to allocate idle task for AP");
 
     // Send a life-sign
     log::info!("AP with APIC-ID {} is online", this_cpu().get_apic_id());
@@ -170,12 +166,4 @@ extern "C" fn start_ap() -> ! {
     }
 
     unreachable!("Road ends here!");
-}
-
-#[no_mangle]
-pub extern "C" fn ap_request_loop() {
-    start_kernel_task(request_processing_main, String::from("request-processing"))
-        .expect("Failed to launch request processing task");
-    request_loop();
-    panic!("Returned from request_loop!");
 }
