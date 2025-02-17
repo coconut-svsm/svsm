@@ -7,6 +7,7 @@ import platform
 import shutil
 import json
 import os
+import sys
 
 SUPPORTED_IGVM_TARGETS=["qemu", "hyper-v", "vanadium"]
 
@@ -634,6 +635,10 @@ def build(args):
 
     Args:
       args: A structure initialized from command line options.
+
+    Returns:
+        True on successful build
+        False on failue
     """
 	# Create output directory if it does not exist yet.
     if not os.path.exists("bin"):
@@ -647,13 +652,19 @@ def build(args):
             build_one(recipe, helpers, args)
 
     except FileNotFoundError as f:
-        print(f"Error: {f}")
+        print(f"Error: {recipe}: {f}")
+        return False
     except json.JSONDecodeError as e:
         print(f"Error: {recipe}: {e}")
+        return False
     except subprocess.CalledProcessError as e:
-        print(f"Error: {e}")
+        print(f"Error: {recipe}: {e}")
+        return False
     except ValueError as verr:
-        print(f"Error: {verr}")
+        print(f"Error: {recipe}: {verr}")
+        return False
+
+    return True
 
 def parse_arguments():
     """Parses command-line arguments."""
@@ -686,5 +697,5 @@ def parse_arguments():
     return parser.parse_args()
 
 if __name__ == "__main__":
-    build(parse_arguments())
+    sys.exit(os.EX_OK if build(parse_arguments()) else os.EX_SOFTWARE)
 
