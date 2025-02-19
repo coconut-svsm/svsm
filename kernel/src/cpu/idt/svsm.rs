@@ -165,7 +165,7 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x} - Terminating task",
             rip, err, rsp);
         terminate();
-    } else if !handle_exception_table(ctxt) {
+    } else if !handle_exception_table(ctxt, false) {
         panic!(
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x}",
             rip, err, rsp
@@ -201,7 +201,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
             (err & PageFaultError::W.bits() as usize) != 0,
         )
         .is_err()
-        && !handle_exception_table(ctxt)
+        && !handle_exception_table(ctxt, false)
     {
         handle_debug_exception(ctxt, vector);
         panic!(
