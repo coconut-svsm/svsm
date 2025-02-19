@@ -17,6 +17,8 @@ struct GDTDesc {
     addr: VirtAddr,
 }
 
+// The base address of the GDT should be aligned on an 8-byte boundary
+// to yield the best processor performance.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct GDTEntry(u64);
 
