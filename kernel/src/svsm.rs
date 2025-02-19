@@ -166,7 +166,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     // SAFETY: we trust the previous stage to pass a valid pointer
     unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
-    GLOBAL_GDT.load();
     GLOBAL_GDT.load_selectors();
     early_idt_init();
 
@@ -239,6 +238,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         VirtAddr::from(&raw const bsp_stack_end),
     ));
 
+    idt_init();
+
     if is_cet_ss_supported() {
         enable_shadow_stacks!(bsp_percpu);
     }
@@ -250,7 +251,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .setup_idle_task(svsm_main)
         .expect("Failed to allocate idle task for BSP");
 
-    idt_init();
     platform
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
