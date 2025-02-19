@@ -52,8 +52,8 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 use release::COCONUT_VERSION;
 
 extern "C" {
-    pub static bsp_stack: u8;
-    pub static bsp_stack_end: u8;
+    static bsp_stack: u8;
+    static bsp_stack_end: u8;
 }
 
 /*
@@ -97,8 +97,10 @@ global_asm!(
         .bss
 
         .align {PAGE_SIZE}
+        .globl bsp_stack
     bsp_stack:
         .fill 8*{PAGE_SIZE}, 1, 0
+        .globl bsp_stack_end
     bsp_stack_end:
         "#,
     PAGE_SIZE = const PAGE_SIZE,
