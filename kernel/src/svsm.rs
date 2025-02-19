@@ -19,7 +19,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, PerCpu};
+use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -367,11 +367,15 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     secrets_page_mut().clear_vmpck(2);
     secrets_page_mut().clear_vmpck(3);
 
-    log::error!(
-        "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
-        this_cpu().get_apic_id(),
-        COCONUT_VERSION
-    );
+    if let Some(cpu) = try_this_cpu() {
+        log::error!(
+            "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
+            cpu.get_apic_id(),
+            COCONUT_VERSION
+        );
+    } else {
+        log::error!("Panic on CPU[?]! COCONUT-SVSM Version: {}", COCONUT_VERSION);
+    }
     log::error!("Info: {}", info);
 
     print_stack(3);
