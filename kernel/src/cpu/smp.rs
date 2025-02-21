@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::idt;
 use crate::cpu::percpu::{cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu};
@@ -37,10 +36,10 @@ fn start_cpu(platform: &dyn SvsmPlatform, apic_id: u32) -> Result<(), SvsmError>
     Ok(())
 }
 
-pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
+pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, apic_ids: &[u32]) {
     let mut count: usize = 0;
-    for c in cpus.iter().filter(|c| c.apic_id != 0 && c.enabled) {
-        log::info!("Launching AP with APIC-ID {}", c.apic_id);
+    for id in apic_ids.iter().cloned().filter(|&id| id != 0) {
+        log::info!("Launching AP with APIC-ID {}", id);
 
         // If this is the first AP being started, then advise the TLB package
         // that future TLB flushes will have to be done with SMP scope.
@@ -48,7 +47,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
             set_tlb_flush_smp();
         }
 
-        start_cpu(platform, c.apic_id).expect("Failed to bring CPU online");
+        start_cpu(platform, id).expect("Failed to bring CPU online");
         count += 1;
     }
     log::info!("Brought {} AP(s) online", count);

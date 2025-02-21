@@ -6,7 +6,6 @@
 
 extern crate alloc;
 
-use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
@@ -247,17 +246,11 @@ impl IgvmParams<'_> {
         Ok(())
     }
 
-    pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
-        let mut cpus: Vec<ACPICPUInfo> = Vec::new();
+    pub fn load_cpu_info(&self) -> Result<Vec<u32>, SvsmError> {
         log::info!("CPU count is {}", { self.igvm_param_page.cpu_count });
-        for i in 0..self.igvm_param_page.cpu_count {
-            let cpu = ACPICPUInfo {
-                apic_id: i,
-                enabled: true,
-            };
-            cpus.push(cpu);
-        }
-        Ok(cpus)
+        // Assume the APIC IDs are sequential. This may not be true, so other means
+        // should be used to determine APIC IDs if possible.
+        Ok((0..self.igvm_param_page.cpu_count).collect())
     }
 
     pub fn should_launch_fw(&self) -> bool {

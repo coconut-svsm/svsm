@@ -4,15 +4,20 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
+use crate::mm::page_visibility::SharedBox;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
-use crate::mm::virt_to_phys;
+use crate::mm::{virt_to_phys, PAGE_SIZE};
 use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::utils::raw_vmgexit;
@@ -29,7 +34,7 @@ use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
 use super::{pvalidate, PvalidateOp};
 
-use zerocopy::{FromZeros, Immutable, IntoBytes};
+use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 #[repr(C, packed)]
 #[derive(Debug, Default, Clone, Copy, IntoBytes, Immutable)]
@@ -103,6 +108,7 @@ enum GHCBExitCode {
     AP_CREATE = 0x80000013,
     HV_DOORBELL = 0x8000_0014,
     HV_IPI = 0x8000_0015,
+    GET_APIC_IDS = 0x8000_0017,
     CONFIGURE_INT_INJ = 0x8000_0019,
     DISABLE_ALT_INJ = 0x8000_001A,
     SPECIFIC_EOI = 0x8000_001B,
@@ -533,6 +539,44 @@ impl GHCB {
         }
 
         Ok(())
+    }
+
+    pub fn get_apic_ids(&self) -> Result<Vec<u32>, SvsmError> {
+        self.clear();
+
+        // RAX holds the number of pages given to the hypervisor.
+        // exit_info_1 stores the GPA of the buffer
+        // If RAX was not big enough, RAX is changed to hold the required size.
+
+        #[repr(C)]
+        #[derive(FromBytes, Copy, Clone)]
+        struct SevApicIdDesc {
+            num_entries: u32,
+            apic_ids: [u32; 1023],
+        }
+
+        let shared_page: SharedBox<SevApicIdDesc> = SharedBox::try_new_zeroed()?;
+        assert_eq!(size_of::<SevApicIdDesc>(), PAGE_SIZE);
+        self.set_rax_valid(1);
+        self.vmgexit(
+            GHCBExitCode::GET_APIC_IDS,
+            virt_to_phys(shared_page.addr()).into(),
+            0,
+        )?;
+        if self.get_rax_valid()? != 1 {
+            // Hypervisor reports the list of APIC IDs doesn't fit in a page.
+            return Err(SvsmError::PlatformInit);
+        }
+
+        let mut ids = SevApicIdDesc::new_zeroed();
+        shared_page.read_into(&mut ids);
+
+        Ok(ids
+            .apic_ids
+            .iter()
+            .take(ids.num_entries as usize)
+            .cloned()
+            .collect())
     }
 
     pub fn ap_create(

@@ -4,6 +4,8 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+extern crate alloc;
+
 pub mod guest_cpu;
 pub mod native;
 pub mod snp;
@@ -11,6 +13,8 @@ pub mod tdp;
 
 mod snp_fw;
 pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
+
+use alloc::vec::Vec;
 
 use native::NativePlatform;
 use snp::SnpPlatform;
@@ -182,6 +186,11 @@ pub trait SvsmPlatform {
     /// Indicates whether this platform should invoke the SVSM request loop.
     fn start_svsm_request_loop(&self) -> bool {
         false
+    }
+
+    /// Gets a list of all the APIC IDs available. Returns NotSupported if the platform does not support this operation.
+    fn get_apic_ids(&self) -> Result<Vec<u32>, SvsmError> {
+        Err(SvsmError::NotSupported)
     }
 }
 

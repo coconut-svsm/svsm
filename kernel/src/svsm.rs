@@ -28,6 +28,7 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
+use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
@@ -312,16 +313,17 @@ pub extern "C" fn svsm_main() {
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
-    let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
-    let mut nr_cpus = 0;
+    // Get the list of APIC IDs from the platform if possible. If the platform does not
+    // support the operation, get them from the config instead.
+    let cpus = match SVSM_PLATFORM.get_apic_ids() {
+        Ok(cpus) => cpus,
+        Err(SvsmError::NotSupported) => config
+            .load_cpu_info()
+            .expect("Failed to get APIC ID list from config"),
+        Err(e) => panic!("Failed to get APIC ID list from platform: {e:?}"),
+    };
 
-    for cpu in cpus.iter() {
-        if cpu.enabled {
-            nr_cpus += 1;
-        }
-    }
-
-    log::info!("{} CPU(s) present", nr_cpus);
+    log::info!("{} CPU(s) present", cpus.len());
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
 

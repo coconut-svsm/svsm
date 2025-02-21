@@ -4,6 +4,10 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
@@ -333,6 +337,10 @@ impl SvsmPlatform for SnpPlatform {
 
     fn start_svsm_request_loop(&self) -> bool {
         true
+    }
+
+    fn get_apic_ids(&self) -> Result<Vec<u32>, SvsmError> {
+        current_ghcb().get_apic_ids()
     }
 }
 

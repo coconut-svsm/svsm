@@ -454,8 +454,8 @@ pub struct ACPICPUInfo {
 /// let fw_cfg = FwCfg::new(&io);
 /// match load_acpi_cpu_info(&fw_cfg) {
 ///     Ok(cpu_info) => {
-///         for info in cpu_info {
-///             // You can print id (info.apic_id) and whether it is enabled (info.enabled)
+///         for apic_id in cpu_info {
+///             // You can print apic id
 ///         }
 ///     }
 ///     Err(err) => {
@@ -463,13 +463,13 @@ pub struct ACPICPUInfo {
 ///     }
 /// }
 /// ```
-pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<u32>, SvsmError> {
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
     let content = apic_table.content().ok_or(SvsmError::Acpi)?;
 
-    let mut cpus: Vec<ACPICPUInfo> = Vec::new();
+    let mut ids: Vec<u32> = Vec::new();
 
     let mut offset = MADT_HEADER_SIZE;
     while offset < content.len() {
@@ -483,19 +483,17 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmEr
                 let lapic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalApic>(offset)
                     .ok_or(SvsmError::Acpi)?;
-                cpus.push(ACPICPUInfo {
-                    apic_id: lapic_ptr.apic_id as u32,
-                    enabled: (lapic_ptr.flags & 1) == 1,
-                });
+                if (lapic_ptr.flags & 1) == 1 {
+                    ids.push(lapic_ptr.apic_id as u32);
+                }
             }
             9 if entry_len == mem::size_of::<RawMADTEntryLocalX2Apic>() => {
                 let x2apic_ptr = apic_table
                     .content_ptr::<RawMADTEntryLocalX2Apic>(offset)
                     .ok_or(SvsmError::Acpi)?;
-                cpus.push(ACPICPUInfo {
-                    apic_id: x2apic_ptr.apic_id,
-                    enabled: (x2apic_ptr.flags & 1) == 1,
-                });
+                if (x2apic_ptr.flags & 1) == 1 {
+                    ids.push(x2apic_ptr.apic_id);
+                }
             }
             madt_type if entry_len == 0 => {
                 log::warn!(
@@ -512,5 +510,5 @@ pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmEr
         offset = offset.checked_add(entry_len).ok_or(SvsmError::Acpi)?;
     }
 
-    Ok(cpus)
+    Ok(ids)
 }
