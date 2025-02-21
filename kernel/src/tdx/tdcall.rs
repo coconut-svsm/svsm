@@ -6,6 +6,7 @@
 
 use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::cpuid::CpuidResult;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
@@ -18,6 +19,7 @@ use core::arch::asm;
 const TDG_VP_TDVMCALL: u32 = 0;
 const TDG_MEM_PAGE_ACCEPT: u32 = 6;
 
+const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
 
@@ -242,6 +244,45 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
         vaddr = vaddr + size;
     }
     Ok(())
+}
+
+pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut result_eax: u32;
+    let mut result_ebx: u32;
+    let mut result_ecx: u32;
+    let mut result_edx: u32;
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_CPUID,
+             in("r12") cpuid_fn,
+             in("r13") cpuid_subfn,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") _,
+             lateout("r12") result_eax,
+             lateout("r13") result_ebx,
+             lateout("r14") result_ecx,
+             lateout("r15") result_edx,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
+
+    CpuidResult {
+        eax: result_eax,
+        ebx: result_ebx,
+        ecx: result_ecx,
+        edx: result_edx,
+    }
 }
 
 pub fn tdvmcall_halt() {
