@@ -2,7 +2,7 @@
 //
 // Copyright (c) 2024 SUSE LLC
 //
-// Authors: Thomas Leroy <tleroy@suse.de>
+// Author: Thomas Leroy <tleroy@suse.de>
 
 .code64
 

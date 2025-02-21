@@ -2,7 +2,7 @@
 //
 // Copyright (c) 2024 SUSE LLC
 //
-// Authors: Joerg Roedel <jroedel@suse.de>
+// Author: Joerg Roedel <jroedel@suse.de>
 
 .code64
 

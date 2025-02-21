@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2023 IBM
 //
-// Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
+// Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
 //! `SNP_GUEST_REQUEST` mechanism to communicate with the PSP
 

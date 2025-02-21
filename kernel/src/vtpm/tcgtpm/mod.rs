@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2023 IBM
 //
-// Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
+// Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
 //! This crate implements the virtual TPM interfaces for the TPM 2.0
 //! Reference Implementation (by Microsoft)
