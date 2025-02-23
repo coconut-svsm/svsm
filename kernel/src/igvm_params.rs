@@ -6,7 +6,7 @@
 
 extern crate alloc;
 
-use crate::acpi::tables::ACPICPUInfo;
+use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo, ACPITable};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
@@ -20,6 +20,7 @@ use cpuarch::vmsa::VMSA;
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
 use bootlib::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
+use core::slice;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
@@ -35,6 +36,7 @@ pub struct IgvmParams<'a> {
     igvm_param_block: &'a IgvmParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
+    igvm_madt: Option<&'a [u8]>,
     igvm_guest_context: Option<&'a IgvmGuestContext>,
 }
 
@@ -45,6 +47,19 @@ impl IgvmParams<'_> {
         let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
         let memory_map_address = addr + param_block.memory_map_offset as usize;
         let memory_map = Self::try_aligned_ref::<IgvmMemoryMap>(memory_map_address)?;
+        let madt_address = addr + param_block.madt_offset as usize;
+        let madt = if param_block.madt_size != 0 {
+            // SAFETY: the parameter block correctly describes the bounds of the
+            // MADT.
+            unsafe {
+                Some(slice::from_raw_parts(
+                    madt_address.as_ptr::<u8>(),
+                    param_block.madt_size as usize,
+                ))
+            }
+        } else {
+            None
+        };
         let guest_context = if param_block.guest_context_offset != 0 {
             let offset = usize::try_from(param_block.guest_context_offset).unwrap();
             Some(Self::try_aligned_ref::<IgvmGuestContext>(addr + offset)?)
@@ -56,6 +71,7 @@ impl IgvmParams<'_> {
             igvm_param_block: param_block,
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
+            igvm_madt: madt,
             igvm_guest_context: guest_context,
         })
     }
@@ -247,17 +263,14 @@ impl IgvmParams<'_> {
         Ok(())
     }
 
-    pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
-        let mut cpus: Vec<ACPICPUInfo> = Vec::new();
-        log::info!("CPU count is {}", { self.igvm_param_page.cpu_count });
-        for i in 0..self.igvm_param_page.cpu_count {
-            let cpu = ACPICPUInfo {
-                apic_id: i,
-                enabled: true,
-            };
-            cpus.push(cpu);
+    pub fn load_cpu_info(&self) -> Result<Option<Vec<ACPICPUInfo>>, SvsmError> {
+        match self.igvm_madt {
+            Some(madt_data) => {
+                let madt = ACPITable::new(madt_data)?;
+                Ok(Some(load_acpi_cpu_info(&madt)?))
+            }
+            None => Ok(None),
         }
-        Ok(cpus)
     }
 
     pub fn should_launch_fw(&self) -> bool {

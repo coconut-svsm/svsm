@@ -8,7 +8,7 @@ extern crate alloc;
 
 use core::slice;
 
-use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo};
+use crate::acpi::tables::{load_fw_cpu_info, ACPICPUInfo};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
@@ -121,10 +121,16 @@ impl<'a> SvsmConfig<'a> {
         }
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.load_cpu_info(),
-            None => load_acpi_cpu_info(self.fw_cfg.as_ref().unwrap()),
+        // If IGVM parameters are present, then attempt to collect the CPU
+        // information from the IGVM parameters.  Otherwise, fall back to
+        // firmware config.
+        if let Some(igvm_params) = &self.igvm_params {
+            if let Some(cpu_info) = igvm_params.load_cpu_info()? {
+                return Ok(cpu_info);
+            }
         }
+
+        load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
     }
 
     pub fn should_launch_fw(&self) -> bool {

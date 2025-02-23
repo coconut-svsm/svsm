@@ -44,7 +44,8 @@ pub const ANY_NATIVE_COMPATIBILITY_MASK: u32 = NATIVE_COMPATIBILITY_MASK | VSM_C
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
-const IGVM_PARAMETER_COUNT: u32 = 2;
+const IGVM_MADT_PA: u32 = 2;
+const IGVM_PARAMETER_COUNT: u32 = 3;
 
 const _: () = assert!(size_of::<IgvmParamBlock>() as u64 <= PAGE_SIZE_4K);
 const _: () = assert!(size_of::<IgvmGuestContext>() as u64 <= PAGE_SIZE_4K);
@@ -192,7 +193,8 @@ impl IgvmBuilder {
 
     fn create_param_block(&self) -> Result<IgvmParamBlock, Box<dyn Error>> {
         let param_page_offset = PAGE_SIZE_4K as u32;
-        let memory_map_offset = param_page_offset + PAGE_SIZE_4K as u32;
+        let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
+        let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
         let kernel_min_size = 0x1000000; // 16 MiB
         let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
         {
@@ -233,6 +235,8 @@ impl IgvmBuilder {
             param_area_size,
             param_page_offset,
             memory_map_offset,
+            madt_offset,
+            madt_size: self.gpa_map.madt.get_size().try_into().unwrap(),
             guest_context_offset,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
@@ -345,12 +349,19 @@ impl IgvmBuilder {
             });
         }
 
-        // Create the two parameter areas for memory map and general parameters.
+        // Create the parameter areas for all host-supplied parameters.
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: PAGE_SIZE_4K,
             parameter_area_index: IGVM_MEMORY_MAP_PA,
             initial_data: vec![],
         });
+        if self.gpa_map.madt.get_size() != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterArea {
+                number_of_bytes: PAGE_SIZE_4K,
+                parameter_area_index: IGVM_MADT_PA,
+                initial_data: vec![],
+            });
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: PAGE_SIZE_4K,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
@@ -366,6 +377,13 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
                 byte_offset: 4,
             }));
+        if self.gpa_map.madt.get_size() != 0 {
+            self.directives
+                .push(IgvmDirectiveHeader::Madt(IGVM_VHS_PARAMETER {
+                    parameter_area_index: IGVM_MADT_PA,
+                    byte_offset: 0,
+                }));
+        }
         self.directives
             .push(IgvmDirectiveHeader::MemoryMap(IGVM_VHS_PARAMETER {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
@@ -378,6 +396,15 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
             },
         ));
+        if self.gpa_map.madt.get_size() != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+                IGVM_VHS_PARAMETER_INSERT {
+                    gpa: self.gpa_map.madt.get_start(),
+                    compatibility_mask: COMPATIBILITY_MASK.get(),
+                    parameter_area_index: IGVM_MADT_PA,
+                },
+            ));
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self.gpa_map.general_params.get_start(),

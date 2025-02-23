@@ -65,6 +65,7 @@ pub struct GpaMap {
     pub igvm_param_block: GpaRange,
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
+    pub madt: GpaRange,
     pub guest_context: GpaRange,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
@@ -139,7 +140,12 @@ impl GpaMap {
 
         let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
         let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
-        let memory_map = GpaRange::new_page(general_params.get_end())?;
+        let madt_size = match options.hypervisor {
+            Hypervisor::HyperV | Hypervisor::Vanadium => PAGE_SIZE_4K,
+            Hypervisor::Qemu => 0,
+        };
+        let madt = GpaRange::new(general_params.get_end(), madt_size)?;
+        let memory_map = GpaRange::new_page(madt.get_end())?;
         let guest_context = if let Some(firmware) = firmware {
             if firmware.get_guest_context().is_some() {
                 // Locate the guest context after the memory map parameter page
@@ -171,6 +177,7 @@ impl GpaMap {
             igvm_param_block,
             general_params,
             memory_map,
+            madt,
             guest_context,
             kernel,
             vmsa,

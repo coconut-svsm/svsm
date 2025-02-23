@@ -146,7 +146,7 @@ impl ACPITableHeader {
 
 #[derive(Debug)]
 /// ACPI table, both header and contents
-struct ACPITable {
+pub struct ACPITable {
     header: ACPITableHeader,
     /// Raw binary content of ACPI table
     buf: Vec<u8>,
@@ -164,7 +164,7 @@ impl ACPITable {
     /// # Returns
     ///
     /// A new [`ACPITable`] instance on success, or an [`SvsmError`] if parsing fails.
-    fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
+    pub fn new(ptr: &[u8]) -> Result<Self, SvsmError> {
         let (raw_header, _) =
             RawACPITableHeader::read_from_prefix(ptr).map_err(|_| SvsmError::Acpi)?;
         let size = raw_header.len as usize;
@@ -412,9 +412,7 @@ pub struct ACPICPUInfo {
     pub enabled: bool,
 }
 
-/// Loads ACPI CPU information by parsing the ACPI tables.
-///
-/// This function retrieves CPU information from the ACPI tables provided by the firmware.
+/// Loads ACPI CPU information by parsing the ACPI tables provided by the firmware
 /// It processes the Multiple APIC Description Table (MADT) to extract information about each CPU's
 /// APIC ID and enabled status.
 ///
@@ -435,7 +433,7 @@ pub struct ACPICPUInfo {
 /// # Example
 ///
 /// ```
-/// use svsm::acpi::tables::load_acpi_cpu_info;
+/// use svsm::acpi::tables::load_fw_cpu_info;
 /// use svsm::fw_cfg::FwCfg;
 /// use svsm::io::IOPort;
 ///
@@ -452,7 +450,7 @@ pub struct ACPICPUInfo {
 ///
 /// let io = MyIo;
 /// let fw_cfg = FwCfg::new(&io);
-/// match load_acpi_cpu_info(&fw_cfg) {
+/// match load_fw_cpu_info(&fw_cfg) {
 ///     Ok(cpu_info) => {
 ///         for info in cpu_info {
 ///             // You can print id (info.apic_id) and whether it is enabled (info.enabled)
@@ -463,12 +461,31 @@ pub struct ACPICPUInfo {
 ///     }
 /// }
 /// ```
-pub fn load_acpi_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+pub fn load_fw_cpu_info(fw_cfg: &FwCfg<'_>) -> Result<Vec<ACPICPUInfo>, SvsmError> {
     let buffer = ACPITableBuffer::from_fwcfg(fw_cfg)?;
 
     let apic_table = buffer.acp_table_by_sig("APIC").ok_or(SvsmError::Acpi)?;
-    let content = apic_table.content().ok_or(SvsmError::Acpi)?;
+    load_acpi_cpu_info(&apic_table)
+}
 
+/// Loads ACPI CPU information by parsing the ACPI tables.
+/// It processes the Multiple APIC Description Table (MADT) to extract information about each CPU's
+/// APIC ID and enabled status.
+///
+/// # Arguments
+///
+/// * 'apic_table': A reference to the MADT that was located from the ACPI tables.
+///
+/// # Returns
+///
+/// A [`Result`] containing a vector of [`ACPICPUInfo`] structs representing CPU information.
+/// If successful, the vector contains information about each detected CPU; otherwise, an error is returned.
+///
+/// # Errors
+///
+/// This function returns an error if there are issues with reading or parsing ACPI tables.
+pub fn load_acpi_cpu_info(apic_table: &ACPITable) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+    let content = apic_table.content().ok_or(SvsmError::Acpi)?;
     let mut cpus: Vec<ACPICPUInfo> = Vec::new();
 
     let mut offset = MADT_HEADER_SIZE;

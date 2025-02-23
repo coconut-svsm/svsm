@@ -10,7 +10,7 @@ use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use libfuzzer_sys::{fuzz_target, Corpus};
 use std::hint::black_box;
-use svsm::acpi::tables::load_acpi_cpu_info;
+use svsm::acpi::tables::load_fw_cpu_info;
 use svsm::fw_cfg::FwCfg;
 use svsm::io::IOPort;
 
@@ -57,7 +57,7 @@ fuzz_target!(|data: &[u8]| -> Corpus {
     };
     let fwcfg = FwCfg::new(&io);
 
-    if let Ok(info) = load_acpi_cpu_info(&fwcfg) {
+    if let Ok(info) = load_fw_cpu_info(&fwcfg) {
         let _ = black_box(info);
     }
 
