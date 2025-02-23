@@ -74,7 +74,7 @@ pub fn virt_log_usage() {
 
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
-        this_cpu().get_apic_id(),
+        this_cpu().get_cpu_index(),
         this_cpu().vrange_4k.borrow().used_pages() - unused_cap_4k,
         this_cpu().vrange_2m.borrow().used_pages() - unused_cap_2m
     );

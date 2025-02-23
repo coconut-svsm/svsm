@@ -151,8 +151,8 @@ pub extern "C" fn request_loop_main() {
     // other CPUs have done the same.
     wait_for_ipi_block();
 
-    let apic_id = this_cpu().get_apic_id();
-    log::info!("Launching request loop task on CPU {}", apic_id);
+    let cpu_index = this_cpu().get_cpu_index();
+    log::info!("Launching request loop task on CPU {}", cpu_index);
 
     loop {
         // Determine whether the guest is runnable.  If not, halt and wait for
@@ -242,9 +242,8 @@ pub extern "C" fn request_loop_main() {
 
 #[no_mangle]
 pub extern "C" fn request_processing_main() {
-    let apic_id = this_cpu().get_apic_id();
-
-    log::info!("Launching request-processing task on CPU {}", apic_id);
+    let cpu_index = this_cpu().get_cpu_index();
+    log::info!("Launching request-processing task on CPU {}", cpu_index);
 
     loop {
         wait_for_requests();

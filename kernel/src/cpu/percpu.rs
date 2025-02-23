@@ -674,7 +674,7 @@ impl PerCpu {
     }
 
     pub fn get_cpu_index(&self) -> usize {
-        self.shared().cpu_index()
+        self.shared.cpu_index()
     }
 
     pub fn get_apic_id(&self) -> u32 {
@@ -993,13 +993,13 @@ impl PerCpu {
     }
 
     pub fn unmap_guest_vmsa(&self) {
-        assert!(self.shared().apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
-        assert!(self.shared().apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
@@ -1423,11 +1423,11 @@ pub extern "C" fn cpu_idle_loop() {
     // Start request processing on this CPU if required.
     if SVSM_PLATFORM.start_svsm_request_loop() {
         // Start request processing on this CPU.
-        let apic_id = this_cpu().get_apic_id();
-        let processing_name = format!("request-processing on CPU {}", apic_id);
+        let cpu_index = this_cpu().get_cpu_index();
+        let processing_name = format!("request-processing on CPU {}", cpu_index);
         start_kernel_task(request_processing_main, processing_name)
             .expect("Failed to launch request processing task");
-        let loop_name = format!("request-loop on CPU {}", apic_id);
+        let loop_name = format!("request-loop on CPU {}", cpu_index);
         start_kernel_task(request_loop_main, loop_name)
             .expect("Failed to launch request loop task");
     }
