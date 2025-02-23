@@ -144,7 +144,7 @@ struct TaskSchedState {
     state: TaskState,
 
     /// CPU this task is currently assigned to
-    cpu: u32,
+    cpu_index: usize,
 }
 
 impl TaskSchedState {
@@ -341,7 +341,7 @@ impl Task {
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
-                cpu: cpu.get_apic_id(),
+                cpu_index: cpu.get_cpu_index(),
             }),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -437,11 +437,11 @@ impl Task {
         self.sched_state.lock_read().idle_task
     }
 
-    pub fn update_cpu(&self, new_cpu: u32) -> u32 {
+    pub fn update_cpu(&self, new_cpu_index: usize) -> usize {
         let mut state = self.sched_state.lock_write();
-        let old_cpu = state.cpu;
-        state.cpu = new_cpu;
-        old_cpu
+        let old_cpu_index = state.cpu_index;
+        state.cpu_index = new_cpu_index;
+        old_cpu_index
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {

@@ -438,9 +438,9 @@ pub fn schedule() {
     // !!! Runqueue lock must be release here !!!
     if let Some((current, next)) = work {
         // Update per-cpu mappings if needed
-        let apic_id = this_cpu().get_apic_id();
+        let cpu_index = this_cpu().get_cpu_index();
 
-        if next.update_cpu(apic_id) != apic_id {
+        if next.update_cpu(cpu_index) != cpu_index {
             // Task has changed CPU, update per-cpu mappings
             let mut pt = next.page_table.lock();
             this_cpu().populate_page_table(&mut pt);
