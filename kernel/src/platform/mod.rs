@@ -208,6 +208,14 @@ impl SvsmPlatformCell {
             }
         }
     }
+
+    pub fn platform(&self) -> &dyn SvsmPlatform {
+        match self {
+            SvsmPlatformCell::Native(platform) => platform,
+            SvsmPlatformCell::Snp(platform) => platform,
+            SvsmPlatformCell::Tdp(platform) => platform,
+        }
+    }
 }
 
 impl Deref for SvsmPlatformCell {
