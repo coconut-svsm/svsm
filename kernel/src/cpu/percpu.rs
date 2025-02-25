@@ -24,7 +24,7 @@ use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::{ApicAccess, X86Apic};
-use crate::cpu::{IrqState, LocalApic};
+use crate::cpu::{IrqGuard, IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
@@ -1197,18 +1197,16 @@ impl PerCpu {
     }
 
     pub fn schedule_init(&self) -> TaskPointer {
-        // If the platform permits the use of interrupts, then ensure that
-        // interrupts will be enabled on the current CPU when leaving the
-        // scheduler environment.  This is done after disabling interrupts
-        // for scheduler initialization so that the first interrupt that can
-        // be received will always observe that there is a current task and
-        // not the boot thread.
-        if SVSM_PLATFORM.use_interrupts() {
-            self.irq_state.set_restore_state(true);
-        }
+        self.irq_state.set_restore_state(true);
         let task = self.runqueue.lock_write().schedule_init();
         self.set_current_stack(task.stack_bounds());
         task
+    }
+
+    pub fn disable_interrupt_use(&self) {
+        let guard = IrqGuard::new();
+        self.irq_state.set_restore_state(false);
+        drop(guard);
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {

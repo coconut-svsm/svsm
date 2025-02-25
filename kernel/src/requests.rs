@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::cpu::ipi::wait_for_ipi_block;
 use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests};
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
 use crate::error::SvsmError;
@@ -146,6 +147,10 @@ fn check_requests() -> Result<bool, SvsmReqError> {
 
 #[no_mangle]
 pub extern "C" fn request_loop_main() {
+    // Suppress the use of IPIs before entering the guest, and ensure that all
+    // other CPUs have done the same.
+    wait_for_ipi_block();
+
     let apic_id = this_cpu().get_apic_id();
     log::info!("Launching request loop task on CPU {}", apic_id);
 
