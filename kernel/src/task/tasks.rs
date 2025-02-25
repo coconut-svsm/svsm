@@ -41,7 +41,7 @@ use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::{is_aligned, MemoryRegion};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
-use super::schedule::{current_task_terminated, schedule};
+use super::schedule::{after_task_switch, current_task_terminated, schedule};
 
 pub static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
     SpinLock::new(BitmapAllocator1024::new_empty());
@@ -827,6 +827,9 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     // is dropped, re-enabling IRQs.
 
     irqs_enable();
+
+    // Perform housekeeping actions following a task switch.
+    after_task_switch();
 
     // SAFETY: The caller takes responsibility for the correctness of the save
     // area address.

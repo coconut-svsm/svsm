@@ -33,6 +33,7 @@ extern crate alloc;
 use super::INITIAL_TASK_ID;
 use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
 use crate::address::{Address, VirtAddr};
+use crate::cpu::ipi::{send_multicast_ipi, IpiMessage, IpiTarget};
 use crate::cpu::irq_state::raw_get_tpr;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
@@ -70,6 +71,10 @@ pub struct RunQueue {
 
     /// Pointer to a task that should be woken when returning from idle
     wake_from_idle: Option<TaskPointer>,
+
+    /// Pointer to a task that is requesting an affinity change to another
+    /// processor, along with the CPU index describing the new affinity..
+    set_affinity: Option<(TaskPointer, usize)>,
 }
 
 impl RunQueue {
@@ -83,6 +88,7 @@ impl RunQueue {
             idle_task: OnceCell::new(),
             terminated_task: None,
             wake_from_idle: None,
+            set_affinity: None,
         }
     }
 
@@ -360,6 +366,22 @@ pub fn go_idle() {
     schedule();
 }
 
+pub fn set_affinity(cpu_index: usize) {
+    // Mark the current task as blocked so it is not scheduled again.
+    let task = this_cpu().current_task();
+    task.set_task_blocked();
+
+    // Mark this task as the task pending an affinity change.
+    let mut runqueue = this_cpu().runqueue().lock_write();
+    assert!(runqueue.set_affinity.is_none());
+    runqueue.set_affinity = Some((task, cpu_index));
+    drop(runqueue);
+
+    // Find another task to run.  The scheduler will complete the affinity
+    // change once a new task has been selected on this processor.
+    schedule();
+}
+
 // SAFETY: This function returns a raw pointer to a task. It is safe
 // because this function is only used in the task switch code, which also only
 // takes a single reference to the next and previous tasks. Also, this
@@ -479,14 +501,55 @@ pub fn schedule() {
 
     drop(guard);
 
+    // Perform housekeeping actions following a task switch.
+    after_task_switch();
+
     // If the previous task had terminated then we can release
     // it's reference here.
     let _ = this_cpu().runqueue().lock_write().terminated_task.take();
 }
 
-pub fn schedule_task(task: TaskPointer) {
+struct SetAffinityMessage {
+    task: TaskPointer,
+}
+
+// SAFETY: The SetAffinityMessage structure contains no references other than
+// global references, and can safely rely on the default implementation of the
+// IPI message copy routines.
+unsafe impl IpiMessage for SetAffinityMessage {
+    fn invoke(&self) {
+        // Mark the task as runnable on the current CPU.  It will be selected
+        // to run at the next scheduling interval.  If the CPU is currently
+        // idle, then the idle task will wake and invoke the scheduler to
+        // invoke this task.
+        assert!(!self.task.is_running());
+        enqueue_task(self.task.clone());
+    }
+}
+
+pub fn after_task_switch() {
+    // Determine whether any task is pending an affinity change.  This must be
+    // done with the run queue locked, but the actual affinity change must
+    // happen without holding the run queue lock.
+    let mut runqueue = this_cpu().runqueue().lock_write();
+    let set_affinity = runqueue.set_affinity.take();
+    drop(runqueue);
+
+    if let Some((task, cpu_index)) = set_affinity {
+        // Send an IPI to the target processor indicating which task it should
+        // take.
+        let set_affinity_message = SetAffinityMessage { task };
+        send_multicast_ipi(IpiTarget::Single(cpu_index), &set_affinity_message);
+    }
+}
+
+fn enqueue_task(task: TaskPointer) {
     task.set_task_running();
     this_cpu().runqueue().lock_write().handle_task(task);
+}
+
+pub fn schedule_task(task: TaskPointer) {
+    enqueue_task(task);
     schedule();
 }
 
