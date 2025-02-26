@@ -145,13 +145,13 @@ fn check_requests() -> Result<bool, SvsmReqError> {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn request_loop_main() {
+pub extern "C" fn request_loop_main(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
+
     // Suppress the use of IPIs before entering the guest, and ensure that all
     // other CPUs have done the same.
     wait_for_ipi_block();
 
-    let cpu_index = this_cpu().get_cpu_index();
     log::info!("Launching request loop task on CPU {}", cpu_index);
 
     loop {
@@ -240,9 +240,8 @@ pub extern "C" fn request_loop_main() {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn request_processing_main() {
-    let cpu_index = this_cpu().get_cpu_index();
+pub extern "C" fn request_processing_main(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
     log::info!("Launching request-processing task on CPU {}", cpu_index);
 
     loop {

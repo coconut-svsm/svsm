@@ -239,6 +239,9 @@ struct CreateTaskArguments {
     // address, and for kernel tasks, it is a kernel address,
     entry: usize,
 
+    // A start parameter for kernel tasks.
+    start_parameter: usize,
+
     // The name of the task.
     name: String,
 
@@ -312,7 +315,7 @@ impl Task {
         let (stack, raw_bounds, rsp_offset) = if args.vm_user_range.is_some() {
             Self::allocate_utask_stack(cpu, args.entry, xsa_addr)?
         } else {
-            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr)?
+            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
         };
         let stack_start = vaddr_region.start() + SVSM_PERTASK_STACK_BASE_OFFSET;
         vm_kernel_range.insert_at(stack_start, stack)?;
@@ -354,11 +357,13 @@ impl Task {
 
     pub fn create(
         cpu: &PerCpu,
-        entry: extern "C" fn(),
+        entry: extern "C" fn(usize),
+        start_parameter: usize,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
             entry: entry as usize,
+            start_parameter,
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
@@ -380,6 +385,7 @@ impl Task {
         }
         let create_args = CreateTaskArguments {
             entry: user_entry,
+            start_parameter: 0,
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
@@ -473,6 +479,7 @@ impl Task {
         cpu: &PerCpu,
         entry: usize,
         xsa_addr: usize,
+        start_parameter: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
@@ -509,6 +516,8 @@ impl Task {
             (*task_context).regs.rdi = entry;
             // xsave area addr
             (*task_context).regs.rsi = xsa_addr;
+            // start argument parameter.
+            (*task_context).regs.rdx = start_parameter;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
             // Task termination handler for when entry point returns
             stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
@@ -826,13 +835,13 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     }
 }
 
-extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
+extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_parameter: usize) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
         setup_new_task_common(xsa_addr);
     }
-    entry();
+    entry(start_parameter);
 }
 
 extern "C" fn task_exit() {

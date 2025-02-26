@@ -259,9 +259,13 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn start_kernel_task(entry: extern "C" fn(), name: String) -> Result<TaskPointer, SvsmError> {
+pub fn start_kernel_task(
+    entry: extern "C" fn(usize),
+    start_parameter: usize,
+    name: String,
+) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    let task = Task::create(cpu, entry, name)?;
+    let task = Task::create(cpu, entry, start_parameter, name)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU

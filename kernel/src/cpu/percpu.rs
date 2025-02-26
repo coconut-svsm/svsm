@@ -894,8 +894,8 @@ impl PerCpu {
         platform.setup_percpu_current(self)
     }
 
-    pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, String::from("idle"))?;
+    pub fn setup_idle_task(&self, entry: extern "C" fn(usize)) -> Result<(), SvsmError> {
+        let idle_task = Task::create(self, entry, self.shared.cpu_index, String::from("idle"))?;
         self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }
@@ -1418,17 +1418,16 @@ pub fn current_task() -> TaskPointer {
     this_cpu().runqueue.lock_read().current_task()
 }
 
-#[no_mangle]
-pub extern "C" fn cpu_idle_loop() {
+pub extern "C" fn cpu_idle_loop(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
     // Start request processing on this CPU if required.
     if SVSM_PLATFORM.start_svsm_request_loop() {
         // Start request processing on this CPU.
-        let cpu_index = this_cpu().get_cpu_index();
         let processing_name = format!("request-processing on CPU {}", cpu_index);
-        start_kernel_task(request_processing_main, processing_name)
+        start_kernel_task(request_processing_main, cpu_index, processing_name)
             .expect("Failed to launch request processing task");
         let loop_name = format!("request-loop on CPU {}", cpu_index);
-        start_kernel_task(request_loop_main, loop_name)
+        start_kernel_task(request_loop_main, cpu_index, loop_name)
             .expect("Failed to launch request loop task");
     }
 
