@@ -286,8 +286,9 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-#[no_mangle]
-pub extern "C" fn svsm_main() {
+pub extern "C" fn svsm_main(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, 0);
+
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
     gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
@@ -355,7 +356,7 @@ pub extern "C" fn svsm_main() {
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
-    cpu_idle_loop();
+    cpu_idle_loop(cpu_index);
 }
 
 #[panic_handler]
