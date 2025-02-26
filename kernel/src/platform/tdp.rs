@@ -12,7 +12,6 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::apic::{apic_register_bit, APIC_MSR_ISR};
 use crate::error::SvsmError;
-use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
@@ -206,17 +205,14 @@ impl SvsmPlatform for TdpPlatform {
         (read_msr(APIC_MSR_ISR + msr) & mask as u64) != 0
     }
 
-    fn start_cpu(
-        &self,
-        cpu: &PerCpu,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(), SvsmError> {
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
         //
         // transition_cr3 is not needed since all TD APs are using the stage2
         // page table set up by the BSP.
-        let ap_context = create_ap_start_context(context, 0);
+        let context = cpu.get_initial_context(start_rip);
+        let ap_context = create_ap_start_context(&context, 0);
 
         // The mailbox page was already accepted by the BSP in stage2 and
         // therefore it's been initialized as a zero page.
