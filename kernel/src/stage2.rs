@@ -27,7 +27,7 @@ use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::flush_tlb_percpu;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
-use svsm::cpu::percpu::{this_cpu, PerCpu};
+use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -60,7 +60,10 @@ fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
 }
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
-    let bsp_percpu = PerCpu::alloc(0)?;
+    // SAFETY: this is the first CPU, so there can be no other dependencies
+    // on multi-threaded access to the per-cpu areas.
+    let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
+    let bsp_percpu = PerCpu::alloc(percpu_shared)?;
     // SAFETY: pgtable is properly aligned and is never freed within the
     // lifetime of stage2. We go through a raw pointer to promote it to a
     // static mut. Only the BSP is able to get a reference to it so no

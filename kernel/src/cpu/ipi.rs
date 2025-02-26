@@ -382,10 +382,9 @@ pub fn send_ipi(
             let mut target_count: usize = 0;
             for cpu in PERCPU_AREAS.iter() {
                 // Ignore the current CPU and CPUs that are not online.
-                let cpu_shared = cpu.as_cpu_ref();
-                if cpu_shared.is_online() && cpu_shared.apic_id() != this_cpu().get_apic_id() {
+                if cpu.is_online() && cpu.apic_id() != this_cpu().get_apic_id() {
                     target_count += 1;
-                    cpu_shared.ipi_from(sender_cpu_index);
+                    cpu.ipi_from(sender_cpu_index);
                 }
             }
 

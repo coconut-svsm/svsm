@@ -57,6 +57,7 @@ use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
 use crate::utils::MemoryRegion;
+use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -69,25 +70,6 @@ use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use cpuarch::vmsa::VMSA;
 
-#[derive(Copy, Clone, Debug)]
-pub struct PerCpuInfo {
-    apic_id: u32,
-    cpu_shared: &'static PerCpuShared,
-}
-
-impl PerCpuInfo {
-    const fn new(apic_id: u32, cpu_shared: &'static PerCpuShared) -> Self {
-        Self {
-            apic_id,
-            cpu_shared,
-        }
-    }
-
-    pub fn as_cpu_ref(&self) -> &'static PerCpuShared {
-        self.cpu_shared
-    }
-}
-
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 
@@ -98,7 +80,7 @@ pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 // should only occur after all writes are done.
 #[derive(Debug)]
 pub struct PerCpuAreas {
-    areas: UnsafeCell<Vec<PerCpuInfo>>,
+    areas: UnsafeCell<Vec<&'static PerCpuShared>>,
 }
 
 unsafe impl Sync for PerCpuAreas {}
@@ -110,21 +92,44 @@ impl PerCpuAreas {
         }
     }
 
-    fn next_cpu_index(&self) -> usize {
-        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.len()
+    /// # Safety
+    /// The areas vector obtained here is not multi-thread safe, so the caller
+    /// must guarantee that is not used in a context that expects multiwthread
+    /// safety.
+    unsafe fn get_areas(&self) -> &Vec<&'static PerCpuShared> {
+        // SAFETY: the caller guarantees that accessing the unsafe cell is
+        // appropriate.
+        unsafe { &*self.areas.get() }
     }
 
-    unsafe fn push(&self, info: PerCpuInfo) {
-        let ptr = unsafe { self.areas.get().as_mut().unwrap() };
-        ptr.push(info);
-        let cpu_shared = ptr[info.as_cpu_ref().cpu_index];
-        assert_eq!(cpu_shared.apic_id, info.cpu_shared.apic_id);
+    /// # Safety
+    /// This function can only be invoked before any other processors have
+    /// started.  Otherwise, accesses to the areas vector will not be safe.
+    pub unsafe fn create_new(&self, apic_id: u32) -> &'static PerCpuShared {
+        // SAFETY: the caller guarantees that it is safe to obtain a mutable
+        // reference to the areas vector.
+        let areas = unsafe { &mut *self.areas.get() };
+
+        // Allocate a new shared per-CPU area to describe the APIC ID being
+        // created.  The CPU index will be the next in sequence ased on the
+        // size of the vector.  The new shared per-CPU area is allocated on
+        // the heap so it is globally visible.
+        let cpu_index = areas.len();
+        let percpu_shared = Box::leak(Box::new(PerCpuShared::new(apic_id, cpu_index)));
+
+        // Leak the box so the allocation persists with a static lifetime,
+        // and install the allocated per-CPU area into the areas vector.
+        areas.push(percpu_shared);
+
+        percpu_shared
     }
 
-    pub fn iter(&self) -> Iter<'_, PerCpuInfo> {
-        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.iter()
+    pub fn iter(&self) -> Iter<'_, &'static PerCpuShared> {
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas.iter()
     }
 
     // Fails if no such area exists or its address is NULL
@@ -133,16 +138,18 @@ impl PerCpuAreas {
         // uphold is that there are no mutations or mutable aliases
         // going on when casting via as_ref(). This only happens via
         // Self::push(), which is intentionally unsafe and private.
-        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr.iter()
-            .find(|info| info.apic_id == apic_id)
-            .map(|info| info.cpu_shared)
+        self.iter()
+            .find(|shared| shared.apic_id() == apic_id)
+            .copied()
     }
 
     /// Callers are expected to specify a valid CPU index.
     pub fn get_by_cpu_index(&self, index: usize) -> &'static PerCpuShared {
-        let ptr = unsafe { self.areas.get().as_ref().unwrap() };
-        ptr[index].cpu_shared
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas[index]
     }
 }
 
@@ -351,12 +358,9 @@ const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 /// `shared` field, a reference to which will be stored in [`PERCPU_AREAS`].
 #[derive(Debug)]
 pub struct PerCpu {
-    /// Per-CPU storage that might be accessed from other CPUs.
-    shared: PerCpuShared,
-
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
-    shared_global: OnceCell<&'static PerCpuShared>,
+    shared: &'static PerCpuShared,
 
     /// APIC access object
     apic: X86Apic,
@@ -401,7 +405,7 @@ pub struct PerCpu {
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
-    fn new(apic_id: u32, cpu_index: usize) -> Self {
+    fn new(shared: &'static PerCpuShared) -> Self {
         Self {
             pgtbl: RefCell::new(None),
             apic: X86Apic::default(),
@@ -422,8 +426,7 @@ impl PerCpu {
             request_waitqueue: RefCell::new(WaitQueue::new()),
             guest_apic: RefCell::new(None),
 
-            shared: PerCpuShared::new(apic_id, cpu_index),
-            shared_global: OnceCell::new(),
+            shared,
             ghcb: OnceCell::new(),
             hypercall_pages: RefCell::new(None),
             hv_doorbell: Cell::new(None),
@@ -436,29 +439,14 @@ impl PerCpu {
 
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
-    pub fn alloc(apic_id: u32) -> Result<&'static Self, SvsmError> {
-        // APIC IDs are expected to be unique.
-        assert!(PERCPU_AREAS.get_by_apic_id(apic_id).is_none());
-        let cpu_index = PERCPU_AREAS.next_cpu_index();
-        let page = PageBox::try_new(Self::new(apic_id, cpu_index))?;
+    pub fn alloc(shared: &'static PerCpuShared) -> Result<&'static Self, SvsmError> {
+        let page = PageBox::try_new(Self::new(shared))?;
         let percpu = PageBox::leak(page);
-        percpu.set_shared_global();
-        unsafe { PERCPU_AREAS.push(PerCpuInfo::new(apic_id, &percpu.shared)) };
         Ok(percpu)
     }
 
     pub fn shared(&self) -> &PerCpuShared {
-        &self.shared
-    }
-
-    fn set_shared_global(&'static self) {
-        self.shared_global
-            .set(&self.shared)
-            .expect("shared global set more than once");
-    }
-
-    pub fn shared_global(&self) -> &'static PerCpuShared {
-        self.shared_global.get().unwrap()
+        self.shared
     }
 
     pub fn initialize_apic(&self, accessor: &'static dyn ApicAccess) {
@@ -562,7 +550,7 @@ impl PerCpu {
             target_set,
             self.shared.cpu_index,
             &mut ipi_helper,
-            &self.shared_global().ipi_board,
+            &self.shared.ipi_board,
         );
     }
 
@@ -578,7 +566,7 @@ impl PerCpu {
             IpiTarget::Single(cpu_index),
             self.shared.cpu_index,
             &mut ipi_helper,
-            &self.shared_global().ipi_board,
+            &self.shared.ipi_board,
         );
     }
 

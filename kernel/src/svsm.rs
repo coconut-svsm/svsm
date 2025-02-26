@@ -19,7 +19,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu};
+use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -227,7 +227,10 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         init_pgtable.load();
     }
 
-    let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
+    // SAFETY: this is the first CPU, so there can be no other dependencies
+    // on multi-threaded access to the per-cpu areas.
+    let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
+    let bsp_percpu = PerCpu::alloc(percpu_shared).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup(platform, init_pgtable)

@@ -473,8 +473,7 @@ impl LocalApic {
         // Enumerate all CPUs to see which have APIC IDs that match the
         // requested destination. Skip the current CPU, since it was checked
         // above.
-        for cpu_ref in PERCPU_AREAS.iter() {
-            let cpu = cpu_ref.as_cpu_ref();
+        for cpu in PERCPU_AREAS.iter() {
             let this_apic_id = cpu.apic_id();
             if (this_apic_id != apic_id)
                 && Self::logical_destination_match(destination, this_apic_id)
@@ -547,8 +546,7 @@ impl LocalApic {
             // Enumerate all processors in the system except for the
             // current CPU and indicate that an IPI has been requested.
             let apic_id = this_cpu().get_apic_id();
-            for cpu_ref in PERCPU_AREAS.iter() {
-                let cpu = cpu_ref.as_cpu_ref();
+            for cpu in PERCPU_AREAS.iter() {
                 if cpu.apic_id() != apic_id {
                     Self::post_ipi_one_target(cpu, icr);
                 }
