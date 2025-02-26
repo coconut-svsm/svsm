@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2024 IBM
 //
-// Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
+// Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
 use std::env::current_dir;
 use std::path::PathBuf;

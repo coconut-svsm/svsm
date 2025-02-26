@@ -2,7 +2,7 @@
 //
 // Copyright (C) 2023 IBM
 //
-// Authors: Claudio Carvalho <cclaudio@linux.ibm.com>
+// Author: Claudio Carvalho <cclaudio@linux.ibm.com>
 
 //! Driver to send `SNP_GUEST_REQUEST` commands to the PSP. It can be any of the
 //! request or response command types defined in the SEV-SNP spec, regardless if it's
