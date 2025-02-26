@@ -149,7 +149,7 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for PR branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt || ( cat clippy_warnings_pr.txt; exit 1 )
 
       # Required because after the next checkout everything is removed.
       - name: Upload PR warnings artifact
@@ -169,7 +169,7 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for base branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt || ( cat clippy_warnings_base.txt; exit 1 )
 
       - name: Download PR warnings artifact
         uses: actions/download-artifact@v4
