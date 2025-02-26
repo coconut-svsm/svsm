@@ -45,20 +45,16 @@ use crate::mm::{
     SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{halt, SvsmPlatform, SVSM_PLATFORM};
-use crate::requests::{request_loop_main, request_processing_main};
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{
-    schedule, schedule_task, start_kernel_task, RunQueue, Task, TaskPointer, WaitQueue,
-};
+use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
 use crate::utils::MemoryRegion;
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -122,6 +118,22 @@ impl PerCpuAreas {
         areas.push(percpu_shared);
 
         percpu_shared
+    }
+
+    pub fn len(&self) -> usize {
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas.is_empty()
     }
 
     pub fn iter(&self) -> Iter<'_, &'static PerCpuShared> {
@@ -1420,16 +1432,6 @@ pub fn current_task() -> TaskPointer {
 
 pub extern "C" fn cpu_idle_loop(cpu_index: usize) {
     debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
-    // Start request processing on this CPU if required.
-    if SVSM_PLATFORM.start_svsm_request_loop() {
-        // Start request processing on this CPU.
-        let processing_name = format!("request-processing on CPU {}", cpu_index);
-        start_kernel_task(request_processing_main, cpu_index, processing_name)
-            .expect("Failed to launch request processing task");
-        let loop_name = format!("request-loop on CPU {}", cpu_index);
-        start_kernel_task(request_loop_main, cpu_index, loop_name)
-            .expect("Failed to launch request loop task");
-    }
 
     loop {
         // Go idle

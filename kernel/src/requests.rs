@@ -4,8 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use crate::cpu::ipi::wait_for_ipi_block;
-use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests};
+use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests, PERCPU_AREAS};
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -13,7 +15,7 @@ use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::sev::ghcb::switch_to_vmpl;
-use crate::task::go_idle;
+use crate::task::{go_idle, set_affinity, start_kernel_task};
 
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
@@ -21,6 +23,8 @@ use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
 use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
 use cpuarch::vmsa::GuestVMExit;
+
+use alloc::format;
 
 /// The SVSM Calling Area (CAA)
 #[repr(C, packed)]
@@ -146,11 +150,30 @@ fn check_requests() -> Result<bool, SvsmReqError> {
 }
 
 pub extern "C" fn request_loop_main(cpu_index: usize) {
+    if cpu_index != 0 {
+        // Send this task to the correct CPU.
+        set_affinity(cpu_index);
+    } else {
+        // When starting the request loop on the BSP, start an additional
+        // request loop task for each other processor in the system.
+        let cpu_count = PERCPU_AREAS.len();
+        for task_index in 1..cpu_count {
+            let loop_name = format!("request-loop on CPU {}", task_index);
+            start_kernel_task(request_loop_main, task_index, loop_name)
+                .expect("Failed to launch request loop task");
+        }
+    }
+
     debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
 
     // Suppress the use of IPIs before entering the guest, and ensure that all
     // other CPUs have done the same.
     wait_for_ipi_block();
+
+    // Start the request processing task for this CPU.
+    let processing_name = format!("request-processing on CPU {}", cpu_index);
+    start_kernel_task(request_processing_main, cpu_index, processing_name)
+        .expect("Failed to launch request processing task");
 
     log::info!("Launching request loop task on CPU {}", cpu_index);
 
