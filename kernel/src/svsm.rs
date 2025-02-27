@@ -29,7 +29,6 @@ use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
-use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -296,16 +295,18 @@ pub extern "C" fn svsm_main() {
         .expect("SVSM platform environment setup failed");
 
     let launch_info = &*LAUNCH_INFO;
-    let config = if launch_info.igvm_params_virt_addr != 0 {
+    let igvm_params = if launch_info.igvm_params_virt_addr != 0 {
         let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
             .expect("Invalid IGVM parameters");
         if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
             panic!("Launch VTOM does not match VTOM from IGVM parameters");
         }
-        SvsmConfig::IgvmConfig(igvm_params)
+        Some(igvm_params)
     } else {
-        SvsmConfig::FirmwareConfig(FwCfg::new(SVSM_PLATFORM.get_io_port()))
+        None
     };
+
+    let config = SvsmConfig::new(SVSM_PLATFORM.platform(), igvm_params);
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 

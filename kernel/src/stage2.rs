@@ -29,7 +29,6 @@ use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu, PerCpu};
 use svsm::error::SvsmError;
-use svsm::fw_cfg::FwCfg;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
@@ -196,13 +195,15 @@ fn get_svsm_config(
     launch_info: &Stage2LaunchInfo,
     platform: &dyn SvsmPlatform,
 ) -> Result<SvsmConfig<'static>, SvsmError> {
-    if launch_info.igvm_params == 0 {
-        return Ok(SvsmConfig::FirmwareConfig(FwCfg::new(
-            platform.get_io_port(),
-        )));
-    }
+    let igvm_params = if launch_info.igvm_params == 0 {
+        None
+    } else {
+        Some(IgvmParams::new(VirtAddr::from(
+            launch_info.igvm_params as u64,
+        ))?)
+    };
 
-    IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64)).map(SvsmConfig::IgvmConfig)
+    Ok(SvsmConfig::new(platform, igvm_params))
 }
 
 /// Loads a single ELF segment and returns its virtual memory region.
@@ -395,7 +396,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
             .expect("Failed to load kernel ELF");
 
     // Load the IGVM params, if present. Update loaded region accordingly.
-    let (igvm_vregion, igvm_pregion) = if let SvsmConfig::IgvmConfig(ref igvm_params) = config {
+    let (igvm_vregion, igvm_pregion) = if let Some(igvm_params) = config.get_igvm_params() {
         let (igvm_vregion, igvm_pregion) = load_igvm_params(
             launch_info,
             igvm_params,

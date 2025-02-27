@@ -99,6 +99,13 @@ pub struct IgvmParamBlock {
     pub param_page_offset: u32,
 
     /// The offset, in bytes, from the base of the parameter block to the base
+    /// of the host-supplied MADT.
+    pub madt_offset: u32,
+
+    /// The size, in bytes, of the MADT area.
+    pub madt_size: u32,
+
+    /// The offset, in bytes, from the base of the parameter block to the base
     /// of the memory map (which is in IGVM format).
     pub memory_map_offset: u32,
 
