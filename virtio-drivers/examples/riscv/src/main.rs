@@ -13,7 +13,7 @@ use core::ptr::NonNull;
 use flat_device_tree::{node::FdtNode, standard_nodes::Compatible, Fdt};
 use log::LevelFilter;
 use virtio_drivers::{
-    device::{blk::VirtIOBlk, input::VirtIOInput},
+    device::blk::VirtIOBlk,
     transport::{
         mmio::{MmioTransport, VirtIOHeader},
         DeviceType, Transport,
@@ -77,7 +77,6 @@ fn virtio_probe(node: FdtNode) {
 fn virtio_device(transport: impl Transport) {
     match transport.device_type() {
         DeviceType::Block => virtio_blk(transport),
-        DeviceType::Input => virtio_input(transport),
         t => warn!("Unrecognized virtio device: {:?}", t),
     }
 }
@@ -95,15 +94,4 @@ fn virtio_blk<T: Transport>(transport: T) {
         assert_eq!(input, output);
     }
     info!("virtio-blk test finished");
-}
-
-fn virtio_input<T: Transport>(transport: T) {
-    //let mut event_buf = [0u64; 32];
-    let mut _input =
-        VirtIOInput::<HalImpl, T>::new(transport).expect("failed to create input driver");
-    // loop {
-    //     input.ack_interrupt().expect("failed to ack");
-    //     info!("mouse: {:?}", input.mouse_xy());
-    // }
-    // TODO: handle external interrupt
 }

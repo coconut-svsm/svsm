@@ -3,9 +3,6 @@
 pub mod blk;
 #[cfg(feature = "alloc")]
 pub mod console;
-#[cfg(feature = "alloc")]
-pub mod input;
-
 pub mod socket;
 
 pub(crate) mod common;
