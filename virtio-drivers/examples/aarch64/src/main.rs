@@ -24,7 +24,6 @@ use smccc::{psci::system_off, Hvc};
 use virtio_drivers::{
     device::{
         blk::VirtIOBlk,
-        console::VirtIOConsole,
         socket::{
             VirtIOSocket, VsockAddr, VsockConnectionManager, VsockEventType, VMADDR_CID_HOST,
         },
@@ -114,7 +113,6 @@ extern "C" fn main(x0: u64, x1: u64, x2: u64, x3: u64) {
 fn virtio_device(transport: impl Transport) {
     match transport.device_type() {
         DeviceType::Block => virtio_blk(transport),
-        DeviceType::Console => virtio_console(transport),
         DeviceType::Socket => match virtio_socket(transport) {
             Ok(()) => info!("virtio-socket test finished successfully"),
             Err(e) => error!("virtio-socket test finished with error '{e:?}'"),
@@ -137,20 +135,6 @@ fn virtio_blk<T: Transport>(transport: T) {
         assert_eq!(input, output);
     }
     info!("virtio-blk test finished");
-}
-
-fn virtio_console<T: Transport>(transport: T) {
-    let mut console =
-        VirtIOConsole::<HalImpl, T>::new(transport).expect("Failed to create console driver");
-    if let Some(size) = console.size() {
-        info!("VirtIO console {}", size);
-    }
-    for &c in b"Hello world on console!\n" {
-        console.send(c).expect("Failed to send character");
-    }
-    let c = console.recv(true).expect("Failed to read from console");
-    info!("Read {:?}", c);
-    info!("virtio-console test finished");
 }
 
 fn virtio_socket<T: Transport>(transport: T) -> virtio_drivers::Result<()> {
