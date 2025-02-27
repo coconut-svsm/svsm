@@ -27,11 +27,6 @@ use virtio_impl::HalImpl;
 
 mod virtio_impl;
 
-#[cfg(feature = "tcp")]
-mod tcp;
-
-const NET_QUEUE_SIZE: usize = 16;
-
 #[no_mangle]
 extern "C" fn main(_hartid: usize, device_tree_paddr: usize) {
     log::set_max_level(LevelFilter::Info);
@@ -87,7 +82,6 @@ fn virtio_device(transport: impl Transport) {
     match transport.device_type() {
         DeviceType::Block => virtio_blk(transport),
         DeviceType::Input => virtio_input(transport),
-        DeviceType::Network => virtio_net(transport),
         DeviceType::Sound => virtio_sound(transport),
         t => warn!("Unrecognized virtio device: {:?}", t),
     }
@@ -117,38 +111,6 @@ fn virtio_input<T: Transport>(transport: T) {
     //     info!("mouse: {:?}", input.mouse_xy());
     // }
     // TODO: handle external interrupt
-}
-
-fn virtio_net<T: Transport>(transport: T) {
-    #[cfg(not(feature = "tcp"))]
-    {
-        let mut net =
-            virtio_drivers::device::net::VirtIONetRaw::<HalImpl, T, NET_QUEUE_SIZE>::new(transport)
-                .expect("failed to create net driver");
-        info!("MAC address: {:02x?}", net.mac_address());
-
-        let mut buf = [0u8; 2048];
-        let (hdr_len, pkt_len) = net.receive_wait(&mut buf).expect("failed to recv");
-        info!(
-            "recv {} bytes: {:02x?}",
-            pkt_len,
-            &buf[hdr_len..hdr_len + pkt_len]
-        );
-        net.send(&buf[..hdr_len + pkt_len]).expect("failed to send");
-        info!("virtio-net test finished");
-    }
-
-    #[cfg(feature = "tcp")]
-    {
-        const NET_BUFFER_LEN: usize = 2048;
-        let net = virtio_drivers::device::net::VirtIONet::<HalImpl, T, NET_QUEUE_SIZE>::new(
-            transport,
-            NET_BUFFER_LEN,
-        )
-        .expect("failed to create net driver");
-        info!("MAC address: {:02x?}", net.mac_address());
-        tcp::test_echo_server(net);
-    }
 }
 
 fn virtio_sound<T: Transport>(transport: T) {

@@ -25,7 +25,6 @@ use virtio_drivers::{
     device::{
         blk::VirtIOBlk,
         console::VirtIOConsole,
-        net::VirtIONetRaw,
         socket::{
             VirtIOSocket, VsockAddr, VsockConnectionManager, VsockEventType, VMADDR_CID_HOST,
         },
@@ -115,7 +114,6 @@ extern "C" fn main(x0: u64, x1: u64, x2: u64, x3: u64) {
 fn virtio_device(transport: impl Transport) {
     match transport.device_type() {
         DeviceType::Block => virtio_blk(transport),
-        DeviceType::Network => virtio_net(transport),
         DeviceType::Console => virtio_console(transport),
         DeviceType::Socket => match virtio_socket(transport) {
             Ok(()) => info!("virtio-socket test finished successfully"),
@@ -139,20 +137,6 @@ fn virtio_blk<T: Transport>(transport: T) {
         assert_eq!(input, output);
     }
     info!("virtio-blk test finished");
-}
-
-fn virtio_net<T: Transport>(transport: T) {
-    let mut net =
-        VirtIONetRaw::<HalImpl, T, 16>::new(transport).expect("failed to create net driver");
-    let mut buf = [0u8; 2048];
-    let (hdr_len, pkt_len) = net.receive_wait(&mut buf).expect("failed to recv");
-    info!(
-        "recv {} bytes: {:02x?}",
-        pkt_len,
-        &buf[hdr_len..hdr_len + pkt_len]
-    );
-    net.send(&buf[..hdr_len + pkt_len]).expect("failed to send");
-    info!("virtio-net test finished");
 }
 
 fn virtio_console<T: Transport>(transport: T) {
