@@ -7,7 +7,5 @@ pub mod console;
 pub mod input;
 
 pub mod socket;
-#[cfg(feature = "alloc")]
-pub mod sound;
 
 pub(crate) mod common;
