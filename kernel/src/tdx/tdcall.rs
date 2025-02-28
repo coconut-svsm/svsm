@@ -25,6 +25,8 @@ const TDG_VM_RD: u32 = 7;
 const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+const TDVMCALL_RDMSR: u32 = 31;
+const TDVMCALL_WRMSR: u32 = 32;
 const TDVMCALL_MAP_GPA: u32 = 0x10001;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
@@ -396,6 +398,57 @@ pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
         ecx: result_ecx,
         edx: result_edx,
     }
+}
+
+pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut result: u64;
+
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_RDMSR,
+             in("r12") msr as u64,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") result,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
+
+    result
+}
+
+pub fn tdvmcall_wrmsr(msr: u32, value: u64) {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_WRMSR,
+             in("r12") msr as u64,
+             in("r13") value,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
 }
 
 pub fn tdvmcall_halt() {
