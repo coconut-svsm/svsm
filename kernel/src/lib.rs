@@ -39,6 +39,8 @@ pub mod task;
 pub mod tdx;
 pub mod types;
 pub mod utils;
+#[cfg(feature = "virtio-drivers")]
+pub mod virtio;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
