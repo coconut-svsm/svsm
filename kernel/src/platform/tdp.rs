@@ -10,7 +10,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::read_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{apic_register_bit, APIC_MSR_ISR};
+use crate::cpu::x86::apic::{apic_register_bit, MSR_X2APIC_ISR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
@@ -203,7 +203,7 @@ impl SvsmPlatform for TdpPlatform {
         // Examine the APIC ISR to determine whether this interrupt vector is
         // active.  If so, it is assumed to be an external interrupt.
         let (msr, mask) = apic_register_bit(vector);
-        (read_msr(APIC_MSR_ISR + msr) & mask as u64) != 0
+        (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
     }
 
     fn start_cpu(

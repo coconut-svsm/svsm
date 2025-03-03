@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 // Copyright (c) Microsoft Corporation
+// Copyright (c) SUSE LLC
 //
 // Author: Jon Lange <jlange@microsoft.com>
+// Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
@@ -12,7 +14,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{APIC_MSR_EOI, APIC_MSR_ICR};
+use crate::cpu::x86::apic::{MSR_X2APIC_EOI, MSR_X2APIC_ICR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
@@ -180,13 +182,13 @@ impl SvsmPlatform for NativePlatform {
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         // SAFETY: writing to ICR MSR doesn't break memory safety.
-        unsafe { write_msr(APIC_MSR_ICR, icr) };
+        unsafe { write_msr(MSR_X2APIC_ICR, icr) };
         Ok(())
     }
 
     fn eoi(&self) {
         // SAFETY: writing to EOI MSR doesn't break memory safety.
-        unsafe { write_msr(APIC_MSR_EOI, 0) };
+        unsafe { write_msr(MSR_X2APIC_EOI, 0) };
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {
