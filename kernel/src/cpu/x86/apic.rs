@@ -46,3 +46,9 @@ pub fn x2apic_enable() {
         }
     }
 }
+
+/// Send an End-of-Interrupt notification to the X2APIC.
+pub fn x2apic_eoi() {
+    // SAFETY: writing to EOI MSR doesn't break memory safety.
+    unsafe { write_msr(MSR_X2APIC_EOI, 0) };
+}

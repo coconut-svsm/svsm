@@ -14,7 +14,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_enable, MSR_X2APIC_EOI, MSR_X2APIC_ICR};
+use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, MSR_X2APIC_ICR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
@@ -171,8 +171,7 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn eoi(&self) {
-        // SAFETY: writing to EOI MSR doesn't break memory safety.
-        unsafe { write_msr(MSR_X2APIC_EOI, 0) };
+        x2apic_eoi();
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {
