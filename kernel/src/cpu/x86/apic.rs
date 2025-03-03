@@ -13,8 +13,13 @@ pub const MSR_X2APIC_ISR: u32 = 0x810;
 /// Interrupt-Control-Register register MSR offset
 pub const MSR_X2APIC_ICR: u32 = 0x830;
 
-// Returns the MSR offset and bitmask to identify a specific vector in an
-// APIC register (IRR, ISR, or TMR).
+/// Get the MSR offset relative to a bitmap base MSR and the mask for the MSR
+/// value to check for a specific vector bit being set in IRR, ISR, or TMR.
+///
+/// # Returns
+///
+/// A `(u32, u32)` tuple with the MSR offset as the first and the vector
+/// bitmask as the second value.
 pub fn apic_register_bit(vector: usize) -> (u32, u32) {
     let index: u8 = vector as u8;
     ((index >> 5) as u32, 1 << (index & 0x1F))
