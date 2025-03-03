@@ -53,6 +53,23 @@ pub fn x2apic_eoi() {
     unsafe { write_msr(MSR_X2APIC_EOI, 0) };
 }
 
+/// Check whether a give IRQ vector is currently being serviced by returning
+/// the value of its ISR bit from X2APIC.
+///
+/// # Arguments
+///
+/// - `vector` - The IRQ vector for which to check the ISR bit.
+///
+/// # Returns
+///
+/// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
+pub fn x2apic_in_service(vector: usize) -> bool {
+    // Examine the APIC ISR to determine whether this interrupt vector is
+    // active.  If so, it is assumed to be an external interrupt.
+    let (msr, mask) = apic_register_bit(vector);
+    (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
+}
+
 /// Write a command to the Interrupt Command Register.
 ///
 /// # Arguments
