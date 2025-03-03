@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 //
 // Copyright (c) Microsoft Corporation
+// Copyright (c) SUSE LLC
 //
 // Author: Jon Lange <jlange@microsoft.com>
+// Author: Joerg Roedel <jroedel@suse.de>
 
-pub const APIC_MSR_EOI: u32 = 0x80B;
-pub const APIC_MSR_ISR: u32 = 0x810;
-pub const APIC_MSR_ICR: u32 = 0x830;
+/// End-of-Interrupt register MSR offset
+pub const MSR_X2APIC_EOI: u32 = 0x80B;
+/// Interrupt-Service-Register base MSR offset
+pub const MSR_X2APIC_ISR: u32 = 0x810;
+/// Interrupt-Control-Register register MSR offset
+pub const MSR_X2APIC_ICR: u32 = 0x830;
 
 // Returns the MSR offset and bitmask to identify a specific vector in an
 // APIC register (IRR, ISR, or TMR).
