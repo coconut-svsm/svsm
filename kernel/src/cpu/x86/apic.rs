@@ -10,6 +10,8 @@ use crate::cpu::msr::{read_msr, write_msr};
 
 /// End-of-Interrupt register MSR offset
 pub const MSR_X2APIC_EOI: u32 = 0x80B;
+/// Spurious-Interrupt-Register MSR offset
+pub const MSR_X2APIC_SPIV: u32 = 0x80F;
 /// Interrupt-Service-Register base MSR offset
 pub const MSR_X2APIC_ISR: u32 = 0x810;
 /// Interrupt-Control-Register register MSR offset
@@ -18,6 +20,10 @@ pub const MSR_X2APIC_ICR: u32 = 0x830;
 const MSR_APIC_BASE: u32 = 0x1B;
 const APIC_ENABLE_MASK: u64 = 0x800;
 const APIC_X2_ENABLE_MASK: u64 = 0x400;
+
+// SPIV bits
+const APIC_SPIV_VECTOR_MASK: u64 = (1u64 << 8) - 1;
+const APIC_SPIV_SW_ENABLE_MASK: u64 = 1 << 8;
 
 /// Get the MSR offset relative to a bitmap base MSR and the mask for the MSR
 /// value to check for a specific vector bit being set in IRR, ISR, or TMR.
@@ -45,6 +51,8 @@ pub fn x2apic_enable() {
             write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
         }
     }
+    // Set SW-enable in SPIV to enable IRQ delivery
+    x2apic_sw_enable();
 }
 
 /// Send an End-of-Interrupt notification to the X2APIC.
@@ -78,4 +86,22 @@ pub fn x2apic_in_service(vector: usize) -> bool {
 pub fn x2apic_icr_write(icr: u64) {
     // SAFETY: writing to ICR MSR doesn't break memory safety.
     unsafe { write_msr(MSR_X2APIC_ICR, icr) };
+}
+
+/// Set Spurious-Interrupt-Vector Register
+///
+/// # Arguments
+///
+/// - `vector` - The IRQ vector to deliver spurious interrupts to.
+/// - `enable` - Value of the APIC-Software-Enable bit.
+pub fn x2apic_spiv_write(vector: u8, enable: bool) {
+    let apic_spiv: u64 = if enable { APIC_SPIV_SW_ENABLE_MASK } else { 0 }
+        | ((vector as u64) & APIC_SPIV_VECTOR_MASK);
+    // SAFETY: Setting bits in SIPV does not break memory safety.
+    unsafe { write_msr(MSR_X2APIC_SPIV, apic_spiv) };
+}
+
+/// Enable the APIC-Software-Enable bit.
+pub fn x2apic_sw_enable() {
+    x2apic_spiv_write(0xff, true);
 }
