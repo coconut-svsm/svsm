@@ -52,3 +52,13 @@ pub fn x2apic_eoi() {
     // SAFETY: writing to EOI MSR doesn't break memory safety.
     unsafe { write_msr(MSR_X2APIC_EOI, 0) };
 }
+
+/// Write a command to the Interrupt Command Register.
+///
+/// # Arguments
+///
+/// - `icr` - The 64-bit value describing the interrupt command.
+pub fn x2apic_icr_write(icr: u64) {
+    // SAFETY: writing to ICR MSR doesn't break memory safety.
+    unsafe { write_msr(MSR_X2APIC_ICR, icr) };
+}
