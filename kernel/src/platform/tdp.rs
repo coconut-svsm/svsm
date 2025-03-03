@@ -10,7 +10,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::read_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{apic_register_bit, MSR_X2APIC_ISR};
+use crate::cpu::x86::apic::{apic_register_bit, x2apic_eoi, MSR_X2APIC_ISR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
@@ -197,7 +197,9 @@ impl SvsmPlatform for TdpPlatform {
         Err(TdxError::Unimplemented.into())
     }
 
-    fn eoi(&self) {}
+    fn eoi(&self) {
+        x2apic_eoi();
+    }
 
     fn is_external_interrupt(&self, vector: usize) -> bool {
         // Examine the APIC ISR to determine whether this interrupt vector is
