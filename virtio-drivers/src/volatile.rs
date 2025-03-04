@@ -96,7 +96,9 @@ impl<T: IntoBytes + FromBytes + Immutable> VolatileWritable<T> for *mut Volatile
 /// ```
 macro_rules! volread {
     ($hal:ty, $nonnull:expr, $field:ident) => {
-        $crate::volatile::VolatileReadable::vread_hal::<$hal>(core::ptr::addr_of!((*$nonnull.as_ptr()).$field))
+        $crate::volatile::VolatileReadable::vread_hal::<$hal>(core::ptr::addr_of!(
+            (*$nonnull.as_ptr()).$field
+        ))
     };
     ($nonnull:expr, $field:ident) => {
         $crate::volatile::VolatileReadable::vread(core::ptr::addr_of!((*$nonnull.as_ptr()).$field))

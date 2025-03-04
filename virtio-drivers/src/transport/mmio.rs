@@ -297,7 +297,11 @@ impl<H: Hal> MmioTransport<H> {
             return Err(MmioError::ZeroDeviceId);
         }
         let version = volread!(H, header, version).try_into()?;
-        Ok(Self { header, version, _phantom: PhantomData})
+        Ok(Self {
+            header,
+            version,
+            _phantom: PhantomData,
+        })
     }
 
     /// Gets the version of the VirtIO MMIO transport.
@@ -343,7 +347,12 @@ impl<H: Hal> Transport for MmioTransport<H> {
             volwrite!(H, self.header, driver_features_sel, 0); // driver features [0, 32)
             volwrite!(H, self.header, driver_features, driver_features as u32);
             volwrite!(H, self.header, driver_features_sel, 1); // driver features [32, 64)
-            volwrite!(H, self.header, driver_features, (driver_features >> 32) as u32);
+            volwrite!(
+                H,
+                self.header,
+                driver_features,
+                (driver_features >> 32) as u32
+            );
         }
     }
 
@@ -435,9 +444,19 @@ impl<H: Hal> Transport for MmioTransport<H> {
                     volwrite!(H, self.header, queue_desc_low, descriptors as u32);
                     volwrite!(H, self.header, queue_desc_high, (descriptors >> 32) as u32);
                     volwrite!(H, self.header, queue_driver_low, driver_area as u32);
-                    volwrite!(H, self.header, queue_driver_high, (driver_area >> 32) as u32);
+                    volwrite!(
+                        H,
+                        self.header,
+                        queue_driver_high,
+                        (driver_area >> 32) as u32
+                    );
                     volwrite!(H, self.header, queue_device_low, device_area as u32);
-                    volwrite!(H, self.header, queue_device_high, (device_area >> 32) as u32);
+                    volwrite!(
+                        H,
+                        self.header,
+                        queue_device_high,
+                        (device_area >> 32) as u32
+                    );
                     volwrite!(H, self.header, queue_ready, 1);
                 }
             }

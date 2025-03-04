@@ -33,7 +33,10 @@ const SUPPORTED_FEATURES: BlkFeature = BlkFeature::RO
 /// # fn example<HalImpl: Hal, T: Transport>(transport: T) -> Result<(), Error> {
 /// let mut disk = VirtIOBlk::<HalImpl, _>::new(transport)?;
 ///
-/// println!("VirtIO block device: {} kB", disk.capacity() * SECTOR_SIZE as u64 / 2);
+/// println!(
+///     "VirtIO block device: {} kB",
+///     disk.capacity() * SECTOR_SIZE as u64 / 2
+/// );
 ///
 /// // Read sector 0 and then copy it to sector 1.
 /// let mut buf = [0; SECTOR_SIZE];
@@ -59,7 +62,8 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
         info!("config: {:?}", config);
         // Safe because config is a valid pointer to the device configuration space.
         let capacity = unsafe {
-            volread!(H, config, capacity_low) as u64 | (volread!(H, config, capacity_high) as u64) << 32
+            volread!(H, config, capacity_low) as u64
+                | (volread!(H, config, capacity_high) as u64) << 32
         };
         info!("found a block device of size {}KB", capacity / 2);
 
@@ -229,12 +233,12 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
     /// assert_eq!(blk.peek_used(), Some(token));
     ///
     /// unsafe {
-    ///   blk.complete_read_blocks(token, &request, &mut buffer, &mut response)?;
+    ///     blk.complete_read_blocks(token, &request, &mut buffer, &mut response)?;
     /// }
     /// if response.status() == RespStatus::OK {
-    ///   println!("Successfully read block.");
+    ///     println!("Successfully read block.");
     /// } else {
-    ///   println!("Error {:?} reading block.", response.status());
+    ///     println!("Error {:?} reading block.", response.status());
     /// }
     /// # Ok(())
     /// # }

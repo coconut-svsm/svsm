@@ -6,9 +6,9 @@ pub mod mmio;
 
 use crate::{PhysAddr, Result, PAGE_SIZE};
 use bitflags::{bitflags, Flags};
-use zerocopy::{FromBytes, Immutable, IntoBytes};
 use core::{fmt::Debug, ops::BitAnd, ptr::NonNull};
 use log::debug;
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 /// A VirtIO transport layer.
 pub trait Transport {

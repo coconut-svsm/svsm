@@ -152,7 +152,7 @@ pub unsafe trait Hal {
     /// `src` must be properly alinged and reside at a readable memory address.
     unsafe fn mmio_read<T>(src: &T) -> T
     where
-        T: FromBytes + Immutable
+        T: FromBytes + Immutable,
     {
         unsafe { (src as *const T).read_volatile() }
     }
@@ -167,7 +167,7 @@ pub unsafe trait Hal {
     /// `dst` must be properly alinged and reside at a writable memory address.
     unsafe fn mmio_write<T>(dst: &mut T, value: T)
     where
-        T: IntoBytes + Immutable
+        T: IntoBytes + Immutable,
     {
         unsafe {
             (dst as *mut T).write_volatile(value);
