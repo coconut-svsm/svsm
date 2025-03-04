@@ -811,7 +811,7 @@ impl<'a, 'b> InputOutputIter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Iterator for InputOutputIter<'a, 'b> {
+impl Iterator for InputOutputIter<'_, '_> {
     type Item = (NonNull<[u8]>, BufferDirection);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -1211,7 +1211,7 @@ mod tests {
         unsafe { queue.add(&[&[42]], &mut []) }.unwrap();
 
         // Check that the transport would be notified.
-        assert_eq!(queue.should_notify(), true);
+        assert!(queue.should_notify());
 
         // SAFETY: the various parts of the queue are properly aligned, dereferenceable and
         // initialised, and nothing else is accessing them at the same time.
@@ -1221,7 +1221,7 @@ mod tests {
         }
 
         // Check that the transport would not be notified.
-        assert_eq!(queue.should_notify(), false);
+        assert!(!queue.should_notify());
     }
 
     /// Tests that the queue notifies the device about added buffers, if it hasn't suppressed
@@ -1246,7 +1246,7 @@ mod tests {
         assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 0);
 
         // Check that the transport would be notified.
-        assert_eq!(queue.should_notify(), true);
+        assert!(queue.should_notify());
 
         // SAFETY: the various parts of the queue are properly aligned, dereferenceable and
         // initialised, and nothing else is accessing them at the same time.
@@ -1258,12 +1258,12 @@ mod tests {
         }
 
         // Check that the transport would not be notified.
-        assert_eq!(queue.should_notify(), false);
+        assert!(!queue.should_notify());
 
         // Add another buffer chain.
         assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 1);
 
         // Check that the transport should be notified again now.
-        assert_eq!(queue.should_notify(), true);
+        assert!(queue.should_notify());
     }
 }

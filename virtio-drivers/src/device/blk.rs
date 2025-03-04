@@ -598,7 +598,7 @@ mod tests {
         let blk = VirtIOBlk::<FakeHal, FakeTransport<BlkConfig>>::new(transport).unwrap();
 
         assert_eq!(blk.capacity(), 0x02_0000_0042);
-        assert_eq!(blk.readonly(), true);
+        assert!(blk.readonly());
     }
 
     #[test]
@@ -738,7 +738,7 @@ mod tests {
         // Write a block to the device.
         let mut buffer = [0; 512];
         buffer[0..9].copy_from_slice(b"Test data");
-        blk.write_blocks(42, &mut buffer).unwrap();
+        blk.write_blocks(42, &buffer).unwrap();
 
         // Request to flush should be ignored as the device doesn't support it.
         blk.flush().unwrap();
