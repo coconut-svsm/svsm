@@ -60,7 +60,7 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
         // Read configuration space.
         let config = transport.config_space::<BlkConfig>()?;
         info!("config: {:?}", config);
-        // Safe because config is a valid pointer to the device configuration space.
+        // SAFETY: Safe because config is a valid pointer to the device configuration space.
         let capacity = unsafe {
             volread!(H, config, capacity_low) as u64
                 | (volread!(H, config, capacity_high) as u64) << 32

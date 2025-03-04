@@ -311,7 +311,7 @@ impl<H: Hal> MmioTransport<H> {
 
     /// Gets the vendor ID.
     pub fn vendor_id(&self) -> u32 {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe { volread!(H, self.header, vendor_id) }
     }
 }
@@ -325,13 +325,13 @@ unsafe impl<H: Hal> Sync for MmioTransport<H> {}
 
 impl<H: Hal> Transport for MmioTransport<H> {
     fn device_type(&self) -> DeviceType {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         let device_id = unsafe { volread!(H, self.header, device_id) };
         device_id.into()
     }
 
     fn read_device_features(&mut self) -> u64 {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, device_features_sel, 0); // device features [0, 32)
             let mut device_features_bits = volread!(H, self.header, device_features).into();
@@ -342,7 +342,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     }
 
     fn write_driver_features(&mut self, driver_features: u64) {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, driver_features_sel, 0); // driver features [0, 32)
             volwrite!(H, self.header, driver_features, driver_features as u32);
@@ -357,7 +357,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     }
 
     fn max_queue_size(&mut self, queue: u16) -> u32 {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, queue_sel, queue.into());
             volread!(H, self.header, queue_num_max)
@@ -365,19 +365,19 @@ impl<H: Hal> Transport for MmioTransport<H> {
     }
 
     fn notify(&mut self, queue: u16) {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, queue_notify, queue.into());
         }
     }
 
     fn get_status(&self) -> DeviceStatus {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe { volread!(H, self.header, status) }
     }
 
     fn set_status(&mut self, status: DeviceStatus) {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, status, status);
         }
@@ -386,7 +386,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     fn set_guest_page_size(&mut self, guest_page_size: u32) {
         match self.version {
             MmioVersion::Legacy => {
-                // Safe because self.header points to a valid VirtIO MMIO region.
+                // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
                 unsafe {
                     volwrite!(H, self.header, legacy_guest_page_size, guest_page_size);
                 }
@@ -428,7 +428,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
                 let align = PAGE_SIZE as u32;
                 let pfn = (descriptors / PAGE_SIZE) as u32;
                 assert_eq!(pfn as usize * PAGE_SIZE, descriptors);
-                // Safe because self.header points to a valid VirtIO MMIO region.
+                // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
                 unsafe {
                     volwrite!(H, self.header, queue_sel, queue.into());
                     volwrite!(H, self.header, queue_num, size);
@@ -437,7 +437,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
                 }
             }
             MmioVersion::Modern => {
-                // Safe because self.header points to a valid VirtIO MMIO region.
+                // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
                 unsafe {
                     volwrite!(H, self.header, queue_sel, queue.into());
                     volwrite!(H, self.header, queue_num, size);
@@ -466,7 +466,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     fn queue_unset(&mut self, queue: u16) {
         match self.version {
             MmioVersion::Legacy => {
-                // Safe because self.header points to a valid VirtIO MMIO region.
+                // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
                 unsafe {
                     volwrite!(H, self.header, queue_sel, queue.into());
                     volwrite!(H, self.header, queue_num, 0);
@@ -475,7 +475,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
                 }
             }
             MmioVersion::Modern => {
-                // Safe because self.header points to a valid VirtIO MMIO region.
+                // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
                 unsafe {
                     volwrite!(H, self.header, queue_sel, queue.into());
 
@@ -496,7 +496,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     }
 
     fn queue_used(&mut self, queue: u16) -> bool {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             volwrite!(H, self.header, queue_sel, queue.into());
             match self.version {
@@ -507,7 +507,7 @@ impl<H: Hal> Transport for MmioTransport<H> {
     }
 
     fn ack_interrupt(&mut self) -> bool {
-        // Safe because self.header points to a valid VirtIO MMIO region.
+        // SAFETY: Safe because self.header points to a valid VirtIO MMIO region.
         unsafe {
             let interrupt = volread!(H, self.header, interrupt_status);
             if interrupt != 0 {

@@ -64,7 +64,7 @@ impl<H: Hal> Dma<H> {
 
 impl<H: Hal> Drop for Dma<H> {
     fn drop(&mut self) {
-        // Safe because the memory was previously allocated by `dma_alloc` in `Dma::new`, not yet
+        // SAFETY: Safe because the memory was previously allocated by `dma_alloc` in `Dma::new`, not yet
         // deallocated, and we are passing the values from then.
         let err = unsafe { H::dma_dealloc(self.paddr, self.vaddr, self.pages) };
         assert_eq!(err, 0, "failed to deallocate DMA");
@@ -154,6 +154,7 @@ pub unsafe trait Hal {
     where
         T: FromBytes + Immutable,
     {
+        // SAFETY: `src` is assumed to be properly aligned and within readale memory
         unsafe { (src as *const T).read_volatile() }
     }
 
@@ -169,6 +170,7 @@ pub unsafe trait Hal {
     where
         T: IntoBytes + Immutable,
     {
+        // SAFETY: dst is assumed to be properly alinged and within writeble memory
         unsafe {
             (dst as *mut T).write_volatile(value);
         }
