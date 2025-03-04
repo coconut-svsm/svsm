@@ -6,7 +6,7 @@
 
 use super::features::cpu_has_pge;
 use crate::address::{Address, PhysAddr};
-use crate::cpu::features::{cpu_has_smap, cpu_has_smep};
+use crate::cpu::features::{cpu_has_smap, cpu_has_smep, cpu_has_umip};
 use crate::platform::SvsmPlatform;
 use bitflags::bitflags;
 use core::arch::asm;
@@ -46,6 +46,10 @@ pub fn cr4_init(platform: &dyn SvsmPlatform) {
     if !cfg!(feature = "nosmap") {
         assert!(cpu_has_smap(platform), "CPU does not support SMAP");
         cr4.insert(CR4Flags::SMAP);
+    }
+
+    if cpu_has_umip(platform) {
+        cr4.insert(CR4Flags::UMIP);
     }
 
     // SAFETY: we are not changing any execution-state relevant flags
