@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::cpu::ipi::wait_for_ipi_block;
-use crate::cpu::percpu::{process_requests, this_cpu, wait_for_requests, PERCPU_AREAS};
+use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
@@ -154,6 +154,8 @@ fn check_requests() -> Result<bool, SvsmReqError> {
 }
 
 pub extern "C" fn request_loop_main(cpu_index: usize) {
+    log::info!("Launching request-processing task on CPU {}", cpu_index);
+
     if cpu_index != 0 {
         // Send this task to the correct CPU.
         set_affinity(cpu_index);
@@ -173,13 +175,6 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
     // Suppress the use of IPIs before entering the guest, and ensure that all
     // other CPUs have done the same.
     wait_for_ipi_block();
-
-    // Start the request processing task for this CPU.
-    let processing_name = format!("request-processing on CPU {}", cpu_index);
-    start_kernel_task(request_processing_main, cpu_index, processing_name)
-        .expect("Failed to launch request processing task");
-
-    log::info!("Launching request loop task on CPU {}", cpu_index);
 
     loop {
         // Determine whether the guest is runnable.  If not, halt and wait for
@@ -244,7 +239,7 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
         match check_requests() {
             Ok(pending) => {
                 if pending {
-                    process_requests();
+                    process_request();
                 }
             }
             Err(SvsmReqError::RequestError(code)) => {
@@ -267,69 +262,59 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
     }
 }
 
-pub extern "C" fn request_processing_main(cpu_index: usize) {
-    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
-    log::info!("Launching request-processing task on CPU {}", cpu_index);
+fn process_request() {
+    // Obtain a reference to the VMSA just long enough to extract the
+    // request parameters.
+    let mut rax: u64;
+    let mut request_info = {
+        let cpu = this_cpu();
+        let mut vmsa_ref = cpu.guest_vmsa_ref();
+        let vmsa = vmsa_ref.vmsa();
 
-    loop {
-        wait_for_requests();
+        // Clear EFER.SVME in guest VMSA
+        vmsa.disable();
 
-        // Obtain a reference to the VMSA just long enough to extract the
-        // request parameters.
-        let mut rax: u64;
-        let mut request_info = {
-            let cpu = this_cpu();
-            let mut vmsa_ref = cpu.guest_vmsa_ref();
-            let vmsa = vmsa_ref.vmsa();
-
-            // Clear EFER.SVME in guest VMSA
-            vmsa.disable();
-
-            rax = vmsa.rax;
-            RequestInfo {
-                protocol: (rax >> 32) as u32,
-                request: (rax & 0xffff_ffff) as u32,
-                params: RequestParams::from_vmsa(vmsa),
-            }
-        };
-
-        rax = match request_loop_once(
-            &mut request_info.params,
-            request_info.protocol,
-            request_info.request,
-        ) {
-            Ok(success) => match success {
-                true => SvsmResultCode::SUCCESS.into(),
-                false => rax,
-            },
-            Err(SvsmReqError::RequestError(code)) => {
-                log::debug!(
-                    "Soft error handling protocol {} request {}: {:?}",
-                    request_info.protocol,
-                    request_info.request,
-                    code
-                );
-                code.into()
-            }
-            Err(SvsmReqError::FatalError(err)) => {
-                log::error!(
-                    "Fatal error handling core protocol request {}: {:?}",
-                    request_info.request,
-                    err
-                );
-                break;
-            }
-        };
-
-        // Write back results
-        {
-            let cpu = this_cpu();
-            let mut vmsa_ref = cpu.guest_vmsa_ref();
-            let vmsa = vmsa_ref.vmsa();
-            vmsa.rax = rax;
-            request_info.params.write_back(vmsa);
+        rax = vmsa.rax;
+        RequestInfo {
+            protocol: (rax >> 32) as u32,
+            request: (rax & 0xffff_ffff) as u32,
+            params: RequestParams::from_vmsa(vmsa),
         }
-    }
+    };
 
-    panic!("Request processing task died unexpectedly");
+    rax = match request_loop_once(
+        &mut request_info.params,
+        request_info.protocol,
+        request_info.request,
+    ) {
+        Ok(success) => match success {
+            true => SvsmResultCode::SUCCESS.into(),
+            false => rax,
+        },
+        Err(SvsmReqError::RequestError(code)) => {
+            log::debug!(
+                "Soft error handling protocol {} request {}: {:?}",
+                request_info.protocol,
+                request_info.request,
+                code
+            );
+            code.into()
+        }
+        Err(SvsmReqError::FatalError(err)) => {
+            panic!(
+                "Fatal error handling core protocol request {}: {:?}",
+                request_info.request,
+                err
+            );
+        }
+    };
+
+    // Write back results
+    {
+        let cpu = this_cpu();
+        let mut vmsa_ref = cpu.guest_vmsa_ref();
+        let vmsa = vmsa_ref.vmsa();
+        vmsa.rax = rax;
+        request_info.params.write_back(vmsa);
+    }
 }
