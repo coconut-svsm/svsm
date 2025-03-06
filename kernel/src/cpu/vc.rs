@@ -577,7 +577,9 @@ mod tests {
     fn test_wrmsr_tsc_aux() {
         if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             let test_val = 0x1234;
-            verify_ghcb_gets_altered(|| write_msr(MSR_TSC_AUX, test_val));
+            verify_ghcb_gets_altered(||
+                // SAFETY: writing to TSC_AUX MSR doesn't break memory safety.
+                unsafe { write_msr(MSR_TSC_AUX, test_val) });
             let readback = verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX));
             assert_eq!(test_val, readback);
         }
