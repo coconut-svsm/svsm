@@ -16,7 +16,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
+use crate::cpu::x86::x2apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
