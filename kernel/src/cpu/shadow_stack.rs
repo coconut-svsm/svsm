@@ -19,11 +19,6 @@ pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
 
 // Try to enable the CET feature in CR4 and set `IS_CET_SUPPORTED` if successful.
 pub fn determine_cet_support() {
-    // Don't try to determine support if the shadow-stacks feature is not enabled.
-    if !cfg!(feature = "shadow-stacks") {
-        return;
-    }
-
     let rcx: u64;
     // SAFETY: Inline assembly to enable CET bit in CR4, which does not change
     // any state related to memory safety.
@@ -52,7 +47,7 @@ pub fn determine_cet_support() {
 pub fn is_cet_ss_supported() -> bool {
     // In theory CPUs can have support for CET, but not CET_SS, but in practice
     // no such CPUs exist. Treat CET being supported as CET_SS being supported.
-    cfg!(feature = "shadow-stacks") && IS_CET_SUPPORTED.load(Ordering::Relaxed)
+    IS_CET_SUPPORTED.load(Ordering::Relaxed)
 }
 
 /// Enable shadow stacks.
