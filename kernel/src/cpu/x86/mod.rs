@@ -9,3 +9,4 @@ pub mod smap;
 pub mod x2apic;
 
 pub use apic::{ApicAccess, RawX86Apic, X86Apic};
+pub use x2apic::X2Apic;
