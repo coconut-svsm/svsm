@@ -377,7 +377,7 @@ pub struct PerCpu {
     /// WaitQueue for request processing
     request_waitqueue: RefCell<WaitQueue>,
     /// Local APIC state for APIC emulation if enabled
-    apic: RefCell<Option<LocalApic>>,
+    guest_apic: RefCell<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
     ghcb: OnceCell<GhcbPage>,
@@ -416,7 +416,7 @@ impl PerCpu {
             vrange_2m: RefCell::new(VirtualRange::new()),
             runqueue: RWLockIrqSafe::new(RunQueue::new()),
             request_waitqueue: RefCell::new(WaitQueue::new()),
-            apic: RefCell::new(None),
+            guest_apic: RefCell::new(None),
 
             shared: PerCpuShared::new(apic_id, cpu_index),
             shared_global: OnceCell::new(),
@@ -1025,7 +1025,7 @@ impl PerCpu {
         // Enable alternate injection if the hypervisor supports it.
         let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
         if use_alternate_injection {
-            self.apic.replace(Some(LocalApic::new()));
+            self.guest_apic.replace(Some(LocalApic::new()));
 
             // Configure the interrupt injection vector.
             let ghcb = self.ghcb().unwrap();
@@ -1045,15 +1045,15 @@ impl PerCpu {
 
     /// Returns a shared reference to the local APIC, or `None` if APIC
     /// emulation is not enabled.
-    fn apic(&self) -> Option<Ref<'_, LocalApic>> {
-        let apic = self.apic.borrow();
+    fn guest_apic(&self) -> Option<Ref<'_, LocalApic>> {
+        let apic = self.guest_apic.borrow();
         Ref::filter_map(apic, Option::as_ref).ok()
     }
 
     /// Returns a mutable reference to the local APIC, or `None` if APIC
     /// emulation is not enabled.
-    fn apic_mut(&self) -> Option<RefMut<'_, LocalApic>> {
-        let apic = self.apic.borrow_mut();
+    fn guest_apic_mut(&self) -> Option<RefMut<'_, LocalApic>> {
+        let apic = self.guest_apic.borrow_mut();
         RefMut::filter_map(apic, Option::as_mut).ok()
     }
 
@@ -1072,7 +1072,7 @@ impl PerCpu {
     }
 
     pub fn disable_apic_emulation(&self) {
-        if let Some(mut apic) = self.apic_mut() {
+        if let Some(mut apic) = self.guest_apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa_addr = vmsa_ref.caa_addr();
             let vmsa = vmsa_ref.vmsa();
@@ -1081,7 +1081,7 @@ impl PerCpu {
     }
 
     pub fn clear_pending_interrupts(&self) {
-        if let Some(mut apic) = self.apic_mut() {
+        if let Some(mut apic) = self.guest_apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
             let caa_addr = vmsa_ref.caa_addr();
             let vmsa = vmsa_ref.vmsa();
@@ -1090,20 +1090,20 @@ impl PerCpu {
     }
 
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa_addr: Option<VirtAddr>) {
-        if let Some(mut apic) = self.apic_mut() {
+        if let Some(mut apic) = self.guest_apic_mut() {
             apic.present_interrupts(self.shared(), vmsa, caa_addr);
         }
     }
 
     pub fn use_apic_emulation(&self) -> bool {
-        self.apic().is_some()
+        self.guest_apic().is_some()
     }
 
     pub fn read_apic_register(&self, register: u64) -> Result<u64, SvsmError> {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        self.apic_mut()
+        self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
             .read_register(self.shared(), vmsa, caa_addr, register)
     }
@@ -1112,13 +1112,13 @@ impl PerCpu {
         let mut vmsa_ref = self.guest_vmsa_ref();
         let caa_addr = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
-        self.apic_mut()
+        self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
             .write_register(vmsa, caa_addr, register, value)
     }
 
     pub fn configure_apic_vector(&self, vector: u8, allowed: bool) -> Result<(), SvsmError> {
-        self.apic_mut()
+        self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
             .configure_vector(vector, allowed);
         Ok(())
