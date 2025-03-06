@@ -16,7 +16,6 @@ use bootlib::kernel_launch::{
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::panic::PanicInfo;
-use core::ptr::addr_of_mut;
 use core::slice;
 use core::sync::atomic::{AtomicU32, Ordering};
 use cpuarch::snp_cpuid::SnpCpuidTable;
@@ -25,6 +24,7 @@ use svsm::address::{Address, PhysAddr, VirtAddr};
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
+use svsm::cpu::flush_tlb_percpu;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu, PerCpu};
@@ -61,9 +61,11 @@ fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     let bsp_percpu = PerCpu::alloc(0)?;
-    // SAFETY: pgtable is a static mut and this is the only place where we
-    // get a reference to it.
-    let init_pgtable = unsafe { &mut *addr_of_mut!(pgtable) };
+    // SAFETY: pgtable is properly aligned and is never freed within the
+    // lifetime of stage2. We go through a raw pointer to promote it to a
+    // static mut. Only the BSP is able to get a reference to it so no
+    // aliasing can occur.
+    let init_pgtable = unsafe { (&raw mut pgtable).as_mut().unwrap() };
     bsp_percpu.set_pgtable(init_pgtable);
     bsp_percpu.map_self_stage2()?;
     platform.setup_guest_host_comm(bsp_percpu, true);
@@ -78,10 +80,18 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
 /// The caller must ensure that the `PerCpu` is never used again.
 unsafe fn shutdown_percpu() {
     let ptr = SVSM_PERCPU_BASE.as_mut_ptr::<PerCpu>();
-    // SAFETY: demanded to the caller
+    // SAFETY: ptr is properly aligned but the caller must ensure the PerCpu
+    // structure is valid and not aliased.
     unsafe {
         core::ptr::drop_in_place(ptr);
     }
+    // SAFETY: pgtable is properly aligned and is never freed within the
+    // lifetime of stage2. We go through a raw pointer to promote it to a
+    // static mut. Only the BSP is able to get a reference to it so no
+    // aliasing can occur.
+    let init_pgtable = unsafe { (&raw mut pgtable).as_mut().unwrap() };
+    init_pgtable.unmap_4k(SVSM_PERCPU_BASE);
+    flush_tlb_percpu();
 }
 
 fn setup_env(
