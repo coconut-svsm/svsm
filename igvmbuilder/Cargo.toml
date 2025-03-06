@@ -11,7 +11,7 @@ bootlib.workspace = true
 clap = { workspace = true, default-features = true, features = ["derive"] }
 igvm_defs.workspace = true
 igvm.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, default-features = true }
 zerocopy.workspace = true
 zerocopy07 = { package = "zerocopy", version = "0.7" }
 
