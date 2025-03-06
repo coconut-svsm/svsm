@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["APIC_MSR_EOI","APIC_MSR_ICR","APIC_MSR_ISR"],"fn":["apic_register_bit"]};
