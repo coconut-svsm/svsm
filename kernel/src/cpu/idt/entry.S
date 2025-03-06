@@ -398,7 +398,8 @@ default_entry_no_ist	name=mce	handler=panic			error_code=0	vector=18
 // #XF SIMD Floating-Point Exception (Vector 19)
 default_entry_no_ist	name=xf		handler=panic			error_code=0	vector=19
 
-// Vector 20 not defined
+// #VE Virtualization Exception (Vector 20)
+default_entry_no_ist	name=ve		handler=ve			error_code=0	vector=20
 
 // #CP Control-Protection Exception (Vector 21)
 .if CFG_SHADOW_STACKS
