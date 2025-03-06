@@ -215,8 +215,10 @@ pub fn user_mode(ctxt: &X86ExceptionContext) -> bool {
     (ctxt.frame.cs & 3) == 3
 }
 
+// The base addresses of the IDT should be aligned on an 8-byte boundary
+// to maximize performance of cache line fills.
 #[derive(Copy, Clone, Default, Debug)]
-#[repr(C, packed)]
+#[repr(C, packed(8))]
 pub struct IdtEntry {
     low: u64,
     high: u64,
@@ -306,7 +308,7 @@ impl IdtEntry {
 
 const IDT_ENTRIES: usize = 256;
 
-#[repr(C, packed)]
+#[repr(C, packed(2))]
 #[derive(Default, Clone, Copy, Debug)]
 struct IdtDesc {
     size: u16,
