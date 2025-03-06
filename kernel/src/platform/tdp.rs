@@ -11,7 +11,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::x2apic::{x2apic_eoi, x2apic_in_service};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
