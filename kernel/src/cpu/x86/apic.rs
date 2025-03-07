@@ -4,6 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::cpu::percpu::this_cpu;
+
 use super::{SnpGhcbApic, X2Apic};
 use core::cell::RefCell;
 use core::marker::PhantomData;
@@ -283,4 +285,9 @@ impl LApic {
         let apic = self.driver.borrow();
         (*apic).irq_in_service(vector)
     }
+}
+
+/// Send an EOI signal via the installed APIC driver.
+pub fn apic_eoi() {
+    this_cpu().apic().eoi();
 }

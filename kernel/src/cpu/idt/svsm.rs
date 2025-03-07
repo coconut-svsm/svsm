@@ -22,7 +22,6 @@ use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::mm::GuestPtr;
-use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use core::arch::global_asm;
@@ -404,7 +403,7 @@ pub fn common_isr_handler(vector: usize) {
     // Perform the EOI cycle after the interrupt processing state has been
     // restored so that recurrent interrupts will not introduce recursion at
     // this point.
-    SVSM_PLATFORM.eoi();
+    this_cpu().apic().eoi();
 }
 
 global_asm!(
