@@ -370,14 +370,43 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn rdmsr_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+    /// Perform an MSR read via a GHCB call
+    ///
+    /// # Arguments
+    ///
+    /// - `msr_index` - MSR to read
+    ///
+    /// # Returns
+    ///
+    /// On a successful call, returns `Result` with a tuple `(u32, u32)`. The
+    /// first value is the `RAX` and the second the `RDX` register. On failure
+    /// a `Result` with `SvsmError` is returned.
+    pub fn rdmsr_raw(&self, msr_index: u32) -> Result<(u32, u32), SvsmError> {
         self.clear();
-
-        self.set_rcx_valid(regs.rcx as u64);
-
+        self.set_rcx_valid(msr_index as u64);
         self.vmgexit(GHCBExitCode::MSR, 0, 0)?;
-        let rdx = self.get_rdx_valid()?;
-        let rax = self.get_rax_valid()?;
+        let eax: u32 = (self.get_rax_valid()? & 0xFFFFFFFF) as u32;
+        let edx: u32 = (self.get_rdx_valid()? & 0xFFFFFFFF) as u32;
+        Ok((eax, edx))
+    }
+
+    /// Perform an MSR read via a GHCB call an return a `u64` value.
+    ///
+    /// # Arguments
+    ///
+    /// - `msr_index` - MSR to read
+    ///
+    /// # Returns
+    ///
+    /// On a successful call, returns `Result` with a `u64` value. On failure
+    /// a `Result` with `SvsmError` is returned.
+    pub fn rdmsr(&self, msr_index: u32) -> Result<u64, SvsmError> {
+        let (rax, rdx) = self.rdmsr_raw(msr_index)?;
+        Ok((rax as u64) | ((rdx as u64) << 32))
+    }
+
+    pub fn rdmsr_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        let (rax, rdx) = self.rdmsr_raw(u32::try_from(regs.rcx).unwrap())?;
         regs.rdx = rdx as usize;
         regs.rax = rax as usize;
         Ok(())
