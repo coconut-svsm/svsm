@@ -9,9 +9,10 @@ use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::x2apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::{X2Apic, X86ApicDriver};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
@@ -90,6 +91,8 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+        let x2apic = X86ApicDriver::new_x2apic(X2Apic::new_skip_msr_enable());
+        this_cpu().apic().set(x2apic);
         Ok(())
     }
 

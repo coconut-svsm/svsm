@@ -23,6 +23,7 @@ use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
+use crate::cpu::x86::LApic;
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
@@ -356,6 +357,10 @@ pub struct PerCpu {
     /// address space.
     shared_global: OnceCell<&'static PerCpuShared>,
 
+    /// Local APIC driver (X2APIC or platform specfic, needs to be initialized
+    /// by platform code).
+    apic: LApic,
+
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
@@ -399,6 +404,7 @@ impl PerCpu {
     fn new(apic_id: u32, cpu_index: usize) -> Self {
         Self {
             pgtbl: RefCell::new(None),
+            apic: LApic::default(),
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
             isst: Cell::new(Isst::default()),
@@ -453,6 +459,16 @@ impl PerCpu {
 
     pub fn shared_global(&self) -> &'static PerCpuShared {
         self.shared_global.get().unwrap()
+    }
+
+    /// Get a reference to the local APIC driver interface
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`LApic`] structure as an interface to the installed
+    /// local APIC driver.
+    pub fn apic(&self) -> &LApic {
+        &self.apic
     }
 
     /// Disables IRQs on the current CPU. Keeps track of the nesting level and

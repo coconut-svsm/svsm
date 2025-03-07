@@ -13,9 +13,10 @@ use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::x2apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
+use crate::cpu::x86::x2apic::{x2apic_eoi, x2apic_icr_write};
+use crate::cpu::x86::{X2Apic, X86ApicDriver};
 use crate::error::SvsmError;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
@@ -86,7 +87,8 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        x2apic_enable();
+        let x2apic = X86ApicDriver::new_x2apic(X2Apic::new());
+        this_cpu().apic().set(x2apic);
         Ok(())
     }
 

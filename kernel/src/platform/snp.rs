@@ -15,6 +15,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
+use crate::cpu::x86::{SnpGhcbApic, X86ApicDriver};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -156,6 +157,9 @@ impl SvsmPlatform for SnpPlatform {
         if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
             cpu.configure_hv_doorbell()?;
         }
+
+        let snp_apic = X86ApicDriver::new_snp_apic(SnpGhcbApic::new());
+        this_cpu().apic().set(snp_apic);
 
         Ok(())
     }
