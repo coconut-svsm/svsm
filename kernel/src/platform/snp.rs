@@ -23,7 +23,6 @@ use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::GHCBIOSize;
-use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
 };
@@ -304,16 +303,6 @@ impl SvsmPlatform for SnpPlatform {
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         current_ghcb().hv_ipi(icr)?;
         Ok(())
-    }
-
-    fn eoi(&self) {
-        // Issue an explicit EOI unless no explicit EOI is required.
-        if !current_hv_doorbell().no_eoi_required() {
-            // 0x80B is the X2APIC EOI MSR.
-            // Errors here cannot be handled but should not be grounds for
-            // panic.
-            let _ = current_ghcb().wrmsr(0x80B, 0);
-        }
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

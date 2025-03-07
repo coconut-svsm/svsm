@@ -13,7 +13,7 @@ use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::x2apic::{x2apic_eoi, x2apic_icr_write};
+use crate::cpu::x86::x2apic::x2apic_icr_write;
 use crate::cpu::x86::{X2Apic, X86ApicDriver};
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -168,10 +168,6 @@ impl SvsmPlatform for NativePlatform {
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
         x2apic_icr_write(icr);
         Ok(())
-    }
-
-    fn eoi(&self) {
-        x2apic_eoi();
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

@@ -199,8 +199,6 @@ impl SvsmPlatform for TdpPlatform {
         Err(TdxError::Unimplemented.into())
     }
 
-    fn eoi(&self) {}
-
     fn is_external_interrupt(&self, vector: usize) -> bool {
         x2apic_in_service(vector)
     }
