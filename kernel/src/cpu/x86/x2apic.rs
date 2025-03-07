@@ -100,8 +100,6 @@ impl X86Apic for X2Apic {
     }
 }
 
-/// End-of-Interrupt register MSR offset
-pub const MSR_X2APIC_EOI: u32 = 0x80B;
 /// Interrupt-Service-Register base MSR offset
 pub const MSR_X2APIC_ISR: u32 = 0x810;
 /// Interrupt-Control-Register register MSR offset
@@ -117,12 +115,6 @@ pub const MSR_X2APIC_ICR: u32 = 0x830;
 fn apic_register_bit(vector: usize) -> (u32, u32) {
     let index: u8 = vector as u8;
     ((index >> 5) as u32, 1 << (index & 0x1F))
-}
-
-/// Send an End-of-Interrupt notification to the X2APIC.
-pub fn x2apic_eoi() {
-    // SAFETY: writing to EOI MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_EOI, 0) };
 }
 
 /// Check whether a give IRQ vector is currently being serviced by returning
