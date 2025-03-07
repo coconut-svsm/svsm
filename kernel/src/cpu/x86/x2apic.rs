@@ -99,35 +99,3 @@ impl X86Apic for X2Apic {
         RawX2Apic::sw_enable();
     }
 }
-
-/// Interrupt-Service-Register base MSR offset
-pub const MSR_X2APIC_ISR: u32 = 0x810;
-
-/// Get the MSR offset relative to a bitmap base MSR and the mask for the MSR
-/// value to check for a specific vector bit being set in IRR, ISR, or TMR.
-///
-/// # Returns
-///
-/// A `(u32, u32)` tuple with the MSR offset as the first and the vector
-/// bitmask as the second value.
-fn apic_register_bit(vector: usize) -> (u32, u32) {
-    let index: u8 = vector as u8;
-    ((index >> 5) as u32, 1 << (index & 0x1F))
-}
-
-/// Check whether a give IRQ vector is currently being serviced by returning
-/// the value of its ISR bit from X2APIC.
-///
-/// # Arguments
-///
-/// - `vector` - The IRQ vector for which to check the ISR bit.
-///
-/// # Returns
-///
-/// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
-pub fn x2apic_in_service(vector: usize) -> bool {
-    // Examine the APIC ISR to determine whether this interrupt vector is
-    // active.  If so, it is assumed to be an external interrupt.
-    let (msr, mask) = apic_register_bit(vector);
-    (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
-}

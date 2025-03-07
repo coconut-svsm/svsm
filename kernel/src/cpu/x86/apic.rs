@@ -297,3 +297,17 @@ pub fn apic_post_irq(icr: u64) -> Result<(), SvsmError> {
     this_cpu().apic().post_irq(icr);
     Ok(())
 }
+
+/// Check whether a give IRQ vector is currently being serviced by returning
+/// the value of its ISR bit from X2APIC.
+///
+/// # Arguments
+///
+/// - `vector` - The IRQ vector for which to check the ISR bit.
+///
+/// # Returns
+///
+/// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
+pub fn apic_in_service(vector: usize) -> bool {
+    this_cpu().apic().irq_in_service(vector)
+}
