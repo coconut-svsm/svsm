@@ -10,8 +10,8 @@ use super::idt::common::IPI_VECTOR;
 use super::percpu::this_cpu;
 use super::percpu::PERCPU_AREAS;
 use super::TprGuard;
+use crate::cpu::x86::apic_post_irq;
 use crate::error::SvsmError;
-use crate::platform::SVSM_PLATFORM;
 use crate::types::{TPR_IPI, TPR_SYNCH};
 use crate::utils::{ScopedMut, ScopedRef};
 
@@ -420,7 +420,7 @@ pub fn send_ipi(
 
 fn send_single_ipi_irq(cpu_index: usize, icr: ApicIcr) -> Result<(), SvsmError> {
     let cpu = PERCPU_AREAS.get_by_cpu_index(cpu_index);
-    SVSM_PLATFORM.post_irq(icr.with_destination(cpu.apic_id()).into())
+    apic_post_irq(icr.with_destination(cpu.apic_id()).into())
 }
 
 fn send_ipi_irq(target_set: IpiTarget<'_>) -> Result<(), SvsmError> {
@@ -432,11 +432,11 @@ fn send_ipi_irq(target_set: IpiTarget<'_>) -> Result<(), SvsmError> {
                 send_single_ipi_irq(cpu_index, icr)?;
             }
         }
-        IpiTarget::AllButSelf => SVSM_PLATFORM.post_irq(
+        IpiTarget::AllButSelf => apic_post_irq(
             icr.with_destination_shorthand(IcrDestFmt::AllButSelf)
                 .into(),
         )?,
-        IpiTarget::All => SVSM_PLATFORM.post_irq(
+        IpiTarget::All => apic_post_irq(
             icr.with_destination_shorthand(IcrDestFmt::AllWithSelf)
                 .into(),
         )?,
@@ -536,6 +536,7 @@ pub fn send_unicast_ipi<M: IpiMessageMut>(cpu_index: usize, ipi_message: &mut M)
 #[cfg(test)]
 mod tests {
     use crate::cpu::ipi::*;
+    use crate::platform::SVSM_PLATFORM;
 
     #[derive(Debug)]
     struct TestIpi<'a> {
