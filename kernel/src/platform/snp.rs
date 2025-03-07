@@ -296,11 +296,6 @@ impl SvsmPlatform for SnpPlatform {
         self.can_use_interrupts
     }
 
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        current_ghcb().hv_ipi(icr)?;
-        Ok(())
-    }
-
     fn is_external_interrupt(&self, _vector: usize) -> bool {
         // When restricted injection is active, the event disposition is
         // already known to the caller and thus need not be examined.  When

@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::percpu::this_cpu;
+use crate::error::SvsmError;
 
 use super::{SnpGhcbApic, X2Apic};
 use core::cell::RefCell;
@@ -290,4 +291,9 @@ impl LApic {
 /// Send an EOI signal via the installed APIC driver.
 pub fn apic_eoi() {
     this_cpu().apic().eoi();
+}
+
+pub fn apic_post_irq(icr: u64) -> Result<(), SvsmError> {
+    this_cpu().apic().post_irq(icr);
+    Ok(())
 }

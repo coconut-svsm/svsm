@@ -195,10 +195,6 @@ impl SvsmPlatform for TdpPlatform {
         true
     }
 
-    fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
-    }
-
     fn is_external_interrupt(&self, vector: usize) -> bool {
         x2apic_in_service(vector)
     }

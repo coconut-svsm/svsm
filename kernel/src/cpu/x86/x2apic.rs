@@ -79,8 +79,6 @@ impl X86Apic for X2Apic {
 
 /// Interrupt-Service-Register base MSR offset
 pub const MSR_X2APIC_ISR: u32 = 0x810;
-/// Interrupt-Control-Register register MSR offset
-pub const MSR_X2APIC_ICR: u32 = 0x830;
 
 /// Get the MSR offset relative to a bitmap base MSR and the mask for the MSR
 /// value to check for a specific vector bit being set in IRR, ISR, or TMR.
@@ -109,14 +107,4 @@ pub fn x2apic_in_service(vector: usize) -> bool {
     // active.  If so, it is assumed to be an external interrupt.
     let (msr, mask) = apic_register_bit(vector);
     (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
-}
-
-/// Write a command to the Interrupt Command Register.
-///
-/// # Arguments
-///
-/// - `icr` - The 64-bit value describing the interrupt command.
-pub fn x2apic_icr_write(icr: u64) {
-    // SAFETY: writing to ICR MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_ICR, icr) };
 }
