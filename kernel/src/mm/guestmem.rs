@@ -257,6 +257,20 @@ impl<T: Copy> GuestPtr<T> {
 
     /// # Safety
     ///
+    /// The caller must verify not to read arbitrary memory, as this function
+    /// doesn't make any checks in that regard.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error if the specified address is not mapped.
+    #[inline]
+    pub unsafe fn read_ref(&self, buf: &mut T) -> Result<(), SvsmError> {
+        // SAFETY: demanded to the caller
+        unsafe { do_movsb(self.ptr, buf) }
+    }
+
+    /// # Safety
+    ///
     /// The caller must verify not to corrupt arbitrary memory, as this function
     /// doesn't make any checks in that regard.
     ///
