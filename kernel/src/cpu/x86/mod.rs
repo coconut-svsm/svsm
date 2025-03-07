@@ -9,6 +9,6 @@ pub mod smap;
 pub mod snp_apic;
 pub mod x2apic;
 
-pub use apic::{apic_eoi, ApicAccess, LApic, RawX86Apic, X86Apic, X86ApicDriver};
+pub use apic::{apic_eoi, apic_post_irq, ApicAccess, LApic, RawX86Apic, X86Apic, X86ApicDriver};
 pub use snp_apic::SnpGhcbApic;
 pub use x2apic::X2Apic;
