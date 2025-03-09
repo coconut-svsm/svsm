@@ -205,7 +205,14 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
-        cpuid_table(eax)
+        // If this is an architectural CPUID leaf, then extract the result
+        // from the CPUID table.  Otherwise, request the value from the
+        // hypervisor.
+        if (eax >> 28) == 4 {
+            current_ghcb().cpuid(eax).ok()
+        } else {
+            cpuid_table(eax)
+        }
     }
 
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool) {
