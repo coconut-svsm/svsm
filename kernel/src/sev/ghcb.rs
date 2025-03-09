@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, IrqGuard, X86GeneralRegs};
@@ -94,6 +95,7 @@ impl From<GhcbError> for SvsmError {
 #[expect(non_camel_case_types, clippy::upper_case_acronyms)]
 enum GHCBExitCode {
     RDTSC = 0x6e,
+    CPUID = 0x72,
     IOIO = 0x7b,
     MSR = 0x7c,
     RDTSCP = 0x87,
@@ -279,6 +281,27 @@ impl GHCB {
 
     ghcb_getter!(get_usage_valid, usage, u32);
     ghcb_setter!(set_usage_valid, usage, u32);
+
+    pub fn cpuid(&self, eax: u32) -> Result<CpuidResult, SvsmError> {
+        self.clear();
+        self.set_rax_valid(eax as u64);
+        self.vmgexit(GHCBExitCode::CPUID, 0, 0)?;
+        Ok(CpuidResult {
+            eax: self.get_rax_valid()? as u32,
+            ebx: self.get_rbx_valid()? as u32,
+            ecx: self.get_rcx_valid()? as u32,
+            edx: self.get_rdx_valid()? as u32,
+        })
+    }
+
+    pub fn cpuid_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        let result = self.cpuid(regs.rax as u32)?;
+        regs.rax = result.eax as usize;
+        regs.rbx = result.ebx as usize;
+        regs.rcx = result.ecx as usize;
+        regs.rdx = result.edx as usize;
+        Ok(())
+    }
 
     pub fn rdtscp_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
         self.clear();
