@@ -29,6 +29,7 @@ use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
+use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -295,6 +296,8 @@ pub extern "C" fn svsm_main() {
     SVSM_PLATFORM
         .env_setup_svsm()
         .expect("SVSM platform environment setup failed");
+
+    hyperv_setup().expect("failed to complete Hyper-V setup");
 
     let launch_info = &*LAUNCH_INFO;
     let igvm_params = if launch_info.igvm_params_virt_addr != 0 {

@@ -98,6 +98,7 @@ enum GHCBExitCode {
     CPUID = 0x72,
     IOIO = 0x7b,
     MSR = 0x7c,
+    VMMCALL = 0x81,
     RDTSCP = 0x87,
     SNP_PSC = 0x8000_0010,
     GUEST_REQUEST = 0x8000_0011,
@@ -220,18 +221,30 @@ pub struct GHCB {
     rcx: AtomicU64,
     rdx: AtomicU64,
     rbx: AtomicU64,
-    reserved_7: [AtomicU8; 0x70],
+    reserved_7: AtomicU64,
+    rbp: AtomicU64,
+    rsi: AtomicU64,
+    rdi: AtomicU64,
+    r8: AtomicU64,
+    r9: AtomicU64,
+    r10: AtomicU64,
+    r11: AtomicU64,
+    r12: AtomicU64,
+    r13: AtomicU64,
+    r14: AtomicU64,
+    r15: AtomicU64,
+    reserved_8: [AtomicU8; 0x10],
     sw_exit_code: AtomicU64,
     sw_exit_info_1: AtomicU64,
     sw_exit_info_2: AtomicU64,
     sw_scratch: AtomicU64,
-    reserved_8: [AtomicU8; 0x38],
+    reserved_9: [AtomicU8; 0x38],
     xcr0: AtomicU64,
     valid_bitmap: [AtomicU64; 2],
     x87_state_gpa: AtomicU64,
-    reserved_9: [AtomicU8; 0x3f8],
+    reserved_10: [AtomicU8; 0x3f8],
     buffer: [AtomicU8; GHCB_BUFFER_SIZE],
-    reserved_10: [AtomicU8; 0xa],
+    reserved_11: [AtomicU8; 0xa],
     version: AtomicU16,
     usage: AtomicU32,
 }
@@ -258,6 +271,9 @@ impl GHCB {
     ghcb_getter!(get_rbx_valid, rbx, u64);
     ghcb_setter!(set_rbx_valid, rbx, u64);
 
+    ghcb_getter!(get_r8_valid, r8, u64);
+    ghcb_setter!(set_r8_valid, r8, u64);
+
     ghcb_getter!(get_exit_code_valid, sw_exit_code, u64);
     ghcb_setter!(set_exit_code_valid, sw_exit_code, u64);
 
@@ -281,6 +297,16 @@ impl GHCB {
 
     ghcb_getter!(get_usage_valid, usage, u32);
     ghcb_setter!(set_usage_valid, usage, u32);
+
+    pub fn vmmcall(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        self.clear();
+        self.set_rcx_valid(regs.rcx as u64);
+        self.set_rdx_valid(regs.rdx as u64);
+        self.set_r8_valid(regs.r8 as u64);
+        self.vmgexit(GHCBExitCode::VMMCALL, 0, 0)?;
+        regs.rax = self.get_rax_valid()? as usize;
+        Ok(())
+    }
 
     pub fn cpuid(&self, eax: u32) -> Result<CpuidResult, SvsmError> {
         self.clear();

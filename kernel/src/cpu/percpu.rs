@@ -26,7 +26,7 @@ use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, s
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
-use crate::hyperv::HypercallPagesGuard;
+use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::alloc::{allocate_pages, free_page};
 use crate::mm::page_visibility::{make_page_private, make_page_shared};
@@ -668,6 +668,10 @@ impl PerCpu {
         self.current_stack.set(stack);
     }
 
+    pub fn get_cpu_index(&self) -> usize {
+        self.shared().cpu_index()
+    }
+
     pub fn get_apic_id(&self) -> u32 {
         self.shared().apic_id()
     }
@@ -885,6 +889,12 @@ impl PerCpu {
 
         // Complete platform-specific initialization.
         platform.setup_percpu(self)?;
+
+        // Allocate hypercall pages if running on Hyper-V, unless this is the
+        // BSP (where they will be allocated later).
+        if self.shared.cpu_index() != 0 && *IS_HYPERV {
+            self.allocate_hypercall_pages()?;
+        }
 
         Ok(())
     }

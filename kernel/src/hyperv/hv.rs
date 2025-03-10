@@ -5,10 +5,9 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::{VirtAddr, VirtPhysPair};
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{this_cpu, PerCpu};
-use crate::cpu::IrqGuard;
+use crate::cpu::{IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
 use crate::hyperv;
@@ -16,6 +15,7 @@ use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
+use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::unsafe_copy_bytes;
@@ -224,7 +224,7 @@ impl<'a> HypercallPagesGuard<'a> {
 }
 
 #[bitfield(u64)]
-struct HvHypercallInput {
+pub struct HvHypercallInput {
     call_code: u16,
     is_fast: bool,
     #[bits(9)]
@@ -243,7 +243,7 @@ struct HvHypercallInput {
 }
 
 #[bitfield(u64)]
-struct HvHypercallOutput {
+pub struct HvHypercallOutput {
     status: u16,
     _rsvd_16_31: u16,
     #[bits(12)]
@@ -262,20 +262,21 @@ enum HvCallCode {
 pub const HV_PARTITION_ID_SELF: u64 = 0xFFFF_FFFF_FFFF_FFFF;
 pub const HV_VP_INDEX_SELF: u32 = 0xFFFF_FFFE;
 
+pub const HV_STATUS_SUCCESS: u16 = 0;
+pub const HV_STATUS_OPERATION_FAILED: u16 = 0x71;
+pub const HV_STATUS_TIMEOUT: u16 = 0x78;
+
 static HYPERV_HYPERCALL_CODE_PAGE: ImmutAfterInitCell<VirtAddr> = ImmutAfterInitCell::uninit();
 static CURRENT_VTL: ImmutAfterInitCell<u8> = ImmutAfterInitCell::uninit();
+pub static IS_HYPERV: ImmutAfterInitCell<bool> = ImmutAfterInitCell::uninit();
 
-pub fn is_hyperv_hypervisor() -> bool {
-    // Check if any hypervisor is present.
-    if (CpuidResult::get(1, 0).ecx & 0x80000000) == 0 {
-        return false;
-    }
-
+fn is_hyperv_hypervisor() -> bool {
     // Get the hypervisor interface signature.
-    CpuidResult::get(0x40000001, 0).eax == 0x31237648
+    let cpuid_result = SVSM_PLATFORM.cpuid(0x40000001).unwrap();
+    cpuid_result.eax == 0x31237648
 }
 
-pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
+pub fn setup_hypercall_page() -> Result<(), SvsmError> {
     // Allocate a page to use as the hypercall code page.
     let page = allocate_pages(1)?;
 
@@ -289,16 +290,25 @@ pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
         .init(hypercall_va)
         .expect("Hypercall code page already allocated");
 
-    // Set the guest OS ID.  The value is arbitrary.
-    // SAFETY: writing to HV Guest OS ID doesn't break safety.
-    unsafe { write_msr(HyperVMsr::GuestOSID.into(), 0xC0C0C0C0) };
-
     // Set the hypercall code page address to the physical address of the
     // allocated page, and mark it enabled.
     let pa = virt_to_phys(page);
     // SAFETY: we trust the page allocator to allocate a valid page to which pa
     // points.
     unsafe { write_msr(HyperVMsr::Hypercall.into(), u64::from(pa) | 1) };
+
+    Ok(())
+}
+
+fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
+    // Set the guest OS ID.  The value is arbitrary.
+    // SAFETY: the guest OS MSR does not affect safety.
+    unsafe {
+        SVSM_PLATFORM.write_host_msr(HyperVMsr::GuestOSID.into(), 0xC0C0C0C0);
+    }
+
+    // Take platform-specific action to enable hypercalls.
+    SVSM_PLATFORM.setup_hyperv_hypercalls()?;
 
     // Obtain the current VTL for use in future hypercalls.
     let vsm_status_value = get_vp_register(hyperv::HvRegisterName::VsmVpStatus)?;
@@ -311,12 +321,30 @@ pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
     Ok(())
 }
 
+pub fn hyperv_setup() -> Result<(), SvsmError> {
+    // First, determine if this is a Hyper-V system.
+    let is_hyperv = is_hyperv_hypervisor();
+    IS_HYPERV
+        .init(is_hyperv)
+        .expect("Hyper-V support already initialized");
+
+    if is_hyperv {
+        // If this is the BSP, then configure hypercall pages.
+        this_cpu().allocate_hypercall_pages()?;
+
+        // Complete the work required to configure hypercalls.
+        hyperv_setup_hypercalls()?;
+    }
+
+    Ok(())
+}
+
 /// # Safety
 ///
 /// Hypercalls can have side-effects that include modifying memory, so
 /// callers must be certain that any preconditions required for the safety
 /// of a hypercall are met.
-unsafe fn hypercall(
+pub unsafe fn execute_hypercall(
     input_control: HvHypercallInput,
     hypercall_pages: &HypercallPagesGuard<'_>,
 ) -> HvHypercallOutput {
@@ -333,6 +361,59 @@ unsafe fn hypercall(
              options(att_syntax));
     }
     HvHypercallOutput::from(output)
+}
+
+pub fn execute_host_hypercall(
+    mut input_control: HvHypercallInput,
+    hypercall_pages: &HypercallPagesGuard<'_>,
+    func: fn(&mut X86GeneralRegs),
+) -> HvHypercallOutput {
+    let mut output: HvHypercallOutput;
+    let mut regs: X86GeneralRegs = X86GeneralRegs::default();
+
+    loop {
+        // Configure the call registers based on the current state of the
+        // call.
+        regs.rcx = input_control.into_bits() as usize;
+        regs.rdx = u64::from(hypercall_pages.input.paddr) as usize;
+        regs.r8 = u64::from(hypercall_pages.output.paddr) as usize;
+
+        // Issue the hypercall to the host.
+        func(&mut regs);
+
+        // If any status other than HV_STATUS_TIMEOUT is returned, then stop
+        // the loop.
+        output = HvHypercallOutput::from(regs.rax as u64);
+        if output.status() != HV_STATUS_TIMEOUT {
+            break;
+        }
+
+        // Continue processing from wherever the hypervisor left off.  The rep
+        // start index isn't checked for validity, since it is only being used
+        // as an input to the untrusted hypervisor. This applies to both simple
+        // and rep hypercalls.
+        input_control = input_control.with_start_index(output.count());
+    }
+
+    // If this is not a rep hypercall, then return the status directly, with
+    // the element count zeroed out.
+    if input_control.element_count() == 0 {
+        return HvHypercallOutput::new().with_status(output.status());
+    }
+    // The output can be returned directly if the element count is reasonable,
+    // i.e. if a successful call completed all elements or an unsuccessful call
+    // completed fewer elements than were requested.
+    if output.status() == HV_STATUS_SUCCESS {
+        if output.count() == input_control.element_count() {
+            return output;
+        }
+    } else if output.count() < input_control.element_count() {
+        return output;
+    }
+
+    // If the output indicates success but the last rep was not completed,
+    // then return failure instead.
+    HvHypercallOutput::new().with_status(HV_STATUS_OPERATION_FAILED)
 }
 
 /// Dead code is allowed because the hypercall input logic doesn't recognize
@@ -367,7 +448,7 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
     // SAFETY: the GetVpRegisters hypercall does not write to any memory other
     // than the hypercall page, and does not consume memory that is not
     // included in the hypercall input.
-    let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
+    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
     let status = call_output.status();
     if status != 0 {
         return Err(HyperV(status));
@@ -412,7 +493,7 @@ fn enable_vp_vtl_hypercall(
 
     // SAFETY: the EnableVpVtl hypercall does not write to any memory and
     // does not consume memory that is not included in the hypercall input.
-    let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
+    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
     let status = call_output.status();
 
     if status != 0 {
@@ -453,7 +534,7 @@ fn start_vp_hypercall(
 
     // SAFETY: the StartVp hypercall does not write to any memory and does not
     // consume memory that is not included in the hypercall input.
-    let call_output = unsafe { hypercall(input_control, &hypercall_pages) };
+    let call_output = unsafe { SVSM_PLATFORM.hypercall(input_control, &hypercall_pages) };
     let status = call_output.status();
 
     if status != 0 {
