@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 // Copyright (c) Microsoft Corporation
+// Copyright (c) SUSE LLC
 //
 // Author: Jon Lange <jlange@microsoft.com>
+// Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::msr::{read_msr, write_msr};
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{APIC_MSR_EOI, APIC_MSR_ICR};
+use crate::cpu::x86::apic_post_irq;
+use crate::cpu::x86::{X2Apic, X86ApicDriver};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
@@ -30,9 +32,6 @@ use crate::mm::virt_to_phys;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
-
-const MSR_APIC_BASE: u32 = 0x1B;
-const APIC_X2_ENABLE_MASK: u64 = 0xC00;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {
@@ -87,20 +86,8 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        // Enable X2APIC mode.
-        // SAFETY: accesses to the APIC_BASE MSR are safe if the address is not
-        // being changed.
-        let apic_base = read_msr(MSR_APIC_BASE);
-        let apic_base_x2_enabled = apic_base | APIC_X2_ENABLE_MASK;
-        if apic_base != apic_base_x2_enabled {
-            // SAFETY: enabling X2APIC mode allows accessing APIC's control
-            // registers through MSR accesses, so enabling it doesn't break
-            // memory safety itself.
-            unsafe {
-                write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
-            }
-        }
-
+        let x2apic = X86ApicDriver::new_x2apic(X2Apic::new());
+        this_cpu().apic().set(x2apic);
         Ok(())
     }
 
@@ -178,17 +165,6 @@ impl SvsmPlatform for NativePlatform {
         true
     }
 
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        // SAFETY: writing to ICR MSR doesn't break memory safety.
-        unsafe { write_msr(APIC_MSR_ICR, icr) };
-        Ok(())
-    }
-
-    fn eoi(&self) {
-        // SAFETY: writing to EOI MSR doesn't break memory safety.
-        unsafe { write_msr(APIC_MSR_EOI, 0) };
-    }
-
     fn is_external_interrupt(&self, _vector: usize) -> bool {
         // For a native platform, the hypervisor is fully trusted with all
         // event delivery, so all events are assumed not to be external
@@ -226,12 +202,12 @@ impl SvsmPlatform for NativePlatform {
         // running virtualized.
         let icr = ApicIcr::new().with_destination(cpu.shared().apic_id());
         let init_icr = icr.with_message_type(IcrMessageType::Init);
-        self.post_irq(init_icr.into())?;
+        apic_post_irq(init_icr.into())?;
         let sipi_vector = SIPI_STUB_GPA >> 12;
         let sipi_icr = icr
             .with_message_type(IcrMessageType::Sipi)
             .with_vector(sipi_vector.try_into().unwrap());
-        self.post_irq(sipi_icr.into())?;
+        apic_post_irq(sipi_icr.into())?;
 
         Ok(())
     }
