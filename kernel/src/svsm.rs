@@ -339,7 +339,7 @@ pub extern "C" fn svsm_main() {
     virt_log_usage();
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
-        panic!("Failed to launch FW: {e:#?}");
+        panic!("Failed to launch FW: {e:?}");
     }
 
     #[cfg(test)]
@@ -352,7 +352,7 @@ pub extern "C" fn svsm_main() {
 
     match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
         Ok(_) => (),
-        Err(e) => log::info!("Failed to launch /init: {e:#?}"),
+        Err(e) => log::info!("Failed to launch /init: {e:?}"),
     }
 
     cpu_idle_loop();
