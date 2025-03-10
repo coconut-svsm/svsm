@@ -28,6 +28,7 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
+use crate::hyperv;
 use crate::io::IOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -120,8 +121,30 @@ pub trait SvsmPlatform {
     /// Get the features and the capabilities of the platform.
     fn capabilities(&self) -> Caps;
 
+    /// Enable platform-specific Hyper-V hypercall operations.
+    fn setup_hyperv_hypercalls(&self) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
+    /// Perform a hypercall.
+    /// # Safety
+    /// Hypercalls may have side-effects that affect the integrity of the
+    /// system, and the caller must take responsibility for ensuring that the
+    /// hypercall operation is safe.
+    unsafe fn hypercall(
+        &self,
+        input_control: hyperv::HvHypercallInput,
+        hypercall_pages: &hyperv::HypercallPagesGuard<'_>,
+    ) -> hyperv::HvHypercallOutput;
+
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
+
+    /// Write a host-owned MSR.
+    /// # Safety
+    /// The caller must ensure that the requested MSR modification does mot
+    /// affect memory safety.
+    unsafe fn write_host_msr(&self, msr: u32, value: u64);
 
     /// Establishes state required for guest/host communication.
     fn setup_guest_host_comm(&mut self, cpu: &PerCpu, is_bsp: bool);

@@ -13,11 +13,13 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
 use crate::error::SvsmError;
+use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
-    tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa, MD_TDCS_NUM_L2_VMS,
+    tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
+    tdvmcall_wrmsr, MD_TDCS_NUM_L2_VMS,
 };
 use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -113,8 +115,26 @@ impl SvsmPlatform for TdpPlatform {
         Caps::new(vm_bitmap, features)
     }
 
+    /// # Safety
+    /// Hypercalls may have side-effects that affect the integrity of the
+    /// system, and the caller must take responsibility for ensuring that the
+    /// hypercall operation is safe.
+    unsafe fn hypercall(
+        &self,
+        input_control: hyperv::HvHypercallInput,
+        hypercall_pages: &hyperv::HypercallPagesGuard<'_>,
+    ) -> hyperv::HvHypercallOutput {
+        hyperv::execute_host_hypercall(input_control, hypercall_pages, |registers| {
+            tdvmcall_hyperv_hypercall(registers);
+        })
+    }
+
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
         Some(CpuidResult::get(eax, 0))
+    }
+
+    unsafe fn write_host_msr(&self, msr: u32, value: u64) {
+        tdvmcall_wrmsr(msr, value);
     }
 
     fn setup_guest_host_comm(&mut self, _cpu: &PerCpu, _is_bsp: bool) {}

@@ -8,6 +8,7 @@ use super::error::TdVmcallError::Retry;
 use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
@@ -520,4 +521,36 @@ where
 
 pub fn tdvmcall_io_read<T>(port: u16) -> u32 {
     tdvmcall_io(port, 0, size_of::<T>(), false)
+}
+
+pub fn tdvmcall_hyperv_hypercall(regs: &mut X86GeneralRegs) {
+    let pass_regs = (1 << 2) | (1 << 8) | (1 << 10) | (1 << 11);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut hypercall_ret: u64;
+    // A Hyper-V hypercall uses VMCALL but does not use the standard GHCI
+    // convention.  The distinction is encoded in R10, which always passes
+    // zero for GHCI calls, and which passes the Hyper-V hypercall code (which
+    // is never zero) in the case of hypercalls.
+    debug_assert_ne!({ regs.rcx }, 0);
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") regs.rcx,
+             in("rdx") regs.rdx,
+             in("r8") regs.r8,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") hypercall_ret,
+             options(att_syntax));
+    }
+
+    // Ignore errors here.  The caller cannot handle them, and the final
+    // status is not trustworthy anyway.
+    debug_assert!(tdx_result(ret).is_ok());
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+
+    regs.rax = hypercall_ret as usize;
 }
