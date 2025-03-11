@@ -946,11 +946,7 @@ impl PerCpu {
     /// Allocates and initializes a new VMSA for this CPU. Returns its
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
-    pub fn alloc_svsm_vmsa(
-        &self,
-        vtom: u64,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(PhysAddr, u64), SvsmError> {
+    pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
         if self.svsm_vmsa.get().is_some() {
             // FIXME: add a more explicit error variant for this condition
             return Err(SvsmError::Mem);
@@ -960,7 +956,8 @@ impl PerCpu {
         let paddr = vmsa.paddr();
 
         // Initialize VMSA
-        init_svsm_vmsa(&mut vmsa, vtom, context);
+        let context = self.get_initial_context(start_rip);
+        init_svsm_vmsa(&mut vmsa, vtom, &context);
         vmsa.enable();
 
         let sev_features = vmsa.sev_features;
