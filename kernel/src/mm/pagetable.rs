@@ -241,6 +241,11 @@ impl PTEntry {
         self.flags().contains(PTEntryFlags::USER)
     }
 
+    /// Check if the page table entry is global.
+    pub fn global(&self) -> bool {
+        self.flags().contains(PTEntryFlags::GLOBAL)
+    }
+
     /// Check if the page table entry has reserved bits set.
     pub fn has_reserved_bits(&self, pm: PagingMode, level: usize) -> bool {
         let reserved_mask = match pm {
@@ -1184,6 +1189,27 @@ impl PageTable {
                 | PTEntryFlags::ACCESSED;
             let entry = &mut self.root[idx];
             entry.set(make_private_address(paddr), flags);
+        }
+    }
+
+    /// Makes the memory region pages read-only.
+    /// This method is meant for 4k global pages only.
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `region` can be made read-only, i.e. that
+    /// no write can happen or that a #PF raised by any tentative write is
+    /// expected.
+    /// The caller must also ensure that the region start and size are 4k
+    /// aligned.
+    pub unsafe fn make_region_ro_4k(&mut self, region: MemoryRegion<VirtAddr>) {
+        for page in region.iter_pages(PageSize::Regular) {
+            if let Mapping::Level0(entry) = self.walk_addr(page) {
+                debug_assert!(entry.global());
+                debug_assert!(!entry.huge());
+
+                entry.set(entry.address(), PTEntryFlags::data_ro());
+            }
         }
     }
 }
