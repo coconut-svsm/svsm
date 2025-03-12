@@ -84,7 +84,7 @@ impl PerCPUPageMappingGuard {
         self.mapping.region().start()
     }
 
-    /// Creates a virtual contigous mapping for the given 4k physical pages which
+    /// Creates a virtual contiguous mapping for the given 4k physical pages which
     /// may not be contiguous in physical memory.
     ///
     /// # Arguments
