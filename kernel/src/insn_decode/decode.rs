@@ -720,6 +720,29 @@ impl DecodedInsnCtx {
             })
     }
 
+    /// Emulates IOIO instructions using the provided machine context.
+    ///
+    /// # Arguments
+    ///
+    /// * `mctx` - A mutable reference to an object implementing the
+    ///   `InsnMachineCtx` trait to provide the necessary machine context
+    ///   for emulation.
+    ///
+    /// # Returns
+    ///
+    /// An `Ok(())` if emulation is successful or an `InsnError` otherwise.
+    pub fn emulate_ioio<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
+        self.insn
+            .ok_or(InsnError::UnSupportedInsn)
+            .and_then(|insn| match insn {
+                DecodedInsn::In(_, _)
+                | DecodedInsn::Out(_, _)
+                | DecodedInsn::Ins
+                | DecodedInsn::Outs => self.emulate(mctx),
+                _ => Err(InsnError::UnSupportedInsn),
+            })
+    }
+
     fn decode<I: InsnMachineCtx>(
         &mut self,
         bytes: &[u8; MAX_INSN_SIZE],
