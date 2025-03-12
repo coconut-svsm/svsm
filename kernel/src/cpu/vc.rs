@@ -87,6 +87,13 @@ impl fmt::Display for VcError {
     }
 }
 
+/// Handles a #VC exception in stage 2 before the GHCB is set up.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
     let insn_ctx = vc_decode_insn(ctx)?;
@@ -100,6 +107,14 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Resu
     Ok(())
 }
 
+/// Handles a #VC exception in stage 2 using GHCB features, requiring the GHCB to
+/// be set up beforehand.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
 
@@ -125,6 +140,14 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     Ok(())
 }
 
+/// Handles a runtime #VC exception.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+/// - the exception vector code.
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
 
