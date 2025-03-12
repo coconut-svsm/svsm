@@ -185,6 +185,12 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
+    fn determine_cet_support(&self) -> bool {
+        // CET is supported on all SNP platforms, and CPUID should not be
+        // consulted to determine this.
+        true
+    }
+
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
         cpuid_table(eax)
     }
