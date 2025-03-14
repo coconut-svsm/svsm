@@ -23,6 +23,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
 use crate::hyperv;
@@ -108,6 +109,11 @@ pub trait SvsmPlatform {
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
+
+    /// Determine whether shadow stacks are supported.
+    fn determine_cet_support(&self) -> bool {
+        determine_cet_support_from_cpuid()
+    }
 
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(&self, eax: u32) -> Option<CpuidResult>;

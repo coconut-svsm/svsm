@@ -192,8 +192,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     }
 
     cr0_init();
+    determine_cet_support(&*platform);
     cr4_init(&*platform);
-    determine_cet_support();
 
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
