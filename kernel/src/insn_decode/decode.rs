@@ -720,6 +720,31 @@ impl DecodedInsnCtx {
             })
     }
 
+    /// Emulates the decoded MMIO instruction using the provided machine context.
+    ///
+    /// # Arguments
+    ///
+    /// * `mctx` - A mutable reference to an object implementing the
+    ///   `InsnMachineCtx` trait to provide the necessary machine context
+    ///   for emulation.
+    ///
+    /// # Returns
+    ///
+    /// An `Ok(())` if emulation is successful or an `InsnError` otherwise.
+    pub fn emulate_mmio<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
+        // Forbidding MMIO raised from userspace for now.
+        if mctx.read_cpl() > 0 {
+            return Err(InsnError::UnSupportedInsn);
+        }
+
+        self.insn
+            .ok_or(InsnError::UnSupportedInsn)
+            .and_then(|insn| match insn {
+                DecodedInsn::Mov => self.emulate_mov(mctx),
+                _ => Err(InsnError::UnSupportedInsn),
+            })
+    }
+
     fn decode<I: InsnMachineCtx>(
         &mut self,
         bytes: &[u8; MAX_INSN_SIZE],
