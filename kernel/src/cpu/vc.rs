@@ -30,6 +30,7 @@ pub const SVM_EXIT_CPUID: usize = 0x72;
 pub const SVM_EXIT_IOIO: usize = 0x7b;
 pub const SVM_EXIT_MSR: usize = 0x7c;
 pub const SVM_EXIT_RDTSCP: usize = 0x87;
+pub const SVM_EXIT_NPF: usize = 0x400;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
 
@@ -154,6 +155,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_NPF, Some(DecodedInsn::Mov)) => handle_mmio(ctx, &insn_ctx),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -274,6 +276,17 @@ fn handle_ioio(
         }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
+}
+
+fn handle_mmio(
+    ctx: &mut X86ExceptionContext,
+    insn_ctx: &Option<DecodedInsnCtx>,
+) -> Result<(), SvsmError> {
+    insn_ctx
+        .as_ref()
+        .unwrap()
+        .emulate_mmio(ctx)
+        .map_err(SvsmError::from)
 }
 
 fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, SvsmError> {
