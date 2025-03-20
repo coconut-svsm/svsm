@@ -56,7 +56,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --all-features -- -D warnings
+          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --exclude aproxy --all-features -- -D warnings
 
       - name: Clippy on std x86_64-unknown-linux-gnu
         uses: actions-rs/cargo@v1
@@ -149,7 +149,7 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for PR branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt || ( cat clippy_warnings_pr.txt; exit 1 )
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt || ( cat clippy_warnings_pr.txt; exit 1 )
 
       # Required because after the next checkout everything is removed.
       - name: Upload PR warnings artifact
@@ -169,7 +169,7 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for base branch
         run: |
-          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt || ( cat clippy_warnings_base.txt; exit 1 )
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt || ( cat clippy_warnings_base.txt; exit 1 )
 
       - name: Download PR warnings artifact
         uses: actions/download-artifact@v4
@@ -187,7 +187,7 @@ jobs:
             echo "ERROR: $(($PR_WARNINGS - $BASE_WARNINGS)) new undocumented unsafe code blocks detected in this PR"
             echo "enabling the clippy::undocumented_unsafe_blocks lint in this way:"
             echo "$ cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz \\"
-            echo "  --exclude igvmbuilder --exclude igvmmeasure -- -W clippy::undocumented_unsafe_blocks"
+            echo "  --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy -- -W clippy::undocumented_unsafe_blocks"
             echo ""
             diff --color -u clippy_warnings_base.txt clippy_warnings_pr.txt
             exit 1
