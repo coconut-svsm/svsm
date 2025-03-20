@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["BIT","BIT_MASK","enable_shadow_stacks","println"],"mod":["acpi","address","config","console","cpu","crypto","debug","error","fs","fw_cfg","greq","hyperv","igvm_params","insn_decode","io","kernel_region","locking","mm","platform","protocols","requests","serial","sev","svsm_paging","syscall","task","tdx","types","utils","vtpm"]};
