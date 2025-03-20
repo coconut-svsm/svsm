@@ -16,7 +16,6 @@ fn init_verify() {
             "--rlimit=1",
             "--expand-errors",
             "--multiple-errors=5",
-            "--triggers-silent",
             "--no-auto-recommends-check",
             "--trace",
             "-Z unstable-options",
