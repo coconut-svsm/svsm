@@ -87,6 +87,13 @@ impl fmt::Display for VcError {
     }
 }
 
+/// Handles a #VC exception in stage 2 before the GHCB is set up.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
     let insn_ctx = vc_decode_insn(ctx)?;
@@ -100,6 +107,14 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Resu
     Ok(())
 }
 
+/// Handles a #VC exception in stage 2 using GHCB features, requiring the GHCB to
+/// be set up beforehand.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
 
@@ -114,7 +129,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 
     match (err, insn_ctx.and_then(|d| d.insn())) {
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(ins)) => handle_ioio(ctx, ghcb, ins),
+        (SVM_EXIT_IOIO, Some(ins)) => early_handle_ioio(ctx, ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
@@ -125,6 +140,14 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
     Ok(())
 }
 
+/// Handles a runtime #VC exception.
+///
+/// # Parameters
+/// - registers state before the exception was raise through a [`X86ExceptionContext`].
+/// - the exception vector code.
+///
+/// # Returns
+/// - a `SvsmError` if the handling went wrong.
 pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
 
@@ -146,11 +169,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
-        (SVM_EXIT_IOIO, Some(_)) => insn_ctx
-            .as_ref()
-            .unwrap()
-            .emulate(ctx)
-            .map_err(SvsmError::from),
+        (SVM_EXIT_IOIO, Some(_)) => handle_ioio(ctx, &insn_ctx.unwrap()),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
@@ -256,7 +275,7 @@ fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
     }
 }
 
-fn handle_ioio(
+fn early_handle_ioio(
     ctx: &mut X86ExceptionContext,
     ghcb: &GHCB,
     insn: DecodedInsn,
@@ -274,6 +293,10 @@ fn handle_ioio(
         }
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
+}
+
+fn handle_ioio(ctx: &mut X86ExceptionContext, insn_ctx: &DecodedInsnCtx) -> Result<(), SvsmError> {
+    insn_ctx.emulate_ioio(ctx).map_err(SvsmError::from)
 }
 
 fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, SvsmError> {
