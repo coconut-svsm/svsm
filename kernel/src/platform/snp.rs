@@ -185,6 +185,17 @@ impl SvsmPlatform for SnpPlatform {
         }
     }
 
+    fn determine_cet_support(&self) -> bool {
+        // Examine CPUID information to see whether CET is supported by the
+        // hypervisor.  If no CPUID information is present, then assume that
+        // CET is supported.
+        if let Some(cpuid) = cpuid_table(7) {
+            (cpuid.ecx & 0x80) != 0
+        } else {
+            todo!()
+        }
+    }
+
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
         cpuid_table(eax)
     }
