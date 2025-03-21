@@ -141,7 +141,7 @@ impl Drop for PerCPUPageMappingGuard {
 /// unmap the specific memory range after being dropped.
 #[derive(Debug)]
 pub struct MemMappingGuard<T> {
-    // The guard of holding the temperary mapping for a specific memory range.
+    // The guard of holding the temporary mapping for a specific memory range.
     guard: PerCPUPageMappingGuard,
     // The starting offset of the memory range.
     start_off: usize,
