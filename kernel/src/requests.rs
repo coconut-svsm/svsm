@@ -14,10 +14,12 @@ use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::sev::ghcb::switch_to_vmpl;
 use crate::task::go_idle;
 
-use crate::protocols::{attest::attest_protocol_request, SVSM_ATTEST_PROTOCOL};
+use crate::protocols::attest::attest_protocol_request;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
-use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
+use crate::protocols::{
+    RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+};
 use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
 use cpuarch::vmsa::GuestVMExit;

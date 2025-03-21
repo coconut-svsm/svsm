@@ -25,6 +25,9 @@ use alloc::{boxed::Box, vec::Vec};
 use uuid::{uuid, Uuid};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
+pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const ATTEST_PROTOCOL_VERSION_MAX: u32 = 1;
+
 const SERVICES_MANIFEST_GUID: Uuid = uuid!("63849ebb-3d92-4670-a1ff-58f9c94b87bb");
 const GUID_HEADER_ENTRY_SIZE: usize = 24;
 const SVSM_ATTEST_SERVICES: u32 = 0;
