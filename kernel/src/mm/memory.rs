@@ -11,6 +11,7 @@ use crate::config::SvsmConfig;
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
+use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
@@ -112,6 +113,24 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
         .lock_read()
         .iter()
         .any(|region| region.contains(paddr))
+}
+
+/// Returns `true` if the provided physical region `region` is valid, i.e.,
+/// it is within a configured memory region, otherwise returns `false`.
+/// Note this does NOT permit a region to span multiple MEMORY_MAP entries
+/// since they are assumed to be coalesced.
+pub fn valid_phys_region(region: &MemoryRegion<PhysAddr>) -> bool {
+    if PERCPU_VMSAS.overlaps(region) {
+        return false;
+    }
+    if region.overlap(&MemoryRegion::new(LAUNCH_VMSA_ADDR, PAGE_SIZE)) {
+        return false;
+    }
+
+    MEMORY_MAP
+        .lock_read()
+        .iter()
+        .any(|entry| entry.contains_region(region))
 }
 
 /// The starting address of the ISA range.
