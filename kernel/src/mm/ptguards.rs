@@ -4,16 +4,20 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+extern crate alloc;
+
 use super::pagetable::PTEntryFlags;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_address_percpu;
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
-use crate::mm::virtualrange::VRangeAlloc;
+use crate::mm::{memory::valid_phys_region, virtualrange::VRangeAlloc};
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
+use core::slice::{from_raw_parts, from_raw_parts_mut};
 
 /// Guard for a per-CPU page mapping to ensure adequate cleanup if drop.
 #[derive(Debug)]
@@ -141,7 +145,7 @@ impl Drop for PerCPUPageMappingGuard {
 /// unmap the specific memory range after being dropped.
 #[derive(Debug)]
 pub struct MemMappingGuard<T> {
-    // The guard of holding the temperary mapping for a specific memory range.
+    // The guard of holding the temporary mapping for a specific memory range.
     guard: PerCPUPageMappingGuard,
     // The starting offset of the memory range.
     start_off: usize,
@@ -198,6 +202,39 @@ impl<T: Copy> MemMappingGuard<T> {
             })
     }
 
+    /// Reads a vector of data from a virtual address region specified by an offset and count
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify not to read from arbitrary memory regions. The region to read must
+    /// be checked to guarantee the memory is mapped by the guard and is valid for reading.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to read from.
+    /// * `count`: The number of elements to read from starting from offset.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the read operation is successful, it returns `Ok(Vec<T>)` which contains the read back data.
+    /// If the virtual address region cannot be retrieved, it returns `Err(SvsmError::Mem)`.
+    pub unsafe fn read_many(&self, offset: usize, count: usize) -> Result<Vec<T>, SvsmError> {
+        let start = core::mem::size_of::<T>()
+            .checked_mul(offset)
+            .ok_or(SvsmError::InvalidAddress)?;
+        let size = core::mem::size_of::<T>()
+            .checked_mul(count)
+            .ok_or(SvsmError::InvalidAddress)?;
+        self.virt_addr_region(start, size)
+            .map_or(Err(SvsmError::Mem), |region|
+                    // SAFETY: Assured by caller.
+                    unsafe {
+                        Ok(from_raw_parts(region.start().as_ptr::<T>(), count).to_vec())
+                    })
+    }
+
     /// Writes data from a provided data into a virtual address region specified by an offset.
     ///
     /// # Safety
@@ -221,8 +258,44 @@ impl<T: Copy> MemMappingGuard<T> {
         let size = core::mem::size_of::<T>();
         self.virt_addr_region(offset * size, size)
             .map_or(Err(SvsmError::Mem), |region| {
+                // SAFETY: Assured by caller.
                 unsafe {
                     *(region.start().as_mut_ptr::<T>()) = data;
+                }
+                Ok(())
+            })
+    }
+
+    /// Writes data from a provided data into a virtual address region specified by an offset.
+    ///
+    /// # Safety
+    ///
+    /// The caller must verify not to write to arbitrary memory regions. The memory region to write
+    /// must be checked to guarantee the memory is mapped by the guard and is valid for writing.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to write to.
+    /// * `data`: Data to write.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the write operation is successful, it returns `Ok(())`. If the virtual address region
+    /// cannot be retrieved or if the buffer size is larger than the region size, it returns
+    /// `Err(SvsmError::Mem)`.
+    pub unsafe fn write_many(&self, offset: usize, data: &[T]) -> Result<(), SvsmError> {
+        let size = core::mem::size_of::<T>();
+        let start = size.checked_mul(offset).ok_or(SvsmError::InvalidAddress)?;
+        let len = size
+            .checked_mul(data.len())
+            .ok_or(SvsmError::InvalidAddress)?;
+        self.virt_addr_region(start, len)
+            .map_or(Err(SvsmError::Mem), |region| {
+                // SAFETY: Assured by caller.
+                unsafe {
+                    from_raw_parts_mut(region.start().as_mut_ptr::<T>(), len).copy_from_slice(data);
                 }
                 Ok(())
             })
@@ -243,16 +316,149 @@ impl<T: Copy> MemMappingGuard<T> {
     }
 }
 
+/// Represents a guard for a specific memory range mapping, which will
+/// unmap the specific memory range after being dropped.
+/// Does all necessary validity checks that the memory region is valid in order for
+/// reads and writes to be safe.
+#[derive(Debug)]
+pub struct SafeMemMappingGuard<T> {
+    guard: MemMappingGuard<T>,
+}
+
+impl<T: Copy> SafeMemMappingGuard<T> {
+    /// Creates a new `SafeMemMappingGuard` by checking safety requirements needed for
+    /// `MemMappingGuard` operations to be safe.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - The starting address for a `PerCPUPageMappingGuard` to associate with the
+    ///             `MemMappingGuard`.
+    ///
+    /// # Returns
+    ///
+    /// Self is returned.
+    pub fn from_region(region: &MemoryRegion<PhysAddr>) -> Result<Self, SvsmError> {
+        if !valid_phys_region(region) {
+            return Err(SvsmError::InvalidAddress);
+        }
+        let start = region.start().page_align();
+        let offset = region.start().page_offset();
+        let end = region.end().page_align_up();
+        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
+        let memguard = MemMappingGuard::new(guard, offset)?;
+
+        Ok(Self { guard: memguard })
+    }
+
+    /// Creates a new `SafeMemMappingGuard` by checking safety requirements needed for
+    /// `MemMappingGuard` operations to be safe.
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - The starting address for a `PerCPUPageMappingGuard` to associate with the
+    ///             `MemMappingGuard`.
+    /// * `count` - The number of contiguous T objects to map.
+    ///
+    /// # Returns
+    ///
+    /// Self is returned.
+    pub fn new(start: PhysAddr, count: usize) -> Result<Self, SvsmError> {
+        let size = count.checked_mul(size_of::<T>()).ok_or(SvsmError::Mem)?;
+        let region = MemoryRegion::checked_new(start, size).ok_or(SvsmError::Mem)?;
+
+        Self::from_region(&region)
+    }
+
+    /// Reads data from a virtual address region specified by an offset
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to read from.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the read operation is successful, it returns `Ok(T)` which contains the read back data.
+    /// If the virtual address region cannot be retrieved, it returns `Err(SvsmError::Mem)`.
+    pub fn read(&self, offset: usize) -> Result<T, SvsmError> {
+        // SAFETY: The safety conditions of reading this region are met by the guard
+        // due to the checking at its construction.
+        unsafe { self.guard.read(offset) }
+    }
+
+    /// Reads a vector of data from a virtual address region specified by an offset and count
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to read from.
+    /// * `count`: The number of elements to read from starting from offset.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the read operation is successful, it returns `Ok(Vec<T>)` which contains the read back data.
+    /// If the virtual address region cannot be retrieved, it returns `Err(SvsmError::Mem)`.
+    pub fn read_many(&self, offset: usize, count: usize) -> Result<Vec<T>, SvsmError> {
+        // SAFETY: The safety conditions of reading this region are met by the guard
+        // due to the checking at its construction.
+        unsafe { self.guard.read_many(offset, count) }
+    }
+
+    /// Writes data from a provided data into a virtual address region specified by an offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to write to.
+    /// * `data`: Data to write.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the write operation is successful, it returns `Ok(())`. If the virtual address region
+    /// cannot be retrieved or if the buffer size is larger than the region size, it returns
+    /// `Err(SvsmError::Mem)`.
+    pub fn write(&self, offset: usize, data: T) -> Result<(), SvsmError> {
+        // SAFETY: The safety conditions of reading this region are met by the guard
+        // due to the checking at its construction.
+        unsafe { self.guard.write(offset, data) }
+    }
+
+    /// Writes data from a provided data into a virtual address region specified by an offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
+    ///   region to write to.
+    /// * `data`: Data to write.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Result` that indicates the success or failure of the operation.
+    /// If the write operation is successful, it returns `Ok(())`. If the virtual address region
+    /// cannot be retrieved or if the buffer size is larger than the region size, it returns
+    /// `Err(SvsmError::Mem)`.
+    pub fn write_many(&self, offset: usize, data: &[T]) -> Result<(), SvsmError> {
+        // SAFETY: The safety conditions of reading this region are met by the guard
+        // due to the checking at its construction.
+        unsafe { self.guard.write_many(offset, data) }
+    }
+}
+
 impl<T: Copy> InsnMachineMem for MemMappingGuard<T> {
     type Item = T;
 
     /// Safety: See the MemMappingGuard's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+        // SAFETY: Assured by caller.
         unsafe { self.read(0).map_err(|_| InsnError::MemRead) }
     }
 
     /// Safety: See the MemMappingGuard's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+        // SAFETY: Assured by caller.
         unsafe { self.write(0, data).map_err(|_| InsnError::MemWrite) }
     }
 }
