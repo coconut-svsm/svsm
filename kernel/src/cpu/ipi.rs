@@ -364,16 +364,22 @@ pub fn send_ipi(
             }
         }
         _ => {
+            let mut target_count: usize = 0;
             for cpu in PERCPU_AREAS.iter() {
-                ipi_board.pending.fetch_add(1, Ordering::Relaxed);
-                cpu.as_cpu_ref().ipi_from(sender_cpu_index);
+                // Ignore the current CPU and CPUs that are not online.
+                let cpu_shared = cpu.as_cpu_ref();
+                if cpu_shared.is_online() && cpu_shared.apic_id() != this_cpu().get_apic_id() {
+                    target_count += 1;
+                    cpu_shared.ipi_from(sender_cpu_index);
+                }
             }
-            send_interrupt = true;
 
-            // Remove the current CPU from the target set and completion
-            // calculation, since no interrupt is required to ensure that
-            // IPI handlng can be performed locally.
-            ipi_board.pending.fetch_sub(1, Ordering::Relaxed);
+            // Record the count of targets that will need to respond before
+            // this IPI can complete.
+            ipi_board.pending.store(target_count, Ordering::Relaxed);
+
+            // Send an interrupt only if there are targets to receive it.
+            send_interrupt = target_count != 0;
 
             // Only include the current CPU if requested.
             if let IpiTarget::All = target_set {
