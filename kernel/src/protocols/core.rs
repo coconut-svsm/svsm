@@ -13,9 +13,9 @@ use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
-use crate::protocols::apic::{APIC_PROTOCOL, APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
+use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
-use crate::protocols::RequestParams;
+use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
@@ -35,7 +35,6 @@ const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
 
-const CORE_PROTOCOL: u32 = 1;
 const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
 const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
 
@@ -206,12 +205,12 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let version: u32 = (rcx & 0xffff_ffffu64).try_into().unwrap();
 
     let ret_val = match protocol {
-        CORE_PROTOCOL => protocol_supported(
+        SVSM_CORE_PROTOCOL => protocol_supported(
             version,
             CORE_PROTOCOL_VERSION_MIN,
             CORE_PROTOCOL_VERSION_MAX,
         ),
-        APIC_PROTOCOL => {
+        SVSM_APIC_PROTOCOL => {
             // The APIC protocol is only supported if the calling CPU supports
             // alternate injection.
             if this_cpu().use_apic_emulation() {
