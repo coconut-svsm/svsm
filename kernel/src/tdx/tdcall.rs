@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::error::TdVmcallError::Retry;
 use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
@@ -24,6 +25,7 @@ const TDG_VM_RD: u32 = 7;
 const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+const TDVMCALL_MAP_GPA: u32 = 0x10001;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
 
@@ -319,6 +321,42 @@ pub fn tdcall_vm_read(field: u64) -> u64 {
     debug_assert!(tdx_result(err).is_ok());
     // val = 0 in case of no success.
     val
+}
+
+pub fn tdvmcall_map_gpa(mut gpa: u64, size: u64) -> Result<(), TdxError> {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let end = gpa + size;
+    loop {
+        let mut ret: u64;
+        let mut vmcall_ret: u64;
+        let mut retry_gpa: u64;
+        // SAFETY: executing TDCALL requires the use of assembly.
+        unsafe {
+            asm!("tdcall",
+                 in("rax") TDG_VP_TDVMCALL,
+                 in("rcx") pass_regs,
+                 in("r10") 0,
+                 in("r11") TDVMCALL_MAP_GPA,
+                 in("r12") gpa,
+                 in("r13") end - gpa,
+                 lateout("rax") ret,
+                 lateout("r10") vmcall_ret,
+                 lateout("r11") retry_gpa,
+                 options(att_syntax));
+        }
+
+        debug_assert!(tdx_result(ret).is_ok());
+        let err = tdvmcall_result(vmcall_ret);
+
+        // If a retry was requested, then reissue the call as requested by the
+        // host.  No validation is performed on this value because it is
+        // being passed to an untrusted host.
+        if err != Err(TdxError::Vmcall(Retry)) {
+            return err;
+        }
+
+        gpa = retry_gpa;
+    }
 }
 
 pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {

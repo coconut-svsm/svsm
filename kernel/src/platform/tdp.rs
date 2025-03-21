@@ -17,7 +17,7 @@ use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
-    tdvmcall_io_read, tdvmcall_io_write, MD_TDCS_NUM_L2_VMS,
+    tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa, MD_TDCS_NUM_L2_VMS,
 };
 use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -125,11 +125,27 @@ impl SvsmPlatform for TdpPlatform {
 
     fn page_state_change(
         &self,
-        _region: MemoryRegion<PhysAddr>,
+        region: MemoryRegion<PhysAddr>,
         _size: PageSize,
-        _op: PageStateChangeOp,
+        op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+        // The cast to u32 below is awkward, but the is_aligned() function
+        // requires its type to be convertible to u32 - which usize is not -
+        // and for an alignment check, only the low 32 bits are needed anyway.
+        if !region.start().is_aligned(PAGE_SIZE)
+            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
+        {
+            return Err(SvsmError::InvalidAddress);
+        }
+        let gpa = match op {
+            PageStateChangeOp::Private => u64::from(region.start()),
+            PageStateChangeOp::Shared => u64::from(region.start()) | *VTOM as u64,
+            _ => return Err(SvsmError::NotSupported),
+        };
+
+        tdvmcall_map_gpa(gpa, region.len() as u64)?;
+
+        Ok(())
     }
 
     fn validate_physical_page_range(
@@ -139,9 +155,9 @@ impl SvsmPlatform for TdpPlatform {
     ) -> Result<(), SvsmError> {
         // The cast to u32 below is awkward, but the is_aligned() function
         // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway
+        // and for an alignment check, only the low 32 bits are needed anyway.
         if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
+            || !is_aligned(region.len(), PAGE_SIZE)
         {
             return Err(SvsmError::InvalidAddress);
         }
