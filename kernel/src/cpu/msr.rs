@@ -32,7 +32,7 @@ pub fn read_msr(msr: u32) -> u64 {
 /// The caller should ensure that the new value in the target MSR doesn't break
 /// memory safety.
 pub unsafe fn write_msr(msr: u32, val: u64) {
-    let eax = (val & 0x0000_0000_ffff_ffff) as u32;
+    let eax = val as u32;
     let edx = (val >> 32) as u32;
 
     // SAFETY: requirements have to be checked by the caller.
