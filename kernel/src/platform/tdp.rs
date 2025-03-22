@@ -214,7 +214,12 @@ impl SvsmPlatform for TdpPlatform {
         //
         // transition_cr3 is not needed since all TD APs are using the stage2
         // page table set up by the BSP.
-        let ap_context = create_ap_start_context(context, 0);
+        let mut ap_context = create_ap_start_context(context, 0);
+
+        // Set the initial EFER to zero so that it is not reloaded.  This
+        // is necessary since the TDX module does not permit changes to EFER
+        // when running in the L1.
+        ap_context.efer = 0;
 
         // The mailbox page was already accepted by the BSP in stage2 and
         // therefore it's been initialized as a zero page.
