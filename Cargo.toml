@@ -26,6 +26,8 @@ members = [
     "user/init",
     # Release version identifier
     "release",
+    # Virtio Drivers (MMIO)
+    "virtio-drivers",
 ]
 
 
@@ -42,6 +44,7 @@ packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
+virtio-drivers = { path = "virtio-drivers" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }

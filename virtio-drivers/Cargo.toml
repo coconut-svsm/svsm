@@ -1,0 +1,30 @@
+[package]
+name = "virtio-drivers"
+version = "0.7.5"
+license = "MIT"
+authors = [
+  "Jiajie Chen <noc@jiegec.ac.cn>",
+  "Runji Wang <wangrunji0408@163.com>",
+  "Yuekai Jia <equation618@gmail.com>",
+  "Andrew Walbran <qwandor@google.com>",
+]
+edition = "2021"
+description = "VirtIO guest drivers."
+repository = "https://github.com/rcore-os/virtio-drivers"
+keywords = ["virtio"]
+categories = ["hardware-support", "no-std"]
+
+[dependencies]
+log = "0.4.22"
+bitflags = "2.6.0"
+enumn = "0.1.14"
+embedded-io = { version = "0.6.1", optional = true }
+zerocopy = { version = "0.8.7", features = ["derive"] }
+
+[features]
+default = ["alloc", "embedded-io"]
+alloc = ["zerocopy/alloc"]
+embedded-io = ["dep:embedded-io"]
+
+[dev-dependencies]
+zerocopy = { version = "0.8.7", features = ["alloc"] }
