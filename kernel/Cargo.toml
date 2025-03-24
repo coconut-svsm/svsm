@@ -36,6 +36,7 @@ packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
+virtio-drivers.workspace = true
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
