@@ -24,6 +24,8 @@ const TDG_VM_RD: u32 = 7;
 const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+const TDVMCALL_RDMSR: u32 = 31;
+const TDVMCALL_WRMSR: u32 = 32;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
 
@@ -429,4 +431,55 @@ where
 
 pub fn tdvmcall_io_read<T>(port: u16) -> u32 {
     tdvmcall_io(port, 0, size_of::<T>(), false)
+}
+
+pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut val: u64;
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_RDMSR,
+             in("r12") msr,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") val,
+             lateout("r12") _,
+             options(att_syntax));
+    }
+    // Ignore errors here since the caller cannot handle them.
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
+
+    val
+}
+
+pub fn tdvmcall_wrmsr(msr: u32, val: u64) {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_WRMSR,
+             in("r12") msr,
+             in("r13") val,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") _,
+             lateout("r12") _,
+             lateout("r13") _,
+             options(att_syntax));
+    }
+    // Ignore errors here since the caller cannot handle them.
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
 }
