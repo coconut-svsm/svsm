@@ -15,6 +15,7 @@ pub enum TdxSuccess {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TdxError {
+    OperandInvalid,
     NoVeInfo,
     PageSizeMismatch,
     Unimplemented,
@@ -44,6 +45,7 @@ pub fn tdx_result(err: u64) -> Result<TdxSuccess, TdxError> {
         }
     } else {
         match code {
+            0xC000_0100 => Err(TdxError::OperandInvalid),
             0xC000_0704 => Err(TdxError::NoVeInfo),
             0xC000_0B0B => Err(TdxError::PageSizeMismatch),
             _ => Err(TdxError::Unknown(err)),

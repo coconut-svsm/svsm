@@ -4,9 +4,11 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::capabilities::Caps;
 use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
@@ -20,7 +22,6 @@ use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{
@@ -34,6 +35,7 @@ use crate::sev::{
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use syscall::GlobalFeatureFlags;
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -194,6 +196,13 @@ impl SvsmPlatform for SnpPlatform {
         } else {
             todo!()
         }
+    }
+
+    fn capabilities(&self) -> Caps {
+        // VMPL0 is SVSM. VMPL1 to VMPL3 are guest.
+        let vm_bitmap: u64 = 0xE;
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_SNP;
+        Caps::new(vm_bitmap, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
