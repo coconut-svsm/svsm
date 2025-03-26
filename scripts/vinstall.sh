@@ -22,4 +22,4 @@ fi
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV verus-rustc
 
 # verus formatter
-cargo install --git https://github.com/verus-lang/verusfmt --rev v0.5.0
+cargo install --git https://github.com/verus-lang/verusfmt --rev v0.5.3

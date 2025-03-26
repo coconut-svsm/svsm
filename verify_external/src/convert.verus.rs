@@ -15,23 +15,32 @@ pub trait FromSpec<T>: Sized {
 }
 
 macro_rules! def_primitive_from{
-    ($toty: ty, $($fromty: ty),*) => {
-        $(verus!{
+    ($toty: ty; $($fromty: ty),*) => {verus!{
+        $(
             impl FromSpec<$fromty> for $toty {
-            open spec fn from_spec(v: $fromty) -> Self {
-                v as $toty
+                open spec fn from_spec(v: $fromty) -> Self {
+                    v as $toty
+                }
             }
-        }})*
-    }
+        )*
+    }}
 }
 
-def_primitive_from!{u16, u8, u16}
+def_primitive_from!{u8; u8}
 
-def_primitive_from!{u32, u8, u16, u32}
+def_primitive_from!{u16; u8, u16}
 
-def_primitive_from!{u64, u8, u16, u32, usize}
+def_primitive_from!{u32; u8, u16, u32}
 
-def_primitive_from!{usize, u8, u16, u32, usize}
+def_primitive_from!{u64; u8, u16, u32, u64, usize}
+
+def_primitive_from!{usize; u8, u16, u32, usize}
+
+def_primitive_from!{u128; u8, u16, u32, u64, usize, u128}
+
+def_primitive_from!{int; u8, u16, u32, u64, usize, u128, int, nat}
+
+def_primitive_from!{nat; u8, u16, u32, u64, usize, u128, nat}
 
 pub open spec fn from_spec<T1, T2>(v: T1) -> T2;
 
@@ -40,11 +49,11 @@ pub open spec fn default_into_spec<T, U: From<T>>(v: T) -> U {
     from_spec(v)
 }
 
-#[verifier(external_body)]
 pub broadcast proof fn axiom_from_spec<T, U: FromSpec<T>>(v: T)
     ensures
         #[trigger] from_spec::<T, U>(v) === U::from_spec(v),
 {
+    admit();
 }
 
 #[verifier::external_trait_specification]
