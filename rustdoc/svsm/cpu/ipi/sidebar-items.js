@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["IpiRequest","IpiTarget"],"fn":["handle_ipi_interrupt","receive_single_ipi","send_ipi","send_ipi_irq","send_multicast_ipi","send_single_ipi_irq","send_unicast_ipi"],"struct":["IpiBoard","IpiHelperMut","IpiHelperShared"],"trait":["IpiHelper","IpiMessage","IpiMessageMut"]};

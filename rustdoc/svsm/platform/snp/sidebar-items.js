@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["pvalidate_page_range"],"static":["APIC_EMULATION_REG_COUNT","GHCB_IO_DRIVER","SVSM_ENV_INITIALIZED","VTOM"],"struct":["GHCBIOPort","SnpPlatform"]};
