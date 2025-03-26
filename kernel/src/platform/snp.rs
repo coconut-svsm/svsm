@@ -15,6 +15,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
+use crate::cpu::x86::apic::{MSR_X2APIC_EOI, MSR_X2APIC_ICR};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -41,7 +42,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
 
-static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static USE_RESTR_INJ: AtomicBool = AtomicBool::new(false);
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -90,6 +91,10 @@ impl SnpPlatform {
             can_use_interrupts: !suppress_svsm_interrupts,
         }
     }
+
+    fn use_restr_inj() -> bool {
+        USE_RESTR_INJ.load(Ordering::Relaxed)
+    }
 }
 
 impl SvsmPlatform for SnpPlatform {
@@ -112,9 +117,11 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
-        this_cpu().configure_hv_doorbell()?;
+        if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
+            USE_RESTR_INJ.store(true, Ordering::Relaxed);
+            this_cpu().setup_hv_doorbell()?;
+        }
         guest_request_driver_init();
-        SVSM_ENV_INITIALIZED.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -150,11 +157,8 @@ impl SvsmPlatform for SnpPlatform {
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         cpu.register_ghcb()?;
 
-        // #HV doorbell allocation can only occur if the SVSM environment has
-        // already been initialized.  Skip allocation if not; it will be done
-        // during environment initialization.
-        if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
-            cpu.configure_hv_doorbell()?;
+        if Self::use_restr_inj() {
+            cpu.setup_hv_doorbell()?;
         }
 
         Ok(())
@@ -317,17 +321,30 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        current_ghcb().hv_ipi(icr)?;
+        // The #HV IPI can only be used if restricted injection is supported.
+        // Otherwise, the IPI must be sent via an X2APIC ICR write.
+        if Self::use_restr_inj() {
+            current_ghcb().hv_ipi(icr)?;
+        } else {
+            current_ghcb().wrmsr(MSR_X2APIC_ICR, icr)?;
+        }
+
         Ok(())
     }
 
     fn eoi(&self) {
-        // Issue an explicit EOI unless no explicit EOI is required.
-        if !current_hv_doorbell().no_eoi_required() {
-            // 0x80B is the X2APIC EOI MSR.
-            // Errors here cannot be handled but should not be grounds for
-            // panic.
-            let _ = current_ghcb().wrmsr(0x80B, 0);
+        if Self::use_restr_inj() {
+            // Issue an explicit EOI unless no explicit EOI is required.
+            if !current_hv_doorbell().no_eoi_required() {
+                // 0x80B is the X2APIC EOI MSR.
+                // Errors here cannot be handled but should not be grounds for
+                // panic.
+                let _ = current_ghcb().wrmsr(0x80B, 0);
+            }
+        } else {
+            current_ghcb()
+                .wrmsr(MSR_X2APIC_EOI, 0)
+                .expect("GHCB EOI failed");
         }
     }
 
