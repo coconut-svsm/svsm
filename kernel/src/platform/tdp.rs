@@ -11,7 +11,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write, x2apic_in_service};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
@@ -90,6 +90,7 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+        x2apic_enable();
         Ok(())
     }
 
@@ -201,8 +202,9 @@ impl SvsmPlatform for TdpPlatform {
         true
     }
 
-    fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
+    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
+        x2apic_icr_write(icr);
+        Ok(())
     }
 
     fn eoi(&self) {
