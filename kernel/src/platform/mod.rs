@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+pub mod capabilities;
 pub mod guest_cpu;
 pub mod native;
 pub mod snp;
@@ -12,6 +13,7 @@ pub mod tdp;
 mod snp_fw;
 pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
 
+use capabilities::Caps;
 use native::NativePlatform;
 use snp::SnpPlatform;
 use tdp::TdpPlatform;
@@ -23,6 +25,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
 use crate::io::IOPort;
@@ -34,6 +37,7 @@ use bootlib::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 pub static SVSM_PLATFORM: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
+pub static CAPS: ImmutAfterInitCell<Caps> = ImmutAfterInitCell::uninit();
 
 #[derive(Clone, Copy, Debug)]
 pub struct PageEncryptionMasks {
@@ -107,6 +111,14 @@ pub trait SvsmPlatform {
 
     /// Determines the paging encryption masks for the current architecture.
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks;
+
+    /// Determine whether shadow stacks are supported.
+    fn determine_cet_support(&self) -> bool {
+        determine_cet_support_from_cpuid()
+    }
+
+    /// Get the features and the capabilities of the platform.
+    fn capabilities(&self) -> Caps;
 
     /// Obtain CPUID using platform-specific tables.
     fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
@@ -237,6 +249,11 @@ impl DerefMut for SvsmPlatformCell {
 
 pub fn init_platform_type(platform_type: SvsmPlatformType) {
     SVSM_PLATFORM_TYPE.init(platform_type).unwrap();
+}
+
+pub fn init_capabilities() {
+    let caps = SVSM_PLATFORM.capabilities();
+    CAPS.init(caps).unwrap();
 }
 
 pub fn halt() {

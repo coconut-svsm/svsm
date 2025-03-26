@@ -17,6 +17,8 @@ struct GDTDesc {
     addr: VirtAddr,
 }
 
+// The base address of the GDT should be aligned on an 8-byte boundary
+// to yield the best processor performance.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct GDTEntry(u64);
 
@@ -80,7 +82,18 @@ impl GDT {
 
         let tss_entries = &self.entries[idx..idx + 1].as_mut_ptr();
 
+        // SAFETY:
+        // For add():
+        //   - idx and idx + size_of::<GDTEntry>() don't overflow isize.
+        //   - the borrow checker guarantees that self is still allocated
+        //   - self.entries[6:8] fits in self's allocation.
+        // For write_volatile():
+        //   - the borrow checker guarantees that self.entries is allocated
+        //   - alignment is checked inside
         unsafe {
+            assert_eq!(align_of_val(&tss_entries.add(0)), align_of::<GDTEntry>());
+            assert_eq!(align_of_val(&tss_entries.add(1)), align_of::<GDTEntry>());
+
             tss_entries.add(0).write_volatile(desc0);
             tss_entries.add(1).write_volatile(desc1);
         }
@@ -90,14 +103,14 @@ impl GDT {
         self.set_tss_entry(GDTEntry::null(), GDTEntry::null());
     }
 
-    pub fn load_tss(&mut self, tss: &X86Tss) {
+    pub fn load_tss(&mut self, tss: &'static X86Tss) {
         let (desc0, desc1) = tss.to_gdt_entry();
 
-        unsafe {
-            self.set_tss_entry(desc0, desc1);
-            asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax));
-            self.clear_tss_entry()
-        }
+        self.set_tss_entry(desc0, desc1);
+        // SAFETY: loading task register must me done in assembly.
+        // tss is ensured to have a static lifetime so this is safe.
+        unsafe { asm!("ltr %ax", in("ax") SVSM_TSS, options(att_syntax)) };
+        self.clear_tss_entry()
     }
 
     pub fn kernel_cs(&self) -> GDTEntry {

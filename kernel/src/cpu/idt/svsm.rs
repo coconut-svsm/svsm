@@ -13,7 +13,7 @@ use super::common::{
     idt_mut, user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR,
     CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, IPI_VECTOR,
     MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR,
-    SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, XF_VECTOR,
+    SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
@@ -24,6 +24,7 @@ use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::mm::GuestPtr;
 use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
+use crate::tdx::ve::handle_virtualization_exception;
 use core::arch::global_asm;
 
 use crate::syscall::*;
@@ -50,6 +51,7 @@ extern "C" {
     fn asm_entry_ac();
     fn asm_entry_mce();
     fn asm_entry_xf();
+    fn asm_entry_ve();
     fn asm_entry_cp();
     fn asm_entry_hv();
     fn asm_entry_vc();
@@ -85,6 +87,7 @@ pub fn early_idt_init() {
     idt.set_entry(AC_VECTOR, IdtEntry::entry(asm_entry_ac));
     idt.set_entry(MCE_VECTOR, IdtEntry::entry(asm_entry_mce));
     idt.set_entry(XF_VECTOR, IdtEntry::entry(asm_entry_xf));
+    idt.set_entry(VE_VECTOR, IdtEntry::entry(asm_entry_ve));
     idt.set_entry(CP_VECTOR, IdtEntry::entry(asm_entry_cp));
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
@@ -262,6 +265,26 @@ extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vec
     }
 }
 
+// Virtualization Exception handler
+#[no_mangle]
+extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
+    let rip = ctxt.frame.rip;
+    let code = ctxt.error_code;
+
+    if let Err(err) = handle_virtualization_exception(ctxt) {
+        log::error!("#VE handling error: {:?}", err);
+        if user_mode(ctxt) {
+            log::error!("Failed to handle #VE from user-mode at RIP {:#018x} code: {:#018x} - Terminating task", rip, code);
+            terminate();
+        } else {
+            panic!(
+                "Failed to handle #VE from kernel-mode at RIP {:#018x} code: {:#018x}",
+                rip, code
+            );
+        }
+    }
+}
+
 // VMM Communication handler
 #[no_mangle]
 extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
@@ -319,6 +342,8 @@ extern "C" fn ex_handler_system_call(
         SYS_READDIR => sys_readdir(ctxt.regs.rdi as u32, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_MKDIR => sys_mkdir(ctxt.regs.rdi),
         SYS_RMDIR => sys_rmdir(ctxt.regs.rdi),
+        // Class 3 SysCalls.
+        SYS_CAPABILITIES => sys_capabilities(ctxt.regs.rdi as u32),
         _ => Err(SysCallError::EINVAL),
     }
     .map_or_else(|e| e as usize, |v| v as usize);
@@ -390,10 +415,6 @@ global_asm!(
         .set const_true, 1
     "#,
     concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
-    concat!(
-        ".set CFG_SHADOW_STACKS, const_",
-        cfg!(feature = "shadow-stacks")
-    ),
     include_str!("../x86/smap.S"),
     include_str!("entry.S"),
     IF = const RFlags::IF.bits(),

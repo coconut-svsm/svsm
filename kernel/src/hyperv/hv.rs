@@ -190,12 +190,15 @@ pub fn hyperv_setup_hypercalls() -> Result<(), SvsmError> {
         .expect("Hypercall code page already allocated");
 
     // Set the guest OS ID.  The value is arbitrary.
-    write_msr(HyperVMsr::GuestOSID.into(), 0xC0C0C0C0);
+    // SAFETY: writing to HV Guest OS ID doesn't break safety.
+    unsafe { write_msr(HyperVMsr::GuestOSID.into(), 0xC0C0C0C0) };
 
     // Set the hypercall code page address to the physical address of the
     // allocated page, and mark it enabled.
     let pa = virt_to_phys(page);
-    write_msr(HyperVMsr::Hypercall.into(), u64::from(pa) | 1);
+    // SAFETY: we trust the page allocator to allocate a valid page to which pa
+    // points.
+    unsafe { write_msr(HyperVMsr::Hypercall.into(), u64::from(pa) | 1) };
 
     // Obtain the current VTL for use in future hypercalls.
     let vsm_status_value = get_vp_register(hyperv::HvRegisterName::VsmVpStatus)?;

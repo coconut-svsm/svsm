@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use core::{
-    arch::asm,
-    sync::atomic::{AtomicBool, Ordering},
-};
+use crate::platform::SvsmPlatform;
+
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use bitflags::bitflags;
 
+use super::cpuid::CpuidResult;
 use super::msr::read_msr;
 
 pub const S_CET: u32 = 0x6a2;
@@ -18,33 +18,15 @@ pub const MODE_64BIT: usize = 1;
 pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
 
 // Try to enable the CET feature in CR4 and set `IS_CET_SUPPORTED` if successful.
-pub fn determine_cet_support() {
-    // Don't try to determine support if the shadow-stacks feature is not enabled.
-    if !cfg!(feature = "shadow-stacks") {
-        return;
+pub fn determine_cet_support(platform: &dyn SvsmPlatform) {
+    if platform.determine_cet_support() {
+        IS_CET_SUPPORTED.store(true, Ordering::Relaxed);
     }
+}
 
-    let rcx: u64;
-    // SAFETY: Inline assembly to enable CET bit in CR4, which does not change
-    // any state related to memory safety.
-    unsafe {
-        asm!(// Try to enable CET in CR4.
-             "   mov %cr4, %rax",
-             "   or $1<<23, %rax",
-             "1: mov %rax, %cr4",
-             "   xorq %rcx, %rcx",
-             "2:",
-             ".pushsection \"__exception_table\",\"a\"",
-             ".balign 16",
-             ".quad (1b)",
-             ".quad (2b)",
-             ".popsection",
-             out("rax") _,
-             out("rcx") rcx,
-             options(att_syntax, nostack, nomem, pure, preserves_flags));
-    }
-
-    IS_CET_SUPPORTED.store(rcx == 0, Ordering::Relaxed);
+pub fn determine_cet_support_from_cpuid() -> bool {
+    let cpuid = CpuidResult::get(7, 0);
+    (cpuid.ecx & 0x80) != 0
 }
 
 /// Returns whether shadow stacks are supported by the CPU and the kernel.
@@ -52,7 +34,7 @@ pub fn determine_cet_support() {
 pub fn is_cet_ss_supported() -> bool {
     // In theory CPUs can have support for CET, but not CET_SS, but in practice
     // no such CPUs exist. Treat CET being supported as CET_SS being supported.
-    cfg!(feature = "shadow-stacks") && IS_CET_SUPPORTED.load(Ordering::Relaxed)
+    IS_CET_SUPPORTED.load(Ordering::Relaxed)
 }
 
 /// Enable shadow stacks.

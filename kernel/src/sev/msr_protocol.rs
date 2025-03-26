@@ -59,7 +59,7 @@ bitflags! {
         const APIC_ID_LIST            = 1 << 4;
         const SEV_SNP_MULTI_VMPL      = 1 << 5;
         const SEV_PAGE_STATE_CHANGE   = 1 << 6;
-        const SEV_SNP_EXT_INTERRUPTS  = 1 << 7;
+        const SEV_SNP_EXT_INTERRUPTS  = 1 << 9;
     }
 }
 
@@ -78,7 +78,8 @@ pub fn verify_ghcb_version() {
     // used.
     assert!(!irqs_enabled());
     // Request SEV information.
-    write_msr(SEV_GHCB, GHCBMsr::SEV_INFO_REQ);
+    // SAFETY: Requesting info through the GHCB MSR protocol is safe.
+    unsafe { write_msr(SEV_GHCB, GHCBMsr::SEV_INFO_REQ) };
     raw_vmgexit();
     let sev_info = read_msr(SEV_GHCB);
 
@@ -107,7 +108,8 @@ pub fn hypervisor_ghcb_features() -> GHCBHvFeatures {
 
 pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, GHCBMsr::SNP_HV_FEATURES_REQ);
+    // SAFETY: Requesting HV features through the GHCB MSR protocol is safe.
+    unsafe { write_msr(SEV_GHCB, GHCBMsr::SNP_HV_FEATURES_REQ) };
     raw_vmgexit();
     let result = read_msr(SEV_GHCB);
     drop(guard);
@@ -138,12 +140,17 @@ pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
     }
 }
 
-pub fn register_ghcb_gpa_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
+/// # Safety
+///
+/// Since this causes the GHCB to be remapped to a different physical address
+/// (allowing leaking and modifying its content), `addr` should be validated.
+pub unsafe fn register_ghcb_gpa_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
     let mut info = addr.bits() as u64;
 
     info |= GHCBMsr::SNP_REG_GHCB_GPA_REQ;
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, info);
+    // SAFETY: safety requirements should be checked by the caller
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     info = read_msr(SEV_GHCB);
     drop(guard);
@@ -159,7 +166,10 @@ pub fn register_ghcb_gpa_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
     Ok(())
 }
 
-fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrError> {
+/// # Safety
+///
+/// See [`validate_page_msr`] or [`invalidate_page_msr`] safety requirements.
+unsafe fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrError> {
     let mut info: u64 = (addr.bits() as u64) & 0x000f_ffff_ffff_f000;
 
     if valid {
@@ -170,7 +180,8 @@ fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrE
 
     info |= GHCBMsr::SNP_STATE_CHANGE_REQ;
     let guard = IrqGuard::new();
-    write_msr(SEV_GHCB, info);
+    // SAFETY: safety requirements are delegated to the caller.
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     let response = read_msr(SEV_GHCB);
     drop(guard);
@@ -186,12 +197,22 @@ fn set_page_valid_status_msr(addr: PhysAddr, valid: bool) -> Result<(), GhcbMsrE
     Ok(())
 }
 
-pub fn validate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
-    set_page_valid_status_msr(addr, true)
+/// # Safety
+///
+/// Since this causes a page to be remmaped with a different encryption
+/// attribute, `addr` should be validated.
+pub unsafe fn validate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
+    // SAFETY: safety requirements are delegated to the caller.
+    unsafe { set_page_valid_status_msr(addr, true) }
 }
 
-pub fn invalidate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
-    set_page_valid_status_msr(addr, false)
+/// # Safety
+///
+/// Since this causes a page to be remmaped with a different encryption
+/// attribute, `addr` should be validated.
+pub unsafe fn invalidate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
+    // SAFETY: safety requirements are delegated to the caller.
+    unsafe { set_page_valid_status_msr(addr, false) }
 }
 
 pub fn request_termination_msr() -> ! {
@@ -201,7 +222,8 @@ pub fn request_termination_msr() -> ! {
     // no reason to preserve interrupt state.  Interrupts can be disabled
     // outright prior to shutdown.
     raw_irqs_disable();
-    write_msr(SEV_GHCB, info);
+    // SAFETY: Requesting termination doesn't break memory safety.
+    unsafe { write_msr(SEV_GHCB, info) };
     raw_vmgexit();
     loop {
         halt();

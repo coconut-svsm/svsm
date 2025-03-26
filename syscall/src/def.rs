@@ -9,6 +9,7 @@ use bitflags::bitflags;
 // Syscall classes
 const CLASS0: u64 = 0;
 const CLASS1: u64 = 1 << 32;
+const CLASS3: u64 = 3 << 32;
 
 // Syscall number in class0
 pub const SYS_EXIT: u64 = CLASS0;
@@ -26,6 +27,9 @@ pub const SYS_OPENDIR: u64 = CLASS1 + 6;
 pub const SYS_READDIR: u64 = CLASS1 + 7;
 pub const SYS_MKDIR: u64 = CLASS1 + 8;
 pub const SYS_RMDIR: u64 = CLASS1 + 9;
+
+// Syscall number in class3
+pub const SYS_CAPABILITIES: u64 = CLASS3;
 
 ///Maximum length of path name including null character in bytes
 pub const PATH_MAX: usize = 4096;
@@ -121,5 +125,39 @@ impl Default for DirEnt {
             file_type: FileType::File,
             file_size: 0,
         }
+    }
+}
+
+bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct GlobalFeatureFlags: u64 {
+        const _ = 0x7; // Define bits used for platform type since
+                       // multi-bit flags should be avoided
+    }
+}
+
+impl GlobalFeatureFlags {
+    pub const PLATFORM_TYPE_NATIVE: u64 = 0;
+    pub const PLATFORM_TYPE_SNP: u64 = 1;
+    pub const PLATFORM_TYPE_TDP: u64 = 2;
+
+    pub fn is_snp(&self) -> bool {
+        (self.bits() & 0x7) == Self::PLATFORM_TYPE_SNP
+    }
+
+    pub fn is_tdp(&self) -> bool {
+        (self.bits() & 0x7) == Self::PLATFORM_TYPE_TDP
+    }
+}
+
+impl From<u64> for GlobalFeatureFlags {
+    fn from(flags: u64) -> Self {
+        GlobalFeatureFlags::from_bits_truncate(flags)
+    }
+}
+
+impl From<GlobalFeatureFlags> for u64 {
+    fn from(flags: GlobalFeatureFlags) -> Self {
+        flags.bits() & GlobalFeatureFlags::all().bits()
     }
 }

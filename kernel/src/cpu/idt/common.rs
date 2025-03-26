@@ -41,6 +41,7 @@ pub const MF_VECTOR: usize = 16;
 pub const AC_VECTOR: usize = 17;
 pub const MCE_VECTOR: usize = 18;
 pub const XF_VECTOR: usize = 19;
+pub const VE_VECTOR: usize = 20;
 pub const CP_VECTOR: usize = 21;
 pub const HV_VECTOR: usize = 28;
 pub const VC_VECTOR: usize = 29;
@@ -214,8 +215,10 @@ pub fn user_mode(ctxt: &X86ExceptionContext) -> bool {
     (ctxt.frame.cs & 3) == 3
 }
 
+// The base addresses of the IDT should be aligned on an 8-byte boundary
+// to maximize performance of cache line fills.
 #[derive(Copy, Clone, Default, Debug)]
-#[repr(C, packed)]
+#[repr(C, packed(8))]
 pub struct IdtEntry {
     low: u64,
     high: u64,
@@ -305,7 +308,7 @@ impl IdtEntry {
 
 const IDT_ENTRIES: usize = 256;
 
-#[repr(C, packed)]
+#[repr(C, packed(2))]
 #[derive(Default, Clone, Copy, Debug)]
 struct IdtDesc {
     size: u16,

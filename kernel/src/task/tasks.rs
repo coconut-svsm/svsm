@@ -60,7 +60,7 @@ impl TaskVirtualRegionGuard {
     fn alloc() -> Result<Self, SvsmError> {
         let index = KTASK_VADDR_BITMAP
             .lock()
-            .alloc(1, 1)
+            .alloc(1, 0)
             .ok_or(SvsmError::Alloc(AllocError::OutOfMemory))?;
         Ok(Self { index })
     }

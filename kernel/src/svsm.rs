@@ -37,7 +37,7 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
-use svsm::platform::{init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::exec_user;
@@ -192,8 +192,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     }
 
     cr0_init();
+    determine_cet_support(&*platform);
     cr4_init(&*platform);
-    determine_cet_support();
 
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
@@ -312,6 +312,8 @@ pub extern "C" fn svsm_main() {
 
     populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
         .expect("Failed to unpack FS archive");
+
+    init_capabilities();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
     let mut nr_cpus = 0;

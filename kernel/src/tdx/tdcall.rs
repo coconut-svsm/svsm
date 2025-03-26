@@ -6,6 +6,7 @@
 
 use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::cpu::cpuid::CpuidResult;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
@@ -16,10 +17,26 @@ use bitfield_struct::bitfield;
 use core::arch::asm;
 
 const TDG_VP_TDVMCALL: u32 = 0;
+const TDG_VP_VEINFO_GET: u32 = 3;
 const TDG_MEM_PAGE_ACCEPT: u32 = 6;
+const TDG_VM_RD: u32 = 7;
 
+const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+
+pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
+
+/// Virtualization exception information
+#[derive(Clone, Copy, Debug)]
+pub struct TdVeInfo {
+    pub exit_reason: u32,
+    pub exit_qualification: u64,
+    pub gla: u64,
+    pub gpa: u64,
+    pub exit_instruction_length: u32,
+    pub exit_instruction_info: u32,
+}
 
 #[bitfield(u64)]
 struct EptMappingInfo {
@@ -242,6 +259,105 @@ pub unsafe fn td_accept_virtual_memory(region: MemoryRegion<VirtAddr>) -> Result
         vaddr = vaddr + size;
     }
     Ok(())
+}
+
+pub fn tdcall_get_ve_info() -> Option<TdVeInfo> {
+    let mut out_rcx: u64;
+    let mut out_rdx: u64;
+    let mut out_r8: u64;
+    let mut out_r9: u64;
+    let mut out_r10: u64;
+    // SAFETY: executing TDCALL requires the use of assembly.
+    let err = unsafe {
+        let mut ret: u64;
+        asm!("tdcall",
+             in("rax") TDG_VP_VEINFO_GET,
+             lateout("rax") ret,
+             out("rcx") out_rcx,
+             out("rdx") out_rdx,
+             out("r8") out_r8,
+             out("r9") out_r9,
+             out("r10") out_r10,
+             options(att_syntax));
+        ret
+    };
+    match tdx_result(err) {
+        Ok(_) => Some(TdVeInfo {
+            exit_reason: out_rcx as u32,
+            exit_qualification: out_rdx,
+            gla: out_r8,
+            gpa: out_r9,
+            exit_instruction_length: out_r10 as u32,
+            exit_instruction_info: ((out_r10 >> 32) as u32),
+        }),
+        Err(TdxError::NoVeInfo) => None,
+        Err(e) => panic!("Unknown TD error: {e:?}"),
+    }
+}
+
+pub fn tdcall_vm_read(field: u64) -> u64 {
+    let (val, err) = loop {
+        let mut val: u64;
+        // SAFETY: executing TDCALL requires the use of assembly.
+        let err = unsafe {
+            let mut ret: u64;
+            asm!("tdcall",
+                 in("rax") TDG_VM_RD,
+                 in("rcx") 0,
+                 in("rdx") field,
+                 lateout("rax") ret,
+                 lateout("rdx") _,
+                 out("r8") val,
+                 options(att_syntax));
+            ret
+        };
+        if !tdx_recoverable_error(err) {
+            break (val, err);
+        }
+    };
+    // Ignore errors here since the caller cannot handle them.
+    debug_assert!(tdx_result(err).is_ok());
+    // val = 0 in case of no success.
+    val
+}
+
+pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut result_eax: u32;
+    let mut result_ebx: u32;
+    let mut result_ecx: u32;
+    let mut result_edx: u32;
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_CPUID,
+             in("r12") cpuid_fn,
+             in("r13") cpuid_subfn,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") _,
+             lateout("r12") result_eax,
+             lateout("r13") result_ebx,
+             lateout("r14") result_ecx,
+             lateout("r15") result_edx,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
+
+    CpuidResult {
+        eax: result_eax,
+        ebx: result_ebx,
+        ecx: result_ecx,
+        edx: result_edx,
+    }
 }
 
 pub fn tdvmcall_halt() {

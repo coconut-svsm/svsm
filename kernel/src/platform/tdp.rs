@@ -4,20 +4,20 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
+use super::capabilities::Caps;
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::msr::read_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{apic_register_bit, APIC_MSR_ISR};
+use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
 use crate::error::SvsmError;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::tdx::tdcall::{
-    td_accept_physical_memory, td_accept_virtual_memory, tdvmcall_halt, tdvmcall_io_read,
-    tdvmcall_io_write,
+    td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
+    tdvmcall_io_read, tdvmcall_io_write, MD_TDCS_NUM_L2_VMS,
 };
 use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
@@ -25,6 +25,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
 use core::{mem, ptr};
+use syscall::GlobalFeatureFlags;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -102,6 +103,14 @@ impl SvsmPlatform for TdpPlatform {
             addr_mask_width: vtom.trailing_zeros(),
             phys_addr_sizes: res.eax,
         }
+    }
+
+    fn capabilities(&self) -> Caps {
+        let num_vms = tdcall_vm_read(MD_TDCS_NUM_L2_VMS);
+        // VM 0 is always L1 itself
+        let vm_bitmap = ((1 << num_vms) - 1) << 1;
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_TDP;
+        Caps::new(vm_bitmap, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
@@ -196,13 +205,12 @@ impl SvsmPlatform for TdpPlatform {
         Err(TdxError::Unimplemented.into())
     }
 
-    fn eoi(&self) {}
+    fn eoi(&self) {
+        x2apic_eoi();
+    }
 
     fn is_external_interrupt(&self, vector: usize) -> bool {
-        // Examine the APIC ISR to determine whether this interrupt vector is
-        // active.  If so, it is assumed to be an external interrupt.
-        let (msr, mask) = apic_register_bit(vector);
-        (read_msr(APIC_MSR_ISR + msr) & mask as u64) != 0
+        x2apic_in_service(vector)
     }
 
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
@@ -212,7 +220,12 @@ impl SvsmPlatform for TdpPlatform {
         // transition_cr3 is not needed since all TD APs are using the stage2
         // page table set up by the BSP.
         let context = cpu.get_initial_context(start_rip);
-        let ap_context = create_ap_start_context(&context, 0);
+        let mut ap_context = create_ap_start_context(&context, 0);
+
+        // Set the initial EFER to zero so that it is not reloaded.  This
+        // is necessary since the TDX module does not permit changes to EFER
+        // when running in the L1.
+        ap_context.efer = 0;
 
         // The mailbox page was already accepted by the BSP in stage2 and
         // therefore it's been initialized as a zero page.

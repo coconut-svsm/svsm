@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 // Copyright (c) Microsoft Corporation
+// Copyright (c) SUSE LLC
 //
 // Author: Jon Lange <jlange@microsoft.com>
+// Author: Joerg Roedel <jroedel@suse.de>
 
+use super::capabilities::Caps;
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{APIC_MSR_EOI, APIC_MSR_ICR};
+use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
 use crate::error::SvsmError;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::mm::PerCPUPageMappingGuard;
-use crate::platform::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
+use syscall::GlobalFeatureFlags;
 
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
 use core::{mem, ptr};
@@ -29,9 +32,6 @@ use crate::mm::virt_to_phys;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
-
-const MSR_APIC_BASE: u32 = 0x1B;
-const APIC_X2_ENABLE_MASK: u64 = 0xC00;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {
@@ -86,15 +86,7 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        // Enable X2APIC mode.
-        // SAFETY: accesses to the APIC_BASE MSR are safe if the address is not
-        // being changed.
-        let apic_base = read_msr(MSR_APIC_BASE);
-        let apic_base_x2_enabled = apic_base | APIC_X2_ENABLE_MASK;
-        if apic_base != apic_base_x2_enabled {
-            write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
-        }
-
+        x2apic_enable();
         Ok(())
     }
 
@@ -107,6 +99,11 @@ impl SvsmPlatform for NativePlatform {
             addr_mask_width: 64,
             phys_addr_sizes: res.eax,
         }
+    }
+
+    fn capabilities(&self) -> Caps {
+        let features = GlobalFeatureFlags::PLATFORM_TYPE_NATIVE;
+        Caps::new(0, features)
     }
 
     fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
@@ -173,12 +170,12 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        write_msr(APIC_MSR_ICR, icr);
+        x2apic_icr_write(icr);
         Ok(())
     }
 
     fn eoi(&self) {
-        write_msr(APIC_MSR_EOI, 0);
+        x2apic_eoi();
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {
