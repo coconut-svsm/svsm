@@ -28,7 +28,6 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
 use crate::error::SvsmError;
-use crate::hyperv;
 use crate::io::IOPort;
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -185,11 +184,7 @@ pub trait SvsmPlatform {
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
     /// Start an additional processor.
-    fn start_cpu(
-        &self,
-        cpu: &PerCpu,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(), SvsmError>;
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
 
     /// Indicates whether this platform should invoke the SVSM request loop.
     fn start_svsm_request_loop(&self) -> bool {

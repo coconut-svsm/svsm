@@ -17,7 +17,6 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
 use crate::error::SvsmError;
-use crate::hyperv;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
 use crate::mm::PerCPUPageMappingGuard;
@@ -186,18 +185,15 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
-    fn start_cpu(
-        &self,
-        cpu: &PerCpu,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(), SvsmError> {
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+        let context = cpu.get_initial_context(start_rip);
         if self.is_hyperv {
-            return hyperv_start_cpu(cpu, context);
+            return hyperv_start_cpu(cpu, &context);
         }
 
         // Translate this context into an AP start context and place it it in
         // the AP startup transition page.
-        let ap_context = create_ap_start_context(context, self.transition_cr3);
+        let ap_context = create_ap_start_context(&context, self.transition_cr3);
 
         let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
         let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;

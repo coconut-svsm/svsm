@@ -13,7 +13,6 @@ use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
 use crate::error::SvsmError;
-use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::tdx::tdcall::{
@@ -214,17 +213,14 @@ impl SvsmPlatform for TdpPlatform {
         x2apic_in_service(vector)
     }
 
-    fn start_cpu(
-        &self,
-        cpu: &PerCpu,
-        context: &hyperv::HvInitialVpContext,
-    ) -> Result<(), SvsmError> {
+    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
         //
         // transition_cr3 is not needed since all TD APs are using the stage2
         // page table set up by the BSP.
-        let mut ap_context = create_ap_start_context(context, 0);
+        let context = cpu.get_initial_context(start_rip);
+        let mut ap_context = create_ap_start_context(&context, 0);
 
         // Set the initial EFER to zero so that it is not reloaded.  This
         // is necessary since the TDX module does not permit changes to EFER
