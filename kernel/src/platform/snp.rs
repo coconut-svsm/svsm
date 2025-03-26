@@ -38,12 +38,10 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
-
-static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -114,9 +112,11 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
-        this_cpu().configure_hv_doorbell()?;
+        if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
+            GHCB_APIC_ACCESSOR.set_use_restr_inj(true);
+            this_cpu().setup_hv_doorbell()?;
+        }
         guest_request_driver_init();
-        SVSM_ENV_INITIALIZED.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -152,11 +152,8 @@ impl SvsmPlatform for SnpPlatform {
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         cpu.register_ghcb()?;
 
-        // #HV doorbell allocation can only occur if the SVSM environment has
-        // already been initialized.  Skip allocation if not; it will be done
-        // during environment initialization.
-        if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
-            cpu.configure_hv_doorbell()?;
+        if GHCB_APIC_ACCESSOR.use_restr_inj() {
+            cpu.setup_hv_doorbell()?;
         }
 
         apic_initialize(&GHCB_APIC_ACCESSOR);

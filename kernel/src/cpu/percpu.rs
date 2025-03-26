@@ -48,7 +48,6 @@ use crate::platform::{halt, SvsmPlatform, SVSM_PLATFORM};
 use crate::requests::{request_loop_main, request_processing_main};
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
-use crate::sev::msr_protocol::{hypervisor_ghcb_features, GHCBHvFeatures};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{
@@ -784,28 +783,13 @@ impl PerCpu {
         self.ghcb().unwrap().register()
     }
 
-    fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
+    pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
         assert!(
             self.hv_doorbell.get().is_none(),
             "Attempted to reinitialize the HV doorbell page"
         );
         self.hv_doorbell.set(Some(doorbell));
-        Ok(())
-    }
-
-    /// Configures the HV doorbell page if restricted injection is enabled.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this function is called more than once for a given CPU and
-    /// restricted injection is enabled.
-    pub fn configure_hv_doorbell(&self) -> Result<(), SvsmError> {
-        // #HV doorbell configuration is only required if this system will make
-        // use of restricted injection.
-        if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
-            self.setup_hv_doorbell()?;
-        }
         Ok(())
     }
 
