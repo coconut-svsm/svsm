@@ -315,7 +315,9 @@ pub extern "C" fn svsm_main() {
 
     init_capabilities();
 
-    let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
+    let cpus = config
+        .load_cpu_info()
+        .expect("Failed to determine number of CPUs");
     let mut nr_cpus = 0;
 
     for cpu in cpus.iter() {
