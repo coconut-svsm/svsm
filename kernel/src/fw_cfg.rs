@@ -236,4 +236,10 @@ impl<'a> FwCfg<'a> {
 
         (0..num).map(|_| self.read_memory_region())
     }
+
+    pub fn get_cpu_count(&self) -> u32 {
+        const CPU_COUNT_HIDDEN_FILE: u16 = 0x5;
+        self.select(CPU_COUNT_HIDDEN_FILE);
+        self.read_le::<u32>()
+    }
 }

@@ -130,7 +130,17 @@ impl<'a> SvsmConfig<'a> {
             }
         }
 
-        load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
+        // Fall back to fw_cfg, if present, and read a hidden file to get CPU count
+        if let Some(c) = self.fw_cfg.as_ref() {
+            Ok((0..c.get_cpu_count())
+                .map(|i| ACPICPUInfo {
+                    apic_id: i,
+                    enabled: true,
+                })
+                .collect())
+        } else {
+            load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
+        }
     }
 
     pub fn should_launch_fw(&self) -> bool {
