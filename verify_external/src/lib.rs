@@ -23,6 +23,5 @@ use builtin_macros::*;
 verus! {
 #[cfg_attr(verus_keep_ghost, verifier::broadcast_use_by_default_when_this_crate_is_imported)]
 pub broadcast group external_axiom {
-    convert::convert_group
 }
 }

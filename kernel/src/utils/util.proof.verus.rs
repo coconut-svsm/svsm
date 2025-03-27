@@ -7,43 +7,32 @@
 // Proofs related to util.rs
 verus! {
 
-/// A meaningful align_down should be verified to equal to align_up_spec
-/// align_down_ens ==> from_spec(ret) === align_down_spec
-pub broadcast proof fn proof_align_down<T: IntegerAligned>(val: T, align: T) where
-    u64: FromSpec<T>,
-    int: FromSpec<T>,
-
+/// A meaningful align_down should be verified to equal to align_up_integer_ens
+/// align_down_ens ==> align_down_integer_ens
+pub broadcast proof fn proof_align_down<T: IntegerAligned>(val: T, align: T, ret: T) where
     requires
-        from_spec::<T, u64>(align) > 0,
-        is_pow_of_2(from_spec(align)),
-        #[trigger] align_down_requires((val, align)),
+        0 < align.into_spec() <= u64::MAX,
+        is_pow_of_2(align.into_spec() as u64),
+        align_down_requires((val, align)),
+        #[trigger] align_down_ens((val, align), ret),
     ensures
-        forall|ret| #[trigger]
-            align_down_ens((val, align), ret) ==> from_spec(ret) === align_down_spec(val, align),
+        align_down_integer_ens(val, align, ret),
 {
-    assert forall|ret: T| #[trigger] align_down_ens((val, align), ret) implies from_spec(ret)
-        === align_down_spec(val, align) by { T::lemma_align_down(val, align, ret) }
+    T::lemma_align_down(val, align, ret)
 }
 
-/// A meaningful align_up should be verified to equal to align_up_spec
-/// align_up_ens ==> from_spec(ret) === align_up_spec
-pub broadcast proof fn proof_align_up<T: IntegerAligned>(val: T, align: T) where
-    u64: FromSpec<T>,
-    int: FromSpec<T>,
-
+/// A meaningful align_up should be verified to equal to align_up_integer_ens
+/// align_up_ens ==> align_up_integer_ens
+pub broadcast proof fn proof_align_up<T: IntegerAligned>(val: T, align: T, ret: T) where
     requires
-        from_spec::<T, u64>(align) > 0,
-        is_pow_of_2(from_spec(align)),
+        0 < align.into_spec() <= u64::MAX,
+        is_pow_of_2(align.into_spec() as u64),
         align_up_requires((val, align)),
+        #[trigger] align_up_ens((val, align), ret),
     ensures
-        #![trigger align_up_requires((val, align))]
-        forall|ret| #[trigger]
-            align_up_ens((val, align), ret) ==> from_spec(ret) === align_up_spec(val, align),
+        align_up_integer_ens(val, align, ret),
 {
-    assert forall|ret: T| #[trigger] align_up_ens((val, align), ret) implies from_spec(ret)
-        === align_up_spec(val, align) by {
-        T::lemma_align_up(val, align, ret);
-    }
+    T::lemma_align_up(val, align, ret);
 }
 
 broadcast group group_align_proofs {
@@ -82,11 +71,12 @@ mod util_align_up {
             ret == add(x, sub(align, 1)) & !sub(align, 1),
             ret == spec_align_up(x as int, align as int),
     {
-        broadcast use group_align_proofs;
+        broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
 
         let mask = (align - 1) as u64;
         let y = (x + mask) as u64;
         verify_proof::bits::lemma_bit_u64_and_mask(y, !mask);
+        verify_proof::bits::lemma_bit_u64_and_mask(y, mask);
         verify_proof::bits::lemma_bit_u64_and_mask_is_mod(y, mask);
         let ret = add(x, sub(align, 1)) & !sub(align, 1);
 
@@ -99,7 +89,6 @@ mod util_align_up {
             lemma_add_mod_noop(x, align - 1, align);
             lemma_small_mod((align - 1) as nat, align as nat);
             lemma_mod_twice(x, align);
-            assert(r == align - 1);
         } else {
             lemma_mod_self_0(align);
             lemma_sub_mod_noop(x + align, 1, align);
@@ -107,9 +96,7 @@ mod util_align_up {
             lemma_add_mod_noop(x, align, align);
             lemma_mod_twice(x, align);
             lemma_small_mod(1, align as nat);
-            assert(r == (x % align - 1) % align);
             lemma_small_mod((x % align - 1) as nat, align as nat);
-            assert(r == (x % align - 1) as int);
         }
         ret
     }
@@ -152,8 +139,6 @@ mod util_align_down {
     {
         broadcast use group_align_proofs;
 
-        let mask: u64 = sub(align, 1);
-        assert(x == (x & !mask) + (x & mask));
     }
 
     pub proof fn lemma_align_down_u32(x: u32, align: u32)
@@ -162,10 +147,8 @@ mod util_align_down {
         ensures
             (x & !((align - 1) as u32)) == spec_align_down(x as int, align as int),
     {
-        assert(align > 0) by {
-            broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
+        broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
 
-        }
         let mask = sub(align, 1);
         verify_proof::bits::lemma_bit_u32_and_mask(x, mask);
         verify_proof::bits::lemma_bit_u32_and_mask(x, !mask);
@@ -178,18 +161,11 @@ mod util_align_down {
 
 pub use util_align_down::*;
 
-pub trait IntegerAligned: Add<Output = Self> + Sub<Output = Self> + BitAnd<Output = Self> + Not<
-    Output = Self,
-> + From<u8> + Copy + FromSpec<u8> + SpecSubOp<Self> + SpecAddOp<Self> + SpecBitAndOp<
-    Self,
-> + SpecNotOp + SpecPartialEqOp<Self> + core::cmp::PartialEq where
-    u64: FromSpec<Self>,
-    int: FromSpec<Self>,
- {
+pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + FromIntoInteger where  {
     proof fn lemma_is_aligned(val: Self, align: Self, ret: bool)
         requires
-            from_spec::<Self, u64>(align) > 0,
-            is_pow_of_2(from_spec::<_, u64>(align) as u64),
+            0 < align.into_spec() <= u64::MAX,
+            is_pow_of_2(align.into_spec() as u64),
             is_aligned_requires((val, align)),
             is_aligned_ens((val, align), ret),
         ensures
@@ -198,22 +174,22 @@ pub trait IntegerAligned: Add<Output = Self> + Sub<Output = Self> + BitAnd<Outpu
 
     proof fn lemma_align_down(val: Self, align: Self, ret: Self)
         requires
-            from_spec::<Self, u64>(align) > 0,
-            is_pow_of_2(from_spec(align)),
+            0 < align.into_spec() <= u64::MAX,
+            is_pow_of_2(align.into_spec() as u64),
             align_down_requires((val, align)),
             align_down_ens((val, align), ret),
         ensures
-            from_spec::<_, int>(ret) == align_down_spec(val, align),
+            align_down_integer_ens(val, align, ret),
     ;
 
     proof fn lemma_align_up(val: Self, align: Self, ret: Self)
         requires
-            from_spec::<Self, u64>(align) > 0,
-            is_pow_of_2(from_spec(align)),
+            0 < align.into_spec() <= u64::MAX,
+            is_pow_of_2(align.into_spec() as u64),
             align_up_ens((val, align), ret),
             align_up_requires((val, align)),
         ensures
-            from_spec::<_, int>(ret) == align_up_spec(val, align),
+            align_up_integer_ens(val, align, ret),
     ;
 }
 
@@ -226,7 +202,6 @@ mod util_integer_align {
         proof fn lemma_is_aligned(val: u64, align: u64, ret: bool) {
             broadcast use group_align_proofs;
 
-            assert(ret == (val & sub(align, 1) == 0));
         }
 
         proof fn lemma_align_down(val: Self, align: Self, ret: Self) {
@@ -256,7 +231,6 @@ mod util_integer_align {
         proof fn lemma_is_aligned(val: u32, align: u32, ret: bool) {
             broadcast use group_align_proofs;
 
-            assert(ret == (val & (align - 1) as u32 == 0));
         }
 
         proof fn lemma_align_down(val: Self, align: Self, ret: Self) {

@@ -4,10 +4,11 @@
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
-use verify_external::convert::{from_spec, FromSpec};
-use vstd::std_specs::ops::{SpecAddOp, SpecSubOp};
-
-use crate::utils::util::{align_down_spec, align_up_spec, proof_align_up};
+use crate::utils::util::{
+    align_down_integer_ens, align_up_integer_ens, proof_align_down, proof_align_up,
+};
+use verify_external::convert::{exists_into, forall_into, FromSpec};
+use vstd::std_specs::ops::{SpecAddRequires, SpecSubRequires};
 verus! {
 
 pub broadcast group sign_extend_proof {
@@ -22,6 +23,9 @@ pub broadcast group address_align_proof {
     crate::types::group_types_proof,
     verify_proof::bits::lemma_bit_usize_and_mask_is_mod,
     proof_align_up,
+    proof_align_down,
+    address_spec::lemma_align_up_requires,
+    address_spec::lemma_align_up_ens,
 }
 
 broadcast group vaddr_impl_proof {
@@ -46,7 +50,6 @@ mod address_spec { include!("address_inner.verus.rs");  }
 
 pub use address_spec::*;
 
-#[verifier(inline)]
 // The inner address should be smaller than VADDR_RANGE_SIZE.
 // Define a simple spec for sign_extend without using bit ops.
 pub open spec fn sign_extend_spec(addr: InnerAddr) -> usize
@@ -78,37 +81,6 @@ pub open spec fn sign_extend_ensures(addr: InnerAddr, ret: InnerAddr) -> bool {
     &&& vaddr_lower_bits(ret) == vaddr_lower_bits(addr)
 }
 
-pub open spec fn align_requires(align: InnerAddr) -> bool {
-    crate::utils::util::align_requires(align as u64)
-}
-
-#[verifier(inline)]
-pub open spec fn addr_align_up_requires<A>(addr: A, align: InnerAddr) -> bool {
-    &&& align_requires(align)
-    &&& from_spec::<_, InnerAddr>(addr) + align - 1 <= InnerAddr::MAX
-    &&& align > 0
-}
-
-pub open spec fn addr_align_up<A>(addr: A, align: InnerAddr) -> A {
-    from_spec(align_up_spec(from_spec::<_, InnerAddr>(addr), align) as InnerAddr)
-}
-
-pub open spec fn addr_align_down<A>(addr: A, align: InnerAddr) -> A {
-    from_spec(align_down_spec(from_spec(addr), align) as InnerAddr)
-}
-
-pub open spec fn is_aligned_spec(val: InnerAddr, align: InnerAddr) -> bool {
-    val % align == 0
-}
-
-pub open spec fn addr_is_aligned_spec<A>(addr: A, align: InnerAddr) -> bool {
-    is_aligned_spec(from_spec(addr), align)
-}
-
-pub open spec fn addr_is_page_aligned_spec<A>(addr: A) -> bool {
-    is_aligned_spec(from_spec(addr), PAGE_SIZE)
-}
-
 pub open spec fn pt_idx_spec(addr: InnerAddr, l: usize) -> usize
     recommends
         l <= 5,
@@ -125,13 +97,11 @@ pub open spec fn pt_idx_spec(addr: InnerAddr, l: usize) -> usize
     upper % 512
 }
 
-pub open spec fn crosses_page_spec<T: Into<InnerAddr>>(addr: T, size: InnerAddr) -> bool {
-    let inner = from_spec::<_, InnerAddr>(addr);
-    pfn_spec(inner) != pfn_spec((inner + size - 1) as InnerAddr)
+pub open spec fn crosses_page_ens<T: Into<InnerAddr>>(addr: T, size: InnerAddr, ret: bool) -> bool {
+    exists_into(addr, |inner| ret == (pfn_spec(inner) != pfn_spec((inner + size - 1) as InnerAddr)))
 }
 
 // Define a view (@) for VirtAddr
-#[cfg(verus_keep_ghost)]
 impl View for VirtAddr {
     type V = InnerAddr;
 
@@ -139,11 +109,6 @@ impl View for VirtAddr {
         self.0
     }
 }
-
-pub assume_specification[ VirtAddr::eq ](vaddr1: &VirtAddr, vaddr2: &VirtAddr) -> (ret: bool)
-    ensures
-        ret == (vaddr1@ == vaddr2@),
-;
 
 impl VirtAddr {
     /// Canonical form addresses run from 0 through 00007FFF'FFFFFFFF,
@@ -213,47 +178,35 @@ impl VirtAddr {
     }
 }
 
-impl SpecAddOp<InnerAddr> for VirtAddr {
-    type Output = VirtAddr;
-
+impl SpecAddRequires<InnerAddr> for VirtAddr {
     /* Specifications for methods */
     // requires that adding offset will not cause not overflow.
     // If a low address, adding offset to it should not have set any bits in upper 16 bits.
     // If a high address, should not exceed usize::MAX
-    open spec fn spec_add_requires(lhs: Self, offset: InnerAddr) -> bool {
-        lhs.offset() + offset < VADDR_RANGE_SIZE
+    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
+        self.offset() + offset < VADDR_RANGE_SIZE
     }
+}
 
-    open spec fn spec_add_ensures(lhs: Self, offset: InnerAddr, ret: VirtAddr) -> bool {
-        &&& lhs.offset() + offset == ret.offset()
-        &&& ret === VirtAddr::from_spec((lhs@ + offset) as InnerAddr)
+impl VirtAddr {
+    pub open spec fn spec_add_ensures(self, offset: InnerAddr, ret: VirtAddr) -> bool {
+        &&& self.offset() + offset == ret.offset()
+        &&& ret === VirtAddr::from_spec((self@ + offset) as InnerAddr)
     }
 }
 
 // Get a new addr by subtracting an offset from an existing virtual address
-impl SpecSubOp<InnerAddr> for VirtAddr {
-    type Output = VirtAddr;
-
-    open spec fn spec_sub_requires(lhs: Self, other: InnerAddr) -> bool {
-        &&& lhs.offset() >= other
-    }
-
-    open spec fn spec_sub_ensures(lhs: Self, other: InnerAddr, ret: Self) -> bool {
-        ret.offset() == lhs.offset() - other
+impl SpecSubRequires<InnerAddr> for VirtAddr {
+    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
+        self.offset() >= rhs
     }
 }
 
 // Compute the offset between two virtual addresses.
-impl SpecSubOp<VirtAddr> for VirtAddr {
-    type Output = InnerAddr;
-
+impl SpecSubRequires<VirtAddr> for VirtAddr {
     /// Do not assume they are both high/low addresses.
-    open spec fn spec_sub_requires(lhs: Self, other: VirtAddr) -> bool {
-        &&& lhs@ >= other@
-    }
-
-    open spec fn spec_sub_ensures(lhs: Self, other: VirtAddr, ret: InnerAddr) -> bool {
-        ret == lhs.offset() - other.offset()
+    open spec fn spec_sub_requires(self, rhs: VirtAddr) -> bool {
+        self@ >= rhs@
     }
 }
 
@@ -288,7 +241,6 @@ impl FromSpec<VirtAddr> for u64 {
 }
 
 // Define a view (@) for PhysAddr
-#[cfg(verus_keep_ghost)]
 impl View for PhysAddr {
     type V = InnerAddr;
 
@@ -309,39 +261,21 @@ impl FromSpec<PhysAddr> for InnerAddr {
     }
 }
 
-impl SpecSubOp<PhysAddr> for PhysAddr {
-    type Output = InnerAddr;
-
-    open spec fn spec_sub_requires(lhs: Self, rhs: Self) -> bool {
-        lhs@ >= rhs@
-    }
-
-    open spec fn spec_sub_ensures(lhs: Self, rhs: Self, ret: InnerAddr) -> bool {
-        ret == (lhs@ - rhs@)
+impl SpecSubRequires<PhysAddr> for PhysAddr {
+    open spec fn spec_sub_requires(self, rhs: PhysAddr) -> bool {
+        self@ >= rhs@
     }
 }
 
-impl SpecSubOp<InnerAddr> for PhysAddr {
-    type Output = PhysAddr;
-
-    open spec fn spec_sub_requires(lhs: Self, rhs: InnerAddr) -> bool {
-        lhs@ >= rhs
-    }
-
-    open spec fn spec_sub_ensures(lhs: Self, rhs: InnerAddr, ret: PhysAddr) -> bool {
-        ret@ == (lhs@ - rhs)
+impl SpecSubRequires<InnerAddr> for PhysAddr {
+    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
+        self@ >= rhs
     }
 }
 
-impl SpecAddOp<InnerAddr> for PhysAddr {
-    type Output = PhysAddr;
-
-    open spec fn spec_add_requires(lhs: Self, offset: InnerAddr) -> bool {
-        lhs@ + offset <= InnerAddr::MAX
-    }
-
-    open spec fn spec_add_ensures(lhs: Self, offset: InnerAddr, ret: PhysAddr) -> bool {
-        &&& lhs@ + offset == ret@
+impl SpecAddRequires<InnerAddr> for PhysAddr {
+    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
+        self@ + offset <= InnerAddr::MAX
     }
 }
 
