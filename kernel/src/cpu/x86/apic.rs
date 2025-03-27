@@ -8,6 +8,8 @@
 
 use crate::cpu::msr::{read_msr, write_msr};
 
+/// APIC base address MSR offset
+pub const MSR_APIC_BASE: u32 = 0x1B;
 /// End-of-Interrupt register MSR offset
 pub const MSR_X2APIC_EOI: u32 = 0x80B;
 /// Spurious-Interrupt-Register MSR offset
@@ -17,7 +19,6 @@ pub const MSR_X2APIC_ISR: u32 = 0x810;
 /// Interrupt-Control-Register register MSR offset
 pub const MSR_X2APIC_ICR: u32 = 0x830;
 
-const MSR_APIC_BASE: u32 = 0x1B;
 const APIC_ENABLE_MASK: u64 = 0x800;
 const APIC_X2_ENABLE_MASK: u64 = 0x400;
 
