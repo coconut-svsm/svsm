@@ -26,6 +26,7 @@ pub enum TdxError {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TdVmcallError {
     OperandInvalid,
+    Retry,
     Unknown(u64),
 }
 
@@ -62,6 +63,7 @@ pub fn tdx_recoverable_error(err: u64) -> bool {
 pub fn tdvmcall_result(err: u64) -> Result<(), TdxError> {
     match err {
         0 => Ok(()),
+        1 => Err(TdxError::Vmcall(TdVmcallError::Retry)),
         0x8000_0000_0000_0000 => Err(TdxError::Vmcall(TdVmcallError::OperandInvalid)),
         _ => Err(TdxError::Vmcall(TdVmcallError::Unknown(err))),
     }
