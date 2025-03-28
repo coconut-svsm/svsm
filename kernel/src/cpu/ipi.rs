@@ -100,6 +100,13 @@ pub unsafe trait IpiMessage {
         }
     }
 
+    /// If an IPI message has any atomic members, then they may be modified
+    /// by IPI execution.  Therefore, it may be necessary to transfer the
+    /// modified atomic members back to the original message so the sender
+    /// can observe the final atomic value.  IPI message implementations only
+    /// need to implement this method if they require such finalization.
+    fn finalize(&self, _shared_buffer: &Self) {}
+
     /// Invokes the IPI handler for the message.
     fn invoke(&self);
 }
@@ -218,8 +225,13 @@ impl<T: IpiMessage + Sync> IpiHelper for IpiHelperShared<'_, T> {
         self.message.copy_to_shared(shared_buffer);
     }
 
-    fn copy_from_shared(&mut self, _shared_buffer: *const ()) {
-        // A shared IPI does not copy back any results.
+    fn copy_from_shared(&mut self, shared_buffer: *const ()) {
+        // SAFETY: the IPI logic guarantees that the shared buffer will contain
+        // an object of type `T`.
+        unsafe {
+            let shared = shared_buffer as *const T;
+            self.message.finalize(shared.as_ref().unwrap());
+        }
     }
 
     // SAFETY: The IPI logic is guaranteed to call this function only when
@@ -624,6 +636,47 @@ mod tests {
             // Verify that `drop()` was called exactly once on thie IPI
             // message.
             assert_eq!(drop_count, 1);
+        }
+    }
+
+    struct AtomicIpi {
+        cpu_count: AtomicUsize,
+    }
+
+    /// # Safety
+    /// The test IPI method has no references and can safely use the default
+    /// copy implementations from the IPI message traits.  It requires a
+    /// finalize routine to capture the atomic result.
+    unsafe impl IpiMessage for AtomicIpi {
+        fn invoke(&self) {
+            self.cpu_count.fetch_add(1, Ordering::Relaxed);
+        }
+
+        fn finalize(&self, shared_buffer: &Self) {
+            let cpu_count = shared_buffer.cpu_count.load(Ordering::Relaxed);
+            self.cpu_count.store(cpu_count, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_atomic_ipi() {
+        // IPI testing is only possible on platforms that support SVSM
+        // interrupts.
+        if SVSM_PLATFORM.use_interrupts() {
+            let all_message = AtomicIpi {
+                cpu_count: AtomicUsize::new(0),
+            };
+            this_cpu().send_multicast_ipi(IpiTarget::All, &all_message);
+            let all_count = all_message.cpu_count.load(Ordering::Relaxed);
+            assert!(all_count > 0);
+
+            let abs_message = AtomicIpi {
+                cpu_count: AtomicUsize::new(0),
+            };
+            this_cpu().send_multicast_ipi(IpiTarget::AllButSelf, &abs_message);
+            let abs_count = abs_message.cpu_count.load(Ordering::Relaxed);
+            assert_eq!(abs_count + 1, all_count);
         }
     }
 }
