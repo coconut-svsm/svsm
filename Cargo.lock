@@ -1112,6 +1112,7 @@ dependencies = [
  "sha2",
  "syscall",
  "test",
+ "uuid",
  "verify_external",
  "verify_proof",
  "vstd",

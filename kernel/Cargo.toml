@@ -38,6 +38,7 @@ zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
 # Need "force-soft", see https://github.com/RustCrypto/hashes/issues/446
 sha2 = { workspace = true, features = ["force-soft"] }
+uuid.workspace = true
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }

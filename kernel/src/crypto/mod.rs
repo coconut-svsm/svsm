@@ -89,8 +89,8 @@ pub mod digest {
     // behind a type without any fields.
 
     pub trait Algorithm {
-	/// Digests `input` into an output vector of size `OUTPUT_LEN`.
-	fn digest(input: &[u8]) -> Vec<u8>;
+        /// Digests `input` into an output vector of size `OUTPUT_LEN`.
+        fn digest(input: &[u8]) -> Vec<u8>;
     }
 
     /// Sha512 type

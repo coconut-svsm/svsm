@@ -83,6 +83,6 @@ impl CryptoAes256GcmTrait for CryptoAes256Gcm {
 
 impl CryptoHashTrait for CryptoSha512 {
     fn digest(input: &[u8]) -> Vec<u8> {
-	Sha512::digest(input).to_vec()
+        Sha512::digest(input).to_vec()
     }
 }
