@@ -11,9 +11,12 @@
 #[cfg(not(any(test, fuzzing)))]
 mod wrapper;
 
+pub mod ek_templates;
+
 extern crate alloc;
 
 use alloc::vec::Vec;
+
 use core::ffi::c_void;
 use libtcgtpm::bindings::{
     TPM_Manufacture, TPM_TearDown, _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable,
@@ -24,18 +27,44 @@ use crate::{
     address::VirtAddr,
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
-    vtpm::{TcgTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface},
+    vtpm::{
+        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA, SvsmVTpmError, TcgTpmSimulatorInterface,
+        VtpmInterface, VtpmProtocolInterface,
+    },
 };
 
-#[derive(Debug, Copy, Clone, Default)]
+// Definitions from "Trusted Platform Module Library Part 4: Supporting Routines – Code,
+// Family “2.0”, Level 00, Revision 01.38"
+
+const TPM_RC_SUCCESS: u32 = 0;
+
+// This selector is similar to the template selector, except the whole public key template
+// is part of the selector. There is no support for PCR selection or inSensitive or outsideInfo.
+const VTPM_SELECT_MTAUTH_EK: u64 = 0x0000_0000_0000_0001;
+
+#[derive(Debug, Clone, Default)]
 pub struct TcgTpm {
     is_powered_on: bool,
+    ekpub: Option<Vec<u8>>,
+}
+
+// PREREQUISITE: CMD must be at least 10 bytes long.
+// A TPM command result contains
+//
+// Byte offset | Size | Description
+// ---
+// 0x00        | 2    | u16 ST tag
+// 0x02        | 4    | u32 response size
+// 0x06        | 4    | u32 response code
+fn tpm_cmd_rc(cmd: &[u8]) -> u32 {
+    u32::from_be_bytes(cmd[6..10].try_into().unwrap())
 }
 
 impl TcgTpm {
     pub const fn new() -> TcgTpm {
         TcgTpm {
             is_powered_on: false,
+            ekpub: None,
         }
     }
 
@@ -65,6 +94,24 @@ impl TcgTpm {
                 Err(SvsmReqError::incomplete())
             }
         }
+    }
+
+    fn select_primary_key_manifest(&self, selector: &[u8]) -> Result<Vec<u8>, SvsmVTpmError> {
+        let (mut cmd, mut command_size) = create_mtauth_ek_cmd(selector);
+
+        self.send_tpm_command(&mut cmd[..], &mut command_size, 0)
+            .map_err(SvsmVTpmError::ReqError)?;
+
+        let rc = tpm_cmd_rc(&cmd);
+        // Check that TPM_RC(UINT32) at byte offset 6 is 0x00000000 (TPM_RC_SUCCESS)
+        if rc != TPM_RC_SUCCESS {
+            return Err(SvsmVTpmError::CommandError(rc));
+        }
+
+        // Get size (UINT16) of TPMT_PUBLIC at offset 18.
+        // Note this is output from the TPM, so its value is trusted.
+        let size_of_tpmt_public = u16::from_be_bytes([cmd[18], cmd[19]]);
+        Ok(cmd[20..(20 + size_of_tpmt_public) as usize].to_vec())
     }
 }
 
@@ -163,7 +210,102 @@ impl TcgTpmSimulatorInterface for TcgTpm {
     }
 }
 
+fn extend_empty_auth(buf: &mut Vec<u8>) {
+    // TPM_RS_PW(4) + nonce(2) + attributes(1) + pw(2)
+    buf.extend_from_slice(&[
+        0x00, 0x00, 0x00, 0x09, // Size
+        // TPM_RS_PW
+        0x40, 0x00, 0x00, 0x09, // nonce == empty buffer
+        0x00, 0x00, // session attributes = continueSession = 0x01
+        0x01, // password = empty buffer
+        0x00, 0x00,
+    ]);
+}
+
+fn create_mtauth_ek_cmd(public_area: &[u8]) -> (Vec<u8>, usize) {
+    let mut cmd = Vec::<u8>::with_capacity(TPM_BUFFER_MAX_SIZE);
+
+    // TPM Command header
+    cmd.extend_from_slice(&[
+        0x80, 0x02, // TPM_ST_SESSIONS
+        0x00, 0x00, 0x00, 0x00, // Placeholder for command size
+        0x00, 0x00, 0x01, 0x31, // TPM_CC_CREATEPRIMARY
+        0x40, 0x00, 0x00, 0x0B, // TPM_RH_ENDORSEMENT
+    ]);
+
+    // Authorization block
+    extend_empty_auth(&mut cmd);
+
+    // inSensitive parameter
+    //
+    // TPM2B_SENSITIVE_CREATE structure is defined in
+    // Table 132 — Definition of TPM2B_SENSITIVE_CREATE Structure,
+    // Trusted Platform Module Library Part 2: Structures
+    cmd.extend_from_slice(&[
+        0x00, 0x04, // sensitive data size
+        0x00, 0x00, 0x00, 0x00, // user auth
+    ]);
+
+    // inPublic parameter
+    // parameters size
+    cmd.extend_from_slice(&(public_area.len() as u16).to_be_bytes());
+    // parameters
+    cmd.extend_from_slice(public_area);
+
+    cmd.extend_from_slice(&[
+        0x00, 0x00, 0x00, 0x00, // outsideInfo parameter
+        0x00, 0x00, // pcr selection
+    ]);
+
+    // Update command size
+    let command_size = cmd.len();
+    cmd[2..6].copy_from_slice(&(command_size as u32).to_be_bytes());
+
+    cmd.resize(TPM_BUFFER_MAX_SIZE, 0);
+    (cmd, command_size)
+}
+
+fn split_selector(selector: &[u8]) -> Result<(u64, &[u8]), SvsmReqError> {
+    if selector.len() < 8 {
+        log::error!("unexpected manifest selector length {}", selector.len());
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    let tag = u64::from_le_bytes(selector[..8].try_into().unwrap());
+    Ok((tag, &selector[8..]))
+}
+
 impl VtpmInterface for TcgTpm {
+    fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError> {
+        if self.ekpub.is_none() {
+            let (mut cmd, mut cmd_size) = create_mtauth_ek_cmd(&DEFAULT_PUBLIC_AREA[..]);
+            self.send_tpm_command(&mut cmd, &mut cmd_size, 0)?;
+            if tpm_cmd_rc(cmd.as_slice()) != TPM_RC_SUCCESS {
+                return Err(SvsmReqError::incomplete());
+            }
+            let size_of_tpmt_public = u16::from_be_bytes([cmd[18], cmd[19]]);
+            self.ekpub = Some(cmd[20..(20 + size_of_tpmt_public) as usize].to_vec());
+        }
+        self.ekpub.clone().ok_or_else(SvsmReqError::invalid_request)
+    }
+
+    fn select_manifest(&mut self, version: u32, selector: &[u8]) -> Result<Vec<u8>, SvsmVTpmError> {
+        // The only supported selector version is 0.
+        if version > 0 {
+            log::error!("unexpected manifest version number {}", version);
+            return Err(SvsmVTpmError::ReqError(SvsmReqError::invalid_parameter()));
+        }
+
+        let (tag, data) = split_selector(selector)?;
+        // The only supported selection kind is an endorsement hierarchy primary key.
+        match tag {
+            VTPM_SELECT_MTAUTH_EK => self.select_primary_key_manifest(data),
+            _ => {
+                log::error!("unknown selector tag {}", tag);
+                Err(SvsmVTpmError::ReqError(SvsmReqError::invalid_parameter()))
+            }
+        }
+    }
+
     fn is_powered_on(&self) -> bool {
         self.is_powered_on
     }

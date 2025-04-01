@@ -9,8 +9,11 @@ extern crate alloc;
 
 use crate::address::{Address, PhysAddr};
 use crate::error::{AttestError, SvsmError};
-use crate::greq::{pld_report::{USER_DATA_SIZE, SnpReportResponse}, services::get_regular_report};
-use crate::mm::guestmem::{read_bytes_from_guest, read_from_guest, copy_to_guest};
+use crate::greq::{
+    pld_report::{SnpReportResponse, USER_DATA_SIZE},
+    services::get_regular_report,
+};
+use crate::mm::guestmem::{copy_to_guest, read_bytes_from_guest, read_from_guest};
 use crate::protocols::{errors::SvsmReqError, RequestParams};
 
 use alloc::vec::Vec;
