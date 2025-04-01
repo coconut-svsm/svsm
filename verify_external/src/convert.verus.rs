@@ -6,74 +6,90 @@
 use vstd::prelude::*;
 verus! {
 
-pub broadcast group convert_group {
-    axiom_from_spec,
-}
-
 pub trait FromSpec<T>: Sized {
     spec fn from_spec(v: T) -> Self;
 }
 
-macro_rules! def_primitive_from{
-    ($toty: ty, $($fromty: ty),*) => {
-        $(verus!{
-            impl FromSpec<$fromty> for $toty {
-            open spec fn from_spec(v: $fromty) -> Self {
-                v as $toty
-            }
-        }})*
+pub trait IntoSpec<T>: Sized {
+    spec fn into_spec(self) -> T;
+}
+
+impl<T, U> IntoSpec<U> for T where U: FromSpec<T> {
+    open spec fn into_spec(self) -> U {
+        U::from_spec(self)
     }
 }
 
-def_primitive_from!{u16, u8, u16}
+pub trait FromIntoInteger: FromSpec<int> + IntoSpec<int> {
 
-def_primitive_from!{u32, u8, u16, u32}
+}
 
-def_primitive_from!{u64, u8, u16, u32, usize}
+macro_rules! def_primitive_from{
+    ($toty: ty; $($fromty: ty),*) => {verus!{
+        $(
+            impl FromSpec<$fromty> for $toty {
+                open spec fn from_spec(v: $fromty) -> Self {
+                    v as $toty
+                }
+            }
+        )*
+    }}
+}
 
-def_primitive_from!{usize, u8, u16, u32, usize}
+def_primitive_from!{u8; u8, int}
 
-pub open spec fn from_spec<T1, T2>(v: T1) -> T2;
+def_primitive_from!{u16; u8, u16, int}
+
+def_primitive_from!{u32; u8, u16, u32, int}
+
+def_primitive_from!{u64; u8, u16, u32, u64, usize, int}
+
+def_primitive_from!{usize; u8, u16, u32, usize, int}
+
+def_primitive_from!{u128; u8, u16, u32, u64, usize, u128, int}
+
+def_primitive_from!{int; u8, u16, u32, u64, usize, u128, int, nat}
+
+def_primitive_from!{nat; u8, u16, u32, u64, usize, u128, nat}
+
+impl FromIntoInteger for u8 {
+
+}
+
+impl FromIntoInteger for u16 {
+
+}
+
+impl FromIntoInteger for u32 {
+
+}
+
+impl FromIntoInteger for u64 {
+
+}
+
+impl FromIntoInteger for usize {
+
+}
 
 #[verifier(inline)]
-pub open spec fn default_into_spec<T, U: From<T>>(v: T) -> U {
-    from_spec(v)
+pub open spec fn exists_into<T, U>(v: T, r: spec_fn(v: U) -> bool) -> bool where T: Into<U> {
+    exists|u: U| #[trigger] T::into.ensures((v,), u) && r(u)
 }
 
-#[verifier(external_body)]
-pub broadcast proof fn axiom_from_spec<T, U: FromSpec<T>>(v: T)
-    ensures
-        #[trigger] from_spec::<T, U>(v) === U::from_spec(v),
-{
+#[verifier(inline)]
+pub open spec fn forall_into<T, U>(v: T, r: spec_fn(v: U) -> bool) -> bool where T: Into<U> {
+    forall|u: U| #[trigger] T::into.ensures((v,), u) ==> r(u)
 }
 
-#[verifier::external_trait_specification]
-pub trait ExInto<T>: Sized {
-    type ExternalTraitSpecificationFor: core::convert::Into<T>;
-
-    fn into(self) -> (ret: T)
-        ensures
-            from_spec(self) === ret,
-    ;
+#[verifier(inline)]
+pub open spec fn exists_from<T, U>(v: T, r: spec_fn(v: U) -> bool) -> bool where U: From<T> {
+    exists|u: U| #[trigger] U::from.ensures((v,), u) && r(u)
 }
 
-#[verifier::external_trait_specification]
-pub trait ExFrom<T>: Sized {
-    type ExternalTraitSpecificationFor: core::convert::From<T>;
-
-    fn from(v: T) -> (ret: Self)
-        ensures
-            from_spec(v) === ret,
-    ;
-}
-
-#[verifier::external_fn_specification]
-#[verifier::when_used_as_spec(default_into_spec)]
-pub fn ex_into<T, U: From<T>>(a: T) -> (ret: U)
-    ensures
-        ret === from_spec(a),
-{
-    a.into()
+#[verifier(inline)]
+pub open spec fn forall_from<T, U>(v: T, r: spec_fn(v: U) -> bool) -> bool where U: From<T> {
+    forall|u: U| #[trigger] U::from.ensures((v,), u) ==> r(u)
 }
 
 } // verus!

@@ -248,7 +248,10 @@ macro_rules! bit_shl_values {
         pub broadcast proof fn $pname()
         ensures
         #(
-            N < $styp::BITS ==> #[trigger]($one << N) == POW2_VALUE!(N),
+            #![trigger ($one << N)]
+        )*
+        #(
+            N < $styp::BITS ==> ($one << N) == POW2_VALUE!(N),
         )*
         {
             #(assert($one << N == POW2_VALUE!(N)) by(compute_only);)*
@@ -296,7 +299,7 @@ macro_rules! bit_set_clear_mask {
                 (a & m) & m == a & m,
                 a & m <= m,
                 a & m <= a,
-                a == add(a & m, a & !m),
+                a == (a & m) + (a & !m),
         {}
         }
     };
@@ -353,6 +356,10 @@ bit_not_properties! {usize, u64, spec_bit_usize_not_properties, lemma_bit_usize_
 bit_set_clear_mask! {usize, u64, lemma_bit_usize_or_mask, lemma_bit_usize_and_mask}
 bit_and_mask_is_mod! {usize, lemma_bit_usize_and_mask_is_mod}
 
+bit_shl_values! {u32, u32, 1usize, lemma_bit_u32_shl_values}
+bit_not_properties! {u32, u32, spec_bit_u32_not_properties, lemma_bit_u32_not_is_sub}
+bit_set_clear_mask! {u32, u32, lemma_bit_u32_or_mask, lemma_bit_u32_and_mask}
+bit_and_mask_is_mod! {u32, lemma_bit_u32_and_mask_is_mod}
 verus! {
 
 pub broadcast proof fn lemma_pow2_eq_bit_value(n: nat)
