@@ -205,7 +205,7 @@ pub fn print_stack(skip: usize) {
     for frame in unwinder.skip(skip) {
         match frame {
             UnwoundStackFrame::Valid(item) => log::info!(
-                "  [{:#018x}]{}",
+                "  [{:016x}]{}",
                 item.rip,
                 if !item.is_aligned { " #" } else { "" }
             ),
