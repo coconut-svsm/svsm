@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::super::control_regs::read_cr2;
-use super::super::extable::handle_exception_table;
+use super::super::extable::{handle_exception_table, handle_exception_table_early};
 use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
@@ -46,6 +46,7 @@ extern "C" {
     fn asm_entry_np();
     fn asm_entry_ss();
     fn asm_entry_gp();
+    fn asm_entry_pf_early();
     fn asm_entry_pf();
     fn asm_entry_mf();
     fn asm_entry_ac();
@@ -82,7 +83,7 @@ pub fn early_idt_init() {
     idt.set_entry(NP_VECTOR, IdtEntry::entry(asm_entry_np));
     idt.set_entry(SS_VECTOR, IdtEntry::entry(asm_entry_ss));
     idt.set_entry(GP_VECTOR, IdtEntry::entry(asm_entry_gp));
-    idt.set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf));
+    idt.set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf_early));
     idt.set_entry(MF_VECTOR, IdtEntry::entry(asm_entry_mf));
     idt.set_entry(AC_VECTOR, IdtEntry::entry(asm_entry_ac));
     idt.set_entry(MCE_VECTOR, IdtEntry::entry(asm_entry_mce));
@@ -103,6 +104,9 @@ pub fn early_idt_init() {
 }
 
 pub fn idt_init() {
+    // Switch #PF handler to the default one
+    idt_mut().set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf));
+
     // Set IST vectors
     init_ist_vectors();
 
@@ -172,6 +176,21 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
         panic!(
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x}",
             rip, err, rsp
+        );
+    }
+}
+
+// Early Page-Fault handler
+#[no_mangle]
+extern "C" fn ex_handler_page_fault_early(ctxt: &mut X86ExceptionContext, _vector: usize) {
+    let cr2 = read_cr2();
+    let rip = ctxt.frame.rip;
+    let err = ctxt.error_code;
+
+    if !handle_exception_table_early(ctxt) {
+        panic!(
+            "Unhandled early Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+            rip, cr2, err
         );
     }
 }

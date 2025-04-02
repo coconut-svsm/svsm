@@ -60,6 +60,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::arch::asm;
 use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ptr;
@@ -1189,6 +1190,34 @@ impl PerCpu {
 
 pub fn this_cpu() -> &'static PerCpu {
     unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
+}
+
+pub fn try_this_cpu() -> Option<&'static PerCpu> {
+    let mut rcx: u64;
+
+    // SAFETY: Inline assembly to test the validity of the PerCpu page.
+    // Any #PF generated here is handled by the #PF handler and it will
+    // either return an error in %rcx or crash the system. This however
+    // does not impact any state related to memory safety.
+    unsafe {
+        asm!("1: movq ({0}), {1}",
+             "   xorq %rcx, %rcx",
+             "2:",
+             ".pushsection \"__early_exception_table\",\"a\"",
+             ".balign 16",
+             ".quad (1b)",
+             ".quad (2b)",
+             ".popsection",
+                in(reg) SVSM_PERCPU_BASE.bits(),
+                out(reg) _,
+                out("rcx") rcx,
+                options(att_syntax, nostack));
+    }
+    if rcx == 0 {
+        Some(this_cpu())
+    } else {
+        None
+    }
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {
