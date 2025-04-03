@@ -349,6 +349,14 @@ impl SvsmPlatform for SnpPlatform {
     fn start_svsm_request_loop(&self) -> bool {
         true
     }
+
+    fn mmio_write(&self, paddr: PhysAddr, data: &[u8]) -> Result<(), SvsmError> {
+        crate::cpu::percpu::current_ghcb().mmio_write(paddr, data)
+    }
+
+    fn mmio_read(&self, paddr: PhysAddr, data: &mut [u8]) -> Result<(), SvsmError> {
+        crate::cpu::percpu::current_ghcb().mmio_read(paddr, data)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
