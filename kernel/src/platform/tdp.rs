@@ -270,6 +270,14 @@ impl SvsmPlatform for TdpPlatform {
         }
         Ok(())
     }
+
+    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+        unimplemented!()
+    }
+
+    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+        unimplemented!()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]

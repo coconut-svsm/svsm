@@ -366,6 +366,28 @@ impl SvsmPlatform for SnpPlatform {
     fn start_svsm_request_loop(&self) -> bool {
         true
     }
+
+    /// Perfrom a write to a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, paddr: PhysAddr, data: &[u8]) -> Result<(), SvsmError> {
+        // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
+        unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
+    }
+
+    /// Perfrom a read from a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_read(&self, paddr: PhysAddr, data: &mut [u8]) -> Result<(), SvsmError> {
+        // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
+        unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
