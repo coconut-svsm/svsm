@@ -190,6 +190,14 @@ pub trait SvsmPlatform {
     fn start_svsm_request_loop(&self) -> bool {
         false
     }
+
+    fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+        todo!()
+    }
+
+    fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+        todo!()
+    }
 }
 
 //FIXME - remove Copy trait
