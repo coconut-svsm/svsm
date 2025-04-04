@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["APIC_ENABLE_MASK","APIC_SPIV_SW_ENABLE_MASK","APIC_SPIV_VECTOR_MASK","APIC_X2_ENABLE_MASK","MSR_APIC_BASE","MSR_X2APIC_EOI","MSR_X2APIC_ICR","MSR_X2APIC_ISR","MSR_X2APIC_SPIV"],"fn":["apic_register_bit","x2apic_enable","x2apic_eoi","x2apic_icr_write","x2apic_in_service","x2apic_spiv_write","x2apic_sw_enable"]};
