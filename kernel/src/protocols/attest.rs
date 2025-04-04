@@ -1,0 +1,576 @@
+// SPDX-License-Identifier: MIT
+//
+// Copyright (c) 2025  Hewlett Packard Enterprise Development LP
+// Copyright (c) 2025 Coconut-SVSM Authors
+//
+
+//! Attest protocol implementation
+
+extern crate alloc;
+
+use crate::address::{Address, PhysAddr};
+use crate::error::{AttestError, SvsmError};
+use crate::greq::{
+    pld_report::{SnpReportResponse, USER_DATA_SIZE},
+    services::get_regular_report,
+};
+use crate::mm::guestmem::{copy_to_guest, read_bytes_from_guest, read_from_guest};
+use crate::protocols::{errors::SvsmReqError, RequestParams};
+#[cfg(all(feature = "vtpm", not(test)))]
+use crate::vtpm::{vtpm_get_manifest, vtpm_get_manifest_ex, SvsmVTpmError};
+
+use alloc::vec::Vec;
+use sha2::{Digest, Sha512};
+use uuid::{uuid, Uuid};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const ATTEST_PROTOCOL_VERSION_MAX: u32 = 2;
+
+const SERVICES_MANIFEST_GUID: Uuid = uuid!("63849ebb-3d92-4670-a1ff-58f9c94b87bb");
+const GUID_HEADER_ENTRY_SIZE: usize = 24;
+const SVSM_ATTEST_SERVICES: u32 = 0;
+const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
+const SVSM_ATTEST_SINGLE_SERVICE_EX: u32 = 2;
+const SVSM_MAX_SELECTOR_SIZE: usize = 65536;
+
+#[cfg(all(feature = "vtpm", not(test)))]
+const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+
+// Attest services operation structure, as defined in Table 11 of Secure VM Service Module for
+// SEV-SNP Guests 58019 Rev, 1.00 July 2023
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
+pub struct AttestServicesOp {
+    report_gpa: u64,
+    report_size: u32,
+    reserved_1: [u8; 4],
+    nonce_gpa: u64,
+    nonce_size: u16,
+    reserved_2: [u8; 6],
+    manifest_gpa: u64,
+    manifest_size: u32,
+    reserved_3: [u8; 4],
+    certificate_gpa: u64,
+    certificate_size: u32,
+    reserved_4: [u8; 4],
+}
+
+impl AttestServicesOp {
+    /// Take a slice and return a reference for Self
+    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
+        let ops: &Self =
+            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
+        if !ops.is_reserved_clear() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(ops)
+    }
+
+    /// Checks if reserved fields are all set to zero
+    pub fn is_reserved_clear(&self) -> bool {
+        self.reserved_1.iter().all(|&x| x == 0)
+            && self.reserved_2.iter().all(|&x| x == 0)
+            && self.reserved_3.iter().all(|&x| x == 0)
+            && self.reserved_4.iter().all(|&x| x == 0)
+    }
+
+    /// Returns the nonce
+    pub fn get_nonce(&self) -> Result<Vec<u8>, SvsmReqError> {
+        // Check that nonce is the right size.
+        // Nonce i.e. REPORT_DATA is 64 bytes per Table 22 of
+        // "SEV Secure Nested Paging Firmware ABI Specification, Revision 1.57"
+        let nonce_size = self.nonce_size.into();
+        if nonce_size != 64 {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        let gpa = PhysAddr::from(self.nonce_gpa);
+
+        read_bytes_from_guest(gpa, nonce_size).map_err(|_| SvsmReqError::invalid_parameter())
+    }
+
+    /// Returns the manifest buffer gpa and size
+    /// Checks if gpa is page aligned and valid.
+    /// Manifest buffer size can be greater than 4k, so it can cross page boundary.
+    pub fn get_manifest_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
+        let gpa = PhysAddr::from(self.manifest_gpa);
+        let size =
+            usize::try_from(self.manifest_size).map_err(|_| SvsmReqError::invalid_parameter())?;
+        if !gpa.is_page_aligned() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok((gpa, size))
+    }
+
+    /// Returns the report buffer gpa and size
+    /// Checks if gpa is page aligned and valid.
+    /// Report buffer size can be greater than 4k, so it can cross page boundary.
+    pub fn get_report_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
+        let gpa = PhysAddr::from(self.report_gpa);
+        let size =
+            usize::try_from(self.report_size).map_err(|_| SvsmReqError::invalid_parameter())?;
+        if !gpa.is_page_aligned() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok((gpa, size))
+    }
+}
+
+#[derive(Clone)]
+struct GuidTableEntry {
+    guid: uuid::Uuid,
+    data: Vec<u8>,
+}
+
+struct GuidTable {
+    entries: Vec<GuidTableEntry>,
+}
+
+impl GuidTable {
+    fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    // Only used when features are enabled.
+    #[allow(dead_code)]
+    fn push(&mut self, guid: uuid::Uuid, data: Vec<u8>) {
+        self.entries.push(GuidTableEntry { guid, data })
+    }
+
+    fn header_size(&self) -> usize {
+        // The services manifest header is 24 bytes, followed by 24 bytes for each entry.
+        (1 + self.entries.len()) * GUID_HEADER_ENTRY_SIZE
+    }
+
+    /// Returns how many bytes the wire ABI representation takes.
+    fn len(&self) -> usize {
+        let init = self.header_size();
+        self.entries
+            .iter()
+            .fold(init, |acc, entry| acc + entry.data.len())
+    }
+
+    // Writes the GuidTable contents at the end of `data` or returns an error.
+    fn to_vec(&self) -> Result<Vec<u8>, SvsmError> {
+        let length = self.len();
+        let mut data: Vec<u8> = Vec::with_capacity(length);
+        data.extend_from_slice(&SERVICES_MANIFEST_GUID.to_bytes_le());
+        data.extend_from_slice(&(length as u32).to_le_bytes());
+        data.extend_from_slice(&(self.entries.len() as u32).to_le_bytes());
+
+        let mut data_cursor = self.header_size() as u32;
+        self.entries.iter().for_each(|entry| {
+            data.extend_from_slice(&entry.guid.to_bytes_le());
+            data.extend_from_slice(&data_cursor.to_le_bytes());
+            data.extend_from_slice(&(entry.data.len() as u32).to_le_bytes());
+            data_cursor += entry.data.len() as u32;
+        });
+        self.entries
+            .iter()
+            .for_each(|entry| data.extend_from_slice(entry.data.as_slice()));
+        Ok(data)
+    }
+}
+
+// Attest Single Service Operation structure, as defined in
+// Table 13 of Secure VM Service Module for SEV-SNP Guests
+// 58019 Rev. 1.00 July 2023
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
+pub struct AttestSingleServiceOp {
+    op: AttestServicesOp,
+    guid: [u8; 16],
+    manifest_ver: u32,
+    reserved_5: [u8; 4],
+}
+
+impl AttestSingleServiceOp {
+    /// Take a slice and return a reference for Self
+    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
+        let ops: &Self =
+            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
+        if !ops.is_reserved_clear() || !ops.is_manifest_version_valid() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(ops)
+    }
+
+    /// Checks if reserved fields are all set to zero
+    pub fn is_reserved_clear(&self) -> bool {
+        self.op.is_reserved_clear() && self.reserved_5.iter().all(|&x| x == 0)
+    }
+
+    /// Returns the nonce
+    pub fn get_nonce(&self) -> Result<Vec<u8>, SvsmReqError> {
+        self.op.get_nonce()
+    }
+
+    /// Returns the manifest buffer gpa and size
+    /// Checks if gpa is page aligned and valid.
+    /// Manifest buffer size can be greater than 4k, so it can cross page boundary.
+    pub fn get_manifest_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
+        self.op.get_manifest_gpa_and_size()
+    }
+
+    /// Returns the report buffer gpa and size
+    /// Checks if gpa is page aligned and valid.
+    /// Report buffer size can be greater than 4k, so it can cross page boundary.
+    pub fn get_report_gpa_and_size(&self) -> Result<(PhysAddr, usize), SvsmReqError> {
+        self.op.get_report_gpa_and_size()
+    }
+
+    pub fn get_manifest_version(&self) -> u32 {
+        self.manifest_ver
+    }
+
+    fn is_manifest_version_valid(&self) -> bool {
+        // Currently only manifest version 0 is supported
+        self.manifest_ver == 0
+    }
+
+    /// Returns the guid
+    pub fn get_guid(&self) -> uuid::Uuid {
+        Uuid::from_bytes_le(self.guid)
+    }
+}
+
+// Attest Single Service Operation structure, to be defined in
+// Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.01
+#[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
+pub struct AttestSingleServiceOpEx {
+    op: AttestSingleServiceOp,
+    selector_gpa: u64,
+    selector_size: u32,
+    reserved_6: [u8; 4],
+}
+
+impl AttestSingleServiceOpEx {
+    /// Take a slice and return a reference for Self
+    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
+        let ops: &Self =
+            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
+
+        if !ops.is_reserved_clear() || !ops.is_manifest_version_valid() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(ops)
+    }
+
+    /// Checks if reserved fields are all set to zero
+    pub fn is_reserved_clear(&self) -> bool {
+        self.op.is_reserved_clear() && self.reserved_6.iter().all(|&x| x == 0)
+    }
+
+    /// Returns the nonce
+    pub fn get_nonce(&self) -> Result<Vec<u8>, SvsmReqError> {
+        self.op.get_nonce()
+    }
+
+    pub fn get_selector(&self) -> Result<Vec<u8>, SvsmReqError> {
+        let size = self
+            .selector_size
+            .try_into()
+            .map_err(|_| SvsmReqError::protocol(AttestError::ManifestSelector as u64))?;
+        if size == 0 {
+            return Ok(Vec::new());
+        }
+        if size > SVSM_MAX_SELECTOR_SIZE {
+            return Err(SvsmReqError::protocol(AttestError::ManifestSelector as u64));
+        }
+
+        let gpa = PhysAddr::from(self.selector_gpa);
+        read_bytes_from_guest(gpa, size).map_err(|_| SvsmReqError::invalid_parameter())
+    }
+
+    pub fn get_manifest_version(&self) -> u32 {
+        self.op.get_manifest_version()
+    }
+
+    fn is_manifest_version_valid(&self) -> bool {
+        if self.selector_size != 0 {
+            // The selector version validity will be checked when the service manifest is fetched.
+            return true;
+        }
+        self.op.is_manifest_version_valid()
+    }
+
+    /// Returns the guid
+    pub fn get_guid(&self) -> uuid::Uuid {
+        self.op.get_guid()
+    }
+}
+
+fn get_attestation_report(nonce: &[u8]) -> Result<Vec<u8>, SvsmReqError> {
+    // Construct attestation request message to send to SNP
+    let mut report_req = Vec::<u8>::with_capacity(size_of::<SnpReportResponse>());
+    let mut buf = Vec::<u8>::with_capacity(USER_DATA_SIZE);
+    if nonce.len() != USER_DATA_SIZE {
+        // If nonce is no the same size as user data, return an error as something is wrong.
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    // Copy user attestation request nonce to buffer
+    buf.extend_from_slice(nonce);
+    report_req.extend_from_slice(&buf[..nonce.len()]);
+
+    // Set request VMPL to 0
+    report_req.extend_from_slice(&0_u32.to_le_bytes());
+
+    // Set reserved bytes to zeros
+    report_req.extend_from_slice(&[0; 28]);
+
+    // Make sure buffer is big enough to hold the report
+    report_req.resize(size_of::<SnpReportResponse>(), 0);
+
+    // Send request to snp
+    let _response_size = get_regular_report(report_req.as_mut_slice())?;
+
+    // Per Table 25 of "SEV Secure Nested Paging Firmware ABI Specification, Revision 1.57",
+    // attestation report starts at byte offset 0x20. And get_regular_report() already called
+    // SnpReportResponse::validate_report() which checks that the report is the right length.
+    // So we can always drain the first 0x20 bytes without panicking at runtime.
+    report_req.drain(0..0x20);
+
+    Ok(report_req)
+}
+
+fn write_report_and_manifest(
+    manifest: &[u8],
+    params: &mut RequestParams,
+    ops: &AttestServicesOp,
+    report: &[u8],
+) -> Result<(), SvsmReqError> {
+    // Get attestation report buffer's gPA from call's Attest Single Service Operation structure.
+    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
+    // If it is bigger than 4K, it must be physically contiguous.
+    let (report_gpa, report_size) = ops.get_report_gpa_and_size()?;
+
+    // Get manifest buffer's GPA from call's Attest Single Service Operation structure
+    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
+    // If it is bigger than 4K, it must be physically contiguous.
+    let (manifest_gpa, manifest_size) = ops.get_manifest_gpa_and_size()?;
+
+    // Check that the manifest will fit in the buffer by checking that the length of the manifest
+    // is less than the size of the buffer. The size of the buffer was used to create the guard,
+    // so can not be tricked into writing outside the buffer.
+    // If the manifest is larger than the buffer, it is either a malformed manifest or buffer too
+    // small. In either case, return an error.
+    if manifest.len() > manifest_size {
+        return Err(SvsmError::Attestation(AttestError::Manifest).into());
+    }
+
+    // Check that the attestation report will fit in the buffer by checking that the length of the
+    // report is less than the size of the buffer. The size of the buffer was used to create the
+    // guard, so can not be tricked into writing outside the buffer.
+    // If the report is larger than the buffer, it is either a malformed report or buffer too small.
+    // In either case, return an error.
+    if report.len() > report_size {
+        return Err(SvsmError::Attestation(AttestError::Report).into());
+    }
+
+    copy_to_guest(report, report_gpa)?;
+
+    // Set report size in bytes in r8 register
+    params.r8 = report
+        .len()
+        .try_into()
+        .map_err(|_| SvsmError::Attestation(AttestError::Report))?;
+
+    copy_to_guest(manifest, manifest_gpa)?;
+
+    // Set the manifest size in bytes in rcx register
+    params.rcx = manifest
+        .len()
+        .try_into()
+        .map_err(|_| SvsmError::Attestation(AttestError::Manifest))?;
+
+    // Does not support certificate currently, so setting certificate size to 0
+    params.rdx = 0;
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn attest_single_service(
+    manifest: &[u8],
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOp,
+) -> Result<(), SvsmReqError> {
+    let nonce = ops.get_nonce()?;
+
+    // Concatenate nonce and manifest and hash per page 29 of
+    // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
+    let nonce_and_manifest = [&nonce[..], manifest].concat();
+    let hash = Sha512::digest(&nonce_and_manifest);
+
+    // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
+    let report = get_attestation_report(hash.as_slice())?;
+
+    write_report_and_manifest(manifest, params, &ops.op, report.as_slice())
+}
+
+#[allow(dead_code)]
+fn attest_single_service_ex(
+    manifest: &[u8],
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOpEx,
+    selector: Vec<u8>,
+) -> Result<(), SvsmReqError> {
+    // The selector is unnecessary.
+    if selector.capacity() == 0 {
+        return attest_single_service(manifest, params, &ops.op);
+    }
+
+    // Concatenate nonce, selection context, and manifest
+    // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.01".
+    let nonce = ops.get_nonce()?;
+    // 0x324D5353 in little endian, SSM2: Single service manifest 2
+    let magic: [u8; 4] = [b'S', b'S', b'M', b'2'];
+    let guid_le = ops.get_guid().to_bytes_le();
+    let mver_le = ops.get_manifest_version().to_le_bytes();
+    let nonce_and_selector_and_manifest = [
+        &nonce[..],
+        &magic[..],
+        &guid_le[..],
+        &mver_le[..],
+        &selector[..],
+        manifest,
+    ]
+    .concat();
+    let hash = Sha512::digest(&nonce_and_selector_and_manifest);
+
+    // Get attestation report from PSP with Sha512(nonce||selection_context||manifest) as REPORT_DATA.
+    let report = get_attestation_report(hash.as_slice())?;
+
+    write_report_and_manifest(manifest, params, &ops.op.op, &report)
+}
+
+#[cfg(all(feature = "vtpm", not(test)))]
+fn attest_single_vtpm(
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOp,
+) -> Result<(), SvsmReqError> {
+    attest_single_service(vtpm_get_manifest()?.as_slice(), params, ops)
+}
+
+#[cfg(all(feature = "vtpm", not(test)))]
+fn attest_single_vtpm_ex(
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOpEx,
+) -> Result<u32, SvsmReqError> {
+    let selector = ops.get_selector()?;
+
+    if selector.capacity() == 0 {
+        attest_single_vtpm(params, &ops.op)?;
+        return Ok(0);
+    }
+
+    // get manifest from the VTPM.
+    match vtpm_get_manifest_ex(ops.get_manifest_version(), &selector) {
+        Ok(manifest) => {
+            attest_single_service_ex(manifest.as_slice(), params, ops, selector)?;
+            Ok(0)
+        }
+        Err(SvsmVTpmError::CommandError(rc)) => Ok(rc),
+        Err(SvsmVTpmError::ReqError(err)) => Err(err),
+    }
+}
+
+fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    let gpa = PhysAddr::from(params.rcx);
+
+    let attest_op =
+        read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    // Attest multiple services is expected to return a GUID table (Big endian ordering) of the
+    // enumerated active services' attestation manifest. A service that does not have its own
+    // manifest is still enumerated, but with an empty data blob.
+    #[allow(unused_mut)]
+    let mut services = GuidTable::new();
+
+    #[cfg(all(feature = "vtpm", not(test)))]
+    services.push(SVSM_ATTEST_VTPM_GUID, vtpm_get_manifest()?);
+
+    let manifest = services.to_vec()?;
+    let mut nonce_and_manifest = attest_op.get_nonce()?;
+    nonce_and_manifest.extend_from_slice(manifest.as_slice());
+
+    // Concatenate nonce and manifest and hash per page 29 of
+    // "Secure VM Service Module for SEV-SNP Guests 58019 Rev. 1.00".
+    let hash = Sha512::digest(&nonce_and_manifest);
+
+    // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
+    let report = get_attestation_report(hash.as_slice())?;
+
+    write_report_and_manifest(manifest.as_slice(), params, &attest_op, report.as_slice())
+}
+
+#[allow(clippy::needless_pass_by_ref_mut)]
+fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    // Get the gpa of Attest Single Service Operation structure
+    let gpa = PhysAddr::from(params.rcx);
+
+    let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    // Extract the GUID from the Attest Single Service Operation structure.
+    // The GUID is used to determine the specific service to be attested.
+    // Currently, only the VTPM service with the GUID 0xebf176c4_2301a545_9641b4e7_dde5bfe3
+    // is supported, see 8.3.1 of the spec "Secure VM Service Module for SEV-SNP Guests
+    // 58019 Rev. 1.00" for more details.
+    match attest_op.get_guid() {
+        #[cfg(all(feature = "vtpm", not(test)))]
+        SVSM_ATTEST_VTPM_GUID => attest_single_vtpm(params, &attest_op),
+        _ => Err(SvsmReqError::unsupported_protocol()),
+    }
+}
+
+#[allow(clippy::needless_pass_by_ref_mut)]
+fn attest_single_service_ex_handler(params: &mut RequestParams) -> Result<(), SvsmReqError> {
+    // Get the gpa of Attest Single Service Operation structure
+    let gpa = PhysAddr::from(params.rcx);
+
+    let attest_op = read_from_guest::<AttestSingleServiceOpEx>(gpa)
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    // Extract the GUID from the Attest Single Service Operation structure.
+    // The GUID is used to determine the specific service to be attested.
+    // Currently, only the VTPM service with the GUID 0xebf176c4_2301a545_9641b4e7_dde5bfe3
+    // is supported, see 8.3.1 of the spec "Secure VM Service Module for SEV-SNP Guests
+    // 58019 Rev. 1.00" for more details.
+    let selector_err: u32 = match attest_op.get_guid() {
+        // Note that any selector parsing errors MUST be reported with a protocol error
+        // and NOT a generic invalid_parameter error. An invalid parameter error will cause
+        // Linux to treat the failure as getting the input buffer sizes wrong and will
+        // repeatedly fail until retries are exhausted.
+        #[cfg(all(feature = "vtpm", not(test)))]
+        SVSM_ATTEST_VTPM_GUID => attest_single_vtpm_ex(params, &attest_op),
+        _ => Err(SvsmReqError::unsupported_protocol()),
+    }?;
+    if selector_err != 0 {
+        return Err(SvsmReqError::protocol(
+            AttestError::TpmRcBase as u64 + selector_err as u64,
+        ));
+    }
+    Ok(())
+}
+
+pub fn attest_protocol_request(
+    request: u32,
+    params: &mut RequestParams,
+) -> Result<(), SvsmReqError> {
+    match request {
+        SVSM_ATTEST_SERVICES => attest_multiple_services(params),
+        SVSM_ATTEST_SINGLE_SERVICE => attest_single_service_handler(params),
+        SVSM_ATTEST_SINGLE_SERVICE_EX => attest_single_service_ex_handler(params),
+        _ => Err(SvsmReqError::unsupported_protocol()),
+    }
+}
