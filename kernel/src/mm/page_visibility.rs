@@ -34,8 +34,9 @@ use zerocopy::{FromBytes, FromZeros};
 ///
 /// Converting the memory at `vaddr` must be safe within Rust's memory model.
 /// Notably any objects at `vaddr` must tolerate unsynchronized writes of any
-/// bit pattern.
-unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
+/// bit pattern.  In addition, the caller must take responsibility for
+/// returning a page to the private state if it is ever freed.
+pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Revoke page validation before changing page state.
     SVSM_PLATFORM.validate_virtual_page_range(
         MemoryRegion::new(vaddr, PAGE_SIZE),
@@ -69,7 +70,12 @@ unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
 /// # Arguments
 ///
 /// * `vaddr` - The virtual address of the page to be made private.
-unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
+///
+/// # Safety
+///
+/// Converting the memory at `vaddr` must be safe within Rust's memory model.
+/// No outstanding references to the page may exist.
+pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
