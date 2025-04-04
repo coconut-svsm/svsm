@@ -8,6 +8,7 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::idt::idt;
+use crate::cpu::ipi::ipi_start_cpu;
 use crate::cpu::percpu::{cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
@@ -160,6 +161,9 @@ extern "C" fn start_ap() -> ! {
 
     // Send a life-sign
     log::info!("AP with APIC-ID {} is online", this_cpu().get_apic_id());
+
+    // Mark this CPU as participating in IPI usage.
+    ipi_start_cpu();
 
     // Set CPU online so that BSP can proceed
     this_cpu_shared().set_online();
