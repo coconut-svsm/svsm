@@ -39,6 +39,7 @@ pub mod task;
 pub mod tdx;
 pub mod types;
 pub mod utils;
+pub mod vmm;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 

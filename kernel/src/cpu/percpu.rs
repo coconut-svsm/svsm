@@ -1003,13 +1003,13 @@ impl PerCpu {
         Ok((paddr, sev_features))
     }
 
-    pub fn unmap_guest_vmsa(&self) {
+    fn unmap_guest_vmsa(&self) {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
-    pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
+    fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range
@@ -1058,18 +1058,48 @@ impl PerCpu {
         RefMut::filter_map(apic, Option::as_mut).ok()
     }
 
-    pub fn unmap_caa(&self) {
+    fn unmap_caa(&self) {
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
     }
 
-    pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
+    fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
+    }
+
+    pub fn update_guest_mappings(&self) -> Result<(), SvsmError> {
+        let mut locked = self.guest_vmsa_ref();
+        let mut ret = Ok(());
+
+        if !locked.needs_update() {
+            // If there is no VMSA, then the update request must be considered a
+            // failure even though no work was required.
+            return match locked.vmsa_phys() {
+                Some(_) => Ok(()),
+                None => Err(SvsmError::MissingVMSA),
+            };
+        }
+
+        self.unmap_guest_vmsa();
+        self.unmap_caa();
+
+        match locked.vmsa_phys() {
+            Some(paddr) => self.map_guest_vmsa(paddr)?,
+            None => ret = Err(SvsmError::MissingVMSA),
+        }
+
+        if let Some(paddr) = locked.caa_phys() {
+            self.map_guest_caa(paddr)?
+        }
+
+        locked.set_updated();
+
+        ret
     }
 
     pub fn disable_apic_emulation(&self) {
