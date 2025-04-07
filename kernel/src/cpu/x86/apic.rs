@@ -1,25 +1,45 @@
 // SPDX-License-Identifier: MIT
 //
-// Copyright (c) Microsoft Corporation
 // Copyright (c) SUSE LLC
 //
-// Author: Jon Lange <jlange@microsoft.com>
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::msr::{read_msr, write_msr};
+use crate::cpu::percpu::this_cpu;
+use crate::error::SvsmError;
+
+use super::{SnpGhcbApic, X2Apic};
+use core::cell::RefCell;
+use core::marker::PhantomData;
+
+pub trait ApicAccess {
+    /// Write a value to an APIC offset
+    ///
+    /// # Arguments
+    ///
+    /// - `offset` - Offset into the APIC
+    /// - `value` - Value to write at `offset`
+    fn apic_write(offset: usize, value: u64);
+
+    /// Read value from APIC offset
+    ///
+    /// # Arguments
+    ///
+    /// - `offset` - Offset into the APIC
+    ///
+    /// # Returns
+    ///
+    /// The value read from APIC `offset`.
+    fn apic_read(offset: usize) -> u64;
+}
 
 /// End-of-Interrupt register MSR offset
-pub const MSR_X2APIC_EOI: u32 = 0x80B;
+pub const APIC_OFFSET_EOI: usize = 0xB;
 /// Spurious-Interrupt-Register MSR offset
-pub const MSR_X2APIC_SPIV: u32 = 0x80F;
+pub const APIC_OFFSET_SPIV: usize = 0xF;
 /// Interrupt-Service-Register base MSR offset
-pub const MSR_X2APIC_ISR: u32 = 0x810;
+pub const APIC_OFFSET_ISR: usize = 0x10;
 /// Interrupt-Control-Register register MSR offset
-pub const MSR_X2APIC_ICR: u32 = 0x830;
-
-const MSR_APIC_BASE: u32 = 0x1B;
-const APIC_ENABLE_MASK: u64 = 0x800;
-const APIC_X2_ENABLE_MASK: u64 = 0x400;
+pub const APIC_OFFSET_ICR: usize = 0x30;
 
 // SPIV bits
 const APIC_SPIV_VECTOR_MASK: u64 = (1u64 << 8) - 1;
@@ -32,33 +52,250 @@ const APIC_SPIV_SW_ENABLE_MASK: u64 = 1 << 8;
 ///
 /// A `(u32, u32)` tuple with the MSR offset as the first and the vector
 /// bitmask as the second value.
-pub fn apic_register_bit(vector: usize) -> (u32, u32) {
+fn apic_register_bit(vector: usize) -> (usize, u32) {
     let index: u8 = vector as u8;
-    ((index >> 5) as u32, 1 << (index & 0x1F))
+    ((index >> 5) as usize, 1 << (index & 0x1F))
 }
 
-/// Enables the X2APIC by setting the AE and EXTD bits in the APIC base address
-/// register.
-pub fn x2apic_enable() {
-    // Enable X2APIC mode.
-    let apic_base = read_msr(MSR_APIC_BASE);
-    let apic_base_x2_enabled = apic_base | APIC_ENABLE_MASK | APIC_X2_ENABLE_MASK;
-    if apic_base != apic_base_x2_enabled {
-        // SAFETY: enabling X2APIC mode allows accessing APIC's control
-        // registers through MSR accesses, so enabling it doesn't break
-        // memory safety itself.
-        unsafe {
-            write_msr(MSR_APIC_BASE, apic_base_x2_enabled);
+#[derive(Debug, Default)]
+pub struct RawX86Apic<A> {
+    phantom: PhantomData<A>,
+}
+
+impl<A: ApicAccess> RawX86Apic<A> {
+    /// Creates a new instance of [`RawX86Apic`]
+    pub fn new() -> Self {
+        Self {
+            phantom: PhantomData,
         }
     }
-    // Set SW-enable in SPIV to enable IRQ delivery
-    x2apic_sw_enable();
+
+    /// Sends an EOI message
+    #[inline(always)]
+    pub fn eoi() {
+        A::apic_write(APIC_OFFSET_EOI, 0);
+    }
+
+    /// Writes the APIC ICR register
+    ///
+    /// # Arguments
+    ///
+    /// - `icr` - Value to write to the ICR register
+    #[inline(always)]
+    pub fn icr_write(icr: u64) {
+        A::apic_write(APIC_OFFSET_ICR, icr);
+    }
+
+    /// Checks whether an IRQ vector is currently in service
+    ///
+    /// # Arguments
+    ///
+    /// - `vector` - Vector to check for
+    ///
+    /// # Returns
+    ///
+    /// Returns `True` when the vector is in service, `False` otherwise.
+    #[inline(always)]
+    pub fn check_isr(vector: usize) -> bool {
+        // Examine the APIC ISR to determine whether this interrupt vector is
+        // active.  If so, it is assumed to be an external interrupt.
+        let (offset, mask) = apic_register_bit(vector);
+        (A::apic_read(APIC_OFFSET_ISR + offset) & mask as u64) != 0
+    }
+
+    /// Set Spurious-Interrupt-Vector Register
+    ///
+    /// # Arguments
+    ///
+    /// - `vector` - The IRQ vector to deliver spurious interrupts to.
+    /// - `enable` - Value of the APIC-Software-Enable bit.
+    #[inline(always)]
+    pub fn spiv_write(vector: u8, enable: bool) {
+        let apic_spiv: u64 = if enable { APIC_SPIV_SW_ENABLE_MASK } else { 0 }
+            | ((vector as u64) & APIC_SPIV_VECTOR_MASK);
+        A::apic_write(APIC_OFFSET_SPIV, apic_spiv);
+    }
+
+    /// Enable the APIC-Software-Enable bit.
+    pub fn sw_enable() {
+        Self::spiv_write(0xff, true);
+    }
 }
 
-/// Send an End-of-Interrupt notification to the X2APIC.
-pub fn x2apic_eoi() {
-    // SAFETY: writing to EOI MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_EOI, 0) };
+pub trait X86Apic {
+    /// Enables the APIC
+    fn enable(&self);
+
+    /// Sends an EOI message
+    fn eoi(&self);
+
+    /// Writes the APIC ICR register
+    ///
+    /// # Arguments
+    ///
+    /// - `icr` - Value to write to the ICR register
+    fn icr_write(&self, icr: u64);
+
+    /// Checks whether an IRQ vector is currently in service
+    ///
+    /// # Arguments
+    ///
+    /// - `vector` - Vector to check for
+    ///
+    /// # Returns
+    ///
+    /// Returns `True` when the vector is in service, `False` otherwise.
+    fn check_isr(&self, vector: usize) -> bool;
+
+    /// Set Spurious-Interrupt-Vector Register
+    ///
+    /// # Arguments
+    ///
+    /// - `vector` - The IRQ vector to deliver spurious interrupts to.
+    /// - `enable` - Value of the APIC-Software-Enable bit.
+    fn spiv_write(&self, vector: u8, enable: bool);
+
+    /// Enable the APIC-Software-Enable bit.
+    fn sw_enable(&self);
+}
+
+/// Wrapper structure for existing Local APIC drivers. All members (except
+/// `None`) must implement trait [`X86Apic`].
+#[derive(Debug, Default)]
+pub enum X86ApicDriver {
+    #[default]
+    None,
+    X2(X2Apic),
+    Snp(SnpGhcbApic),
+}
+
+impl X86ApicDriver {
+    /// Create a new instance for an X2APIC driver
+    ///
+    /// # Arguments
+    ///
+    /// - `apic` - Instance of struct [`X2Apic`].
+    ///
+    /// # Returns
+    ///
+    /// Instance of [`X86ApicDriver`] for using X2APIC.
+    pub fn new_x2apic(apic: X2Apic) -> Self {
+        Self::X2(apic)
+    }
+
+    pub fn new_snp_apic(apic: SnpGhcbApic) -> Self {
+        Self::Snp(apic)
+    }
+
+    /// Returns a reference to the contained APIC driver. The driver type
+    /// implements the [`X86Apic`] trait. The method panics when no APIC driver
+    /// is set.
+    ///
+    /// # Returns
+    ///
+    /// Reference to an APIC driver struct which implements the [`X86Apic`] trait.
+    #[inline(always)]
+    fn get(&self) -> &dyn X86Apic {
+        match self {
+            X86ApicDriver::None => panic!("APIC driver not set!"),
+            X86ApicDriver::X2(apic) => apic,
+            X86ApicDriver::Snp(apic) => apic,
+        }
+    }
+
+    fn enable(&self) {
+        self.get().enable();
+    }
+
+    #[inline(always)]
+    fn eoi(&self) {
+        self.get().eoi();
+    }
+
+    #[inline(always)]
+    fn post_irq(&self, icr: u64) {
+        self.get().icr_write(icr);
+    }
+
+    #[inline(always)]
+    fn irq_in_service(&self, vector: usize) -> bool {
+        self.get().check_isr(vector)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct LApic {
+    driver: RefCell<X86ApicDriver>,
+}
+
+impl LApic {
+    /// Creates new [`LApic`] instance with no [`X86ApicDriver`] installed.
+    ///
+    /// # Returns
+    ///
+    /// Empty instance of [`LApic`].
+    pub fn new() -> Self {
+        Self {
+            driver: RefCell::new(X86ApicDriver::None),
+        }
+    }
+
+    fn enable(&self) {
+        let apic = self.driver.borrow();
+        (*apic).enable();
+    }
+
+    /// Install new [`X86ApicDriver`] instance. This can be used to install or
+    /// remove an APIC driver.
+    ///
+    /// # Arguments
+    ///
+    /// - `driver` - [`X86ApicDriver`] to install.
+    pub fn set(&self, driver: X86ApicDriver) {
+        self.driver.replace(driver);
+        // Enable APIC only after its driver is successfully installed.
+        self.enable();
+    }
+
+    /// Send and EOI message
+    pub fn eoi(&self) {
+        let apic = self.driver.borrow();
+        (*apic).eoi();
+    }
+
+    /// Post an IRQ via the Interrupt Command Register
+    ///
+    /// # Arguments
+    ///
+    /// - `icr` - Command register value to write
+    pub fn post_irq(&self, icr: u64) {
+        let apic = self.driver.borrow();
+        (*apic).post_irq(icr);
+    }
+
+    /// Check for an IRQ vector in the ISR bitmap
+    ///
+    /// # Arguments
+    ///
+    /// - `vector` - Vector to check in ISR
+    ///
+    /// # Returns
+    ///
+    /// `True` when vector bit is set, `False` otherwise
+    pub fn irq_in_service(&self, vector: usize) -> bool {
+        let apic = self.driver.borrow();
+        (*apic).irq_in_service(vector)
+    }
+}
+
+/// Send an EOI signal via the installed APIC driver.
+pub fn apic_eoi() {
+    this_cpu().apic().eoi();
+}
+
+pub fn apic_post_irq(icr: u64) -> Result<(), SvsmError> {
+    this_cpu().apic().post_irq(icr);
+    Ok(())
 }
 
 /// Check whether a give IRQ vector is currently being serviced by returning
@@ -71,37 +308,6 @@ pub fn x2apic_eoi() {
 /// # Returns
 ///
 /// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
-pub fn x2apic_in_service(vector: usize) -> bool {
-    // Examine the APIC ISR to determine whether this interrupt vector is
-    // active.  If so, it is assumed to be an external interrupt.
-    let (msr, mask) = apic_register_bit(vector);
-    (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
-}
-
-/// Write a command to the Interrupt Command Register.
-///
-/// # Arguments
-///
-/// - `icr` - The 64-bit value describing the interrupt command.
-pub fn x2apic_icr_write(icr: u64) {
-    // SAFETY: writing to ICR MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_ICR, icr) };
-}
-
-/// Set Spurious-Interrupt-Vector Register
-///
-/// # Arguments
-///
-/// - `vector` - The IRQ vector to deliver spurious interrupts to.
-/// - `enable` - Value of the APIC-Software-Enable bit.
-pub fn x2apic_spiv_write(vector: u8, enable: bool) {
-    let apic_spiv: u64 = if enable { APIC_SPIV_SW_ENABLE_MASK } else { 0 }
-        | ((vector as u64) & APIC_SPIV_VECTOR_MASK);
-    // SAFETY: Setting bits in SIPV does not break memory safety.
-    unsafe { write_msr(MSR_X2APIC_SPIV, apic_spiv) };
-}
-
-/// Enable the APIC-Software-Enable bit.
-pub fn x2apic_sw_enable() {
-    x2apic_spiv_write(0xff, true);
+pub fn apic_in_service(vector: usize) -> bool {
+    this_cpu().apic().irq_in_service(vector)
 }

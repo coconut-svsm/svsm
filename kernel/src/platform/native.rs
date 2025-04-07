@@ -13,9 +13,10 @@ use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::percpu::PerCpu;
+use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_enable, x2apic_eoi, x2apic_icr_write};
+use crate::cpu::x86::apic_post_irq;
+use crate::cpu::x86::{X2Apic, X86ApicDriver};
 use crate::error::SvsmError;
 use crate::hyperv::{hyperv_setup_hypercalls, hyperv_start_cpu, is_hyperv_hypervisor};
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
@@ -86,7 +87,8 @@ impl SvsmPlatform for NativePlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        x2apic_enable();
+        let x2apic = X86ApicDriver::new_x2apic(X2Apic::new());
+        this_cpu().apic().set(x2apic);
         Ok(())
     }
 
@@ -169,15 +171,6 @@ impl SvsmPlatform for NativePlatform {
         true
     }
 
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        x2apic_icr_write(icr);
-        Ok(())
-    }
-
-    fn eoi(&self) {
-        x2apic_eoi();
-    }
-
     fn is_external_interrupt(&self, _vector: usize) -> bool {
         // For a native platform, the hypervisor is fully trusted with all
         // event delivery, so all events are assumed not to be external
@@ -212,12 +205,12 @@ impl SvsmPlatform for NativePlatform {
         // running virtualized.
         let icr = ApicIcr::new().with_destination(cpu.shared().apic_id());
         let init_icr = icr.with_message_type(IcrMessageType::Init);
-        self.post_irq(init_icr.into())?;
+        apic_post_irq(init_icr.into())?;
         let sipi_vector = SIPI_STUB_GPA >> 12;
         let sipi_icr = icr
             .with_message_type(IcrMessageType::Sipi)
             .with_vector(sipi_vector.try_into().unwrap());
-        self.post_irq(sipi_icr.into())?;
+        apic_post_irq(sipi_icr.into())?;
 
         Ok(())
     }
