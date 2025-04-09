@@ -96,6 +96,10 @@ pub trait VtpmInterface: TcgTpmSimulatorInterface {
     /// that the EK public key does not exist.
     /// Needs mutability to cache the key.
     fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError>;
+
+    /// Returns the information selected by the given selector struct. A particular EK public key
+    /// template may have a cached public key. Mutable to allow caching after creation.
+    fn select_manifest(&mut self, version: u32, selector: &[u8]) -> Result<Vec<u8>, SvsmVTpmError>;
 }
 
 static VTPM: SpinLock<Vtpm> = SpinLock::new(Vtpm::new());
@@ -120,4 +124,11 @@ pub fn vtpm_get_locked<'a>() -> LockGuard<'a, Vtpm> {
 pub fn vtpm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
     let mut vtpm = VTPM.lock();
     vtpm.get_ekpub()
+}
+
+/// Get the TPM manifest with selector, e.g., a primary key template in the endorsement hierarchy by
+/// calling the select_manifest() implementation of the [`VtpmInterface`]
+pub fn vtpm_get_manifest_ex(selector_ver: u32, selector: &[u8]) -> Result<Vec<u8>, SvsmVTpmError> {
+    let mut vtpm = VTPM.lock();
+    vtpm.select_manifest(selector_ver, selector)
 }
