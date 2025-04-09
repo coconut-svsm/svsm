@@ -114,6 +114,24 @@ pub fn valid_phys_address(paddr: PhysAddr) -> bool {
         .any(|region| region.contains(paddr))
 }
 
+/// Returns `true` if the provided physical region `region` is valid, i.e.,
+/// it is within a configured memory region, otherwise returns `false`.
+/// Note this does NOT permit a region to span multiple MEMORY_MAP entries
+/// since they are assumed to be coalesced.
+pub fn valid_phys_region(region: &MemoryRegion<PhysAddr>) -> bool {
+    if PERCPU_VMSAS.overlap(region) {
+        return false;
+    }
+    if region.contains(LAUNCH_VMSA_ADDR) {
+        return false;
+    }
+
+    MEMORY_MAP
+        .lock_read()
+        .iter()
+        .any(|entry| entry.contains_region(region))
+}
+
 /// The starting address of the ISA range.
 const ISA_RANGE_START: PhysAddr = PhysAddr::new(LOWMEM_END as usize);
 
