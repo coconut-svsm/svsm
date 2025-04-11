@@ -190,6 +190,26 @@ pub trait SvsmPlatform {
     fn start_svsm_request_loop(&self) -> bool {
         false
     }
+
+    /// Perfrom a write to a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+        todo!()
+    }
+
+    /// Perfrom a read from a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+        todo!()
+    }
 }
 
 //FIXME - remove Copy trait
