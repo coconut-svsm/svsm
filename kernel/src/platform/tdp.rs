@@ -11,8 +11,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::x2apic::x2apic_in_service;
-use crate::cpu::x86::{apic_initialize, X2APIC_ACCESSOR};
+use crate::cpu::x86::{apic_in_service, apic_initialize, X2APIC_ACCESSOR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
@@ -238,7 +237,7 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn is_external_interrupt(&self, vector: usize) -> bool {
-        x2apic_in_service(vector)
+        apic_in_service(vector)
     }
 
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {

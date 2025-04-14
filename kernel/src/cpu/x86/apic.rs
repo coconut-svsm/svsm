@@ -219,3 +219,17 @@ pub fn apic_post_irq(icr: u64) {
 pub fn apic_eoi() {
     this_cpu().get_apic().eoi();
 }
+
+/// Check whether a given IRQ vector is currently being serviced by returning
+/// the value of its ISR bit from X2APIC.
+///
+/// # Arguments
+///
+/// - `vector` - The IRQ vector for which to check the ISR bit.
+///
+/// # Returns
+///
+/// Returns `True` when the ISR bit for the vector is 1, `False` otherwise.
+pub fn apic_in_service(vector: usize) -> bool {
+    this_cpu().get_apic().check_isr(vector)
+}
