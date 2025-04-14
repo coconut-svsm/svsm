@@ -15,6 +15,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
+use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -29,6 +30,7 @@ use crate::sev::msr_protocol::{
 };
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
+use crate::sev::GHCB_APIC_ACCESSOR;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
@@ -157,6 +159,10 @@ impl SvsmPlatform for SnpPlatform {
         if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
             cpu.configure_hv_doorbell()?;
         }
+
+        apic_initialize(&GHCB_APIC_ACCESSOR);
+        apic_enable();
+        apic_sw_enable();
 
         Ok(())
     }
