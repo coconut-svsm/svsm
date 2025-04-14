@@ -51,6 +51,11 @@ pub trait ApicAccess: core::fmt::Debug {
         self.apic_write(APIC_OFFSET_ICR, icr);
         Ok(())
     }
+
+    /// EOI Method - defaults to writing to APIC.EOI register
+    fn eoi(&self) {
+        self.apic_write(APIC_OFFSET_EOI, 0);
+    }
 }
 
 /// APIC Base MSR
@@ -132,7 +137,7 @@ impl X86Apic {
     /// Sends an EOI message
     #[inline(always)]
     pub fn eoi(&self) {
-        self.regs().apic_write(APIC_OFFSET_EOI, 0);
+        self.regs().eoi();
     }
 
     /// Writes the APIC ICR register
