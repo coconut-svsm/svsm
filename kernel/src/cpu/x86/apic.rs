@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::cpu::percpu::this_cpu;
+use crate::error::SvsmError;
 use core::cell::OnceCell;
 
 pub trait ApicAccess: core::fmt::Debug {
@@ -36,6 +37,20 @@ pub trait ApicAccess: core::fmt::Debug {
     ///
     /// The value read from APIC `offset`.
     fn apic_read(&self, offset: usize) -> u64;
+
+    /// ICR access method - defaults to writing to the APIC.ICR register.
+    ///
+    /// # Arguments
+    ///
+    /// `icr` - ICR value to write
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, [`SvsmError`] on failure.
+    fn icr_write(&self, icr: u64) -> Result<(), SvsmError> {
+        self.apic_write(APIC_OFFSET_ICR, icr);
+        Ok(())
+    }
 }
 
 /// APIC Base MSR
@@ -127,7 +142,9 @@ impl X86Apic {
     /// - `icr` - Value to write to the ICR register
     #[inline(always)]
     pub fn icr_write(&self, icr: u64) {
-        self.regs().apic_write(APIC_OFFSET_ICR, icr);
+        self.regs()
+            .icr_write(icr)
+            .expect("Failed to write APIC.ICR");
     }
 
     /// Checks whether an IRQ vector is currently in service
