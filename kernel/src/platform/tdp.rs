@@ -12,6 +12,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::x2apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::{apic_initialize, X2APIC_ACCESSOR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
@@ -93,6 +94,7 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+        apic_initialize(&X2APIC_ACCESSOR);
         Ok(())
     }
 
