@@ -214,3 +214,8 @@ pub fn apic_sw_enable() {
 pub fn apic_post_irq(icr: u64) {
     this_cpu().get_apic().icr_write(icr);
 }
+
+/// Send an EOI message
+pub fn apic_eoi() {
+    this_cpu().get_apic().eoi();
+}

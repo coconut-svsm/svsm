@@ -16,7 +16,6 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::x2apic::x2apic_eoi;
 use crate::cpu::x86::{
     apic_enable, apic_initialize, apic_post_irq, apic_sw_enable, X2APIC_ACCESSOR,
 };
@@ -191,10 +190,6 @@ impl SvsmPlatform for NativePlatform {
 
     fn use_interrupts(&self) -> bool {
         true
-    }
-
-    fn eoi(&self) {
-        x2apic_eoi();
     }
 
     fn is_external_interrupt(&self, _vector: usize) -> bool {

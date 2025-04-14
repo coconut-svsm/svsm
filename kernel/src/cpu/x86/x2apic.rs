@@ -87,12 +87,6 @@ pub fn x2apic_enable() {
     x2apic_sw_enable();
 }
 
-/// Send an End-of-Interrupt notification to the X2APIC.
-pub fn x2apic_eoi() {
-    // SAFETY: writing to EOI MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_EOI, 0) };
-}
-
 /// Check whether a give IRQ vector is currently being serviced by returning
 /// the value of its ISR bit from X2APIC.
 ///
@@ -108,16 +102,6 @@ pub fn x2apic_in_service(vector: usize) -> bool {
     // active.  If so, it is assumed to be an external interrupt.
     let (msr, mask) = apic_register_bit(vector);
     (read_msr(MSR_X2APIC_ISR + msr) & mask as u64) != 0
-}
-
-/// Write a command to the Interrupt Command Register.
-///
-/// # Arguments
-///
-/// - `icr` - The 64-bit value describing the interrupt command.
-pub fn x2apic_icr_write(icr: u64) {
-    // SAFETY: writing to ICR MSR doesn't break memory safety.
-    unsafe { write_msr(MSR_X2APIC_ICR, icr) };
 }
 
 /// Set Spurious-Interrupt-Vector Register
