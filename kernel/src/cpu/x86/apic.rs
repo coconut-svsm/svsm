@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::cpu::percpu::this_cpu;
 use core::cell::OnceCell;
 
 pub trait ApicAccess: core::fmt::Debug {
@@ -158,4 +159,31 @@ impl X86Apic {
             | ((vector as u64) & APIC_SPIV_VECTOR_MASK);
         self.regs().apic_write(APIC_OFFSET_SPIV, apic_spiv);
     }
+}
+
+/// Initialize the APIC  by setting an accessor object. This function
+/// does not enable the APIC.
+///
+/// # Arguments
+///
+/// `accessor` - Object implenting [`ApicAccess`] trait which provides the
+///              low-level access methods to access the APIC registers.
+///
+/// # Panics
+///
+/// This method can only be called once per `PerCpu` object, panics on the
+/// second call.
+pub fn apic_initialize(accessor: &'static dyn ApicAccess) {
+    this_cpu().initialize_apic(accessor);
+}
+
+/// Enables the X86 local APIC in X2APIC mode by writing to MSR_APIC_BASE.
+pub fn apic_enable() {
+    this_cpu().get_apic().enable();
+}
+
+/// Enables software IRQs in the X86 local APIC by setting the SPIC.SW_ENABLE
+/// bit.
+pub fn apic_sw_enable() {
+    this_cpu().get_apic().sw_enable();
 }

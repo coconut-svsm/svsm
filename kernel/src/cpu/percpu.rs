@@ -23,6 +23,7 @@ use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
+use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
@@ -358,6 +359,9 @@ pub struct PerCpu {
     /// address space.
     shared_global: OnceCell<&'static PerCpuShared>,
 
+    /// APIC access object
+    apic: X86Apic,
+
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
@@ -401,6 +405,7 @@ impl PerCpu {
     fn new(apic_id: u32, cpu_index: usize) -> Self {
         Self {
             pgtbl: RefCell::new(None),
+            apic: X86Apic::default(),
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
             isst: Cell::new(Isst::default()),
@@ -455,6 +460,19 @@ impl PerCpu {
 
     pub fn shared_global(&self) -> &'static PerCpuShared {
         self.shared_global.get().unwrap()
+    }
+
+    pub fn initialize_apic(&self, accessor: &'static dyn ApicAccess) {
+        self.apic.set_accessor(accessor);
+    }
+
+    /// Get a reference to the [`X86Apic`] object for this cpu.
+    ///
+    /// # Returns
+    ///
+    /// Reference to the [`X86Apic`] object of the local CPU.
+    pub fn get_apic(&self) -> &X86Apic {
+        &self.apic
     }
 
     /// Disables IRQs on the current CPU. Keeps track of the nesting level and
