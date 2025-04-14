@@ -37,6 +37,9 @@ pub trait ApicAccess: core::fmt::Debug {
     fn apic_read(&self, offset: usize) -> u64;
 }
 
+/// APIC Base MSR
+pub const MSR_APIC_BASE: u32 = 0x1B;
+
 /// End-of-Interrupt register MSR offset
 pub const APIC_OFFSET_EOI: usize = 0xB;
 /// Spurious-Interrupt-Register MSR offset
