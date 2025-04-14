@@ -23,7 +23,6 @@ use crate::tdx::tdcall::{
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
     tdvmcall_wrmsr, MD_TDCS_NUM_L2_VMS,
 };
-use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
@@ -236,10 +235,6 @@ impl SvsmPlatform for TdpPlatform {
 
     fn use_interrupts(&self) -> bool {
         true
-    }
-
-    fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
     }
 
     fn eoi(&self) {

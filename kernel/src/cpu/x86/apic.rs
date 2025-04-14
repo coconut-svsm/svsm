@@ -209,3 +209,8 @@ pub fn apic_enable() {
 pub fn apic_sw_enable() {
     this_cpu().get_apic().sw_enable();
 }
+
+/// Sends an IPI specified by the X86 ICR value.
+pub fn apic_post_irq(icr: u64) {
+    this_cpu().get_apic().icr_write(icr);
+}
