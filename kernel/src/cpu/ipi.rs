@@ -52,7 +52,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 /// processed simultaneously by multiple CPUs, requiring cross-thread
 /// synchronization.  `Sync` is not required for unicast messages, since those
 /// messages can only be processed by a single processor at a time.
-
+///
 /// The `IpiTarget` enum describes the set of CPUs that should receive a
 /// multicast IPI.  There are four variants.
 /// * `Single` indicates a single CPU, described by CPU index (*not* APIC ID).
