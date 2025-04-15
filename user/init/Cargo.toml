@@ -3,6 +3,11 @@ name = "userinit"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "init"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 userlib.workspace = true
 
