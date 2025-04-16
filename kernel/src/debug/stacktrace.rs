@@ -7,8 +7,8 @@
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
-    cpu::percpu::this_cpu,
-    mm::address_space::STACK_SIZE,
+    cpu::percpu::try_this_cpu,
+    mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
 use core::{arch::asm, mem};
@@ -38,6 +38,11 @@ struct StackUnwinder {
     stacks: StacksBounds,
 }
 
+extern "C" {
+    static bsp_stack: u8;
+    static bsp_stack_end: u8;
+}
+
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -46,16 +51,25 @@ impl StackUnwinder {
                  options(att_syntax));
         };
 
-        let cpu = this_cpu();
-        let current_stack = cpu.get_current_stack();
-        let top_of_cs_stack = cpu.get_top_of_context_switch_stack();
-        let top_of_df_stack = cpu.get_top_of_df_stack();
-
-        let stacks: StacksBounds = [
-            current_stack,
-            MemoryRegion::from_addresses(top_of_cs_stack - STACK_SIZE, top_of_cs_stack),
-            MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
-        ];
+        let stacks: StacksBounds = if let Some(cpu) = try_this_cpu() {
+            let current_stack = cpu.get_current_stack();
+            let top_of_cs_stack = cpu.get_top_of_context_switch_stack();
+            let top_of_df_stack = cpu.get_top_of_df_stack();
+            [
+                current_stack,
+                MemoryRegion::from_addresses(top_of_cs_stack - STACK_SIZE, top_of_cs_stack),
+                MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
+            ]
+        } else {
+            // Use default stack addresses
+            let bsp_init_stack = MemoryRegion::from_addresses(
+                VirtAddr::from(&raw const bsp_stack),
+                VirtAddr::from(&raw const bsp_stack_end),
+            );
+            let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
+            let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
+            [bsp_init_stack, cs_stack, df_stack]
+        };
 
         Self::new(VirtAddr::from(rbp), stacks)
     }
@@ -191,7 +205,7 @@ pub fn print_stack(skip: usize) {
     for frame in unwinder.skip(skip) {
         match frame {
             UnwoundStackFrame::Valid(item) => log::info!(
-                "  [{:#018x}]{}",
+                "  [{:016x}]{}",
                 item.rip,
                 if !item.is_aligned { " #" } else { "" }
             ),

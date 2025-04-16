@@ -19,7 +19,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, PerCpu};
+use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -52,8 +52,8 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 use release::COCONUT_VERSION;
 
 extern "C" {
-    pub static bsp_stack: u8;
-    pub static bsp_stack_end: u8;
+    static bsp_stack: u8;
+    static bsp_stack_end: u8;
 }
 
 /*
@@ -97,8 +97,10 @@ global_asm!(
         .bss
 
         .align {PAGE_SIZE}
+        .globl bsp_stack
     bsp_stack:
         .fill 8*{PAGE_SIZE}, 1, 0
+        .globl bsp_stack_end
     bsp_stack_end:
         "#,
     PAGE_SIZE = const PAGE_SIZE,
@@ -166,7 +168,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     // SAFETY: we trust the previous stage to pass a valid pointer
     unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
-    GLOBAL_GDT.load();
     GLOBAL_GDT.load_selectors();
     early_idt_init();
 
@@ -239,6 +240,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         VirtAddr::from(&raw const bsp_stack_end),
     ));
 
+    idt_init();
+
     if is_cet_ss_supported() {
         enable_shadow_stacks!(bsp_percpu);
     }
@@ -250,7 +253,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .setup_idle_task(svsm_main)
         .expect("Failed to allocate idle task for BSP");
 
-    idt_init();
     platform
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
@@ -367,11 +369,15 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     secrets_page_mut().clear_vmpck(2);
     secrets_page_mut().clear_vmpck(3);
 
-    log::error!(
-        "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
-        this_cpu().get_apic_id(),
-        COCONUT_VERSION
-    );
+    if let Some(cpu) = try_this_cpu() {
+        log::error!(
+            "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
+            cpu.get_apic_id(),
+            COCONUT_VERSION
+        );
+    } else {
+        log::error!("Panic on CPU[?]! COCONUT-SVSM Version: {}", COCONUT_VERSION);
+    }
     log::error!("Info: {}", info);
 
     print_stack(3);
