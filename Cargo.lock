@@ -1109,6 +1109,7 @@ dependencies = [
  "packit",
  "release",
  "rustc_version",
+ "sha2",
  "syscall",
  "test",
  "verify_external",
