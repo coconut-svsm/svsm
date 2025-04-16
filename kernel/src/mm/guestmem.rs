@@ -6,18 +6,21 @@
 
 extern crate alloc;
 
-use crate::address::{Address, VirtAddr};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::x86::smap::{clac, stac};
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
-use crate::mm::{USER_MEM_END, USER_MEM_START};
+use crate::mm::{
+    memory::valid_phys_region, ptguards::PerCPUPageMappingGuard, USER_MEM_END, USER_MEM_START,
+};
+use crate::utils::MemoryRegion;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::ffi::c_char;
 use core::mem::{size_of, MaybeUninit};
 use syscall::PATH_MAX;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[inline]
 pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
@@ -426,6 +429,174 @@ pub fn copy_to_user(src: &[u8], dst: VirtAddr) -> Result<(), SvsmError> {
         let _guard = UserAccessGuard::new();
         copy_bytes(source, destination, size)
     }
+}
+
+fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
+    let region = MemoryRegion::checked_new(start, size).ok_or(SvsmError::Mem)?;
+    if !valid_phys_region(&region) {
+        return Err(SvsmError::InvalidAddress);
+    }
+    Ok(region)
+}
+
+/// Reads a slice of bytes from a physical address region outside of SVSM use.
+///
+/// # Safety
+///
+/// The caller must ensure that dst..dst+size is memory that it owns.
+///
+/// # Arguments
+///
+/// * `src`: The physical address designating the start of continguous physical
+///   memory to read from.
+/// * `dst`: The pointer to the beginning of the SVSM memory range to populate.
+/// * `size`: The number of bytes to write from src to dst.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
+    let region = checked_guest_region(src, size)?;
+    let start = region.start().page_align();
+    let offset = region.start().page_offset();
+    let end = region.end().page_align_up();
+    let destination = dst as usize;
+
+    // SAFETY: Only reads data from a region outside the SVSM.
+    unsafe {
+        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
+        let source = guard.virt_addr().bits() + offset;
+        copy_bytes(source, destination, size)
+    }
+}
+
+/// Reads a slice of bytes from a physical address region outside of SVSM use.
+///
+/// # Arguments
+///
+/// * `src`: The physical address designating the start of continguous physical
+///   memory to read from.
+/// * `dst`: A mutable slice of SVSM memory to populate from src.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+pub fn copy_slice_from_guest(src: PhysAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
+    // SAFETY: The safety property of slices ensures the memory is owned and mutable.
+    unsafe { copy_from_guest(src, dst.as_mut_ptr(), dst.len()) }
+}
+
+/// Writes a slice of bytes to a physical address region outside of SVSM use.
+///
+/// # Arguments
+///
+/// * `src`: The byte slice to write to guest memory.
+/// * `dst`: The physical address designating the start of continguous physical
+///   memory to write to.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
+    let size = src.len();
+    let region = checked_guest_region(dst, src.len())?;
+    let start = region.start().page_align();
+    let offset = region.start().page_offset();
+    let end = region.end().page_align_up();
+    let source = src.as_ptr() as usize;
+
+    // SAFETY: Only reads data from a region outside the SVSM.
+    unsafe {
+        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
+        let destination = guard.virt_addr().bits() + offset;
+        copy_bytes(source, destination, size)
+    }
+}
+
+/// Reads a vector of bytes from a physical address region outside of SVSM use.
+///
+/// # Arguments
+///
+/// * `src`: The physical address designating the start of continguous physical
+///   memory to read from.
+/// * `size`: The length of the physical address region to read into a vector.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// On success, returns a vector of length `size`.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+pub fn read_bytes_from_guest(src: PhysAddr, size: usize) -> Result<Vec<u8>, SvsmError> {
+    let mut result = Vec::with_capacity(size);
+    // SAFETY: The vector's capacity, `size` has been populated by copy_from_guest.
+    // The translation of bytes to T are checked.
+    unsafe {
+        copy_from_guest(src, result.as_mut_ptr(), size)?;
+        result.set_len(size);
+    }
+    Ok(result)
+}
+
+/// Reads an instance of T from a physical address region outside of SVSM use.
+///
+/// # Arguments
+///
+/// * `src`: The physical address designating the start of continguous physical
+///   memory to read from.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// On success, returns an instance of T.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+pub fn read_from_guest<T: KnownLayout + Sized>(src: PhysAddr) -> Result<T, SvsmError> {
+    let mut t: MaybeUninit<T> = MaybeUninit::uninit();
+    // SAFETY: copy_from_guest does not read `t`, so it's safe to take a mutable pointer.
+    // The `t` layout is known, so populating through the casted *mut u8 is safe.
+    // The size of T is allocated on the SVSM stack, so it is fully owned.
+    // copy_from_guest populates the full contents of t so it is same to assume t is initialized.
+    unsafe {
+        copy_from_guest(src, t.as_mut_ptr().cast::<u8>(), size_of::<T>())?;
+        Ok(t.assume_init())
+    }
+}
+
+/// Writes a value to a physical address region outside of SVSM use.
+///
+/// # Arguments
+///
+/// * `v`: The value to write to guest memory
+/// * `dst`: The physical address designating the start of continguous physical
+///   memory to write to.
+///
+/// # Returns
+///
+/// This function returns a `Result` that indicates the success or failure of the operation.
+/// If the physical address region cannot be mapped, it returns `Err(SvsmError::Mem)`.
+/// If the physical address region cannot be read, it returns `Err(SvsmError::Fault)`.
+/// If the physical address region is not allocated to the guest, it returns
+///   `Err(SvsmError::InvalidAddress)`.
+#[inline]
+pub fn write_to_guest<T: IntoBytes + Immutable>(v: &T, dst: PhysAddr) -> Result<(), SvsmError> {
+    copy_slice_to_guest(v.as_bytes(), dst)
 }
 
 #[cfg(test)]
