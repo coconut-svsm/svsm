@@ -197,12 +197,6 @@ pub trait SvsmPlatform: Sync {
     /// Determines whether the platform supports interrupts to the SVSM.
     fn use_interrupts(&self) -> bool;
 
-    /// Signal an IRQ on one or more CPUs.
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;
-
-    /// Perform an EOI of the current interrupt.
-    fn eoi(&self);
-
     /// Determines whether a given interrupt vector was invoked as an external
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;

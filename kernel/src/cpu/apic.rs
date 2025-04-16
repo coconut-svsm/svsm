@@ -7,11 +7,11 @@
 use crate::address::VirtAddr;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
+use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::Emulation;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
-use crate::platform::SVSM_PLATFORM;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
@@ -578,7 +578,7 @@ impl LocalApic {
                 hv_icr.set_destination_shorthand(IcrDestFmt::AllButSelf);
             }
 
-            SVSM_PLATFORM.post_irq(hv_icr.into()).unwrap();
+            apic_post_irq(hv_icr.into());
         }
     }
 

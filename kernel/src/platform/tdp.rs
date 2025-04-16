@@ -11,7 +11,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::{apic_in_service, apic_initialize, X2APIC_ACCESSOR};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
@@ -22,7 +22,6 @@ use crate::tdx::tdcall::{
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
     tdvmcall_wrmsr, MD_TDCS_NUM_L2_VMS,
 };
-use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
@@ -93,6 +92,7 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+        apic_initialize(&X2APIC_ACCESSOR);
         Ok(())
     }
 
@@ -236,16 +236,8 @@ impl SvsmPlatform for TdpPlatform {
         true
     }
 
-    fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
-    }
-
-    fn eoi(&self) {
-        x2apic_eoi();
-    }
-
     fn is_external_interrupt(&self, vector: usize) -> bool {
-        x2apic_in_service(vector)
+        apic_in_service(vector)
     }
 
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
