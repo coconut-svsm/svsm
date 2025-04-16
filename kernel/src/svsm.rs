@@ -180,7 +180,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .init_from_ref(li)
         .expect("Already initialized launch info");
 
-    let mut platform = SvsmPlatformCell::new(li.platform_type, li.suppress_svsm_interrupts);
+    let mut platform_cell = SvsmPlatformCell::new(li.suppress_svsm_interrupts);
+    let platform = platform_cell.platform_mut();
 
     init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
 
@@ -194,8 +195,8 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     }
 
     cr0_init();
-    determine_cet_support(&*platform);
-    cr4_init(&*platform);
+    determine_cet_support(platform);
+    cr4_init(platform);
 
     install_console_logger("SVSM").expect("Console logger already initialized");
     platform
@@ -218,7 +219,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         Err(e) => panic!("error reading kernel ELF: {}", e),
     };
 
-    paging_init(&*platform, false).expect("Failed to initialize paging");
+    paging_init(platform, false).expect("Failed to initialize paging");
     let init_pgtable =
         init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
     // SAFETY: we are initializing the state, including stack and registers
@@ -229,10 +230,10 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
-        .setup(&*platform, init_pgtable)
+        .setup(platform, init_pgtable)
         .expect("Failed to setup BSP per-cpu area");
     bsp_percpu
-        .setup_on_cpu(&*platform)
+        .setup_on_cpu(platform)
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
     // Now the stack unwinder can be used
@@ -269,9 +270,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         .configure_alternate_injection(launch_info.use_alternate_injection)
         .expect("Alternate injection required but not available");
 
-    SVSM_PLATFORM
-        .init(platform)
-        .expect("Failed to initialize SVSM platform object");
+    platform_cell.global_init();
 
     sse_init();
 
@@ -311,7 +310,7 @@ pub extern "C" fn svsm_main() {
         None
     };
 
-    let config = SvsmConfig::new(SVSM_PLATFORM.platform(), igvm_params);
+    let config = SvsmConfig::new(*SVSM_PLATFORM, igvm_params);
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 

@@ -382,11 +382,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 
     init_platform_type(platform_type);
-    let mut platform = SvsmPlatformCell::new(platform_type, true);
+    let mut platform_cell = SvsmPlatformCell::new(true);
+    let platform = platform_cell.platform_mut();
 
-    let config =
-        get_svsm_config(launch_info, &*platform).expect("Failed to get SVSM configuration");
-    setup_env(&config, &mut *platform, launch_info);
+    let config = get_svsm_config(launch_info, platform).expect("Failed to get SVSM configuration");
+    setup_env(&config, platform, launch_info);
 
     // Get the available physical memory region for the kernel
     let kernel_region = config
@@ -402,7 +402,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     // Load first the kernel ELF and update the loaded physical region
     let (kernel_entry, mut loaded_kernel_vregion) =
-        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, &*platform, &config)
+        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
     // Load the IGVM params, if present. Update loaded region accordingly.
@@ -412,7 +412,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
             igvm_params,
             &loaded_kernel_vregion,
             &loaded_kernel_pregion,
-            &*platform,
+            platform,
             &config,
         )
         .expect("Failed to load IGVM params");
@@ -433,7 +433,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_region,
         loaded_kernel_pregion,
         loaded_kernel_vregion,
-        &*platform,
+        platform,
         &config,
     )
     .expect("Failed to map and validate heap");
