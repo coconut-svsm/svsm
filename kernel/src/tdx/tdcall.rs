@@ -4,9 +4,11 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::error::TdVmcallError::Retry;
 use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
 use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
@@ -24,6 +26,9 @@ const TDG_VM_RD: u32 = 7;
 const TDVMCALL_CPUID: u32 = 10;
 const TDVMCALL_HLT: u32 = 12;
 const TDVMCALL_IO: u32 = 30;
+const TDVMCALL_RDMSR: u32 = 31;
+const TDVMCALL_WRMSR: u32 = 32;
+const TDVMCALL_MAP_GPA: u32 = 0x10001;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
 
@@ -321,6 +326,42 @@ pub fn tdcall_vm_read(field: u64) -> u64 {
     val
 }
 
+pub fn tdvmcall_map_gpa(mut gpa: u64, size: u64) -> Result<(), TdxError> {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let end = gpa + size;
+    loop {
+        let mut ret: u64;
+        let mut vmcall_ret: u64;
+        let mut retry_gpa: u64;
+        // SAFETY: executing TDCALL requires the use of assembly.
+        unsafe {
+            asm!("tdcall",
+                 in("rax") TDG_VP_TDVMCALL,
+                 in("rcx") pass_regs,
+                 in("r10") 0,
+                 in("r11") TDVMCALL_MAP_GPA,
+                 in("r12") gpa,
+                 in("r13") end - gpa,
+                 lateout("rax") ret,
+                 lateout("r10") vmcall_ret,
+                 lateout("r11") retry_gpa,
+                 options(att_syntax));
+        }
+
+        debug_assert!(tdx_result(ret).is_ok());
+        let err = tdvmcall_result(vmcall_ret);
+
+        // If a retry was requested, then reissue the call as requested by the
+        // host.  No validation is performed on this value because it is
+        // being passed to an untrusted host.
+        if err != Err(TdxError::Vmcall(Retry)) {
+            return err;
+        }
+
+        gpa = retry_gpa;
+    }
+}
+
 pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
     let mut ret: u64;
@@ -358,6 +399,57 @@ pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
         ecx: result_ecx,
         edx: result_edx,
     }
+}
+
+pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut result: u64;
+
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_RDMSR,
+             in("r12") msr as u64,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") result,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
+
+    result
+}
+
+pub fn tdvmcall_wrmsr(msr: u32, value: u64) {
+    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") 0,
+             in("r11") TDVMCALL_WRMSR,
+             in("r12") msr as u64,
+             in("r13") value,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             options(att_syntax));
+    }
+    // r10 is expected to be TDG.VP.VMCALL_SUCCESS per the GHCI spec
+    // Make sure the result matches the expectation
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+    debug_assert!(tdx_result(ret).is_ok());
 }
 
 pub fn tdvmcall_halt() {
@@ -429,4 +521,36 @@ where
 
 pub fn tdvmcall_io_read<T>(port: u16) -> u32 {
     tdvmcall_io(port, 0, size_of::<T>(), false)
+}
+
+pub fn tdvmcall_hyperv_hypercall(regs: &mut X86GeneralRegs) {
+    let pass_regs = (1 << 2) | (1 << 8) | (1 << 10) | (1 << 11);
+    let mut ret: u64;
+    let mut vmcall_ret: u64;
+    let mut hypercall_ret: u64;
+    // A Hyper-V hypercall uses VMCALL but does not use the standard GHCI
+    // convention.  The distinction is encoded in R10, which always passes
+    // zero for GHCI calls, and which passes the Hyper-V hypercall code (which
+    // is never zero) in the case of hypercalls.
+    debug_assert_ne!({ regs.rcx }, 0);
+    // SAFETY: executing TDCALL requires the use of assembly.
+    unsafe {
+        asm!("tdcall",
+             in("rax") TDG_VP_TDVMCALL,
+             in("rcx") pass_regs,
+             in("r10") regs.rcx,
+             in("rdx") regs.rdx,
+             in("r8") regs.r8,
+             lateout("rax") ret,
+             lateout("r10") vmcall_ret,
+             lateout("r11") hypercall_ret,
+             options(att_syntax));
+    }
+
+    // Ignore errors here.  The caller cannot handle them, and the final
+    // status is not trustworthy anyway.
+    debug_assert!(tdx_result(ret).is_ok());
+    debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
+
+    regs.rax = hypercall_ret as usize;
 }

@@ -26,9 +26,10 @@ use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, s
 use crate::cpu::{IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
-use crate::hyperv::HypercallPagesGuard;
+use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
-use crate::mm::alloc::allocate_pages;
+use crate::mm::alloc::{allocate_pages, free_page};
+use crate::mm::page_visibility::{make_page_private, make_page_shared};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{
@@ -585,6 +586,28 @@ impl PerCpu {
     /// Allocates hypercall input/output pages for this CPU.
     pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
         let vaddr = allocate_pages(2)?;
+
+        // Attempt to make each page shared.  This must be done carefully so
+        // that state is correctly restored in the event of failure.
+        // SAFETY: the virtual addresses are correct because the pages were
+        // just allocated.  If conversion is successful, these pages will never
+        // be freed, and if conversion if unsuccessful, state will correctly be
+        // restored here before the pages are freed.
+        unsafe {
+            let mut r = make_page_shared(vaddr);
+            if r.is_ok() {
+                let r2 = make_page_shared(vaddr + PAGE_SIZE);
+                if r2.is_err() {
+                    make_page_private(vaddr).expect("Failed to restore private page");
+                    r = r2;
+                }
+            }
+            if r.is_err() {
+                free_page(vaddr);
+                return r;
+            }
+        }
+
         let pages = (
             VirtPhysPair::new(vaddr),
             VirtPhysPair::new(vaddr + PAGE_SIZE),
@@ -643,6 +666,10 @@ impl PerCpu {
 
     pub fn set_current_stack(&self, stack: MemoryRegion<VirtAddr>) {
         self.current_stack.set(stack);
+    }
+
+    pub fn get_cpu_index(&self) -> usize {
+        self.shared().cpu_index()
     }
 
     pub fn get_apic_id(&self) -> u32 {
@@ -862,6 +889,12 @@ impl PerCpu {
 
         // Complete platform-specific initialization.
         platform.setup_percpu(self)?;
+
+        // Allocate hypercall pages if running on Hyper-V, unless this is the
+        // BSP (where they will be allocated later).
+        if self.shared.cpu_index() != 0 && *IS_HYPERV {
+            self.allocate_hypercall_pages()?;
+        }
 
         Ok(())
     }
