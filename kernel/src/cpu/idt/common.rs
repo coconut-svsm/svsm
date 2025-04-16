@@ -16,6 +16,7 @@ use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, Se
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::GuestPtr;
 use crate::platform::SVSM_PLATFORM;
+use crate::ro_after_init_section;
 use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
@@ -394,6 +395,10 @@ impl ReadLockGuard<'static, IDT> {
     }
 }
 
+// SAFETY: after this section's pages are made read-only, a write to this section
+// is a memory saftey violation triggering a #PF, which is the intended
+// behavior.
+#[unsafe(link_section = ro_after_init_section!())]
 static IDT: RWLock<IDT> = RWLock::new(IDT::new());
 
 pub fn idt() -> ReadLockGuard<'static, IDT> {

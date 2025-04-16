@@ -1186,6 +1186,21 @@ impl PageTable {
             entry.set(make_private_address(paddr), flags);
         }
     }
+
+    /// Makes the memory region pages read-only.
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `region` can be made read-only, i.e. that
+    /// no write can happen or that a #PF raised by any write temptative is
+    /// expected.
+    pub unsafe fn make_region_ro(&mut self, region: MemoryRegion<VirtAddr>) {
+        for page in region.iter_pages(PageSize::Regular) {
+            if let Mapping::Level0(entry) = self.walk_addr(page) {
+                entry.set(entry.address(), PTEntryFlags::data_ro());
+            }
+        }
+    }
 }
 
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
