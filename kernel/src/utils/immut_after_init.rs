@@ -175,7 +175,7 @@ unsafe impl<T: Send + Sync> Sync for ImmutAfterInitCell<T> {}
 
 /// A reference to a memory location which is effectively immutable after
 /// initalization code has run.
-
+///
 /// A `ImmutAfterInitRef` can either get initialized statically at link time or
 /// once from initialization code, basically following the protocol of a
 /// [`ImmutAfterInitCell`] itself:
@@ -208,13 +208,13 @@ unsafe impl<T: Send + Sync> Sync for ImmutAfterInitCell<T> {}
 /// from another `ImmutAfterInitRef`:
 /// ```
 /// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
-/// static RX : ImmutAfterInitRef::<'static, i32> = ImmutAfterInitRef::uninit();
-//
-/// fn init_rx(r : ImmutAfterInitRef<'static, i32>) {
+/// static RX: ImmutAfterInitRef<'static, i32> = ImmutAfterInitRef::uninit();
+///
+/// fn init_rx(r: ImmutAfterInitRef<'static, i32>) {
 ///     unsafe { RX.init_from_ref(r.get()) };
 /// }
 ///
-/// static X : i32 = 123;
+/// static X: i32 = 123;
 ///
 /// fn main() {
 ///     let local = ImmutAfterInitRef::<i32>::uninit();
@@ -223,7 +223,6 @@ unsafe impl<T: Send + Sync> Sync for ImmutAfterInitCell<T> {}
 ///     assert_eq!(*RX, 123);
 /// }
 /// ```
-///
 #[derive(Debug)]
 pub struct ImmutAfterInitRef<'a, T: Copy> {
     #[doc(hidden)]

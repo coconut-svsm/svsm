@@ -10,6 +10,7 @@ pub mod console;
 pub mod locking;
 
 pub use console::*;
+#[cfg(not(test))]
 use core::panic::PanicInfo;
 pub use locking::*;
 pub use syscall::*;
@@ -28,6 +29,7 @@ macro_rules! declare_main {
     };
 }
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
     println!("Panic: {}", info);

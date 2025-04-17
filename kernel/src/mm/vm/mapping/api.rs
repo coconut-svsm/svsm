@@ -83,7 +83,7 @@ pub trait VirtualMapping: core::fmt::Debug {
     /// # Returns
     ///
     /// A combination of:
-
+    ///
     /// * PTEntryFlags::WRITABLE
     /// * PTEntryFlags::NX,
     /// * PTEntryFlags::ACCESSED

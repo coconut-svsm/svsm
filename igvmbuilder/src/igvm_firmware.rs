@@ -314,7 +314,7 @@ impl IgvmFirmware {
                     let e = format!("Memory map address {:#018x} is larger than 32 bits", gpa);
                     return Err(e.into());
                 }
-                let page_count = (parameter_area.number_of_bytes + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K;
+                let page_count = parameter_area.number_of_bytes.div_ceil(PAGE_SIZE_4K);
                 // Truncate the page count if it is too large to fit into a
                 // 32-bit number.  It is acceptable for the SVSM to provide a
                 // smaller set of data than the firmware is capable of
