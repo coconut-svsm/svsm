@@ -19,8 +19,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install specified rust toolchain
-        run: rustup toolchain install 1.84.0 -t x86_64-unknown-none --profile minimal -c rustfmt,rust-src,clippy
+      - name: Install rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Add rust components
+        run: rustup component add rustfmt clippy rust-src
 
       - name: Check that Cargo.lock is up to date.
         run: cargo update --workspace --locked
@@ -96,8 +99,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install specified rust toolchain
-        run: rustup toolchain install 1.84.0 -t x86_64-unknown-none --profile minimal --force -c rustfmt,rust-src,clippy
+      - name: Install rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Add rust components
+        run: rustup component add clippy
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
