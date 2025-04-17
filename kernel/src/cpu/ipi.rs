@@ -12,6 +12,7 @@ use super::percpu::PERCPU_AREAS;
 use super::x86::apic_post_irq;
 use super::TprGuard;
 use crate::error::SvsmError;
+use crate::platform::SVSM_PLATFORM;
 use crate::types::{TPR_IPI, TPR_SYNCH};
 use crate::utils::{ScopedMut, ScopedRef};
 
@@ -19,7 +20,7 @@ use core::cell::{Cell, UnsafeCell};
 use core::mem;
 use core::mem::MaybeUninit;
 use core::ptr;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// This module implements inter-processor interrupt support, including the
 /// ability to send and receive messages across CPUs.  Two types of IPI
@@ -305,6 +306,8 @@ pub fn send_ipi(
     ipi_helper: &mut dyn IpiHelper,
     ipi_board: &IpiBoard,
 ) {
+    assert!(ipi_available());
+
     // Raise TPR to synch level to prevent reentrant attempts to send an IPI.
     let tpr_guard = TprGuard::raise(TPR_SYNCH);
 
@@ -552,6 +555,41 @@ pub fn send_unicast_ipi<M: IpiMessageMut>(cpu_index: usize, ipi_message: &mut M)
     this_cpu().send_unicast_ipi(cpu_index, ipi_message);
 }
 
+/// The count of CPUs that have not yet requested blocking of IPI usage.  This
+/// is initially set to 1 to count the BSP, and each AP that starts will
+/// increment the count.
+static IPI_AVAILABLE_CPU_COUNT: AtomicU32 = AtomicU32::new(1);
+
+/// Indicates whether use of IPIs is currently available.
+pub fn ipi_available() -> bool {
+    IPI_AVAILABLE_CPU_COUNT.load(Ordering::Acquire) != 0
+}
+
+/// Request IPI blocking on the current CPU and wait until all other CPUs have
+/// done the same.
+pub fn wait_for_ipi_block() {
+    // Mark this CPU as wanting to block IPIs and wait until all other CPUs
+    // have done the same.  Note that while waiting, additional IPIs may still
+    // be received, which is necessary because other CPUs may not have yet
+    // gotten to the point that they are willing to stop using IPIs.
+    IPI_AVAILABLE_CPU_COUNT.fetch_sub(1, Ordering::Release);
+    while ipi_available() {
+        core::hint::spin_loop();
+    }
+
+    // If this platform cannot make use of interrupts generally, then block
+    // interrupts from this point now that all CPUs have agreed to stop using
+    // IPIs.
+    if !SVSM_PLATFORM.use_interrupts() {
+        this_cpu().disable_interrupt_use();
+    }
+}
+
+/// Count the startup of another AP for IPI blocking purposes.
+pub fn ipi_start_cpu() {
+    IPI_AVAILABLE_CPU_COUNT.fetch_add(1, Ordering::Release);
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cpu::ipi::*;
@@ -613,7 +651,7 @@ mod tests {
     fn test_ipi() {
         // IPI testing is only possible on platforms that support SVSM
         // interrupts.
-        if SVSM_PLATFORM.use_interrupts() {
+        if ipi_available() {
             let mut drop_count: usize = 0;
             let message = TestIpi::new(4, &mut drop_count);
             send_multicast_ipi(IpiTarget::All, &message);
@@ -629,7 +667,7 @@ mod tests {
     fn test_mut_ipi() {
         // IPI testing is only possible on platforms that support SVSM
         // interrupts.
-        if SVSM_PLATFORM.use_interrupts() {
+        if ipi_available() {
             let mut drop_count: usize = 0;
             let mut message = TestIpi::new(4, &mut drop_count);
             send_unicast_ipi(0, &mut message);
