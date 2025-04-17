@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::ffi::c_char;
 use core::mem::{size_of, MaybeUninit};
+use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
 use syscall::PATH_MAX;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -173,7 +174,7 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
 }
 
 #[inline]
-unsafe fn copy_bytes(src: usize, dst: usize, size: usize) -> Result<(), SvsmError> {
+unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
     unsafe {
@@ -185,8 +186,8 @@ unsafe fn copy_bytes(src: usize, dst: usize, size: usize) -> Result<(), SvsmErro
              .quad (1b)
              .quad (2b)
              .popsection",
-                inout("rsi") src => _,
-                inout("rdi") dst => _,
+                inout("rsi") src.expose_provenance() => _,
+                inout("rdi") dst.expose_provenance() => _,
                 inout("rcx") size => rcx,
                 options(att_syntax, nostack));
     }
@@ -201,11 +202,9 @@ unsafe fn copy_bytes(src: usize, dst: usize, size: usize) -> Result<(), SvsmErro
 #[inline]
 unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     let size: usize = size_of::<T>();
-    let s = src as usize;
-    let d = dst as usize;
 
     // SAFETY: Only safe when safety requirements for do_movsb() are fulfilled.
-    unsafe { copy_bytes(s, d, size) }
+    unsafe { copy_bytes(src.cast(), dst.cast(), size) }
 }
 
 #[derive(Debug)]
@@ -402,31 +401,31 @@ fn check_bounds_user(start: usize, len: usize) -> Result<(), SvsmError> {
 }
 
 pub fn copy_from_user(src: VirtAddr, dst: &mut [u8]) -> Result<(), SvsmError> {
-    let source = src.bits();
-    let destination = dst.as_mut_ptr() as usize;
+    let destination = dst.as_mut_ptr();
     let size = dst.len();
 
-    check_bounds_user(source, size)?;
+    check_bounds_user(src.bits(), size)?;
 
     // SAFETY: Safe because the copy only happens to the memory belonging to
     // the dst slice from user-mode memory.
     unsafe {
         let _guard = UserAccessGuard::new();
+        let source = with_exposed_provenance::<u8>(src.bits());
         copy_bytes(source, destination, size)
     }
 }
 
 pub fn copy_to_user(src: &[u8], dst: VirtAddr) -> Result<(), SvsmError> {
-    let source = src.as_ptr() as usize;
-    let destination = dst.bits();
+    let source = src.as_ptr();
     let size = src.len();
 
-    check_bounds_user(destination, size)?;
+    check_bounds_user(dst.bits(), size)?;
 
     // SAFETY: Only reads data from with the slice and copies to an address
     // guaranteed to be in user-space.
     unsafe {
         let _guard = UserAccessGuard::new();
+        let destination = with_exposed_provenance_mut::<u8>(dst.bits());
         copy_bytes(source, destination, size)
     }
 }
@@ -462,15 +461,15 @@ fn checked_guest_region(start: PhysAddr, size: usize) -> Result<MemoryRegion<Phy
 pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
     let region = checked_guest_region(src, size)?;
     let start = region.start().page_align();
-    let offset = region.start().page_offset();
+    // Offset will always be 0..4K, so this is infallible.
+    let offset: isize = region.start().page_offset().try_into().unwrap();
     let end = region.end().page_align_up();
-    let destination = dst as usize;
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
         let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-        let source = guard.virt_addr().bits() + offset;
-        copy_bytes(source, destination, size)
+        let source = with_exposed_provenance::<u8>(guard.virt_addr().bits()).offset(offset);
+        copy_bytes(source, dst, size)
     }
 }
 
@@ -513,15 +512,16 @@ pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
     let size = src.len();
     let region = checked_guest_region(dst, src.len())?;
     let start = region.start().page_align();
-    let offset = region.start().page_offset();
+    // Offset will always be 0..4K so this is infallible.
+    let offset: isize = region.start().page_offset().try_into().unwrap();
     let end = region.end().page_align_up();
-    let source = src.as_ptr() as usize;
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
         let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-        let destination = guard.virt_addr().bits() + offset;
-        copy_bytes(source, destination, size)
+        let destination =
+            with_exposed_provenance_mut::<u8>(guard.virt_addr().bits()).offset(offset);
+        copy_bytes(src.as_ptr(), destination, size)
     }
 }
 
