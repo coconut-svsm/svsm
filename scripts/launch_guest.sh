@@ -128,15 +128,19 @@ echo "QEMU Version: ${QEMU_VERSION}"
 echo "IGVM:         ${IGVM}"
 echo "IMAGE:        ${IMAGE}"
 echo "============================="
-echo "Press Ctrl-] to interrupt"
-echo "============================="
 
-# Store original terminal settings and restore it on exit
-STTY_ORIGINAL=$(stty -g)
-trap 'stty "$STTY_ORIGINAL"' EXIT
 
-# Remap Ctrl-C to Ctrl-] to allow the guest to handle Ctrl-C.
-stty intr ^]
+# Remap Ctrl-C to Ctrl-] to allow the guest to handle Ctrl-C,
+# if we are running with a TTY attached.
+if [ -t 0 ]; then
+  echo "Press Ctrl-] to interrupt"
+  echo "============================="
+  # Store original terminal settings and restore it on exit
+  STTY_ORIGINAL=$(stty -g)
+  trap 'stty "$STTY_ORIGINAL"' EXIT
+
+  stty intr ^]
+fi
 
 $SUDO_CMD \
   $QEMU \
