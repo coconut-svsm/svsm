@@ -14,8 +14,11 @@ use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
+use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
-use crate::protocols::{RequestParams, SVSM_APIC_PROTOCOL, SVSM_CORE_PROTOCOL};
+use crate::protocols::{
+    RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+};
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
     pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
@@ -223,6 +226,11 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
                 0
             }
         }
+        SVSM_ATTEST_PROTOCOL => protocol_supported(
+            version,
+            ATTEST_PROTOCOL_VERSION_MIN,
+            ATTEST_PROTOCOL_VERSION_MAX,
+        ),
         _ => 0,
     };
 

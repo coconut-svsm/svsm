@@ -77,6 +77,27 @@ pub mod aead {
     pub struct Aes256Gcm;
 }
 
+pub mod digest {
+    //! API for message digests.
+
+    extern crate alloc;
+
+    use alloc::vec::Vec;
+
+    // Note the typical new/update/finish API is not initially supported due
+    // to our inability to hide an abstract implementation's state representation
+    // behind a type without any fields.
+
+    pub trait Algorithm {
+        /// Digests `input` into an output vector of size `OUTPUT_LEN`.
+        fn digest(input: &[u8]) -> Vec<u8>;
+    }
+
+    /// Sha512 type
+    #[derive(Copy, Clone, Debug)]
+    pub struct Sha512;
+}
+
 // Crypto implementations supported. Only one of them must be compiled-in.
 
 pub mod rustcrypto;

@@ -10,6 +10,10 @@
 /// TPM 2.0 Reference Implementation
 pub mod tcgtpm;
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use crate::vtpm::tcgtpm::TcgTpm as Vtpm;
 use crate::{locking::LockGuard, protocols::vtpm::TpmPlatformCommand};
 use crate::{locking::SpinLock, protocols::errors::SvsmReqError};
@@ -58,6 +62,27 @@ pub trait TcgTpmSimulatorInterface: VtpmProtocolInterface {
     fn signal_nvon(&self) -> Result<(), SvsmReqError>;
 }
 
+#[derive(Debug)]
+pub enum SvsmVTpmError {
+    ReqError(SvsmReqError),
+    CommandError(u32),
+}
+
+impl From<SvsmReqError> for SvsmVTpmError {
+    fn from(err: SvsmReqError) -> Self {
+        SvsmVTpmError::ReqError(err)
+    }
+}
+
+impl From<SvsmVTpmError> for SvsmReqError {
+    fn from(err: SvsmVTpmError) -> Self {
+        match err {
+            SvsmVTpmError::ReqError(e) => e,
+            SvsmVTpmError::CommandError(_) => SvsmReqError::invalid_request(),
+        }
+    }
+}
+
 /// Basic TPM driver services
 pub trait VtpmInterface: TcgTpmSimulatorInterface {
     /// Check if the TPM is powered on.
@@ -66,6 +91,11 @@ pub trait VtpmInterface: TcgTpmSimulatorInterface {
     /// Prepare the TPM to be used for the first time. At this stage,
     /// the TPM is manufactured.
     fn init(&mut self) -> Result<(), SvsmReqError>;
+
+    /// Returns the cached EK public key if it exists, otherwise it returns an error indicating
+    /// that the EK public key does not exist.
+    /// Needs mutability to cache the key.
+    fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError>;
 }
 
 static VTPM: SpinLock<Vtpm> = SpinLock::new(Vtpm::new());
@@ -83,4 +113,11 @@ pub fn vtpm_init() -> Result<(), SvsmReqError> {
 
 pub fn vtpm_get_locked<'a>() -> LockGuard<'a, Vtpm> {
     VTPM.lock()
+}
+
+/// Get the TPM manifest i.e the EK public key by calling the get_ekpub() implementation of the
+/// [`VtpmInterface`]
+pub fn vtpm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
+    let mut vtpm = VTPM.lock();
+    vtpm.get_ekpub()
 }

@@ -11,9 +11,13 @@
 #[cfg(not(any(test, fuzzing)))]
 mod wrapper;
 
+pub mod ek_templates;
+mod tss;
+
 extern crate alloc;
 
 use alloc::vec::Vec;
+
 use core::ffi::c_void;
 use libtcgtpm::bindings::{
     TPM_Manufacture, TPM_TearDown, _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable,
@@ -24,18 +28,23 @@ use crate::{
     address::VirtAddr,
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
-    vtpm::{TcgTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface},
+    vtpm::{
+        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA, TcgTpmSimulatorInterface, VtpmInterface,
+        VtpmProtocolInterface,
+    },
 };
 
-#[derive(Debug, Copy, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TcgTpm {
     is_powered_on: bool,
+    ekpub: Option<Vec<u8>>,
 }
 
 impl TcgTpm {
     pub const fn new() -> TcgTpm {
         TcgTpm {
             is_powered_on: false,
+            ekpub: None,
         }
     }
 
@@ -164,6 +173,13 @@ impl TcgTpmSimulatorInterface for TcgTpm {
 }
 
 impl VtpmInterface for TcgTpm {
+    fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError> {
+        if self.ekpub.is_none() {
+            self.ekpub = Some(tss::create_ek(self, &DEFAULT_PUBLIC_AREA[..])?);
+        }
+        self.ekpub.clone().ok_or_else(SvsmReqError::invalid_request)
+    }
+
     fn is_powered_on(&self) -> bool {
         self.is_powered_on
     }
