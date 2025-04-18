@@ -182,7 +182,7 @@ extern "C" fn start_ap() -> ! {
         .expect("Failed to allocate idle task for AP");
 
     // Send a life-sign
-    log::info!("AP with APIC-ID {} is online", this_cpu().get_apic_id());
+    log::info!("CPU {} is online", this_cpu().get_cpu_index());
 
     // Mark this CPU as participating in IPI usage.
     ipi_start_cpu();

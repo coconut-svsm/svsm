@@ -45,11 +45,11 @@ pub struct TdMailbox {
 const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
 
 // SAFETY: caller must ensure `mailbox` points to a valid memory address.
-unsafe fn wakeup_ap(mailbox: *mut TdMailbox, index: usize) {
+unsafe fn wakeup_ap(mailbox: *mut TdMailbox, cpu_index: usize) {
     // SAFETY: caller must ensure the address is valid and not aliased.
     unsafe {
         // PerCpu's CPU index has a direct mapping to TD vCPU index
-        (*mailbox).vcpu_index = index.try_into().expect("CPU index too large");
+        (*mailbox).vcpu_index = cpu_index.try_into().unwrap();
     }
 }
 
@@ -275,7 +275,7 @@ impl SvsmPlatform for TdpPlatform {
             let size = mem::size_of::<ApStartContext>();
             let context_ptr = (mbx_va + PAGE_SIZE - size).as_mut_ptr::<ApStartContext>();
             ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
-            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.shared().cpu_index());
+            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.get_cpu_index());
         }
         Ok(())
     }
