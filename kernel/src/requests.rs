@@ -141,10 +141,10 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
                 log::debug!("No VMSA or CAA! Halting");
                 go_idle();
             }
-            GuestExitMessage::Svsm((protocol, request)) => match check_requests() {
+            GuestExitMessage::Svsm((protocol, request, mut params)) => match check_requests() {
                 Ok(pending) => {
                     if pending {
-                        process_request(protocol, request);
+                        process_request(protocol, request, &mut params);
                     }
                 }
                 Err(SvsmReqError::RequestError(code)) => {
@@ -168,17 +168,8 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
     }
 }
 
-fn process_request(protocol: u32, request: u32) {
-    // Obtain a reference to the VMSA just long enough to extract the
-    // request parameters.
-    let mut request_params = {
-        let cpu = this_cpu();
-        let mut vmsa_ref = cpu.guest_vmsa_ref();
-        let vmsa = vmsa_ref.vmsa();
-        RequestParams::from_vmsa(vmsa)
-    };
-
-    let rax: Option<u64> = match request_loop_once(&mut request_params, protocol, request) {
+fn process_request(protocol: u32, request: u32, params: &mut RequestParams) {
+    let rax: Option<u64> = match request_loop_once(params, protocol, request) {
         Ok(success) => match success {
             true => Some(SvsmResultCode::SUCCESS.into()),
             false => None,
@@ -208,6 +199,6 @@ fn process_request(protocol: u32, request: u32) {
         if let Some(val) = rax {
             vmsa.rax = val;
         }
-        request_params.write_back(vmsa);
+        params.write_back(vmsa);
     }
 }

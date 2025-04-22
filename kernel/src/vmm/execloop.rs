@@ -7,6 +7,7 @@
 use super::GuestExitMessage;
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
+use crate::protocols::RequestParams;
 use crate::sev::ghcb::switch_to_vmpl;
 use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
@@ -54,7 +55,7 @@ pub fn enter_guest() -> GuestExitMessage {
 
     // Obtain a reference to the VMSA just long enough to extract the request
     // parameters.
-    let (protocol, request) = {
+    let (protocol, request, params) = {
         let mut vmsa_ref = cpu.guest_vmsa_ref();
         let vmsa = vmsa_ref.vmsa();
 
@@ -63,9 +64,13 @@ pub fn enter_guest() -> GuestExitMessage {
 
         let rax = vmsa.rax;
 
-        ((rax >> 32) as u32, (rax & 0xffff_ffff) as u32)
+        (
+            (rax >> 32) as u32,
+            (rax & 0xffff_ffff) as u32,
+            RequestParams::from_vmsa(vmsa),
+        )
     };
 
     // Return all SVSM protocol requests to the caller.
-    GuestExitMessage::Svsm((protocol, request))
+    GuestExitMessage::Svsm((protocol, request, params))
 }
