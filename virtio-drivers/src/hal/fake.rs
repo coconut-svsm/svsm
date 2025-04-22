@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! Fake HAL implementation for tests.
 
 #![deny(unsafe_op_in_unsafe_fn)]

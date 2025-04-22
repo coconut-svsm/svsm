@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use super::VirtQueue;
 use crate::{transport::Transport, Error, Hal, Result};
 use alloc::boxed::Box;

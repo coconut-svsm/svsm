@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! Common part shared across all the devices.
 
 use bitflags::bitflags;

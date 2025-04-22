@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! VirtIO guest drivers.
 //!
 //! These drivers can be used by bare-metal code (such as a bootloader or OS kernel) running in a VM

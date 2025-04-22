@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use crate::Hal;
 /// An MMIO register which can only be read from.
 #[derive(Default)]

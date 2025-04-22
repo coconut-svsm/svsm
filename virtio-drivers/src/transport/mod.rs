@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! VirtIO transports.
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 use super::{DeviceStatus, DeviceType, Transport};
 use crate::{
     queue::{fake_read_write_queue, Descriptor},

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! Driver for VirtIO block devices.
 
 use crate::hal::Hal;

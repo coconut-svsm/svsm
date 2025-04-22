@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+
 //! MMIO transport for VirtIO.
 
 use super::{DeviceStatus, DeviceType, Transport};
