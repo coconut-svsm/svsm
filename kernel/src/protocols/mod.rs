@@ -11,6 +11,9 @@ pub mod errors;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
+extern crate alloc;
+use crate::vmm::GuestRegister;
+use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 // SVSM protocols
@@ -37,9 +40,9 @@ impl RequestParams {
         }
     }
 
-    pub fn write_back(&self, vmsa: &mut VMSA) {
-        vmsa.rcx = self.rcx;
-        vmsa.rdx = self.rdx;
-        vmsa.r8 = self.r8;
+    pub fn capture(&self, regs: &mut Vec<GuestRegister>) {
+        regs.push(GuestRegister::X64Rcx(self.rcx));
+        regs.push(GuestRegister::X64Rdx(self.rdx));
+        regs.push(GuestRegister::X64R8(self.r8));
     }
 }

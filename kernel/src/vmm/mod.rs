@@ -6,6 +6,8 @@
 
 pub mod execloop;
 pub mod message;
+pub mod registers;
 
 pub use execloop::enter_guest;
 pub use message::*;
+pub use registers::*;

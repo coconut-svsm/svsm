@@ -12,7 +12,7 @@ use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
 use crate::task::{go_idle, set_affinity, start_kernel_task};
-use crate::vmm::{enter_guest, GuestExitMessage};
+use crate::vmm::{enter_guest, GuestExitMessage, GuestRegister};
 
 use crate::protocols::attest::attest_protocol_request;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -22,6 +22,7 @@ use crate::protocols::{
 };
 
 use alloc::format;
+use alloc::vec::Vec;
 
 /// The SVSM Calling Area (CAA)
 #[repr(C, packed)]
@@ -110,21 +111,27 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
     // other CPUs have done the same.
     wait_for_ipi_block();
 
+    let mut guest_regs = Vec::<GuestRegister>::new();
+
     loop {
-        // Attempt to enter the guest.
-        match enter_guest() {
+        // Attempt to enter the guest.  Once registers have been set, reset the
+        // vector so they are not set again.
+        let msg = enter_guest(guest_regs.as_slice());
+        guest_regs = Vec::new();
+
+        match msg {
             GuestExitMessage::NoMappings => {
                 log::debug!("No VMSA or CAA! Halting");
                 go_idle();
             }
             GuestExitMessage::Svsm((protocol, request, mut params)) => {
-                process_request(protocol, request, &mut params)
+                guest_regs = process_request(protocol, request, &mut params);
             }
         }
     }
 }
 
-fn process_request(protocol: u32, request: u32, params: &mut RequestParams) {
+fn process_request(protocol: u32, request: u32, params: &mut RequestParams) -> Vec<GuestRegister> {
     let rax: Option<u64> = match request_loop_once(params, protocol, request) {
         Ok(()) => Some(SvsmResultCode::SUCCESS.into()),
         Err(SvsmReqError::RequestError(code)) => {
@@ -144,14 +151,13 @@ fn process_request(protocol: u32, request: u32, params: &mut RequestParams) {
         }
     };
 
-    // Write back results
-    {
-        let cpu = this_cpu();
-        let mut vmsa_ref = cpu.guest_vmsa_ref();
-        let vmsa = vmsa_ref.vmsa();
-        if let Some(val) = rax {
-            vmsa.rax = val;
-        }
-        params.write_back(vmsa);
+    // Generate vector of registers to update.
+    let mut guest_regs = Vec::<GuestRegister>::new();
+    if let Some(val) = rax {
+        guest_regs.push(GuestRegister::X64Rax(val));
     }
+
+    params.capture(&mut guest_regs);
+
+    guest_regs
 }

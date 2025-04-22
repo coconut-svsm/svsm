@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use super::GuestExitMessage;
+use super::{set_guest_register, GuestExitMessage, GuestRegister};
 use crate::cpu::percpu::{this_cpu, GuestVmsaRef};
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
 use crate::mm::GuestPtr;
@@ -77,7 +77,7 @@ fn get_svsm_request_message(vmsa_ref: &mut GuestVmsaRef) -> Option<GuestExitMess
     None
 }
 
-pub fn enter_guest() -> GuestExitMessage {
+pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
     let cpu = this_cpu();
 
     // If no VMSA or CAA are configured, then the guest cannot be entered.
@@ -86,6 +86,19 @@ pub fn enter_guest() -> GuestExitMessage {
     }
 
     loop {
+        // Modify guest registers before disabling interrupts.
+        let mut vmsa_ref = cpu.guest_vmsa_ref();
+        let caa_addr = vmsa_ref.caa_addr();
+        let vmsa = vmsa_ref.vmsa();
+
+        for reg in regs {
+            set_guest_register(vmsa, reg);
+        }
+
+        // Ensure that no further register modification occurs if the loop
+        // restarts.
+        regs = &[];
+
         // No interrupts may be processed once guest APIC state is updated,
         // since handling an interrupt may modify the guest APIC state
         // calculations, which could cause state corruption.  If interrupts are
@@ -95,9 +108,6 @@ pub fn enter_guest() -> GuestExitMessage {
         let guard = IrqGuard::new();
 
         // Update APIC interrupt emulation state if required.
-        let mut vmsa_ref = cpu.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa_addr();
-        let vmsa = vmsa_ref.vmsa();
         cpu.update_apic_emulation(vmsa, caa_addr);
 
         // Make VMSA runnable again by setting EFER.SVME.
