@@ -3,6 +3,7 @@
 //! Fake HAL implementation for tests.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(missing_docs)]
 
 use crate::{BufferDirection, Hal, PhysAddr, PAGE_SIZE};
 use alloc::alloc::{alloc_zeroed, dealloc, handle_alloc_error};
