@@ -11,12 +11,13 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::{apic_in_service, apic_initialize, X2APIC_ACCESSOR};
+use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
+use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
@@ -92,7 +93,10 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        apic_initialize(&X2APIC_ACCESSOR);
+        apic_initialize(&TDX_APIC_ACCESSOR);
+        // apic_enable() is not needed as both KVM and Hyper-V hosts initialize
+        // TD APICs with (APIC_ENABLE_MASK | APIC_X2_ENABLE_MASK)
+        apic_sw_enable();
         Ok(())
     }
 

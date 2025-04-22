@@ -69,6 +69,8 @@ pub const APIC_OFFSET_SPIV: usize = 0xF;
 pub const APIC_OFFSET_ISR: usize = 0x10;
 /// Interrupt-Control-Register register MSR offset
 pub const APIC_OFFSET_ICR: usize = 0x30;
+/// SELF-IPI register MSR offset (x2APIC only)
+pub const APIC_OFFSET_SELF_IPI: usize = 0x3F;
 
 // SPIV bits
 const APIC_SPIV_VECTOR_MASK: u64 = (1u64 << 8) - 1;
