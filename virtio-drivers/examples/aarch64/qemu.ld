@@ -1,4 +1,0 @@
-MEMORY
-{
-	image : ORIGIN = 0x40080000, LENGTH = 32M
-}
