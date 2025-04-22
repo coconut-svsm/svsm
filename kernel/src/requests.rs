@@ -8,7 +8,6 @@ extern crate alloc;
 
 use crate::cpu::ipi::wait_for_ipi_block;
 use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
-use crate::mm::GuestPtr;
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
@@ -21,7 +20,6 @@ use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
-use cpuarch::vmsa::GuestVMExit;
 
 use alloc::format;
 
@@ -36,9 +34,15 @@ pub struct SvsmCaa {
 }
 
 impl SvsmCaa {
+    /// Indicates whether the `call_pending` flag is set.
+    #[inline]
+    pub fn call_pending(&self) -> bool {
+        self.call_pending != 0
+    }
+
     /// Returns a copy of the this CAA with the `call_pending` field cleared.
     #[inline]
-    const fn serviced(self) -> Self {
+    pub const fn serviced(self) -> Self {
         Self {
             call_pending: 0,
             ..self
@@ -72,42 +76,14 @@ fn request_loop_once(
     params: &mut RequestParams,
     protocol: u32,
     request: u32,
-) -> Result<bool, SvsmReqError> {
-    if !matches!(params.guest_exit_code, GuestVMExit::VMGEXIT) {
-        return Ok(false);
-    }
-
+) -> Result<(), SvsmReqError> {
     match protocol {
-        SVSM_CORE_PROTOCOL => core_protocol_request(request, params).map(|_| true),
-        SVSM_ATTEST_PROTOCOL => attest_protocol_request(request, params).map(|_| true),
+        SVSM_CORE_PROTOCOL => core_protocol_request(request, params),
+        SVSM_ATTEST_PROTOCOL => attest_protocol_request(request, params),
         #[cfg(all(feature = "vtpm", not(test)))]
-        SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params).map(|_| true),
-        SVSM_APIC_PROTOCOL => apic_protocol_request(request, params).map(|_| true),
+        SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params),
+        SVSM_APIC_PROTOCOL => apic_protocol_request(request, params),
         _ => Err(SvsmReqError::unsupported_protocol()),
-    }
-}
-
-fn check_requests() -> Result<bool, SvsmReqError> {
-    let cpu = this_cpu();
-    let vmsa_ref = cpu.guest_vmsa_ref();
-    if let Some(caa_addr) = vmsa_ref.caa_addr() {
-        let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
-        // SAFETY: guest vmsa and ca are always validated before beeing updated
-        // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
-        // they're safe to use.
-        let caa = unsafe { calling_area.read()? };
-
-        let caa_serviced = caa.serviced();
-
-        // SAFETY: guest vmsa is always validated before beeing updated
-        // (core_remap_ca() or core_create_vcpu()) so it's safe to use.
-        unsafe {
-            calling_area.write(caa_serviced)?;
-        }
-
-        Ok(caa.call_pending != 0)
-    } else {
-        Ok(false)
     }
 }
 
@@ -141,39 +117,16 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
                 log::debug!("No VMSA or CAA! Halting");
                 go_idle();
             }
-            GuestExitMessage::Svsm((protocol, request, mut params)) => match check_requests() {
-                Ok(pending) => {
-                    if pending {
-                        process_request(protocol, request, &mut params);
-                    }
-                }
-                Err(SvsmReqError::RequestError(code)) => {
-                    log::debug!(
-                        "Soft error handling protocol {} request {}: {:?}",
-                        protocol,
-                        request,
-                        code
-                    );
-                }
-                Err(SvsmReqError::FatalError(err)) => {
-                    log::error!(
-                        "Fatal error handling core protocol request {}: {:?}",
-                        request,
-                        err
-                    );
-                    break;
-                }
-            },
+            GuestExitMessage::Svsm((protocol, request, mut params)) => {
+                process_request(protocol, request, &mut params)
+            }
         }
     }
 }
 
 fn process_request(protocol: u32, request: u32, params: &mut RequestParams) {
     let rax: Option<u64> = match request_loop_once(params, protocol, request) {
-        Ok(success) => match success {
-            true => Some(SvsmResultCode::SUCCESS.into()),
-            false => None,
-        },
+        Ok(()) => Some(SvsmResultCode::SUCCESS.into()),
         Err(SvsmReqError::RequestError(code)) => {
             log::debug!(
                 "Soft error handling protocol {} request {}: {:?}",
