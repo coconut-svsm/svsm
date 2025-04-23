@@ -19,6 +19,9 @@ use core::{cmp, ptr, slice};
 #[cfg(any(test, fuzzing))]
 use crate::locking::LockGuard;
 
+#[cfg(verus_keep_ghost)]
+include!("alloc.verus.rs");
+
 /// Represents possible errors that can occur during memory allocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AllocError {
