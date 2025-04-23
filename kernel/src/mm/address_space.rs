@@ -8,6 +8,11 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::mm::pagetable::{PageFrame, PageTable};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
+use verus_stub::*;
+#[cfg(verus_keep_ghost)]
+include!("address_space.verus.rs");
+
+#[verus_verify]
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(not(any(test, target_os = "none")), expect(dead_code))]
 pub struct FixedAddressMappingRange {
@@ -17,6 +22,12 @@ pub struct FixedAddressMappingRange {
 }
 
 impl FixedAddressMappingRange {
+    #[verus_spec(ret =>
+        requires
+            Self::req_new(virt_start, virt_end, phys_start),
+        ensures
+            ret@ == LinearMap::spec_new(virt_start, virt_end, phys_start)
+    )]
     pub fn new(virt_start: VirtAddr, virt_end: VirtAddr, phys_start: PhysAddr) -> Self {
         Self {
             virt_start,
@@ -26,12 +37,17 @@ impl FixedAddressMappingRange {
     }
 
     #[cfg(target_os = "none")]
+    #[verus_spec(ret =>
+        ensures
+            ret == self@.spec_phys_to_virt(paddr@ as int)
+    )]
     fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
+        proof! {self.use_type_invariant();}
         if paddr < self.phys_start {
             None
         } else {
             let size: usize = self.virt_end - self.virt_start;
-            if paddr >= self.phys_start + size {
+            if paddr - self.phys_start >= size {
                 None
             } else {
                 let offset: usize = paddr - self.phys_start;

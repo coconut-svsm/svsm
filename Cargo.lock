@@ -1915,6 +1915,7 @@ dependencies = [
  "bitflags 2.9.1",
  "bootlib",
  "builtin",
+ "builtin_macros",
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-common",
