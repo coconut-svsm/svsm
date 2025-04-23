@@ -1350,6 +1350,7 @@ dependencies = [
  "builtin_macros",
  "paste",
  "seq-macro",
+ "state_machines_macros",
  "vstd",
 ]
 
