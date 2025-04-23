@@ -1153,6 +1153,7 @@ dependencies = [
  "bitflags 2.6.0",
  "bootlib",
  "builtin",
+ "builtin_macros",
  "cpuarch",
  "elf",
  "gdbstub",
