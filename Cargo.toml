@@ -63,10 +63,10 @@ uuid = { version = "1.6.1", default-features = false }
 zerocopy = { version = "0.8.2", features = ["derive"] }
 
 # Verus repos
-builtin = { git = "https://github.com/verus-lang/verus", rev ="734fdcf", default-features = false }
-builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="734fdcf", features = ["vpanic"], default-features = false }
-state_machines_macros = { git = "https://github.com/verus-lang/verus", rev ="734fdcf", default-features = false }
-vstd = { git = "https://github.com/verus-lang/verus", rev ="734fdcf", features = ["alloc", "allow_panic"], default-features = false }
+builtin = { git = "https://github.com/verus-lang/verus", rev ="50bb07d", default-features = false }
+builtin_macros = { git = "https://github.com/verus-lang/verus", rev ="50bb07d", features = ["vpanic"], default-features = false }
+state_machines_macros = { git = "https://github.com/verus-lang/verus", rev ="50bb07d", default-features = false }
+vstd = { git = "https://github.com/verus-lang/verus", rev ="50bb07d", features = ["alloc", "allow_panic"], default-features = false }
 
 # Verification libs
 verify_proof = { path = "verify_proof", default-features = false  }

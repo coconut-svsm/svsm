@@ -89,7 +89,7 @@ enum PageType {
 #[verus_verify]
 impl TryFrom<u64> for PageType {
     type Error = AllocError;
-    #[verus_spec(ret=>
+    #[verus_spec(ret =>
         ensures
             PageType::ens_try_from(val, ret),
     )]
@@ -130,7 +130,7 @@ impl PageStorageType {
     /// # Returns
     ///
     /// A new instance of [`PageStorageType`].
-    #[verus_verify(dual(spec_new))]
+    #[verus_verify(dual_spec(spec_new))]
     #[verus_spec(returns Self::spec_new(t))]
     const fn new(t: PageType) -> Self {
         Self(t as u64)
@@ -145,7 +145,7 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_order))]
+    #[verus_verify(dual_spec(spec_encode_order))]
     #[verus_spec(returns self.spec_encode_order(order))]
     fn encode_order(self, order: usize) -> Self {
         Self(self.0 | ((order as u64) & Self::ORDER_MASK) << Self::TYPE_SHIFT)
@@ -160,7 +160,7 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_next))]
+    #[verus_verify(dual_spec(spec_encode_next))]
     #[verus_spec(returns self.spec_encode_next(next_page))]
     fn encode_next(self, next_page: usize) -> Self {
         Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
@@ -175,7 +175,7 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`]
-    #[verus_verify(dual(spec_encode_slab))]
+    #[verus_verify(dual_spec(spec_encode_slab))]
     #[verus_spec(returns self.spec_encode_slab(slab))]
     fn encode_slab(self, slab: u64) -> Self {
         let item_size = slab & Self::SLAB_MASK;
@@ -191,14 +191,14 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_refcount))]
+    #[verus_verify(dual_spec(spec_encode_refcount))]
     #[verus_spec(returns self.spec_encode_refcount(refcount))]
     fn encode_refcount(self, refcount: u64) -> Self {
         Self(self.0 | refcount << Self::TYPE_SHIFT)
     }
 
     /// Decodes the order of the page.
-    #[verus_verify(dual(spec_decode_order))]
+    #[verus_verify(dual_spec(spec_decode_order))]
     #[verus_spec(ret =>
         ensures
             ret <= Self::ORDER_MASK,
@@ -211,7 +211,7 @@ impl PageStorageType {
     }
 
     /// Decodes the index of the next page.
-    #[verus_verify(dual(spec_decode_next))]
+    #[verus_verify(dual_spec(spec_decode_next))]
     #[verus_spec(ret =>
         ensures
             ret < (1u64 << (u64::BITS - Self::NEXT_SHIFT) as u64),
@@ -224,7 +224,7 @@ impl PageStorageType {
     }
 
     /// Decodes the slab
-    #[verus_verify(dual(spec_decode_slab))]
+    #[verus_verify(dual_spec(spec_decode_slab))]
     #[verus_spec(ret =>
         ensures
             ret <= Self::SLAB_MASK,
@@ -237,7 +237,7 @@ impl PageStorageType {
     }
 
     /// Decodes the reference count.
-    #[verus_verify(dual(spec_decode_refcount))]
+    #[verus_verify(dual_spec(spec_decode_refcount))]
     #[verus_spec(ret =>
         ensures
             ret < (1u64 << (u64::BITS - Self::TYPE_SHIFT) as u64),
@@ -272,7 +272,7 @@ struct FreeInfo {
 
 impl FreeInfo {
     /// Encodes the [`FreeInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Free)
@@ -281,7 +281,7 @@ impl FreeInfo {
     }
 
     /// Decodes a [`FreeInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_decode_impl))]
+    #[verus_verify(dual_spec(spec_decode_impl))]
     #[verus_spec(
         requires
             Self::spec_decode_impl(mem).order < MAX_ORDER,
@@ -304,14 +304,14 @@ struct AllocatedInfo {
 
 impl AllocatedInfo {
     /// Encodes the [`AllocatedInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Allocated).encode_order(self.order)
     }
 
     /// Decodes a [`PageStorageType`] into an [`AllocatedInfo`].
-    #[verus_verify(dual(spec_decode_impl))]
+    #[verus_verify(dual_spec(spec_decode_impl))]
     #[verus_spec(
         requires
             Self::spec_decode_impl(mem).order < MAX_ORDER,
@@ -333,18 +333,15 @@ struct SlabPageInfo {
 
 impl SlabPageInfo {
     /// Encodes the [`SlabPageInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::SlabPage).encode_slab(self.item_size)
     }
 
     /// Decodes a [`PageStorageType`] into a [`SlabPageInfo`].
-    #[verus_verify(dual(spec_decode_impl))]
-    #[verus_spec(
-        returns
-            Self::spec_decode_impl(mem)
-    )]
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(returns Self::spec_decode_impl(mem))]
     fn decode(mem: PageStorageType) -> Self {
         let item_size = mem.decode_slab();
         Self { item_size }
@@ -360,17 +357,19 @@ struct CompoundInfo {
 
 impl CompoundInfo {
     /// Encodes the [`CompoundInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Compound).encode_order(self.order)
     }
 
     /// Decodes a [`PageStorageType`] into a [`CompoundInfo`].
-    #[verus_verify(dual(spec_decode_impl))]
+    #[verus_verify(dual_spec(spec_decode_impl))]
     #[verus_spec(
-        requires Self::spec_decode_impl(mem).order < MAX_ORDER,
-        returns Self::spec_decode_impl(mem)
+        requires
+            Self::spec_decode_impl(mem).order < MAX_ORDER,
+        returns
+            Self::spec_decode_impl(mem)
     )]
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
@@ -385,14 +384,14 @@ struct ReservedInfo;
 
 impl ReservedInfo {
     /// Encodes the [`ReservedInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Reserved)
     }
 
     /// Decodes a [`PageStorageType`] into a [`ReservedInfo`].
-    #[verus_verify(dual(spec_decode_impl))]
+    #[verus_verify(dual_spec(spec_decode_impl))]
     #[verus_spec(returns Self::spec_decode_impl(_mem))]
     fn decode(_mem: PageStorageType) -> Self {
         Self
@@ -409,24 +408,26 @@ struct FileInfo {
 
 impl FileInfo {
     /// Creates a new [`FileInfo`] with the specified reference count.
-    #[verus_verify(dual(spec_new))]
+    #[verus_verify(dual_spec(spec_new))]
     #[verus_spec(
-        requires ref_count < (1u64 << (u64::BITS - PageStorageType::TYPE_SHIFT) as u64),
-        returns Self::spec_new(ref_count)
+        requires
+            ref_count < (1u64 << (u64::BITS - PageStorageType::TYPE_SHIFT) as u64),
+        returns
+            Self::spec_new(ref_count)
     )]
     const fn new(ref_count: u64) -> Self {
         Self { ref_count }
     }
 
     /// Encodes the [`FileInfo`] into a [`PageStorageType`].
-    #[verus_verify(dual(spec_encode_impl))]
+    #[verus_verify(dual_spec(spec_encode_impl))]
     #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::File).encode_refcount(self.ref_count)
     }
 
     /// Decodes a [`PageStorageType`] into a [`FileInfo`].
-    #[verus_verify(dual(spec_decode_impl))]
+    #[verus_verify(dual_spec(spec_decode_impl))]
     #[verus_spec(
         returns Self::spec_decode_impl(mem)
     )]
@@ -451,7 +452,7 @@ enum PageInfo {
 #[verus_verify]
 impl PageInfo {
     /// Converts [`PageInfo`] into a [`PageStorageType`].
-    #[verus_spec(ret=>
+    #[verus_spec(ret =>
         ensures
             Self::spec_decode(ret) == Some(self),
         returns
@@ -658,17 +659,18 @@ impl MemoryRegion {
             old(self).ens_write_page_info(*self, pfn, pi, *old(perm), *perm),
     )]
     fn write_page_info(&mut self, pfn: usize, pi: PageInfo) {
-        proof! {pi.use_type_invariant();}
+        proof! {
+            pi.use_type_invariant();
+            reveal(spec_page_info);
+        }
         self.check_pfn(pfn);
+
         let info: PageStorageType = pi.to_mem();
         // SAFETY: we have checked that the pfn is valid via check_pfn() above.
         // proved to be safe enough if passing valid tracked perm.
         unsafe {
             proof_with!(Tracked(perm));
             self.page_info_mut_ptr(pfn).v_write(info);
-        }
-        proof! {
-            reveal(spec_page_info);
         }
     }
 
@@ -686,7 +688,7 @@ impl MemoryRegion {
         proof_decl! {
             reveal(spec_page_info);
             use_type_invariant(&self.perms.borrow().info);
-            let tracked perm = self.perms.borrow().info.reserved.tracked_borrow(pfn);
+            let tracked perm = self.perms.borrow().info.tracked_borrow(pfn);
         }
         // SAFETY: we have checked that the pfn is valid via check_pfn() above.
         // Verification makes it safe enough.
@@ -699,8 +701,8 @@ impl MemoryRegion {
     }
 
     /// Gets the virtual offset of a virtual address within the memory region.
-    /// TODO(verus): dual mode for closure to avoid annotations.
-    #[verus_spec(ret=>
+    /// TODO(verus): dual_spec mode for closure to avoid annotations.
+    #[verus_spec(ret =>
         requires
             self.wf_params(),
         ensures
@@ -723,7 +725,7 @@ impl MemoryRegion {
     }
 
     /// Gets the page frame number for a given virtual address.
-    /// TODO(verus): dual mode for closure to avoid annotations.
+    /// TODO(verus): dual_spec mode for closure to avoid annotations.
     #[verus_spec(ret =>
         requires
             self.wf_params(),
@@ -807,6 +809,8 @@ impl MemoryRegion {
         #[cfg_attr(verus_keep_ghost, verus_spec(
             invariant
                 old(self).ens_mark_compound_page_loop(*self, pfn, i, order, *old(perms), *perms),
+            decreases
+                nr_pages - i,
         ))]
         #[cfg_attr(verus_keep_ghost, verifier::loop_isolation(false))]
         for i in 1..nr_pages {
@@ -877,10 +881,10 @@ impl MemoryRegion {
 
             // Grant write access to the page info.
             self.perms.borrow_mut().info.tracked_unshare_for_write(&mut info);
-            use_type_invariant(&info);
 
             // Extract all page info perms
-            let tracked PageInfoDb {id, reserved: mut reserved2, ..} = info;
+            let ghost id = info.id();
+            let tracked mut reserved2 = info.tracked_expose();
             let tracked mut reserved = reserved2.tracked_remove_keys(Set::new(|i: usize| pfn1 <= i < pfn2));
 
             // Prove the next page is valid.
@@ -896,12 +900,13 @@ impl MemoryRegion {
         proof_decl! {
             // Insert the readonly share of info perm for the left pages into
             // the tracked info perm to avoid future write outside.
-            let tracked info =  self.perms.borrow_mut().info.tracked_insert_unit(new_order, pfn1, id, reserved);
+            let tracked info =  self.perms.borrow_mut().info.tracked_insert_unit(new_order, pfn1, info.id(), reserved);
             let tracked p1 = PgUnitPerm {mem, info, typ: arbitrary()};
         }
 
         proof_with!(Tracked(&mut reserved2));
         self.init_compound_page(pfn2, new_order, next_pfn);
+        self.next_page[new_order] = pfn1;
 
         proof! {
             // Insert the readonly share of info perm for the right pages into
@@ -916,7 +921,6 @@ impl MemoryRegion {
             self.perms.borrow_mut().free.tracked_push(new_order, pfn1, p1);
         }
 
-        self.next_page[new_order] = pfn1;
         // Do the accounting
         self.nr_pages[order] -= 1;
         self.nr_pages[new_order] += 2;
@@ -933,6 +937,8 @@ impl MemoryRegion {
             0 <= order <= MAX_ORDER,
         ensures
             old(self).ens_refill_page_list(*self, ret.is_ok(), order),
+        decreases
+            MAX_ORDER - order,
     )]
     fn refill_page_list(&mut self, order: usize) -> Result<(), AllocError> {
         proof! {
@@ -978,8 +984,7 @@ impl MemoryRegion {
             // Grant write access to the page info.
             let tracked (mem, mut info) = perm.tracked_take();
             self.perms.borrow_mut().info.tracked_unshare_for_write(&mut info);
-            use_type_invariant(&info);
-            let tracked PageInfoDb {id, mut reserved, ..} = info;
+            let tracked mut reserved = info.tracked_expose();
             let tracked mut info_head = reserved.tracked_remove(pfn);
         }
         proof_with!(Tracked(&mut info_head));
@@ -987,7 +992,7 @@ impl MemoryRegion {
         proof! {
             // Insert the readonly share of info perm into the tracked info perm
             reserved.tracked_insert(pfn, info_head);
-            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, pfn, id, reserved);
+            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, pfn, info.id(), reserved);
 
             // Return the memory permission with a readonly share of info.
             let tracked perm = PgUnitPerm {mem, info, typ: arbitrary()};
@@ -1183,10 +1188,9 @@ impl MemoryRegion {
 
             // Split info perms into two groups:
             // one for the allocinfo and another for compound pages.
-            use_type_invariant(&info);
-            use_type_invariant(&info2);
-            let tracked PageInfoDb {id, mut reserved, unit_start} = info;
-            reserved.tracked_union_prefer_right(info2.reserved);
+            let tracked mut reserved = info.tracked_expose();
+            let tracked mut reserved2 = info2.tracked_expose();
+            reserved.tracked_union_prefer_right(reserved2);
             let tracked mut head_info = reserved.tracked_remove(pfn);
         }
 
@@ -1204,7 +1208,7 @@ impl MemoryRegion {
             // Insert the readonly share of info perm for the merged memory
             // back into the tracked info perm to avoid future write outside.
             reserved.tracked_insert(pfn, head_info);
-            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(new_order, pfn, id, reserved);
+            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(new_order, pfn, info.id(), reserved);
 
             // Prove the nr_page counter is correct.
             assert(2 * (1usize << order) == (1usize << new_order));
@@ -1305,6 +1309,7 @@ impl MemoryRegion {
                 old_pfn != 0,
                 old_pfn == self@.free.avail[order as int][idx_ + 1].pfn(),
                 -1 <= idx_ < self@.free.avail[order as int].len() - 1,
+            decreases (idx_ + 1),
         ))]
         loop {
             proof_decl! {
@@ -1324,7 +1329,6 @@ impl MemoryRegion {
                 old_pfn = current_pfn;
                 proof! {
                     idx_ = idx_ - 1;
-                    assert(self.req_allocate_pfn(old_pfn, order));
                 }
                 continue;
             }
@@ -1335,21 +1339,22 @@ impl MemoryRegion {
             proof_with!(Tracked(current_perm));
             let next_pfn = self.next_free_pfn(current_pfn, order);
             proof_decl! {
+                // prove the next_pfn is disjont with current_pfn.
                 self.perms.borrow_mut().free.tracked_disjoint_pfn(order, idx_ + 1, order, idx_);
-                let tracked mut current_perm = self.perms.borrow_mut().free.tracked_remove(order, idx_ + 1);
-                let tracked (prev_mem, prev_info) = current_perm.tracked_take();
+
+                // Get prev mem and info perms and grant write to info perm.
+                let tracked mut prev_perm = self.perms.borrow_mut().free.tracked_remove(order, idx_ + 1);
+                let tracked (prev_mem, prev_info) = prev_perm.tracked_take();
                 self.perms.borrow_mut().info.tracked_unshare_for_write(&mut prev_info);
-
-                let tracked mut prev_perm = self.perms.borrow_mut().free.tracked_remove(order, idx_);
-                let tracked (mut mem, mut info) =  prev_perm.tracked_take();
-                self.perms.borrow_mut().info.tracked_unshare_for_write(&mut info);
-                use_type_invariant(&info);
-                let tracked PageInfoDb {id, mut reserved, ..} = info;
-
-                let tracked head_info = reserved.tracked_remove(current_pfn);
-                use_type_invariant(&prev_info);
-                let tracked PageInfoDb {id, reserved: mut prev_reserved, ..} = prev_info;
+                let tracked mut prev_reserved = prev_info.tracked_expose();
                 let tracked prev_head_info = prev_reserved.tracked_remove(old_pfn);
+
+                // Get current mem and info perms and grant write to info perm.
+                let tracked mut current_perm = self.perms.borrow_mut().free.tracked_remove(order, idx_);
+                let tracked (mut mem, mut info) = current_perm.tracked_take();
+                self.perms.borrow_mut().info.tracked_unshare_for_write(&mut info);
+                let tracked mut reserved = info.tracked_expose();
+                let tracked head_info = reserved.tracked_remove(current_pfn);
             }
             let pg = PageInfo::Free(FreeInfo {
                 next_page: next_pfn,
@@ -1365,15 +1370,21 @@ impl MemoryRegion {
             self.free_pages[order] -= 1;
 
             proof! {
+                // Insert the readonly share of info perm for prev free pages
                 prev_reserved.tracked_insert(old_pfn, prev_head_info);
-                let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, old_pfn, id, prev_reserved);
+                let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, old_pfn, prev_info.id(), prev_reserved);
 
+                // Insert the prev_mem back to free list.
                 let tracked mut prev_perm = PgUnitPerm {mem: prev_mem, info, typ: arbitrary()};
                 self.perms.borrow_mut().free.tracked_insert(order, idx_, old_pfn, prev_perm);
 
+                // Insert the readonly share of info perm for the allocated
+                // pages to avoid future change from inside and outside of MR.
                 reserved.tracked_insert(current_pfn, head_info);
-                let tracked info =  self.perms.borrow_mut().info.tracked_insert_unit(order, current_pfn, id, reserved);
+                let tracked info =  self.perms.borrow_mut().info.tracked_insert_unit(order, current_pfn, prev_info.id(), reserved);
+
                 *perm = PgUnitPerm {mem, info, typ: arbitrary()};
+                // Prove free list is still strictly wellformed.
                 old(self)@.free.lemma_wf_restrict_remove(&self.perms.borrow().free, order, idx_);
             }
 
@@ -1400,8 +1411,7 @@ impl MemoryRegion {
             let tracked mut perm = perm;
             let tracked (mem, mut info) = perm.tracked_take();
             self.perms.borrow_mut().info.tracked_unshare_for_write(&mut info);
-            use_type_invariant(&info);
-            let tracked PageInfoDb {id, mut reserved, ..} = info;
+            let tracked mut reserved = info.tracked_expose();
             let tracked mut head_info = reserved.tracked_remove(pfn);
         }
         let pg = PageInfo::Free(FreeInfo {
@@ -1414,7 +1424,7 @@ impl MemoryRegion {
 
         proof! {
             reserved.tracked_insert(pfn, head_info);
-            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, pfn, id, reserved);
+            let tracked info = self.perms.borrow_mut().info.tracked_insert_unit(order, pfn, info.id(), reserved);
             let tracked mut pfn_perm = PgUnitPerm {mem, info, typ: arbitrary()};
             self.perms.borrow_mut().free.tracked_push(order, pfn, pfn_perm);
         }
@@ -1468,6 +1478,8 @@ impl MemoryRegion {
             old(self).req_try_to_merge_page(pfn, order, perm),
         ensures
             old(self).ens_free_page_order(self, pfn, order),
+        decreases
+            MAX_ORDER - order,
     )]
     #[verus_verify(spinoff_prover)]
     fn free_page_order(&mut self, pfn: usize, order: usize) {
@@ -1509,13 +1521,16 @@ impl MemoryRegion {
         proof_decl! {
             use_type_invariant(&perm);
             let tracked AllocatedPagesPerm{mut perm, mr_map} = perm;
+
+            // Prove the passed pages shares the same mapping and page info,
+            // tracked inside the MemoryRegion.
             self.perms.borrow().mr_map.is_same(&mr_map);
             self.perms.borrow().info.tracked_is_same_info(&perm, pfn);
+
+            // Prove the pfn is valid.
             assert(self.valid_pfn_order(pfn, res.spec_order())) by {
-                assert(mr_map.pg_params().valid_pfn_order(pfn, res.spec_order()));
                 mr_map.pg_params().lemma_reserved_pfn_count();
             }
-            use_type_invariant(&mr_map);
         }
 
         match res {

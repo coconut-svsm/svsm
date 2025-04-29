@@ -195,12 +195,12 @@ dependencies = [
 [[package]]
 name = "builtin"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 
 [[package]]
 name = "builtin_macros"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 dependencies = [
  "prettyplease_verus",
  "proc-macro2",
@@ -883,7 +883,7 @@ dependencies = [
 [[package]]
 name = "prettyplease_verus"
 version = "0.2.29"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 dependencies = [
  "proc-macro2",
  "syn_verus",
@@ -1062,7 +1062,7 @@ dependencies = [
 [[package]]
 name = "state_machines_macros"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 dependencies = [
  "indexmap",
  "proc-macro2",
@@ -1142,7 +1142,7 @@ dependencies = [
 [[package]]
 name = "syn_verus"
 version = "2.0.96"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1306,7 +1306,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vstd"
 version = "0.1.0"
-source = "git+https://github.com/verus-lang/verus?rev=734fdcf#734fdcf77969141a1cd9082c481b2682e7914398"
+source = "git+https://github.com/verus-lang/verus?rev=50bb07d#50bb07d829694d7a6303d44d4bde6c84f8e23c73"
 dependencies = [
  "builtin",
  "builtin_macros",

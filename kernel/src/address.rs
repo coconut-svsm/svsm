@@ -583,6 +583,7 @@ impl ops::Sub<usize> for VirtAddr {
     type Output = Self;
 
     #[inline]
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(ret =>
         ensures
             ret.offset() == self.offset() - other

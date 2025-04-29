@@ -783,6 +783,12 @@ impl PageInfoDb {
         ret
     }
 
+    spec fn ens_unshare_for_write(&self, new: Self, unit: &PageInfoDb) -> bool {
+        &&& new@ == self@.remove_keys(unit@.dom())
+        &&& new.id() == self.id()
+        &&& self.ens_add_unit_nr_pages(new, unit.order())
+    }
+
     proof fn tracked_unshare_for_write(tracked &mut self, tracked unit: &mut PageInfoDb)
         requires
             old(self).dom().contains(old(unit).unit_start()),
@@ -796,9 +802,9 @@ impl PageInfoDb {
                 old(unit).id().shares + old(self).id().shares,
             ),
             unit.unit_head()@ == old(unit).unit_head()@.update_shares(unit.id().shares),
+            forall|order: usize| #[trigger] old(unit).nr_page(order) == unit.nr_page(order),
             self@ == old(self)@.remove_keys(unit@.dom()),
             self.id() == old(self).id(),
-            forall|order: usize| #[trigger] old(unit).nr_page(order) == unit.nr_page(order),
             old(self).ens_add_unit_nr_pages(*self, unit.order()),
     {
         let idx = unit.unit_start();
@@ -822,6 +828,8 @@ impl PageInfoDb {
         *unit = PageInfoDb::tracked_new_unit(order, unit_start, id, reserved);
     }
 
+    /// Insert a new unit with the same share into the `PageInfoDb` and
+    /// returns remaining shares.
     proof fn tracked_insert_unit(
         tracked &mut self,
         order: usize,
@@ -953,6 +961,19 @@ impl PageInfoDb {
         use_type_invariant(self);
         reveal(PageInfoDb::wf_basic_at);
         self.reserved.tracked_borrow(idx)
+    }
+
+    proof fn tracked_expose(tracked self) -> (tracked ret: Map<
+        usize,
+        FracTypedPerm<PageStorageType>,
+    >)
+        ensures
+            ret == self.reserved,
+            self.wf(),
+    {
+        use_type_invariant(&self);
+        let tracked PageInfoDb { id, reserved, .. } = self;
+        reserved
     }
 }
 
