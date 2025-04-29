@@ -150,12 +150,7 @@ impl SvsmPlatform for TdpPlatform {
         _size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         let gpa = match op {
@@ -174,9 +169,6 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
         if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
@@ -198,12 +190,7 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         match op {
