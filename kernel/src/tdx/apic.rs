@@ -7,7 +7,9 @@
 use crate::cpu::apic::{ApicIcr, IcrDestFmt, IcrMessageType};
 use crate::cpu::msr::{read_msr, write_msr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::x86::apic::{APIC_OFFSET_ICR, APIC_OFFSET_SELF_IPI, APIC_OFFSET_SPIV};
+use crate::cpu::x86::apic::{
+    APIC_OFFSET_ICR, APIC_OFFSET_ID, APIC_OFFSET_SELF_IPI, APIC_OFFSET_SPIV,
+};
 use crate::cpu::x86::x2apic::{MSR_X2APIC_BASE, MSR_X2APIC_SELF_IPI};
 use crate::cpu::x86::{ApicAccess, MSR_APIC_BASE};
 use crate::tdx::tdcall;
@@ -51,7 +53,7 @@ impl TdxApicAccessor {
     // NOTE:
     // Needs to be updated when new GHCI APIC registers are used.
     fn is_ghci_msr(offset: usize) -> bool {
-        matches!(offset, APIC_OFFSET_SPIV | APIC_OFFSET_ICR)
+        matches!(offset, APIC_OFFSET_ID | APIC_OFFSET_SPIV | APIC_OFFSET_ICR)
     }
 }
 
