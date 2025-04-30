@@ -1,8 +1,7 @@
 FEATURES ?= vtpm
 SVSM_ARGS += --features ${FEATURES}
 
-FEATURES_TEST ?= vtpm
-SVSM_ARGS_TEST += --no-default-features --features ${FEATURES_TEST}
+SVSM_ARGS_TEST += --no-default-features
 
 ifdef RELEASE
 TARGET_PATH=release
