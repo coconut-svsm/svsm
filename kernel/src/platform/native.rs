@@ -121,8 +121,8 @@ impl SvsmPlatform for NativePlatform {
         unsafe { hyperv::execute_hypercall(input_control, hypercall_pages) }
     }
 
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
-        Some(CpuidResult::get(eax, 0))
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+        Some(CpuidResult::get(eax, ecx))
     }
 
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {

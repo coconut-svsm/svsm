@@ -308,9 +308,10 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn cpuid(&self, eax: u32) -> Result<CpuidResult, SvsmError> {
+    pub fn cpuid(&self, eax: u32, ecx: u32) -> Result<CpuidResult, SvsmError> {
         self.clear();
         self.set_rax_valid(eax as u64);
+        self.set_rcx_valid(ecx as u64);
         self.vmgexit(GHCBExitCode::CPUID, 0, 0)?;
         Ok(CpuidResult {
             eax: self.get_rax_valid()? as u32,
@@ -321,7 +322,7 @@ impl GHCB {
     }
 
     pub fn cpuid_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
-        let result = self.cpuid(regs.rax as u32)?;
+        let result = self.cpuid(regs.rax as u32, regs.rcx as u32)?;
         regs.rax = result.eax as usize;
         regs.rbx = result.ebx as usize;
         regs.rcx = result.ecx as usize;
