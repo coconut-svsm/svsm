@@ -115,7 +115,7 @@ jobs:
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - name: Build SVSM
-        run: ./build configs/qemu-target.json
+        run: cargo xbuild configs/qemu-target.json
 
       ########################
 
