@@ -1,0 +1,12 @@
+[package]
+name = "xbuild"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { workspace = true, features = ["color", "derive", "help", "std", "suggestions", "usage"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+
+[lints]
+workspace = true

@@ -1,8 +1,8 @@
 # COCONUT Build Recipes Format
 
 This document describes the format of COCONUT build recipes as consumed by the
-`scripts/build.py` script. The script takes a build recipe as input and builds
-all tooling and component to generate one or more IGVM output files.
+`xbuild` program. The program takes a build recipe as input and builds all
+tooling and component to generate one or more IGVM output files.
 
 IGVM files are hypervisor specific. The COCONUT source repository ships with
 ready-to-use recipes for all supported hypervisors. IGVM files for multiple
