@@ -61,6 +61,8 @@ pub trait ApicAccess: core::fmt::Debug {
 /// APIC Base MSR
 pub const MSR_APIC_BASE: u32 = 0x1B;
 
+/// Local APIC ID register MSR offset
+pub const APIC_OFFSET_ID: usize = 0x2;
 /// End-of-Interrupt register MSR offset
 pub const APIC_OFFSET_EOI: usize = 0xB;
 /// Spurious-Interrupt-Register MSR offset
@@ -69,6 +71,8 @@ pub const APIC_OFFSET_SPIV: usize = 0xF;
 pub const APIC_OFFSET_ISR: usize = 0x10;
 /// Interrupt-Control-Register register MSR offset
 pub const APIC_OFFSET_ICR: usize = 0x30;
+/// SELF-IPI register MSR offset (x2APIC only)
+pub const APIC_OFFSET_SELF_IPI: usize = 0x3F;
 
 // SPIV bits
 const APIC_SPIV_VECTOR_MASK: u64 = (1u64 << 8) - 1;
@@ -132,6 +136,12 @@ impl X86Apic {
     /// Enable the APIC-Software-Enable bit.
     pub fn sw_enable(&self) {
         self.spiv_write(0xff, true);
+    }
+
+    /// Get APIC ID
+    #[inline(always)]
+    pub fn id(&self) -> u32 {
+        self.regs().apic_read(APIC_OFFSET_ID) as u32
     }
 
     /// Sends an EOI message

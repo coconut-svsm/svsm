@@ -19,6 +19,8 @@ pub const MSR_X2APIC_SPIV: u32 = 0x80F;
 pub const MSR_X2APIC_ISR: u32 = 0x810;
 /// Interrupt-Control-Register register MSR offset
 pub const MSR_X2APIC_ICR: u32 = 0x830;
+/// SELF-IPI register MSR offset
+pub const MSR_X2APIC_SELF_IPI: u32 = 0x83F;
 
 #[derive(Debug)]
 pub struct X2ApicAccessor {}

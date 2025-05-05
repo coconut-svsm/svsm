@@ -11,12 +11,13 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::{apic_in_service, apic_initialize, X2APIC_ACCESSOR};
+use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
+use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
@@ -92,7 +93,10 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
-        apic_initialize(&X2APIC_ACCESSOR);
+        apic_initialize(&TDX_APIC_ACCESSOR);
+        // apic_enable() is not needed as both KVM and Hyper-V hosts initialize
+        // TD APICs with (APIC_ENABLE_MASK | APIC_X2_ENABLE_MASK)
+        apic_sw_enable();
         Ok(())
     }
 
@@ -150,12 +154,7 @@ impl SvsmPlatform for TdpPlatform {
         _size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         let gpa = match op {
@@ -174,9 +173,6 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
         if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
@@ -198,12 +194,7 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         match op {

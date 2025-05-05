@@ -891,7 +891,9 @@ impl PerCpu {
 
     // Setup code which needs to run on the target CPU
     pub fn setup_on_cpu(&self, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
-        platform.setup_percpu_current(self)
+        platform.setup_percpu_current(self)?;
+        assert!(self.get_apic().id() == self.get_apic_id());
+        Ok(())
     }
 
     pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
