@@ -2014,7 +2014,7 @@ mod test {
                 assert_eq!(layout.size(), size);
 
                 // Allocate four pages worth of objects from each Slab.
-                let n = (4 * PAGE_SIZE + size - 1) / size;
+                let n = (4 * PAGE_SIZE).div_ceil(size);
                 for _k in 0..n {
                     let p = unsafe { ALLOCATOR.alloc(layout) };
                     assert_ne!(p, ptr::null_mut());
@@ -2091,7 +2091,7 @@ mod test {
 
         let mut allocs: Vec<*mut u8> = Vec::new();
         let mut null_seen = false;
-        for _i in 0..((TEST_MEMORY_SIZE + OBJECT_SIZE - 1) / OBJECT_SIZE) {
+        for _i in 0..TEST_MEMORY_SIZE.div_ceil(OBJECT_SIZE) {
             let p = unsafe { ALLOCATOR.alloc(layout) };
             if p.is_null() {
                 null_seen = true;
