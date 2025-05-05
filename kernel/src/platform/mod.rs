@@ -139,7 +139,7 @@ pub trait SvsmPlatform: Sync {
     ) -> hyperv::HvHypercallOutput;
 
     /// Obtain CPUID using platform-specific tables.
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult>;
 
     /// Write a host-owned MSR.
     /// # Safety

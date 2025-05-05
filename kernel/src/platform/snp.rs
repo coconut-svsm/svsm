@@ -166,7 +166,7 @@ impl SvsmPlatform for SnpPlatform {
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let processor_capacity =
-            cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
+            cpuid_table(0x80000008, 0).expect("Can not get physical address size from CPUID table");
         if vtom_enabled() {
             let vtom = *VTOM;
             PageEncryptionMasks {
@@ -178,7 +178,7 @@ impl SvsmPlatform for SnpPlatform {
         } else {
             // Find C-bit position.
             let sev_capabilities =
-                cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
+                cpuid_table(0x8000001f, 0).expect("Can not get C-Bit position from CPUID table");
             let c_bit = sev_capabilities.ebx & 0x3f;
             PageEncryptionMasks {
                 private_pte_mask: 1 << c_bit,
@@ -193,7 +193,7 @@ impl SvsmPlatform for SnpPlatform {
         // Examine CPUID information to see whether CET is supported by the
         // hypervisor.  If no CPUID information is present, then assume that
         // CET is supported.
-        if let Some(cpuid) = cpuid_table(7) {
+        if let Some(cpuid) = cpuid_table(7, 0) {
             (cpuid.ecx & 0x80) != 0
         } else {
             todo!()
@@ -223,14 +223,14 @@ impl SvsmPlatform for SnpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
         // If this is an architectural CPUID leaf, then extract the result
         // from the CPUID table.  Otherwise, request the value from the
         // hypervisor.
         if (eax >> 28) == 4 {
-            current_ghcb().cpuid(eax).ok()
+            current_ghcb().cpuid(eax, ecx).ok()
         } else {
-            cpuid_table(eax)
+            cpuid_table(eax, ecx)
         }
     }
 

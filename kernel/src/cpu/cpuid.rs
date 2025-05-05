@@ -127,8 +127,8 @@ pub fn cpuid_table_raw(eax: u32, ecx: u32, xcr0: u64, xss: u64) -> Option<CpuidR
     None
 }
 
-pub fn cpuid_table(eax: u32) -> Option<CpuidResult> {
-    cpuid_table_raw(eax, 0, 0, 0)
+pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
+    cpuid_table_raw(eax, ecx, 0, 0)
 }
 
 pub fn dump_cpuid_table() {
