@@ -58,7 +58,7 @@ jobs:
           RUSTFLAGS: --cfg fuzzing
 
       - name: Clippy on tests
-        run: cargo clippy --all-features --workspace --tests --exclude packit --exclude user* -- -D warnings
+        run: cargo clippy --all-features --workspace --tests --exclude packit -- -D warnings
 
       - name: Check documentation
         run: make doc
