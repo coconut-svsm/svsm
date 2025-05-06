@@ -382,7 +382,7 @@ pub fn send_ipi(
             let mut target_count: usize = 0;
             for cpu in PERCPU_AREAS.iter() {
                 // Ignore the current CPU and CPUs that are not online.
-                if cpu.is_online() && cpu.apic_id() != this_cpu().get_apic_id() {
+                if cpu.is_online() && cpu.cpu_index() != this_cpu().get_cpu_index() {
                     target_count += 1;
                     cpu.ipi_from(sender_cpu_index);
                 }
@@ -606,7 +606,7 @@ mod tests {
             Self {
                 value,
                 drop_count,
-                cpu_index: this_cpu().shared().cpu_index(),
+                cpu_index: this_cpu().get_cpu_index(),
             }
         }
     }
@@ -616,7 +616,7 @@ mod tests {
             // Drop must only be called on the CPU that created the message.
             // Otherwise, the drop count reference may point to the wrong
             // data.
-            assert_eq!(this_cpu().shared().cpu_index(), self.cpu_index);
+            assert_eq!(this_cpu().get_cpu_index(), self.cpu_index);
             *self.drop_count += 1;
         }
     }

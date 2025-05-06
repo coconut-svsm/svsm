@@ -45,20 +45,16 @@ use crate::mm::{
     SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{halt, SvsmPlatform, SVSM_PLATFORM};
-use crate::requests::{request_loop_main, request_processing_main};
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{
-    schedule, schedule_task, start_kernel_task, RunQueue, Task, TaskPointer, WaitQueue,
-};
+use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
 use crate::utils::MemoryRegion;
 use alloc::boxed::Box;
-use alloc::format;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -122,6 +118,22 @@ impl PerCpuAreas {
         areas.push(percpu_shared);
 
         percpu_shared
+    }
+
+    pub fn len(&self) -> usize {
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        // SAFETY: it is safe to obtain a shared reference to the areas
+        // vector because callers attempting to mutate the vector guarantee
+        // that they cannot race with iteration.
+        let areas = unsafe { self.get_areas() };
+        areas.is_empty()
     }
 
     pub fn iter(&self) -> Iter<'_, &'static PerCpuShared> {
@@ -674,7 +686,7 @@ impl PerCpu {
     }
 
     pub fn get_cpu_index(&self) -> usize {
-        self.shared().cpu_index()
+        self.shared.cpu_index()
     }
 
     pub fn get_apic_id(&self) -> u32 {
@@ -896,8 +908,8 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn setup_idle_task(&self, entry: extern "C" fn()) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, String::from("idle"))?;
+    pub fn setup_idle_task(&self, entry: extern "C" fn(usize)) -> Result<(), SvsmError> {
+        let idle_task = Task::create(self, entry, self.shared.cpu_index, String::from("idle"))?;
         self.runqueue.lock_read().set_idle_task(idle_task);
         Ok(())
     }
@@ -995,13 +1007,13 @@ impl PerCpu {
     }
 
     pub fn unmap_guest_vmsa(&self) {
-        assert!(self.shared().apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
     pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
-        assert!(self.shared().apic_id == this_cpu().get_apic_id());
+        assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
@@ -1420,19 +1432,8 @@ pub fn current_task() -> TaskPointer {
     this_cpu().runqueue.lock_read().current_task()
 }
 
-#[no_mangle]
-pub extern "C" fn cpu_idle_loop() {
-    // Start request processing on this CPU if required.
-    if SVSM_PLATFORM.start_svsm_request_loop() {
-        // Start request processing on this CPU.
-        let apic_id = this_cpu().get_apic_id();
-        let processing_name = format!("request-processing on CPU {}", apic_id);
-        start_kernel_task(request_processing_main, processing_name)
-            .expect("Failed to launch request processing task");
-        let loop_name = format!("request-loop on CPU {}", apic_id);
-        start_kernel_task(request_loop_main, loop_name)
-            .expect("Failed to launch request loop task");
-    }
+pub extern "C" fn cpu_idle_loop(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
 
     loop {
         // Go idle

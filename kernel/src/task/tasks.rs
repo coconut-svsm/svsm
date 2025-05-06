@@ -41,7 +41,7 @@ use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::{is_aligned, MemoryRegion};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
-use super::schedule::{current_task_terminated, schedule};
+use super::schedule::{after_task_switch, current_task_terminated, schedule};
 
 pub static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
     SpinLock::new(BitmapAllocator1024::new_empty());
@@ -144,7 +144,7 @@ struct TaskSchedState {
     state: TaskState,
 
     /// CPU this task is currently assigned to
-    cpu: u32,
+    cpu_index: usize,
 }
 
 impl TaskSchedState {
@@ -239,6 +239,9 @@ struct CreateTaskArguments {
     // address, and for kernel tasks, it is a kernel address,
     entry: usize,
 
+    // A start parameter for kernel tasks.
+    start_parameter: usize,
+
     // The name of the task.
     name: String,
 
@@ -312,7 +315,7 @@ impl Task {
         let (stack, raw_bounds, rsp_offset) = if args.vm_user_range.is_some() {
             Self::allocate_utask_stack(cpu, args.entry, xsa_addr)?
         } else {
-            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr)?
+            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
         };
         let stack_start = vaddr_region.start() + SVSM_PERTASK_STACK_BASE_OFFSET;
         vm_kernel_range.insert_at(stack_start, stack)?;
@@ -341,7 +344,7 @@ impl Task {
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
-                cpu: cpu.get_apic_id(),
+                cpu_index: cpu.get_cpu_index(),
             }),
             name: args.name,
             id: TASK_ID_ALLOCATOR.next_id(),
@@ -354,11 +357,13 @@ impl Task {
 
     pub fn create(
         cpu: &PerCpu,
-        entry: extern "C" fn(),
+        entry: extern "C" fn(usize),
+        start_parameter: usize,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
             entry: entry as usize,
+            start_parameter,
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
@@ -380,6 +385,7 @@ impl Task {
         }
         let create_args = CreateTaskArguments {
             entry: user_entry,
+            start_parameter: 0,
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
@@ -437,11 +443,11 @@ impl Task {
         self.sched_state.lock_read().idle_task
     }
 
-    pub fn update_cpu(&self, new_cpu: u32) -> u32 {
+    pub fn update_cpu(&self, new_cpu_index: usize) -> usize {
         let mut state = self.sched_state.lock_write();
-        let old_cpu = state.cpu;
-        state.cpu = new_cpu;
-        old_cpu
+        let old_cpu_index = state.cpu_index;
+        state.cpu_index = new_cpu_index;
+        old_cpu_index
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
@@ -473,6 +479,7 @@ impl Task {
         cpu: &PerCpu,
         entry: usize,
         xsa_addr: usize,
+        start_parameter: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
@@ -509,6 +516,8 @@ impl Task {
             (*task_context).regs.rdi = entry;
             // xsave area addr
             (*task_context).regs.rsi = xsa_addr;
+            // start argument parameter.
+            (*task_context).regs.rdx = start_parameter;
             (*task_context).ret_addr = run_kernel_task as *const () as u64;
             // Task termination handler for when entry point returns
             stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
@@ -819,6 +828,9 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
 
     irqs_enable();
 
+    // Perform housekeeping actions following a task switch.
+    after_task_switch();
+
     // SAFETY: The caller takes responsibility for the correctness of the save
     // area address.
     unsafe {
@@ -826,13 +838,13 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     }
 }
 
-extern "C" fn run_kernel_task(entry: extern "C" fn(), xsa_addr: u64) {
+extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_parameter: usize) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
         setup_new_task_common(xsa_addr);
     }
-    entry();
+    entry(start_parameter);
 }
 
 extern "C" fn task_exit() {
@@ -937,17 +949,19 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
-        start_kernel_task(task1, String::from("task1"))
+        start_kernel_task(task1, 1, String::from("task1"))
             .expect("Failed to launch request processing task");
     }
 
-    extern "C" fn task1() {
+    extern "C" fn task1(start_parameter: usize) {
+        assert_eq!(start_parameter, 1);
+
         let ret: u64;
         unsafe {
             asm!("call test_fpu", options(att_syntax));
         }
 
-        start_kernel_task(task2, String::from("task2"))
+        start_kernel_task(task2, 2, String::from("task2"))
             .expect("Failed to launch request processing task");
 
         unsafe {
@@ -956,7 +970,8 @@ mod tests {
         assert_eq!(ret, 0);
     }
 
-    extern "C" fn task2() {
+    extern "C" fn task2(start_parameter: usize) {
+        assert_eq!(start_parameter, 2);
         unsafe {
             asm!("call alter_fpu", options(att_syntax));
         }
