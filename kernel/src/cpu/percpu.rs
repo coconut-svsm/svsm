@@ -49,7 +49,7 @@ use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer, WaitQueue};
+use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -393,8 +393,6 @@ pub struct PerCpu {
     pub vrange_2m: RefCell<VirtualRange>,
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLockIrqSafe<RunQueue>,
-    /// WaitQueue for request processing
-    request_waitqueue: RefCell<WaitQueue>,
     /// Local APIC state for APIC emulation if enabled
     guest_apic: RefCell<Option<LocalApic>>,
 
@@ -435,7 +433,6 @@ impl PerCpu {
             vrange_4k: RefCell::new(VirtualRange::new()),
             vrange_2m: RefCell::new(VirtualRange::new()),
             runqueue: RWLockIrqSafe::new(RunQueue::new()),
-            request_waitqueue: RefCell::new(WaitQueue::new()),
             guest_apic: RefCell::new(None),
 
             shared,
@@ -1006,13 +1003,13 @@ impl PerCpu {
         Ok((paddr, sev_features))
     }
 
-    pub fn unmap_guest_vmsa(&self) {
+    fn unmap_guest_vmsa(&self) {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_VMSA_BASE);
     }
 
-    pub fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
+    fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
         let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range
@@ -1061,18 +1058,48 @@ impl PerCpu {
         RefMut::filter_map(apic, Option::as_mut).ok()
     }
 
-    pub fn unmap_caa(&self) {
+    fn unmap_caa(&self) {
         // Ignore errors - the mapping might or might not be there
         let _ = self.vm_range.remove(SVSM_PERCPU_CAA_BASE);
     }
 
-    pub fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
+    fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
         let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
+    }
+
+    pub fn update_guest_mappings(&self) -> Result<(), SvsmError> {
+        let mut locked = self.guest_vmsa_ref();
+        let mut ret = Ok(());
+
+        if !locked.needs_update() {
+            // If there is no VMSA, then the update request must be considered a
+            // failure even though no work was required.
+            return match locked.vmsa_phys() {
+                Some(_) => Ok(()),
+                None => Err(SvsmError::MissingVMSA),
+            };
+        }
+
+        self.unmap_guest_vmsa();
+        self.unmap_caa();
+
+        match locked.vmsa_phys() {
+            Some(paddr) => self.map_guest_vmsa(paddr)?,
+            None => ret = Err(SvsmError::MissingVMSA),
+        }
+
+        if let Some(paddr) = locked.caa_phys() {
+            self.map_guest_caa(paddr)?
+        }
+
+        locked.set_updated();
+
+        ret
     }
 
     pub fn disable_apic_emulation(&self) {
@@ -1409,22 +1436,6 @@ impl PerCpuVmsas {
         }
 
         Ok(guard.swap_remove(index))
-    }
-}
-
-pub fn wait_for_requests() {
-    let current_task = current_task();
-    this_cpu()
-        .request_waitqueue
-        .borrow_mut()
-        .wait_for_event(current_task);
-    schedule();
-}
-
-pub fn process_requests() {
-    let maybe_task = this_cpu().request_waitqueue.borrow_mut().wakeup();
-    if let Some(task) = maybe_task {
-        schedule_task(task);
     }
 }
 

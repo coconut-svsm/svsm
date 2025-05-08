@@ -13,7 +13,6 @@ use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
-use crate::requests::update_mappings;
 use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use crate::utils::fw_meta::{find_table, RawMetaBuffer, Uuid};
@@ -413,7 +412,7 @@ pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     }
 
     this_cpu().alloc_guest_vmsa()?;
-    update_mappings()?;
+    this_cpu().update_guest_mappings()?;
 
     Ok(())
 }

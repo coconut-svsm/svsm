@@ -11,7 +11,10 @@ pub mod errors;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
-use cpuarch::vmsa::{GuestVMExit, VMSA};
+extern crate alloc;
+use crate::vmm::GuestRegister;
+use alloc::vec::Vec;
+use cpuarch::vmsa::VMSA;
 
 // SVSM protocols
 pub const SVSM_CORE_PROTOCOL: u32 = 0;
@@ -21,7 +24,6 @@ pub const SVSM_APIC_PROTOCOL: u32 = 3;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
-    pub guest_exit_code: GuestVMExit,
     sev_features: u64,
     rcx: u64,
     rdx: u64,
@@ -31,7 +33,6 @@ pub struct RequestParams {
 impl RequestParams {
     pub fn from_vmsa(vmsa: &VMSA) -> Self {
         RequestParams {
-            guest_exit_code: vmsa.guest_exit_code,
             sev_features: vmsa.sev_features,
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
@@ -39,9 +40,9 @@ impl RequestParams {
         }
     }
 
-    pub fn write_back(&self, vmsa: &mut VMSA) {
-        vmsa.rcx = self.rcx;
-        vmsa.rdx = self.rdx;
-        vmsa.r8 = self.r8;
+    pub fn capture(&self, regs: &mut Vec<GuestRegister>) {
+        regs.push(GuestRegister::X64Rcx(self.rcx));
+        regs.push(GuestRegister::X64Rdx(self.rdx));
+        regs.push(GuestRegister::X64R8(self.r8));
     }
 }
