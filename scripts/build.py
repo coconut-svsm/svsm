@@ -18,6 +18,7 @@ class CargoRunner:
 
     def __init__(self, package):
         self.package = package
+        self.output_file = package
         self.binary = False
         self.features = []
         self.release = False
@@ -31,6 +32,12 @@ class CargoRunner:
         Sets the package to build.
         """
         self.package = package
+
+    def set_output_file(self, output_file):
+        """
+        Sets an alternative build output file name.
+        """
+        self.output_file = output_file
 
     def enable_binary(self):
         """
@@ -112,7 +119,10 @@ class CargoRunner:
         if self.target:
             target_dir = os.path.join(target_dir, self.target)
         binary_dir = os.path.join(target_dir, "release" if self.release else "debug")
-        return os.path.join(binary_dir, self.package)
+        binary = os.path.join(binary_dir, self.output_file)
+        if not os.path.isfile(binary):
+            binary = os.path.join(binary_dir, self.package)
+        return binary
 
 def parse_components(recipe):
     """
@@ -319,6 +329,8 @@ def cargo_build(package, config, target, args):
         runner.add_feature(feature)
     if config.get("binary"):
         runner.enable_binary()
+    if config.get("file"):
+        runner.set_output_file(config.get("file"))
     if config.get("manifest"):
         runner.set_manifest(config.get("manifest"))
     if args.release:
