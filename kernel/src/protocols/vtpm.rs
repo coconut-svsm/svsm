@@ -189,12 +189,12 @@ fn vtpm_query_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 /// # Arguments
 ///
 /// * `buffer`: Contains the TpmSendCommandRequest. It will also be
-///             used to store the TpmSendCommandResponse as a byte slice
+///   used to store the TpmSendCommandResponse as a byte slice
 ///
 /// # Returns
 ///
 /// * `u32`: Number of bytes written back to `buffer` as part of
-///          the TpmSendCommandResponse
+///   the TpmSendCommandResponse
 fn tpm_send_command_request(buffer: &mut [u8]) -> Result<u32, SvsmReqError> {
     let outbuf: Vec<u8> = {
         let request = TpmSendCommandRequest::try_from_as_ref(buffer)?;

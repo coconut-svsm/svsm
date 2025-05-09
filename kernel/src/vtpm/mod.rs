@@ -36,9 +36,9 @@ pub trait TcgTpmSimulatorInterface: VtpmProtocolInterface {
     /// # Arguments
     ///
     /// * `buffer`: Buffer with the command to be sent to the TPM. It has to be large enough
-    ///             to hold the response received from the TPM.
+    ///   to hold the response received from the TPM.
     /// * `length`: The length of the command stored in `buffer`. It will be updated with the
-    ///             size of the TPM response received from the TPM.
+    ///   size of the TPM response received from the TPM.
     /// * `locality`: TPM locality the TPM command will be executed
     fn send_tpm_command(
         &self,
