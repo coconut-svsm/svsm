@@ -343,3 +343,18 @@ global_asm!(
     AP_STARTUP_RIP_ADDR = const AP_CTXT_ADDR + offset_of!(ApStartContext, initial_rip) as u32,
     options(att_syntax)
 );
+
+// Provide dummy symbols in stage2 which might be required by code shared
+// between SVSM and Stage2.
+global_asm!(
+    r#"
+        .globl entry_code_start
+        entry_code_start:
+        .globl entry_code_end
+        entry_code_end:
+        .globl bsp_stack
+        bsp_stack:
+        .globl bsp_stack_end
+        bsp_stack_end:
+        "#
+);
