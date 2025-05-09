@@ -92,7 +92,7 @@ fn create_mtauth_ek_cmd(tpmt_public: &[u8]) -> Vec<u8> {
 /// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send `cmd` to.
 /// * `cmd`: A command buffer large enough to receive the command response.
 /// * `set_len`: If true, sets the command length in the command header to `cmd.len()` before
-///              sending the command.
+///   sending the command.
 pub fn checked_send<T: TcgTpmSimulatorInterface>(
     vtpm: &T,
     cmd: &mut [u8],

@@ -216,7 +216,7 @@ impl FileHandle {
     ///  # Arguments
     ///
     ///  - `offset`: specifies the size in bytes to which the file
-    ///     git  is to be truncated.
+    ///    git  is to be truncated.
     ///
     ///  # Returns
     ///

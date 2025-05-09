@@ -67,7 +67,7 @@ impl<'a, T> SpinLock<T> {
     /// # Arguments:
     ///
     /// * `data`: Data to be protected by the `SpinLock`. The data is moved into
-    ///    and from this point on owned by the SpinLock.
+    ///   and from this point on owned by the SpinLock.
     ///
     /// # Returns:
     ///

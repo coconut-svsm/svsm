@@ -186,9 +186,9 @@ impl SnpGuestRequestMsg {
     ///
     /// * `msg_type`: Type of the command stored in the `command` buffer.
     /// * `msg_seqno`: VMPL0 sequence number to be used in the message. The PSP will reject
-    ///                subsequent messages when it detects that the sequence numbers are
-    ///                out of sync. The sequence number is also used as initialization
-    ///                vector (IV) in encryption.
+    ///   subsequent messages when it detects that the sequence numbers are
+    ///   out of sync. The sequence number is also used as initialization
+    ///   vector (IV) in encryption.
     /// * `vmpck0`: VMPCK0 key that will be used to encrypt the command.
     /// * `command`: command slice to be encrypted.
     ///

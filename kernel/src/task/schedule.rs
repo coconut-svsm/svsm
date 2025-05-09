@@ -11,10 +11,10 @@
 //! depends on the state of the task:
 //!
 //! * [`RUNNING`] A task in running state is owned by the [`RunQueue`] and either
-//!    stored in the `run_list` (when the task is not actively running) or in
-//!    `current_task` when it is scheduled on the CPU.
+//!   stored in the `run_list` (when the task is not actively running) or in
+//!   `current_task` when it is scheduled on the CPU.
 //! * [`BLOCKED`] A task in this state is waiting for an event to become runnable
-//!    again. It is owned by a wait object when in this state.
+//!   again. It is owned by a wait object when in this state.
 //! * [`TERMINATED`] The task is about to be destroyed and owned by the [`RunQueue`].
 //!
 //! The scheduler is cooperative. A task runs until it voluntarily calls the

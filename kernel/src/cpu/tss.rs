@@ -11,7 +11,7 @@ use core::num::NonZeroU8;
 use core::ptr::addr_of;
 
 // IST offsets
-pub const IST_DF: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(1) };
+pub const IST_DF: NonZeroU8 = NonZeroU8::new(1).unwrap();
 
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C, packed(4))]

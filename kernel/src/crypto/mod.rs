@@ -31,7 +31,7 @@ pub mod aead {
         /// * `aad`: Additional authenticated data
         /// * `inbuf`: Cleartext buffer to be encrypted
         /// * `outbuf`: Buffer to store the encrypted data, it must be large enough to also
-        ///             hold the authenticated tag.
+        ///   hold the authenticated tag.
         ///
         /// # Returns
         ///
