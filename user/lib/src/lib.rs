@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 #![no_std]
+#![allow(clippy::doc_overindented_list_items)]
 
 pub mod console;
 pub mod locking;

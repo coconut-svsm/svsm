@@ -9,6 +9,7 @@
 #![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
 #![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]
 #![cfg_attr(all(test, test_in_svsm), reexport_test_harness_main = "test_main")]
+#![allow(clippy::doc_overindented_list_items)]
 
 pub mod acpi;
 pub mod address;

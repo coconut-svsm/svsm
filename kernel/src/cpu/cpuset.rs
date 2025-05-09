@@ -12,7 +12,7 @@ pub const MAX_CPUS: usize = 1024;
 /// be represented.
 #[derive(Copy, Clone, Debug, Default)]
 pub struct CpuSet {
-    bitmask: [u64; (MAX_CPUS + 63) / 64],
+    bitmask: [u64; MAX_CPUS.div_ceil(64)],
 }
 
 impl CpuSet {
@@ -79,7 +79,7 @@ impl Iterator for CpuSetIterator<'_> {
 /// addition and removal.  A maximum of 1024 CPUs can be represented.
 #[derive(Debug, Default)]
 pub struct AtomicCpuSet {
-    bitmask: [AtomicU64; (MAX_CPUS + 63) / 64],
+    bitmask: [AtomicU64; MAX_CPUS.div_ceil(64)],
 }
 
 impl AtomicCpuSet {
