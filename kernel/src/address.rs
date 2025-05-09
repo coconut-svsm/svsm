@@ -374,6 +374,29 @@ impl VirtAddr {
         self.0 as *mut T
     }
 
+    #[verus_spec(ret =>
+        with Tracked(provenance): Tracked<vstd::raw_ptr::IsExposed>
+        ensures
+            ret == ptr_from_data::<T>(PtrData { addr: self@, provenance: provenance@, metadata: Metadata::Thin }),
+    )]
+    pub fn as_ptr_with_provenance<T>(&self) -> *const T {
+        ({
+            proof_with!(Tracked(provenance));
+            self.as_mut_ptr_with_provenance()
+        }) as *const T
+    }
+
+    #[verus_spec(ret =>
+        with Tracked(provenance): Tracked<vstd::raw_ptr::IsExposed>
+        ensures
+            ret == ptr_mut_from_data::<T>(
+                vstd::raw_ptr::PtrData { addr: self@, provenance: provenance@, metadata: Metadata::Thin },
+            ),
+    )]
+    pub fn as_mut_ptr_with_provenance<T>(&self) -> *mut T {
+        vstd::raw_ptr::with_exposed_provenance(self.0, verus_exec_expr! {Tracked(provenance)})
+    }
+
     #[inline]
     #[verus_spec(returns self@)]
     pub const fn as_usize(&self) -> usize {
@@ -560,6 +583,7 @@ impl ops::Sub<usize> for VirtAddr {
     type Output = Self;
 
     #[inline]
+    #[verus_verify(spinoff_prover)]
     #[verus_spec(ret =>
         ensures
             ret.offset() == self.offset() - other

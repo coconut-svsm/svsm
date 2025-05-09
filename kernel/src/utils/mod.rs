@@ -8,6 +8,7 @@ pub mod bitmap_allocator;
 pub mod fw_meta;
 pub mod immut_after_init;
 pub mod memory_region;
+pub mod safe_ptr;
 pub mod scoped;
 pub mod unsafe_copy;
 pub mod util;
