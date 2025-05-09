@@ -73,7 +73,7 @@ impl VMR {
     ///
     /// * `start` - Virtual start address for the memory region. Must be aligned to [`VMR_GRANULE`]
     /// * `end` - Virtual end address (non-inclusive) for the memory region.
-    ///           Must be bigger than `start` and aligned to [`VMR_GRANULE`].
+    ///   Must be bigger than `start` and aligned to [`VMR_GRANULE`].
     /// * `flags` - Global [`PTEntryFlags`] to use for this [`struct VMR`].
     ///
     /// # Returns
@@ -419,7 +419,7 @@ impl VMR {
     /// # Arguments
     ///
     /// * `addr` - The virtual address at which the search for a mapping area
-    ///            starts
+    ///   starts
     /// * `mapping` - `Arc` pointer to the VMM to insert
     ///
     /// # Returns
