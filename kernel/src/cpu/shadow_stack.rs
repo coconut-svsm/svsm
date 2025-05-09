@@ -14,6 +14,7 @@ pub const PL0_SSP: u32 = 0x6a4;
 pub const ISST_ADDR: u32 = 0x6a8;
 
 pub const MODE_64BIT: usize = 1;
+pub const BUSY: usize = 1;
 
 pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
 
