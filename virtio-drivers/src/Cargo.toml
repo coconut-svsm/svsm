@@ -1,0 +1,24 @@
+[package]
+name = "virtio-drivers"
+version = "0.7.5"
+license = "MIT"
+authors = [
+  "Jiajie Chen <noc@jiegec.ac.cn>",
+  "Runji Wang <wangrunji0408@163.com>",
+  "Yuekai Jia <equation618@gmail.com>",
+  "Andrew Walbran <qwandor@google.com>",
+]
+edition = "2021"
+description = "VirtIO guest drivers based on https://github.com/rcore-os/virtio-drivers, adapted for Coconut SVSM"
+keywords = ["virtio"]
+categories = ["hardware-support", "no-std"]
+
+[dependencies]
+log = { workspace = true }
+bitflags = { workspace = true }
+enumn = "0.1.14"
+zerocopy = { workspace = true, features = ["derive"] }
+
+[features]
+default = ["alloc"]
+alloc = ["zerocopy/alloc"]

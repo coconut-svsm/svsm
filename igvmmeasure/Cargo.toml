@@ -7,7 +7,7 @@ edition = "2021"
 # see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification
 [target.'cfg(all(target_os = "linux"))'.dependencies]
 clap = { workspace = true, default-features = true, features = ["derive"] }
-sha2.workspace = true
+sha2 = { workspace = true, default-features = true }
 igvm.workspace = true
 igvm_defs.workspace = true
 p384.workspace = true
