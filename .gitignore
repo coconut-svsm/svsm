@@ -3,6 +3,7 @@
 *.elf
 *.swp
 *~
+*.igvm
 verus*.log
 /bin/
 /target/
