@@ -28,6 +28,19 @@ syscall.workspace = true
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 bitfield-struct.workspace = true
 bitflags.workspace = true
+cocoon-tpm-crypto = { workspace = true, features = [
+    "enable_arch_math_asm", "zeroize",
+    # Enable x86 rdseed based rng.
+    "enable_x86_64_rdseed",
+    # At least one of block cipher, mode and hash is needed,
+    # otherwise compilation will fail due to empty enums.
+    "aes", "cfb", "sha256", "sha384", "sha512",
+    "ecc", "ecdh", "ecdsa",
+    "ecc_nist_p224", "ecc_nist_p256",
+    "ecc_nist_p384", "ecc_nist_p521",
+], optional = true }
+cocoon-tpm-tpm2-interface = { workspace = true, optional = true }
+cocoon-tpm-utils-common = { workspace = true, optional = true }
 gdbstub = { workspace = true, optional = true }
 gdbstub_arch = { workspace = true, optional = true }
 igvm_defs = { workspace = true, features = ["unstable"] }
@@ -55,7 +68,8 @@ verus_stub = { workspace = true }
 test.workspace = true
 
 [features]
-attest = ["dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
+attest = ["dep:cocoon-tpm-crypto", "dep:cocoon-tpm-tpm2-interface", "dep:cocoon-tpm-utils-common", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
+
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
