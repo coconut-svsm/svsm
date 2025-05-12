@@ -272,7 +272,7 @@ pub static IS_HYPERV: ImmutAfterInitCell<bool> = ImmutAfterInitCell::uninit();
 
 fn is_hyperv_hypervisor() -> bool {
     // Get the hypervisor interface signature.
-    let result = SVSM_PLATFORM.cpuid(0x40000001);
+    let result = SVSM_PLATFORM.cpuid(0x40000001, 0);
     if let Some(cpuid_result) = result {
         cpuid_result.eax == 0x31237648
     } else {
@@ -484,7 +484,7 @@ fn enable_vp_vtl_hypercall(
     let input_header = HvInputEnableVpVtl {
         partition_id: HV_PARTITION_ID_SELF,
         vtl,
-        vp_index: cpu.get_apic_id(),
+        vp_index: cpu.get_cpu_index().try_into().unwrap(),
         context: *context,
         ..Default::default()
     };
@@ -524,7 +524,7 @@ fn start_vp_hypercall(
     let input_header = HvInputStartVirtualProcessor {
         partition_id: HV_PARTITION_ID_SELF,
         vtl,
-        vp_index: cpu.get_apic_id(),
+        vp_index: cpu.get_cpu_index().try_into().unwrap(),
         context: *context,
         ..Default::default()
     };

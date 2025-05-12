@@ -1,7 +1,7 @@
 FEATURES ?= vtpm
 SVSM_ARGS += --features ${FEATURES}
 
-FEATURES_TEST ?= vtpm
+FEATURES_TEST ?= virtio-drivers
 SVSM_ARGS_TEST += --no-default-features --features ${FEATURES_TEST}
 
 ifdef RELEASE

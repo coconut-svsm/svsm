@@ -26,6 +26,7 @@ fn main() {
         .allowlist_file("deps/libtcgtpm.h")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
+        .clang_arg("-isystemdeps/libcrt/include/")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .unwrap_or_else(|_| panic!("Unable to generate bindings for deps/libtcgtpm.h"));

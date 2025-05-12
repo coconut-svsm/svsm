@@ -7,11 +7,11 @@
 use crate::address::VirtAddr;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
+use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::Emulation;
 use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
-use crate::platform::SVSM_PLATFORM;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
@@ -473,8 +473,7 @@ impl LocalApic {
         // Enumerate all CPUs to see which have APIC IDs that match the
         // requested destination. Skip the current CPU, since it was checked
         // above.
-        for cpu_ref in PERCPU_AREAS.iter() {
-            let cpu = cpu_ref.as_cpu_ref();
+        for cpu in PERCPU_AREAS.iter() {
             let this_apic_id = cpu.apic_id();
             if (this_apic_id != apic_id)
                 && Self::logical_destination_match(destination, this_apic_id)
@@ -547,8 +546,7 @@ impl LocalApic {
             // Enumerate all processors in the system except for the
             // current CPU and indicate that an IPI has been requested.
             let apic_id = this_cpu().get_apic_id();
-            for cpu_ref in PERCPU_AREAS.iter() {
-                let cpu = cpu_ref.as_cpu_ref();
+            for cpu in PERCPU_AREAS.iter() {
                 if cpu.apic_id() != apic_id {
                     Self::post_ipi_one_target(cpu, icr);
                 }
@@ -578,7 +576,7 @@ impl LocalApic {
                 hv_icr.set_destination_shorthand(IcrDestFmt::AllButSelf);
             }
 
-            SVSM_PLATFORM.post_irq(hv_icr.into()).unwrap();
+            apic_post_irq(hv_icr.into());
         }
     }
 

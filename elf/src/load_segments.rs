@@ -103,11 +103,7 @@ impl Elf64LoadSegments {
     /// Returns [`Some((phdr_index, offset))`] if the address range is found within a segment,
     /// where `phdr_index` is the program header index, and `offset` is the offset within
     pub fn lookup_vaddr_range(&self, range: &Elf64AddrRange) -> Option<(Elf64Half, Elf64Xword)> {
-        let i = self.find_first_not_before(range);
-        let i = match i {
-            Some(i) => i,
-            None => return None,
-        };
+        let i = self.find_first_not_before(range)?;
 
         let segment = &self.segments[i];
         if segment.0.vaddr_begin <= range.vaddr_begin && range.vaddr_end <= segment.0.vaddr_end {

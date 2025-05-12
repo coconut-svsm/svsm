@@ -17,6 +17,7 @@
 //! usually the one corresponding to that module. Each module should provide
 //! a way to convert a leaf error into a SvsmError via the [`From`] trait.
 
+use crate::block::BlockDeviceError;
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
 use crate::fw_cfg::FwCfgError;
@@ -28,6 +29,8 @@ use crate::sev::SevSnpError;
 use crate::syscall::ObjError;
 use crate::task::TaskError;
 use crate::tdx::TdxError;
+#[cfg(feature = "virtio-drivers")]
+use crate::virtio::VirtioError;
 use elf::ElfError;
 use syscall::SysCallError;
 
@@ -43,6 +46,18 @@ pub enum ApicError {
 
     /// An error related to APIC registration.
     Registration,
+}
+
+/// Errors related to Attestation handling. These may originate from multiple
+/// layers in the system. Added to protocol base for protocol error.
+#[repr(u64)]
+#[derive(Clone, Copy, Debug)]
+pub enum AttestError {
+    /// An error related to attestation report.
+    Report = 0,
+
+    /// An error related to attestation manifest.
+    Manifest = 1,
 }
 
 /// A generic error during SVSM operation.
@@ -100,8 +115,15 @@ pub enum SvsmError {
     NotSupported,
     /// Generic errors related to APIC emulation.
     Apic(ApicError),
+    /// Generic errors related to attestation handling.
+    Attestation(AttestError),
     /// Errors related to Hyper-V.
     HyperV(u16),
+    /// Errors related to Virtio drivers.
+    #[cfg(feature = "virtio-drivers")]
+    Virtio(VirtioError),
+    /// Errors related to block devices.
+    Block(BlockDeviceError),
 }
 
 impl From<ElfError> for SvsmError {
@@ -116,9 +138,28 @@ impl From<ApicError> for SvsmError {
     }
 }
 
+impl From<AttestError> for SvsmError {
+    fn from(err: AttestError) -> Self {
+        Self::Attestation(err)
+    }
+}
+
 impl From<ObjError> for SvsmError {
     fn from(err: ObjError) -> Self {
         Self::Obj(err)
+    }
+}
+
+#[cfg(feature = "virtio-drivers")]
+impl From<VirtioError> for SvsmError {
+    fn from(err: VirtioError) -> Self {
+        Self::Virtio(err)
+    }
+}
+
+impl From<BlockDeviceError> for SvsmError {
+    fn from(err: BlockDeviceError) -> Self {
+        Self::Block(err)
     }
 }
 

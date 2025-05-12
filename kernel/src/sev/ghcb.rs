@@ -100,6 +100,8 @@ enum GHCBExitCode {
     MSR = 0x7c,
     VMMCALL = 0x81,
     RDTSCP = 0x87,
+    MMIO_READ = 0x8000_0001,
+    MMIO_WRITE = 0x8000_0002,
     SNP_PSC = 0x8000_0010,
     GUEST_REQUEST = 0x8000_0011,
     GUEST_EXT_REQUEST = 0x8000_0012,
@@ -308,9 +310,10 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn cpuid(&self, eax: u32) -> Result<CpuidResult, SvsmError> {
+    pub fn cpuid(&self, eax: u32, ecx: u32) -> Result<CpuidResult, SvsmError> {
         self.clear();
         self.set_rax_valid(eax as u64);
+        self.set_rcx_valid(ecx as u64);
         self.vmgexit(GHCBExitCode::CPUID, 0, 0)?;
         Ok(CpuidResult {
             eax: self.get_rax_valid()? as u32,
@@ -321,7 +324,7 @@ impl GHCB {
     }
 
     pub fn cpuid_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
-        let result = self.cpuid(regs.rax as u32)?;
+        let result = self.cpuid(regs.rax as u32, regs.rcx as u32)?;
         regs.rax = result.eax as usize;
         regs.rbx = result.ebx as usize;
         regs.rcx = result.ecx as usize;
@@ -370,14 +373,43 @@ impl GHCB {
         Ok(())
     }
 
-    pub fn rdmsr_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+    /// Perform an MSR read via a GHCB call
+    ///
+    /// # Arguments
+    ///
+    /// - `msr_index` - MSR to read
+    ///
+    /// # Returns
+    ///
+    /// On a successful call, returns `Result` with a tuple `(u32, u32)`. The
+    /// first value is the `RAX` and the second the `RDX` register. On failure
+    /// a `Result` with `SvsmError` is returned.
+    pub fn rdmsr_raw(&self, msr_index: u32) -> Result<(u32, u32), SvsmError> {
         self.clear();
-
-        self.set_rcx_valid(regs.rcx as u64);
-
+        self.set_rcx_valid(msr_index as u64);
         self.vmgexit(GHCBExitCode::MSR, 0, 0)?;
-        let rdx = self.get_rdx_valid()?;
-        let rax = self.get_rax_valid()?;
+        let eax: u32 = (self.get_rax_valid()? & 0xFFFFFFFF) as u32;
+        let edx: u32 = (self.get_rdx_valid()? & 0xFFFFFFFF) as u32;
+        Ok((eax, edx))
+    }
+
+    /// Perform an MSR read via a GHCB call an return a `u64` value.
+    ///
+    /// # Arguments
+    ///
+    /// - `msr_index` - MSR to read
+    ///
+    /// # Returns
+    ///
+    /// On a successful call, returns `Result` with a `u64` value. On failure
+    /// a `Result` with `SvsmError` is returned.
+    pub fn rdmsr(&self, msr_index: u32) -> Result<u64, SvsmError> {
+        let (rax, rdx) = self.rdmsr_raw(msr_index)?;
+        Ok((rax as u64) | ((rdx as u64) << 32))
+    }
+
+    pub fn rdmsr_regs(&self, regs: &mut X86GeneralRegs) -> Result<(), SvsmError> {
+        let (rax, rdx) = self.rdmsr_raw(u32::try_from(regs.rcx).unwrap())?;
         regs.rdx = rdx as usize;
         regs.rax = rax as usize;
         Ok(())
@@ -498,15 +530,66 @@ impl GHCB {
         T: IntoBytes + Immutable,
     {
         let src = data.as_bytes();
+        self.write_buffer_slice(src, offset)
+    }
+
+    fn write_buffer_slice(&self, data: &[u8], offset: usize) -> Result<(), GhcbError> {
         let dst = &self
             .buffer
             .get(offset..)
             .ok_or(GhcbError::InvalidOffset)?
-            .get(..src.len())
+            .get(..data.len())
             .ok_or(GhcbError::InvalidOffset)?;
-        for (dst, src) in dst.iter().zip(src.iter().copied()) {
+        for (dst, src) in dst.iter().zip(data.iter().copied()) {
             dst.store(src, Ordering::Relaxed);
         }
+        Ok(())
+    }
+
+    fn read_buffer_slice(&self, data: &mut [u8], offset: usize) -> Result<(), GhcbError> {
+        let src = &self
+            .buffer
+            .get(offset..)
+            .ok_or(GhcbError::InvalidOffset)?
+            .get(..data.len())
+            .ok_or(GhcbError::InvalidOffset)?;
+        for (d, s) in data.iter_mut().zip(src.iter()) {
+            *d = s.load(Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn pepare_buffer(&self) {
+        let buffer_va = VirtAddr::from(self.buffer.as_ptr());
+        let buffer_pa = u64::from(virt_to_phys(buffer_va));
+        self.set_sw_scratch_valid(buffer_pa);
+    }
+
+    /// Perfrom a write to a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    pub unsafe fn mmio_write(&self, pa: PhysAddr, value: &[u8]) -> Result<(), SvsmError> {
+        self.clear();
+        self.write_buffer_slice(value, 0)?;
+        self.pepare_buffer();
+        self.vmgexit(GHCBExitCode::MMIO_WRITE, u64::from(pa), value.len() as u64)?;
+        Ok(())
+    }
+
+    /// Perfrom a read from a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    pub unsafe fn mmio_read(&self, pa: PhysAddr, value: &mut [u8]) -> Result<(), SvsmError> {
+        self.clear();
+        self.pepare_buffer();
+        self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), value.len() as u64)?;
+        self.read_buffer_slice(value, 0)?;
         Ok(())
     }
 
@@ -572,9 +655,7 @@ impl GHCB {
                 };
                 self.write_buffer(&header, 0)?;
 
-                let buffer_va = VirtAddr::from(self.buffer.as_ptr());
-                let buffer_pa = u64::from(virt_to_phys(buffer_va));
-                self.set_sw_scratch_valid(buffer_pa);
+                self.pepare_buffer();
 
                 if let Err(mut e) = self.vmgexit(GHCBExitCode::SNP_PSC, 0, 0) {
                     if let Err(err) = self.get_exit_info_2_valid() {

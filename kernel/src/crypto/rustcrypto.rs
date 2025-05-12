@@ -6,15 +6,20 @@
 
 //! RustCrypto implementation
 
+extern crate alloc;
+
 use aes_gcm::{
     aead::{Aead, Payload},
     Aes256Gcm, Key, KeyInit, Nonce,
 };
+use alloc::vec::Vec;
+use sha2::{Digest, Sha512};
 
 use crate::{
     crypto::aead::{
         Aes256Gcm as CryptoAes256Gcm, Aes256GcmTrait as CryptoAes256GcmTrait, IV_SIZE, KEY_SIZE,
     },
+    crypto::digest::{Algorithm as CryptoHashTrait, Sha512 as CryptoSha512},
     protocols::errors::SvsmReqError,
 };
 
@@ -73,5 +78,11 @@ impl CryptoAes256GcmTrait for CryptoAes256Gcm {
         outbuf: &mut [u8],
     ) -> Result<usize, SvsmReqError> {
         aes_gcm_do(AesGcmOperation::Decrypt, iv, key, aad, inbuf, outbuf)
+    }
+}
+
+impl CryptoHashTrait for CryptoSha512 {
+    fn digest(input: &[u8]) -> Vec<u8> {
+        Sha512::digest(input).to_vec()
     }
 }

@@ -4,6 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+pub mod apic;
 pub mod error;
 pub mod tdcall;
 pub mod ve;

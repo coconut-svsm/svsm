@@ -19,23 +19,17 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install specified rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: '1.82.0'
-            target: x86_64-unknown-none
-            profile: minimal
-            override: true
-            components: rustfmt, rust-src, clippy
+      - name: Install rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Add rust components
+        run: rustup component add rustfmt rust-src clippy
+
+      - name: Check that Cargo.lock is up to date.
+        run: cargo update --workspace --locked
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
-
-      - name: Check that Cargo.lock is up to date
-        uses: actions-rs/cargo@v1
-        with:
-          command: update
-          args: --workspace --locked
 
       # ubuntu-latest does not have binutils 2.39, which we need for
       # ld to work, so build all the objects without performing the
@@ -47,42 +41,24 @@ jobs:
         run: make test
 
       - name: Format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Clippy on no_std x86_64-unknown-none
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --all-features -- -D warnings
+        run: cargo clippy --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --all-features -- -D warnings
 
       - name: Clippy on std x86_64-unknown-linux-gnu
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace --all-features --exclude svsm --exclude svsm-fuzz --exclude packit --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
+        run: cargo clippy --workspace --all-features --exclude svsm --exclude svsm-fuzz --exclude packit --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Clippy on stage1
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --package stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings -C panic=abort
+        run: cargo clippy --package stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings -C panic=abort
 
       - name: Clippy on svsm-fuzz
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
+        run: cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
         env:
           RUSTFLAGS: --cfg fuzzing
 
       - name: Clippy on tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace --exclude packit --exclude user* --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+        run: cargo clippy --workspace --exclude packit --exclude user* --all-features --tests --target=x86_64-unknown-linux-gnu -- -D warnings
 
       - name: Check documentation
         run: make doc
@@ -98,13 +74,7 @@ jobs:
           submodules: recursive
 
       - name: Install latest nightly
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: nightly
-            target: x86_64-unknown-none
-            profile: minimal
-            override: true
-            components: rustfmt
+        run: rustup toolchain install nightly -t x86_64-unknown-none --profile minimal --force -c rustfmt
 
       # release/src/git_version.rs is auto-generated via a build.rs file. Touch
       # it here to avoid CI failures.
@@ -112,10 +82,7 @@ jobs:
         run: echo "" > release/src/git_version.rs
 
       - name: Format doctests
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check --config "format_code_in_doc_comments=true"
+        run: cargo fmt --all -- --check --config "format_code_in_doc_comments=true"
 
   # Check for new undocumented unsafe blocks. This is to prevent them from
   # growing before we add comments for all of them and manage to enable
@@ -133,13 +100,10 @@ jobs:
           submodules: recursive
 
       - name: Install specified rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: '1.82.0'
-            target: x86_64-unknown-none
-            profile: minimal
-            override: true
-            components: rustfmt, rust-src, clippy
+        run: rustup toolchain install --profile minimal
+
+      - name: Add rust components
+        run: rustup component add clippy
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake

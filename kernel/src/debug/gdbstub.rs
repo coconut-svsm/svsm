@@ -44,6 +44,8 @@ pub mod svsm_gdbstub {
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
 
+    // The static mutable reference to the stack is protected by the GDB_STATE lock.
+    #[allow(static_mut_refs)]
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         unsafe {
             let mut target = GdbStubTarget::new();
@@ -55,7 +57,7 @@ pub mod svsm_gdbstub {
                 .run_state_machine(&mut target)
                 .expect("Failed to start GDB state machine");
             *GDB_STATE.lock() = Some(SvsmGdbStub { gdb, target });
-            GDB_STACK_TOP = GDB_STACK.as_mut_ptr().offset(GDB_STACK.len() as isize - 1) as u64;
+            GDB_STACK_TOP = GDB_STACK.as_mut_ptr().offset(GDB_STACK.len() as isize - 1);
         }
         GDB_INITIALISED.store(true, Ordering::Relaxed);
         Ok(())
@@ -120,6 +122,9 @@ pub mod svsm_gdbstub {
                 }
             }
 
+            // SAFETY: swaps the stack with GDB_STACK_TOP, which is held uniquely mutably
+            // under the GDB_STACK_LOCK, and then sets the stack to the result of handle_stop,
+            // which is the expected behavior.
             unsafe {
                 asm!(
                     r#"
@@ -132,7 +137,7 @@ pub mod svsm_gdbstub {
                     in("rsi") exception_type as u64,
                     in("rdi") &mut task_ctx,
                     in("rdx") &mut gdb_state,
-                    in("rax") GDB_STACK_TOP,
+                    in("rax") GDB_STACK_TOP.expose_provenance(),
                     options(att_syntax));
             }
 
@@ -175,7 +180,7 @@ pub mod svsm_gdbstub {
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
     static mut GDB_STACK: [u64; 8192] = [0; 8192];
-    static mut GDB_STACK_TOP: u64 = 0;
+    static mut GDB_STACK_TOP: *mut u64 = core::ptr::null_mut();
 
     struct GdbTaskContext {
         cr3: usize,

@@ -9,6 +9,7 @@ use super::super::extable::{handle_exception_table, handle_exception_table_early
 use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
+use super::super::x86::apic_eoi;
 use super::common::{
     idt_mut, user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR,
     CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, IPI_VECTOR,
@@ -22,7 +23,6 @@ use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::mm::GuestPtr;
-use crate::platform::SVSM_PLATFORM;
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use core::arch::global_asm;
@@ -425,7 +425,7 @@ pub fn common_isr_handler(vector: usize) {
     // Perform the EOI cycle after the interrupt processing state has been
     // restored so that recurrent interrupts will not introduce recursion at
     // this point.
-    SVSM_PLATFORM.eoi();
+    apic_eoi();
 }
 
 global_asm!(
