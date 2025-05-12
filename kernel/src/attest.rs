@@ -13,6 +13,18 @@ use crate::{
     serial::SerialPort,
 };
 use alloc::{string::ToString, vec, vec::Vec};
+use cocoon_tpm_crypto::{
+    ecc,
+    rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
+    CryptoError, EmptyCryptoIoSlices,
+};
+use cocoon_tpm_tpm2_interface::{
+    self as tpm2_interface, Tpm2bEccParameter, TpmEccCurve, TpmiAlgHash, TpmsEccPoint,
+};
+use cocoon_tpm_utils_common::{
+    alloc::try_alloc_zeroizing_vec,
+    io_slices::{self, IoSlicesIterCommon as _},
+};
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -23,6 +35,8 @@ use serde::Serialize;
 pub struct AttestationDriver<'a> {
     sp: SerialPort<'a>,
     tee: Tee,
+    _pub_key: TpmsEccPoint<'static>,
+    _priv_key: Tpm2bEccParameter<'static>,
 }
 
 impl TryFrom<Tee> for AttestationDriver<'_> {
@@ -39,7 +53,14 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
             _ => return Err(AttestationError::UnsupportedTee.into()),
         }
 
-        Ok(Self { sp, tee })
+        let key = sc_key_generate(TpmEccCurve::NistP384).map_err(AttestationError::KeyGen)?;
+
+        Ok(Self {
+            sp,
+            tee,
+            _pub_key: key.0,
+            _priv_key: key.1,
+        })
     }
 }
 
@@ -115,10 +136,47 @@ pub enum AttestationError {
     ProxyWrite,
     /// Unsupported TEE architecture.
     UnsupportedTee,
+    /// Unable to generate secure channel key.
+    KeyGen(CryptoError),
 }
 
 impl From<AttestationError> for SvsmError {
     fn from(e: AttestationError) -> Self {
         Self::TeeAttestation(e)
     }
+}
+
+/// Generate a key used to establish a secure channel between the confidential guest and
+/// attestation server.
+fn sc_key_generate(
+    curve_id: TpmEccCurve,
+) -> Result<(TpmsEccPoint<'static>, Tpm2bEccParameter<'static>), CryptoError> {
+    let mut rng = {
+        let mut rdseed = X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
+        let mut hash_drbg_entropy =
+            try_alloc_zeroizing_vec(HashDrbg::min_seed_entropy_len(TpmiAlgHash::Sha256))?;
+
+        rdseed.generate::<_, EmptyCryptoIoSlices>(
+            io_slices::SingletonIoSliceMut::new(hash_drbg_entropy.as_mut_slice())
+                .map_infallible_err(),
+            None,
+        )?;
+
+        rng::HashDrbg::instantiate(
+            tpm2_interface::TpmiAlgHash::Sha256,
+            &hash_drbg_entropy,
+            None,
+            Some(b"SVSM attestation RNG"),
+        )
+    }?;
+
+    let curve = ecc::curve::Curve::new(curve_id)?;
+    let curve_ops = curve.curve_ops()?;
+    let ecc_key = ecc::EccKey::generate(&curve_ops, &mut rng, None)?;
+
+    let (pub_key, priv_key) = ecc_key.into_tpms(&curve_ops)?;
+
+    let priv_key = priv_key.ok_or(CryptoError::Internal)?;
+
+    Ok((pub_key, priv_key))
 }
