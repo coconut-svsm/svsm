@@ -32,10 +32,20 @@ pub struct SnpReportRequest {
     ///        3: Reserved
     pub flags: u32,
     /// Reserved, must be zero
-    rsvd: [u8; 24],
+    pub rsvd: [u8; 24],
 }
 
 impl SnpReportRequest {
+    /// Constructor. Properly sets reserved bits to 0.
+    pub fn new(user_data: [u8; USER_DATA_SIZE], vmpl: u32, flags: u32) -> Self {
+        Self {
+            user_data,
+            vmpl,
+            flags,
+            rsvd: [0u8; 24],
+        }
+    }
+
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         Self::ref_from_prefix(buffer)
