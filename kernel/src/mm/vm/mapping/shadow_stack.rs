@@ -46,18 +46,27 @@ impl VMKernelShadowStack {
     /// # Returns
     ///
     /// Initialized shadow stack & initial SSP value on success, Err(SvsmError::Mem) on error
-    pub fn new(base: VirtAddr, init: ShadowStackInit) -> Result<(Self, VirtAddr), SvsmError> {
+    pub fn new(
+        base: VirtAddr,
+        init: ShadowStackInit,
+    ) -> Result<(Self, Option<VirtAddr>, VirtAddr), SvsmError> {
         let page = PageRef::new()?;
 
         // Initialize the shadow stack.
         let mut chunk = [0; 24];
-        let ssp = match init {
+        let (base_token_addr, ssp) = match init {
             ShadowStackInit::Normal {
                 entry_return,
                 exit_return,
             } => {
-                // If exit_return is empty use an invalid non-canonical address.
-                let exit_return = exit_return.unwrap_or(0xa5a5_a5a5_a5a5_a5a5);
+                // If exit return is empty, then this thread will be used as a
+                // user task stack.  In that case, place a busy token at the
+                // base of the shadow stack.
+                let base_token_addr = base + PAGE_SIZE - 8;
+                let base_token = match exit_return {
+                    Some(addr) => addr,
+                    None => base_token_addr.bits() + shadow_stack::BUSY,
+                };
 
                 let (token_bytes, rip_bytes) = chunk.split_at_mut(8);
 
@@ -66,11 +75,11 @@ impl VMKernelShadowStack {
                 let token = (token_addr + 8).bits() + shadow_stack::MODE_64BIT;
                 token_bytes.copy_from_slice(&token.to_ne_bytes());
 
-                let (entry_bytes, exit_bytes) = rip_bytes.split_at_mut(8);
+                let (entry_bytes, base_bytes) = rip_bytes.split_at_mut(8);
                 entry_bytes.copy_from_slice(&entry_return.to_ne_bytes());
-                exit_bytes.copy_from_slice(&exit_return.to_ne_bytes());
+                base_bytes.copy_from_slice(&base_token.to_ne_bytes());
 
-                token_addr
+                (Some(base_token_addr), token_addr)
             }
             ShadowStackInit::ContextSwitch => {
                 let (_, token_bytes) = chunk.split_at_mut(16);
@@ -80,7 +89,7 @@ impl VMKernelShadowStack {
                 let token = (token_addr + 8).bits() + shadow_stack::MODE_64BIT;
                 token_bytes.copy_from_slice(&token.to_ne_bytes());
 
-                token_addr
+                (None, token_addr)
             }
             ShadowStackInit::Exception => {
                 let (_, token_bytes) = chunk.split_at_mut(16);
@@ -90,14 +99,14 @@ impl VMKernelShadowStack {
                 let token = token_addr.bits();
                 token_bytes.copy_from_slice(&token.to_ne_bytes());
 
-                token_addr
+                (None, token_addr)
             }
-            ShadowStackInit::Init => base + PAGE_SIZE - 8,
+            ShadowStackInit::Init => (None, base + PAGE_SIZE - 8),
         };
 
         page.write(PAGE_SIZE - chunk.len(), &chunk);
 
-        Ok((VMKernelShadowStack { page }, ssp))
+        Ok((VMKernelShadowStack { page }, base_token_addr, ssp))
     }
 }
 

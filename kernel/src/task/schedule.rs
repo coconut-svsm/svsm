@@ -480,7 +480,7 @@ pub fn schedule() {
             // SAFETY: Task::exception_shadow_stack is always initialized when
             // creating a new Task.
             unsafe {
-                write_msr(PL0_SSP, next.exception_shadow_stack.bits() as u64);
+                write_msr(PL0_SSP, next.shadow_stack_base.bits() as u64);
             }
         }
 

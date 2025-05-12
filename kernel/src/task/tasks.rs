@@ -31,8 +31,8 @@ use crate::mm::vm::{
 use crate::mm::{
     alloc::AllocError, mappings::create_anon_mapping, mappings::create_file_mapping, PageBox,
     VMMappingGuard, SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END,
-    SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET, SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-    SVSM_PERTASK_STACK_BASE_OFFSET, USER_MEM_END, USER_MEM_START,
+    SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET, SVSM_PERTASK_STACK_BASE_OFFSET, USER_MEM_END,
+    USER_MEM_START,
 };
 use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
@@ -166,7 +166,7 @@ pub struct Task {
 
     pub stack_bounds: MemoryRegion<VirtAddr>,
 
-    pub exception_shadow_stack: VirtAddr,
+    pub shadow_stack_base: VirtAddr,
 
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageBox<PageTable>>,
@@ -285,28 +285,23 @@ impl Task {
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
-        let mut exception_shadow_stack = VirtAddr::null();
+        let mut shadow_stack_base = VirtAddr::null();
         if is_cet_ss_supported() {
             let shadow_stack;
-            (shadow_stack, shadow_stack_offset) = VMKernelShadowStack::new(
+            let base_token_addr;
+            (shadow_stack, base_token_addr, shadow_stack_offset) = VMKernelShadowStack::new(
                 vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
                 },
             )?;
+            if let Some(base_addr) = base_token_addr {
+                shadow_stack_base = base_addr;
+            }
+
             vm_kernel_range.insert_at(
                 vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
-
-            let shadow_stack;
-            (shadow_stack, exception_shadow_stack) = VMKernelShadowStack::new(
-                vaddr_region.start() + SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET,
-                ShadowStackInit::Exception,
-            )?;
-            vm_kernel_range.insert_at(
-                vaddr_region.start() + SVSM_PERTASK_EXCEPTION_SHADOW_STACK_BASE_OFFSET,
                 Arc::new(Mapping::new(shadow_stack)),
             )?;
         }
@@ -336,7 +331,7 @@ impl Task {
             ssp: shadow_stack_offset,
             xsa,
             stack_bounds: bounds,
-            exception_shadow_stack,
+            shadow_stack_base,
             page_table: SpinLock::new(pgtable),
             _ktask_region: ktask_region,
             vm_kernel_range,
