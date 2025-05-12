@@ -32,7 +32,7 @@ pub struct SnpReportRequest {
     ///        3: Reserved
     pub flags: u32,
     /// Reserved, must be zero
-    rsvd: [u8; 24],
+    pub rsvd: [u8; 24],
 }
 
 impl SnpReportRequest {
