@@ -15,6 +15,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
+use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -23,12 +24,12 @@ use crate::io::IOPort;
 use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::sev::ghcb::GHCBIOSize;
-use crate::sev::hv_doorbell::current_hv_doorbell;
 use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
 };
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
+use crate::sev::GHCB_APIC_ACCESSOR;
 use crate::sev::{
     init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
 };
@@ -37,12 +38,10 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
-
-static SVSM_ENV_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -113,9 +112,11 @@ impl SvsmPlatform for SnpPlatform {
     }
 
     fn env_setup_svsm(&self) -> Result<(), SvsmError> {
-        this_cpu().configure_hv_doorbell()?;
+        if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
+            GHCB_APIC_ACCESSOR.set_use_restr_inj(true);
+            this_cpu().setup_hv_doorbell()?;
+        }
         guest_request_driver_init();
-        SVSM_ENV_INITIALIZED.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -151,12 +152,13 @@ impl SvsmPlatform for SnpPlatform {
     fn setup_percpu_current(&self, cpu: &PerCpu) -> Result<(), SvsmError> {
         cpu.register_ghcb()?;
 
-        // #HV doorbell allocation can only occur if the SVSM environment has
-        // already been initialized.  Skip allocation if not; it will be done
-        // during environment initialization.
-        if SVSM_ENV_INITIALIZED.load(Ordering::Relaxed) {
-            cpu.configure_hv_doorbell()?;
+        if GHCB_APIC_ACCESSOR.use_restr_inj() {
+            cpu.setup_hv_doorbell()?;
         }
+
+        apic_initialize(&GHCB_APIC_ACCESSOR);
+        apic_enable();
+        apic_sw_enable();
 
         Ok(())
     }
@@ -164,7 +166,7 @@ impl SvsmPlatform for SnpPlatform {
     fn get_page_encryption_masks(&self) -> PageEncryptionMasks {
         // Find physical address size.
         let processor_capacity =
-            cpuid_table(0x80000008).expect("Can not get physical address size from CPUID table");
+            cpuid_table(0x80000008, 0).expect("Can not get physical address size from CPUID table");
         if vtom_enabled() {
             let vtom = *VTOM;
             PageEncryptionMasks {
@@ -176,7 +178,7 @@ impl SvsmPlatform for SnpPlatform {
         } else {
             // Find C-bit position.
             let sev_capabilities =
-                cpuid_table(0x8000001f).expect("Can not get C-Bit position from CPUID table");
+                cpuid_table(0x8000001f, 0).expect("Can not get C-Bit position from CPUID table");
             let c_bit = sev_capabilities.ebx & 0x3f;
             PageEncryptionMasks {
                 private_pte_mask: 1 << c_bit,
@@ -191,7 +193,7 @@ impl SvsmPlatform for SnpPlatform {
         // Examine CPUID information to see whether CET is supported by the
         // hypervisor.  If no CPUID information is present, then assume that
         // CET is supported.
-        if let Some(cpuid) = cpuid_table(7) {
+        if let Some(cpuid) = cpuid_table(7, 0) {
             (cpuid.ecx & 0x80) != 0
         } else {
             todo!()
@@ -221,14 +223,14 @@ impl SvsmPlatform for SnpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
         // If this is an architectural CPUID leaf, then extract the result
         // from the CPUID table.  Otherwise, request the value from the
         // hypervisor.
         if (eax >> 28) == 4 {
-            current_ghcb().cpuid(eax).ok()
+            current_ghcb().cpuid(eax, ecx).ok()
         } else {
-            cpuid_table(eax)
+            cpuid_table(eax, ecx)
         }
     }
 
@@ -346,21 +348,6 @@ impl SvsmPlatform for SnpPlatform {
         self.can_use_interrupts
     }
 
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError> {
-        current_ghcb().hv_ipi(icr)?;
-        Ok(())
-    }
-
-    fn eoi(&self) {
-        // Issue an explicit EOI unless no explicit EOI is required.
-        if !current_hv_doorbell().no_eoi_required() {
-            // 0x80B is the X2APIC EOI MSR.
-            // Errors here cannot be handled but should not be grounds for
-            // panic.
-            let _ = current_ghcb().wrmsr(0x80B, 0);
-        }
-    }
-
     fn is_external_interrupt(&self, _vector: usize) -> bool {
         // When restricted injection is active, the event disposition is
         // already known to the caller and thus need not be examined.  When
@@ -378,6 +365,28 @@ impl SvsmPlatform for SnpPlatform {
 
     fn start_svsm_request_loop(&self) -> bool {
         true
+    }
+
+    /// Perfrom a write to a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, paddr: PhysAddr, data: &[u8]) -> Result<(), SvsmError> {
+        // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
+        unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
+    }
+
+    /// Perfrom a read from a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_read(&self, paddr: PhysAddr, data: &mut [u8]) -> Result<(), SvsmError> {
+        // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
+        unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }
 }
 

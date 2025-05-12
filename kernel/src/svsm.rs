@@ -7,6 +7,8 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
+extern crate alloc;
+
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -19,7 +21,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu};
+use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
 };
@@ -39,10 +41,11 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::requests::request_loop_main;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
-use svsm::task::exec_user;
 use svsm::task::schedule_init;
+use svsm::task::{exec_user, start_kernel_task};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -50,6 +53,7 @@ use svsm::vtpm::vtpm_init;
 
 use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
+use alloc::string::String;
 use release::COCONUT_VERSION;
 
 extern "C" {
@@ -227,7 +231,10 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         init_pgtable.load();
     }
 
-    let bsp_percpu = PerCpu::alloc(0).expect("Failed to allocate BSP per-cpu data");
+    // SAFETY: this is the first CPU, so there can be no other dependencies
+    // on multi-threaded access to the per-cpu areas.
+    let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
+    let bsp_percpu = PerCpu::alloc(percpu_shared).expect("Failed to allocate BSP per-cpu data");
 
     bsp_percpu
         .setup(platform, init_pgtable)
@@ -283,8 +290,9 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-#[no_mangle]
-pub extern "C" fn svsm_main() {
+pub extern "C" fn svsm_main(cpu_index: usize) {
+    debug_assert_eq!(cpu_index, 0);
+
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
     gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
@@ -320,15 +328,6 @@ pub extern "C" fn svsm_main() {
     init_capabilities();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
-    let mut nr_cpus = 0;
-
-    for cpu in cpus.iter() {
-        if cpu.enabled {
-            nr_cpus += 1;
-        }
-    }
-
-    log::info!("{} CPU(s) present", nr_cpus);
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
 
@@ -361,7 +360,13 @@ pub extern "C" fn svsm_main() {
         Err(e) => log::info!("Failed to launch /init: {e:#?}"),
     }
 
-    cpu_idle_loop();
+    // Start request processing on this CPU if required.
+    if SVSM_PLATFORM.start_svsm_request_loop() {
+        start_kernel_task(request_loop_main, 0, String::from("request-loop on CPU 0"))
+            .expect("Failed to launch request loop task");
+    }
+
+    cpu_idle_loop(cpu_index);
 }
 
 #[panic_handler]
@@ -374,7 +379,7 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     if let Some(cpu) = try_this_cpu() {
         log::error!(
             "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
-            cpu.get_apic_id(),
+            cpu.get_cpu_index(),
             COCONUT_VERSION
         );
     } else {

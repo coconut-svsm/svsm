@@ -11,18 +11,18 @@ use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
-use crate::cpu::x86::apic::{x2apic_eoi, x2apic_in_service};
+use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
 use crate::mm::PerCPUPageMappingGuard;
+use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
     tdvmcall_wrmsr, MD_TDCS_NUM_L2_VMS,
 };
-use crate::tdx::TdxError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
@@ -46,11 +46,11 @@ pub struct TdMailbox {
 const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
 
 // SAFETY: caller must ensure `mailbox` points to a valid memory address.
-unsafe fn wakeup_ap(mailbox: *mut TdMailbox, index: usize) {
+unsafe fn wakeup_ap(mailbox: *mut TdMailbox, cpu_index: usize) {
     // SAFETY: caller must ensure the address is valid and not aliased.
     unsafe {
         // PerCpu's CPU index has a direct mapping to TD vCPU index
-        (*mailbox).vcpu_index = index.try_into().expect("CPU index too large");
+        (*mailbox).vcpu_index = cpu_index.try_into().unwrap();
     }
 }
 
@@ -93,6 +93,10 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn setup_percpu_current(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
+        apic_initialize(&TDX_APIC_ACCESSOR);
+        // apic_enable() is not needed as both KVM and Hyper-V hosts initialize
+        // TD APICs with (APIC_ENABLE_MASK | APIC_X2_ENABLE_MASK)
+        apic_sw_enable();
         Ok(())
     }
 
@@ -130,8 +134,8 @@ impl SvsmPlatform for TdpPlatform {
         })
     }
 
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult> {
-        Some(CpuidResult::get(eax, 0))
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult> {
+        Some(CpuidResult::get(eax, ecx))
     }
 
     unsafe fn write_host_msr(&self, msr: u32, value: u64) {
@@ -150,12 +154,7 @@ impl SvsmPlatform for TdpPlatform {
         _size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         let gpa = match op {
@@ -174,9 +173,6 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway.
         if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
@@ -198,12 +194,7 @@ impl SvsmPlatform for TdpPlatform {
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        // The cast to u32 below is awkward, but the is_aligned() function
-        // requires its type to be convertible to u32 - which usize is not -
-        // and for an alignment check, only the low 32 bits are needed anyway
-        if !region.start().is_aligned(PAGE_SIZE)
-            || !is_aligned(region.len() as u32, PAGE_SIZE as u32)
-        {
+        if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {
             return Err(SvsmError::InvalidAddress);
         }
         match op {
@@ -236,16 +227,8 @@ impl SvsmPlatform for TdpPlatform {
         true
     }
 
-    fn post_irq(&self, _icr: u64) -> Result<(), SvsmError> {
-        Err(TdxError::Unimplemented.into())
-    }
-
-    fn eoi(&self) {
-        x2apic_eoi();
-    }
-
     fn is_external_interrupt(&self, vector: usize) -> bool {
-        x2apic_in_service(vector)
+        apic_in_service(vector)
     }
 
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
@@ -283,9 +266,17 @@ impl SvsmPlatform for TdpPlatform {
             let size = mem::size_of::<ApStartContext>();
             let context_ptr = (mbx_va + PAGE_SIZE - size).as_mut_ptr::<ApStartContext>();
             ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
-            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.shared().cpu_index());
+            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.get_cpu_index());
         }
         Ok(())
+    }
+
+    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+        unimplemented!()
+    }
+
+    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+        unimplemented!()
     }
 }
 

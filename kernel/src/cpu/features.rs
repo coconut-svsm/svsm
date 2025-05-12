@@ -13,24 +13,24 @@ const X86_FEATURE_UMIP: u32 = 2;
 
 pub fn cpu_has_pge(platform: &dyn SvsmPlatform) -> bool {
     platform
-        .cpuid(0x0000_0001)
+        .cpuid(0x0000_0001, 0)
         .map_or_else(|| false, |c| (c.edx >> X86_FEATURE_PGE) & 1 == 1)
 }
 
 pub fn cpu_has_smep(platform: &dyn SvsmPlatform) -> bool {
     platform
-        .cpuid(0x0000_0007)
+        .cpuid(0x0000_0007, 0)
         .map_or_else(|| false, |c| (c.ebx >> X86_FEATURE_SMEP & 1) == 1)
 }
 
 pub fn cpu_has_smap(platform: &dyn SvsmPlatform) -> bool {
     platform
-        .cpuid(0x0000_0007)
+        .cpuid(0x0000_0007, 0)
         .map_or_else(|| false, |c| (c.ebx >> X86_FEATURE_SMAP & 1) == 1)
 }
 
 pub fn cpu_has_umip(platform: &dyn SvsmPlatform) -> bool {
     platform
-        .cpuid(0x0000_0007)
+        .cpuid(0x0000_0007, 0)
         .map_or_else(|| false, |c| (c.ecx >> X86_FEATURE_UMIP & 1) == 1)
 }

@@ -139,7 +139,7 @@ pub trait SvsmPlatform: Sync {
     ) -> hyperv::HvHypercallOutput;
 
     /// Obtain CPUID using platform-specific tables.
-    fn cpuid(&self, eax: u32) -> Option<CpuidResult>;
+    fn cpuid(&self, eax: u32, ecx: u32) -> Option<CpuidResult>;
 
     /// Write a host-owned MSR.
     /// # Safety
@@ -197,12 +197,6 @@ pub trait SvsmPlatform: Sync {
     /// Determines whether the platform supports interrupts to the SVSM.
     fn use_interrupts(&self) -> bool;
 
-    /// Signal an IRQ on one or more CPUs.
-    fn post_irq(&self, icr: u64) -> Result<(), SvsmError>;
-
-    /// Perform an EOI of the current interrupt.
-    fn eoi(&self);
-
     /// Determines whether a given interrupt vector was invoked as an external
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;
@@ -214,6 +208,22 @@ pub trait SvsmPlatform: Sync {
     fn start_svsm_request_loop(&self) -> bool {
         false
     }
+
+    /// Perfrom a write to a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError>;
+
+    /// Perfrom a read from a memory-mapped IO area
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

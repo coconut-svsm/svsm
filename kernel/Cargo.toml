@@ -2,7 +2,7 @@
 name = "svsm"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82.0"
+rust-version = "1.84.0"
 
 [[bin]]
 name = "stage2"
@@ -36,6 +36,10 @@ packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
 release.workspace = true
+# Need "force-soft", see https://github.com/RustCrypto/hashes/issues/446
+sha2 = { workspace = true, features = ["force-soft"] }
+uuid.workspace = true
+virtio-drivers = { workspace = true, optional = true }
 
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
@@ -55,8 +59,10 @@ nosmap = []
 verus_all = ["builtin", "verify_proof/verus", "verify_external/verus"]
 verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
+virtio-drivers = ["dep:virtio-drivers"]
 
 [dev-dependencies]
+sha2 = { workspace = true, features = ["force-soft"] }
 
 [build-dependencies]
 rustc_version = "0.4"
