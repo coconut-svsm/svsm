@@ -7,7 +7,8 @@
 
 use super::*;
 use anyhow::Context;
-use kbs_types::{Challenge, Request};
+use kbs_types::*;
+use reqwest::StatusCode;
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -59,5 +60,105 @@ impl AttestationProtocol for KbsProtocol {
         let resp = NegotiationResponse { params };
 
         Ok(resp)
+    }
+
+    /// With the serialized TEE evidence and key, complete the attestation. Serialize the evidence
+    /// and send it to the /attest endpoint of the KBS server. Upon a successful attestation, fetch
+    /// a secret (identified as "svsm_secret"). If able to successfully fetch the secret, return a
+    /// successful AttestationResponse with the secret included.
+    fn attestation(
+        &mut self,
+        http: &mut HttpClient,
+        request: AttestationRequest,
+    ) -> anyhow::Result<AttestationResponse> {
+        // Create a KBS attestation object from the TEE evidence and key.
+        let attestation = Attestation {
+            tee_pubkey: match request.key {
+                AttestationKey::EC {
+                    crv,
+                    x_b64url,
+                    y_b64url,
+                } => TeePubKey::EC {
+                    crv,
+                    alg: "EC".to_string(),
+                    x: x_b64url,
+                    y: y_b64url,
+                },
+            },
+            tee_evidence: Value::String(request.evidence),
+        };
+
+        // Attest TEE evidence at KBS /attest endpoint.
+        let http_resp = http
+            .cli
+            .post(format!("{}/kbs/v0/attest", http.url))
+            .json(&attestation)
+            .send()
+            .context("unable to POST to KBS /attest endpoint")?;
+
+        // The JSON response from the /attest endpoint is basically ignored here. Instead, we check
+        // the HTTP status to indicate successful attestation.
+        //
+        // FIXME
+        if http_resp.status() != StatusCode::OK {
+            return Ok(AttestationResponse {
+                success: false,
+                secret: None,
+                pub_key: None,
+            });
+        }
+
+        // Successful attestation. Fetch the secret (which should be stored as "svsm_secret" within
+        // the KBS's RVPS.
+        let http_resp = http
+            .cli
+            .post(format!("{}/kbs/v0/svsm_secret", http.url))
+            .send()
+            .context("unable to POST to KBS /attest endpoint")?;
+
+        // Unsuccessful attempt at retrieving secret.
+        if http_resp.status() != StatusCode::OK {
+            return Ok(AttestationResponse {
+                success: false,
+                secret: None,
+                pub_key: None,
+            });
+        }
+
+        let text = http_resp
+            .text()
+            .context("unable to read KBS /resource response")?;
+
+        let resp: Response = serde_json::from_str(&text)
+            .context("unable to convert KBS /resource response to KBS Response object")?;
+
+        let pub_key = {
+            let val = serde_json::from_slice(&resp.encrypted_key).unwrap();
+            let Value::Object(map) = val else {
+                panic!();
+            };
+
+            let x = map.get("x_b64url").unwrap();
+            let Value::String(x) = x else {
+                panic!();
+            };
+
+            let y = map.get("y_b64url").unwrap();
+            let Value::String(y) = y else {
+                panic!();
+            };
+
+            AttestationKey::EC {
+                crv: "EC521".to_string(),
+                x_b64url: x.to_string(),
+                y_b64url: y.to_string(),
+            }
+        };
+
+        Ok(AttestationResponse {
+            success: true,
+            secret: Some(resp.ciphertext),
+            pub_key: Some(pub_key),
+        })
     }
 }
