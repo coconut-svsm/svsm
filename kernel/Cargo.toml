@@ -26,6 +26,7 @@ elf.workspace = true
 syscall.workspace = true
 
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
+base64 = { workspace = true, optional = true, features = ["alloc"] }
 bitfield-struct.workspace = true
 bitflags.workspace = true
 cocoon-tpm-crypto = { workspace = true, features = [
@@ -68,7 +69,7 @@ verus_stub = { workspace = true }
 test.workspace = true
 
 [features]
-attest = ["dep:cocoon-tpm-crypto", "dep:cocoon-tpm-tpm2-interface", "dep:cocoon-tpm-utils-common", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
+attest = ["dep:base64", "dep:cocoon-tpm-crypto", "dep:cocoon-tpm-tpm2-interface", "dep:cocoon-tpm-utils-common", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
 
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]

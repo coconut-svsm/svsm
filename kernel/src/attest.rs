@@ -9,10 +9,12 @@ extern crate alloc;
 
 use crate::{
     error::SvsmError,
+    greq::{pld_report::*, services::get_regular_report},
     io::{Read, Write, DEFAULT_IO_DRIVER},
     serial::SerialPort,
 };
 use alloc::{string::ToString, vec, vec::Vec};
+use base64::{prelude::BASE64_STANDARD, Engine};
 use cocoon_tpm_crypto::{
     ecc,
     rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
@@ -28,6 +30,8 @@ use cocoon_tpm_utils_common::{
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
+use sha2::{Digest, Sha512};
+use zerocopy::{FromBytes, IntoBytes};
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
@@ -35,7 +39,7 @@ use serde::Serialize;
 pub struct AttestationDriver<'a> {
     sp: SerialPort<'a>,
     tee: Tee,
-    _pub_key: TpmsEccPoint<'static>,
+    pub_key: TpmsEccPoint<'static>,
     _priv_key: Tpm2bEccParameter<'static>,
 }
 
@@ -58,7 +62,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
         Ok(Self {
             sp,
             tee,
-            _pub_key: key.0,
+            pub_key: key.0,
             _priv_key: key.1,
         })
     }
@@ -67,9 +71,9 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
     pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
-        let _negotiation = self.negotiation()?;
+        let negotiation = self.negotiation()?;
 
-        todo!();
+        Ok(self.attestation(negotiation)?)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -85,6 +89,14 @@ impl AttestationDriver<'_> {
         let payload = self.read()?;
 
         serde_json::from_slice(&payload).or(Err(AttestationError::NegotiationDeserialize))
+    }
+
+    /// Send an attestation request to the proxy. Proxy should reply with attestation response
+    /// containing the status (success/fail) and an optional secret returned from the server upon
+    /// successful attestation.
+    fn attestation(&self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+        let _evidence = evidence(&self.tee, hash(n, &self.pub_key)?)?;
+        todo!();
     }
 
     /// Read attestation data from the serial port.
@@ -138,6 +150,8 @@ pub enum AttestationError {
     UnsupportedTee,
     /// Unable to generate secure channel key.
     KeyGen(CryptoError),
+    /// Unable to fetch SEV-SNP attestation report.
+    SnpGetReport,
 }
 
 impl From<AttestationError> for SvsmError {
@@ -179,4 +193,76 @@ fn sc_key_generate(
     let priv_key = priv_key.ok_or(CryptoError::Internal)?;
 
     Ok((pub_key, priv_key))
+}
+
+/// Hash negotiation parameters and fetch TEE evidence.
+fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
+    let evidence = match tee {
+        &Tee::Snp => {
+            let mut user_data = [0u8; 64];
+            user_data.copy_from_slice(&hash);
+
+            let request = SnpReportRequest {
+                user_data,
+                vmpl: 0,
+                flags: 1, // Sign with VCEK.
+                rsvd: [0u8; 24],
+            };
+
+            let mut buf = request.as_bytes().to_vec();
+            // The buffer currently contains the the SnpReportRequest structure. However, SVSM
+            // will fill this buffer in with the SnpReportResponse when fetching the report.
+            // Ensure the array is large enough to contain the response (which is much larger
+            // than the request, as it contains the attestation report).
+            buf.resize(2048, 0);
+
+            let bytes = {
+                let len = get_regular_report(&mut buf).or(Err(AttestationError::SnpGetReport))?;
+
+                // We have the length of the response. The rest of the response is unused.
+                // Parse the SnpReportResponse from the slice of the buf containing the
+                // response (that is, &buf[0..len]).
+                let resp = SnpReportResponse::ref_from_bytes(&buf[..len])
+                    .or(Err(AttestationError::SnpGetReport))?;
+
+                // Get the attestation report as bytes for serialization in the
+                // AttestationRequest.
+                resp.report().as_bytes().to_vec()
+            };
+
+            bytes
+        }
+        // We check for supported TEE architectures in the AttestationDriver's constructor.
+        _ => unreachable!(),
+    };
+
+    Ok(evidence)
+}
+
+/// Hash the negotiation parameters from the attestation server for inclusion in the
+/// attestation evidence.
+fn hash(
+    n: NegotiationResponse,
+    pub_key: &TpmsEccPoint<'static>,
+) -> Result<Vec<u8>, AttestationError> {
+    let mut sha = Sha512::new();
+
+    for p in &n.params {
+        match p {
+            NegotiationParam::Base64StdBytes(s) => {
+                let decoded = BASE64_STANDARD
+                    .decode(s)
+                    .map_err(|_| AttestationError::NegotiationDeserialize)?;
+
+                sha.update(decoded);
+            }
+            #[allow(irrefutable_let_patterns)]
+            NegotiationParam::EcPublicKeyBytes => {
+                sha.update(&*pub_key.x.buffer);
+                sha.update(&*pub_key.y.buffer);
+            }
+        }
+    }
+
+    Ok(sha.finalize().to_vec())
 }
