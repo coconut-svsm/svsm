@@ -720,7 +720,7 @@ impl PerCpu {
         base: VirtAddr,
         init: ShadowStackInit,
     ) -> Result<VirtAddr, SvsmError> {
-        let (shadow_stack, ssp) = VMKernelShadowStack::new(base, init)?;
+        let (shadow_stack, _, ssp) = VMKernelShadowStack::new(base, init)?;
         self.vm_range
             .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
         Ok(ssp)

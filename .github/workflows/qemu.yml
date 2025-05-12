@@ -1,0 +1,125 @@
+name: qemu
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  # IGVM C wrapper might require a different Rust version than SVSM
+  RUST_VERSION_IGVM: 1.84.1
+  QEMU_REPO: https://github.com/coconut-svsm/qemu.git
+  QEMU_REF: svsm-igvm
+  IGVM_REPO: https://github.com/microsoft/igvm.git
+  IGVM_REF: igvm-v0.3.4
+
+jobs:
+  check:
+    name: QEMU NOCC boot test
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Query coconut-svsm/qemu repo
+        run: |
+          QEMU_SHA=$(git ls-remote "$QEMU_REPO" --exit-code "$QEMU_REF" | cut -f 1)
+          echo "QEMU_SHA=${QEMU_SHA}" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      - name: Get QEMU form cache
+        id: qemu_cache
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: qemu-${{ env.QEMU_SHA }}--rust-${{ env.RUST_VERSION_IGVM }}--igvm-${{ env.IGVM_REF }}
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Enable Ubuntu source repositories
+        run: |
+          sudo sed -i 's/^Types: deb/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt-get update
+
+      - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
+        name: Build QEMU
+        run: |
+          # Update & install dependencies
+          sudo apt-get install --yes git curl libcunit1-dev
+          # TODO: Find a minimal set of dependencies to install
+          sudo apt-get build-dep --yes qemu
+
+          OUT="$PWD/tools"
+          mkdir -p "$OUT"
+
+          # Set up a build directory outside the coconut-svsm checkout
+          mkdir -p ../scratch
+          pushd ../scratch
+
+          # Build IGVM
+          git clone "${{ env.IGVM_REPO }}" \
+            --branch="${{ env.IGVM_REF }}" \
+            --depth=1
+
+          pushd igvm
+
+          # Installing Rust toolchain and tools from within this workflow step in in the
+          # igvm checkout directory to avoid interference of the coconut-svsm rust-toolchain.toml,
+          # which might override versions and target settings.
+          rustup toolchain install "${{ env.RUST_VERSION_IGVM }}" --target x86_64-unknown-linux-gnu --profile minimal
+
+          # Currently needed for the C wrapper of IGVM
+          cargo install cbindgen
+
+          PREFIX="$OUT" make -C igvm_c
+          PREFIX="$OUT" make -C igvm_c install
+          popd
+
+          # Build Qmeu
+           git clone "${{ env.QEMU_REPO }}" \
+            --branch="${{ env.QEMU_REF }}" \
+            --depth=1
+
+          pushd qemu
+          PKG_CONFIG_PATH="$OUT/lib64/pkgconfig" ./configure \
+            --target-list=x86_64-softmmu \
+            --enable-igvm --extra-ldflags=-L"$OUT/lib64" \
+            --extra-cflags=-I"$OUT/include" \
+            --enable-tcg \
+            --enable-kvm \
+            --enable-slirp \
+            --enable-strip \
+            --static \
+            --disable-docs \
+            --disable-user \
+            --without-default-features \
+            --prefix="$OUT"
+          make -j "$(nproc)" install
+          popd
+
+          popd
+
+      ## TODO: We can replace the SVSM build step and download the IGVM file as an artifact
+        # from the "Rust check" jobs instread to speed things up.
+
+      - name: Install Rust x86_64-unknown-none
+        run: |
+          rustup toolchain install \
+            --profile minimal
+
+      - name: Install TPM 2.0 Reference Implementation build dependencies
+        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
+
+      - name: Build SVSM
+        run: ./build configs/qemu-target.json
+
+      ########################
+
+      - name: Run SVSM in QEMU
+        run: |
+          QEMU=./tools/bin/qemu-system-x86_64 scripts/test-qemu-nocc-boot.sh
+
