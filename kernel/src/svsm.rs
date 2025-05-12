@@ -42,6 +42,8 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+#[cfg(all(feature = "uefivars", not(test)))]
+use svsm::protocols::uefivars::uefi_mm_protocol_init;
 use svsm::requests::request_loop_main;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
@@ -344,6 +346,9 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
 
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
+
+    #[cfg(all(feature = "uefivars", not(test)))]
+    uefi_mm_protocol_init().expect("uefi mm protocol failed to initialize");
 
     virt_log_usage();
 
