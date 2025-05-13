@@ -8,7 +8,7 @@ use crate::address::{Address, VirtAddr};
 use crate::types::PAGE_SIZE;
 use core::ops::{Add, BitAnd, Not, Sub};
 
-use vstd::prelude::*;
+use verus_stub::*;
 
 #[cfg(verus_keep_ghost)]
 include!("util.verus.rs");
