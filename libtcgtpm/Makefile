@@ -53,6 +53,7 @@ $(OPENSSL_MAKEFILE):
 			no-aria \
 			no-asm \
 			no-async \
+			no-atexit \
 			no-autoerrinit \
 			no-autoload-config \
 			no-bf \
@@ -67,17 +68,23 @@ $(OPENSSL_MAKEFILE):
 			no-deprecated \
 			no-des \
 			no-dgram \
+			no-docs \
 			no-dsa \
 			no-dso \
 			no-dtls \
+			no-dtls1 \
+			no-dtls1_2 \
 			no-dtls1_2-method \
 			no-dtls1-method \
 			no-dynamic-engine \
 			no-ec2m \
+			no-ecx  \
+			no-egd \
 			no-engine \
 			no-err \
 			no-filenames \
 			no-gost \
+			no-http  \
 			no-hw \
 			no-idea \
 			no-ktls \
@@ -94,6 +101,7 @@ $(OPENSSL_MAKEFILE):
 			no-poly1305 \
 			no-posix-io \
 			no-psk \
+			no-quic \
 			no-rc2 \
 			no-rc4 \
 			no-rfc3779 \
@@ -104,6 +112,7 @@ $(OPENSSL_MAKEFILE):
 			no-siphash \
 			no-siv \
 			no-sm2 \
+			no-sm2-precomp  \
 			no-sm4 \
 			no-sock \
 			no-srp \
@@ -114,10 +123,19 @@ $(OPENSSL_MAKEFILE):
 			no-ssl-trace \
 			no-static-engine \
 			no-stdio \
+			no-tests \
+			no-thread-pool \
 			no-threads \
+			no-tls1 \
+			no-tls1_1 \
+			no-tls1_1-method \
+			no-tls1_2 \
+			no-tls1_2-method \
 			no-tls1_3 \
+			no-tls1-method \
 			no-ts \
 			no-ui-console \
+			no-uplink \
 			no-whirlpool \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
