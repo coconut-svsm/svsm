@@ -82,7 +82,7 @@ jobs:
         run: echo "" > release/src/git_version.rs
 
       - name: Format doctests
-        run: cargo fmt --all -- --check --config "format_code_in_doc_comments=true"
+        run: cargo +nightly fmt --all -- --check --config "format_code_in_doc_comments=true"
 
   # Check for new undocumented unsafe blocks. This is to prevent them from
   # growing before we add comments for all of them and manage to enable
