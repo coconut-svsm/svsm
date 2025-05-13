@@ -14,7 +14,7 @@ use crate::{
     serial::SerialPort,
 };
 use alloc::{string::ToString, vec, vec::Vec};
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{prelude::*, Engine};
 use cocoon_tpm_crypto::{
     ecc,
     rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
@@ -94,8 +94,24 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
-        let _evidence = evidence(&self.tee, hash(n, &self.pub_key)?)?;
+    fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+        let evidence = evidence(&self.tee, hash(n, &self.pub_key)?)?;
+
+        let req = AttestationRequest {
+            evidence: BASE64_URL_SAFE.encode(evidence),
+            key: AttestationKey::EC {
+                crv: "EC384".to_string(),
+                x_b64url: BASE64_URL_SAFE.encode(&*self.pub_key.x.buffer),
+                y_b64url: BASE64_URL_SAFE.encode(&*self.pub_key.y.buffer),
+            },
+        };
+
+        self.write(req)?;
+        let payload = self.read()?;
+
+        let response: AttestationResponse = serde_json::from_slice(&payload)
+            .map_err(|_| AttestationError::AttestationDeserialize)?;
+
         todo!();
     }
 
@@ -138,6 +154,8 @@ impl AttestationDriver<'_> {
 /// Possible errors when attesting TEE evidence.
 #[derive(Clone, Copy, Debug)]
 pub enum AttestationError {
+    /// Error deserializing the attestation response from JSON bytes.
+    AttestationDeserialize,
     /// Error deserializing the negotiation response from JSON bytes.
     NegotiationDeserialize,
     /// Error serializing the negotiation request to JSON bytes.
