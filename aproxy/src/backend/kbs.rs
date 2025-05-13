@@ -129,10 +129,33 @@ impl AttestationProtocol for KbsProtocol {
         let resp: Response = serde_json::from_str(&text)
             .context("unable to convert KBS /resource response to KBS Response object")?;
 
+        let pub_key = {
+            let val = serde_json::from_slice(&resp.encrypted_key).unwrap();
+            let Value::Object(map) = val else {
+                panic!();
+            };
+
+            let x = map.get("x_b64url").unwrap();
+            let Value::String(x) = x else {
+                panic!();
+            };
+
+            let y = map.get("y_b64url").unwrap();
+            let Value::String(y) = y else {
+                panic!();
+            };
+
+            AttestationKey::EC {
+                crv: "EC384".to_string(),
+                x_b64url: x.to_string(),
+                y_b64url: y.to_string(),
+            }
+        };
+
         Ok(AttestationResponse {
             success: true,
             secret: Some(resp.ciphertext),
-            pub_key: Some(resp.encrypted_key),
+            pub_key: Some(pub_key),
         })
     }
 }
