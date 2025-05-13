@@ -13,20 +13,21 @@ use crate::{
     io::{Read, Write, DEFAULT_IO_DRIVER},
     serial::SerialPort,
 };
+use aes::{cipher::BlockDecrypt, Aes256};
+use aes_gcm::KeyInit;
 use alloc::{string::ToString, vec, vec::Vec};
 use base64::{prelude::*, Engine};
 use cocoon_tpm_crypto::{
-    ecc,
+    ecc::{curve::Curve, ecdh::ecdh_c_1e_1s_cdh_party_v_key_gen, EccKey},
     rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
     CryptoError, EmptyCryptoIoSlices,
 };
-use cocoon_tpm_tpm2_interface::{
-    self as tpm2_interface, Tpm2bEccParameter, TpmEccCurve, TpmiAlgHash, TpmsEccPoint,
-};
+use cocoon_tpm_tpm2_interface::{self as tpm2_interface, TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
 use cocoon_tpm_utils_common::{
     alloc::try_alloc_zeroizing_vec,
     io_slices::{self, IoSlicesIterCommon as _},
 };
+use core::cmp::min;
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -35,12 +36,12 @@ use zerocopy::{FromBytes, IntoBytes};
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
-#[derive(Debug)]
+#[allow(missing_debug_implementations)]
 pub struct AttestationDriver<'a> {
     sp: SerialPort<'a>,
     tee: Tee,
-    pub_key: TpmsEccPoint<'static>,
-    _priv_key: Tpm2bEccParameter<'static>,
+    ecc: EccKey,
+    curve: Curve,
 }
 
 impl TryFrom<Tee> for AttestationDriver<'_> {
@@ -57,13 +58,14 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
             _ => return Err(AttestationError::UnsupportedTee.into()),
         }
 
-        let key = sc_key_generate(TpmEccCurve::NistP384).map_err(AttestationError::KeyGen)?;
+        let curve = Curve::new(TpmEccCurve::NistP384).map_err(AttestationError::Crypto)?;
+        let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
         Ok(Self {
             sp,
             tee,
-            pub_key: key.0,
-            _priv_key: key.1,
+            ecc,
+            curve,
         })
     }
 }
@@ -73,7 +75,8 @@ impl AttestationDriver<'_> {
     pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
         let negotiation = self.negotiation()?;
 
-        Ok(self.attestation(negotiation)?)
+        self.attestation(negotiation)
+            .map_err(SvsmError::TeeAttestation)
     }
 
     /// Send a negotiation request to the proxy. Proxy should reply with Negotiation parameters
@@ -95,15 +98,19 @@ impl AttestationDriver<'_> {
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
     fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
-        let evidence = evidence(&self.tee, hash(n, &self.pub_key)?)?;
+        let pub_key = self
+            .ecc
+            .pub_key()
+            .to_tpms_ecc_point(&self.curve.curve_ops().map_err(AttestationError::Crypto)?)
+            .map_err(AttestationError::Crypto)?;
+
+        let evidence = evidence(&self.tee, hash(n, &pub_key)?)?;
 
         let req = AttestationRequest {
             evidence: BASE64_URL_SAFE.encode(evidence),
-            key: AttestationKey::EC {
-                crv: "EC384".to_string(),
-                x_b64url: BASE64_URL_SAFE.encode(&*self.pub_key.x.buffer),
-                y_b64url: BASE64_URL_SAFE.encode(&*self.pub_key.y.buffer),
-            },
+            key: (TpmEccCurve::NistP384, &pub_key)
+                .try_into()
+                .map_err(|_| AttestationError::AttestationDeserialize)?,
         };
 
         self.write(req)?;
@@ -112,7 +119,49 @@ impl AttestationDriver<'_> {
         let response: AttestationResponse = serde_json::from_slice(&payload)
             .map_err(|_| AttestationError::AttestationDeserialize)?;
 
-        todo!();
+        if !response.success {
+            return Err(AttestationError::Failed);
+        }
+
+        let Some(ak) = response.pub_key else {
+            return Err(AttestationError::PublicKeyMissing)?;
+        };
+
+        let pub_key: TpmsEccPoint<'static> = ak.try_into().map_err(AttestationError::Crypto)?;
+
+        let Some(ciphertext) = response.secret else {
+            return Err(AttestationError::SecretMissing);
+        };
+
+        self.decrypt(ciphertext, pub_key)
+    }
+
+    /// Decrypt a secret from the attestation server with the TEE private key.
+    fn decrypt(
+        &self,
+        ciphertext: Vec<u8>,
+        pub_key: TpmsEccPoint<'static>,
+    ) -> Result<Vec<u8>, AttestationError> {
+        let shared_secret =
+            ecdh_c_1e_1s_cdh_party_v_key_gen(TpmiAlgHash::Sha256, "", &self.ecc, &pub_key)
+                .map_err(AttestationError::Crypto)?;
+
+        let aes = Aes256::new_from_slice(&shared_secret[..])
+            .map_err(|_| AttestationError::AesGenerate)?;
+        // Decrypt each 16-byte block of the ciphertext with the symmetric key.
+        let mut ptr = 0;
+        let len = ciphertext.len();
+        let mut vec: Vec<u8> = Vec::new();
+        while ptr < len {
+            let remain = min(16, len - ptr);
+            let mut arr: [u8; 16] = [0u8; 16];
+            arr[..remain].copy_from_slice(&ciphertext[ptr..ptr + remain]);
+            aes.decrypt_block((&mut arr).into());
+            vec.append(&mut arr.to_vec());
+            ptr += remain;
+        }
+
+        Ok(vec)
     }
 
     /// Read attestation data from the serial port.
@@ -154,8 +203,12 @@ impl AttestationDriver<'_> {
 /// Possible errors when attesting TEE evidence.
 #[derive(Clone, Copy, Debug)]
 pub enum AttestationError {
+    /// Error generating AES key.
+    AesGenerate,
     /// Error deserializing the attestation response from JSON bytes.
     AttestationDeserialize,
+    /// Guest has failed attestation.
+    Failed,
     /// Error deserializing the negotiation response from JSON bytes.
     NegotiationDeserialize,
     /// Error serializing the negotiation request to JSON bytes.
@@ -164,10 +217,16 @@ pub enum AttestationError {
     ProxyRead,
     /// Error writing over the attestation proxy transport channel.
     ProxyWrite,
+    /// Attestation successful, but no public key found.
+    PublicKeyMissing,
     /// Unsupported TEE architecture.
     UnsupportedTee,
     /// Unable to generate secure channel key.
-    KeyGen(CryptoError),
+    Crypto(CryptoError),
+    /// Attestation successful, but unable to decrypt secret.
+    SecretDecrypt,
+    /// Attestation successful, but no secret found.
+    SecretMissing,
     /// Unable to fetch SEV-SNP attestation report.
     SnpGetReport,
 }
@@ -180,9 +239,7 @@ impl From<AttestationError> for SvsmError {
 
 /// Generate a key used to establish a secure channel between the confidential guest and
 /// attestation server.
-fn sc_key_generate(
-    curve_id: TpmEccCurve,
-) -> Result<(TpmsEccPoint<'static>, Tpm2bEccParameter<'static>), CryptoError> {
+fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
     let mut rng = {
         let mut rdseed = X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
         let mut hash_drbg_entropy =
@@ -202,15 +259,9 @@ fn sc_key_generate(
         )
     }?;
 
-    let curve = ecc::curve::Curve::new(curve_id)?;
     let curve_ops = curve.curve_ops()?;
-    let ecc_key = ecc::EccKey::generate(&curve_ops, &mut rng, None)?;
 
-    let (pub_key, priv_key) = ecc_key.into_tpms(&curve_ops)?;
-
-    let priv_key = priv_key.ok_or(CryptoError::Internal)?;
-
-    Ok((pub_key, priv_key))
+    EccKey::generate(&curve_ops, &mut rng, None)
 }
 
 /// Hash negotiation parameters and fetch TEE evidence.
