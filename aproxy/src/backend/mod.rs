@@ -38,6 +38,12 @@ impl HttpClient {
             Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
         }
     }
+
+    pub fn attestation(&mut self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
+        match self.protocol {
+            Protocol::Kbs(mut kbs) => kbs.attestation(self, req),
+        }
+    }
 }
 
 /// Attestation Protocol identifier.
@@ -65,4 +71,9 @@ pub trait AttestationProtocol {
         client: &mut HttpClient,
         req: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse>;
+    fn attestation(
+        &mut self,
+        client: &mut HttpClient,
+        req: AttestationRequest,
+    ) -> anyhow::Result<AttestationResponse>;
 }
