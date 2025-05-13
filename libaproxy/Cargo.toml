@@ -4,6 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+base64 = { workspace = true, features = ["alloc"] }
+cocoon-tpm-crypto = { workspace = true, features = [
+    "enable_arch_math_asm", "zeroize",
+    # Enable x86 rdseed based rng.
+    "enable_x86_64_rdseed",
+    # At least one of block cipher, mode and hash is needed,
+    # otherwise compilation will fail due to empty enums.
+    "aes", "cfb", "sha256", "sha384", "sha512",
+    "ecc", "ecdh", "ecdsa",
+    "ecc_nist_p224", "ecc_nist_p256",
+    "ecc_nist_p384", "ecc_nist_p521",
+]}
+cocoon-tpm-tpm2-interface.workspace = true
 kbs-types = { workspace = true, features = ["alloc"] }
 serde.workspace = true
 
