@@ -146,6 +146,7 @@ int issetugid(void);
 int getentropy(void *buffer, size_t length);
 long syscall(long number, ...);
 int usleep(unsigned usec);
+int sleep(unsigned usec);
 
 // stdio.h
 
@@ -222,6 +223,9 @@ clock_t clock(void);
 int clock_gettime(clockid_t clk_id, struct timespec *tp);
 int gettimeofday(struct timeval *restrict tv, void *restrict tz);
 int __secs_to_tm(long long t, struct tm *tm);
+time_t mktime(struct tm *tm);
+
+extern int timezone;
 
 #define DECLARE_ARGS(val, low, high)	unsigned long low, high
 #define EAX_EDX_VAL(val, low, high)	((low) | (high) << 32)
