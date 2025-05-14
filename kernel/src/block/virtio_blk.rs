@@ -70,7 +70,9 @@ impl BlockDriver for VirtIOBlkDriver {
 
 #[cfg(all(test, test_in_svsm))]
 mod tests {
-    use crate::{address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM};
+    use crate::{
+        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::is_qemu_test_env,
+    };
     use core::cmp::min;
     extern crate alloc;
     use super::*;
@@ -93,11 +95,6 @@ mod tests {
     fn get_image_hash_from_host() -> Option<[u8; 32]> {
         use crate::serial::Terminal;
         use crate::testing::{svsm_test_io, IORequest};
-        use crate::testutils::is_qemu_test_env;
-
-        if !is_qemu_test_env() {
-            return None;
-        }
 
         let sp = svsm_test_io().unwrap();
 
@@ -114,25 +111,33 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_4sectors() {
-        virtio_read(4);
+        if is_qemu_test_env() {
+            virtio_read(4);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_8sectors() {
-        virtio_read(8);
+        if is_qemu_test_env() {
+            virtio_read(8);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_9sectors() {
-        virtio_read(9);
+        if is_qemu_test_env() {
+            virtio_read(9);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_17sectors() {
-        virtio_read(17);
+        if is_qemu_test_env() {
+            virtio_read(17);
+        }
     }
 
     /// Read from the block device using the specified buffer size for earch
@@ -167,25 +172,33 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_4sectors() {
-        virtio_write(4);
+        if is_qemu_test_env() {
+            virtio_write(4);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_8sectors() {
-        virtio_write(8);
+        if is_qemu_test_env() {
+            virtio_write(8);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_9sectors() {
-        virtio_write(9);
+        if is_qemu_test_env() {
+            virtio_write(9);
+        }
     }
 
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_17sectors() {
-        virtio_write(17);
+        if is_qemu_test_env() {
+            virtio_write(17);
+        }
     }
 
     /// Write to the block device and fill it with (random) data, writing with the
