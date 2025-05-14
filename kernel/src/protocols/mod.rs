@@ -21,6 +21,7 @@ pub const SVSM_CORE_PROTOCOL: u32 = 0;
 pub const SVSM_ATTEST_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
+pub const SVSM_UEFI_MM_PROTOCOL: u32 = 4;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
