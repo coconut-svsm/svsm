@@ -46,8 +46,12 @@ $(OPENSSL_MAKEFILE):
 	(cd $(OPENSSL_DIR) && \
 		./Configure \
 			--config=$(DEPS_DIR)/openssl_svsm.conf \
+			--api=1.1.1 \
 			SVSM \
+			disable-legacy \
 			no-afalgeng \
+			no-aria \
+			no-asm \
 			no-async \
 			no-autoerrinit \
 			no-autoload-config \
@@ -56,12 +60,18 @@ $(OPENSSL_MAKEFILE):
 			no-capieng \
 			no-cast \
 			no-chacha \
+			no-cmac \
+			no-cmp \
 			no-cms \
 			no-ct \
 			no-deprecated \
 			no-des \
 			no-dgram \
 			no-dsa \
+			no-dso \
+			no-dtls \
+			no-dtls1_2-method \
+			no-dtls1-method \
 			no-dynamic-engine \
 			no-ec2m \
 			no-engine \
@@ -70,29 +80,45 @@ $(OPENSSL_MAKEFILE):
 			no-gost \
 			no-hw \
 			no-idea \
+			no-ktls \
+			no-makedepend \
 			no-md4 \
 			no-mdc2 \
-			no-pic \
+			no-module \
+			no-multiblock \
+			no-nextprotoneg \
 			no-ocb \
+			no-ocsp \
+			no-padlockeng \
+			no-pic \
 			no-poly1305 \
 			no-posix-io \
+			no-psk \
 			no-rc2 \
 			no-rc4 \
 			no-rfc3779 \
 			no-rmd160 \
 			no-scrypt \
 			no-seed \
+			no-shared \
+			no-siphash \
+			no-siv \
+			no-sm2 \
+			no-sm4 \
 			no-sock \
 			no-srp \
+			no-srtp \
+			no-sse2 \
 			no-ssl \
+			no-ssl3-method \
+			no-ssl-trace \
+			no-static-engine \
 			no-stdio \
 			no-threads \
+			no-tls1_3 \
 			no-ts \
-			no-whirlpool \
-			no-shared \
-			no-sse2 \
 			no-ui-console \
-			no-asm \
+			no-whirlpool \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
 			-I$(LIBCRT_DIR)/include \
