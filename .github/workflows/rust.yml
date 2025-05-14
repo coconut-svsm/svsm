@@ -123,6 +123,12 @@ jobs:
           name: clippy-warnings-pr
           path: clippy_warnings_pr.txt
 
+      # Ensure submodules are rebuilt correctly
+      - name: Clean workspace
+        run: |
+          git clean -xdf
+          git submodule foreach git clean -xdf
+
       - name: Checkout base branch
         uses: actions/checkout@v3
         with:
