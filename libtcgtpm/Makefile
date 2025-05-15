@@ -68,6 +68,7 @@ $(OPENSSL_MAKEFILE):
 			no-deprecated \
 			no-des \
 			no-dgram \
+			no-dh \
 			no-docs \
 			no-dsa \
 			no-dso \
