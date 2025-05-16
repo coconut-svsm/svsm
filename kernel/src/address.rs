@@ -12,7 +12,7 @@ use core::fmt;
 use core::ops;
 use core::slice;
 
-use vstd::prelude::*;
+use verus_stub::*;
 
 #[cfg(verus_keep_ghost)]
 include!("address.verus.rs");

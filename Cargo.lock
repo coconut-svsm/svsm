@@ -911,9 +911,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.93"
+version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60946a68e5f9d28b0dc1c21bb8a97ee7d018a8b322fa57838ba31cc878e22d99"
+checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
 ]
@@ -1108,7 +1108,6 @@ dependencies = [
  "bitflags 2.6.0",
  "bootlib",
  "builtin",
- "builtin_macros",
  "cpuarch",
  "elf",
  "gdbstub",
@@ -1126,6 +1125,7 @@ dependencies = [
  "uuid",
  "verify_external",
  "verify_proof",
+ "verus_stub",
  "virtio-drivers",
  "vstd",
  "zerocopy 0.8.10",
@@ -1313,6 +1313,22 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "verus_macro_stub"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
+name = "verus_stub"
+version = "0.1.0"
+dependencies = [
+ "builtin_macros",
+ "verus_macro_stub",
+ "vstd",
+]
 
 [[package]]
 name = "virtio-drivers"

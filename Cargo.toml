@@ -28,6 +28,8 @@ members = [
     "release",
     # Virtio Drivers (MMIO)
     "virtio-drivers",
+    # crate for verification stubs
+    "verus_stub",
 ]
 
 
@@ -38,6 +40,8 @@ cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "elf" }
+verus_stub = { path = "verus_stub" }
+verus_macro_stub = { path = "verus_macro_stub" }
 libtcgtpm = { path = "libtcgtpm" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
