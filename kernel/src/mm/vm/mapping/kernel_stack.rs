@@ -31,7 +31,7 @@ impl VMKernelStack {
     /// # Arguments
     ///
     /// * `base` - Virtual base address this stack is mapped at (including
-    ///            guard pages).
+    ///   guard pages).
     ///
     /// # Returns
     ///
@@ -48,7 +48,7 @@ impl VMKernelStack {
     /// # Arguments
     ///
     /// * `base` - Virtual base address this stack is mapped at (including
-    ///            guard pages).
+    ///   guard pages).
     ///
     /// # Returns
     ///

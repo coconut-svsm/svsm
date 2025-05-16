@@ -38,7 +38,7 @@ impl RawAllocMapping {
     /// New instance of RawAllocMapping. Still needs to call `alloc_pages()` on it before it can be used.
     pub fn new(size: usize) -> Self {
         let count = align_up(size, PAGE_SIZE) >> PAGE_SHIFT;
-        let pages: Vec<Option<PageRef>> = iter::repeat(None).take(count).collect();
+        let pages: Vec<Option<PageRef>> = iter::repeat_n(None, count).collect();
         RawAllocMapping { pages, count }
     }
 

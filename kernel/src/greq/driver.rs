@@ -200,7 +200,7 @@ impl SnpGuestRequestDriver {
     /// * `req_class`: whether this is a regular or extended `SNP_GUEST_REQUEST` command
     /// * `msg_type`: type of the command stored in `buffer`, e.g. SNP_MSG_REPORT_REQ
     /// * `buffer`: buffer with the `SNP_GUEST_REQUEST` command to be sent.
-    ///             The same buffer will also be used to store the response.
+    ///   The same buffer will also be used to store the response.
     /// * `command_len`: Size (in bytes) of the command stored in `buffer`
     ///
     /// # Returns

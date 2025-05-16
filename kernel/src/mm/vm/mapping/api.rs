@@ -77,8 +77,8 @@ pub trait VirtualMapping: core::fmt::Debug {
     /// # Arguments
     ///
     /// * 'offset' -> The offset in bytes into the `VirtualMapping`. The flags
-    ///               returned from this function relate to the page at the
-    ///               given offset
+    ///   returned from this function relate to the page at the
+    ///   given offset
     ///
     /// # Returns
     ///
@@ -118,14 +118,14 @@ pub trait VirtualMapping: core::fmt::Debug {
     /// # Arguments
     ///
     /// * 'vmr' - Virtual memory range that contains the mapping. This
-    ///           [`VirtualMapping`] can use this to insert/remove regions
-    ///           as necessary to handle the page fault.
+    ///   [`VirtualMapping`] can use this to insert/remove regions
+    ///   as necessary to handle the page fault.
     ///
     /// * `offset` - Offset into the virtual mapping that was the subject of
-    ///              the page fault.
+    ///   the page fault.
     ///
     /// * 'write' - `true` if the fault was due to a write to the memory
-    ///              location, or 'false' if the fault was due to a read.
+    ///   location, or 'false' if the fault was due to a read.
     fn handle_page_fault(
         &mut self,
         _vmr: &VMR,
