@@ -11,11 +11,6 @@
 #pragma GCC visibility push (hidden)
 #endif
 
-// Openssl big number operation (bn_op). Ensure it is defined for all SVSM
-// external dependency that requires openssl crypto functions.
-//#define SIXTY_FOUR_BIT_LONG
-#define SIXTY_FOUR_BIT
-
 // features.h
 
 #define _Noreturn __attribute__((__noreturn__))
