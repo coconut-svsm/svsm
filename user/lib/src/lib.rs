@@ -4,14 +4,12 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-#![no_std]
+#![cfg_attr(all(not(test), target_os = "none"), no_std)]
 
 pub mod console;
 pub mod locking;
 
 pub use console::*;
-#[cfg(not(test))]
-use core::panic::PanicInfo;
 pub use locking::*;
 pub use syscall::*;
 
@@ -29,9 +27,9 @@ macro_rules! declare_main {
     };
 }
 
-#[cfg(not(test))]
+#[cfg(all(not(test), target_os = "none"))]
 #[panic_handler]
-fn panic(info: &PanicInfo<'_>) -> ! {
+fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     println!("Panic: {}", info);
     exit(!0);
 }
