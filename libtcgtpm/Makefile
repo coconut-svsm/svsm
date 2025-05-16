@@ -46,9 +46,14 @@ $(OPENSSL_MAKEFILE):
 	(cd $(OPENSSL_DIR) && \
 		./Configure \
 			--config=$(DEPS_DIR)/openssl_svsm.conf \
+			--api=1.1.1 \
 			SVSM \
+			disable-legacy \
 			no-afalgeng \
+			no-aria \
+			no-asm \
 			no-async \
+			no-atexit \
 			no-autoerrinit \
 			no-autoload-config \
 			no-bf \
@@ -56,43 +61,83 @@ $(OPENSSL_MAKEFILE):
 			no-capieng \
 			no-cast \
 			no-chacha \
+			no-cmac \
+			no-cmp \
 			no-cms \
 			no-ct \
 			no-deprecated \
 			no-des \
 			no-dgram \
+			no-dh \
+			no-docs \
 			no-dsa \
+			no-dso \
+			no-dtls \
+			no-dtls1 \
+			no-dtls1_2 \
+			no-dtls1_2-method \
+			no-dtls1-method \
 			no-dynamic-engine \
 			no-ec2m \
+			no-ecx  \
+			no-egd \
 			no-engine \
 			no-err \
 			no-filenames \
 			no-gost \
+			no-http  \
 			no-hw \
 			no-idea \
+			no-ktls \
+			no-makedepend \
 			no-md4 \
 			no-mdc2 \
-			no-pic \
+			no-module \
+			no-multiblock \
+			no-nextprotoneg \
 			no-ocb \
+			no-ocsp \
+			no-padlockeng \
+			no-pic \
 			no-poly1305 \
 			no-posix-io \
+			no-psk \
+			no-quic \
 			no-rc2 \
 			no-rc4 \
 			no-rfc3779 \
 			no-rmd160 \
 			no-scrypt \
 			no-seed \
+			no-shared \
+			no-siphash \
+			no-siv \
+			no-sm2 \
+			no-sm2-precomp  \
+			no-sm4 \
 			no-sock \
 			no-srp \
-			no-ssl \
-			no-stdio \
-			no-threads \
-			no-ts \
-			no-whirlpool \
-			no-shared \
+			no-srtp \
 			no-sse2 \
+			no-ssl \
+			no-ssl3-method \
+			no-ssl-trace \
+			no-static-engine \
+			no-stdio \
+			no-tests \
+			no-thread-pool \
+			no-threads \
+			no-tls1 \
+			no-tls1_1 \
+			no-tls1_1-method \
+			no-tls1_2 \
+			no-tls1_2-method \
+			no-tls1_3 \
+			no-tls1-method \
+			no-ts \
 			no-ui-console \
-			no-asm \
+			no-uplink \
+			no-whirlpool \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
 			-I$(LIBCRT_DIR)/include \
@@ -109,11 +154,6 @@ TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
 TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
-# This is needed to workaround an issue with an unused variable when
-# FILE_BACKED_NV is set to NO. The real fix is posted here:
-# https://github.com/TrustedComputingGroup/TPM/pull/7
-# When that PR is merged, we can remove this line.
-TCGTPM_CFLAGS += -Wno-error=unused-variable
 
 TCGTPM_EXTRA_CFLAGS = -I $(DEPS_DIR)/TpmConfiguration
 

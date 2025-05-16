@@ -142,6 +142,14 @@ int usleep(unsigned usec)
     return -1;
 }
 
+int sleep(unsigned usec)
+{
+    NOT_IMPLEMENTED;
+    return -1;
+}
+
+int timezone = 0;
+
 // dirent.h
 
 DIR *opendir(const char *name)
@@ -173,6 +181,11 @@ int stat(const char *__restrict path, struct stat *restrict buf)
 // time.h
 
 char *ctime(const time_t *t) {
-	NOT_IMPLEMENTED;
-	return NULL;
+    NOT_IMPLEMENTED;
+    return NULL;
+}
+
+time_t mktime(struct tm *tm) {
+    NOT_IMPLEMENTED;
+    return 0;
 }
