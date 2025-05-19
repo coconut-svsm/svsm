@@ -129,6 +129,12 @@ jobs:
           submodules: recursive
           ref: ${{ github.event.pull_request.base.sha }}
 
+      - name: Install specified rust toolchain for the base branch
+        run: rustup toolchain install --profile minimal
+
+      - name: Add rust components to the base branch toolchain
+        run: rustup component add clippy
+
       - name: Build base branch
         run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
 
