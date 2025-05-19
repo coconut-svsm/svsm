@@ -40,9 +40,9 @@ endif
 C_BIT_POS ?= 51
 
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm bin/coconut-vanadium.igvm
-IGVMBUILDER = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmbuilder"
+IGVMBUILDER = "target/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
-IGVMMEASURE = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/igvmmeasure"
+IGVMMEASURE = "target/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
 
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
@@ -62,10 +62,10 @@ $(IGVMMEASUREBIN): $(IGVMMEASURE) bin
 	cp -f $(IGVMMEASURE) $@
 
 $(IGVMBUILDER):
-	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmbuilder
+	cargo build ${CARGO_ARGS} --package igvmbuilder
 
 $(IGVMMEASURE):
-	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p igvmmeasure
+	cargo build ${CARGO_ARGS} --package igvmmeasure
 
 bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
 	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu --snp --tdp
@@ -92,7 +92,7 @@ bin/coconut-test-vanadium.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampol
 	$(IGVMMEASURE) --check-kvm --native-zero $@ measure
 
 test:
-	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace --exclude=user* --target=x86_64-unknown-linux-gnu
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
 
 test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 
@@ -102,11 +102,11 @@ test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
 test-in-hyperv: bin/coconut-test-hyperv.igvm
 
 doc:
-	cargo doc -p svsm --open --all-features --document-private-items
+	cargo doc --package svsm --all-features --document-private-items --target=x86_64-unknown-none --open
 
 docsite:
 	mkdir -p ${DOC_SITE}
-	cargo doc -p svsm --all-features --document-private-items --no-deps
+	cargo doc --package svsm --all-features --document-private-items --target=x86_64-unknown-none --no-deps
 	mkdocs build -f Documentation/mkdocs.yml -d ../${DOC_SITE}
 	cp -r ${RUSTDOC_OUTPUT} ${DOC_SITE}/rustdoc
 
@@ -126,15 +126,17 @@ bin/meta.bin: utils/gen_meta utils/print-meta bin
 	./utils/gen_meta $@
 
 bin/stage2.bin: bin
-	cargo build --manifest-path kernel/Cargo.toml ${CARGO_ARGS} --bin stage2
+	cargo build --package svsm --bin stage2 ${CARGO_ARGS} --target=x86_64-unknown-none
 	objcopy -O binary ${STAGE2_ELF} $@
 
 bin/svsm-kernel.elf: bin
-	cargo build ${CARGO_ARGS} ${SVSM_ARGS} --bin svsm
+	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin
-	LINK_TEST=1 cargo +nightly test ${CARGO_ARGS} ${SVSM_ARGS_TEST} -p svsm --config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
+	LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
+		--target=x86_64-unknown-none \
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
 
 ${FS_BIN}: bin
@@ -145,15 +147,15 @@ endif
 
 stage1_elf_full: bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin/meta.bin
 	ln -sf svsm-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 	rm -f bin/kernel.elf
 
 stage1_elf_trampoline: bin/meta.bin
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --bin stage1 -- ${STAGE1_RUSTC_ARGS}
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 
 stage1_elf_test: bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin/meta.bin
 	ln -sf test-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
+	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 	rm -f bin/kernel.elf
 
 bin/svsm: stage1_elf_full
@@ -175,11 +177,11 @@ bin/svsm-test.bin: bin/svsm-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude stage1 -- -D warnings
-	cargo clippy --workspace --all-features --exclude packit --exclude svsm-fuzz --exclude svsm --exclude 'user*' --exclude stage1 --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy -p stage1 --all-features --target=x86_64-unknown-linux-gnu -- -D warnings ${STAGE1_RUSTC_ARGS}
-	RUSTFLAGS="--cfg fuzzing" cargo clippy --package svsm-fuzz --all-features --target=x86_64-unknown-linux-gnu -- -D warnings
-	cargo clippy --workspace --all-features --exclude packit --exclude 'user*' --tests --target=x86_64-unknown-linux-gnu -- -D warnings
+	cargo clippy --all-features --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- -D warnings
+	RUSTFLAGS="--cfg fuzzing" cargo clippy --all-features --package svsm-fuzz -- -D warnings
+	cargo clippy --all-features --package svsm --target x86_64-unknown-none -- -D warnings
+	cargo clippy --all-features --package stage1 --target x86_64-unknown-none -- -D warnings ${STAGE1_RUSTC_ARGS}
+	cargo clippy --all-features --workspace --tests --exclude packit -- -D warnings
 
 clean:
 	cargo clean

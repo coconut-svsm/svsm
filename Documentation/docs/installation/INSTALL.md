@@ -213,13 +213,13 @@ $ git submodule update --init
 That checks out the SVSM which can be built by
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd ./build configs/qemu-target.json
+$ FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild configs/qemu-target.json
 ```
 
-to get a debug build of the SVSM or
+to get a debug build of the SVSM, or
 
 ```
-$ FW_FILE=/path/to/firmware/OVMF.fd ./build --release configs/qemu-target.json
+$ FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild --release configs/qemu-target.json
 ```
 
 to build the SVSM with the release target. When the build is finished

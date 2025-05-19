@@ -1,1 +1,2 @@
-scripts/build.py
+#!/bin/sh
+cargo xbuild "$@"
