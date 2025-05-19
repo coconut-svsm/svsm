@@ -18,7 +18,7 @@ use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use crate::utils::fw_meta::{find_table, RawMetaBuffer};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
-use uuid::{uuid, Uuid};
+use bootlib::firmware::*;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use core::mem::{size_of, size_of_val};
@@ -46,10 +46,6 @@ impl SevFWMetaData {
     }
 }
 
-const OVMF_TABLE_FOOTER_GUID: Uuid = uuid!("96b582de-1fb2-45f7-baea-a366c55a082d");
-const OVMF_SEV_META_DATA_GUID: Uuid = uuid!("dc886566-984a-4798-a75e-5585a7bf67cc");
-const SVSM_INFO_GUID: Uuid = uuid!("a789a612-0597-4c4b-a49f-cbb1fe9d1ddd");
-
 #[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 struct SevMetaDataHeader {
@@ -66,11 +62,6 @@ struct SevMetaDataDesc {
     len: u32,
     t: u32,
 }
-
-const SEV_META_DESC_TYPE_MEM: u32 = 1;
-const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
-const SEV_META_DESC_TYPE_CPUID: u32 = 3;
-const SEV_META_DESC_TYPE_CAA: u32 = 4;
 
 /// Parse the firmware metadata from the given slice.
 pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
@@ -114,7 +105,7 @@ fn parse_sev_meta(
     raw_data: &[u8],
 ) -> Result<(), SvsmError> {
     // Find SEV metadata table
-    let Some(tbl) = find_table(&OVMF_SEV_META_DATA_GUID, raw_data) else {
+    let Some(tbl) = find_table(&OVMF_SEV_METADATA_GUID, raw_data) else {
         log::warn!("Could not find SEV metadata in firmware");
         return Ok(());
     };
