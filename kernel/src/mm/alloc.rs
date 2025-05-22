@@ -2154,7 +2154,7 @@ mod test {
     fn test_drop_pagebox_slice() {
         use core::num::NonZeroUsize;
 
-        const NUM_ITEMS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8192) };
+        const NUM_ITEMS: NonZeroUsize = NonZeroUsize::new(8192).unwrap();
         static DROPPED: AtomicUsize = AtomicUsize::new(0);
 
         #[derive(Clone)]

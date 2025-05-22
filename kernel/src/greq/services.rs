@@ -63,14 +63,14 @@ fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, Svsm
 /// # Arguments
 ///
 /// * `buffer`: Buffer with the [`MSG_REPORT_REQ`](SnpReportRequest) command that will be
-///             sent to the PSP. It must be large enough to hold the
-///             [`MSG_REPORT_RESP`](SnpReportResponse) received from the PSP.
+///   sent to the PSP. It must be large enough to hold the
+///   [`MSG_REPORT_RESP`](SnpReportResponse) received from the PSP.
 ///
 /// # Returns
 ///
 /// * Success
 ///     * `usize`: Number of bytes written to `buffer`. It should match the
-///        [`MSG_REPORT_RESP`](SnpReportResponse) size.
+///       [`MSG_REPORT_RESP`](SnpReportResponse) size.
 /// * Error
 ///     * [`SvsmReqError`]
 pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmReqError> {
@@ -89,15 +89,15 @@ pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmReqError> {
 /// # Arguments
 ///
 /// * `buffer`: Buffer with the [`MSG_REPORT_REQ`](SnpReportRequest) command that will be
-///             sent to the PSP. It must be large enough to hold the
-///             [`MSG_REPORT_RESP`](SnpReportResponse) received from the PSP.
+///   sent to the PSP. It must be large enough to hold the
+///   [`MSG_REPORT_RESP`](SnpReportResponse) received from the PSP.
 /// * `certs`:  Buffer to store the SEV-SNP certificates received from the hypervisor.
 ///
 /// # Return codes
 ///
 /// * Success
 ///     * `usize`: Number of bytes written to `buffer`. It should match
-///                the [`MSG_REPORT_RESP`](SnpReportResponse) size.
+///       the [`MSG_REPORT_RESP`](SnpReportResponse) size.
 /// * Error
 ///     * [`SvsmReqError`]
 ///     * `SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(certs_buffer_size, psp_rc)))`:
