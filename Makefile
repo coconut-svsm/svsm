@@ -1,8 +1,13 @@
 FEATURES ?= vtpm
+ifneq ($(FEATURES),)
 SVSM_ARGS += --features ${FEATURES}
+endif
 
 FEATURES_TEST ?= virtio-drivers
-SVSM_ARGS_TEST += --no-default-features --features ${FEATURES_TEST}
+SVSM_ARGS_TEST += --no-default-features
+ifneq ($(FEATURES_TEST),)
+SVSM_ARGS_TEST += --features ${FEATURES_TEST}
+endif
 
 ifdef RELEASE
 TARGET_PATH=release
