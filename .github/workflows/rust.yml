@@ -44,7 +44,11 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy on no_std x86_64-unknown-none
+<<<<<<< HEAD
         run: cargo clippy --all-features --package svsm --target=x86_64-unknown-none -- -D warnings
+=======
+        run: cargo clippy --workspace --exclude igvmbuilder --exclude igvmmeasure --exclude svsm-fuzz --exclude packit --exclude stage1 --exclude aproxy --all-features -- -D warnings
+>>>>>>> 040f25b8 (aproxy: Complete negotiation with KBS protocol)
 
       - name: Clippy on std x86_64-unknown-linux-gnu
         run: cargo clippy --all-features --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- -D warnings
@@ -114,7 +118,11 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for PR branch
         run: |
+<<<<<<< HEAD
           cargo clippy --all-features --package svsm --target=x86_64-unknown-none --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt || ( cat clippy_warnings_pr.txt; exit 1 )
+=======
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_pr.txt || ( cat clippy_warnings_pr.txt; exit 1 )
+>>>>>>> 040f25b8 (aproxy: Complete negotiation with KBS protocol)
 
       # Required because after the next checkout everything is removed.
       - name: Upload PR warnings artifact
@@ -146,7 +154,11 @@ jobs:
 
       - name: Clippy with undocumented_unsafe_blocks for base branch
         run: |
+<<<<<<< HEAD
           cargo clippy --all-features --package svsm --target=x86_64-unknown-none --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt || ( cat clippy_warnings_base.txt; exit 1 )
+=======
+          cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy --quiet -- -W clippy::undocumented_unsafe_blocks 2> clippy_warnings_base.txt || ( cat clippy_warnings_base.txt; exit 1 )
+>>>>>>> 040f25b8 (aproxy: Complete negotiation with KBS protocol)
 
       - name: Download PR warnings artifact
         uses: actions/download-artifact@v4
@@ -163,7 +175,12 @@ jobs:
           if [ "$PR_WARNINGS" -gt "$BASE_WARNINGS" ]; then
             echo "ERROR: $(($PR_WARNINGS - $BASE_WARNINGS)) new undocumented unsafe code blocks detected in this PR"
             echo "enabling the clippy::undocumented_unsafe_blocks lint in this way:"
+<<<<<<< HEAD
             echo "$ cargo clippy --all-features --package svsm --target=x86_64-unknown-none -- -W clippy::undocumented_unsafe-blocks"
+=======
+            echo "$ cargo clippy --workspace --all-features --exclude packit --exclude stage1 --exclude svsm-fuzz \\"
+            echo "  --exclude igvmbuilder --exclude igvmmeasure --exclude aproxy -- -W clippy::undocumented_unsafe_blocks"
+>>>>>>> 040f25b8 (aproxy: Complete negotiation with KBS protocol)
             echo ""
             diff --color -u clippy_warnings_base.txt clippy_warnings_pr.txt
             exit 1

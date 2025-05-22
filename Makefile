@@ -45,15 +45,26 @@ IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/${TARGET_PATH}/igvmmeasure"
 IGVMMEASUREBIN = bin/igvmmeasure
 
+APROXY = "target/x86_64-unknown-linux-gnu/${TARGET_PATH}/aproxy"
+APROXYBIN = bin/aproxy
+
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
 
 all: bin/svsm.bin igvm
 
+aproxy: $(APROXY) $(APROXYBIN)
+
 igvm: $(IGVM_FILES) $(IGVMBIN) $(IGVMMEASUREBIN)
 
 bin:
 	mkdir -v -p bin
+
+$(APROXYBIN): $(APROXY) bin
+	cp -f $(APROXY) $@
+
+$(APROXY):
+	cargo build ${CARGO_ARGS} --target=x86_64-unknown-linux-gnu -p aproxy
 
 $(IGVMBIN): $(IGVMBUILDER) bin
 	cp -f $(IGVMBUILDER) $@

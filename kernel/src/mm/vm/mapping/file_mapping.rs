@@ -56,7 +56,7 @@ impl VMFileMapping {
     /// # Arguments
     ///
     /// * 'file' - The file to create the mapping for. This instance keeps a
-    ///            reference to the file until it is dropped.
+    ///   reference to the file until it is dropped.
     ///
     /// * 'offset' - The offset from the start of the file to map. This must be
     ///   align to PAGE_SIZE.

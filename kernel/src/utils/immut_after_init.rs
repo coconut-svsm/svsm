@@ -247,8 +247,8 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// initialized instance.
     ///
     /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
-    ///         to. By convention, the referenced value must have been
-    ///         initialized already.
+    ///   to. By convention, the referenced value must have been
+    ///   initialized already.
     pub fn init_from_ref<'b>(&self, r: &'b T) -> ImmutAfterInitResult<()>
     where
         'b: 'a,
@@ -268,8 +268,8 @@ impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
     /// Must **not** get called on an already initialized `ImmutAfterInitRef` instance!
     ///
     /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
-    ///            convention, the referenced value must have been initialized
-    ///            already.
+    ///   convention, the referenced value must have been initialized
+    ///   already.
     pub fn init_from_cell<'b>(&self, cell: &'b ImmutAfterInitCell<T>) -> ImmutAfterInitResult<()>
     where
         'b: 'a,
