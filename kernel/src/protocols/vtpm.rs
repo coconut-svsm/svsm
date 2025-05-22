@@ -8,9 +8,9 @@
 
 extern crate alloc;
 
-use core::{mem::size_of, slice::from_raw_parts_mut};
+use core::mem::size_of;
 
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 use crate::{
     address::{Address, PhysAddr},
@@ -239,10 +239,32 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
-    let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
-
     let response_size = match cmd {
-        TpmPlatformCommand::SendCommand => tpm_send_command_request(buffer)?,
+        TpmPlatformCommand::SendCommand => {
+            // Let's use Vec to avoid consuming too much stack.
+            let mut buffer: Vec<u8> = vec![0; PAGE_SIZE];
+            let buf_slice: &mut [u8; PAGE_SIZE] = buffer
+                .as_mut_slice()
+                .try_into()
+                .expect("Failed to initialize vTPM buffer");
+
+            let buf_ptr = GuestPtr::<[u8; PAGE_SIZE]>::new(vaddr);
+
+            // SAFETY: `buf_ptr` is initialized with `vaddr` which points to
+            // a valid region just mapped, and its size is PAGE_SIZE.
+            // Since we need a mutable buffer in the next calls, to avoid UB,
+            // we copy the guest buffer to an internal one and then copy it back
+            // to give the result to the guest.
+            unsafe { buf_ptr.read_ref(buf_slice)? };
+
+            let response_size = tpm_send_command_request(buf_slice)?;
+
+            // SAFETY: `buf_ptr` is initialized with `vaddr` which points to
+            // a valid region just mapped, and its size is PAGE_SIZE.
+            unsafe { buf_ptr.write_ref(buf_slice)? };
+
+            response_size
+        }
     };
 
     // SAFETY: vaddr points to a new mapped region.
