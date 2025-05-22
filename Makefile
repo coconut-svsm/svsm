@@ -139,7 +139,9 @@ bin/svsm-kernel.elf: bin
 	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin
-	LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
+# RUSTDOC=true removes doctests, which is necessary as they do not work with
+# custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
+	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
 		--target=x86_64-unknown-none \
 		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
 	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
