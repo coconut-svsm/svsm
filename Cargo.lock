@@ -189,6 +189,7 @@ dependencies = [
 name = "bootlib"
 version = "0.1.0"
 dependencies = [
+ "uuid",
  "zerocopy 0.8.10",
 ]
 

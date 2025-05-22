@@ -10,6 +10,7 @@
 
 #![no_std]
 
+pub mod firmware;
 pub mod igvm_params;
 pub mod kernel_launch;
 pub mod platform;

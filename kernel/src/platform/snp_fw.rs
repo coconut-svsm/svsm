@@ -15,13 +15,13 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use crate::utils::fw_meta::{find_table, RawMetaBuffer, Uuid};
+use crate::utils::fw_meta::{find_table, RawMetaBuffer};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
+use bootlib::firmware::*;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 use core::mem::{size_of, size_of_val};
-use core::str::FromStr;
 
 #[derive(Clone, Debug, Default)]
 pub struct SevFWMetaData {
@@ -46,10 +46,6 @@ impl SevFWMetaData {
     }
 }
 
-const OVMF_TABLE_FOOTER_GUID: &str = "96b582de-1fb2-45f7-baea-a366c55a082d";
-const OVMF_SEV_META_DATA_GUID: &str = "dc886566-984a-4798-a75e-5585a7bf67cc";
-const SVSM_INFO_GUID: &str = "a789a612-0597-4c4b-a49f-cbb1fe9d1ddd";
-
 #[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 struct SevMetaDataHeader {
@@ -67,11 +63,6 @@ struct SevMetaDataDesc {
     t: u32,
 }
 
-const SEV_META_DESC_TYPE_MEM: u32 = 1;
-const SEV_META_DESC_TYPE_SECRETS: u32 = 2;
-const SEV_META_DESC_TYPE_CPUID: u32 = 3;
-const SEV_META_DESC_TYPE_CAA: u32 = 4;
-
 /// Parse the firmware metadata from the given slice.
 pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let mut meta_data = SevFWMetaData::new();
@@ -80,8 +71,7 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
 
     // Check the UUID
     let uuid = raw_meta.header.uuid();
-    let meta_uuid = Uuid::from_str(OVMF_TABLE_FOOTER_GUID)?;
-    if uuid != meta_uuid {
+    if uuid != OVMF_TABLE_FOOTER_GUID {
         return Err(SvsmError::Firmware);
     }
 
@@ -93,8 +83,7 @@ pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
     let raw_data = raw_meta.data.get(data_start..).ok_or(SvsmError::Firmware)?;
 
     // First check if this is the SVSM itself instead of OVMF
-    let svsm_info_uuid = Uuid::from_str(SVSM_INFO_GUID)?;
-    if find_table(&svsm_info_uuid, raw_data).is_some() {
+    if find_table(&SVSM_INFO_GUID, raw_data).is_some() {
         return Err(SvsmError::Firmware);
     }
 
@@ -116,8 +105,7 @@ fn parse_sev_meta(
     raw_data: &[u8],
 ) -> Result<(), SvsmError> {
     // Find SEV metadata table
-    let sev_meta_uuid = Uuid::from_str(OVMF_SEV_META_DATA_GUID)?;
-    let Some(tbl) = find_table(&sev_meta_uuid, raw_data) else {
+    let Some(tbl) = find_table(&OVMF_SEV_METADATA_GUID, raw_data) else {
         log::warn!("Could not find SEV metadata in firmware");
         return Ok(());
     };
