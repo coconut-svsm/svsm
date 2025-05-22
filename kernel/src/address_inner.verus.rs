@@ -200,4 +200,13 @@ pub broadcast proof fn lemma_align_up_ens<A: AddressSpec>(addr: A, align: InnerA
     crate::utils::util::proof_align_up(iaddr, align, iret);
 }
 
+// Incrementing a thin pointers.
+pub open spec fn spec_ptr_add<T>(base_ptr: *const T, idx: usize) -> *const T
+    recommends
+        base_ptr@.metadata == vstd::raw_ptr::Metadata::Thin,
+{
+    let addr = VirtAddr::from_spec((base_ptr@.addr + idx * size_of::<T>()) as usize)@;
+    vstd::raw_ptr::ptr_from_data(vstd::raw_ptr::PtrData { addr, ..base_ptr@ })
+}
+
 } // verus!
