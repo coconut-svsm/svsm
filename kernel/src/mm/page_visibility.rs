@@ -114,8 +114,19 @@ impl<T: FromZeros> SharedBox<T> {
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
 
         for offset in (0..core::mem::size_of::<T>()).step_by(PAGE_SIZE) {
-            unsafe {
-                make_page_shared(vaddr + offset)?;
+            let r1 = unsafe { make_page_shared(vaddr + offset) };
+            if let Err(e1) = r1 {
+                for off in (0..offset).step_by(PAGE_SIZE) {
+                    // SAFETY: we previously marked this page as shared in this same function.
+                    let r2 = unsafe { make_page_private(vaddr + off) };
+                    if let Err(e2) = r2 {
+                        log::error!("Failed to restore page visibility (e2:?), leaking memory!");
+                        return Err(e2);
+                    }
+                }
+                // SAFETY: we previously allocated these pages in this same function
+                let _ = unsafe { PageBox::from_raw(ptr) };
+                return Err(e1);
             }
         }
 
