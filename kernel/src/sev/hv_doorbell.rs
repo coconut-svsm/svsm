@@ -14,6 +14,7 @@ use bitfield_struct::bitfield;
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use zerocopy::FromBytes;
 
 #[bitfield(u8)]
 pub struct HVDoorbellFlags {
@@ -42,7 +43,7 @@ pub struct HVExtIntStatus {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 pub struct HVExtIntInfo {
     pub status: AtomicU32,
     pub irr: [AtomicU32; 7],
@@ -68,7 +69,7 @@ pub fn allocate_hv_doorbell_page(ghcb: &GHCB) -> Result<&'static HVDoorbell, Svs
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 pub struct HVDoorbell {
     pub vector: AtomicU8,
     pub flags: AtomicU8,
