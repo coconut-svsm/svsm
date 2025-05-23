@@ -21,7 +21,7 @@ use crate::protocols::errors::SvsmReqError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
-use zerocopy::{FromBytes, FromZeros};
+use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 /// Makes a virtual page shared by revoking its validation, updating the
 /// page state, and modifying the page tables accordingly.
@@ -105,7 +105,7 @@ pub struct SharedBox<T> {
     ptr: NonNull<T>,
 }
 
-impl<T> SharedBox<T> {
+impl<T: FromZeros> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
         let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
@@ -121,7 +121,9 @@ impl<T> SharedBox<T> {
 
         Ok(Self { ptr })
     }
+}
 
+impl<T> SharedBox<T> {
     /// Returns the virtual address of the memory.
     pub fn addr(&self) -> VirtAddr {
         VirtAddr::from(self.ptr.as_ptr())
@@ -141,9 +143,9 @@ impl<T> SharedBox<T> {
     /// Share `value` with the host.
     pub fn write_from(&mut self, value: &T)
     where
-        T: Copy,
+        T: Copy + IntoBytes + Immutable,
     {
-        // SAFETY: `self.ptr` is valid..
+        // SAFETY: `self.ptr` is valid. Value can be represented as a byte slice.
         unsafe {
             unsafe_copy_bytes(value, self.ptr.as_ptr(), 1);
         }
