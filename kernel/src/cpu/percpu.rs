@@ -29,8 +29,7 @@ use crate::error::{ApicError, SvsmError};
 use crate::hyperv;
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
-use crate::mm::alloc::{allocate_pages, free_page};
-use crate::mm::page_visibility::{make_page_private, make_page_shared};
+use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::vm::{
@@ -599,34 +598,10 @@ impl PerCpu {
 
     /// Allocates hypercall input/output pages for this CPU.
     pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
-        let vaddr = allocate_pages(2)?;
-
-        // Attempt to make each page shared.  This must be done carefully so
-        // that state is correctly restored in the event of failure.
-        // SAFETY: the virtual addresses are correct because the pages were
-        // just allocated.  If conversion is successful, these pages will never
-        // be freed, and if conversion if unsuccessful, state will correctly be
-        // restored here before the pages are freed.
-        unsafe {
-            let mut r = make_page_shared(vaddr);
-            if r.is_ok() {
-                let r2 = make_page_shared(vaddr + PAGE_SIZE);
-                if r2.is_err() {
-                    make_page_private(vaddr).expect("Failed to restore private page");
-                    r = r2;
-                }
-            }
-            if r.is_err() {
-                free_page(vaddr);
-                return r;
-            }
-        }
-
-        let pages = (
-            VirtPhysPair::new(vaddr),
-            VirtPhysPair::new(vaddr + PAGE_SIZE),
-        );
-        *self.hypercall_pages.borrow_mut() = Some(pages);
+        let pages = SharedBox::<[u8; PAGE_SIZE * 2]>::try_new_zeroed()?.leak();
+        let p1 = VirtPhysPair::new(pages.as_ptr().into());
+        let p2 = VirtPhysPair::new(p1.vaddr + PAGE_SIZE);
+        *self.hypercall_pages.borrow_mut() = Some((p1, p2));
         Ok(())
     }
 
