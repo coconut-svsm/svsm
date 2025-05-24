@@ -9,7 +9,7 @@ use core::ptr::NonNull;
 
 use crate::address::VirtAddr;
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::mem::{copy_bytes, write_bytes};
+use crate::cpu::mem::{unsafe_copy_bytes, write_bytes};
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::mm::validate::{
@@ -134,7 +134,7 @@ impl<T> SharedBox<T> {
     {
         unsafe {
             // SAFETY: `self.ptr` is valid. Any bitpattern is valid for `T`.
-            copy_bytes(
+            unsafe_copy_bytes(
                 self.ptr.as_ptr() as usize,
                 out as *const T as usize,
                 size_of::<T>(),
@@ -149,7 +149,7 @@ impl<T> SharedBox<T> {
     {
         unsafe {
             // SAFETY: `self.ptr` is valid..
-            copy_bytes(
+            unsafe_copy_bytes(
                 value as *const T as usize,
                 self.ptr.as_ptr() as usize,
                 size_of::<T>(),
@@ -195,7 +195,7 @@ impl<T, const N: usize> SharedBox<[T; N]> {
         let size = core::mem::size_of_val(outbuf);
         unsafe {
             // SAFETY: `self.ptr` is valid.
-            copy_bytes(
+            unsafe_copy_bytes(
                 self.ptr.as_ptr() as usize,
                 outbuf.as_mut_ptr() as usize,
                 size,

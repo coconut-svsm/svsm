@@ -5,6 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::address::{VirtAddr, VirtPhysPair};
+use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{this_cpu, PerCpu};
 use crate::cpu::{IrqGuard, X86GeneralRegs};
@@ -18,7 +19,6 @@ use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::unsafe_copy_bytes;
 
 use core::arch::asm;
 use core::cell::RefMut;

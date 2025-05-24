@@ -7,7 +7,7 @@ use core::arch::asm;
 /// This function has all the safety requirements of `core::ptr::copy` except
 /// that data races (both on `src` and `dst`) are explicitly permitted.
 #[inline(always)]
-pub unsafe fn copy_bytes(src: usize, dst: usize, size: usize) {
+pub unsafe fn unsafe_copy_bytes(src: usize, dst: usize, size: usize) {
     // SAFETY: Inline assembly to perform a memory copy.
     // The safery requirements of the parameters are delegated to the caller of
     // this function which is unsafe.
