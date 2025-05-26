@@ -33,10 +33,12 @@ Information about COCONUT-SVSM can be found on at the
 Community
 ---------
 
-Development discussions happen on the
-[project mailing list](https://mail.8bytes.org/cgi-bin/mailman/listinfo/svsm-devel)
-(svsm-devel@coconut-svsm.dev). Regular development calls are scheduled via the
-mailing list.
+Development discussions happen on the project mailing list:
+- address: coconut-svsm@lists.linux.dev
+- archive: https://lore.kernel.org/coconut-svsm/
+- subscription/unsubscription: https://subspace.kernel.org/lists.linux.dev.html
+
+Regular development calls are scheduled via the mailing list.
 
 Reporting Bugs
 --------------
