@@ -9,12 +9,10 @@ pub mod fw_meta;
 pub mod immut_after_init;
 pub mod memory_region;
 pub mod scoped;
-pub mod unsafe_copy;
 pub mod util;
 
 pub use memory_region::MemoryRegion;
 pub use scoped::{ScopedMut, ScopedRef};
-pub use unsafe_copy::*;
 pub use util::{
     align_down, align_up, is_aligned, overlap, page_align_up, page_offset, zero_mem_region,
 };
