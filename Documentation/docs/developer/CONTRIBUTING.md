@@ -5,7 +5,7 @@ Submissions to the project are accepted via pull-requests on
 GitHub against this repository: [https://github.com/coconut-svsm/svsm](https://github.com/coconut-svsm/svsm)
 
 Patches may also be sent to the development mailing list
-(svsm-devel@coconut-svsm.dev) for review.
+(coconut-svsm@lists.linux.dev) for review.
 
 Patch Format
 ------------
