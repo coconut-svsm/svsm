@@ -88,20 +88,19 @@ impl VtpmProtocolInterface for TcgTpm {
 pub const TPM_BUFFER_MAX_SIZE: usize = PAGE_SIZE;
 
 impl TcgTpmSimulatorInterface for TcgTpm {
-    fn send_tpm_command(
-        &self,
-        buffer: &mut [u8],
-        length: &mut usize,
-        locality: u8,
-    ) -> Result<(), SvsmReqError> {
+    fn send_tpm_command(&self, command: &[u8], locality: u8) -> Result<Vec<u8>, SvsmReqError> {
         if !self.is_powered_on {
             return Err(SvsmReqError::invalid_request());
         }
-        if *length > TPM_BUFFER_MAX_SIZE || *length > buffer.len() {
+        if command.len() > TPM_BUFFER_MAX_SIZE {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        let mut request_ffi = buffer[..*length].to_vec();
+        // _plat__RunCommand() should define it `const` because it only uses
+        // it as input, but unfortunately it doesn't. Anyway, this buffer
+        // is only read during the FFI call.
+        let request_ffi_p = command.as_ptr() as *mut u8;
+        let request_ffi_size = command.len() as u32;
 
         let mut response_ffi = Vec::<u8>::with_capacity(TPM_BUFFER_MAX_SIZE);
         let mut response_ffi_p = response_ffi.as_mut_ptr();
@@ -113,8 +112,8 @@ impl TcgTpmSimulatorInterface for TcgTpm {
         unsafe {
             _plat__LocalitySet(locality);
             _plat__RunCommand(
-                request_ffi.len() as u32,
-                request_ffi.as_mut_ptr().cast::<u8>(),
+                request_ffi_size,
+                request_ffi_p,
                 &raw mut response_ffi_size,
                 &raw mut response_ffi_p,
             );
@@ -124,14 +123,7 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             response_ffi.set_len(response_ffi_size as usize);
         }
 
-        buffer.fill(0);
-        buffer
-            .get_mut(..response_ffi.len())
-            .ok_or_else(SvsmReqError::invalid_request)?
-            .copy_from_slice(response_ffi.as_slice());
-        *length = response_ffi.len();
-
-        Ok(())
+        Ok(response_ffi)
     }
 
     fn signal_poweron(&mut self, only_reset: bool) -> Result<(), SvsmReqError> {

@@ -107,27 +107,17 @@ impl TpmSendCommandRequest {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        let mut length = self.inbuf_size as usize;
+        let length = self.inbuf_size as usize;
 
         let tpm_cmd = self
             .inbuf
             .get(..length)
             .ok_or_else(SvsmReqError::invalid_parameter)?;
-        let mut buffer: Vec<u8> = Vec::with_capacity(SEND_COMMAND_RESP_OUTBUF_SIZE);
-        buffer.extend_from_slice(tpm_cmd);
-
-        // The buffer slice must be large enough to hold the TPM command response
-        buffer.resize(SEND_COMMAND_RESP_OUTBUF_SIZE, 0);
 
         let vtpm = vtpm_get_locked();
-        vtpm.send_tpm_command(buffer.as_mut_slice(), &mut length, self.locality)?;
+        let response = vtpm.send_tpm_command(tpm_cmd, self.locality)?;
 
-        if length > buffer.len() {
-            return Err(SvsmReqError::invalid_request());
-        }
-        buffer.truncate(length);
-
-        Ok(buffer)
+        Ok(response)
     }
 }
 
