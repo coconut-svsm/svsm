@@ -70,6 +70,10 @@ while [[ $# -gt 0 ]]; do
       CGS=nocc
       shift
       ;;
+    --)
+      shift
+      break
+      ;;
     -*|--*)
       echo "Unknown option $1"
       exit 1
@@ -176,4 +180,5 @@ $SUDO_CMD \
     $COM4_SERIAL \
     $QEMU_EXIT_DEVICE \
     $QEMU_TEST_IO_DEVICE \
-    $STATE_DEVICE
+    $STATE_DEVICE \
+    "$@"
