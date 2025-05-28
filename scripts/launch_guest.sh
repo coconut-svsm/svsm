@@ -130,7 +130,7 @@ fi
 if [ ! -z $IMAGE ]; then
   IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=on \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
-    -device scsi-hd,drive=disk0,bootindex=0"
+    -device scsi-hd,drive=disk0"
 fi
 
 if [ "$EUID" -ne 0 ]; then
