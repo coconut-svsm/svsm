@@ -183,12 +183,7 @@ fn vtpm_query_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 ///
 /// * `buffer`: Contains the TpmSendCommandRequest. It will also be
 ///   used to store the TpmSendCommandResponse as a byte slice
-///
-/// # Returns
-///
-/// * `u32`: Number of bytes written back to `buffer` as part of
-///   the TpmSendCommandResponse
-fn tpm_send_command_request(buffer: &mut [u8]) -> Result<u32, SvsmReqError> {
+fn tpm_send_command_request(buffer: &mut [u8]) -> Result<(), SvsmReqError> {
     let outbuf: Vec<u8> = {
         let request = TpmSendCommandRequest::try_from_as_ref(buffer)?;
         request.send()?
@@ -196,7 +191,7 @@ fn tpm_send_command_request(buffer: &mut [u8]) -> Result<u32, SvsmReqError> {
     let response = TpmSendCommandResponse::try_from_as_mut_ref(buffer)?;
     let _ = response.set_outbuf(outbuf.as_slice());
 
-    Ok(outbuf.len() as u32)
+    Ok(())
 }
 
 fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
@@ -232,24 +227,13 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
-    let response_size = match cmd {
+    match cmd {
         TpmPlatformCommand::SendCommand => {
             let mut buffer = read_bytes_from_guest(paddr, PAGE_SIZE)?;
-            let response_size = tpm_send_command_request(&mut buffer[..])?;
+            tpm_send_command_request(&mut buffer[..])?;
             copy_slice_to_guest(&buffer[..], paddr)?;
-            response_size
         }
     };
-
-    // SAFETY: vaddr points to a new mapped region.
-    // if paddr + sizeof::<u32>() goes to the folowing page, it should
-    // not be a problem since the end of the requested region is
-    // (paddr + PAGE_SIZE), which requests another page. So
-    // write(response_size) can only happen on valid memory, mapped
-    // by PerCPUPageMappingGuard::create().
-    unsafe {
-        GuestPtr::<u32>::new(vaddr).write(response_size)?;
-    }
 
     Ok(())
 }
