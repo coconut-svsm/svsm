@@ -14,10 +14,7 @@ use alloc::vec::Vec;
 
 use crate::{
     address::{Address, PhysAddr},
-    mm::{
-        guestmem::{copy_slice_to_guest, read_bytes_from_guest},
-        valid_phys_address, GuestPtr, PerCPUPageMappingGuard,
-    },
+    mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest},
     protocols::{errors::SvsmReqError, RequestParams},
     types::PAGE_SIZE,
     vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
@@ -200,17 +197,6 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     if paddr.is_null() {
         return Err(SvsmReqError::invalid_parameter());
     }
-    if !valid_phys_address(paddr) {
-        return Err(SvsmReqError::invalid_address());
-    }
-
-    // The vTPM buffer size is one page, but it not required to be page aligned.
-    let start = paddr.page_align();
-    let offset = paddr.page_offset();
-    let end = (paddr + PAGE_SIZE).page_align_up();
-
-    let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-    let vaddr = guard.virt_addr() + offset;
 
     // vTPM common request/response structure (SVSM spec, table 15)
     //
@@ -218,8 +204,7 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     //     IN: platform command
     //    OUT: platform command response size
 
-    // SAFETY: vaddr comes from a new mapped region.
-    let command = unsafe { GuestPtr::<u32>::new(vaddr).read()? };
+    let command = read_from_guest::<u32>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
 
     let cmd = TpmPlatformCommand::try_from(command)?;
 
@@ -229,6 +214,7 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     match cmd {
         TpmPlatformCommand::SendCommand => {
+            // The vTPM buffer size is one page, but it not required to be page aligned.
             let mut buffer = read_bytes_from_guest(paddr, PAGE_SIZE)?;
             tpm_send_command_request(&mut buffer[..])?;
             copy_slice_to_guest(&buffer[..], paddr)?;
