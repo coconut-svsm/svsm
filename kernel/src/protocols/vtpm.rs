@@ -97,16 +97,22 @@ impl TpmSendCommandRequest {
         // is entirely safe.
         let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
 
-        Ok(request)
-    }
-
-    pub fn send(&self) -> Result<Vec<u8>, SvsmReqError> {
-        // TODO: Before implementing locality, we need to agree what it means
-        // to the platform
-        if self.locality != 0 {
+        if !request.validate() {
             return Err(SvsmReqError::invalid_parameter());
         }
 
+        Ok(request)
+    }
+
+    fn validate(&self) -> bool {
+        // TODO: Before implementing locality, we need to agree what it means
+        // to the platform
+        self.locality == 0
+            && self.command == TpmPlatformCommand::SendCommand as u32
+            && self.inbuf_size as usize <= SEND_COMMAND_REQ_INBUF_SIZE
+    }
+
+    pub fn send(&self) -> Result<Vec<u8>, SvsmReqError> {
         let length = self.inbuf_size as usize;
 
         let tpm_cmd = self
