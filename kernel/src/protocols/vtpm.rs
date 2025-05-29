@@ -8,9 +8,8 @@
 
 extern crate alloc;
 
-use core::mem::size_of;
-
 use alloc::vec::Vec;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     address::{Address, PhysAddr},
@@ -71,8 +70,8 @@ const SVSM_VTPM_QUERY: u32 = 0;
 const SVSM_VTPM_COMMAND: u32 = 1;
 
 /// TPM_SEND_COMMAND request structure (SVSM spec, table 16)
-#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
 struct TpmSendCommandRequest {
     /// MSSIM platform command ID
     command: u32,
@@ -87,15 +86,8 @@ struct TpmSendCommandRequest {
 impl TpmSendCommandRequest {
     // Take as slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let buffer = buffer
-            .get(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-
-        // SAFETY: TpmSendCommandRequest has no invalid representations, as it
-        // is comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
+        let request =
+            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
 
         if !request.validate() {
             return Err(SvsmReqError::invalid_parameter());
@@ -130,8 +122,8 @@ impl TpmSendCommandRequest {
 const SEND_COMMAND_RESP_OUTBUF_SIZE: usize = PAGE_SIZE - 4;
 
 /// TPM_SEND_COMMAND response structure (SVSM spec, table 17)
-#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
 struct TpmSendCommandResponse {
     /// Size of the output buffer
     outbuf_size: u32,
@@ -142,17 +134,7 @@ struct TpmSendCommandResponse {
 impl TpmSendCommandResponse {
     // Take as slice and return a &mut Self
     pub fn try_from_as_mut_ref(buffer: &mut [u8]) -> Result<&mut Self, SvsmReqError> {
-        let buffer = buffer
-            .get_mut(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-
-        // SAFETY: TpmSendCommandResponse has no invalid representations, as it
-        // is comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let response = unsafe { &mut *buffer.as_mut_ptr().cast::<Self>() };
-
-        Ok(response)
+        Self::mut_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())
     }
 
     /// Write the response to the outbuf
