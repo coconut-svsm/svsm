@@ -5,6 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use core::mem::MaybeUninit;
+use core::ops::Deref;
 use core::ptr::NonNull;
 
 use crate::address::VirtAddr;
@@ -204,6 +205,23 @@ impl<T, const N: usize> SharedBox<[T; N]> {
         }
 
         Ok(())
+    }
+}
+
+impl<T: FromBytes + Sync> Deref for SharedBox<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: ptr pointing to valid memory is part of this type's
+        // invariant. The target is Sync, so there cannot be any data
+        // races, and it is FromBytes, so it has no invalid
+        // representations.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: FromBytes + Sync> AsRef<T> for SharedBox<T> {
+    fn as_ref(&self) -> &T {
+        self
     }
 }
 
