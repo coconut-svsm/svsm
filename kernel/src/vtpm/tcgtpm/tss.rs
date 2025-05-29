@@ -90,28 +90,33 @@ fn create_mtauth_ek_cmd(tpmt_public: &[u8]) -> Vec<u8> {
 /// Arguments:
 ///
 /// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send `cmd` to.
-/// * `cmd`: A command buffer large enough to receive the command response.
+/// * `cmd`: A command buffer.
 /// * `set_len`: If true, sets the command length in the command header to `cmd.len()` before
 ///   sending the command.
+///
+/// Returns:
+///
+/// The command response on success, or an error.
 pub fn checked_send<T: TcgTpmSimulatorInterface>(
     vtpm: &T,
     cmd: &mut [u8],
     set_len: bool,
-) -> Result<(), SvsmVTpmError> {
-    let mut command_size;
+) -> Result<Vec<u8>, SvsmVTpmError> {
+    let command_size;
     if set_len {
         command_size = cmd.len();
         cmd[2..6].copy_from_slice(&(command_size as u32).to_be_bytes());
     } else {
         command_size = u32::from_be_bytes(cmd[2..6].try_into().unwrap()) as usize;
     }
-    vtpm.send_tpm_command(cmd, &mut command_size, 0)
+    let response = vtpm
+        .send_tpm_command(&cmd[..command_size], 0)
         .map_err(|_| SvsmVTpmError::ReqError(SvsmReqError::invalid_request()))?;
-    let rc = tpm_cmd_rc(cmd);
+    let rc = tpm_cmd_rc(&response);
     if rc != TPM_RC_SUCCESS {
         return Err(SvsmVTpmError::CommandError(rc));
     }
-    Ok(())
+    Ok(response)
 }
 
 /// Uses `vtpm` to create an a primary key on the endorsement hierarchy.
@@ -132,10 +137,10 @@ pub fn create_ek<T: TcgTpmSimulatorInterface>(
 ) -> Result<Vec<u8>, SvsmVTpmError> {
     let mut cmd = create_mtauth_ek_cmd(tpmt_public);
 
-    checked_send(vtpm, &mut cmd, /*set_len=*/ false)?;
+    let mut response = checked_send(vtpm, &mut cmd, /*set_len=*/ false)?;
 
     // Get size (UINT16) of TPMT_PUBLIC at offset 18.
     // Note this is output from the TPM, so its value is trusted.
-    let size_of_tpmt_public = u16::from_be_bytes([cmd[18], cmd[19]]);
-    Ok(cmd[20..(20 + size_of_tpmt_public) as usize].to_vec())
+    let size_of_tpmt_public = u16::from_be_bytes([response[18], response[19]]) as usize;
+    Ok(response.drain(20..(20 + size_of_tpmt_public)).collect())
 }
