@@ -60,6 +60,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
+use core::ops::Deref;
 use core::ptr;
 use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -402,7 +403,7 @@ pub struct PerCpu {
     hypercall_pages: RefCell<Option<(VirtPhysPair, VirtPhysPair)>>,
 
     /// `#HV` doorbell page for this CPU.
-    hv_doorbell: Cell<Option<&'static HVDoorbell>>,
+    hv_doorbell: OnceCell<SharedBox<HVDoorbell>>,
 
     init_shadow_stack: Cell<Option<VirtAddr>>,
     context_switch_stack: Cell<Option<VirtAddr>>,
@@ -437,7 +438,7 @@ impl PerCpu {
             shared,
             ghcb: OnceCell::new(),
             hypercall_pages: RefCell::new(None),
-            hv_doorbell: Cell::new(None),
+            hv_doorbell: OnceCell::new(),
             init_shadow_stack: Cell::new(None),
             context_switch_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -616,8 +617,8 @@ impl PerCpu {
         unsafe { HypercallPagesGuard::new(RefMut::map(page_ref, |o| o.as_mut().unwrap())) }
     }
 
-    pub fn hv_doorbell(&self) -> Option<&'static HVDoorbell> {
-        self.hv_doorbell.get()
+    pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
+        self.hv_doorbell.get().map(Deref::deref)
     }
 
     pub fn process_hv_events_if_required(&self) {
@@ -627,10 +628,12 @@ impl PerCpu {
     }
 
     /// Gets a pointer to the location of the HV doorbell pointer in the
-    /// PerCpu structure. Pointers and references have the same layout, so
-    /// the return type is equivalent to `*const *const HVDoorbell`.
-    pub fn hv_doorbell_addr(&self) -> *const &'static HVDoorbell {
-        self.hv_doorbell.as_ptr().cast()
+    /// PerCpu structure.
+    pub fn hv_doorbell_addr(&self) -> *const *const HVDoorbell {
+        self.hv_doorbell
+            .get()
+            .map(SharedBox::ptr_ref)
+            .unwrap_or(ptr::null())
     }
 
     pub fn get_top_of_shadow_stack(&self) -> VirtAddr {
@@ -757,11 +760,9 @@ impl PerCpu {
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
         let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
-        assert!(
-            self.hv_doorbell.get().is_none(),
-            "Attempted to reinitialize the HV doorbell page"
-        );
-        self.hv_doorbell.set(Some(doorbell));
+        self.hv_doorbell
+            .set(doorbell)
+            .expect("Attempted to reinitialize HV doorbell page");
         Ok(())
     }
 

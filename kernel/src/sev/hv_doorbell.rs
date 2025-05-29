@@ -12,7 +12,6 @@ use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
 use core::arch::asm;
-use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 use zerocopy::FromBytes;
 
@@ -52,20 +51,14 @@ pub struct HVExtIntInfo {
 
 /// Allocates a new HV doorbell page and registers it on the hypervisor
 /// using the given GHCB.
-pub fn allocate_hv_doorbell_page(ghcb: &GHCB) -> Result<&'static HVDoorbell, SvsmError> {
+pub fn allocate_hv_doorbell_page(ghcb: &GHCB) -> Result<SharedBox<HVDoorbell>, SvsmError> {
     let page = SharedBox::<HVDoorbell>::try_new_zeroed()?;
 
     let vaddr = page.addr();
     let paddr = virt_to_phys(vaddr);
     ghcb.register_hv_doorbell(paddr)?;
 
-    // Create a static shared reference.
-    let ptr = page.leak();
-    // SAFETY: Any bit-pattern is valid for `HVDoorbell` and it tolerates
-    // unsynchronized writes from the host.
-    let doorbell = unsafe { ptr.as_ref() };
-
-    Ok(doorbell)
+    Ok(page)
 }
 
 #[repr(C)]
@@ -75,7 +68,7 @@ pub struct HVDoorbell {
     pub flags: AtomicU8,
     pub no_eoi_required: AtomicU8,
     pub per_vmpl_events: AtomicU8,
-    reserved_63_4: UnsafeCell<[u8; 60]>,
+    reserved_63_4: [AtomicU8; 60],
     pub per_vmpl: [HVExtIntInfo; 3],
 }
 
