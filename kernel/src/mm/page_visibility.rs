@@ -170,6 +170,14 @@ impl<T> SharedBox<T> {
         core::mem::forget(self);
         ptr
     }
+
+    // Gets the address of the inner pointer
+    pub fn ptr_ref(&self) -> *const *const T {
+        // We are casting a `*const NonNull<T>` to a `*const *const T`.
+        // The cast is valid because `NonNull<T>` is transparent over
+        // `*mut T`, and `*mut T` has the same layout as `*const T`.
+        (&raw const self.ptr).cast()
+    }
 }
 
 impl<T, const N: usize> SharedBox<[T; N]> {
