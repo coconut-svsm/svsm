@@ -40,6 +40,7 @@ release.workspace = true
 sha2 = { workspace = true, features = ["force-soft"] }
 uuid.workspace = true
 virtio-drivers = { workspace = true, optional = true }
+virtfw-varstore = { version = "0.2.4", optional = true }
 
 builtin = { workspace = true, optional = true }
 vstd = { workspace = true, optional = true}
@@ -60,6 +61,7 @@ verus_all = ["builtin", "vstd", "verify_proof/verus", "verify_external/verus", "
 verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
 virtio-drivers = ["dep:virtio-drivers"]
+uefivars = ["dep:virtfw-varstore"]
 
 [dev-dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
