@@ -67,6 +67,9 @@ fn uefi_mm_setup(params: &RequestParams) -> Result<(), SvsmReqError> {
     if !valid_phys_address(paddr) {
         return Err(SvsmReqError::invalid_address());
     }
+    if paddr.page_offset() != 0 {
+        return Err(SvsmReqError::invalid_address());
+    }
     if size == 0 {
         return Err(SvsmReqError::invalid_parameter());
     }
@@ -102,16 +105,18 @@ fn uefi_mm_request(_params: &RequestParams) -> Result<(), SvsmReqError> {
     if !valid_phys_address(paddr) {
         return Err(SvsmReqError::invalid_address());
     }
+    if paddr.page_offset() != 0 {
+        return Err(SvsmReqError::invalid_address());
+    }
     if buffer.size == 0 {
         return Err(SvsmReqError::invalid_parameter());
     }
 
     // map buffer
     let start = paddr.page_align();
-    let offset = paddr.page_offset();
     let end = (paddr + buffer.size).page_align_up();
     let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-    let vaddr = guard.virt_addr() + offset;
+    let vaddr = guard.virt_addr();
 
     // SAFETY: vaddr comes from a new mapped region.
     let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), buffer.size) };
