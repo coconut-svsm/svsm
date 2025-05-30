@@ -29,8 +29,8 @@ use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
 
 const SVSM_UEFI_MM_QUERY: u32 = 1;
-const SVSM_UEFI_MM_SETUP: u32 = 2;
-const SVSM_UEFI_MM_RESET: u32 = 3;
+const SVSM_UEFI_MM_REGISTER_BUFFER: u32 = 2;
+const SVSM_UEFI_MM_UNREGISTER_BUFFER: u32 = 3;
 const SVSM_UEFI_MM_REQUEST: u32 = 4;
 
 struct MmBuffer {
@@ -55,7 +55,7 @@ fn uefi_mm_query(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 }
 
 // setup communication buffer
-fn uefi_mm_setup(params: &RequestParams) -> Result<(), SvsmReqError> {
+fn uefi_mm_register_buffer(params: &RequestParams) -> Result<(), SvsmReqError> {
     let addr = params.rcx;
     let size = params.rdx;
 
@@ -84,7 +84,7 @@ fn uefi_mm_setup(params: &RequestParams) -> Result<(), SvsmReqError> {
 }
 
 // reset protocol
-fn uefi_mm_reset(_params: &RequestParams) -> Result<(), SvsmReqError> {
+fn uefi_mm_unregister_buffer(_params: &RequestParams) -> Result<(), SvsmReqError> {
     let mut buffer = BUFFER.lock();
     buffer.addr = 0;
     buffer.size = 0;
@@ -133,8 +133,8 @@ pub fn uefi_mm_protocol_request(
 ) -> Result<(), SvsmReqError> {
     match request {
         SVSM_UEFI_MM_QUERY => uefi_mm_query(params),
-        SVSM_UEFI_MM_SETUP => uefi_mm_setup(params),
-        SVSM_UEFI_MM_RESET => uefi_mm_reset(params),
+        SVSM_UEFI_MM_REGISTER_BUFFER => uefi_mm_register_buffer(params),
+        SVSM_UEFI_MM_UNREGISTER_BUFFER => uefi_mm_unregister_buffer(params),
         SVSM_UEFI_MM_REQUEST => uefi_mm_request(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
