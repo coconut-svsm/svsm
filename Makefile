@@ -3,7 +3,7 @@ ifneq ($(FEATURES),)
 SVSM_ARGS += --features ${FEATURES}
 endif
 
-FEATURES_TEST ?= virtio-drivers
+FEATURES_TEST ?= vtpm,virtio-drivers
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}

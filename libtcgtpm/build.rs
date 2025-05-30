@@ -27,6 +27,7 @@ fn main() {
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
         .clang_arg("-isystemdeps/libcrt/include/")
+        .clang_arg("-fno-pie") // libcrt.h hides symbols if pie is enabled
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .unwrap_or_else(|_| panic!("Unable to generate bindings for deps/libtcgtpm.h"));
