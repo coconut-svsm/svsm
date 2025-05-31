@@ -435,7 +435,7 @@ global_asm!(
     "#,
     concat!(".set CFG_NOSMAP, const_", cfg!(feature = "nosmap")),
     include_str!("../x86/smap.S"),
-    include_str!("entry.S"),
+    include_str!("svsm_entry.S"),
     IF = const RFlags::IF.bits(),
     IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     options(att_syntax)
