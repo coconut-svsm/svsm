@@ -10,6 +10,7 @@ CFLAGS += -I./include -nostdinc -nostdlib -mno-red-zone
 CFLAGS += -m64 -march=x86-64 -mno-sse2 -fPIE
 CFLAGS += -fno-stack-protector
 CFLAGS += -ffreestanding
+CFLAGS += -Wall -Werror
 
 CC = gcc
 
