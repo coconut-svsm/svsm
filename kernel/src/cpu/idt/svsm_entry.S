@@ -14,25 +14,25 @@ HV_DOORBELL_ADDR:
 .pushsection .entry.text, "ax"
 
 .macro push_regs
-        pushq   %rax
-        pushq   %rbx
-        pushq   %rcx
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
+	pushq	%rax
+	pushq	%rbx
+	pushq	%rcx
+	pushq	%rdx
+	pushq	%rsi
+	pushq	%rdi
+	pushq	%rbp
+	pushq	%r8
+	pushq	%r9
+	pushq	%r10
+	pushq	%r11
+	pushq	%r12
+	pushq	%r13
+	pushq	%r14
+	pushq	%r15
 	# rdsspq is a nop when shadow stacks are not supported. Make sure that
 	# rax is 0 if that's the case.
 	xorl	%eax, %eax
-	rdsspq  %rax
+	rdsspq	%rax
 	pushq	%rax
 .endm
 
@@ -42,7 +42,7 @@ asm_entry_\name:
 	asm_clac
 
 	.if \error_code == 0
-	pushq $0
+	pushq	$0
 	.endif
 	push_regs
 	movl	$\vector, %esi
@@ -58,7 +58,7 @@ asm_entry_\name:
 	asm_clac
 
 	.if \error_code == 0
-	pushq $0
+	pushq	$0
 	.endif
 	push_regs
 	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp)
@@ -115,8 +115,8 @@ asm_entry_hv:
 	// registers will need to be popped.
 	pushq	$0
 	pushq	%rax
-	pushq 	%rbx
-        pushq   %rcx
+	pushq	%rbx
+	pushq	%rcx
 	// Check whether interrupts were enabled at the time of #HV.  If so,
 	// commit to processing all #HV events immediately.
 	testl	${IF}, ({EXCEP_FLAGS_OFF} - {EXCEP_RCX_OFF})(%rsp)
@@ -127,18 +127,18 @@ asm_entry_hv:
 	leaq	switch_vmpl_window_start(%rip), %rbx
 	leaq	switch_vmpl_window_end(%rip), %rcx
 	cmp	%rbx, %rax
-	jb 	hv_not_vmpl_switch
+	jb	hv_not_vmpl_switch
 	cmp	%rcx, %rax
 	jae	hv_not_vmpl_switch
 	// RIP is in the return window, so update RIP to the cancel point.
 	leaq	switch_vmpl_cancel(%rip), %rbx
 	movq	%rbx, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	// Update RIP on the shadow stack to the cancel point.
-	cmpb    $0, {IS_CET_SUPPORTED}(%rip)
-        je 2f
-	rdsspq  %rax
-        wrssq	%rbx, 8(%rax)
-    2:
+	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+	je	2f
+	rdsspq	%rax
+	wrssq	%rbx, 8(%rax)
+2:
 	// Defer any further processing until interrupts can be processed.
 	jmp	postpone_hv
 hv_not_vmpl_switch:
@@ -182,10 +182,10 @@ hv_not_vmpl_switch:
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
 	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
-        je	2f
+	je	2f
 	movl	$3, %eax
 	incsspq	%rax
-    2:
+2:
 	jmp	handle_as_hv
 
 postpone_hv:
@@ -238,32 +238,32 @@ restart_hv:
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
 	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
-        je	2f
+	je	2f
 	movl	$3, %eax
 	incsspq	%rax
-    2:
-	
+2:
+
 continue_hv:
 	// At this point, only the dummy error code and first three registers
 	// have been pushed onto the stack.  Push the remainder to construct a
 	// full exception context.
-        pushq   %rdx
-        pushq   %rsi
-        pushq   %rdi
-        pushq   %rbp
-        pushq   %r8
-        pushq   %r9
-        pushq   %r10
-        pushq   %r11
-        pushq   %r12
-        pushq   %r13
-        pushq   %r14
-        pushq   %r15
-        # rdsspq is a nop when shadow stacks are not supported. Make sure that
+	pushq	%rdx
+	pushq	%rsi
+	pushq	%rdi
+	pushq	%rbp
+	pushq	%r8
+	pushq	%r9
+	pushq	%r10
+	pushq	%r11
+	pushq	%r12
+	pushq	%r13
+	pushq	%r14
+	pushq	%r15
+	# rdsspq is a nop when shadow stacks are not supported. Make sure that
 	# rdx is 0 if that's the case.
 	xorl	%edx, %edx
-	rdsspq  %rdx
-        pushq	%rdx
+	rdsspq	%rdx
+	pushq	%rdx
 handle_as_hv:
 	// Load the address of the #HV doorbell page.  The global address
 	// might not yet be configured, and the per-CPU page might also not
@@ -276,7 +276,7 @@ handle_as_hv:
 	testq	%rdi, %rdi
 	jz	default_return
 handle_as_hv_with_doorbell:
-	call 	process_hv_events
+	call	process_hv_events
 	// fall through to default_return
 
 .globl default_return
@@ -284,20 +284,20 @@ default_return:
 	// Ensure that interrupts are disabled before attempting any return.
 	cli
 	testb	$3, {EXCEP_CS_OFF}(%rsp) // Check CS RPL in exception frame
-	jnz 	return_user
+	jnz	return_user
 return_all_paths:
 	// If interrupts were previously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
 	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp) // check EFLAGS.IF in exception frame
-	jz 	begin_iret_return
-	movq 	HV_DOORBELL_ADDR(%rip), %rdi
-	test 	%rdi, %rdi
-	jz 	begin_iret_return
-	movq 	(%rdi), %rdi
-	test 	%rdi, %rdi
-	jz 	begin_iret_return
-	testw 	$0x8000, (%rdi)
+	jz	begin_iret_return
+	movq	HV_DOORBELL_ADDR(%rip), %rdi
+	test	%rdi, %rdi
+	jz	begin_iret_return
+	movq	(%rdi), %rdi
+	test	%rdi, %rdi
+	jz	begin_iret_return
+	testw	$0x8000, (%rdi)
 	// The memory access to the NoFurtherSignal bit must be the last
 	// instruction prior to the IRET RIP window checked by the #HV entry
 	// code above.  After this point, all code must execute within this
@@ -305,7 +305,7 @@ return_all_paths:
 	// detect any #HV that arrives after the check above, except for
 	// the specific case of processing pending #HV events.
 iret_return_window:
-	jnz 	handle_as_hv_with_doorbell
+	jnz	handle_as_hv_with_doorbell
 begin_iret_return:
 	// Reload registers without modifying the stack pointer so that if #HV
 	// occurs within this window, the saved registers are still intact.
@@ -333,12 +333,12 @@ default_iret:
 
 return_user:
 	// Put user-mode specific return code here
-	jmp 	return_all_paths
+	jmp	return_all_paths
 
 .globl return_new_task
 return_new_task:
-	call setup_user_task
-	jmp default_return
+	call	setup_user_task
+	jmp	default_return
 
 // #DE Divide-by-Zero-Error Exception (Vector 0)
 default_entry_no_ist	name=de		handler=panic			error_code=0	vector=0
