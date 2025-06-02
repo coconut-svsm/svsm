@@ -136,16 +136,16 @@ long syscall(long number, ...)
     return -1;
 }
 
-int usleep(unsigned usec)
+int usleep(useconds_t usec)
 {
     NOT_IMPLEMENTED;
     return -1;
 }
 
-int sleep(unsigned usec)
+unsigned int sleep(unsigned int seconds)
 {
     NOT_IMPLEMENTED;
-    return -1;
+    return seconds;
 }
 
 int timezone = 0;

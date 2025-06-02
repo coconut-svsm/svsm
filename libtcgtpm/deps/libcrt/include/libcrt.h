@@ -62,6 +62,8 @@
 #define __NEED_blksize_t
 #define __NEED_blkcnt_t
 
+#define __NEED_useconds_t
+
 #include <bits/alltypes.h>
 
 // errno.h
@@ -145,8 +147,8 @@ int issetugid(void);
 
 int getentropy(void *buffer, size_t length);
 long syscall(long number, ...);
-int usleep(unsigned usec);
-int sleep(unsigned usec);
+int usleep(useconds_t usec);
+unsigned int sleep(unsigned int seconds);
 
 // stdio.h
 
