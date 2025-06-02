@@ -4,6 +4,8 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
+extern crate alloc;
+
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
@@ -11,6 +13,7 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
+use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
 use core::{arch::asm, mem};
 
@@ -226,16 +229,26 @@ impl Iterator for StackUnwinder {
     }
 }
 
+fn print_stack_frame(frame: StackFrame) {
+    let mut annotated = false;
+    let mut msg = format!("  [{:016x}]", frame.rip);
+
+    if frame.is_exception_frame {
+        msg.push_str(" @");
+        annotated = true;
+    }
+    if !frame.is_aligned {
+        msg.push_str(if annotated { "#" } else { " #" });
+    }
+    log::info!("{}", msg);
+}
+
 pub fn print_stack(skip: usize) {
     let unwinder = StackUnwinder::unwind_this_cpu();
     log::info!("---BACKTRACE---:");
     for frame in unwinder.skip(skip) {
         match frame {
-            UnwoundStackFrame::Valid(item) => log::info!(
-                "  [{:016x}]{}",
-                item.rip,
-                if !item.is_aligned { " #" } else { "" }
-            ),
+            UnwoundStackFrame::Valid(item) => print_stack_frame(item),
             UnwoundStackFrame::Invalid => log::info!("  Invalid frame"),
         }
     }
