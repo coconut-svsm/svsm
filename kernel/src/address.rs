@@ -38,9 +38,7 @@ const fn sign_extend(addr: InnerAddr) -> InnerAddr {
 }
 
 #[verus_verify]
-pub trait Address:
-    Copy + From<InnerAddr> + Into<InnerAddr> + PartialEq + Eq + PartialOrd + Ord
-{
+pub trait Address: Copy + From<InnerAddr> + Into<InnerAddr> + Ord {
     /// Transform the address into its inner representation for easier
     /// arithmetic manipulation
     #[inline]
