@@ -8,7 +8,7 @@ use std::error::Error;
 use std::fs::metadata;
 
 use bootlib::kernel_launch::{
-    CPUID_PAGE, SECRETS_PAGE, STAGE2_BASE, STAGE2_STACK_PAGE, STAGE2_START,
+    CPUID_PAGE, SECRETS_PAGE, STAGE2_BASE, STAGE2_MAXLEN, STAGE2_STACK_PAGE, STAGE2_START,
 };
 use igvm_defs::PAGE_SIZE_4K;
 
@@ -107,6 +107,13 @@ impl GpaMap {
 
         // Obtain the lengths of the binary files
         let stage2_len = Self::get_metadata(&options.stage2)?.len() as usize;
+        if stage2_len > STAGE2_MAXLEN as usize {
+            return Err(format!(
+                "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+            )
+            .into());
+        }
+
         let kernel_elf_len = Self::get_metadata(&options.kernel)?.len() as usize;
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
