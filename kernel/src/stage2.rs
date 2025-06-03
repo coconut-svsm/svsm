@@ -156,6 +156,7 @@ fn setup_env(
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
+    // Must be done after init_percpu() to catch early #PFs
     early_idt_init();
 
     // Complete initializtion of the platform.  After that point, the console
@@ -495,8 +496,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     log::info!("Starting SVSM kernel...");
 
-    // Shut down the GHCB
     unsafe {
+        // Shut down the PerCpu instance
         shutdown_percpu();
 
         asm!("jmp *%rax",
