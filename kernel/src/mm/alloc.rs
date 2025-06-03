@@ -5,7 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::mem::{copy_bytes, write_bytes};
+use crate::cpu::mem::{unsafe_copy_bytes, write_bytes};
 use crate::error::SvsmError;
 use crate::fs::Buffer;
 use crate::locking::SpinLock;
@@ -947,7 +947,7 @@ impl PageRef {
         let size = PAGE_SIZE;
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
-            copy_bytes(src, dst, size);
+            unsafe_copy_bytes(src, dst, size);
         }
 
         Ok(PageRef {
@@ -964,7 +964,7 @@ impl PageRef {
         let size = buf.len();
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
-            copy_bytes(src, dst, size);
+            unsafe_copy_bytes(src, dst, size);
         }
     }
 
@@ -976,7 +976,7 @@ impl PageRef {
         let size = buf.len();
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
-            copy_bytes(src, dst, size);
+            unsafe_copy_bytes(src, dst, size);
         }
     }
 
