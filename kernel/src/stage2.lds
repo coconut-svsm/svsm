@@ -18,6 +18,10 @@ SECTIONS
 		*(.text)
 		*(.text.*)
 		. = ALIGN(16);
+		entry_code_start = .;
+		*(.entry.text)
+		entry_code_end = .;
+		. = ALIGN(16);
 		early_exception_table_start = .;
 		KEEP(*(__early_exception_table))
 		early_exception_table_end = .;

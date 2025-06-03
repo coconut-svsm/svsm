@@ -121,6 +121,8 @@ global_asm!(
         addq    $8, %rsp /* Skip error code */
         iretq
 
+        .pushsection .entry.text, "ax"
+
          /* Early tage 2 handler array setup */
     push_regs_no_ghcb:
         pushq   %rbx
@@ -147,6 +149,8 @@ global_asm!(
         call    stage2_generic_idt_handler_no_ghcb
         jmp     generic_idt_handler_return
 
+        .popsection
+
         .align 32
         .globl stage2_idt_handler_array_no_ghcb
     stage2_idt_handler_array_no_ghcb:
@@ -160,7 +164,9 @@ global_asm!(
         jmp     push_regs_no_ghcb
         i = i + 1
         .endr
-        
+
+        .pushsection .entry.text, "ax"
+
         /* Stage 2 handler array setup */
     push_regs_stage2:
         pushq   %rbx
@@ -186,6 +192,8 @@ global_asm!(
         movq    %rsp, %rdi
         call    stage2_generic_idt_handler
         jmp     generic_idt_handler_return
+
+        .popsection
 
         .align 32
         .globl stage2_idt_handler_array
