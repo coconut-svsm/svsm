@@ -29,7 +29,6 @@ HV_DOORBELL_ADDR:
         pushq   %r13
         pushq   %r14
         pushq   %r15
-	pushq   $0
 	# rdsspq is a nop when shadow stacks are not supported. Make sure that
 	# rax is 0 if that's the case.
 	xorl	%eax, %eax
@@ -260,7 +259,6 @@ continue_hv:
         pushq   %r13
         pushq   %r14
         pushq   %r15
-	pushq   $0
         # rdsspq is a nop when shadow stacks are not supported. Make sure that
 	# rdx is 0 if that's the case.
 	xorl	%edx, %edx
