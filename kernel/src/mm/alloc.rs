@@ -942,8 +942,8 @@ impl PageRef {
     pub fn try_copy_page(&self) -> Result<Self, SvsmError> {
         let virt_addr = allocate_file_page()?;
 
-        let src = self.virt_addr.bits();
-        let dst = virt_addr.bits();
+        let src = self.virt_addr.as_ptr::<u8>();
+        let dst = virt_addr.as_mut_ptr::<u8>();
         let size = PAGE_SIZE;
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
@@ -959,8 +959,8 @@ impl PageRef {
     pub fn write(&self, offset: usize, buf: &[u8]) {
         assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
 
-        let src = buf.as_ptr() as usize;
-        let dst = self.virt_addr.bits() + offset;
+        let src = buf.as_ptr();
+        let dst = (self.virt_addr + offset).as_mut_ptr();
         let size = buf.len();
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
@@ -971,8 +971,8 @@ impl PageRef {
     pub fn read(&self, offset: usize, buf: &mut [u8]) {
         assert!(offset.checked_add(buf.len()).unwrap() <= PAGE_SIZE);
 
-        let src = self.virt_addr.bits() + offset;
-        let dst = buf.as_mut_ptr() as usize;
+        let src = (self.virt_addr + offset).as_ptr();
+        let dst = buf.as_mut_ptr();
         let size = buf.len();
         unsafe {
             // SAFETY: `src` and `dst` are both valid.
@@ -1050,8 +1050,8 @@ impl PageRef {
     }
 
     pub fn fill(&self, offset: usize, value: u8) {
-        let dst = self.virt_addr.bits() + offset;
         let size = PAGE_SIZE.checked_sub(offset).unwrap();
+        let dst = (self.virt_addr + offset).as_mut_ptr::<u8>();
 
         unsafe {
             // SAFETY: `dst` is valid.

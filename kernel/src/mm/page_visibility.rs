@@ -132,13 +132,9 @@ impl<T> SharedBox<T> {
     where
         T: FromBytes + Copy,
     {
+        // SAFETY: `self.ptr` is valid. Any bitpattern is valid for `T`.
         unsafe {
-            // SAFETY: `self.ptr` is valid. Any bitpattern is valid for `T`.
-            unsafe_copy_bytes(
-                self.ptr.as_ptr() as usize,
-                out as *const T as usize,
-                size_of::<T>(),
-            );
+            unsafe_copy_bytes(self.ptr.as_ptr(), out, 1);
         }
     }
 
@@ -147,13 +143,9 @@ impl<T> SharedBox<T> {
     where
         T: Copy,
     {
+        // SAFETY: `self.ptr` is valid..
         unsafe {
-            // SAFETY: `self.ptr` is valid..
-            unsafe_copy_bytes(
-                value as *const T as usize,
-                self.ptr.as_ptr() as usize,
-                size_of::<T>(),
-            );
+            unsafe_copy_bytes(value, self.ptr.as_ptr(), 1);
         }
     }
 
@@ -175,9 +167,9 @@ impl<T, const N: usize> SharedBox<[T; N]> {
             return Err(SvsmReqError::invalid_parameter());
         }
 
+        // SAFETY: `self.ptr` is valid and we did a bounds check on `n`.
         unsafe {
-            // SAFETY: `self.ptr` is valid and we did a bounds check on `n`.
-            write_bytes(self.ptr.as_ptr() as usize, size_of::<T>() * n, 0);
+            write_bytes(self.ptr.as_ptr().cast::<T>(), n, 0);
         }
 
         Ok(())
@@ -192,14 +184,9 @@ impl<T, const N: usize> SharedBox<[T; N]> {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        let size = core::mem::size_of_val(outbuf);
+        // SAFETY: `self.ptr` is valid.
         unsafe {
-            // SAFETY: `self.ptr` is valid.
-            unsafe_copy_bytes(
-                self.ptr.as_ptr() as usize,
-                outbuf.as_mut_ptr() as usize,
-                size,
-            );
+            unsafe_copy_bytes(self.ptr.as_ptr().cast(), outbuf.as_mut_ptr(), outbuf.len());
         }
 
         Ok(())

@@ -25,7 +25,6 @@ use core::cell::RefMut;
 use core::marker::PhantomData;
 use core::mem;
 use core::mem::MaybeUninit;
-use core::ptr;
 
 use bitfield_struct::bitfield;
 
@@ -59,11 +58,7 @@ impl<H, T: ?Sized> HypercallInput<H, T> {
         // the destination pointer was determined when the input object was
         // created.
         unsafe {
-            unsafe_copy_bytes(
-                ptr::from_ref(header) as usize,
-                self.header as usize,
-                mem::size_of::<H>(),
-            );
+            unsafe_copy_bytes(header, self.header, 1);
         }
     }
 }
@@ -89,14 +84,14 @@ impl<H, T> HypercallInput<H, T> {
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn write_rep(&mut self, index: usize, item: T) {
         assert!(index < self.rep_count);
-        let addr = self.header as usize + mem::size_of::<H>() + (index * core::mem::size_of::<T>());
+        // SAFETY: the header pointer is valid and we bounds-check the
+        // index.
+        let dst = unsafe { self.header.add(1).cast::<T>().add(index) };
         // SAFETY: the source pointer is a safe reference, and the safety of
         // the destination pointer is guaranteed by the address calculation
         // at the time the input object was created, plus the bounds check
         // above.
-        unsafe {
-            unsafe_copy_bytes(ptr::from_ref(&item) as usize, addr, mem::size_of::<T>());
-        }
+        unsafe { unsafe_copy_bytes(&item, dst, 1) }
     }
 }
 
@@ -116,8 +111,9 @@ impl<T> HypercallOutput<T> {
 
     fn read(&self, index: usize) -> T {
         assert!(index < self.rep_count);
-        let addr = self.array as usize + (index * core::mem::size_of::<T>());
-
+        // SAFETY: the array pointer is valid and we bounds-check the
+        // index
+        let src = unsafe { self.array.add(index) };
         let mut item = MaybeUninit::<T>::uninit();
 
         // SAFETY: the source pointer is a safe reference, and the safety of
@@ -125,8 +121,7 @@ impl<T> HypercallOutput<T> {
         // at the time the input object was created, plus the bounds check
         // above.  The copy guarantees the initialization of the output object.
         unsafe {
-            unsafe_copy_bytes(addr, item.as_mut_ptr() as usize, mem::size_of::<T>());
-
+            unsafe_copy_bytes(src, item.as_mut_ptr(), 1);
             item.assume_init()
         }
     }
