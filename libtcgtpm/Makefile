@@ -169,6 +169,7 @@ $(TCGTPM_MAKEFILE):
 		./bootstrap && \
 		sed -i 's/^ax_pthread_ok=no/ax_pthread_ok=yes/' configure && \
 		./configure \
+			--disable-pthread \
 			EXTRA_CFLAGS="${TCGTPM_EXTRA_CFLAGS}" \
 			CFLAGS="${TCGTPM_CFLAGS}" \
 			LIBCRYPTO_LIBS="$(LIBCRT) $(LIBCRYPTO)" \
