@@ -392,4 +392,11 @@ _Noreturn void longjmp (jmp_buf, int);
 #define assert(x) ((void)((x) || (__assert_fail(#x, __FILE__, __LINE__, __func__),0)))
 _Noreturn void __assert_fail (const char *, const char *, int, const char *);
 
+// select.h
+#define FD_SETSIZE 1024
+typedef unsigned long fd_mask;
+typedef struct {
+	unsigned long fds_bits[FD_SETSIZE / 8 / sizeof(long)];
+} fd_set;
+
 #endif
