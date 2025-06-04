@@ -169,7 +169,7 @@ impl<T, const N: usize> SharedBox<[T; N]> {
 
         // SAFETY: `self.ptr` is valid and we did a bounds check on `n`.
         unsafe {
-            write_bytes(self.ptr.as_ptr() as usize, size_of::<T>() * n, 0);
+            write_bytes(self.ptr.as_ptr().cast::<T>(), n, 0);
         }
 
         Ok(())

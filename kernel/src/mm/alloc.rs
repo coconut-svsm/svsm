@@ -1050,8 +1050,8 @@ impl PageRef {
     }
 
     pub fn fill(&self, offset: usize, value: u8) {
-        let dst = self.virt_addr.bits() + offset;
         let size = PAGE_SIZE.checked_sub(offset).unwrap();
+        let dst = (self.virt_addr + offset).as_mut_ptr::<u8>();
 
         unsafe {
             // SAFETY: `dst` is valid.

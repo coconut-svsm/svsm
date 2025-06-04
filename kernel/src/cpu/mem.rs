@@ -30,7 +30,8 @@ pub unsafe fn unsafe_copy_bytes<T>(src: *const T, dst: *mut T, count: usize) {
 /// This function has all the safety requirements of `core::ptr::write_bytes` except
 /// that data races are explicitly permitted.
 #[inline(always)]
-pub unsafe fn write_bytes(dst: usize, size: usize, value: u8) {
+pub unsafe fn write_bytes<T>(dst: *mut T, count: usize, value: u8) {
+    let size = count * core::mem::size_of::<T>();
     // SAFETY: Inline assembly to perform a memory write.
     // The safery requirements of the parameters are delegated to the caller of
     // this function which is unsafe.
