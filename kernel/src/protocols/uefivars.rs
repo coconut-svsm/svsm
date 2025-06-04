@@ -31,6 +31,9 @@ use crate::protocols::RequestParams;
 
 const SVSM_UEFI_MM_REQUEST: u32 = 1;
 
+pub const UEFI_MM_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const UEFI_MM_PROTOCOL_VERSION_MAX: u32 = 1;
+
 static STORE: SpinLock<EfiVarStore> = SpinLock::new(EfiVarStore::new());
 
 fn check_buffer(addr: u64, size: usize) -> Result<(), SvsmReqError> {
