@@ -160,14 +160,9 @@ TCGTPM_EXTRA_CFLAGS = -I $(DEPS_DIR)/TpmConfiguration
 # Configure the TPM 2.0 Reference Implementation and remove the pthread requirement.
 # In fact, pthread is required only in the TPM simulator, but we
 # are not building the simulator.
-#
-# The https://github.com/TrustedComputingGroup/TPM/pull/7 will add support
-# for `--disable-pthread` in configure, for now let's do a hack and set
-# `ax_pthread_ok` to yes to make configure happy.
 $(TCGTPM_MAKEFILE):
 	(cd $(TCGTPM_DIR) && \
 		./bootstrap && \
-		sed -i 's/^ax_pthread_ok=no/ax_pthread_ok=yes/' configure && \
 		./configure \
 			--disable-pthread \
 			EXTRA_CFLAGS="${TCGTPM_EXTRA_CFLAGS}" \
