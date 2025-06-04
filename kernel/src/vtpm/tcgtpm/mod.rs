@@ -29,10 +29,14 @@ use crate::{
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
     vtpm::{
-        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA, TcgTpmSimulatorInterface, VtpmInterface,
-        VtpmProtocolInterface,
+        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA, SvsmVTpmError, TcgTpmSimulatorInterface,
+        VtpmInterface, VtpmProtocolInterface,
     },
 };
+
+// This selector is similar to the template selector, except the whole public key template
+// is part of the selector. There is no support for PCR selection or inSensitive or outsideInfo.
+const VTPM_SELECT_MTAUTH_EK: u64 = 0x0000_0000_0000_0001;
 
 #[derive(Debug, Clone, Default)]
 pub struct TcgTpm {
@@ -74,6 +78,18 @@ impl TcgTpm {
                 Err(SvsmReqError::incomplete())
             }
         }
+    }
+
+    fn select_primary_key_manifest(
+        &mut self,
+        tpmt_public: &[u8],
+    ) -> Result<Vec<u8>, SvsmVTpmError> {
+        // Use cached key for known templates.
+        if tpmt_public == &DEFAULT_PUBLIC_AREA[..] {
+            return self.get_ekpub().map_err(SvsmVTpmError::ReqError);
+        }
+
+        tss::create_ek(self, tpmt_public)
     }
 }
 
@@ -172,12 +188,39 @@ impl TcgTpmSimulatorInterface for TcgTpm {
     }
 }
 
+fn split_selector(selector: &[u8]) -> Result<(u64, &[u8]), SvsmReqError> {
+    if selector.len() < 8 {
+        log::error!("unexpected manifest selector length {}", selector.len());
+        return Err(SvsmReqError::invalid_parameter());
+    }
+    let tag = u64::from_le_bytes(selector[..8].try_into().unwrap());
+    Ok((tag, &selector[8..]))
+}
+
 impl VtpmInterface for TcgTpm {
     fn get_ekpub(&mut self) -> Result<Vec<u8>, SvsmReqError> {
         if self.ekpub.is_none() {
             self.ekpub = Some(tss::create_ek(self, &DEFAULT_PUBLIC_AREA[..])?);
         }
         self.ekpub.clone().ok_or_else(SvsmReqError::invalid_request)
+    }
+
+    fn select_manifest(&mut self, version: u32, selector: &[u8]) -> Result<Vec<u8>, SvsmVTpmError> {
+        // The only supported selector version is 0.
+        if version > 0 {
+            log::error!("unexpected manifest version number {}", version);
+            return Err(SvsmVTpmError::ReqError(SvsmReqError::invalid_parameter()));
+        }
+
+        let (tag, data) = split_selector(selector)?;
+        // The only supported selection kind is an endorsement hierarchy primary key.
+        match tag {
+            VTPM_SELECT_MTAUTH_EK => self.select_primary_key_manifest(data),
+            _ => {
+                log::error!("unknown selector tag {}", tag);
+                Err(SvsmVTpmError::ReqError(SvsmReqError::invalid_parameter()))
+            }
+        }
     }
 
     fn is_powered_on(&self) -> bool {
