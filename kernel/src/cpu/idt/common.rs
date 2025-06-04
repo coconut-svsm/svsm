@@ -18,7 +18,7 @@ use crate::mm::GuestPtr;
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
-use core::arch::{asm, global_asm};
+use core::arch::asm;
 use core::mem;
 use core::ops::Deref;
 
@@ -65,8 +65,7 @@ bitflags::bitflags! {
 #[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct X86ExceptionContext {
-    pub ssp: u64,
-    _padding: [u8; 8],
+    pub ssp: usize,
     pub regs: X86GeneralRegs,
     pub error_code: usize,
     pub frame: X86InterruptFrame,
@@ -428,35 +427,6 @@ pub fn is_exception_handler_return_site(rip: VirtAddr) -> bool {
     let end = VirtAddr::from(&raw const entry_code_end);
     (start..end).contains(&rip)
 }
-
-global_asm!(
-    r#"
-        /* Needed by the stack unwinder to recognize exception frames. */
-        .globl generic_idt_handler_return
-    generic_idt_handler_return:
-
-        popq    %r15
-        popq    %r14
-        popq    %r13
-        popq    %r12
-        popq    %r11
-        popq    %r10
-        popq    %r9
-        popq    %r8
-        popq    %rbp
-        popq    %rdi
-        popq    %rsi
-        popq    %rdx
-        popq    %rcx
-        popq    %rbx
-        popq    %rax
-
-        addq    $8, %rsp /* Skip error code */
-
-        iretq
-        "#,
-    options(att_syntax)
-);
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
