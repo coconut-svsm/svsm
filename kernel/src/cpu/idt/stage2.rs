@@ -86,6 +86,8 @@ global_asm!(
         .text
 
     generic_idt_handler_return:
+        addq    $8, %rsp /* Skip ssp */
+
         popq    %r15
         popq    %r14
         popq    %r13
@@ -126,6 +128,7 @@ global_asm!(
         pushq   %r14
         pushq   %r15
 
+        pushq   $0 /* ssp */
         movq    %rsp, %rdi
         call    stage2_generic_idt_handler_no_ghcb
         jmp     generic_idt_handler_return
@@ -165,6 +168,7 @@ global_asm!(
         pushq   %r14
         pushq   %r15
 
+        pushq   $0 /* ssp */
         movq    %rsp, %rdi
         call    stage2_generic_idt_handler
         jmp     generic_idt_handler_return
