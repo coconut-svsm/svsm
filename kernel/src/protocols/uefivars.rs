@@ -33,6 +33,9 @@ const SVSM_UEFI_MM_REGISTER_BUFFER: u32 = 1;
 const SVSM_UEFI_MM_UNREGISTER_BUFFER: u32 = 2;
 const SVSM_UEFI_MM_REQUEST_DOORBELL: u32 = 3;
 
+pub const UEFI_MM_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const UEFI_MM_PROTOCOL_VERSION_MAX: u32 = 1;
+
 struct MmBuffer {
     addr: u64,
     size: usize,
