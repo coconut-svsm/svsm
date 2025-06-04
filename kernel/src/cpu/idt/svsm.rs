@@ -26,6 +26,7 @@ use crate::mm::GuestPtr;
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use core::arch::global_asm;
+use core::mem::offset_of;
 
 use crate::syscall::*;
 use syscall::*;
@@ -437,6 +438,26 @@ global_asm!(
     include_str!("../x86/smap.S"),
     include_str!("svsm_entry.S"),
     IF = const RFlags::IF.bits(),
+    EXCEP_R15_OFF = const offset_of!(X86ExceptionContext, regs.r15),
+    EXCEP_R14_OFF = const offset_of!(X86ExceptionContext, regs.r14),
+    EXCEP_R13_OFF = const offset_of!(X86ExceptionContext, regs.r13),
+    EXCEP_R12_OFF = const offset_of!(X86ExceptionContext, regs.r12),
+    EXCEP_R11_OFF = const offset_of!(X86ExceptionContext, regs.r11),
+    EXCEP_R10_OFF = const offset_of!(X86ExceptionContext, regs.r10),
+    EXCEP_R9_OFF = const offset_of!(X86ExceptionContext, regs.r9),
+    EXCEP_R8_OFF = const offset_of!(X86ExceptionContext, regs.r8),
+    EXCEP_RBP_OFF = const offset_of!(X86ExceptionContext, regs.rbp),
+    EXCEP_RDI_OFF = const offset_of!(X86ExceptionContext, regs.rdi),
+    EXCEP_RSI_OFF = const offset_of!(X86ExceptionContext, regs.rsi),
+    EXCEP_RDX_OFF = const offset_of!(X86ExceptionContext, regs.rdx),
+    EXCEP_RCX_OFF = const offset_of!(X86ExceptionContext, regs.rcx),
+    EXCEP_RBX_OFF = const offset_of!(X86ExceptionContext, regs.rbx),
+    EXCEP_RAX_OFF = const offset_of!(X86ExceptionContext, regs.rax),
+    EXCEP_RIP_OFF = const offset_of!(X86ExceptionContext, frame.rip),
+    EXCEP_RSP_OFF = const offset_of!(X86ExceptionContext, frame.rsp),
+    EXCEP_CS_OFF = const offset_of!(X86ExceptionContext, frame.cs),
+    EXCEP_FLAGS_OFF = const offset_of!(X86ExceptionContext, frame.flags),
+    EXCEP_FRAME_OFF = const offset_of!(X86ExceptionContext, frame),
     IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
     options(att_syntax)
 );

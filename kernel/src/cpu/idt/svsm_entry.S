@@ -62,7 +62,7 @@ asm_entry_\name:
 	pushq $0
 	.endif
 	push_regs
-	testl 	${IF}, 0xA0(%rsp)
+	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp)
 	jz	L\@
 	sti
 L\@:
@@ -111,19 +111,20 @@ asm_entry_irq_\name:
 asm_entry_hv:
 	asm_clac
 
-	// Push a dummy error code, and only three registers.  If no #HV
-	// processing is required, then only these three registers will need to
-	// be popped.
+	// Push a dummy error code, and only three registers as scratch
+	// registers.  If no #HV processing is required, then only these three
+	// registers will need to be popped.
 	pushq	$0
 	pushq	%rax
 	pushq 	%rbx
         pushq   %rcx
 	// Check whether interrupts were enabled at the time of #HV.  If so,
 	// commit to processing all #HV events immediately.
-	testl 	${IF}, 0x30(%rsp)
+	testl	${IF}, ({EXCEP_FLAGS_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	jnz	continue_hv
+	// Fetch RIP from the trap frame.
+	movq	({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp), %rax
 	// Check whether the trap RIP is within the guest VMPL return window.
-	movq	0x20(%rsp), %rax // fetch RIP from the trap frame.
 	leaq	switch_vmpl_window_start(%rip), %rbx
 	leaq	switch_vmpl_window_end(%rip), %rcx
 	cmp	%rbx, %rax
@@ -132,7 +133,7 @@ asm_entry_hv:
 	jae	hv_not_vmpl_switch
 	// RIP is in the return window, so update RIP to the cancel point.
 	leaq	switch_vmpl_cancel(%rip), %rbx
-	movq	%rbx, 0x20(%rsp)
+	movq	%rbx, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	// Update RIP on the shadow stack to the cancel point.
 	cmpb    $0, {IS_CET_SUPPORTED}(%rip)
         je 2f
@@ -143,7 +144,7 @@ asm_entry_hv:
 	jmp	postpone_hv
 hv_not_vmpl_switch:
 	// Load the RSP value that was live at the time of the #HV.
-	movq	0x38(%rsp), %rcx
+	movq	({EXCEP_RSP_OFF} - {EXCEP_RCX_OFF})(%rsp), %rcx
 	// Check to see whether this interrupt occurred on the IRET path
 	leaq	iret_return_window(%rip), %rbx
 	cmp	%rbx, %rax
@@ -173,7 +174,7 @@ hv_not_vmpl_switch:
 	// required.  This could not be performed before the RIP check because
 	// the previous RIP determines where to find the previous EFLAGS.IF
 	// value on the stack.
-	testl	${IF}, 20*8(%rcx)
+	testl	${IF}, {EXCEP_FLAGS_OFF}(%rcx)
 	jz	postpone_hv
 	// Switch to the stack pointer from the previous exception, which
 	// points to the register save area, and continue with #HV
@@ -192,6 +193,7 @@ postpone_hv:
 	popq	%rcx
 	popq	%rbx
 	popq	%rax
+	// Skip error code.
 	addq	$8, %rsp
 	iretq
 
@@ -203,7 +205,11 @@ restart_hv:
 	// checked because the stack location of the previous EFLAGS.IF value
 	// was not known until RIP was determined to be at the IRET
 	// instruction.
-	testl	${IF}, 0x10(%rcx)
+	//
+	// At this point, RCX holds the stack pointer at the time of the
+	// IRET that was aborted.  In other words, it is pointing to
+	// &X86ExceptionContext.frame.
+	testl	${IF}, ({EXCEP_FLAGS_OFF} - {EXCEP_FRAME_OFF})(%rcx)
 	jz	postpone_hv
 	// Since interrupts were enabled in the previous exception frame,
 	// #HV processing is now required.  The previous RSP points to the
@@ -216,17 +222,19 @@ restart_hv:
 	// normally to create a complete exception context reflecting the
 	// register state at the time of the exception that was returning at
 	// the time the #HV arrived.
-	// At this point, RCX holds the stack pointer at the time of the
-	// IRET that was aborted.  The first QWORD below that pointer is
-	// reserved for the dummy error code, then the three QWORDS below that
-	// will hold the RAX, RBX, and RCX values, which are presently stored
-	// in the top three QWORDs of the current stack.
+	//
+	// The first QWORD below the RCX pointer is reserved for the dummy
+	// error code, then the three QWORDS below that will hold the RAX, RBX,
+	// and RCX values, which are presently stored in the top three QWORDs
+	// of the current stack.  Copy them back to the previous exception
+	// context and start reconstructing (or "taking over") it.
 	movq	0*8(%rsp), %rax
 	movq	%rax, -4*8(%rcx)
 	movq	1*8(%rsp), %rax
 	movq	%rax, -3*8(%rcx)
 	movq	2*8(%rsp), %rax
 	movq	%rax, -2*8(%rcx)
+	// Load the previous stack pointer and continue reconstruction at RDX.
 	leaq	-4*8(%rcx), %rsp
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
@@ -277,13 +285,13 @@ handle_as_hv_with_doorbell:
 default_return:
 	// Ensure that interrupts are disabled before attempting any return.
 	cli
-	testb	$3, 19*8(%rsp) // Check CS in exception frame
+	testb	$3, {EXCEP_CS_OFF}(%rsp) // Check CS RPL in exception frame
 	jnz 	return_user
 return_all_paths:
 	// If interrupts were previously available, then check whether any #HV
 	// events are pending.  If so, proceed as if the original trap was
 	// #HV.
-	testl 	${IF}, 20*8(%rsp) // check EFLAGS.IF in exception frame
+	testl	${IF}, {EXCEP_FLAGS_OFF}(%rsp) // check EFLAGS.IF in exception frame
 	jz 	begin_iret_return
 	movq 	HV_DOORBELL_ADDR(%rip), %rdi
 	test 	%rdi, %rdi
@@ -303,23 +311,24 @@ iret_return_window:
 begin_iret_return:
 	// Reload registers without modifying the stack pointer so that if #HV
 	// occurs within this window, the saved registers are still intact.
-	movq 	2*8(%rsp), %r15
-	movq 	3*8(%rsp), %r14
-	movq 	4*8(%rsp), %r13
-	movq 	5*8(%rsp), %r12
-	movq 	6*8(%rsp), %r11
-	movq 	7*8(%rsp), %r10
-	movq 	8*8(%rsp), %r9
-	movq 	9*8(%rsp), %r8
-	movq 	10*8(%rsp), %rbp
-	movq 	11*8(%rsp), %rdi
-	movq 	12*8(%rsp), %rsi
-	movq 	13*8(%rsp), %rdx
-	movq 	14*8(%rsp), %rcx
-	movq 	15*8(%rsp), %rbx
-	movq 	16*8(%rsp), %rax
+	movq	{EXCEP_R15_OFF}(%rsp), %r15
+	movq	{EXCEP_R14_OFF}(%rsp), %r14
+	movq	{EXCEP_R13_OFF}(%rsp), %r13
+	movq	{EXCEP_R12_OFF}(%rsp), %r12
+	movq	{EXCEP_R11_OFF}(%rsp), %r11
+	movq	{EXCEP_R10_OFF}(%rsp), %r10
+	movq	{EXCEP_R9_OFF}(%rsp), %r9
+	movq	{EXCEP_R8_OFF}(%rsp), %r8
+	movq	{EXCEP_RBP_OFF}(%rsp), %rbp
+	movq	{EXCEP_RDI_OFF}(%rsp), %rdi
+	movq	{EXCEP_RSI_OFF}(%rsp), %rsi
+	movq	{EXCEP_RDX_OFF}(%rsp), %rdx
+	movq	{EXCEP_RCX_OFF}(%rsp), %rcx
+	movq	{EXCEP_RBX_OFF}(%rsp), %rbx
+	movq	{EXCEP_RAX_OFF}(%rsp), %rax
 
-	addq 	$18*8, %rsp
+	// Skip error code.
+	addq	${EXCEP_FRAME_OFF}, %rsp
 
 default_iret:
 	iretq
