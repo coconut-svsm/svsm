@@ -31,6 +31,9 @@ use crate::protocols::errors::SvsmReqError;
 
 const SVSM_UEFI_MM_REQUEST: u32 = 1;
 
+pub const UEFI_MM_PROTOCOL_VERSION_MIN: u32 = 1;
+pub const UEFI_MM_PROTOCOL_VERSION_MAX: u32 = 1;
+
 // current edk2 uses 64k
 pub const UEFI_MM_BUFFER_LIMIT: usize = 256 * 1024;
 
