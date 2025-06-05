@@ -221,6 +221,8 @@ impl VtpmInterface for TcgTpm {
 
         self.signal_poweron(false)?;
         self.signal_nvon()?;
+	tss::startup(self)?;
+	ek_templates::populate_default(self)?;
 
         log::info!("VTPM: TPM 2.0 Reference Implementation initialized");
 
