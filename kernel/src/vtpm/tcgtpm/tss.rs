@@ -18,6 +18,9 @@ use alloc::vec::Vec;
 
 pub const TPM_RC_SUCCESS: u32 = 0;
 
+/// TPM_RC_2 + TPM_RC_FMT1 + TPM_RC_VALUE, expected from NV_UndefineSpace for unknown index.
+pub const TPM_RC2_RC_VALUE: u32 = 0x284;
+
 // PREREQUISITE: CMD must be at least 10 bytes long.
 // A TPM command result contains
 //
@@ -138,4 +141,97 @@ pub fn create_ek<T: TcgTpmSimulatorInterface>(
     // Note this is output from the TPM, so its value is trusted.
     let size_of_tpmt_public = u16::from_be_bytes([cmd[18], cmd[19]]);
     Ok(cmd[20..(20 + size_of_tpmt_public) as usize].to_vec())
+}
+
+/// Runs NV_Write to writes an NV data buffer to a given NV index at offset 0.
+///
+/// # Arguments
+///
+/// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send the command to.
+/// * `nvindex`: The index to be populated. Must already be defined.
+/// * `nv_buffer`: The TPM2B_MAX_NV_BUFFER of data to write to offset 0.
+pub fn write_nv<T: TcgTpmSimulatorInterface>(
+    vtpm: &T,
+    nvindex: u32,
+    nv_buffer: &[u8],
+) -> Result<(), SvsmVTpmError> {
+    let mut cmd = Vec::with_capacity(33 + nv_buffer.len());
+    cmd.extend_from_slice(&[
+        0x80, 0x02, // TPM_ST_SESSIONS
+        0x00, 0x00, 0x00, 0x00, // Placeholder for command size
+        0x00, 0x00, 0x01, 0x37, // TPM_CC_NV_WRITE
+        0x40, 0x00, 0x00, 0x0C, // TPM2_RH_PLATFORM
+    ]);
+    cmd.extend_from_slice(&nvindex.to_be_bytes()); // 4 bytes
+    extend_empty_auth(&mut cmd); // 11 bytes
+    let size: u16 = nv_buffer
+        .len()
+        .try_into()
+        .map_err(|_| SvsmVTpmError::ReqError(SvsmReqError::invalid_request()))?;
+    cmd.extend_from_slice(&size.to_be_bytes());
+    cmd.extend_from_slice(nv_buffer);
+    cmd.extend_from_slice(&[0x00, 0x00]); // offset 0
+    checked_send(vtpm, &mut cmd, /*set_len=*/ true)
+}
+
+/// Runs NV_DefineSpace to prepare an NV index for use.
+///
+/// # Arguments:
+///
+/// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send the command to.
+/// * `nv_public`: A TPM2B_NV_PUBLIC used for defining the index.
+///
+pub fn define_nv_space<T: TcgTpmSimulatorInterface>(
+    vtpm: &T,
+    nv_public: &[u8],
+) -> Result<(), SvsmVTpmError> {
+    let mut cmd = Vec::with_capacity(27 + nv_public.len());
+    cmd.extend_from_slice(&[
+        0x80, 0x02, // TPM_ST_SESSIONS
+        0x00, 0x00, 0x00, 0x00, // Placeholder for command size
+        0x00, 0x00, 0x01, 0x2A, // TPM_CC_NV_DefineSpace
+        0x40, 0x00, 0x00, 0x0C, // TPM2_RH_PLATFORM
+    ]);
+    extend_empty_auth(&mut cmd); // 11 bytes
+    cmd.extend_from_slice(&[0x00, 0x00]); // Empty authorization value for the index.
+    cmd.extend_from_slice(nv_public);
+    checked_send(vtpm, &mut cmd, /*set_len=*/ true)
+}
+
+/// Runs NV_UndefineSpace to remove an NV index.
+///
+/// # Arguments:
+///
+/// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send the command to.
+/// * `nvindex`: The index to be populated. Must already be defined.
+pub fn undefine_nv_space<T: TcgTpmSimulatorInterface>(
+    vtpm: &T,
+    nvindex: u32,
+) -> Result<(), SvsmVTpmError> {
+    let mut cmd = Vec::with_capacity(29);
+    cmd.extend_from_slice(&[
+        0x80, 0x02, // TPM_ST_SESSIONS
+        0x00, 0x00, 0x00, 0x00, // Placeholder for command size
+        0x00, 0x00, 0x01, 0x22, // TPM_CC_NV_UndefineSpace
+        0x40, 0x00, 0x00, 0x0C, // TPM2_RH_PLATFORM
+    ]);
+    extend_empty_auth(&mut cmd); // 11 bytes
+    cmd.extend_from_slice(&nvindex.to_be_bytes()); // 4 bytes
+    checked_send(vtpm, &mut cmd, /*set_len=*/ true)
+}
+
+/// Runs Startup with SU_CLEAR.
+///
+/// # Arguments:
+///
+/// * `vtpm`: An implementation of [`TcgTpmSimulatorInterface`] to send the command to.
+pub fn startup<T: TcgTpmSimulatorInterface>(vtpm: &T) -> Result<(), SvsmReqError> {
+    let startup_cmd: &mut [u8] = &mut [
+        0x80, 0x01, // Tag
+        0x00, 0x00, 0x00, 0x0c, // Command size
+        0x00, 0x00, 0x01, 0x44, // TPM_CC_STARTUP
+        0x00, 0x00, // TPM_SU_CLEAR
+    ];
+    let mut cmd_len = startup_cmd.len();
+    vtpm.send_tpm_command(startup_cmd, &mut cmd_len, 0)
 }

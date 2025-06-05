@@ -1157,6 +1157,7 @@ dependencies = [
  "elf",
  "gdbstub",
  "gdbstub_arch",
+ "getrandom",
  "igvm_defs",
  "intrusive-collections",
  "libtcgtpm",
