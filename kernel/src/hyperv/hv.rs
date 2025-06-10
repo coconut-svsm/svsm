@@ -129,12 +129,8 @@ impl<T> HypercallOutput<T> {
 
 #[derive(Debug)]
 pub struct HypercallPagesGuard<'a> {
-    // The page reference is never actually read; it exists here to bind the
-    // lifetime of the `Ref` to the lifetime of the `HypercallPagesGuard`.
-    // The input/output pages are unwrapped during construction.
-    _page_ref: RefMut<'a, (VirtPhysPair, VirtPhysPair)>,
-    pub input: VirtPhysPair,
-    pub output: VirtPhysPair,
+    pub input: RefMut<'a, VirtPhysPair>,
+    pub output: RefMut<'a, VirtPhysPair>,
     _irq_guard: IrqGuard,
 }
 
@@ -152,9 +148,8 @@ impl<'a> HypercallPagesGuard<'a> {
     /// responsible for ensuring that both virtual and physical addresses are
     /// correct and usable.
     pub unsafe fn new(page_ref: RefMut<'a, (VirtPhysPair, VirtPhysPair)>) -> Self {
-        let (input, output) = *page_ref;
+        let (input, output) = RefMut::map_split(page_ref, |r| (&mut r.0, &mut r.1));
         Self {
-            _page_ref: page_ref,
             input,
             output,
             _irq_guard: IrqGuard::new(),
