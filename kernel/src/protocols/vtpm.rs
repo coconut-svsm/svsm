@@ -8,13 +8,12 @@
 
 extern crate alloc;
 
-use core::{mem::size_of, slice::from_raw_parts_mut};
-
 use alloc::vec::Vec;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     address::{Address, PhysAddr},
-    mm::{valid_phys_address, GuestPtr, PerCPUPageMappingGuard},
+    mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest},
     protocols::{errors::SvsmReqError, RequestParams},
     types::PAGE_SIZE,
     vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
@@ -71,8 +70,8 @@ const SVSM_VTPM_QUERY: u32 = 0;
 const SVSM_VTPM_COMMAND: u32 = 1;
 
 /// TPM_SEND_COMMAND request structure (SVSM spec, table 16)
-#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
 struct TpmSendCommandRequest {
     /// MSSIM platform command ID
     command: u32,
@@ -87,55 +86,44 @@ struct TpmSendCommandRequest {
 impl TpmSendCommandRequest {
     // Take as slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
-        let buffer = buffer
-            .get(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
+        let request =
+            Self::ref_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())?;
 
-        // SAFETY: TpmSendCommandRequest has no invalid representations, as it
-        // is comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let request = unsafe { &*buffer.as_ptr().cast::<Self>() };
+        if !request.validate() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
 
         Ok(request)
     }
 
-    pub fn send(&self) -> Result<Vec<u8>, SvsmReqError> {
+    fn validate(&self) -> bool {
         // TODO: Before implementing locality, we need to agree what it means
         // to the platform
-        if self.locality != 0 {
-            return Err(SvsmReqError::invalid_parameter());
-        }
+        self.locality == 0
+            && self.command == TpmPlatformCommand::SendCommand as u32
+            && self.inbuf_size as usize <= SEND_COMMAND_REQ_INBUF_SIZE
+    }
 
-        let mut length = self.inbuf_size as usize;
+    pub fn send(&self) -> Result<Vec<u8>, SvsmReqError> {
+        let length = self.inbuf_size as usize;
 
         let tpm_cmd = self
             .inbuf
             .get(..length)
             .ok_or_else(SvsmReqError::invalid_parameter)?;
-        let mut buffer: Vec<u8> = Vec::with_capacity(SEND_COMMAND_RESP_OUTBUF_SIZE);
-        buffer.extend_from_slice(tpm_cmd);
-
-        // The buffer slice must be large enough to hold the TPM command response
-        buffer.resize(SEND_COMMAND_RESP_OUTBUF_SIZE, 0);
 
         let vtpm = vtpm_get_locked();
-        vtpm.send_tpm_command(buffer.as_mut_slice(), &mut length, self.locality)?;
+        let response = vtpm.send_tpm_command(tpm_cmd, self.locality)?;
 
-        if length > buffer.len() {
-            return Err(SvsmReqError::invalid_request());
-        }
-        buffer.truncate(length);
-
-        Ok(buffer)
+        Ok(response)
     }
 }
 
 const SEND_COMMAND_RESP_OUTBUF_SIZE: usize = PAGE_SIZE - 4;
 
 /// TPM_SEND_COMMAND response structure (SVSM spec, table 17)
-#[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
+#[derive(FromBytes, IntoBytes, Immutable, KnownLayout, Clone, Copy, Debug)]
 struct TpmSendCommandResponse {
     /// Size of the output buffer
     outbuf_size: u32,
@@ -146,17 +134,7 @@ struct TpmSendCommandResponse {
 impl TpmSendCommandResponse {
     // Take as slice and return a &mut Self
     pub fn try_from_as_mut_ref(buffer: &mut [u8]) -> Result<&mut Self, SvsmReqError> {
-        let buffer = buffer
-            .get_mut(..size_of::<Self>())
-            .ok_or_else(SvsmReqError::invalid_parameter)?;
-
-        // SAFETY: TpmSendCommandResponse has no invalid representations, as it
-        // is comprised entirely of integer types. It is repr(packed), so its
-        // required alignment is simply 1. We have checked the size, so this
-        // is entirely safe.
-        let response = unsafe { &mut *buffer.as_mut_ptr().cast::<Self>() };
-
-        Ok(response)
+        Self::mut_from_bytes(buffer).map_err(|_| SvsmReqError::invalid_parameter())
     }
 
     /// Write the response to the outbuf
@@ -190,12 +168,7 @@ fn vtpm_query_request(params: &mut RequestParams) -> Result<(), SvsmReqError> {
 ///
 /// * `buffer`: Contains the TpmSendCommandRequest. It will also be
 ///   used to store the TpmSendCommandResponse as a byte slice
-///
-/// # Returns
-///
-/// * `u32`: Number of bytes written back to `buffer` as part of
-///   the TpmSendCommandResponse
-fn tpm_send_command_request(buffer: &mut [u8]) -> Result<u32, SvsmReqError> {
+fn tpm_send_command_request(buffer: &mut [u8]) -> Result<(), SvsmReqError> {
     let outbuf: Vec<u8> = {
         let request = TpmSendCommandRequest::try_from_as_ref(buffer)?;
         request.send()?
@@ -203,7 +176,7 @@ fn tpm_send_command_request(buffer: &mut [u8]) -> Result<u32, SvsmReqError> {
     let response = TpmSendCommandResponse::try_from_as_mut_ref(buffer)?;
     let _ = response.set_outbuf(outbuf.as_slice());
 
-    Ok(outbuf.len() as u32)
+    Ok(())
 }
 
 fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
@@ -212,17 +185,6 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     if paddr.is_null() {
         return Err(SvsmReqError::invalid_parameter());
     }
-    if !valid_phys_address(paddr) {
-        return Err(SvsmReqError::invalid_address());
-    }
-
-    // The vTPM buffer size is one page, but it not required to be page aligned.
-    let start = paddr.page_align();
-    let offset = paddr.page_offset();
-    let end = (paddr + PAGE_SIZE).page_align_up();
-
-    let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
-    let vaddr = guard.virt_addr() + offset;
 
     // vTPM common request/response structure (SVSM spec, table 15)
     //
@@ -230,8 +192,7 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     //     IN: platform command
     //    OUT: platform command response size
 
-    // SAFETY: vaddr comes from a new mapped region.
-    let command = unsafe { GuestPtr::<u32>::new(vaddr).read()? };
+    let command = read_from_guest::<u32>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
 
     let cmd = TpmPlatformCommand::try_from(command)?;
 
@@ -239,21 +200,14 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
         return Err(SvsmReqError::unsupported_call());
     }
 
-    let buffer = unsafe { from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), PAGE_SIZE) };
-
-    let response_size = match cmd {
-        TpmPlatformCommand::SendCommand => tpm_send_command_request(buffer)?,
+    match cmd {
+        TpmPlatformCommand::SendCommand => {
+            // The vTPM buffer size is one page, but it not required to be page aligned.
+            let mut buffer = read_bytes_from_guest(paddr, PAGE_SIZE)?;
+            tpm_send_command_request(&mut buffer[..])?;
+            copy_slice_to_guest(&buffer[..], paddr)?;
+        }
     };
-
-    // SAFETY: vaddr points to a new mapped region.
-    // if paddr + sizeof::<u32>() goes to the folowing page, it should
-    // not be a problem since the end of the requested region is
-    // (paddr + PAGE_SIZE), which requests another page. So
-    // write(response_size) can only happen on valid memory, mapped
-    // by PerCPUPageMappingGuard::create().
-    unsafe {
-        GuestPtr::<u32>::new(vaddr).write(response_size)?;
-    }
 
     Ok(())
 }
