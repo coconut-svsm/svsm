@@ -11,7 +11,13 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
-C_BIT_POS=$("$SCRIPT_DIR/../utils/cbit" || true)
+C_BIT_UTIL="$SCRIPT_DIR/../utils/cbit"
+if [ ! -x "$C_BIT_UTIL" ]; then
+  echo "C-Bit util not found. Trying to build it..."
+  make -C "$SCRIPT_DIR/.." utils/cbit || true
+fi
+
+C_BIT_POS=$("$C_BIT_UTIL" || true)
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v
@@ -70,6 +76,10 @@ while [[ $# -gt 0 ]]; do
       CGS=nocc
       shift
       ;;
+    --)
+      shift
+      break
+      ;;
     -*|--*)
       echo "Unknown option $1"
       exit 1
@@ -126,7 +136,7 @@ fi
 if [ ! -z $IMAGE ]; then
   IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=on \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
-    -device scsi-hd,drive=disk0,bootindex=0"
+    -device scsi-hd,drive=disk0"
 fi
 
 if [ "$EUID" -ne 0 ]; then
@@ -176,4 +186,5 @@ $SUDO_CMD \
     $COM4_SERIAL \
     $QEMU_EXIT_DEVICE \
     $QEMU_TEST_IO_DEVICE \
-    $STATE_DEVICE
+    $STATE_DEVICE \
+    "$@"
