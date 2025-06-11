@@ -17,8 +17,13 @@
 //! is implemented by the virtfw_varstore crate.  The later implements
 //! the MM protocols needed to provide an UEFI variable store.
 
+extern crate alloc;
+use alloc::vec::Vec;
+use bitfield_struct::bitfield;
 use core::mem::size_of;
+use zerocopy::{Immutable, IntoBytes};
 
+use virtfw_libefi::efivar::ids::PK;
 use virtfw_varstore::mm::core::{MmCoreHeader, core_request_dispatch};
 use virtfw_varstore::store::EfiVarStore;
 
@@ -114,4 +119,42 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     store.quirk_disable_shim_reboot(true);
 
     Ok(())
+}
+
+#[bitfield(u32)]
+#[derive(IntoBytes, Immutable)]
+pub struct UefiMmManifestFlags {
+    // non-volatile uefi variables are written to persistent storage
+    pub persistent_nv_vars: bool,
+    // secure boot is enabled
+    pub secureboot_enabled: bool,
+    // secure boot databases ('db' + 'dbx') can be updated by the
+    // guest (assuming proper pkcs7 signature of course).
+    // This should only be set in case secure boot is enabled.
+    pub secureboot_db_update: bool,
+
+    #[bits(29)]
+    _reserved: u32,
+}
+
+#[allow(dead_code)]
+#[derive(IntoBytes, Immutable)]
+struct UefiMmManifest {
+    pub version: u32,
+    pub flags: UefiMmManifestFlags,
+}
+
+pub fn uefi_mm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
+    let store = STORE.lock();
+
+    let pk = store.get(&PK.into());
+    let sb = pk.is_ok();
+
+    let flags = UefiMmManifestFlags::new()
+        .with_persistent_nv_vars(false)
+        .with_secureboot_enabled(sb)
+        .with_secureboot_db_update(false);
+    let manifest = UefiMmManifest { version: 0, flags };
+
+    Ok(manifest.as_bytes().to_vec())
 }
