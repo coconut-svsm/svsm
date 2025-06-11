@@ -1976,6 +1976,7 @@ dependencies = [
  "verus_builtin",
  "verus_builtin_macros",
  "verus_stub",
+ "virtfw-libefi",
  "virtfw-varstore",
  "virtio-drivers",
  "vstd",
