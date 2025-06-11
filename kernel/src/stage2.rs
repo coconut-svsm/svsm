@@ -102,7 +102,7 @@ fn setup_env(
     platform: &mut dyn SvsmPlatform,
     launch_info: &Stage2LaunchInfo,
 ) {
-    GLOBAL_GDT.load();
+    GLOBAL_GDT.load_selectors();
     early_idt_init_no_ghcb();
 
     let debug_serial_port = config.debug_serial_port();
