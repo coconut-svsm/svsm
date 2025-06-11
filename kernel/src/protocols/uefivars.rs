@@ -96,6 +96,15 @@ pub fn uefi_mm_protocol_request(
 
 pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     let mut store = STORE.lock();
+
+    #[cfg(all(feature = "secureboot", not(test)))]
+    {
+        // hard coded configuration for now.
+        store.enroll_pk_mgmt();
+        store.enroll_db_microsoft_uefi();
+        store.enroll_dbx_native();
+    }
+
     store.reset();
 
     // In case a TPM is present, shim's fallback.efi will setup efi
