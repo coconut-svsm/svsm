@@ -101,7 +101,7 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     {
         // hard coded configuration for now.
         store.enroll_pk_mgmt();
-        store.enroll_db_microsoft_uefi();
+        store.enroll_db_test_insecure();
         store.enroll_dbx_native();
     }
 
