@@ -25,6 +25,8 @@ members = [
     "user/lib",
     # Init user-space module
     "user/init",
+    # device model module
+    "user/dm",
     # Release version identifier
     "release",
     # Virtio Drivers (MMIO)
@@ -48,6 +50,7 @@ syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
+userdm = { path = "user/dm" }
 release = { path = "release" }
 virtio-drivers = { path = "virtio-drivers" }
 

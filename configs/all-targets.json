@@ -53,6 +53,9 @@
         "modules": {
             "userinit": {
                 "path": "/init"
+            },
+            "userdm": {
+                "path": "/dm"
             }
         }
     }
