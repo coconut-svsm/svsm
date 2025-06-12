@@ -18,6 +18,10 @@
 // Add spec for convert traits
 pub mod convert;
 
+pub mod hw_spec;
+
+pub mod ptr;
+
 use builtin_macros::*;
 
 verus! {
