@@ -32,7 +32,7 @@ pub struct SnpReportRequest {
     ///        3: Reserved
     pub flags: u32,
     /// Reserved, must be zero
-    rsvd: [u8; 24],
+    pub rsvd: [u8; 24],
 }
 
 impl SnpReportRequest {
@@ -94,6 +94,10 @@ impl SnpReportResponse {
 
     pub fn measurement(&self) -> &[u8; 48] {
         &self.report.measurement
+    }
+
+    pub fn report(&self) -> &AttestationReport {
+        &self.report
     }
 }
 
