@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["USER_DATA_SIZE"],"enum":["SnpReportResponseStatus"],"struct":["AttestationReport","Signature","SnpReportRequest","SnpReportResponse","TcbVersion"]};

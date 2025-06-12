@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["bitmap_allocator","fw_meta","immut_after_init","memory_region","scoped","util"]};
