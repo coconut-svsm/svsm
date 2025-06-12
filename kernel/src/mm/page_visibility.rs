@@ -21,7 +21,7 @@ use crate::protocols::errors::SvsmReqError;
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 
-use zerocopy::{FromBytes, FromZeros};
+use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 
 /// Makes a virtual page shared by revoking its validation, updating the
 /// page state, and modifying the page tables accordingly.
@@ -36,7 +36,7 @@ use zerocopy::{FromBytes, FromZeros};
 /// Notably any objects at `vaddr` must tolerate unsynchronized writes of any
 /// bit pattern.  In addition, the caller must take responsibility for
 /// returning a page to the private state if it is ever freed.
-pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
+unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Revoke page validation before changing page state.
     SVSM_PLATFORM.validate_virtual_page_range(
         MemoryRegion::new(vaddr, PAGE_SIZE),
@@ -75,7 +75,7 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
 ///
 /// Converting the memory at `vaddr` must be safe within Rust's memory model.
 /// No outstanding references to the page may exist.
-pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
+unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
     flush_tlb_global_sync();
@@ -105,7 +105,7 @@ pub struct SharedBox<T> {
     ptr: NonNull<T>,
 }
 
-impl<T> SharedBox<T> {
+impl<T: FromZeros> SharedBox<T> {
     /// Allocate some memory and share it with the host.
     pub fn try_new_zeroed() -> Result<Self, SvsmError> {
         let page_box = PageBox::<MaybeUninit<T>>::try_new_zeroed()?;
@@ -114,14 +114,28 @@ impl<T> SharedBox<T> {
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
 
         for offset in (0..core::mem::size_of::<T>()).step_by(PAGE_SIZE) {
-            unsafe {
-                make_page_shared(vaddr + offset)?;
+            let r1 = unsafe { make_page_shared(vaddr + offset) };
+            if let Err(e1) = r1 {
+                for off in (0..offset).step_by(PAGE_SIZE) {
+                    // SAFETY: we previously marked this page as shared in this same function.
+                    let r2 = unsafe { make_page_private(vaddr + off) };
+                    if let Err(e2) = r2 {
+                        panic!(
+                            "Failed to restore page visibility ({e2:?}) after allocation failure"
+                        );
+                    }
+                }
+                // SAFETY: we previously allocated these pages in this same function
+                let _ = unsafe { PageBox::from_raw(ptr) };
+                return Err(e1);
             }
         }
 
         Ok(Self { ptr })
     }
+}
 
+impl<T> SharedBox<T> {
     /// Returns the virtual address of the memory.
     pub fn addr(&self) -> VirtAddr {
         VirtAddr::from(self.ptr.as_ptr())
@@ -141,9 +155,9 @@ impl<T> SharedBox<T> {
     /// Share `value` with the host.
     pub fn write_from(&mut self, value: &T)
     where
-        T: Copy,
+        T: Copy + IntoBytes + Immutable,
     {
-        // SAFETY: `self.ptr` is valid..
+        // SAFETY: `self.ptr` is valid. Value can be represented as a byte slice.
         unsafe {
             unsafe_copy_bytes(value, self.ptr.as_ptr(), 1);
         }

@@ -167,7 +167,7 @@ impl Default for SnpGuestRequestMsgHdr {
 
 /// `SNP_GUEST_REQUEST` message format
 #[repr(C, align(4096))]
-#[derive(Clone, Copy, Debug, FromBytes)]
+#[derive(Clone, Copy, Debug, FromBytes, IntoBytes, Immutable)]
 pub struct SnpGuestRequestMsg {
     hdr: SnpGuestRequestMsgHdr,
     pld: [u8; MSG_PAYLOAD_SIZE],
