@@ -6,6 +6,7 @@
 
 use crate::address::VirtAddr;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
+use crate::protocols::core::CORE_PROTOCOL_VERSION_MAX;
 use crate::sev::vmsa::VMPL_MAX;
 use crate::types::GUEST_VMPL;
 
@@ -103,7 +104,7 @@ impl SecretsPage {
         self.svsm_base = base;
         self.svsm_size = size;
         self.svsm_caa = caa_addr;
-        self.svsm_max_version = 1;
+        self.svsm_max_version = CORE_PROTOCOL_VERSION_MAX;
         self.svsm_guest_vmpl = GUEST_VMPL as u8;
     }
 
