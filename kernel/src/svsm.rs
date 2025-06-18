@@ -65,6 +65,9 @@ use release::COCONUT_VERSION;
 #[cfg(feature = "attest")]
 use kbs_types::Tee;
 
+#[cfg(feature = "vsock")]
+use svsm::vsock::virtio_vsock::initialize_vsock;
+
 extern "C" {
     static bsp_stack: u8;
     static bsp_stack_end: u8;
@@ -372,6 +375,9 @@ fn svsm_init() {
 
     #[cfg(feature = "virtio-drivers")]
     virtio_mmio_init();
+
+    #[cfg(feature = "vsock")]
+    initialize_vsock();
 
     #[cfg(feature = "attest")]
     {
