@@ -67,7 +67,7 @@ use svsm::svsm_paging::invalidate_early_boot_memory;
 use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
-#[cfg(all(feature = "virtio-drivers", feature = "block"))]
+#[cfg(all(feature = "virtio-drivers", any(feature = "block", feature = "vsock")))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
@@ -217,12 +217,19 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
 fn initialize_virtio_mmio(_boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+    #[cfg(any(feature = "block", feature = "vsock"))]
+    let mut slots = probe_mmio_slots(_boot_params);
+
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
-
-        let mut slots = probe_mmio_slots(_boot_params);
         initialize_block(&mut slots)?;
+    }
+
+    #[cfg(feature = "vsock")]
+    {
+        use svsm::vsock::virtio_vsock::initialize_vsock;
+        initialize_vsock(&mut slots)?;
     }
 
     Ok(())
