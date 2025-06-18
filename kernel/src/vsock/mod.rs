@@ -6,6 +6,8 @@
 
 pub mod api;
 pub mod error;
+#[cfg(feature = "virtio-drivers")]
+pub mod virtio_vsock;
 
 pub use error::VsockError;
 
