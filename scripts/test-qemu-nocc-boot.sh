@@ -10,7 +10,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 # When we see this string on the serial output, consider
 # SVSM booted and the test passed.
-SUCCESS="Terminating current task"
+SUCCESS="Terminating task init"
 
 # Fail the test after this timeout
 TIMEOUT=4s
