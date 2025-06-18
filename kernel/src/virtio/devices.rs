@@ -10,7 +10,9 @@ extern crate alloc;
 use alloc::boxed::Box;
 use core::ops::DerefMut;
 use core::ptr::NonNull;
+use core::sync::atomic::AtomicU32;
 use virtio_drivers::device::blk::VirtIOBlk;
+use virtio_drivers::device::socket::{VirtIOSocket, VsockConnectionManager};
 use virtio_drivers::transport::mmio::{MmioError, MmioTransport};
 use virtio_drivers::transport::{DeviceType, Transport};
 use virtio_drivers::PAGE_SIZE;
@@ -102,6 +104,69 @@ impl VirtIOBlkDevice {
     }
 }
 impl Drop for VirtIOBlkDevice {
+    fn drop(&mut self) {
+        let mut binding = MMIO_SLOTS.lock_write();
+        let slots = binding.as_mut().unwrap();
+
+        let slot = slots
+            .iter_mut()
+            .find(|slot| slot.addr == self.phys_addr)
+            .unwrap();
+        slot.free = true;
+    }
+}
+
+pub struct VirtIOVsockDevice {
+    pub device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<SvsmHal>>>,
+    pub first_free_port: AtomicU32,
+    _mmio_space: GlobalRangeGuard,
+    phys_addr: PhysAddr,
+}
+
+impl core::fmt::Debug for VirtIOVsockDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VirtIOVsockDevice").finish()
+    }
+}
+
+impl VirtIOVsockDevice {
+    pub fn new(slot: &mut MMIOSlot) -> Result<Box<Self>, SvsmError> {
+        virtio_init();
+
+        let mem = map_global_range_4k_shared(slot.addr, PAGE_SIZE, PTEntryFlags::data())?;
+
+        // Not expected to fail, because mem exists.
+        let header = NonNull::new(mem.addr().as_mut_ptr()).unwrap();
+
+        // SAFETY: `header` is the MMIO config area; we have to trust the content is valid.
+        let transport = unsafe {
+            // TODO: Use more detailed error types ?
+            MmioTransport::<SvsmHal>::new(header).map_err(|e| match e {
+                MmioError::BadMagic(_) => VirtioError::InvalidDevice,
+                MmioError::UnsupportedVersion(_) => VirtioError::InvalidDevice,
+                MmioError::ZeroDeviceId => VirtioError::InvalidDevice,
+            })?
+        };
+
+        if transport.device_type() != DeviceType::Socket {
+            return Err(VirtioError::InvalidDeviceType)?;
+        }
+
+        let vsk = VirtIOSocket::new(transport).map_err(|_| VirtioError::InvalidDevice)?;
+        let mgr = VsockConnectionManager::new(vsk);
+
+        slot.free = false;
+
+        Ok(Box::new(VirtIOVsockDevice {
+            device: SpinLock::new(mgr),
+            first_free_port: AtomicU32::new(1024),
+            _mmio_space: mem,
+            phys_addr: slot.addr,
+        }))
+    }
+}
+
+impl Drop for VirtIOVsockDevice {
     fn drop(&mut self) {
         let mut binding = MMIO_SLOTS.lock_write();
         let slots = binding.as_mut().unwrap();
