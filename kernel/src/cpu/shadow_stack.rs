@@ -42,6 +42,16 @@ pub fn is_cet_ss_supported() -> bool {
     IS_CET_SUPPORTED.load(Ordering::Relaxed)
 }
 
+pub fn shadow_stack_info() {
+    log::info!(
+        "Kernel shadow stacks {}",
+        match is_cet_ss_supported() {
+            true => "enabled",
+            false => "not supported",
+        }
+    );
+}
+
 /// Enable shadow stacks.
 ///
 /// This code is placed in a macro instead of a function so that we don't have
