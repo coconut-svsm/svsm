@@ -283,6 +283,41 @@ pub fn start_kernel_task(
     Ok(task)
 }
 
+/// Creates, initializes and starts a new kernel thread of the currently
+/// running kernel task. Note that the thread has already started to run before
+/// this function returns.
+///
+/// # Arguments
+///
+/// * `entry` -  The function to run as the new task's main function
+/// * `start_parameter` - Parameter of type `usize` to pass to the new threads main function.
+///
+/// # Returns
+///
+/// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
+pub fn start_kernel_thread(
+    entry: extern "C" fn(usize),
+    start_parameter: usize,
+) -> Result<TaskPointer, SvsmError> {
+    let current_task = current_task();
+    let cpu = this_cpu();
+    let task = Task::create_thread(
+        cpu,
+        entry,
+        start_parameter,
+        current_task.get_task_name().clone(),
+        current_task,
+    )?;
+    TASKLIST.lock().list().push_back(task.clone());
+
+    // Put task on the runqueue of this CPU
+    cpu.runqueue().lock_write().handle_task(task.clone());
+
+    schedule();
+
+    Ok(task)
+}
+
 /// Creates and initializes the kernel state of a new user task. The task is
 /// not added to the TASKLIST or run-queue yet.
 ///
