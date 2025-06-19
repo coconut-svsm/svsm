@@ -5,11 +5,14 @@
 //
 // Author: Joerg Roedel <joerg.roedel@amd.com>
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::VMR;
+use crate::mm::vm::{Mapping, VMR};
 use crate::mm::{alloc::AllocError, SIZE_LEVEL3, SVSM_PERTASK_BASE};
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::MemoryRegion;
@@ -117,5 +120,49 @@ impl TaskMM {
     /// `True` if user-mode `[VMR]` is present, `False` otherwise.
     pub fn has_user(&self) -> bool {
         self.vm_user_range.is_some()
+    }
+}
+
+/// Guard a per-task kernel mapping and unmap it when going out of scope.
+pub struct TaskKernelMapping {
+    /// Pointer the struct `[TaskMM]` which contains the mapping.
+    mm: Arc<TaskMM>,
+    /// Virtual address of the mapping.
+    va: VirtAddr,
+}
+
+impl TaskKernelMapping {
+    /// Insert a given `[Mapping]` into the kernel address part of the task and
+    /// return a new `[TaskKernelMapping]`.
+    ///
+    /// # Arguments
+    ///
+    /// * `mm` - Pointer to struct `[TaskMM]` to map into.
+    /// * `mapping` - Pointer to `[Mapping]` to put into the kernel-part of the `TaskMM`.
+    ///
+    /// # Returns
+    ///
+    /// `Some(TaskKernelMapping)` on success, `Err(SvsmError)` on failure.
+    pub fn new(mm: Arc<TaskMM>, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+        let va = mm.kernel_range().insert(mapping)?;
+        Ok(Self { mm, va })
+    }
+
+    /// Get the virtual address the guarded mapping starts at.
+    ///
+    /// # Returns
+    ///
+    /// Virtual start address of contained mapping.
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.va
+    }
+}
+
+impl Drop for TaskKernelMapping {
+    fn drop(&mut self) {
+        self.mm
+            .kernel_range()
+            .remove(self.va)
+            .expect("Error removing TaskKernelMapping");
     }
 }
