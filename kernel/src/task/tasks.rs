@@ -212,6 +212,9 @@ struct CreateTaskArguments {
 
     // The root directory that will be associated with this task.
     rootdir: Arc<dyn Directory>,
+
+    // Share state with another task (aka create a thread)
+    thread_of: Option<TaskPointer>,
 }
 
 impl Task {
@@ -220,7 +223,16 @@ impl Task {
 
         cpu.populate_page_table(&mut pgtable);
 
-        let task_mm = Arc::new(TaskMM::create(args.vm_user_range)?);
+        let (task_mm, objtree) = {
+            if let Some(parent_thread) = args.thread_of {
+                (parent_thread.mm.clone(), parent_thread.objs.clone())
+            } else {
+                (
+                    Arc::new(TaskMM::create(args.vm_user_range)?),
+                    Arc::new(RWLock::new(BTreeMap::new())),
+                )
+            }
+        };
 
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
@@ -307,7 +319,7 @@ impl Task {
             rootdir: args.rootdir,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
-            objs: Arc::new(RWLock::new(BTreeMap::new())),
+            objs: objtree,
         }))
     }
 
@@ -323,6 +335,7 @@ impl Task {
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
+            thread_of: None,
         };
         Self::create_common(cpu, create_args)
     }
@@ -345,6 +358,39 @@ impl Task {
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
+            thread_of: None,
+        };
+        Self::create_common(cpu, create_args)
+    }
+
+    /// Create a new thread for an existing task.
+    ///
+    /// # Arguments
+    ///
+    /// * `cpu` - Reference to the `[PerCpu]` structure of the local CPU.
+    /// * `entry` - Pointer the function to run in the thread.
+    /// * `start_parameter` - `usize` to pass as parameter when calling `entry`.
+    /// * `name` - User-visible name of the thread.
+    /// * `thread_of` - Pointer to existing task for which the new thread will
+    ///   be created.
+    ///
+    /// # Returns
+    ///
+    /// `Some(TaskPointer)` with the new thread on success, `Err(SvsmError)` on failure.
+    pub fn create_thread(
+        cpu: &PerCpu,
+        entry: extern "C" fn(usize),
+        start_parameter: usize,
+        name: String,
+        thread: TaskPointer,
+    ) -> Result<TaskPointer, SvsmError> {
+        let create_args = CreateTaskArguments {
+            entry: entry as usize,
+            start_parameter,
+            name,
+            vm_user_range: None,
+            rootdir: opendir("/")?,
+            thread_of: Some(thread),
         };
         Self::create_common(cpu, create_args)
     }
