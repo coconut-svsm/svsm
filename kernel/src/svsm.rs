@@ -21,6 +21,7 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
+use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
 use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::cpu::shadow_stack::{
     determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
@@ -174,7 +175,14 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
     GLOBAL_GDT.load_selectors();
-    early_idt_init();
+
+    let mut early_idt = [IdtEntry::default(); EARLY_IDT_ENTRIES];
+    let mut idt = IDT::new(&mut early_idt);
+    // SAFETY: the IDT here will remain in scope until the full IDT is
+    // initialized later, and thus can safely be used as the early IDT.
+    unsafe {
+        early_idt_init(&mut idt);
+    }
 
     // Capture the debug serial port before the launch info disappears from
     // the address space.
@@ -249,7 +257,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
         VirtAddr::from(&raw const bsp_stack_end),
     ));
 
-    idt_init();
+    idt_init().expect("Failed to allocate IDT");
 
     if is_cet_ss_supported() {
         enable_shadow_stacks!(bsp_percpu);

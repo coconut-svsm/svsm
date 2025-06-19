@@ -11,8 +11,8 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::super::x86::apic_eoi;
 use super::common::{
-    idt_mut, user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR,
-    CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, INT_INJ_VECTOR, IPI_VECTOR,
+    user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR,
+    DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR,
     MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR,
     SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR, XF_VECTOR,
 };
@@ -22,14 +22,29 @@ use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
-use crate::mm::GuestPtr;
+use crate::error::SvsmError;
+use crate::mm::{GuestPtr, PageBox, PAGE_SIZE};
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::arch::global_asm;
+use core::mem;
 use core::mem::offset_of;
+use core::num::NonZero;
 
 use crate::syscall::*;
 use syscall::*;
+
+pub static GLOBAL_IDT: ImmutAfterInitCell<IDT<'_>> = ImmutAfterInitCell::uninit();
+
+pub fn load_static_idt() {
+    // SAFETY: If the static reference is initialized, then it points to data
+    // that can safely be used as an IDT with a static lifetime.  If it is
+    // not initialized, then the borrow will panic.
+    unsafe {
+        GLOBAL_IDT.load();
+    }
+}
 
 extern "C" {
     pub fn return_new_task();
@@ -65,12 +80,11 @@ extern "C" {
     pub static mut HV_DOORBELL_ADDR: usize;
 }
 
-fn init_ist_vectors() {
-    idt_mut().set_entry(DF_VECTOR, IdtEntry::ist_entry(asm_entry_df, IST_DF.get()));
+fn init_ist_vectors(idt: &mut IDT<'_>) {
+    idt.set_entry(DF_VECTOR, IdtEntry::ist_entry(asm_entry_df, IST_DF.get()));
 }
 
-pub fn early_idt_init() {
-    let mut idt = idt_mut();
+fn init_idt_exceptions(idt: &mut IDT<'_>) {
     idt.set_entry(DE_VECTOR, IdtEntry::entry(asm_entry_de));
     idt.set_entry(DB_VECTOR, IdtEntry::entry(asm_entry_db));
     idt.set_entry(NMI_VECTOR, IdtEntry::entry(asm_entry_nmi));
@@ -94,22 +108,42 @@ pub fn early_idt_init() {
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
     idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
-    idt.set_entry(INT_INJ_VECTOR, IdtEntry::entry(asm_entry_irq_int_inj));
+}
+
+/// # Safety
+/// The caller must guarantee that the IDT object passed in does not go out of
+/// scope before the IDT is reloaded with a different object.
+pub unsafe fn early_idt_init(idt: &mut IDT<'_>) {
+    // Initialize the exception portion of the IDT.
+    init_idt_exceptions(idt);
+
+    // Load IDT
+    // SAFETY: the caller guarantees that the lifetime of the IDT object is
+    // appropriate for use here.
+    unsafe {
+        idt.load();
+    }
+}
+
+pub fn idt_init() -> Result<(), SvsmError> {
+    // Allocate a page of memory to use as the IDT.
+    let count = NonZero::new(PAGE_SIZE / mem::size_of::<IdtEntry>()).unwrap();
+    let idt_page = PageBox::<[IdtEntry]>::try_new_slice(IdtEntry::no_handler(), count)?;
+    let mut idt = IDT::new_from_page(idt_page);
+
+    // Configure the exception vectors
+    init_idt_exceptions(&mut idt);
+
+    // Switch #PF handler to the default one
+    idt.set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf));
 
     // Interupts
+    idt.set_entry(INT_INJ_VECTOR, IdtEntry::entry(asm_entry_irq_int_inj));
     idt.set_entry(0x80, IdtEntry::user_entry(asm_entry_int80));
     idt.set_entry(IPI_VECTOR, IdtEntry::entry(asm_entry_irq_ipi));
 
-    // Load IDT
-    idt.load();
-}
-
-pub fn idt_init() {
-    // Switch #PF handler to the default one
-    idt_mut().set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf));
-
     // Set IST vectors
-    init_ist_vectors();
+    init_ist_vectors(&mut idt);
 
     // SAFETY:
     // Capture an address that can be used by assembly code to read the #HV
@@ -124,6 +158,14 @@ pub fn idt_init() {
     unsafe {
         HV_DOORBELL_ADDR = this_cpu().hv_doorbell_addr() as usize;
     };
+
+    // SAFETY: the IDT page was allocated above and is permanently associated
+    // with the IDT, so it can safely be loaded now.
+    unsafe {
+        idt.load();
+    }
+
+    GLOBAL_IDT.init(idt).map_err(|_| SvsmError::PlatformInit)
 }
 
 // Debug handler

@@ -13,14 +13,12 @@ use crate::cpu::gdt::GLOBAL_GDT;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
-use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
-use crate::mm::GuestPtr;
+use crate::mm::{GuestPtr, PageBox};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
-use core::ops::Deref;
 
 pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
@@ -305,24 +303,31 @@ impl IdtEntry {
     }
 }
 
-const IDT_ENTRIES: usize = 256;
+pub const EARLY_IDT_ENTRIES: usize = 32;
 
 #[repr(C, packed(2))]
 #[derive(Default, Clone, Copy, Debug)]
 struct IdtDesc {
-    size: u16,
+    limit: u16,
     address: VirtAddr,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct IDT {
-    entries: [IdtEntry; IDT_ENTRIES],
+#[derive(Debug)]
+pub struct IDT<'a> {
+    entries: &'a mut [IdtEntry],
 }
 
-impl IDT {
-    pub const fn new() -> Self {
-        IDT {
-            entries: [IdtEntry::no_handler(); IDT_ENTRIES],
+impl<'a> IDT<'a> {
+    pub const fn new(entries: &'a mut [IdtEntry]) -> Self {
+        Self { entries }
+    }
+
+    /// # Safety
+    /// The caller is required to supply the virtual address of a freshly
+    /// allocated page.
+    pub fn new_from_page(page: PageBox<[IdtEntry]>) -> Self {
+        Self {
+            entries: PageBox::leak(page),
         }
     }
 
@@ -343,14 +348,21 @@ impl IDT {
         self
     }
 
+    pub fn base_limit(&self) -> (u64, u16) {
+        let base: *const IdtEntry = self.entries.as_ptr();
+        let limit = mem::size_of_val(self.entries) - 1;
+        (base as u64, limit.try_into().unwrap())
+    }
+
     /// Load an IDT.
     /// # Safety
     /// The caller must guarantee that the IDT lifetime must be static so that
     /// its entries are always available to the CPU.
     pub unsafe fn load(&self) {
-        let desc: IdtDesc = IdtDesc {
-            size: (IDT_ENTRIES * 16) as u16,
-            address: VirtAddr::from(self.entries.as_ptr()),
+        let (base, limit) = self.base_limit();
+        let desc = IdtDesc {
+            limit,
+            address: VirtAddr::from(base),
         };
 
         // SAFETY: Inline assembly to load an IDT. `'static` lifetime ensures
@@ -361,51 +373,9 @@ impl IDT {
     }
 }
 
-impl Default for IDT {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl WriteLockGuard<'static, IDT> {
-    pub fn load(&self) {
-        // SAFETY: the lifetime of the lock guard is static, so the safety
-        // requirement of IDT::load are met.
-        unsafe {
-            self.deref().load();
-        }
-    }
-}
-
-impl ReadLockGuard<'static, IDT> {
-    pub fn load(&self) {
-        // SAFETY: the lifetime of the lock guard is static, so the safety
-        // requirement of IDT::load are met.
-        unsafe {
-            self.deref().load();
-        }
-    }
-
-    pub fn base_limit(&self) -> (u64, u16) {
-        let base: *const IDT = core::ptr::from_ref(self);
-        let limit = (IDT_ENTRIES * mem::size_of::<IdtEntry>()) as u16;
-        (base as u64, limit)
-    }
-}
-
-static IDT: RWLock<IDT> = RWLock::new(IDT::new());
-
-pub fn idt() -> ReadLockGuard<'static, IDT> {
-    IDT.lock_read()
-}
-
-pub fn idt_mut() -> WriteLockGuard<'static, IDT> {
-    IDT.lock_write()
-}
-
 pub fn triple_fault() {
     let desc: IdtDesc = IdtDesc {
-        size: 0,
+        limit: 0,
         address: VirtAddr::from(0u64),
     };
 
