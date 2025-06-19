@@ -51,7 +51,7 @@ pub struct TaskMM {
     /// Virtual address region that has been allocated for this task.
     /// This is not referenced but must be stored so that it is dropped when
     /// the Task is dropped.
-    ktask_region: TaskVirtualRegionGuard,
+    _ktask_region: TaskVirtualRegionGuard,
 
     /// Task virtual memory range for use at CPL 0
     vm_kernel_range: VMR,
@@ -86,19 +86,10 @@ impl TaskMM {
         }
 
         Ok(TaskMM {
-            ktask_region,
+            _ktask_region: ktask_region,
             vm_kernel_range,
             vm_user_range: user_vmr,
         })
-    }
-
-    /// Returns the per-Task virtual address region.
-    ///
-    /// # Returns
-    ///
-    /// A `[MemoryRegion]` with the per-task virtual address range bounds.
-    pub fn region(&self) -> MemoryRegion<VirtAddr> {
-        self.ktask_region.vaddr_region()
     }
 
     /// Return a reference to the `[VMR]` for the per-task kernel region.
