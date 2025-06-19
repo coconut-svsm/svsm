@@ -6,6 +6,7 @@
 
 mod exec;
 mod schedule;
+mod task_mm;
 mod tasks;
 mod waiting;
 
