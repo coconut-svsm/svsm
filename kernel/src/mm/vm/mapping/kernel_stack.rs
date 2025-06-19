@@ -9,6 +9,7 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::address_space::STACK_SIZE;
 use crate::mm::pagetable::PTEntryFlags;
+use crate::mm::PageRef;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::{page_align_up, MemoryRegion};
 
@@ -23,6 +24,8 @@ pub struct VMKernelStack {
     alloc: RawAllocMapping,
     /// Number of guard pages to reserve address space for
     guard_pages: usize,
+    /// `True` for shadow stacks
+    shadow: bool,
 }
 
 impl VMKernelStack {
@@ -66,11 +69,12 @@ impl VMKernelStack {
     /// # Arguments
     ///
     /// * `size` - Size of the kernel stack, without guard pages
+    /// * `shadow` - Whether this mapping is for a shadow stack
     ///
     /// # Returns
     ///
     /// Initialized stack on success, Err(SvsmError::Mem) on error
-    pub fn new_size(size: usize) -> Result<Self, SvsmError> {
+    fn new_size(size: usize, shadow: bool) -> Result<Self, SvsmError> {
         // Make sure size is page-aligned
         let size = page_align_up(size);
         // At least two guard-pages needed
@@ -79,6 +83,7 @@ impl VMKernelStack {
         let mut stack = VMKernelStack {
             alloc: RawAllocMapping::new(size),
             guard_pages,
+            shadow,
         };
         stack.alloc_pages()?;
 
@@ -92,12 +97,38 @@ impl VMKernelStack {
     ///
     /// Initialized stack on success, Err(SvsmError::Mem) on error
     pub fn new() -> Result<Self, SvsmError> {
-        VMKernelStack::new_size(STACK_SIZE)
+        VMKernelStack::new_size(STACK_SIZE, false)
+    }
+
+    /// Create a new [`VMKernelStack`] with one page in size for use as a
+    /// shadow stack.
+    ///
+    /// # Returns
+    ///
+    /// Shadow stack on success, Err(SvsmError::Mem) on error
+    pub fn new_shadow() -> Result<Self, SvsmError> {
+        VMKernelStack::new_size(PAGE_SIZE, true)
+    }
+
+    /// Get a reference to the shadow stack page. This is required because
+    /// shadow stacks are mapped read-only and a separate mapping needs to be
+    /// created to initialize it.
+    ///
+    /// # Returns
+    ///
+    /// A [`PageRef`] reference to the shadow stack page
+    ///
+    /// # Panics
+    ///
+    /// The function panics if called on a non-shadow-stack object.
+    pub fn shadow_page(&self) -> PageRef {
+        assert!(self.shadow);
+        self.alloc.page(0)
     }
 
     /// Create a new [`VMKernelStack`] with the default size, packed into a
-    /// [`Mapping`]. This function / will already allocate the backing pages for
-    /// the stack.
+    /// [`Mapping`]. This function will allocate the backing pages for the
+    /// stack.
     ///
     /// # Returns
     ///
@@ -136,6 +167,11 @@ impl VirtualMapping for VMKernelStack {
     }
 
     fn pt_flags(&self, _offset: usize) -> PTEntryFlags {
-        PTEntryFlags::WRITABLE | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+        if self.shadow {
+            // The CPU requires shadow stacks to be dirty and not writable.
+            PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+        } else {
+            PTEntryFlags::WRITABLE | PTEntryFlags::NX | PTEntryFlags::ACCESSED | PTEntryFlags::DIRTY
+        }
     }
 }
