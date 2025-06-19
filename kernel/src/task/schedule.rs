@@ -692,4 +692,8 @@ global_asm!(
 ///    to the context switch shadow stacks by executing `saveprevssp`.
 ///
 /// We just switched between two shadow stack tables in different page tables :)
-const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(0xff8);
+///
+/// Stack offset calculation:
+///
+/// 0x1ff8 = Size(GuardPage) + Size(ShadowStack) - 8; where Size(GuardPage) == Size(ShadowStack) == PAGE_SIZE.
+const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(0x1ff8);

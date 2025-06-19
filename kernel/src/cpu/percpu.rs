@@ -29,9 +29,7 @@ use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{
-    Mapping, VMKernelShadowStack, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR,
-};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
     virt_to_phys, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK,
     SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M,
@@ -640,9 +638,9 @@ impl PerCpu {
         base: VirtAddr,
         init: ShadowStackInit,
     ) -> Result<VirtAddr, SvsmError> {
-        let shadow_stack = VMKernelShadowStack::new()?;
-        let offset = shadow_stack.top_of_stack_offet();
-        let shadow_stack_page = shadow_stack.page();
+        let shadow_stack = VMKernelStack::new_shadow()?;
+        let offset = shadow_stack.top_of_stack();
+        let shadow_stack_page = shadow_stack.shadow_page();
         let shadow_stack_base = self
             .vm_range
             .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;

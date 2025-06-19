@@ -25,7 +25,7 @@ use crate::error::SvsmError;
 use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
     SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
@@ -232,9 +232,9 @@ impl Task {
         let mut shadow_stack_base = VirtAddr::null();
         if is_cet_ss_supported() {
             // Allocate shadow stack and safe top_of_stack offset
-            let shadow_stack = VMKernelShadowStack::new()?;
-            let offset = shadow_stack.top_of_stack_offet();
-            let shadow_stack_page = shadow_stack.page();
+            let shadow_stack = VMKernelStack::new_shadow()?;
+            let offset = shadow_stack.top_of_stack();
+            let shadow_stack_page = shadow_stack.shadow_page();
 
             let base_token_addr;
 
