@@ -19,5 +19,5 @@ pub use kernel_stack::VMKernelStack;
 pub use phys_mem::VMPhysMem;
 pub use rawalloc::RawAllocMapping;
 pub use reserved::VMReserved;
-pub use shadow_stack::{ShadowStackInit, VMKernelShadowStack};
+pub use shadow_stack::VMKernelShadowStack;
 pub use vmalloc::VMalloc;
