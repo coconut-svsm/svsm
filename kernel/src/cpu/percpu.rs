@@ -627,7 +627,7 @@ impl PerCpu {
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
-        let top_of_stack = stack.top_of_stack(base);
+        let top_of_stack = (base + stack.top_of_stack()).align_down(16);
         let mapping = Arc::new(Mapping::new(stack));
 
         self.vm_range.insert_at(base, mapping)?;
