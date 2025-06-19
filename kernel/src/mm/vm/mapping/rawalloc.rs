@@ -73,6 +73,25 @@ impl RawAllocMapping {
         Ok(())
     }
 
+    /// Returns a reference to a page at a given index. The page must already
+    /// been allocated.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - Page index to reference
+    ///
+    /// # Returns
+    ///
+    /// A reference to the requested page.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if an invalid index is accessed or the page at the
+    /// index has not been allocated.
+    pub fn page(&self, index: usize) -> PageRef {
+        self.pages[index].as_ref().unwrap().clone()
+    }
+
     /// Request size of the mapping in bytes
     ///
     /// # Returns
