@@ -37,7 +37,7 @@ use crate::utils::{is_aligned, MemoryRegion};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{after_task_switch, current_task_terminated, schedule};
-use super::task_mm::TaskMM;
+use super::task_mm::{TaskKernelMapping, TaskMM};
 
 pub const INITIAL_TASK_ID: u32 = 1;
 
@@ -134,6 +134,12 @@ pub struct Task {
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageBox<PageTable>>,
 
+    /// Task kernel stack mapping
+    _kernel_stack: TaskKernelMapping,
+
+    /// Task shadow stack mapping
+    _shadow_stack: Option<TaskKernelMapping>,
+
     /// Task memory management state
     mm: Arc<TaskMM>,
 
@@ -229,7 +235,7 @@ impl Task {
 
         let mut shadow_stack_offset = VirtAddr::null();
         let mut shadow_stack_base = VirtAddr::null();
-        if is_cet_ss_supported() {
+        let shadow_stack_mapping = if is_cet_ss_supported() {
             // Allocate shadow stack and safe top_of_stack offset
             let shadow_stack = VMKernelStack::new_shadow()?;
             let offset = shadow_stack.top_of_stack();
@@ -238,9 +244,9 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let stack_base = task_mm
-                .kernel_range()
-                .insert(Arc::new(Mapping::new(shadow_stack)))?;
+            let mapping =
+                TaskKernelMapping::new(task_mm.clone(), Arc::new(Mapping::new(shadow_stack)))?;
+            let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
             (base_token_addr, shadow_stack_offset) = init_shadow_stack(
@@ -255,7 +261,11 @@ impl Task {
             if let Some(base_addr) = base_token_addr {
                 shadow_stack_base = base_addr;
             }
-        }
+
+            Some(mapping)
+        } else {
+            None
+        };
 
         // Call the correct stack creation routine for this task.
         let (stack, raw_bounds, rsp_offset) = if task_mm.has_user() {
@@ -263,7 +273,8 @@ impl Task {
         } else {
             Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
         };
-        let stack_start = task_mm.kernel_range().insert(stack)?;
+        let kernel_stack_mapping = TaskKernelMapping::new(task_mm.clone(), stack)?;
+        let stack_start = kernel_stack_mapping.virt_addr();
 
         task_mm.kernel_range().populate(&mut pgtable);
 
@@ -283,6 +294,8 @@ impl Task {
             stack_bounds: bounds,
             shadow_stack_base,
             page_table: SpinLock::new(pgtable),
+            _kernel_stack: kernel_stack_mapping,
+            _shadow_stack: shadow_stack_mapping,
             mm: task_mm,
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
