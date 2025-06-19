@@ -217,16 +217,6 @@ pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
 /// End address of task memory region
 pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
-/// Kernel stack for a task
-pub const SVSM_PERTASK_STACK_BASE_OFFSET: usize = 0;
-
-/// Kernel shadow stack for normal execution of a task
-pub const SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET: usize =
-    SVSM_PERTASK_STACK_BASE_OFFSET + STACK_TOTAL_SIZE;
-
-/// SSE context save area for a task
-pub const SVSM_PERTASK_XSAVE_AREA_BASE: usize = SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET + PAGE_SIZE;
-
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
 

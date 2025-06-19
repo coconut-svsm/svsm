@@ -28,8 +28,7 @@ use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-    SVSM_PERTASK_STACK_BASE_OFFSET, USER_MEM_END, USER_MEM_START,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
 };
 use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
@@ -239,10 +238,9 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let stack_base = task_mm.kernel_range().insert_at(
-                task_mm.region().start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
+            let stack_base = task_mm
+                .kernel_range()
+                .insert(Arc::new(Mapping::new(shadow_stack)))?;
 
             // Initialize shadow stack
             (base_token_addr, shadow_stack_offset) = init_shadow_stack(
@@ -265,8 +263,7 @@ impl Task {
         } else {
             Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
         };
-        let stack_start = task_mm.region().start() + SVSM_PERTASK_STACK_BASE_OFFSET;
-        task_mm.kernel_range().insert_at(stack_start, stack)?;
+        let stack_start = task_mm.kernel_range().insert(stack)?;
 
         task_mm.kernel_range().populate(&mut pgtable);
 
