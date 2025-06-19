@@ -11,7 +11,7 @@ use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
-use crate::task::{go_idle, set_affinity, start_kernel_task};
+use crate::task::{go_idle, set_affinity, start_kernel_thread};
 use crate::vmm::{enter_guest, GuestExitMessage, GuestRegister};
 
 use crate::protocols::attest::attest_protocol_request;
@@ -21,7 +21,6 @@ use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
 
-use alloc::format;
 use alloc::vec::Vec;
 
 /// The SVSM Calling Area (CAA)
@@ -99,9 +98,8 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
         // request loop task for each other processor in the system.
         let cpu_count = PERCPU_AREAS.len();
         for task_index in 1..cpu_count {
-            let loop_name = format!("request-loop on CPU {}", task_index);
-            start_kernel_task(request_loop_main, task_index, loop_name)
-                .expect("Failed to launch request loop task");
+            start_kernel_thread(request_loop_main, task_index)
+                .expect("Failed to launch request loop thread");
         }
     }
 
