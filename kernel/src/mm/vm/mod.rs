@@ -8,8 +8,7 @@ mod mapping;
 mod range;
 
 pub use mapping::{
-    Mapping, RawAllocMapping, ShadowStackInit, VMFileMapping, VMFileMappingFlags,
-    VMKernelShadowStack, VMKernelStack, VMMAdapter, VMPhysMem, VMReserved, VMalloc, VirtualMapping,
-    VMM,
+    Mapping, RawAllocMapping, VMFileMapping, VMFileMappingFlags, VMKernelShadowStack,
+    VMKernelStack, VMMAdapter, VMPhysMem, VMReserved, VMalloc, VirtualMapping, VMM,
 };
 pub use range::{VMRMapping, VMR, VMR_GRANULE};

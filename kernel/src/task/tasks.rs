@@ -18,16 +18,14 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::{current_task, PerCpu};
-use crate::cpu::shadow_stack::is_cet_ss_supported;
+use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
-use crate::cpu::{irqs_enable, X86ExceptionContext, X86GeneralRegs};
+use crate::cpu::{irqs_enable, ShadowStackInit, X86ExceptionContext, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{
-    Mapping, ShadowStackInit, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR,
-};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR};
 use crate::mm::{
     mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
     SVSM_PERTASK_BASE, SVSM_PERTASK_END, SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
@@ -233,23 +231,32 @@ impl Task {
         let mut shadow_stack_offset = VirtAddr::null();
         let mut shadow_stack_base = VirtAddr::null();
         if is_cet_ss_supported() {
-            let shadow_stack;
+            // Allocate shadow stack and safe top_of_stack offset
+            let shadow_stack = VMKernelShadowStack::new()?;
+            let offset = shadow_stack.top_of_stack_offet();
+            let shadow_stack_page = shadow_stack.page();
+
             let base_token_addr;
-            (shadow_stack, base_token_addr, shadow_stack_offset) = VMKernelShadowStack::new(
+
+            // Map shadow stack into virtual address range
+            let stack_base = task_mm.kernel_range().insert_at(
                 task_mm.region().start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
+                Arc::new(Mapping::new(shadow_stack)),
+            )?;
+
+            // Initialize shadow stack
+            (base_token_addr, shadow_stack_offset) = init_shadow_stack(
+                &shadow_stack_page,
+                stack_base + offset,
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
                 },
-            )?;
+            );
+
             if let Some(base_addr) = base_token_addr {
                 shadow_stack_base = base_addr;
             }
-
-            task_mm.kernel_range().insert_at(
-                task_mm.region().start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
         }
 
         // Call the correct stack creation routine for this task.
