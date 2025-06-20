@@ -1208,6 +1208,7 @@ dependencies = [
  "verify_external",
  "verify_proof",
  "verus_stub",
+ "virtfw-libefi",
  "virtfw-varstore",
  "virtio-drivers",
  "vstd",
