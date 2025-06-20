@@ -1467,9 +1467,9 @@ dependencies = [
 
 [[package]]
 name = "virtfw-libefi"
-version = "0.2.9"
+version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9163c7b62d89175cb6dbff56bc3b36bebc403a20558ba51987de8ede75645d2"
+checksum = "fc33d8ff880bf92eaa2ee8bdd49cdeb9faf9dd4319d0296e1d0ecf8dfb36ea0b"
 dependencies = [
  "bitfield-struct 0.11.0",
  "byteorder",
@@ -1480,9 +1480,9 @@ dependencies = [
 
 [[package]]
 name = "virtfw-varstore"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42274ef87b8018a376a45e3a5ed3fc5505ae5d767223aaf3b68f69dd709081cb"
+checksum = "d2ad32e498c30512317e4f6c1c2caa1e9f4dee29c03ede7d48e5804e6c2d0121"
 dependencies = [
  "hex",
  "log",
