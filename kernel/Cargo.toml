@@ -40,7 +40,7 @@ release.workspace = true
 sha2 = { workspace = true, features = ["force-soft"] }
 uuid.workspace = true
 virtio-drivers = { workspace = true, optional = true }
-virtfw-varstore = { version = "0.3.2", optional = true }
+virtfw-varstore = { version = "0.3.3", optional = true }
 
 builtin = { workspace = true, optional = true }
 vstd = { workspace = true, optional = true}
