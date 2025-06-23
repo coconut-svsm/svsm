@@ -28,6 +28,7 @@ use core::mem;
 use core::mem::MaybeUninit;
 
 use bitfield_struct::bitfield;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// An raw, owned page in shared memory used for Hyper-V hypercalls.
 #[derive(Debug)]
@@ -83,7 +84,10 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
         self.page.vaddr().as_mut_ptr()
     }
 
-    fn write_header(&mut self, header: &H) {
+    fn write_header(&mut self, header: &H)
+    where
+        H: IntoBytes,
+    {
         // SAFETY: the source pointer is a safe reference, and the safety of
         // the destination pointer was determined when the input object was
         // created.
@@ -105,7 +109,10 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
         }
     }
 
-    fn write_rep(&mut self, index: usize, item: T) {
+    fn write_rep(&mut self, index: usize, item: T)
+    where
+        T: IntoBytes,
+    {
         assert!(index < self.rep_count);
         // SAFETY: the header pointer is valid and we bounds-check the
         // index.
@@ -146,7 +153,10 @@ impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
         self.page.vaddr().as_ptr()
     }
 
-    fn read(&self, index: usize) -> T {
+    fn read(&self, index: usize) -> T
+    where
+        T: FromBytes,
+    {
         assert!(index < self.rep_count);
         // SAFETY: the array pointer is valid and we bounds-check the
         // index
@@ -435,7 +445,7 @@ pub fn execute_host_hypercall(
 /// that all fields are read when they are copied into the hypercall input
 /// page.
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputGetVpRegister {
     partition_id: u64,
     vp_index: u32,
@@ -478,7 +488,7 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputEnableVpVtl {
     partition_id: u64,
     vp_index: u32,
@@ -518,7 +528,7 @@ fn enable_vp_vtl_hypercall(
     }
 }
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputStartVirtualProcessor {
     partition_id: u64,
     vp_index: u32,
