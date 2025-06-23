@@ -119,6 +119,11 @@ fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
 }
 
+// Returns true if the address is shared.
+fn is_shared(paddr: PhysAddr) -> bool {
+    paddr == make_shared_address(strip_confidentiality_bits(paddr))
+}
+
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !(shared_pte_mask() | private_pte_mask()))
 }
