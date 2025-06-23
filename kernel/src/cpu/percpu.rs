@@ -610,10 +610,7 @@ impl PerCpu {
         // to ensure that only a single reference can ever be taken at a time.
         let page_ref: RefMut<'_, Option<(HypercallPage, HypercallPage)>> =
             self.hypercall_pages.borrow_mut();
-        // SAFETY: the virtual addresses were allocated when the hypercall
-        // pages were configured, and the physical addresses were captured at
-        // that time.
-        unsafe { HypercallPagesGuard::new(RefMut::map(page_ref, |o| o.as_mut().unwrap())) }
+        HypercallPagesGuard::new(RefMut::map(page_ref, |o| o.as_mut().unwrap()))
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {

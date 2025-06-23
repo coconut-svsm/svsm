@@ -68,10 +68,8 @@ struct HypercallInput<'a, 'b, H, T> {
 }
 
 impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
-    // SAFETY: the caller must guarantee the safety of the header pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
-    unsafe fn new(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+    fn new(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+        const { assert!(size_of::<H>() <= PAGE_SIZE) };
         Self {
             page,
             rep_count: 0,
@@ -96,11 +94,10 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
         }
     }
 
-    // SAFETY: the caller must guarantee the safety of the header pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
-    unsafe fn new_rep(page: &'a mut RefMut<'b, HypercallPage>, page_size: usize) -> Self {
-        let rep_count = (page_size - mem::size_of::<H>()) / mem::size_of::<T>();
+    fn new_rep(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+        const { assert!(size_of::<H>() <= PAGE_SIZE) };
+        const { assert!(size_of::<T>() != 0) };
+        let rep_count = (PAGE_SIZE - mem::size_of::<H>()) / mem::size_of::<T>();
         Self {
             page,
             rep_count,
@@ -138,9 +135,10 @@ struct HypercallOutput<'a, 'b, T> {
 }
 
 impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
-    // SAFETY: the caller must guarantee the safety of the array pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
+    /// # Safety
+    ///
+    /// The caller must guarantee that `rep_count` instances of `T` fit
+    /// within a single page.
     unsafe fn new(page: &'a RefMut<'b, HypercallPage>, rep_count: usize) -> Self {
         Self {
             page,
@@ -174,6 +172,16 @@ impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
     }
 }
 
+/// A guard that holds an exclusive borrow of the Hyper-V hypercall pages.
+/// This type is typically constructed from [`PerCpu::get_hypercall_pages`].
+///
+/// The type guarantees that no other piece of code attempts to modify
+/// the hypercall pages. The pages remain usable until the structure is
+/// dropped. Note that the hypercall pages are per-cpu, so the type does
+/// not guard against concurrent users.
+///
+/// The type also includes helper methods to reinterpret the backing
+/// pages as structured data, in order to read and write their contents.
 #[derive(Debug)]
 pub struct HypercallPagesGuard<'a> {
     pub input: RefMut<'a, HypercallPage>,
@@ -181,20 +189,15 @@ pub struct HypercallPagesGuard<'a> {
     _irq_guard: IrqGuard,
 }
 
-/// A structure that binds a reference to hypercall input/output pages.
-/// The pages remain usable until the structure is dropped.
 impl<'a> HypercallPagesGuard<'a> {
     /// Creates a new `HypercallPagesGuard` structure to describe a pair of
     /// input/output pages.
     ///
-    /// # Safety
-    ///
-    /// No validation is performed to verify correct ownership of the specified
-    /// virtual addresses, and no validation is performed to verify the
-    /// correct association of virtual to physical address.  The caller is
-    /// responsible for ensuring that both virtual and physical addresses are
-    /// correct and usable.
-    pub unsafe fn new(page_ref: RefMut<'a, (HypercallPage, HypercallPage)>) -> Self {
+    /// This method is safe because [`HypercallPage`] guarantees by construction
+    /// that the backing memory is valid and shared with the hypervisor. The type
+    /// is wrapped in a [`RefMut`], meaning that there is a runtime guarantee that
+    /// nobody else holds a reference to the same pages.
+    pub fn new(page_ref: RefMut<'a, (HypercallPage, HypercallPage)>) -> Self {
         let (input, output) = RefMut::map_split(page_ref, |r| (&mut r.0, &mut r.1));
         Self {
             input,
@@ -206,24 +209,14 @@ impl<'a> HypercallPagesGuard<'a> {
     /// Casts a hypercall input page into a header of type `H` and returns a
     /// reference to that header object.
     fn hypercall_input<'b, H>(&'b mut self) -> HypercallInput<'b, 'a, H, ()> {
-        assert!(size_of::<H>() <= PAGE_SIZE);
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to a header of type `H`.
-        unsafe { HypercallInput::new(&mut self.input) }
+        HypercallInput::new(&mut self.input)
     }
 
     /// Divides a hypercall input page into a header of type `H` and a slice
     /// of repeated elements of type `T` and returns a reference to each
     /// portion.
     fn hypercall_rep_input<'b, H, T>(&'b mut self) -> HypercallInput<'b, 'a, H, T> {
-        assert!(size_of::<H>() <= PAGE_SIZE);
-
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to a header of type `H` followed by an array of `T` up to the
-        // size of one page.
-        unsafe { HypercallInput::new_rep(&mut self.input, PAGE_SIZE) }
+        HypercallInput::new_rep(&mut self.input)
     }
 
     /// Casts a hypercall output page into a slice of repeated elements of
@@ -237,9 +230,8 @@ impl<'a> HypercallPagesGuard<'a> {
             1
         };
         assert!(count * size_of::<T>() <= PAGE_SIZE);
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to an array of `T` up to the size of one page.
+        // SAFETY: we've asserted that `count` instances of `T` fit in the
+        // output page.
         unsafe { HypercallOutput::new(&self.output, count) }
     }
 }
