@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::{VirtAddr, VirtPhysPair};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{this_cpu, PerCpu};
@@ -14,6 +14,7 @@ use crate::error::SvsmError::HyperV;
 use crate::hyperv;
 use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
+use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
 use crate::platform::SVSM_PLATFORM;
@@ -27,6 +28,29 @@ use core::mem;
 use core::mem::MaybeUninit;
 
 use bitfield_struct::bitfield;
+
+/// An raw, owned page in shared memory used for Hyper-V hypercalls.
+#[derive(Debug)]
+pub struct HypercallPage {
+    // Shared page.
+    page: SharedBox<[u8; PAGE_SIZE]>,
+    // Physical address of the shared page.
+    paddr: PhysAddr,
+}
+
+impl HypercallPage {
+    /// Attempts to allocate a new shared hypercall page.
+    pub fn try_new() -> Result<Self, SvsmError> {
+        let page = SharedBox::<[u8; PAGE_SIZE]>::try_new_zeroed()?;
+        let paddr = virt_to_phys(page.addr());
+        Ok(Self { page, paddr })
+    }
+
+    /// Gets the virtual address of the shared page.
+    fn vaddr(&self) -> VirtAddr {
+        self.page.addr()
+    }
+}
 
 #[derive(Debug)]
 struct HypercallInput<H, T: ?Sized> {
@@ -129,8 +153,8 @@ impl<T> HypercallOutput<T> {
 
 #[derive(Debug)]
 pub struct HypercallPagesGuard<'a> {
-    pub input: RefMut<'a, VirtPhysPair>,
-    pub output: RefMut<'a, VirtPhysPair>,
+    pub input: RefMut<'a, HypercallPage>,
+    pub output: RefMut<'a, HypercallPage>,
     _irq_guard: IrqGuard,
 }
 
@@ -147,7 +171,7 @@ impl<'a> HypercallPagesGuard<'a> {
     /// correct association of virtual to physical address.  The caller is
     /// responsible for ensuring that both virtual and physical addresses are
     /// correct and usable.
-    pub unsafe fn new(page_ref: RefMut<'a, (VirtPhysPair, VirtPhysPair)>) -> Self {
+    pub unsafe fn new(page_ref: RefMut<'a, (HypercallPage, HypercallPage)>) -> Self {
         let (input, output) = RefMut::map_split(page_ref, |r| (&mut r.0, &mut r.1));
         Self {
             input,
@@ -166,7 +190,7 @@ impl<'a> HypercallPagesGuard<'a> {
     /// in this case.
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn hypercall_input<H>(&mut self) -> HypercallInput<H, ()> {
-        let header = self.input.vaddr.as_mut_ptr::<H>();
+        let header = self.input.vaddr().as_mut_ptr::<H>();
         assert!(size_of::<H>() <= PAGE_SIZE);
         // SAFETY: the virtual address represents an entire page which is
         // exclusively owned by the `HypercallPagesGuard` and can safely be
@@ -185,7 +209,7 @@ impl<'a> HypercallPagesGuard<'a> {
     /// in this case.
     #[allow(clippy::needless_pass_by_ref_mut)]
     fn hypercall_rep_input<H, T>(&mut self) -> HypercallInput<H, T> {
-        let header = self.input.vaddr.as_mut_ptr::<H>();
+        let header = self.input.vaddr().as_mut_ptr::<H>();
         assert!(size_of::<H>() <= PAGE_SIZE);
 
         // SAFETY: the virtual address represents an entire page which is
@@ -209,7 +233,7 @@ impl<'a> HypercallPagesGuard<'a> {
         // SAFETY: the virtual address represents an entire page which is
         // exclusively owned by the `HypercallPagesGuard` and can safely be
         // cast to an array of `T` up to the size of one page.
-        unsafe { HypercallOutput::new(self.output.vaddr.as_ptr::<T>(), count) }
+        unsafe { HypercallOutput::new(self.output.vaddr().as_ptr::<T>(), count) }
     }
 }
 

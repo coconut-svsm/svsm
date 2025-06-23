@@ -16,7 +16,7 @@ use super::isst::Isst;
 use super::msr::write_msr;
 use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
 use super::tss::{X86Tss, IST_DF};
-use crate::address::{Address, PhysAddr, VirtAddr, VirtPhysPair};
+use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
@@ -26,7 +26,7 @@ use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, s
 use crate::cpu::x86::{ApicAccess, X86Apic};
 use crate::cpu::{IrqGuard, IrqState, LocalApic};
 use crate::error::{ApicError, SvsmError};
-use crate::hyperv;
+use crate::hyperv::{self, HypercallPage};
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
 use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::page_visibility::SharedBox;
@@ -400,7 +400,7 @@ pub struct PerCpu {
     ghcb: OnceCell<GhcbPage>,
 
     /// Hypercall input/output pages for this CPU if running under Hyper-V.
-    hypercall_pages: RefCell<Option<(VirtPhysPair, VirtPhysPair)>>,
+    hypercall_pages: RefCell<Option<(HypercallPage, HypercallPage)>>,
 
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: OnceCell<SharedBox<HVDoorbell>>,
@@ -599,9 +599,8 @@ impl PerCpu {
 
     /// Allocates hypercall input/output pages for this CPU.
     pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
-        let pages = SharedBox::<[u8; PAGE_SIZE * 2]>::try_new_zeroed()?.leak();
-        let p1 = VirtPhysPair::new(pages.as_ptr().into());
-        let p2 = VirtPhysPair::new(p1.vaddr + PAGE_SIZE);
+        let p1 = HypercallPage::try_new()?;
+        let p2 = HypercallPage::try_new()?;
         *self.hypercall_pages.borrow_mut() = Some((p1, p2));
         Ok(())
     }
@@ -609,7 +608,7 @@ impl PerCpu {
     pub fn get_hypercall_pages(&self) -> HypercallPagesGuard<'_> {
         // The hypercall page cell is never mutated, but is borrowed mutably
         // to ensure that only a single reference can ever be taken at a time.
-        let page_ref: RefMut<'_, Option<(VirtPhysPair, VirtPhysPair)>> =
+        let page_ref: RefMut<'_, Option<(HypercallPage, HypercallPage)>> =
             self.hypercall_pages.borrow_mut();
         // SAFETY: the virtual addresses were allocated when the hypercall
         // pages were configured, and the physical addresses were captured at
