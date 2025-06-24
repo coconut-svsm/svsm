@@ -141,9 +141,6 @@ pub struct Mapping {
     mapping: RWLock<Box<dyn VirtualMapping>>,
 }
 
-unsafe impl Send for Mapping {}
-unsafe impl Sync for Mapping {}
-
 impl Mapping {
     pub fn new<T>(mapping: T) -> Self
     where
