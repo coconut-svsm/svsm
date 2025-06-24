@@ -12,8 +12,8 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 test_io(){
     PIPE_IN=$1
     PIPE_OUT=$2
-    while true; do
-        TEST=$(head -c 1 $PIPE_OUT | xxd -p)
+    while read -r -n 1 -u 3 BYTE; do
+        TEST=$(printf '%s' "$BYTE" | xxd -p)
         case $TEST in
             # 0x00: NOP
             "00")
@@ -35,7 +35,7 @@ test_io(){
                 echo "Unsupported test: $TEST"
                 ;;
         esac
-    done
+    done 3< "$PIPE_OUT"
 }
 
 TEST_DIR=$(mktemp -d -q)
@@ -51,5 +51,5 @@ $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
     --unit-tests $TEST_DIR/pipe || true
 
-kill $TEST_IO_PID
+kill $TEST_IO_PID 2> /dev/null || true
 rm -rf $TEST_DIR
