@@ -5,7 +5,6 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 use core::cell::UnsafeCell;
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -99,6 +98,8 @@ impl<T> ImmutAfterInitCell<T> {
     /// initialized or `Err(ImmutAfterInitError)` if not.
     pub fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
         self.check_init()?;
+        // SAFETY: the init check above proves that the cell has been
+        // initialized.
         let r = unsafe { (*self.data.get()).assume_init_ref() };
         Ok(r)
     }
@@ -170,128 +171,10 @@ impl<T> Drop for ImmutAfterInitCell<T> {
     }
 }
 
+// SAFETY: ImmutAfterInitCell is Send if its contained type is Send.
 unsafe impl<T: Send> Send for ImmutAfterInitCell<T> {}
+// SAFETY: ImmutAfterInitCell is Sync if its contained type is Send + Sync.
 unsafe impl<T: Send + Sync> Sync for ImmutAfterInitCell<T> {}
-
-/// A reference to a memory location which is effectively immutable after
-/// initalization code has run.
-///
-/// A `ImmutAfterInitRef` can either get initialized statically at link time or
-/// once from initialization code, basically following the protocol of a
-/// [`ImmutAfterInitCell`] itself:
-///
-/// # Examples
-/// A `ImmutAfterInitRef` can be initialized to either point to a
-/// `ImmutAfterInitCell`'s contents,
-/// ```
-/// # use svsm::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitRef};
-/// static X: ImmutAfterInitCell<i32> = ImmutAfterInitCell::uninit();
-/// static RX: ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
-/// fn main() {
-///     unsafe { X.init_from_ref(&123) };
-///     unsafe { RX.init_from_cell(&X) };
-///     assert_eq!(*RX, 123);
-/// }
-/// ```
-/// or to plain value directly:
-/// ```
-/// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
-/// static X: i32 = 123;
-/// static RX: ImmutAfterInitRef<'_, i32> = ImmutAfterInitRef::uninit();
-/// fn main() {
-///     unsafe { RX.init_from_ref(&X) };
-///     assert_eq!(*RX, 123);
-/// }
-/// ```
-///
-/// Also, an `ImmutAfterInitRef` can be initialized by obtaining a reference
-/// from another `ImmutAfterInitRef`:
-/// ```
-/// # use svsm::utils::immut_after_init::ImmutAfterInitRef;
-/// static RX: ImmutAfterInitRef<'static, i32> = ImmutAfterInitRef::uninit();
-///
-/// fn init_rx(r: ImmutAfterInitRef<'static, i32>) {
-///     unsafe { RX.init_from_ref(r.get()) };
-/// }
-///
-/// static X: i32 = 123;
-///
-/// fn main() {
-///     let local = ImmutAfterInitRef::<i32>::uninit();
-///     local.init_from_ref(&X);
-///     init_rx(local);
-///     assert_eq!(*RX, 123);
-/// }
-/// ```
-#[derive(Debug)]
-pub struct ImmutAfterInitRef<'a, T: Copy> {
-    #[doc(hidden)]
-    ptr: ImmutAfterInitCell<*const T>,
-    #[doc(hidden)]
-    _phantom: PhantomData<&'a &'a T>,
-}
-
-impl<'a, T: Copy> ImmutAfterInitRef<'a, T> {
-    /// Create an unitialized `ImmutAfterInitRef` instance. The reference itself
-    /// must get initialized via either of [`Self::init_from_ref()`] or
-    /// [`Self::init_from_cell()`] before first dereferencing it.
-    pub const fn uninit() -> Self {
-        ImmutAfterInitRef {
-            ptr: ImmutAfterInitCell::uninit(),
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to value
-    /// specified by a regular reference.  Will fail if called on an
-    /// initialized instance.
-    ///
-    /// * `r` - Reference to the value to make the `ImmutAfterInitRef` to refer
-    ///   to. By convention, the referenced value must have been
-    ///   initialized already.
-    pub fn init_from_ref<'b>(&self, r: &'b T) -> ImmutAfterInitResult<()>
-    where
-        'b: 'a,
-    {
-        self.ptr.init(r as *const T)
-    }
-
-    /// Dereference the referenced value with lifetime propagation.  Will panic
-    /// if called on an uninitialized instance.
-    pub fn get(&self) -> &'a T {
-        unsafe { &**self.ptr }
-    }
-
-    /// Initialize an uninitialized `ImmutAfterInitRef` instance to point to
-    /// value wrapped in a [`ImmutAfterInitCell`].
-    ///
-    /// Must **not** get called on an already initialized `ImmutAfterInitRef` instance!
-    ///
-    /// * `cell` - The value to make the `ImmutAfterInitRef` to refer to. By
-    ///   convention, the referenced value must have been initialized
-    ///   already.
-    pub fn init_from_cell<'b>(&self, cell: &'b ImmutAfterInitCell<T>) -> ImmutAfterInitResult<()>
-    where
-        'b: 'a,
-    {
-        self.ptr.init(cell.try_get_inner()? as *const T)
-    }
-}
-
-impl<T: Copy> Deref for ImmutAfterInitRef<'_, T> {
-    type Target = T;
-
-    /// Dereference the referenced value *without* lifetime propagation. Must
-    /// **only ever** get called on an initialized `ImmutAfterInitRef` instance!
-    /// Moreover, the value referenced must have been initialized as well. If
-    /// lifetime propagation is needed, use [`ImmutAfterInitRef::get()`].
-    fn deref(&self) -> &T {
-        self.get()
-    }
-}
-
-unsafe impl<T: Copy + Send> Send for ImmutAfterInitRef<'_, T> {}
-unsafe impl<T: Copy + Send + Sync> Sync for ImmutAfterInitRef<'_, T> {}
 
 #[cfg(test)]
 mod tests {

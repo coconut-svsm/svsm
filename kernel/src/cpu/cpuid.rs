@@ -6,18 +6,18 @@
 
 use crate::address::VirtAddr;
 use crate::types::PAGE_SIZE;
-use crate::utils::immut_after_init::ImmutAfterInitRef;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 
 use core::arch::asm;
 
-static CPUID_PAGE: ImmutAfterInitRef<'_, SnpCpuidTable> = ImmutAfterInitRef::uninit();
+static CPUID_PAGE: ImmutAfterInitCell<&SnpCpuidTable> = ImmutAfterInitCell::uninit();
 
 const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
     CPUID_PAGE
-        .init_from_ref(table)
+        .init(table)
         .expect("Could not initialize CPUID page");
 }
 
@@ -39,7 +39,7 @@ pub unsafe fn copy_cpuid_table_to(dst: VirtAddr) {
         start.write_bytes(0, PAGE_SIZE);
         start
             .cast::<SnpCpuidTable>()
-            .copy_from_nonoverlapping(&*CPUID_PAGE, 1);
+            .copy_from_nonoverlapping(*CPUID_PAGE, 1);
     }
 }
 
