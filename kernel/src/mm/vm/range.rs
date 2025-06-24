@@ -66,6 +66,24 @@ pub struct VMR {
     per_cpu: bool,
 }
 
+// SAFETY: Struct VMR is not Sync by default because of the
+//
+//          tree: RWLock<RBTree<VMMAdapter>>
+//
+// member. The inner types are not Sync because:
+//
+//   -> RBTree::Link uses Cell, so it !Sync
+//      -> RBTree::Link is used in 'struct VMM' (!Sync)
+//        -> RBTree::Link and VMM are used in VMMAdapter, which makes it !Sync
+//           -> !Sync propagates up through RBTree -> RWLock
+//
+// The usages of the VMM and VMMAdapter in struct VMR are safe nonetheless,
+// because a struct VMM is only used internally in the VMR implementation and
+// never exposed externally. Creation and modification of struct VMM instances
+// and VMMAdapter only happen with the RWLock held for write, which ensures
+// exclusive and non-concurrent access.
+unsafe impl Sync for VMR {}
+
 impl VMR {
     /// Creates a new [`struct VMR`]
     ///
