@@ -225,7 +225,7 @@ where
     /// assert!(!region.contains(VirtAddr::from(0xffffff1000u64)));
     /// ```
     pub fn contains(&self, addr: A) -> bool {
-        self.start() <= addr && addr < self.end()
+        (self.start()..self.end()).contains(&addr)
     }
 
     /// Check whether an address is within this region, treating `end` as part
