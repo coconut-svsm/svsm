@@ -187,7 +187,10 @@ impl SvsmPlatform for TdpPlatform {
         }
     }
 
-    fn validate_virtual_page_range(
+    /// # Safety
+    /// The caller is required to ensure the safety of the validation operation
+    /// on this memory range.
+    unsafe fn validate_virtual_page_range(
         &self,
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
@@ -196,11 +199,9 @@ impl SvsmPlatform for TdpPlatform {
             return Err(SvsmError::InvalidAddress);
         }
         match op {
-            // SAFETY: safety work on the address is yet to be completed.
-            PageValidateOp::Validate => unsafe {
-                // TODO - verify safety of the physical address range.
-                td_accept_virtual_memory(region)
-            },
+            // SAFETY: The caller is required to ensure the safety of the
+            // memory range.
+            PageValidateOp::Validate => unsafe { td_accept_virtual_memory(region) },
             PageValidateOp::Invalidate => Ok(()),
         }
     }

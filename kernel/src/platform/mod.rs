@@ -173,7 +173,10 @@ pub trait SvsmPlatform: Sync {
     /// Marks a virtual range of pages as valid or invalid for use as private
     /// pages.  Provided primarily for use in stage2 where validation by
     /// physical address cannot be supported.
-    fn validate_virtual_page_range(
+    /// # Safety
+    /// The caller is required to ensure the safety of the validation operation
+    /// on this memory range.
+    unsafe fn validate_virtual_page_range(
         &self,
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,

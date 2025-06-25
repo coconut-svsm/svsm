@@ -212,7 +212,12 @@ impl IgvmParams<'_> {
         }
 
         let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
-        SVSM_PLATFORM.validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+        // SAFETY: the virtual address region was created above to map the
+        // specified physical address range and is therefore safe.
+        unsafe {
+            SVSM_PLATFORM
+                .validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+        }
 
         // Calculate the maximum number of entries that can be inserted.
         let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE

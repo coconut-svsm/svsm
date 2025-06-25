@@ -52,15 +52,27 @@ impl fmt::Display for SevSnpError {
     }
 }
 
-fn pvalidate_range_4k(region: MemoryRegion<VirtAddr>, valid: PvalidateOp) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// range does not violate memory safety.
+unsafe fn pvalidate_range_4k(
+    region: MemoryRegion<VirtAddr>,
+    valid: PvalidateOp,
+) -> Result<(), SvsmError> {
     for addr in region.iter_pages(PageSize::Regular) {
-        pvalidate(addr, PageSize::Regular, valid)?;
+        // SAFETY: the caller promises that the validation operation is safe.
+        unsafe {
+            pvalidate(addr, PageSize::Regular, valid)?;
+        }
     }
 
     Ok(())
 }
 
-pub fn pvalidate_range(
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// range does not violate memory safety.
+pub unsafe fn pvalidate_range(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
@@ -76,15 +88,23 @@ pub fn pvalidate_range(
         {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
-            pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
-                SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                    pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
-                }
-                _ => Err(err),
-            })?;
+            // SAFETY: the caller promises that the validation operation is
+            // safe.
+            unsafe {
+                pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
+                    SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
+                        pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
+                    }
+                    _ => Err(err),
+                })?;
+            }
             addr = addr + PAGE_SIZE_2M;
         } else {
-            pvalidate(addr, PageSize::Regular, valid)?;
+            // SAFETY: the caller promises that the validation operation is
+            // safe.
+            unsafe {
+                pvalidate(addr, PageSize::Regular, valid)?;
+            }
             addr = addr + PAGE_SIZE;
         }
     }
@@ -100,7 +120,14 @@ pub enum PvalidateOp {
     Valid = 1,
 }
 
-pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// does not violate memory safety.
+pub unsafe fn pvalidate(
+    vaddr: VirtAddr,
+    size: PageSize,
+    valid: PvalidateOp,
+) -> Result<(), SvsmError> {
     let rax = vaddr.bits();
     let rcx: u64 = match size {
         PageSize::Regular => 0,
@@ -110,6 +137,7 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     let ret: u64;
     let cf: u64;
 
+    // SAFETY: the caller promises that the validation operation is safe.
     unsafe {
         asm!("xorq %r8, %r8",
              "pvalidate",

@@ -133,9 +133,12 @@ fn setup_env(
 
     // Now that the heap virtual-to-physical mapping has been established,
     // validate the first 640 KB of memory so it can be used if necessary.
-    platform
-        .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
-        .expect("failed to validate low 640 KB");
+    // SAFETY: the low memory region is known not to overlap any memory in use.
+    unsafe {
+        platform
+            .validate_virtual_page_range(lowmem_region, PageValidateOp::Validate)
+            .expect("failed to validate low 640 KB");
+    }
 
     // SAFETY: ap_flag is an extern static and this is the only place where we
     // get a reference to it.
@@ -170,7 +173,9 @@ fn setup_env(
 
 /// Map and validate the specified virtual memory region at the given physical
 /// address.
-fn map_and_validate(
+/// # Safety
+/// The caller is required to ensure the safety of the virtual address range.
+unsafe fn map_and_validate(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     vregion: MemoryRegion<VirtAddr>,
@@ -191,7 +196,10 @@ fn map_and_validate(
             PageStateChangeOp::Private,
         )?;
     }
-    platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
+    // SAFETY: the caller has ensured the safety of the virtual address range.
+    unsafe {
+        platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
+    }
     valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
     Ok(())
 }
@@ -220,7 +228,10 @@ fn get_svsm_config(
 }
 
 /// Loads a single ELF segment and returns its virtual memory region.
-fn load_elf_segment(
+/// # Safety
+/// The caller is required to supply an appropriate virtual address for this
+/// ELF segment.
+unsafe fn load_elf_segment(
     segment: elf::Elf64ImageLoadSegment<'_>,
     paddr: PhysAddr,
     platform: &dyn SvsmPlatform,
@@ -241,7 +252,11 @@ fn load_elf_segment(
     }
 
     // Map and validate the segment at the next contiguous physical address
-    map_and_validate(platform, config, segment_region, paddr)?;
+    // SAFETY: the caller has verified the safety of this virtual address
+    // region.
+    unsafe {
+        map_and_validate(platform, config, segment_region, paddr)?;
+    }
 
     // Copy the segment contents and pad with zeroes
     let segment_buf =
@@ -281,7 +296,10 @@ fn load_kernel_elf(
     let mut load_virt_start = None;
     let mut load_virt_end = VirtAddr::null();
     for segment in elf.image_load_segment_iter(vaddr_alloc_base) {
-        let region = load_elf_segment(segment, loaded_phys.end(), platform, config)?;
+        // SAFETY: the virtual address is calculated based on the base address
+        // of the image and the previously loaded segments, so it is correct
+        // for use.
+        let region = unsafe { load_elf_segment(segment, loaded_phys.end(), platform, config)? };
         // Remember the mapping range's lower and upper bounds to pass it on
         // the kernel later. Note that the segments are being iterated over
         // here in increasing load order.
@@ -332,7 +350,11 @@ fn load_igvm_params(
     // Map and validate destination region
     let igvm_vregion = MemoryRegion::new(loaded_kernel_vregion.end(), params.size());
     let igvm_pregion = MemoryRegion::new(loaded_kernel_pregion.end(), params.size());
-    map_and_validate(platform, config, igvm_vregion, igvm_pregion.start())?;
+    // SAFETY: the virtual address region was computed not to overlap the
+    // kernel image.
+    unsafe {
+        map_and_validate(platform, config, igvm_vregion, igvm_pregion.start())?;
+    }
 
     // Copy the contents over
     let src_addr = VirtAddr::from(launch_info.igvm_params as u64);
@@ -375,7 +397,11 @@ fn prepare_heap(
     let heap_pregion = MemoryRegion::new(heap_pstart, heap_size);
     let heap_vregion = MemoryRegion::new(heap_vstart, heap_size);
 
-    map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
+    // SAFETY: the virtual address range was computed so it is within the valid
+    // region and does not collide with the kernel.
+    unsafe {
+        map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
+    }
 
     Ok((heap_vregion, heap_pregion))
 }

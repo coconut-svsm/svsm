@@ -142,13 +142,13 @@ impl GhcbPage {
         let vaddr = page.vaddr();
         let paddr = virt_to_phys(vaddr);
 
-        // Make page invalid
-        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
-
-        // Let the Hypervisor take the page back
         // SAFETY: we trust virt_to_phys() to return GHCB's physical address
         // since it panics if vaddr is invalid.
         unsafe {
+            // Make page invalid
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid)?;
+
+            // Let the Hypervisor take the page back
             invalidate_page_msr(paddr)?;
         }
 
@@ -183,15 +183,17 @@ impl Drop for GhcbPage {
             register_ghcb_gpa_msr(PhysAddr::null()).expect("Could not unregister GHCB");
         }
 
-        // Ask the hypervisor to change the page back to the private page state.
         // SAFETY: we trust virt_to_phys() to return GHCB's physical address
         // since it panics if vaddr is invalid.
         unsafe {
+            // Ask the hypervisor to change the page back to the private page
+            // state.
             validate_page_msr(paddr).expect("Could not change page state");
-        }
 
-        // Make page guest-valid
-        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid).expect("Could not pvalidate page");
+            // Make page guest-valid
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)
+                .expect("Could not pvalidate page");
+        }
 
         // Needs guarding for Stage2 GHCB
         if valid_bitmap_valid_addr(paddr) {

@@ -63,7 +63,11 @@ fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Resul
             PAGE_SIZE
         };
         let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0)?;
-        pvalidate_range(MemoryRegion::new(mapping.virt_addr(), len), op)?;
+        // SAFETY: The mapping correctly represents the physical address range
+        // and therefore is safe with respect to other memory operations.
+        unsafe {
+            pvalidate_range(MemoryRegion::new(mapping.virt_addr(), len), op)?;
+        }
         paddr = paddr + len;
     }
 
@@ -276,12 +280,17 @@ impl SvsmPlatform for SnpPlatform {
         pvalidate_page_range(region, PvalidateOp::from(op))
     }
 
-    fn validate_virtual_page_range(
+    /// # Safety
+    /// The caller is required to ensure the safety of the validation operation
+    /// on this memory range.
+    unsafe fn validate_virtual_page_range(
         &self,
         region: MemoryRegion<VirtAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        pvalidate_range(region, PvalidateOp::from(op))
+        // SAFETY: The caller is required to ensure the safety of the memory
+        // range.
+        unsafe { pvalidate_range(region, PvalidateOp::from(op)) }
     }
 
     fn flush_tlb(&self, flush_scope: &TlbFlushScope) {

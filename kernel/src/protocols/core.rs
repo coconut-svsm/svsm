@@ -286,10 +286,14 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         rmp_revoke_guest_access(vaddr, huge)?;
     }
 
-    pvalidate(vaddr, huge, valid).or_else(|err| match err {
-        SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) if ign_cf => Ok(()),
-        _ => Err(err),
-    })?;
+    // SAFETY: the physical address was guaranteed to be a guest address and
+    // cannot affect memory safety.
+    unsafe {
+        pvalidate(vaddr, huge, valid).or_else(|err| match err {
+            SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) if ign_cf => Ok(()),
+            _ => Err(err),
+        })?;
+    }
 
     drop(lock);
 
