@@ -66,7 +66,8 @@ where
     }
 
     /// Create a memory region from two raw addresses.
-    pub const fn from_addresses(start: A, end: A) -> Self {
+    pub fn from_addresses(start: A, end: A) -> Self {
+        assert!(start <= end);
         Self { start, end }
     }
 
