@@ -9,6 +9,7 @@ ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
 endif
 
+CLIPPY_OPTIONS ?=
 CLIPPY_ARGS ?= -D warnings
 ifdef UNSAFE_BLOCKS
 CLIPPY_ARGS += -W warnings -W clippy::undocumented_unsafe_blocks
@@ -189,11 +190,11 @@ bin/svsm-test.bin: bin/svsm-test
 	objcopy -O binary $< $@
 
 clippy:
-	cargo clippy --all-features --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- ${CLIPPY_ARGS}
-	RUSTFLAGS="--cfg fuzzing" cargo clippy --all-features --package svsm-fuzz -- ${CLIPPY_ARGS}
-	cargo clippy --all-features --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
-	cargo clippy --all-features --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
-	cargo clippy --all-features --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- ${CLIPPY_ARGS}
+	RUSTFLAGS="--cfg fuzzing" cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm-fuzz -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
 
 clean:
 	cargo clean
