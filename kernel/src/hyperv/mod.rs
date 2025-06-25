@@ -11,8 +11,10 @@ pub use hv::*;
 pub use msr::*;
 
 use bitfield_struct::bitfield;
+use zerocopy::{Immutable, IntoBytes};
 
 #[bitfield(u8)]
+#[derive(IntoBytes, Immutable)]
 pub struct HvInputVtl {
     #[bits(4)]
     target_vtl: u8,
@@ -32,7 +34,7 @@ impl HvInputVtl {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes, Immutable)]
 pub struct HvSegmentRegister {
     pub base: u64,
     pub limit: u32,
@@ -41,7 +43,7 @@ pub struct HvSegmentRegister {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes, Immutable)]
 pub struct HvTableRegister {
     pub _rsvd: [u16; 3],
     pub limit: u16,
@@ -49,7 +51,7 @@ pub struct HvTableRegister {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes, Immutable)]
 pub struct HvInitialVpContext {
     pub rip: u64,
     pub rsp: u64,

@@ -5,6 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use core::mem::MaybeUninit;
+use core::ops::Deref;
 use core::ptr::NonNull;
 
 use crate::address::VirtAddr;
@@ -169,6 +170,14 @@ impl<T> SharedBox<T> {
         core::mem::forget(self);
         ptr
     }
+
+    // Gets the address of the inner pointer
+    pub fn ptr_ref(&self) -> *const *const T {
+        // We are casting a `*const NonNull<T>` to a `*const *const T`.
+        // The cast is valid because `NonNull<T>` is transparent over
+        // `*mut T`, and `*mut T` has the same layout as `*const T`.
+        (&raw const self.ptr).cast()
+    }
 }
 
 impl<T, const N: usize> SharedBox<[T; N]> {
@@ -204,6 +213,23 @@ impl<T, const N: usize> SharedBox<[T; N]> {
         }
 
         Ok(())
+    }
+}
+
+impl<T: FromBytes + Sync> Deref for SharedBox<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: ptr pointing to valid memory is part of this type's
+        // invariant. The target is Sync, so there cannot be any data
+        // races, and it is FromBytes, so it has no invalid
+        // representations.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: FromBytes + Sync> AsRef<T> for SharedBox<T> {
+    fn as_ref(&self) -> &T {
+        self
     }
 }
 

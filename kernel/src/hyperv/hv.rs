@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::{VirtAddr, VirtPhysPair};
+use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{this_cpu, PerCpu};
@@ -14,6 +14,7 @@ use crate::error::SvsmError::HyperV;
 use crate::hyperv;
 use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
+use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
 use crate::platform::SVSM_PLATFORM;
@@ -27,66 +28,92 @@ use core::mem;
 use core::mem::MaybeUninit;
 
 use bitfield_struct::bitfield;
+use zerocopy::{FromBytes, IntoBytes};
 
+/// An raw, owned page in shared memory used for Hyper-V hypercalls.
 #[derive(Debug)]
-struct HypercallInput<H, T: ?Sized> {
-    header: *mut H,
-    rep_count: usize,
-    _phantom: PhantomData<T>,
+pub struct HypercallPage {
+    // Shared page.
+    page: SharedBox<[u8; PAGE_SIZE]>,
+    // Physical address of the shared page.
+    paddr: PhysAddr,
 }
 
-impl<H, T: ?Sized> HypercallInput<H, T> {
-    // SAFETY: the caller must guarantee the safety of the header pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
-    unsafe fn new(header: *mut H) -> Self {
+impl HypercallPage {
+    /// Attempts to allocate a new shared hypercall page.
+    pub fn try_new() -> Result<Self, SvsmError> {
+        let page = SharedBox::<[u8; PAGE_SIZE]>::try_new_zeroed()?;
+        let paddr = virt_to_phys(page.addr());
+        Ok(Self { page, paddr })
+    }
+
+    /// Gets the virtual address of the shared page.
+    fn vaddr(&self) -> VirtAddr {
+        self.page.addr()
+    }
+}
+
+/// A wrapper type to reinterpret an input hypercall page as a header
+/// `H`, optionally followed by a number of instances of `T`.
+///
+/// `'a` is the lifetime of the borrow of the hypercall page from the
+/// containing [`HypercallPagesGuard`], and `'b` is the lifetime of
+/// the borrow of the pages into the [`PerCpu`].
+#[derive(Debug)]
+struct HypercallInput<'a, 'b, H, T> {
+    page: &'a mut RefMut<'b, HypercallPage>,
+    rep_count: usize,
+    _phantom1: PhantomData<H>,
+    _phantom2: PhantomData<T>,
+}
+
+impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
+    fn new(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+        const { assert!(size_of::<H>() <= PAGE_SIZE) };
         Self {
-            header,
+            page,
             rep_count: 0,
-            _phantom: PhantomData,
+            _phantom1: PhantomData,
+            _phantom2: PhantomData,
         }
     }
 
-    /// This function requires the use of `mut self` because it generates
-    /// mutable references to the addresses described by the hypercall pages,
-    /// but the compiler cannot understand that relationship.  Therefore,
-    /// suppress the warning for needless mut because it is actually required
-    /// in this case.
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    fn write_header(&mut self, header: &H) {
+    fn header(&self) -> *mut H {
+        self.page.vaddr().as_mut_ptr()
+    }
+
+    fn write_header(&mut self, header: &H)
+    where
+        H: IntoBytes,
+    {
         // SAFETY: the source pointer is a safe reference, and the safety of
         // the destination pointer was determined when the input object was
         // created.
         unsafe {
-            unsafe_copy_bytes(header, self.header, 1);
+            unsafe_copy_bytes(header, self.header(), 1);
         }
     }
-}
 
-impl<H, T> HypercallInput<H, T> {
-    // SAFETY: the caller must guarantee the safety of the header pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
-    unsafe fn new_rep(header: *mut H, page_size: usize) -> Self {
-        let rep_count = (page_size - mem::size_of::<H>()) / mem::size_of::<T>();
+    fn new_rep(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+        const { assert!(size_of::<H>() <= PAGE_SIZE) };
+        const { assert!(size_of::<T>() != 0) };
+        let rep_count = (PAGE_SIZE - mem::size_of::<H>()) / mem::size_of::<T>();
         Self {
-            header,
+            page,
             rep_count,
-            _phantom: PhantomData,
+            _phantom1: PhantomData,
+            _phantom2: PhantomData,
         }
     }
 
-    /// This function requires the use of `mut self` because it generates
-    /// mutable references to the addresses described by the hypercall pages,
-    /// but the compiler cannot understand that relationship.  Therefore,
-    /// suppress the warning for needless mut because it is actually required
-    /// in this case.
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    fn write_rep(&mut self, index: usize, item: T) {
+    fn write_rep(&mut self, index: usize, item: T)
+    where
+        T: IntoBytes,
+    {
         assert!(index < self.rep_count);
         // SAFETY: the header pointer is valid and we bounds-check the
         // index.
-        let dst = unsafe { self.header.add(1).cast::<T>().add(index) };
+        let dst = unsafe { self.header().add(1).cast::<T>().add(index) };
         // SAFETY: the source pointer is a safe reference, and the safety of
         // the destination pointer is guaranteed by the address calculation
         // at the time the input object was created, plus the bounds check
@@ -95,25 +122,43 @@ impl<H, T> HypercallInput<H, T> {
     }
 }
 
+/// A wrapper type to reinterpret an output hypercall page as a sequence
+/// of a number of instances of a type `T`.
+///
+/// Refer to the documentation for [`HypercallInput`] for the meaning
+/// of the `'a` and `'b` lifetimes.
 #[derive(Debug)]
-struct HypercallOutput<T> {
-    array: *const T,
+struct HypercallOutput<'a, 'b, T> {
+    page: &'a RefMut<'b, HypercallPage>,
     rep_count: usize,
+    _phantom: PhantomData<T>,
 }
 
-impl<T> HypercallOutput<T> {
-    // SAFETY: the caller must guarantee the safety of the array pointer so
-    // that this function can assume the safety guarantees expected for
-    // subsequent access.
-    unsafe fn new(array: *const T, rep_count: usize) -> Self {
-        Self { array, rep_count }
+impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
+    /// # Safety
+    ///
+    /// The caller must guarantee that `rep_count` instances of `T` fit
+    /// within a single page.
+    unsafe fn new(page: &'a RefMut<'b, HypercallPage>, rep_count: usize) -> Self {
+        Self {
+            page,
+            rep_count,
+            _phantom: PhantomData,
+        }
     }
 
-    fn read(&self, index: usize) -> T {
+    fn array(&self) -> *const T {
+        self.page.vaddr().as_ptr()
+    }
+
+    fn read(&self, index: usize) -> T
+    where
+        T: FromBytes,
+    {
         assert!(index < self.rep_count);
         // SAFETY: the array pointer is valid and we bounds-check the
         // index
-        let src = unsafe { self.array.add(index) };
+        let src = unsafe { self.array().add(index) };
         let mut item = MaybeUninit::<T>::uninit();
 
         // SAFETY: the source pointer is a safe reference, and the safety of
@@ -127,27 +172,32 @@ impl<T> HypercallOutput<T> {
     }
 }
 
+/// A guard that holds an exclusive borrow of the Hyper-V hypercall pages.
+/// This type is typically constructed from [`PerCpu::get_hypercall_pages`].
+///
+/// The type guarantees that no other piece of code attempts to modify
+/// the hypercall pages. The pages remain usable until the structure is
+/// dropped. Note that the hypercall pages are per-cpu, so the type does
+/// not guard against concurrent users.
+///
+/// The type also includes helper methods to reinterpret the backing
+/// pages as structured data, in order to read and write their contents.
 #[derive(Debug)]
 pub struct HypercallPagesGuard<'a> {
-    pub input: RefMut<'a, VirtPhysPair>,
-    pub output: RefMut<'a, VirtPhysPair>,
+    pub input: RefMut<'a, HypercallPage>,
+    pub output: RefMut<'a, HypercallPage>,
     _irq_guard: IrqGuard,
 }
 
-/// A structure that binds a reference to hypercall input/output pages.
-/// The pages remain usable until the structure is dropped.
 impl<'a> HypercallPagesGuard<'a> {
     /// Creates a new `HypercallPagesGuard` structure to describe a pair of
     /// input/output pages.
     ///
-    /// # Safety
-    ///
-    /// No validation is performed to verify correct ownership of the specified
-    /// virtual addresses, and no validation is performed to verify the
-    /// correct association of virtual to physical address.  The caller is
-    /// responsible for ensuring that both virtual and physical addresses are
-    /// correct and usable.
-    pub unsafe fn new(page_ref: RefMut<'a, (VirtPhysPair, VirtPhysPair)>) -> Self {
+    /// This method is safe because [`HypercallPage`] guarantees by construction
+    /// that the backing memory is valid and shared with the hypervisor. The type
+    /// is wrapped in a [`RefMut`], meaning that there is a runtime guarantee that
+    /// nobody else holds a reference to the same pages.
+    pub fn new(page_ref: RefMut<'a, (HypercallPage, HypercallPage)>) -> Self {
         let (input, output) = RefMut::map_split(page_ref, |r| (&mut r.0, &mut r.1));
         Self {
             input,
@@ -158,46 +208,20 @@ impl<'a> HypercallPagesGuard<'a> {
 
     /// Casts a hypercall input page into a header of type `H` and returns a
     /// reference to that header object.
-    ///
-    /// This function requires the use of `mut self` because it generates
-    /// mutable references to the addresses described by the hypercall pages,
-    /// but the compiler cannot understand that relationship.  Therefore,
-    /// suppress the warning for needless mut because it is actually required
-    /// in this case.
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    fn hypercall_input<H>(&mut self) -> HypercallInput<H, ()> {
-        let header = self.input.vaddr.as_mut_ptr::<H>();
-        assert!(size_of::<H>() <= PAGE_SIZE);
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to a header of type `H`.
-        unsafe { HypercallInput::new(header) }
+    fn hypercall_input<'b, H>(&'b mut self) -> HypercallInput<'b, 'a, H, ()> {
+        HypercallInput::new(&mut self.input)
     }
 
     /// Divides a hypercall input page into a header of type `H` and a slice
     /// of repeated elements of type `T` and returns a reference to each
     /// portion.
-    ///
-    /// This function requires the use of `mut self` because it generates
-    /// mutable references to the addresses described by the hypercall pages,
-    /// but the compiler cannot understand that relationship.  Therefore,
-    /// suppress the warning for needless mut because it is actually required
-    /// in this case.
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    fn hypercall_rep_input<H, T>(&mut self) -> HypercallInput<H, T> {
-        let header = self.input.vaddr.as_mut_ptr::<H>();
-        assert!(size_of::<H>() <= PAGE_SIZE);
-
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to a header of type `H` followed by an array of `T` up to the
-        // size of one page.
-        unsafe { HypercallInput::new_rep(header, PAGE_SIZE) }
+    fn hypercall_rep_input<'b, H, T>(&'b mut self) -> HypercallInput<'b, 'a, H, T> {
+        HypercallInput::new_rep(&mut self.input)
     }
 
     /// Casts a hypercall output page into a slice of repeated elements of
     /// type `T` and returns a reference to that slice.
-    fn hypercall_output<T>(&self, output: HvHypercallOutput) -> HypercallOutput<T> {
+    fn hypercall_output<'b, T>(&'b self, output: HvHypercallOutput) -> HypercallOutput<'b, 'a, T> {
         // A non-REP hypercall is assumed to have a single output element.
         let output_count = output.count();
         let count: usize = if output_count != 0 {
@@ -206,10 +230,9 @@ impl<'a> HypercallPagesGuard<'a> {
             1
         };
         assert!(count * size_of::<T>() <= PAGE_SIZE);
-        // SAFETY: the virtual address represents an entire page which is
-        // exclusively owned by the `HypercallPagesGuard` and can safely be
-        // cast to an array of `T` up to the size of one page.
-        unsafe { HypercallOutput::new(self.output.vaddr.as_ptr::<T>(), count) }
+        // SAFETY: we've asserted that `count` instances of `T` fit in the
+        // output page.
+        unsafe { HypercallOutput::new(&self.output, count) }
     }
 }
 
@@ -414,7 +437,7 @@ pub fn execute_host_hypercall(
 /// that all fields are read when they are copied into the hypercall input
 /// page.
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputGetVpRegister {
     partition_id: u64,
     vp_index: u32,
@@ -457,7 +480,7 @@ pub fn get_vp_register(name: hyperv::HvRegisterName) -> Result<u64, SvsmError> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputEnableVpVtl {
     partition_id: u64,
     vp_index: u32,
@@ -497,7 +520,7 @@ fn enable_vp_vtl_hypercall(
     }
 }
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, IntoBytes)]
 struct HvInputStartVirtualProcessor {
     partition_id: u64,
     vp_index: u32,
