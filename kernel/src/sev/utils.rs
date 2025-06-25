@@ -52,14 +52,23 @@ impl fmt::Display for SevSnpError {
     }
 }
 
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// range does not violate memory safety.
 fn pvalidate_range_4k(region: MemoryRegion<VirtAddr>, valid: PvalidateOp) -> Result<(), SvsmError> {
     for addr in region.iter_pages(PageSize::Regular) {
-        pvalidate(addr, PageSize::Regular, valid)?;
+        // SAFETY: the caller promises that the validation operation is safe.
+        unsafe {
+            pvalidate(addr, PageSize::Regular, valid)?;
+        }
     }
 
     Ok(())
 }
 
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// range does not violate memory safety.
 pub fn pvalidate_range(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
@@ -76,15 +85,23 @@ pub fn pvalidate_range(
         {
             // Try to validate as a huge page.
             // If we fail, try to fall back to regular-sized pages.
-            pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
-                SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
-                    pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
-                }
-                _ => Err(err),
-            })?;
+            // SAFETY: the caller promises that the validation operation is
+            // safe.
+            unsafe {
+                pvalidate(addr, PageSize::Huge, valid).or_else(|err| match err {
+                    SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
+                        pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
+                    }
+                    _ => Err(err),
+                })?;
+            }
             addr = addr + PAGE_SIZE_2M;
         } else {
-            pvalidate(addr, PageSize::Regular, valid)?;
+            // SAFETY: the caller promises that the validation operation is
+            // safe.
+            unsafe {
+                pvalidate(addr, PageSize::Regular, valid)?;
+            }
             addr = addr + PAGE_SIZE;
         }
     }
@@ -100,7 +117,14 @@ pub enum PvalidateOp {
     Valid = 1,
 }
 
-pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// does not violate memory safety.
+pub unsafe fn pvalidate(
+    vaddr: VirtAddr,
+    size: PageSize,
+    valid: PvalidateOp,
+) -> Result<(), SvsmError> {
     let rax = vaddr.bits();
     let rcx: u64 = match size {
         PageSize::Regular => 0,
@@ -110,6 +134,7 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     let ret: u64;
     let cf: u64;
 
+    // SAFETY: the caller promises that the validation operation is safe.
     unsafe {
         asm!("xorq %r8, %r8",
              "pvalidate",
@@ -145,6 +170,7 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
 /// safety cannot be guaranteed.
 pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
     let new_eax;
+    // SAFETY: the caller promises that the VMMCALL operation is safe.
     unsafe {
         asm!(
             // bx register is reserved by llvm so it can't be passed in
@@ -163,6 +189,7 @@ pub unsafe fn raw_vmmcall(eax: u32, ebx: u32, ecx: u32, edx: u32) -> i32 {
 
 /// Sets the dr7 register to the given value
 pub fn set_dr7(new_val: u64) {
+    // SAFETY: writing DR7 does not affect memory safety.
     unsafe {
         asm!("mov {0}, %dr7", in(reg) new_val, options(att_syntax));
     }
@@ -170,6 +197,7 @@ pub fn set_dr7(new_val: u64) {
 
 pub fn get_dr7() -> u64 {
     let out;
+    // SAFETY: reading DR7 does not affect memory safety.
     unsafe { asm!("mov %dr7, {0}", out(reg) out, options(att_syntax)) };
     out
 }
@@ -184,6 +212,7 @@ pub fn get_dr7() -> u64 {
 /// is subject to change even outside of the scope of VMGEXIT.  Therefore,
 /// use of VMGEXIT cannot cause unsafe behavior.
 pub fn raw_vmgexit() {
+    // SAFETY: executing VMMCALL does not affect memory safety.
     unsafe {
         asm!("rep; vmmcall", options(att_syntax));
     }
@@ -207,7 +236,11 @@ bitflags::bitflags! {
     }
 }
 
-pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that conversion of the virtual address
+/// does not violate memory safety.  Memory safety could be affected if the
+/// page is exposed to a lower VMPL or becomes a VMSA.
+pub unsafe fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(), SvsmError> {
     let rcx: u64 = match size {
         PageSize::Regular => 0,
         PageSize::Huge => 1,
@@ -217,6 +250,7 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(),
     let mut ret: u64;
     let mut ex: u64;
 
+    // SAFETY: the caller promises that the adjust operation is safe.
     unsafe {
         asm!("1: rmpadjust
                  xorq %rcx, %rcx
@@ -252,25 +286,44 @@ pub fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Result<(),
 pub fn rmp_revoke_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
     for vmpl in RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits() {
         let vmpl = RMPFlags::from_bits_truncate(vmpl);
-        rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size)?;
+        // SAFETY: revoking guest access can never affect memory safety.
+        unsafe {
+            rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size)?;
+        }
     }
     Ok(())
 }
 
-pub fn rmp_grant_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
-    rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, size)
+/// # Safety
+/// The caller is required to ensure that exposing this address to the guest
+/// will not affect memory safety.
+pub unsafe fn rmp_grant_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
+    // SAFETY: the caller promises that this operation is safe.
+    unsafe { rmp_adjust(vaddr, RMPFlags::GUEST_VMPL | RMPFlags::RWX, size) }
 }
 
-pub fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that this operation is only attempted on
+/// a page that can safely be used as a guest VMSA.
+pub unsafe fn rmp_set_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
     rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
-    rmp_adjust(
-        vaddr,
-        RMPFlags::GUEST_VMPL | RMPFlags::VMSA,
-        PageSize::Regular,
-    )
+    // SAFETY: the caller has already confirmed that this page can be used
+    // as a guest VMSA< which implies that the memory no longer has safety
+    // properties.
+    unsafe {
+        rmp_adjust(
+            vaddr,
+            RMPFlags::GUEST_VMPL | RMPFlags::VMSA,
+            PageSize::Regular,
+        )
+    }
 }
 
-pub fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
+/// # Safety
+/// The caller is required to ensure that this operation is only attempted on
+/// a page that is already exposed to the guest.
+pub unsafe fn rmp_clear_guest_vmsa(vaddr: VirtAddr) -> Result<(), SvsmError> {
     rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
-    rmp_grant_guest_access(vaddr, PageSize::Regular)
+    // SAFETY: the caller promises that this operation is safe.
+    unsafe { rmp_grant_guest_access(vaddr, PageSize::Regular) }
 }
