@@ -98,6 +98,22 @@ pub mod digest {
     pub struct Sha512;
 }
 
+pub mod rand {
+    //! API for random number generation.
+
+    use crate::protocols::errors::SvsmReqError;
+
+    pub trait Rand {
+	fn fill_bytes(&mut self, buf: &mut [u8]) -> Result<(), SvsmReqError>;
+    }
+
+    // getrandom type.
+    #[derive(Copy, Clone, Debug)]
+    pub struct Reader;
+}
+
 // Crypto implementations supported. Only one of them must be compiled-in.
 
 pub mod rustcrypto;
+#[cfg(feature = "google-vtpm-ek")]
+pub mod rdrand;

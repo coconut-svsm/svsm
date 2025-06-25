@@ -59,6 +59,7 @@ bitflags = "2.6"
 clap = { version = "4.4.14", default-features = false }
 gdbstub = { version = "0.6.6", default-features = false }
 gdbstub_arch = { version = "0.2.4" }
+getrandom = { version = "0.2.15", features = ["rdrand"] }
 igvm = { version = "0.3.4", default-features = false }
 igvm_defs = { version = "0.3.4", default-features = false }
 intrusive-collections = "0.9.6"
