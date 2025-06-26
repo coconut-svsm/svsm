@@ -28,6 +28,7 @@ use svsm::cpu::flush_tlb_percpu;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
+use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -518,6 +519,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 fn panic(info: &PanicInfo<'_>) -> ! {
     log::error!("Panic! COCONUT-SVSM Version: {}", COCONUT_VERSION);
     log::error!("Info: {}", info);
+
+    print_stack(3);
+
     loop {
         platform::halt();
     }
