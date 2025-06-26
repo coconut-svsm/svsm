@@ -502,10 +502,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     )
     .expect("Failed to map and validate heap");
 
-    // Determine whether use of interrupts n the SVSM should be suppressed.
+    // Determine whether use of interrupts on the SVSM should be suppressed.
     // This is required when running SNP under KVM/QEMU.
     let suppress_svsm_interrupts = match platform_type {
-        SvsmPlatformType::Snp => config.is_qemu(),
+        SvsmPlatformType::Snp => config.suppress_svsm_interrupts_on_snp(),
         _ => false,
     };
 

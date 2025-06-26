@@ -65,7 +65,7 @@ impl<'a> SvsmConfig<'a> {
         // Create a firmware config object if the IGVM parameter block
         // indicates that firmwrae config services are available on this
         // system.
-        let fw_cfg = if igvm_params.is_qemu() {
+        let fw_cfg = if igvm_params.has_fw_cfg_port() {
             let io_port = platform.get_io_port();
             Some(FwCfg::new(io_port))
         } else {
@@ -143,7 +143,11 @@ impl<'a> SvsmConfig<'a> {
         self.igvm_params.use_alternate_injection()
     }
 
-    pub fn is_qemu(&self) -> bool {
-        self.igvm_params.is_qemu()
+    pub fn suppress_svsm_interrupts_on_snp(&self) -> bool {
+        self.igvm_params.suppress_svsm_interrupts_on_snp()
+    }
+
+    pub fn has_qemu_testdev(&self) -> bool {
+        self.igvm_params.has_qemu_testdev()
     }
 }

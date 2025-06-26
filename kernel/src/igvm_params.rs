@@ -435,7 +435,15 @@ impl IgvmParams<'_> {
         self.igvm_param_block.use_alternate_injection != 0
     }
 
-    pub fn is_qemu(&self) -> bool {
-        self.igvm_param_block.is_qemu != 0
+    pub fn suppress_svsm_interrupts_on_snp(&self) -> bool {
+        self.igvm_param_block.suppress_svsm_interrupts_on_snp != 0
+    }
+
+    pub fn has_qemu_testdev(&self) -> bool {
+        self.igvm_param_block.has_qemu_testdev != 0
+    }
+
+    pub fn has_fw_cfg_port(&self) -> bool {
+        self.igvm_param_block.has_fw_cfg_port != 0
     }
 }
