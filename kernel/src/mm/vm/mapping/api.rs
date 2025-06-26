@@ -138,27 +138,24 @@ pub trait VirtualMapping: core::fmt::Debug {
 
 #[derive(Debug)]
 pub struct Mapping {
-    mapping: RWLock<Box<dyn VirtualMapping>>,
+    mapping: RWLock<Box<dyn VirtualMapping + Send + Sync>>,
 }
-
-unsafe impl Send for Mapping {}
-unsafe impl Sync for Mapping {}
 
 impl Mapping {
     pub fn new<T>(mapping: T) -> Self
     where
-        T: VirtualMapping + 'static,
+        T: VirtualMapping + Send + Sync + 'static,
     {
         Mapping {
             mapping: RWLock::new(Box::new(mapping)),
         }
     }
 
-    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
         self.mapping.lock_read()
     }
 
-    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
         self.mapping.lock_write()
     }
 }
@@ -238,11 +235,11 @@ impl VMM {
         )
     }
 
-    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
         self.mapping.get()
     }
 
-    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
+    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
         self.mapping.get_mut()
     }
 
