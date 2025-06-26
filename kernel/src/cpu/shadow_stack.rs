@@ -51,7 +51,7 @@ macro_rules! enable_shadow_stacks {
     ($bsp_percpu:ident) => {{
         use core::arch::asm;
 
-        let token_addr = $bsp_percpu.get_top_of_shadow_stack();
+        let token_addr = $bsp_percpu.get_top_of_shadow_stack().unwrap();
 
         unsafe {
             asm!(
