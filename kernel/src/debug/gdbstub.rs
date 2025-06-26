@@ -56,6 +56,10 @@ pub mod svsm_gdbstub {
                 Ordering::Relaxed
             )
             .is_ok());
+        // SAFETY: the use of mutable statics is acceptable because their use
+        // is limited to the debugger package, which uses them only during
+        // interactive debugging, at which time the runtime environment is
+        // stopped for single-threaded debugger activity.
         unsafe {
             let mut target = GdbStubTarget::new();
             #[expect(static_mut_refs)]
@@ -178,6 +182,8 @@ pub mod svsm_gdbstub {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
+            // SAFETY: Inline assembly to generate a software interrupt,
+            // which does not change any state related to memory safety.
             unsafe {
                 asm!("int3");
             }
@@ -240,6 +246,8 @@ pub mod svsm_gdbstub {
     impl Drop for GdbTaskContext {
         fn drop(&mut self) {
             if self.cr3 != 0 {
+                // SAFETY: This is safe because it just restores the previous
+                // page-table, given that the percpu mappings is taken care of.
                 unsafe {
                     asm!("mov %rax, %cr3",
                          in("rax") self.cr3,
@@ -509,6 +517,9 @@ pub mod svsm_gdbstub {
                     // SAFETY: the debugger knows it is safe to operate in the
                     // context of the specified task.
                     let _task_context = unsafe { GdbTaskContext::switch_to_task(tid.get() as u32) };
+                    // SAFETY: the task stack is known to contain a register
+                    // context at the top of the stack, so the registers can
+                    // safely be copied through the stack pointer.
                     unsafe {
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
