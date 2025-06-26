@@ -11,7 +11,7 @@ pub mod boot_stage2;
 
 use bootlib::kernel_launch::{
     KernelLaunchInfo, Stage2LaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START,
-    STAGE2_START,
+    STAGE2_STACK, STAGE2_STACK_END, STAGE2_START,
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
@@ -65,6 +65,10 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     // on multi-threaded access to the per-cpu areas.
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
     let bsp_percpu = PerCpu::alloc(percpu_shared)?;
+    bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
+        VirtAddr::from(STAGE2_STACK_END as u64),
+        VirtAddr::from(STAGE2_STACK as u64),
+    ));
     // SAFETY: pgtable is properly aligned and is never freed within the
     // lifetime of stage2. We go through a raw pointer to promote it to a
     // static mut. Only the BSP is able to get a reference to it so no
