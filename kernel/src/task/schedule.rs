@@ -329,10 +329,10 @@ pub fn is_current_task(id: u32) -> bool {
 
 /// Terminates the current task.
 ///
-/// # Safety
+/// # Panic
 ///
 /// This function must only be called after scheduling is initialized, otherwise it will panic.
-pub unsafe fn current_task_terminated() {
+pub fn current_task_terminated() {
     let cpu = this_cpu();
     let mut rq = cpu.runqueue().lock_write();
     let task_node = rq
@@ -343,10 +343,7 @@ pub unsafe fn current_task_terminated() {
 }
 
 pub fn terminate() {
-    // TODO: re-evaluate whether current_task_terminated() needs to be unsafe
-    unsafe {
-        current_task_terminated();
-    }
+    current_task_terminated();
     schedule();
 }
 

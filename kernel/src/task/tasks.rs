@@ -840,9 +840,7 @@ extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_
 }
 
 extern "C" fn task_exit() {
-    unsafe {
-        current_task_terminated();
-    }
+    current_task_terminated();
     schedule();
 }
 
