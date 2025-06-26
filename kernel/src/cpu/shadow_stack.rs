@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) Coconut-SVSM authors
+//
+// Author: Tom Dohrmann <erbse.13@gmx.de>
 
 use crate::platform::SvsmPlatform;
 
