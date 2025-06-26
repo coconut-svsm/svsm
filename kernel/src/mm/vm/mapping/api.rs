@@ -11,7 +11,7 @@ use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
 use crate::types::{PageSize, PAGE_SHIFT};
 
-use intrusive_collections::rbtree::Link;
+use intrusive_collections::rbtree::AtomicLink;
 use intrusive_collections::{intrusive_adapter, KeyAdapter};
 
 use core::ops::Range;
@@ -167,7 +167,7 @@ impl Mapping {
 #[derive(Debug)]
 pub struct VMM {
     /// Link for storing this instance in an RBTree
-    link: Link,
+    link: AtomicLink,
 
     /// The virtual memory range covered by this mapping
     /// It is stored in a RefCell to check borrowing rules at runtime.
@@ -181,7 +181,10 @@ pub struct VMM {
     mapping: Arc<Mapping>,
 }
 
-intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link: Link });
+unsafe impl Send for VMM {}
+unsafe impl Sync for VMM {}
+
+intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link: AtomicLink });
 
 impl<'a> KeyAdapter<'a> for VMMAdapter {
     type Key = usize;
@@ -204,7 +207,7 @@ impl VMM {
     pub fn new(start_pfn: usize, mapping: Arc<Mapping>) -> Self {
         let size = mapping.get().mapping_size() >> PAGE_SHIFT;
         VMM {
-            link: Link::new(),
+            link: AtomicLink::new(),
             range: Range {
                 start: start_pfn,
                 end: start_pfn + size,
