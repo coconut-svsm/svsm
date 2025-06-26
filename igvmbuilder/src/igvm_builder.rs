@@ -505,7 +505,8 @@ impl IgvmBuilder {
             )?;
         }
 
-        // Populate the empty region below the stage2 stack.
+        // Populate the empty region below the stage2 stack page.
+        // This region is used for stage2 stack at runtime.
         self.add_empty_pages(
             self.gpa_map.base_addr,
             self.gpa_map.stage2_stack.get_start() - self.gpa_map.base_addr,
