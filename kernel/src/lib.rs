@@ -29,6 +29,7 @@ pub mod io;
 pub mod kernel_region;
 pub mod locking;
 pub mod mm;
+pub mod migration;
 pub mod platform;
 pub mod protocols;
 pub mod requests;
