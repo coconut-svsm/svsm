@@ -63,11 +63,17 @@ fn get_idx<T>(v: &[T], idx: usize) -> Option<usize> {
 #[inline]
 fn get_item<T>(v: &[T], idx: usize) -> Option<&T> {
     let idx = get_idx(v, idx)?;
+    // SAFETY: we modulo the index to be within range
     Some(unsafe { v.get_unchecked(idx) })
 }
 
+/// # Safety
+///
+/// The caller must guarantee that the address is valid for the size
+/// of a page.
 #[inline]
 unsafe fn fill_page(page: VirtAddr, byte: u8) {
+    // SAFETY: the caller must guarantee that the page is valid
     unsafe { page.as_mut_ptr::<u8>().write_bytes(byte, PAGE_SIZE) }
 }
 
@@ -118,6 +124,8 @@ fuzz_target!(|inp: FuzzInput| {
             }
             Action::WritePage(idx) => {
                 if let Some(page) = get_item(&pages, idx).copied() {
+                    // SAFETY: the page is valid, since we stored it
+                    // earlier in `pages`.
                     unsafe { fill_page(page, WRITE_BYTE) };
                     inited.insert(page);
                 }
@@ -126,6 +134,8 @@ fuzz_target!(|inp: FuzzInput| {
                 if let Some(page) = get_item(&pages, idx) {
                     if inited.contains(page) {
                         let page_off = idx % PAGE_SIZE;
+                        // SAFETY: the page is valid, since we stored
+                        // it earlier in `pages`.
                         let val = unsafe { page.as_ptr::<u8>().add(page_off).read_volatile() };
                         assert!(val == 0 || val == WRITE_BYTE);
                     }
@@ -150,6 +160,8 @@ fuzz_target!(|inp: FuzzInput| {
                 if let Some(idx) = get_idx(&pages, idx) {
                     let page = pages.swap_remove(idx);
                     inited.remove(&page);
+                    // SAFETY: the page is valid, since we stored it
+                    // earlier in `pages`.
                     unsafe { fill_page(page, POISON_BYTE) };
                     free_page(page);
                 }

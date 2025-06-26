@@ -38,6 +38,8 @@ impl IOPort for FuzzIo<'_> {
 
     fn inb(&self, _port: u16) -> u8 {
         let pos = self.pos.load(Ordering::Relaxed);
+        // SAFETY: we always keep `pos` within bounds by using the
+        // modulo operation before updating it.
         let val = unsafe { *self.data.get_unchecked(pos) };
         self.pos.store((pos + 1) % self.len, Ordering::Relaxed);
         val
