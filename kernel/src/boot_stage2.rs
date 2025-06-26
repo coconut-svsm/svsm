@@ -285,6 +285,10 @@ global_asm!(
          */
         movl %ebp, %edi
         andq $~0xf, %rsp
+
+        /* Mark the next stack frame as the bottom frame */
+        xor %rbp, %rbp
+
         call stage2_main
 
         .data
