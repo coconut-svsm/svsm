@@ -66,15 +66,13 @@ pub struct SvsmConfig<'a> {
 
 impl<'a> SvsmConfig<'a> {
     pub fn new(platform: &dyn SvsmPlatform, igvm_params: Option<IgvmParams<'a>>) -> SvsmConfig<'a> {
-        // Create a firmware config object if there is no IGVM parameter block,
-        // or if the IGVM parameter block indicates that firmwrae config
-        // services are available on this system.
-        let is_qemu = if let Some(ref igvm) = igvm_params {
-            igvm.is_qemu()
+        // If there is no igvm param block, assume the FwCfg port must exist.
+        let has_fw_cfg_port = if let Some(ref igvm) = igvm_params {
+            igvm.has_fw_cfg_port()
         } else {
             true
         };
-        let fw_cfg = if is_qemu {
+        let fw_cfg = if has_fw_cfg_port {
             let io_port = platform.get_io_port();
             Some(FwCfg::new(io_port))
         } else {
@@ -216,10 +214,17 @@ impl<'a> SvsmConfig<'a> {
         }
     }
 
-    pub fn is_qemu(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.is_qemu(),
-            None => true,
-        }
+    pub fn suppress_svsm_interrupts_on_snp(&self) -> bool {
+        self.igvm_params
+            .as_ref()
+            .map(IgvmParams::suppress_svsm_interrupts_on_snp)
+            .unwrap_or(true)
+    }
+
+    pub fn has_qemu_testdev(&self) -> bool {
+        self.igvm_params
+            .as_ref()
+            .map(IgvmParams::has_qemu_testdev)
+            .unwrap_or(true)
     }
 }

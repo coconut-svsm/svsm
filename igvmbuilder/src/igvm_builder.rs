@@ -225,8 +225,18 @@ impl IgvmBuilder {
             (fw_info, vtom)
         };
 
-        let is_qemu: u8 = match self.options.hypervisor {
-            Hypervisor::Qemu => 1,
+        let suppress_svsm_interrupts_on_snp = match self.options.hypervisor {
+            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
+            _ => 0,
+        };
+
+        let has_qemu_testdev = match self.options.hypervisor {
+            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
+            _ => 0,
+        };
+
+        let has_fw_cfg_port = match self.options.hypervisor {
+            Hypervisor::Qemu | Hypervisor::Vanadium => 1,
             _ => 0,
         };
 
@@ -248,7 +258,9 @@ impl IgvmBuilder {
             kernel_max_size: self.gpa_map.kernel.get_size() as u32,
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
-            is_qemu,
+            suppress_svsm_interrupts_on_snp,
+            has_qemu_testdev,
+            has_fw_cfg_port,
             ..Default::default()
         })
     }
