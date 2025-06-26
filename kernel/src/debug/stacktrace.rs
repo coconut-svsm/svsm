@@ -11,6 +11,7 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
+use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
 use core::{arch::asm, mem};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -43,6 +44,11 @@ extern "C" {
     static bsp_stack_end: u8;
 }
 
+fn is_stage2() -> bool {
+    // If the default BSP stack lands under 16MB, we're in Stage2.
+    (&raw const bsp_stack_end as usize) < (16 << 20)
+}
+
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -65,14 +71,23 @@ impl StackUnwinder {
                 });
             [current_stack, cs_stack, df_stack]
         } else {
-            // Use default stack addresses
-            let bsp_init_stack = MemoryRegion::from_addresses(
-                VirtAddr::from(&raw const bsp_stack),
-                VirtAddr::from(&raw const bsp_stack_end),
-            );
-            let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
-            let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
-            [bsp_init_stack, cs_stack, df_stack]
+            // Use default stack addresses.
+            if is_stage2() {
+                let bsp_init_stack = MemoryRegion::from_addresses(
+                    VirtAddr::from(STAGE2_STACK_END as u64),
+                    VirtAddr::from(STAGE2_STACK as u64),
+                );
+                let no_stack = MemoryRegion::new(VirtAddr::null(), 0);
+                [bsp_init_stack, no_stack, no_stack]
+            } else {
+                let bsp_init_stack = MemoryRegion::from_addresses(
+                    VirtAddr::from(&raw const bsp_stack),
+                    VirtAddr::from(&raw const bsp_stack_end),
+                );
+                let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
+                let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
+                [bsp_init_stack, cs_stack, df_stack]
+            }
         };
 
         Self::new(VirtAddr::from(rbp), stacks)
