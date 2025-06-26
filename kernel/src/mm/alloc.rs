@@ -44,8 +44,8 @@ impl From<AllocError> for SvsmError {
     }
 }
 
-/// Maximum order of page allocations (up to 128kb)
-pub const MAX_ORDER: usize = 6;
+/// Maximum order of page allocations (up to 512kb)
+pub const MAX_ORDER: usize = 8;
 
 /// Calculates the order of a given size for page allocation.
 ///
