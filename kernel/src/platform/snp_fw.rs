@@ -186,18 +186,17 @@ fn validate_fw_mem_region(
         let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
         let vaddr = guard.virt_addr();
 
-        pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
-
-        // Make page accessible to guest VMPL
-        rmp_adjust(
-            vaddr,
-            RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-            PageSize::Regular,
-        )?;
-
-        // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
-        // valid pointer to a correctly mapped region of size PAGE_SIZE.
+        // SAFETY: the caller is required to specify a guest address range.
         unsafe {
+            pvalidate(vaddr, PageSize::Regular, PvalidateOp::Valid)?;
+
+            // Make page accessible to guest VMPL
+            rmp_adjust(
+                vaddr,
+                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                PageSize::Regular,
+            )?;
+
             zero_mem_region(vaddr, vaddr + PAGE_SIZE);
         }
     }
@@ -380,11 +379,14 @@ pub fn validate_fw(
         for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
             let vaddr = guard.virt_addr();
-            if let Err(e) = rmp_adjust(
-                vaddr,
-                RMPFlags::GUEST_VMPL | RMPFlags::RWX,
-                PageSize::Regular,
-            ) {
+            // SAFETY: the address is known to be a guest page.
+            if let Err(e) = unsafe {
+                rmp_adjust(
+                    vaddr,
+                    RMPFlags::GUEST_VMPL | RMPFlags::RWX,
+                    PageSize::Regular,
+                )
+            } {
                 log::info!("rmpadjust failed for addr {:#018x}", vaddr);
                 return Err(e);
             }
