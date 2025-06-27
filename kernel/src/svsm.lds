@@ -25,6 +25,13 @@ SECTIONS
 	. = ALIGN(4096);
 	.data : { *(.data) *(.data.*) }
 	. = ALIGN(4096);
+	.ro_after_init : {
+		ro_after_init_start = .;
+		*(.ro_after_init) *(.ro_after_init.*)
+		. = ALIGN(4096);
+		ro_after_init_end = .;
+	}
+	. = ALIGN(4096);
 	.bss : {
 		*(.bss) *(.bss.*)
 		. = ALIGN(4096);
