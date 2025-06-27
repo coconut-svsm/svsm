@@ -8,4 +8,5 @@ pub mod common;
 pub mod stage2;
 pub mod svsm;
 
-pub use common::{idt, idt_mut};
+pub use common::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
+pub use svsm::{load_static_idt, GLOBAL_IDT};

@@ -27,6 +27,7 @@ use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::flush_tlb_percpu;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
+use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
 use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
@@ -97,13 +98,19 @@ unsafe fn shutdown_percpu() {
     flush_tlb_percpu();
 }
 
-fn setup_env(
+// SAFETY: the caller must guarantee that the IDT specified here will remain
+// in scope until a new IDT is loaded.
+unsafe fn setup_env(
     config: &SvsmConfig<'_>,
     platform: &mut dyn SvsmPlatform,
     launch_info: &Stage2LaunchInfo,
+    idt: &mut IDT<'_>,
 ) {
     GLOBAL_GDT.load_selectors();
-    early_idt_init_no_ghcb();
+    // SAFETY: the caller guarantees that the lifetime of this IDT is suitable.
+    unsafe {
+        early_idt_init_no_ghcb(idt);
+    }
 
     let debug_serial_port = config.debug_serial_port();
     install_console_logger("Stage2").expect("Console logger already initialized");
@@ -156,7 +163,10 @@ fn setup_env(
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
-    early_idt_init();
+    // SAFETY: the caller guarantees that the lifetime of this IDT is suitable.
+    unsafe {
+        early_idt_init(idt);
+    }
 
     // Complete initializtion of the platform.  After that point, the console
     // will be fully working and any unsupported configuration can be properly
@@ -389,7 +399,17 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let platform = platform_cell.platform_mut();
 
     let config = get_svsm_config(launch_info, platform).expect("Failed to get SVSM configuration");
-    setup_env(&config, platform, launch_info);
+
+    // Set up space for an early IDT.  This will remain in scope as long as
+    // stage2 is in memory.
+    let mut early_idt = [IdtEntry::no_handler(); EARLY_IDT_ENTRIES];
+    let mut idt = IDT::new(&mut early_idt);
+
+    // SAFETY: the IDT here will remain in scope until the full IDT is
+    // initialized later, and thus can safely be used as the early IDT.
+    unsafe {
+        setup_env(&config, platform, launch_info, &mut idt);
+    }
 
     // Get the available physical memory region for the kernel
     let kernel_region = config

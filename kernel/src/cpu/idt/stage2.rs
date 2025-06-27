@@ -4,22 +4,36 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::common::{idt_mut, DF_VECTOR, HV_VECTOR, VC_VECTOR};
+use super::common::{DF_VECTOR, HV_VECTOR, IDT, VC_VECTOR};
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
 use crate::cpu::X86ExceptionContext;
 use core::arch::global_asm;
 
-pub fn early_idt_init_no_ghcb() {
-    let mut idt = idt_mut();
+/// # Safety
+/// The caller must guarantee that the IDT object passed in does not go out of
+/// scope before the IDT is reloaded with a different object.
+pub unsafe fn early_idt_init_no_ghcb(idt: &mut IDT<'_>) {
     idt.init(&raw const stage2_idt_handler_array_no_ghcb, 32);
-    idt.load();
+
+    // SAFETY: the caller guarantees that the lifetime of the IDT object is
+    // appropriate for use here.
+    unsafe {
+        idt.load();
+    }
 }
 
-pub fn early_idt_init() {
-    let mut idt = idt_mut();
+/// # Safety
+/// The caller must guarantee that the IDT object passed in does not go out of
+/// scope before the IDT is reloaded with a different object.
+pub unsafe fn early_idt_init(idt: &mut IDT<'_>) {
     idt.init(&raw const stage2_idt_handler_array, 32);
-    idt.load();
+
+    // SAFETY: the caller guarantees that the lifetime of the IDT object is
+    // appropriate for use here.
+    unsafe {
+        idt.load();
+    }
 }
 
 #[no_mangle]

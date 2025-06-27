@@ -4,10 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use super::idt::load_static_idt;
 use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::efer::EFERFlags;
-use crate::cpu::idt::idt;
 use crate::cpu::ipi::ipi_start_cpu;
 use crate::cpu::percpu::{
     cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu, PerCpuShared, PERCPU_AREAS,
@@ -81,7 +81,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
 extern "C" fn start_ap_setup(top_of_stack: u64) {
     // Initialize the GDT, TSS, and IDT.
     this_cpu().load_gdt_tss(true);
-    idt().load();
+    load_static_idt();
     // Now the stack unwinder can be used
     this_cpu().set_current_stack(MemoryRegion::new(
         VirtAddr::from(top_of_stack)
