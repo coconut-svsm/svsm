@@ -100,10 +100,10 @@ pub struct RawRWLock<T, I> {
     phantom: PhantomData<fn(I)>,
 }
 
-/// Implements the trait `Sync` for the [`RWLock`], allowing safe
-/// concurrent access across threads.
-unsafe impl<T: Send, I> Send for RawRWLock<T, I> {}
-unsafe impl<T: Send + Sync, I> Sync for RawRWLock<T, I> {}
+// SAFETY: All well-formed locks are `Send`.
+unsafe impl<T, I> Send for RawRWLock<T, I> {}
+// SAFETY: All well-formed locks are `Sync`.
+unsafe impl<T, I> Sync for RawRWLock<T, I> {}
 
 /// Splits a 64-bit value into two parts: readers (low 32 bits) and
 /// writers (high 32 bits).
@@ -143,7 +143,10 @@ fn compose_val(readers: u64, writers: u64) -> u64 {
 /// A reader-writer lock that allows multiple readers or a single writer
 /// to access the protected data. [`RWLock`] provides exclusive access for
 /// writers and shared access for readers, for efficient synchronization.
-impl<T, I: IrqLocking> RawRWLock<T, I> {
+///
+/// A lock can only be formed if the type it protects is `Send`, since the
+/// contents of the lock will be sent to different threads.
+impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
     /// Creates a new [`RWLock`] instance with the provided initial data.
     ///
     /// # Parameters
@@ -215,35 +218,6 @@ impl<T, I: IrqLocking> RawRWLock<T, I> {
         }
     }
 
-    /// This function allows multiple readers to access the data concurrently.
-    ///
-    /// # Returns
-    ///
-    /// A [`ReadLockGuard`] that provides read access to the protected data.
-    pub fn lock_read(&self) -> RawReadLockGuard<'_, T, I> {
-        let irq_state = I::acquire_lock();
-        loop {
-            let val = self.wait_for_writers();
-            let (readers, _) = split_val(val);
-            let new_val = compose_val(readers + 1, 0);
-
-            if self
-                .rwlock
-                .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
-                .is_ok()
-            {
-                break;
-            }
-            core::hint::spin_loop();
-        }
-
-        RawReadLockGuard {
-            rwlock: &self.rwlock,
-            data: unsafe { &*self.data.get() },
-            _irq_state: irq_state,
-        }
-    }
-
     /// This function ensures exclusive access for a single writer and waits
     /// for all readers to finish before granting access to the writer.
     ///
@@ -276,6 +250,41 @@ impl<T, I: IrqLocking> RawRWLock<T, I> {
         RawWriteLockGuard {
             rwlock: &self.rwlock,
             data: unsafe { &mut *self.data.get() },
+            _irq_state: irq_state,
+        }
+    }
+}
+
+/// A lock can only be acquired for read access if its inner type implements
+/// `Sync` as well as `Send`.  This is because a read lock can be acquired
+/// simultaneously by multiple threads, and therefore the data must be
+/// shareable.
+impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
+    /// This function allows multiple readers to access the data concurrently.
+    ///
+    /// # Returns
+    ///
+    /// A [`ReadLockGuard`] that provides read access to the protected data.
+    pub fn lock_read(&self) -> RawReadLockGuard<'_, T, I> {
+        let irq_state = I::acquire_lock();
+        loop {
+            let val = self.wait_for_writers();
+            let (readers, _) = split_val(val);
+            let new_val = compose_val(readers + 1, 0);
+
+            if self
+                .rwlock
+                .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+
+        RawReadLockGuard {
+            rwlock: &self.rwlock,
+            data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         }
     }

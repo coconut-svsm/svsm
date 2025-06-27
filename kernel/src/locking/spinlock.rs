@@ -113,10 +113,14 @@ pub struct RawSpinLock<T, I> {
     phantom: PhantomData<fn(I)>,
 }
 
-unsafe impl<T: Send, I> Send for RawSpinLock<T, I> {}
-unsafe impl<T: Send, I> Sync for RawSpinLock<T, I> {}
+// SAFETY: A well-formed lock is always `Send`.
+unsafe impl<T, I> Send for RawSpinLock<T, I> {}
+// SAFETY: A well-formed lock is always `Sync`.
+unsafe impl<T, I> Sync for RawSpinLock<T, I> {}
 
-impl<T, I: IrqLocking> RawSpinLock<T, I> {
+/// A lock can only be formed if the type it protects is `Send`, since the
+/// contents of the lock will be sent to different threads.
+impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
     /// Creates a new SpinLock instance with the specified initial data.
     ///
     /// # Examples
