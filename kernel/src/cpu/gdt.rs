@@ -6,6 +6,7 @@
 
 use super::tss::X86Tss;
 use crate::address::VirtAddr;
+use crate::ro_after_init_section;
 use crate::types::{SVSM_CS, SVSM_DS, SVSM_TSS};
 use core::arch::asm;
 use core::mem;
@@ -54,6 +55,10 @@ impl GDTEntry {
 
 const GDT_SIZE: u16 = 8;
 
+// SAFETY: after this section's pages are made read-only, a write to this section
+// is a memory safety violation triggering a #PF, which is the intended
+// behavior.
+#[unsafe(link_section = ro_after_init_section!())]
 pub static GLOBAL_GDT: GDT = GDT::new();
 
 #[derive(Clone, Debug, Default)]

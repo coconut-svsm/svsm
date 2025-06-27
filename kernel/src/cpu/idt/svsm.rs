@@ -32,9 +32,13 @@ use core::mem;
 use core::mem::offset_of;
 use core::num::NonZero;
 
-use crate::syscall::*;
+use crate::{ro_after_init_section, syscall::*};
 use syscall::*;
 
+// SAFETY: after this section's pages are made read-only, a write to this section
+// is a memory safety violation triggering a #PF, which is the intended
+// behavior.
+#[unsafe(link_section = ro_after_init_section!())]
 pub static GLOBAL_IDT: ImmutAfterInitCell<IDT<'_>> = ImmutAfterInitCell::uninit();
 
 pub fn load_static_idt() {
