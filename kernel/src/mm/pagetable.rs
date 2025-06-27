@@ -246,6 +246,11 @@ impl PTEntry {
         self.flags().contains(PTEntryFlags::USER)
     }
 
+    /// Check if the page table entry is global.
+    pub fn global(&self) -> bool {
+        self.flags().contains(PTEntryFlags::GLOBAL)
+    }
+
     /// Check if the page table entry has reserved bits set.
     pub fn has_reserved_bits(&self, pm: PagingMode, level: usize) -> bool {
         let reserved_mask = match pm {
