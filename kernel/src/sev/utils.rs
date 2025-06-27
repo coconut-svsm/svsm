@@ -6,11 +6,14 @@
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
+use crate::migration::migration::count_pvalidate;
 use crate::mm::virt_to_frame;
+use crate::mm::address_space::virt_to_phys;
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
 use core::fmt;
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[expect(non_camel_case_types)]
@@ -109,6 +112,9 @@ pub fn pvalidate(vaddr: VirtAddr, size: PageSize, valid: PvalidateOp) -> Result<
     let rdx = valid as u64;
     let ret: u64;
     let cf: u64;
+
+    let paddr = virt_to_phys(vaddr);
+    count_pvalidate(paddr, size, valid);
 
     unsafe {
         asm!("xorq %r8, %r8",
