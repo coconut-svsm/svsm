@@ -1210,6 +1210,54 @@ impl PageTable {
             entry.set(make_private_address(paddr), flags);
         }
     }
+
+    /// Makes the memory region pages read-only.
+    /// This method is meant for global pages only.
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `region` can be made read-only, i.e. that
+    /// no write can happen or that a #PF raised by any tentative write is
+    /// expected.
+    /// The caller must also ensure that the region start and size are 4k
+    /// aligned.
+    pub unsafe fn make_region_ro_4k(
+        &mut self,
+        region: MemoryRegion<VirtAddr>,
+    ) -> Result<(), SvsmError> {
+        // Since 4k alignment is explicitly mentioned in the safety requirements,
+        // let's use a debug assert here.
+        debug_assert!(!region.start().is_aligned(usize::from(PageSize::Huge)));
+
+        for page in region.iter_pages(PageSize::Regular) {
+            match self.walk_addr(page) {
+                Mapping::Level0(entry) => {
+                    if !entry.present() || !entry.global() {
+                        return Err(SvsmError::Mem);
+                    }
+
+                    let flags = PTEntryFlags::data_ro();
+
+                    let paddr = if is_shared(entry.0) {
+                        make_shared_address(entry.address())
+                    } else {
+                        make_private_address(entry.address())
+                    };
+
+                    entry.set(paddr, flags);
+                }
+                Mapping::Level1(entry) | Mapping::Level2(entry) => {
+                    // Ensure we never fell on a huge page while iterating over the region pages.
+                    if entry.huge() {
+                        return Err(SvsmError::Mem);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
