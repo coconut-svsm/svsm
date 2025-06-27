@@ -18,9 +18,7 @@ pub fn sys_exit(exit_code: u32) -> ! {
         "Terminating task {}, exit_code {exit_code}",
         current_task().get_task_name()
     );
-    unsafe {
-        current_task_terminated();
-    }
+    current_task_terminated();
     schedule();
     unreachable!("schedule() returned in sys_exit()");
 }
