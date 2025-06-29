@@ -47,6 +47,7 @@ fn get_idx<T>(v: &[T], idx: usize) -> Option<usize> {
 
 fn get_item<T>(v: &[T], idx: usize) -> Option<&T> {
     let idx = get_idx(v, idx)?;
+    // SAFETY: we modulo the index to be within bounds
     Some(unsafe { v.get_unchecked(idx) })
 }
 

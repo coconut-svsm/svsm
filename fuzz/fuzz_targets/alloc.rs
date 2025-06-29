@@ -50,35 +50,53 @@ impl PoisonAllocator {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide valid memory given by the allocator.
     unsafe fn unpoison_mem(&self, ptr: *mut u8, size: usize) {
+        // SAFETY: the caller must guarantee `ptr` is valid
         unsafe {
             ptr.write_bytes(Self::WRITE_BYTE, size);
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide valid memory given by the allocator.
     unsafe fn poison_mem(&self, ptr: *mut u8, size: usize) {
+        // SAFETY: the caller must guarantee `ptr` is valid
         unsafe {
             ptr.write_bytes(Self::POISON_BYTE, size);
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide valid memory given by the allocator.
     unsafe fn check_mem(&self, ptr: *mut u8, size: usize) {
         for i in 0..size {
+            // SAFETY: the caller must guarantee ptr is valid for `size` elements
             assert_eq!(unsafe { ptr.add(i).read_volatile() }, Self::WRITE_BYTE);
         }
     }
 
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        unsafe {
-            let ptr = self.heap.alloc(layout);
-            if !ptr.is_null() {
-                self.unpoison_mem(ptr, layout.size());
-            }
-            ptr
+    fn alloc(&self, layout: Layout) -> *mut u8 {
+        // SAFETY: this cannot cause UB because SvsmAllocator properly handles
+        // zero-sized allocations.
+        let ptr = unsafe { self.heap.alloc(layout) };
+        if !ptr.is_null() {
+            // SAFETY: `ptr` comes from the allocator above
+            unsafe { self.unpoison_mem(ptr, layout.size()) };
         }
+        ptr
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide valid memory given by the allocator.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        // SAFETY: the caller must guarantee `ptr` is valid and the layout
+        // is correct for the allocation
         unsafe {
             self.check_mem(ptr, layout.size());
             self.poison_mem(ptr, layout.size());
@@ -86,7 +104,12 @@ impl PoisonAllocator {
         }
     }
 
+    /// # Safety
+    ///
+    /// The caller must provide valid memory given by the allocator.
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_layout: Layout) -> *mut u8 {
+        // SAFETY: The caller must provide valid memory and its corresponding
+        // layout
         unsafe {
             self.check_mem(ptr, layout.size());
             self.poison_mem(ptr, layout.size());
@@ -124,7 +147,7 @@ fuzz_target!(|inp: FuzzInput| {
                 let Ok(layout) = Layout::try_from(layout) else {
                     continue;
                 };
-                let ptr = unsafe { heap.alloc(layout) };
+                let ptr = heap.alloc(layout);
                 if !ptr.is_null() {
                     ptrs.push((ptr, layout));
                 }
@@ -132,12 +155,16 @@ fuzz_target!(|inp: FuzzInput| {
             Action::Free(idx) => {
                 if let Some(idx) = idx.checked_rem(ptrs.len()) {
                     let (ptr, layout) = ptrs.swap_remove(idx);
+                    // SAFETY: `ptr` and `layout` come from the allocator,
+                    // since we stored them earlier into `ptrs`
                     unsafe { heap.dealloc(ptr, layout) };
                 }
             }
             Action::Read(idx) => {
                 if let Some(idx) = idx.checked_rem(ptrs.len()) {
                     let (ptr, layout) = ptrs[idx];
+                    // SAFETY: `ptr` and `layout` come from the allocator,
+                    // since we stored them earlier into `ptrs`
                     unsafe { heap.check_mem(ptr, layout.size()) };
                 };
             }
@@ -154,6 +181,8 @@ fuzz_target!(|inp: FuzzInput| {
                     continue;
                 };
 
+                // SAFETY: `ptr` and `layout` come from the allocator,
+                // since we stored them earlier into `ptrs`
                 let ptr = unsafe { heap.realloc(ptr, layout, new_layout) };
                 if !ptr.is_null() {
                     ptrs.push((ptr, new_layout));
@@ -163,6 +192,8 @@ fuzz_target!(|inp: FuzzInput| {
     }
 
     for (ptr, layout) in ptrs.into_iter() {
+        // SAFETY: `ptr` and `layout` come from the allocator, since we
+        // stored them earlier into `ptrs`
         unsafe { heap.dealloc(ptr, layout) };
     }
 });
