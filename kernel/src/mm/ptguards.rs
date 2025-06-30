@@ -190,9 +190,16 @@ impl<T: Copy> MemMappingGuard<T> {
     /// This function returns a `Result` that indicates the success or failure of the operation.
     /// If the read operation is successful, it returns `Ok(T)` which contains the read back data.
     /// If the virtual address region cannot be retrieved, it returns `Err(SvsmError::Mem)`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must make sure that reading from the mapping does not harm
+    /// Rusts memory safety.
     pub unsafe fn read(&self, offset: usize) -> Result<T, SvsmError> {
         let size = core::mem::size_of::<T>();
         self.virt_addr_region(offset * size, size)
+            // SAFETY: The region was mapped by PerCPUPageMappingGuard and is
+            // safe to access.
             .map_or(Err(SvsmError::Mem), |region| unsafe {
                 Ok(*(region.start().as_ptr::<T>()))
             })
@@ -217,10 +224,17 @@ impl<T: Copy> MemMappingGuard<T> {
     /// If the write operation is successful, it returns `Ok(())`. If the virtual address region
     /// cannot be retrieved or if the buffer size is larger than the region size, it returns
     /// `Err(SvsmError::Mem)`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must make sure that writing to the mapping does not harm
+    /// Rusts memory safety.
     pub unsafe fn write(&self, offset: usize, data: T) -> Result<(), SvsmError> {
         let size = core::mem::size_of::<T>();
         self.virt_addr_region(offset * size, size)
             .map_or(Err(SvsmError::Mem), |region| {
+                // SAFETY: The region was mapped by PerCPUPageMappingGuard and
+                // is safe to access.
                 unsafe {
                     *(region.start().as_mut_ptr::<T>()) = data;
                 }
@@ -246,13 +260,19 @@ impl<T: Copy> MemMappingGuard<T> {
 impl<T: Copy> InsnMachineMem for MemMappingGuard<T> {
     type Item = T;
 
-    /// Safety: See the MemMappingGuard's read() method documentation for safety requirements.
+    /// # Safety
+    ///
+    /// See the MemMappingGuard's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+        // SAFETY: Save when MemMappingGuard::read() safety requirements are met.
         unsafe { self.read(0).map_err(|_| InsnError::MemRead) }
     }
 
-    /// Safety: See the MemMappingGuard's write() method documentation for safety requirements.
+    /// # Safety
+    ///
+    /// See the MemMappingGuard's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+        // SAFETY: Save when MemMappingGuard::write() safety requirements are met.
         unsafe { self.write(0, data).map_err(|_| InsnError::MemWrite) }
     }
 }
