@@ -446,4 +446,8 @@ impl IgvmParams<'_> {
     pub fn has_fw_cfg_port(&self) -> bool {
         self.igvm_param_block.has_fw_cfg_port != 0
     }
+
+    pub fn has_test_iorequests(&self) -> bool {
+        self.igvm_param_block.has_test_iorequests != 0
+    }
 }

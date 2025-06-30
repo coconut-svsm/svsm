@@ -353,7 +353,7 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
     #[cfg(test)]
     {
         if config.has_qemu_testdev() {
-            crate::testutils::set_qemu_test_env();
+            crate::testutils::set_has_qemu_testdev();
         }
         crate::test_main();
     }

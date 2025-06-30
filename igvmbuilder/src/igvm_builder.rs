@@ -240,6 +240,11 @@ impl IgvmBuilder {
             _ => 0,
         };
 
+        let has_test_iorequests = match self.options.hypervisor {
+            Hypervisor::Qemu => 1,
+            _ => 0,
+        };
+
         // Most of the parameter block can be initialised with constants.
         Ok(IgvmParamBlock {
             param_area_size,
@@ -261,6 +266,7 @@ impl IgvmBuilder {
             suppress_svsm_interrupts_on_snp,
             has_qemu_testdev,
             has_fw_cfg_port,
+            has_test_iorequests,
             ..Default::default()
         })
     }

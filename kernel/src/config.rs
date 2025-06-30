@@ -150,4 +150,8 @@ impl<'a> SvsmConfig<'a> {
     pub fn has_qemu_testdev(&self) -> bool {
         self.igvm_params.has_qemu_testdev()
     }
+
+    pub fn has_test_iorequests(&self) -> bool {
+        self.igvm_params.has_test_iorequests()
+    }
 }
