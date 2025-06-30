@@ -117,6 +117,9 @@ fn setup_env(
         PhysAddr::from(u64::from(STAGE2_START)),
     );
 
+    // SAFETY: the CPUID page address specified in the launch info was mapped
+    // by the loader, which promises to supply a correctly formed CPUID page
+    // at that address.
     let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
     register_cpuid_table(cpuid_page);
     paging_init(platform, true).expect("Failed to initialize early paging");
@@ -220,7 +223,10 @@ fn get_svsm_config(
 }
 
 /// Loads a single ELF segment and returns its virtual memory region.
-fn load_elf_segment(
+/// # Safety
+/// The caller is required to supply an appropriate virtual address for this
+/// ELF segment.
+unsafe fn load_elf_segment(
     segment: elf::Elf64ImageLoadSegment<'_>,
     paddr: PhysAddr,
     platform: &dyn SvsmPlatform,
@@ -244,6 +250,8 @@ fn load_elf_segment(
     map_and_validate(platform, config, segment_region, paddr)?;
 
     // Copy the segment contents and pad with zeroes
+    // SAFETY: the caller guarantees the correctness of the ELF segment's
+    // virtual address range.
     let segment_buf =
         unsafe { slice::from_raw_parts_mut(segment_start.as_mut_ptr::<u8>(), segment_len) };
     let contents_len = segment.file_contents.len();
@@ -266,6 +274,8 @@ fn load_kernel_elf(
     let elf_start = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let elf_end = PhysAddr::from(launch_info.kernel_elf_end as u64);
     let elf_len = elf_end - elf_start;
+    // SAFETY: the base address of the ELF image was selected by the loader and
+    // is known not to conflict with any other virtual address mappings.
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
     let elf = elf::Elf64File::read(bytes)?;
 
@@ -281,7 +291,10 @@ fn load_kernel_elf(
     let mut load_virt_start = None;
     let mut load_virt_end = VirtAddr::null();
     for segment in elf.image_load_segment_iter(vaddr_alloc_base) {
-        let region = load_elf_segment(segment, loaded_phys.end(), platform, config)?;
+        // SAFETY: the virtual address is calculated based on the base address
+        // of the image and the previously loaded segments, so it is correct
+        // for use.
+        let region = unsafe { load_elf_segment(segment, loaded_phys.end(), platform, config)? };
         // Remember the mapping range's lower and upper bounds to pass it on
         // the kernel later. Note that the segments are being iterated over
         // here in increasing load order.
@@ -307,6 +320,9 @@ fn load_kernel_elf(
             let Some(reloc) = reloc? else {
                 continue;
             };
+            // TODO: ensure that the ELF package rejects illegal relocations
+            // the point outside the image.
+            // SAFETY: the relocation address is known to be correct.
             let dst = unsafe { slice::from_raw_parts_mut(reloc.dst as *mut u8, reloc.value_len) };
             let src = &reloc.value[..reloc.value_len];
             dst.copy_from_slice(src)
@@ -321,7 +337,10 @@ fn load_kernel_elf(
 /// Loads the IGVM params at the next contiguous location from the loaded
 /// kernel image. Returns the virtual and physical memory regions hosting the
 /// loaded data.
-fn load_igvm_params(
+/// # Safety
+/// Ther caller is required to specify the correct virtual address for the
+/// kernel virtual region.
+unsafe fn load_igvm_params(
     launch_info: &Stage2LaunchInfo,
     params: &IgvmParams<'_>,
     loaded_kernel_vregion: &MemoryRegion<VirtAddr>,
@@ -336,7 +355,12 @@ fn load_igvm_params(
 
     // Copy the contents over
     let src_addr = VirtAddr::from(launch_info.igvm_params as u64);
+    // SAFETY: the source address specified in the launch info was mapped
+    // by the loader, which promises to supply a correctly formed IGRM
+    // parameter block
     let igvm_src = unsafe { slice::from_raw_parts(src_addr.as_ptr::<u8>(), igvm_vregion.len()) };
+    // SAFETY: the destination address is calculated to follow the kernel ELF
+    // image, which the caller is required to calculate correctly.
     let igvm_dst = unsafe {
         slice::from_raw_parts_mut(igvm_vregion.start().as_mut_ptr::<u8>(), igvm_vregion.len())
     };
@@ -410,14 +434,18 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     // Load the IGVM params, if present. Update loaded region accordingly.
     let (igvm_vregion, igvm_pregion) = if let Some(igvm_params) = config.get_igvm_params() {
-        let (igvm_vregion, igvm_pregion) = load_igvm_params(
-            launch_info,
-            igvm_params,
-            &loaded_kernel_vregion,
-            &loaded_kernel_pregion,
-            platform,
-            &config,
-        )
+        // SAFETY: The loaded kernel region was correctly calculated above and
+        // is sized appropriately to include a copy of the IGVM parameters.
+        let (igvm_vregion, igvm_pregion) = unsafe {
+            load_igvm_params(
+                launch_info,
+                igvm_params,
+                &loaded_kernel_vregion,
+                &loaded_kernel_pregion,
+                platform,
+                &config,
+            )
+        }
         .expect("Failed to load IGVM params");
 
         // Update the loaded kernel region
@@ -496,6 +524,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     log::info!("Starting SVSM kernel...");
 
     // Shut down the GHCB
+    // SAFETY: the addreses used to invoke the kernel have been calculated
+    // correctly for use in the assembly trampoline.
     unsafe {
         shutdown_percpu();
 
