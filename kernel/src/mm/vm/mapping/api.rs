@@ -31,7 +31,7 @@ pub struct VMPageFaultResolution {
     pub flags: PTEntryFlags,
 }
 
-pub trait VirtualMapping: core::fmt::Debug {
+pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     /// Request the size of the virtual memory mapping
     ///
     /// # Returns
@@ -138,24 +138,24 @@ pub trait VirtualMapping: core::fmt::Debug {
 
 #[derive(Debug)]
 pub struct Mapping {
-    mapping: RWLock<Box<dyn VirtualMapping + Send + Sync>>,
+    mapping: RWLock<Box<dyn VirtualMapping>>,
 }
 
 impl Mapping {
     pub fn new<T>(mapping: T) -> Self
     where
-        T: VirtualMapping + Send + Sync + 'static,
+        T: VirtualMapping + 'static,
     {
         Mapping {
             mapping: RWLock::new(Box::new(mapping)),
         }
     }
 
-    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
+    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.lock_read()
     }
 
-    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
+    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.lock_write()
     }
 }
@@ -177,9 +177,6 @@ pub struct VMM {
     /// It is protected by an RWLock to serialize concurent accesses.
     mapping: Arc<Mapping>,
 }
-
-unsafe impl Send for VMM {}
-unsafe impl Sync for VMM {}
 
 intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link: AtomicLink });
 
@@ -235,11 +232,11 @@ impl VMM {
         )
     }
 
-    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
+    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.get()
     }
 
-    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping + Send + Sync>> {
+    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
         self.mapping.get_mut()
     }
 
