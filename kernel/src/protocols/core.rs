@@ -58,9 +58,13 @@ struct PValidateRequest {
     resv: u32,
 }
 
-fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
+/// # Safety
+/// The caller must only call this function on a page that was committed for
+/// use as a guest VMSA.
+unsafe fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<VirtAddr>) {
     if let Some(v) = vaddr {
-        if let Err(err) = rmp_clear_guest_vmsa(v) {
+        // SAFETY: the caller guarantees the safety of this address.
+        if let Err(err) = unsafe { rmp_clear_guest_vmsa(v) } {
             log::error!("Failed to restore page permissions: {:#?}", err);
         }
     }
@@ -125,7 +129,11 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Make sure the guest can't make modifications to the VMSA page
     rmp_revoke_guest_access(vaddr, PageSize::Regular).inspect_err(|_| {
-        core_create_vcpu_error_restore(Some(paddr), None);
+        // SAFETY: this address has already been validated as a guest-owned
+        // address.
+        unsafe {
+            core_create_vcpu_error_restore(Some(paddr), None);
+        }
     })?;
 
     // TLB flush needed to propagate new permissions
@@ -136,14 +144,21 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // VMSA validity checks according to SVSM spec
     if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
-        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
+        // SAFETY: this address has already been validated as a guest-owned
+        // address.
+        unsafe {
+            core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
+        }
         return Err(SvsmReqError::invalid_parameter());
     }
 
     // Set the VMSA bit
-    rmp_set_guest_vmsa(vaddr).inspect_err(|_| {
-        core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
-    })?;
+    // SAFETY: this page was already validated to be a guest-owned page.
+    unsafe {
+        rmp_set_guest_vmsa(vaddr).inspect_err(|_| {
+            core_create_vcpu_error_restore(Some(paddr), Some(vaddr));
+        })?;
+    }
 
     drop(lock);
 
@@ -170,7 +185,8 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     del_vmsa.disable();
 
     // Do not return early here, as we need to do a TLB flush
-    let res = rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmReqError::invalid_address());
+    // SAFETY: this page is known to already be in use as a guest VMSA.
+    let res = unsafe { rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmReqError::invalid_address()) };
 
     // Unmap the page
     drop(mapping_guard);
@@ -330,7 +346,11 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         } else {
             log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
         }
-        rmp_grant_guest_access(vaddr, huge)?;
+        // SAFETY: the address was validated earlier as a guest page and thus
+        // memory safety is not affected.
+        unsafe {
+            rmp_grant_guest_access(vaddr, huge)?;
+        }
     }
 
     Ok(())

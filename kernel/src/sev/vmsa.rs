@@ -42,7 +42,10 @@ impl VmsaPage {
         };
 
         let vaddr = page.vaddr() + idx * size_of::<VMSA>();
-        rmp_adjust(vaddr, RMPFlags::VMSA | vmpl, PageSize::Regular)?;
+        // SAFETY: the page was allcoate above for exclusive use as a VMSA.
+        unsafe {
+            rmp_adjust(vaddr, RMPFlags::VMSA | vmpl, PageSize::Regular)?;
+        }
         Ok(Self { page, idx })
     }
 
@@ -73,11 +76,14 @@ impl VmsaPage {
 
 impl Drop for VmsaPage {
     fn drop(&mut self) {
-        rmp_adjust(
-            self.vaddr(),
-            RMPFlags::RWX | RMPFlags::VMPL0,
-            PageSize::Regular,
-        )
+        // SAFETY: Revoking VMSA status does not affect memory safety.
+        unsafe {
+            rmp_adjust(
+                self.vaddr(),
+                RMPFlags::RWX | RMPFlags::VMPL0,
+                PageSize::Regular,
+            )
+        }
         .expect("Failed to RMPADJUST VMSA page");
     }
 }
