@@ -340,6 +340,7 @@ mod tests {
     fn test_has_memory_encryption_info_cpuid() {
         const CPUID_EXTENDED_FUNCTION_INFO: u32 = 0x8000_0000;
         const CPUID_MEMORY_ENCRYPTION_INFO: u32 = 0x8000_001F;
+        // SAFETY: CPUID does never affect safety.
         let extended_info = unsafe { __cpuid_count(CPUID_EXTENDED_FUNCTION_INFO, 0) };
         assert!(extended_info.eax >= CPUID_MEMORY_ENCRYPTION_INFO);
     }
@@ -350,6 +351,7 @@ mod tests {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             const CPUID_VENDOR_INFO: u32 = 0;
 
+            // SAFETY: CPUID does never affect safety.
             let vendor_info = unsafe { __cpuid_count(CPUID_VENDOR_INFO, 0) };
 
             let vendor_name_bytes = [vendor_info.ebx, vendor_info.edx, vendor_info.ecx]
@@ -370,6 +372,7 @@ mod tests {
         let ghcb = current_ghcb();
         let ptr: *const GHCB = core::ptr::from_ref(ghcb);
         let ghcb_bytes =
+            // SAFETY: The pointer points to a GHCB.
             unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
         assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
     }
@@ -387,14 +390,20 @@ mod tests {
 
     const TESTDEV_ECHO_LAST_PORT: u16 = 0xe0;
 
-    fn inb(port: u16) -> u8 {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn inb(port: u16) -> u8 {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe {
             let ret: u8;
             asm!("inb %dx, %al", in("dx") port, out("al") ret, options(att_syntax));
             ret
         }
     }
+
     fn inb_from_testdev_echo() -> u8 {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe {
             let ret: u8;
             asm!("inb $0xe0, %al", out("al") ret, options(att_syntax));
@@ -402,22 +411,33 @@ mod tests {
         }
     }
 
-    fn outb(port: u16, value: u8) {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn outb(port: u16, value: u8) {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe { asm!("outb %al, %dx", in("al") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outb_to_testdev_echo(value: u8) {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe { asm!("outb %al, $0xe0", in("al") value, options(att_syntax)) }
     }
 
-    fn inw(port: u16) -> u16 {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn inw(port: u16) -> u16 {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe {
             let ret: u16;
             asm!("inw %dx, %ax", in("dx") port, out("ax") ret, options(att_syntax));
             ret
         }
     }
+
     fn inw_from_testdev_echo() -> u16 {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe {
             let ret: u16;
             asm!("inw $0xe0, %ax", out("ax") ret, options(att_syntax));
@@ -425,22 +445,33 @@ mod tests {
         }
     }
 
-    fn outw(port: u16, value: u16) {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn outw(port: u16, value: u16) {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe { asm!("outw %ax, %dx", in("ax") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outw_to_testdev_echo(value: u16) {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe { asm!("outw %ax, $0xe0", in("ax") value, options(att_syntax)) }
     }
 
-    fn inl(port: u16) -> u32 {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn inl(port: u16) -> u32 {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe {
             let ret: u32;
             asm!("inl %dx, %eax", in("dx") port, out("eax") ret, options(att_syntax));
             ret
         }
     }
+
     fn inl_from_testdev_echo() -> u32 {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe {
             let ret: u32;
             asm!("inl $0xe0, %eax", out("eax") ret, options(att_syntax));
@@ -448,21 +479,37 @@ mod tests {
         }
     }
 
-    fn outl(port: u16, value: u32) {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn outl(port: u16, value: u32) {
+        // SAFETY: Safe when function's safety requirement are met.
         unsafe { asm!("outl %eax, %dx", in("eax") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outl_to_testdev_echo(value: u32) {
+        // SAFETY: Accessing testdev does not modify any memory.
         unsafe { asm!("outl %eax, $0xe0", in("eax") value, options(att_syntax)) }
     }
 
-    fn rep_outsw(port: u16, data: &[u16]) {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn rep_outsw(port: u16, data: &[u16]) {
+        // SAFETY: Port acces is safe when function's safety requirement are
+        // met. Assembly code reads a u16 slice. This is safe because u16 is
+        // Send.
         unsafe {
             asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
     }
 
-    fn rep_insw(port: u16, data: &mut [u16]) {
+    /// # Safety
+    ///
+    /// Caller must ensure that port access does not affect memory safety.
+    unsafe fn rep_insw(port: u16, data: &mut [u16]) {
+        // SAFETY: Port access is safe when function's safety requirement are
+        // met. Assembly code reads data to an exclusively owned u16 slice.
         unsafe {
             asm!("rep insw", in("dx") port, in("rdi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
@@ -473,11 +520,14 @@ mod tests {
     fn test_port_io_8() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u8 = 0x12;
-            verify_ghcb_gets_altered(|| outb(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-            assert_eq!(
-                TEST_VAL,
-                verify_ghcb_gets_altered(|| inb(TESTDEV_ECHO_LAST_PORT))
-            );
+            // SAFETY: Accessing testdev does not modify any memory.
+            unsafe {
+                verify_ghcb_gets_altered(|| outb(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+                assert_eq!(
+                    TEST_VAL,
+                    verify_ghcb_gets_altered(|| inb(TESTDEV_ECHO_LAST_PORT))
+                );
+            }
         }
     }
 
@@ -486,11 +536,14 @@ mod tests {
     fn test_port_io_16() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u16 = 0x4321;
-            verify_ghcb_gets_altered(|| outw(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-            assert_eq!(
-                TEST_VAL,
-                verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
-            );
+            // SAFETY: Accessing testdev does not modify any memory.
+            unsafe {
+                verify_ghcb_gets_altered(|| outw(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+                assert_eq!(
+                    TEST_VAL,
+                    verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
+                );
+            }
         }
     }
 
@@ -499,11 +552,14 @@ mod tests {
     fn test_port_io_32() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u32 = 0xabcd1234;
-            verify_ghcb_gets_altered(|| outl(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
-            assert_eq!(
-                TEST_VAL,
-                verify_ghcb_gets_altered(|| inl(TESTDEV_ECHO_LAST_PORT))
-            );
+            // SAFETY: Accessing testdev does not modify any memory.
+            unsafe {
+                verify_ghcb_gets_altered(|| outl(TESTDEV_ECHO_LAST_PORT, TEST_VAL));
+                assert_eq!(
+                    TEST_VAL,
+                    verify_ghcb_gets_altered(|| inl(TESTDEV_ECHO_LAST_PORT))
+                );
+            }
         }
     }
 
@@ -542,16 +598,22 @@ mod tests {
     fn test_port_io_string_16_get_last() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
-            verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
-            assert_eq!(
-                TEST_DATA.last().unwrap(),
-                &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
-            );
+            // SAFETY: Accessing testdev does not modify any memory.
+            unsafe {
+                verify_ghcb_gets_altered(|| rep_outsw(TESTDEV_ECHO_LAST_PORT, TEST_DATA));
+                assert_eq!(
+                    TEST_DATA.last().unwrap(),
+                    &verify_ghcb_gets_altered(|| inw(TESTDEV_ECHO_LAST_PORT))
+                );
+            }
 
             let mut test_data: [u16; 4] = [0; 4];
-            verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
-            for d in test_data.iter() {
-                assert_eq!(d, TEST_DATA.last().unwrap());
+            // SAFETY: Accessing testdev does not modify any memory.
+            unsafe {
+                verify_ghcb_gets_altered(|| rep_insw(TESTDEV_ECHO_LAST_PORT, &mut test_data));
+                for d in test_data.iter() {
+                    assert_eq!(d, TEST_DATA.last().unwrap());
+                }
             }
         }
     }
@@ -612,6 +674,8 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_error() {
+        // SAFETY: Calls into the VC handler and issues a vmmcall there. VMM
+        // can only modify shared data.
         let res = verify_ghcb_gets_altered(|| unsafe { raw_vmmcall(1005, 0, 0, 0) });
         assert_eq!(res, -1000);
     }
@@ -623,6 +687,8 @@ mod tests {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
 
+            // SAFETY: Calls into the VC handler and issues a vmmcall
+            // there. VMM can only modify shared data.
             let res = verify_ghcb_gets_altered(|| unsafe {
                 raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0)
             });
@@ -685,6 +751,7 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_wbinvd() {
+        // SAFETY: wbinvd does not harm memory safety.
         verify_ghcb_gets_altered(|| unsafe {
             asm!("wbinvd");
         });
@@ -700,6 +767,7 @@ mod tests {
         let mut version: u32 = 0;
         let address = u32::try_from(APIC_DEFAULT_PHYS_BASE + APIC_DEFAULT_VERSION_REGISTER_OFFSET)
             .expect("APIC address should fit in 32 bits");
+        // SAFETY: Reads the APIC version, which does not harm memory safety.
         verify_ghcb_gets_altered(|| unsafe {
             asm!(
                 "mov (%edx), %eax",
