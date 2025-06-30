@@ -128,8 +128,11 @@ pub struct IgvmParamBlock {
     /// Indicates whether SVSM should use an IO port to read the qemu FwCfg.
     pub has_fw_cfg_port: u8,
 
+    /// Indicates whether SVSM can use "IORequest"s to assist with testing.
+    pub has_test_iorequests: u8,
+
     #[doc(hidden)]
-    pub _reserved: [u8; 2],
+    pub _reserved: [u8; 1],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.

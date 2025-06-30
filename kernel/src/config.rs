@@ -227,4 +227,11 @@ impl<'a> SvsmConfig<'a> {
             .map(IgvmParams::has_qemu_testdev)
             .unwrap_or(true)
     }
+
+    pub fn has_test_iorequests(&self) -> bool {
+        self.igvm_params
+            .as_ref()
+            .map(IgvmParams::has_test_iorequests)
+            .unwrap_or(true)
+    }
 }
