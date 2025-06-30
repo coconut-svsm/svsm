@@ -531,7 +531,8 @@ pub mod svsm_gdbstub {
             let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
-                let Ok(val) = read_u8(start_addr + off) else {
+                // SAFETY: Unsafe but ok since this is a debug access
+                let Ok(val) = (unsafe { read_u8(start_addr + off) }) else {
                     return Err(TargetError::NonFatal);
                 };
                 *dst = val;
@@ -691,7 +692,8 @@ pub mod svsm_gdbstub {
             // The breakpoint works by taking the opcode at the bp address, storing
             // it and replacing it with an INT3 instruction
             let vaddr = VirtAddr::from(addr);
-            let Ok(inst) = read_u8(vaddr) else {
+            // SAFETY: Unsafe but ok since this is a debug access
+            let Ok(inst) = (unsafe { read_u8(vaddr) }) else {
                 return Ok(false);
             };
             let Ok(_) = GdbStubTarget::write_bp_address(vaddr, INT3_INSTR) else {
