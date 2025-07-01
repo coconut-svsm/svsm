@@ -285,6 +285,10 @@ global_asm!(
          */
         movl %ebp, %edi
         andq $~0xf, %rsp
+
+        /* Mark the next stack frame as the bottom frame */
+        xor %rbp, %rbp
+
         call stage2_main
 
         .data
@@ -348,10 +352,6 @@ global_asm!(
 // between SVSM and Stage2.
 global_asm!(
     r#"
-        .globl entry_code_start
-        entry_code_start:
-        .globl entry_code_end
-        entry_code_end:
         .globl bsp_stack
         bsp_stack:
         .globl bsp_stack_end
