@@ -4,7 +4,8 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::common::{DF_VECTOR, HV_VECTOR, IDT, VC_VECTOR};
+use super::super::extable::handle_exception_table_early;
+use super::common::{DF_VECTOR, HV_VECTOR, IDT, PF_VECTOR, VC_VECTOR};
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
 use crate::cpu::X86ExceptionContext;
@@ -67,21 +68,30 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext, vect
 
 #[no_mangle]
 pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionContext, vector: usize) {
+    let rip = ctx.frame.rip;
+    let rsp = ctx.frame.rsp;
+    let err = ctx.error_code; // zero if no error code is given
+
     match vector {
         DF_VECTOR => {
             let cr2 = read_cr2();
-            let rip = ctx.frame.rip;
-            let rsp = ctx.frame.rsp;
             panic!(
                 "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x}",
                 rip, rsp, cr2
             );
         }
+        PF_VECTOR => {
+            let cr2 = read_cr2();
+
+            if !handle_exception_table_early(ctx) {
+                panic!(
+                    "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
+                    rip, cr2, err
+                );
+            }
+        }
         VC_VECTOR => stage2_handle_vc_exception_no_ghcb(ctx).expect("Failed to handle #VC"),
         _ => {
-            let err = ctx.error_code;
-            let rip = ctx.frame.rip;
-
             panic!(
                 "Unhandled exception {} RIP {:#018x} error code: {:#018x}",
                 vector, rip, err
