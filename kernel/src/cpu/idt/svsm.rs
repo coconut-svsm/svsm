@@ -6,6 +6,7 @@
 
 use super::super::control_regs::read_cr2;
 use super::super::extable::{handle_exception_table, handle_exception_table_early};
+use super::super::ipi::handle_ipi_interrupt;
 use super::super::percpu::{current_task, this_cpu};
 use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
@@ -454,7 +455,7 @@ pub fn common_isr_handler(vector: usize) {
 
     // Process the requested interrupt vector.
     match vector {
-        IPI_VECTOR => this_cpu().handle_ipi_interrupt(),
+        IPI_VECTOR => handle_ipi_interrupt(),
         _ => {
             // Ignore all unrecognized interrupt vectors and treat them as
             // spurious interrupts.

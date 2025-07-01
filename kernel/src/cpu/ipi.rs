@@ -7,8 +7,7 @@
 use super::apic::{ApicIcr, IcrDestFmt};
 use super::cpuset::{AtomicCpuSet, CpuSet};
 use super::idt::common::IPI_VECTOR;
-use super::percpu::this_cpu;
-use super::percpu::PERCPU_AREAS;
+use super::percpu::{this_cpu, PerCpuShared, PERCPU_AREAS};
 use super::x86::apic_post_irq;
 use super::TprGuard;
 use crate::error::SvsmError;
@@ -174,7 +173,7 @@ pub enum IpiRequest {
 }
 
 #[derive(Debug)]
-pub struct IpiBoard {
+struct IpiBoard {
     // The number of CPUs that have yet to complete the request.
     pending: AtomicUsize,
 
@@ -187,6 +186,31 @@ pub struct IpiBoard {
     // A function pointer that will handle the IPI on the receiving CPU.
     handler: Cell<MaybeUninit<unsafe fn(*const ())>>,
 }
+
+#[derive(Debug, Default)]
+pub struct IpiState {
+    // A set of CPUs that have requested IPI handling by this CPU.
+    request_set: AtomicCpuSet,
+
+    // A bulletin board holding the state of an IPI message to send to other
+    // CPUs.
+    ipi_board: IpiBoard,
+}
+
+// SAFETY: The members of the IPI board are not visible outside of this
+// module, and all of the functions in this module apply correct
+// synchronization to access the cell fields of the IPI board.  Those
+// synchronization rules are the following:
+// - Only the current CPU can write to the IPI board.
+// - No other CPU can read from any `ipi_board` unless it observes the
+//   sender's index in its own request set.
+// - No CPU index can be added to a receiving CPU's request set unless the
+//   sender's IPI board is fully initialized.
+// - The current CPU's IPI board can only be torn down after every recipient
+//   has acknolwedged the IPI.
+// - The sender's TPR must be SYNCH_LEVEL to prevent reentrant attempts to
+//   send an IPI.
+unsafe impl Sync for IpiState {}
 
 // The IpiHelper trait exists to abstract the difference between use of
 // IpiMessage and IpiMessageMut in the IPI send and receive logic.
@@ -300,16 +324,18 @@ impl Default for IpiBoard {
 // is the interface to the correct IPI message trait implementation.  This
 // is consumed as a dynamic dispatch trait to avoid explosion due to multiple
 // generic message implementations.
-pub fn send_ipi(
-    target_set: IpiTarget<'_>,
-    sender_cpu_index: usize,
-    ipi_helper: &mut dyn IpiHelper,
-    ipi_board: &IpiBoard,
-) {
+fn send_ipi(target_set: IpiTarget<'_>, ipi_helper: &mut dyn IpiHelper) {
     assert!(ipi_available());
+
+    let sender_cpu_index = this_cpu().get_cpu_index();
 
     // Raise TPR to synch level to prevent reentrant attempts to send an IPI.
     let tpr_guard = TprGuard::raise(TPR_SYNCH);
+
+    // Obtain a reference to the IPI board of the current CPU.
+    // SAFETY: Raising TPR to synch level proves that no other context
+    // could be trying to configure the IPI board of the current processor.
+    let ipi_board = unsafe { &this_cpu().shared().ipi_state().ipi_board };
 
     // Initialize the IPI board to describe this request.  Since no request
     // can be outstanding right now, the pending count must be zero, and
@@ -349,9 +375,12 @@ pub fn send_ipi(
                 include_self = true;
             } else {
                 ipi_board.pending.store(1, Ordering::Relaxed);
-                PERCPU_AREAS
-                    .get_by_cpu_index(cpu_index)
-                    .ipi_from(sender_cpu_index);
+                // SAFETY: advertising an IPI message from this CPU is safe
+                // because the IPI board is fully constructed.
+                unsafe {
+                    flag_ipi(PERCPU_AREAS.get_by_cpu_index(cpu_index), sender_cpu_index);
+                }
+
                 send_interrupt = true;
             }
         }
@@ -361,9 +390,11 @@ pub fn send_ipi(
                     include_self = true;
                 } else {
                     ipi_board.pending.fetch_add(1, Ordering::Relaxed);
-                    PERCPU_AREAS
-                        .get_by_cpu_index(cpu_index)
-                        .ipi_from(sender_cpu_index);
+                    // SAFETY: advertising an IPI message from this CPU is safe
+                    // because the IPI board is fully constructed.
+                    unsafe {
+                        flag_ipi(PERCPU_AREAS.get_by_cpu_index(cpu_index), sender_cpu_index);
+                    }
                     send_interrupt = true;
                 }
             }
@@ -382,9 +413,13 @@ pub fn send_ipi(
             let mut target_count: usize = 0;
             for cpu in PERCPU_AREAS.iter() {
                 // Ignore the current CPU and CPUs that are not online.
-                if cpu.is_online() && cpu.cpu_index() != this_cpu().get_cpu_index() {
+                if cpu.is_online() && cpu.cpu_index() != sender_cpu_index {
                     target_count += 1;
-                    cpu.ipi_from(sender_cpu_index);
+                    // SAFETY: advertising an IPI message from this CPU is safe
+                    // because the IPI board is fully constructed.
+                    unsafe {
+                        flag_ipi(cpu, sender_cpu_index);
+                    }
                 }
             }
 
@@ -466,6 +501,17 @@ fn send_ipi_irq(target_set: IpiTarget<'_>) -> Result<(), SvsmError> {
 }
 
 /// # Safety
+/// The caller must ensure that the sender's IPI board is fully initialized
+/// before the sender's ID can be added to the request summary of any other
+/// CPU.
+unsafe fn flag_ipi(target: &PerCpuShared, sender: usize) {
+    // SAFETY: The caller promises that it is safe to add the sender's CPU
+    // index to the target request set.
+    let ipi_state = unsafe { target.ipi_state() };
+    ipi_state.request_set.add(sender, Ordering::Release);
+}
+
+/// # Safety
 /// The caller must take responsibility to ensure that the message pointer in
 /// the request is valid.  This is normally ensured by assuming the lifetime
 /// of the request pointer is protected by the lifetime of the bulletin board
@@ -497,7 +543,11 @@ unsafe fn receive_single_ipi(board: &IpiBoard) {
     }
 }
 
-pub fn handle_ipi_interrupt(request_set: &AtomicCpuSet) {
+pub fn handle_ipi_interrupt() {
+    // SAFETY: The request set will be used to determine which senders have
+    // targeted the current CPU, and memebers will only be removed, not added.
+    let request_set = unsafe { &this_cpu().shared().ipi_state().request_set };
+
     // Enumerate all CPUs in the request set and process the request identified
     // by each.
     for cpu_index in request_set.iter(Ordering::Acquire) {
@@ -510,8 +560,8 @@ pub fn handle_ipi_interrupt(request_set: &AtomicCpuSet) {
         // is guaranteed to remain valid until the pending count is
         // decremented.
         unsafe {
-            let ipi_board = cpu.ipi_board();
-            receive_single_ipi(cpu.ipi_board());
+            let ipi_board = &cpu.ipi_state().ipi_board;
+            receive_single_ipi(ipi_board);
 
             // Now that the request has been handled, decrement the count of
             // pending requests on the sender's bulletin board.  The IPI
@@ -536,7 +586,8 @@ pub fn handle_ipi_interrupt(request_set: &AtomicCpuSet) {
 /// * `target_set` - The set of CPUs to which to send the IPI.
 /// * `ipi_message` - The message to send.
 pub fn send_multicast_ipi<M: IpiMessage + Sync>(target_set: IpiTarget<'_>, ipi_message: &M) {
-    this_cpu().send_multicast_ipi(target_set, ipi_message);
+    let mut ipi_helper = IpiHelperShared::new(ipi_message);
+    send_ipi(target_set, &mut ipi_helper);
 }
 
 /// Sends an IPI message to a single CPU.  Because only a single CPU can
@@ -551,7 +602,8 @@ pub fn send_multicast_ipi<M: IpiMessage + Sync>(target_set: IpiTarget<'_>, ipi_m
 ///
 /// The response message generated by the IPI recipient.
 pub fn send_unicast_ipi<M: IpiMessageMut>(cpu_index: usize, ipi_message: &mut M) {
-    this_cpu().send_unicast_ipi(cpu_index, ipi_message);
+    let mut ipi_helper = IpiHelperMut::new(ipi_message);
+    send_ipi(IpiTarget::Single(cpu_index), &mut ipi_helper);
 }
 
 /// The count of CPUs that have not yet requested blocking of IPI usage.  This
@@ -706,14 +758,14 @@ mod tests {
             let all_message = AtomicIpi {
                 cpu_count: AtomicUsize::new(0),
             };
-            this_cpu().send_multicast_ipi(IpiTarget::All, &all_message);
+            send_multicast_ipi(IpiTarget::All, &all_message);
             let all_count = all_message.cpu_count.load(Ordering::Relaxed);
             assert!(all_count > 0);
 
             let abs_message = AtomicIpi {
                 cpu_count: AtomicUsize::new(0),
             };
-            this_cpu().send_multicast_ipi(IpiTarget::AllButSelf, &abs_message);
+            send_multicast_ipi(IpiTarget::AllButSelf, &abs_message);
             let abs_count = abs_message.cpu_count.load(Ordering::Relaxed);
             assert_eq!(abs_count + 1, all_count);
         }
