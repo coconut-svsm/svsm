@@ -11,6 +11,7 @@ use crate::config::SvsmConfig;
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
+use crate::migration::migration::define_region_bitmap;
 use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
@@ -19,7 +20,7 @@ use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 use super::pagetable::LAUNCH_VMSA_ADDR;
 
 /// Global memory map containing various memory regions.
-static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
+pub static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
 
 /// Initializes the global memory map based on the provided configuration
 /// and kernel launch information.
@@ -83,7 +84,13 @@ pub fn init_memory_map(
 
     log::info!("Guest Memory Regions:");
     for r in regions.iter() {
+        // Track guest validated pages for the region
+        let result = define_region_bitmap(*r);
+        if let Err(msg) = result {
+            panic!("{:?}", msg);
+        }
         log::info!("  {r:#018x}");
+
     }
 
     let mut map = MEMORY_MAP.lock_write();

@@ -8,6 +8,7 @@ extern crate alloc;
 
 use crate::cpu::ipi::wait_for_ipi_block;
 use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
+use crate::migration::migration::migration_agent;
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
@@ -101,7 +102,12 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
         for task_index in 1..cpu_count {
             let loop_name = format!("request-loop on CPU {}", task_index);
             start_kernel_task(request_loop_main, task_index, loop_name)
-                .expect("Failed to launch request loop task");
+                    .expect("Failed to launch request loop task");
+            if task_index == 3 {
+                let loop_name = format!("Migration agent on CPU {}", task_index);
+                start_kernel_task(migration_agent, task_index, loop_name)
+                    .expect("Failed to launch migration agent");
+            }
         }
     }
 
