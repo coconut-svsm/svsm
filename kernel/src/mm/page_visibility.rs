@@ -39,10 +39,13 @@ use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
 /// returning a page to the private state if it is ever freed.
 unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Revoke page validation before changing page state.
-    SVSM_PLATFORM.validate_virtual_page_range(
-        MemoryRegion::new(vaddr, PAGE_SIZE),
-        PageValidateOp::Invalidate,
-    )?;
+    // SAFETY: the caller verifies that the memory range is safe to convert.
+    unsafe {
+        SVSM_PLATFORM.validate_virtual_page_range(
+            MemoryRegion::new(vaddr, PAGE_SIZE),
+            PageValidateOp::Invalidate,
+        )?;
+    }
     let paddr = virt_to_phys(vaddr);
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_clear_valid_4k(paddr);
@@ -90,10 +93,13 @@ unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     )?;
 
     // Validate the page now that it is private again.
-    SVSM_PLATFORM.validate_virtual_page_range(
-        MemoryRegion::new(vaddr, PAGE_SIZE),
-        PageValidateOp::Validate,
-    )?;
+    // SAFETY: the caller verifies that the memory range is safe to convert.
+    unsafe {
+        SVSM_PLATFORM.validate_virtual_page_range(
+            MemoryRegion::new(vaddr, PAGE_SIZE),
+            PageValidateOp::Validate,
+        )?;
+    }
     if valid_bitmap_valid_addr(paddr) {
         valid_bitmap_set_valid_4k(paddr);
     }

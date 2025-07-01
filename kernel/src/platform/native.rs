@@ -154,7 +154,10 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    fn validate_virtual_page_range(
+    /// # Safety
+    /// The caller is required to ensure the safety of the validation operation
+    /// on this memory range.
+    unsafe fn validate_virtual_page_range(
         &self,
         _region: MemoryRegion<VirtAddr>,
         _op: PageValidateOp,
