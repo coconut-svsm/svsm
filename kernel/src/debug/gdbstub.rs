@@ -44,11 +44,17 @@ pub mod svsm_gdbstub {
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
 
+    /// # Safety
+    ///
+    /// Starting the gdbstub is not multi-thread safe, so the caller must
+    /// ensure to call this function on a single processor
     // The static mutable reference to the stack is protected by the GDB_STATE lock.
     #[allow(static_mut_refs)]
-    pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+    pub unsafe fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+        let mut target = GdbStubTarget::new();
+        // SAFETY: the caller guarantees to call this function on a single processor,
+        // so it's safe to use mutable static variables.
         unsafe {
-            let mut target = GdbStubTarget::new();
             #[expect(static_mut_refs)]
             let gdb = GdbStubBuilder::new(GdbStubConnection::new(platform))
                 .with_packet_buffer(&mut PACKET_BUFFER)
@@ -169,6 +175,8 @@ pub mod svsm_gdbstub {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
+            // SAFETY: Inline assembly to generate a software interrupt,
+            // which does not change any state related to memory safety.
             unsafe {
                 asm!("int3");
             }
@@ -196,6 +204,7 @@ pub mod svsm_gdbstub {
                 let cr3 = read_cr3();
                 let task = tl.get_task(id);
                 if let Some(task) = task {
+                    // SAFETY: TODO
                     unsafe {
                         task.page_table.lock().load();
                     }
@@ -211,6 +220,7 @@ pub mod svsm_gdbstub {
     impl Drop for GdbTaskContext {
         fn drop(&mut self) {
             if self.cr3 != 0 {
+                // SAFETY: TODO
                 unsafe {
                     asm!("mov %rax, %cr3",
                          in("rax") self.cr3,
@@ -477,6 +487,7 @@ pub mod svsm_gdbstub {
                     // The registers are stored in the top of the task stack as part of the
                     // saved context. We need to switch to the task pagetable to access them.
                     let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+                    // SAFETY: TODO
                     unsafe {
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
@@ -750,7 +761,11 @@ pub mod svsm_gdbstub {
     use crate::cpu::X86ExceptionContext;
     use crate::platform::SvsmPlatform;
 
-    pub fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+    /// # Safety
+    ///
+    /// Starting the gdbstub is not multi-thread safe, so the caller must
+    /// ensure to call this function on a single processor
+    pub unsafe fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         Ok(())
     }
 

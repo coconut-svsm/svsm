@@ -46,6 +46,8 @@ extern "C" {
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
+        // SAFETY: Inline assembly to read RPB, which does not change any state
+        // related to memory safety.
         unsafe {
             asm!("movq %rbp, {}", out(reg) rbp,
                  options(att_syntax));
@@ -134,8 +136,10 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
+        // SAFETY: TODO
         let rbp = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
+        // SAFETY: TODO
         let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
 
@@ -152,6 +156,7 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
+        // SAFETY: TODO
         let ctx = unsafe { &*rsp.as_ptr::<X86ExceptionContext>() };
         let rbp = VirtAddr::from(ctx.regs.rbp);
         let rip = VirtAddr::from(ctx.frame.rip);
