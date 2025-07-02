@@ -77,6 +77,12 @@ pub enum SvsmError {
     Tdx(TdxError),
     /// Generic errors related to memory management
     Mem,
+    /// Attempted to use a misaligned address
+    MemAlign,
+    /// Attempted to access a buffer beyond its bounds
+    MemOverflow,
+    /// An unexpected arithmetic overflow
+    ArithOverflow,
     /// Errors related to the memory allocator
     Alloc(AllocError),
     /// Error reported when there is no VMSA set up.

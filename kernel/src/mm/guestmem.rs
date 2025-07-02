@@ -200,7 +200,7 @@ unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), Sv
 }
 
 #[inline]
-unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
+pub(super) unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     let size: usize = size_of::<T>();
 
     // SAFETY: Only safe when safety requirements for do_movsb() are fulfilled.
