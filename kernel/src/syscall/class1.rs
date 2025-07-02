@@ -57,7 +57,7 @@ pub fn sys_read(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, SysC
     let fs_obj = obj_get(obj_id.into())?;
     let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
 
-    let mut buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
+    let mut buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes)?;
 
     fs_obj
         .read_buffer(&mut buffer)
@@ -69,7 +69,7 @@ pub fn sys_write(obj_id: u32, user_addr: usize, bytes: usize) -> Result<u64, Sys
     let fs_obj = obj_get(obj_id.into())?;
     let fs_obj = fs_obj.as_fs().ok_or(ENOTSUPP)?;
 
-    let buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes);
+    let buffer = UserBuffer::new(VirtAddr::from(user_addr), bytes)?;
 
     fs_obj
         .write_buffer(&buffer)
