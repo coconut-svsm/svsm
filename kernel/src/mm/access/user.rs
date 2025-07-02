@@ -6,11 +6,11 @@
 
 extern crate alloc;
 
+use super::do_movsb;
 use super::{BorrowedMapping, Mapping, MappingRead, MappingWrite, ReadableMapping};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::x86::smap::{clac, stac};
 use crate::error::SvsmError;
-use crate::mm::guestmem::do_movsb;
 use crate::mm::{USER_MEM_END, USER_MEM_START};
 use crate::utils::MemoryRegion;
 use alloc::string::String;
