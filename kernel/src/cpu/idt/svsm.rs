@@ -24,7 +24,8 @@ use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
-use crate::mm::{GuestPtr, PageBox, PAGE_SIZE};
+use crate::mm::access::{BorrowedMapping, Guest, ReadableMapping};
+use crate::mm::{PageBox, PAGE_SIZE};
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -297,24 +298,35 @@ extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vec
     match ctxt.error_code & 0x7fff {
         code @ (NEAR_RET | FAR_RET_IRET) => {
             // Read the return address on the normal stack.
-            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.frame.rsp));
             // SAFETY: `rsp` is a valid guest address filled by the CPU in the
             // X86InterruptFrame
-            let ret = unsafe { ret_ptr.read() }.expect("Failed to read return address");
+            let ret = unsafe {
+                BorrowedMapping::<'_, Guest, u64>::from_address(ctxt.frame.rsp.into())
+                    .expect("Failed to read return address (null RSP)")
+                    .read()
+                    .expect("Failed to read return address")
+            };
 
             // Read the return address on the shadow stack.
-            let prev_rssp_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(ctxt.ssp));
             // SAFETY: `ssp` is a valid guest address filled by the CPU in the
             // X86ExceptionContext
-            let prev_rssp = unsafe { prev_rssp_ptr.read() }
-                .expect("Failed to read address of previous shadow stack pointer");
+            let prev_rssp = unsafe {
+                BorrowedMapping::<'_, Guest, u64>::from_address(ctxt.ssp.into())
+                    .expect("Failed to read return address (null SSP)")
+                    .read()
+                    .expect("Failed to read address of previous shadow stack pointer")
+            };
+
             // The offset to the return pointer is different for RET and IRET.
             let offset = if code == NEAR_RET { 0 } else { 8 };
-            let ret_ptr: GuestPtr<u64> = GuestPtr::new(VirtAddr::from(prev_rssp + offset));
-            let ret_on_ssp =
-                // SAFETY: `ssp` is a valid guest address filled by the CPU in the
-                // X86ExceptionContext
-                unsafe { ret_ptr.read() }.expect("Failed to read return address on shadow stack");
+            // SAFETY: `ssp` is a valid guest address filled by the CPU in the
+            // X86ExceptionContext
+            let ret_on_ssp = unsafe {
+                BorrowedMapping::<'_, Guest, u64>::from_address(VirtAddr::from(prev_rssp + offset))
+                    .expect("Failed to read return address on shadow stack (NULL shadow stack?)")
+                    .read()
+                    .expect("Failed to read return address on shadow stack")
+            };
 
             panic!("thread at {rip:#018x} tried to return to {ret:#x}, but return address on shadow stack was {ret_on_ssp:#x}!");
         }
