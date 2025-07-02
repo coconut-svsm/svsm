@@ -4,21 +4,20 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-extern crate alloc;
-
 use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::GLOBAL_GDT;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
-use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
-use crate::mm::{GuestPtr, PageBox};
+use crate::insn_decode::{InsnError, InsnMachineCtx, Register, SegRegister};
+use crate::mm::access::BorrowedMapping;
+use crate::mm::PageBox;
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
-use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
+use zerocopy::{FromBytes, IntoBytes};
 
 pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
@@ -167,16 +166,20 @@ impl InsnMachineCtx for X86ExceptionContext {
         self.frame.cs & 3
     }
 
-    fn map_linear_addr<T: Copy + 'static>(
+    unsafe fn map_linear_addr<A, T: FromBytes + IntoBytes>(
         &self,
         la: usize,
         _write: bool,
         _fetch: bool,
-    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+    ) -> Result<BorrowedMapping<'_, A, T>, InsnError> {
         if user_mode(self) {
             todo!();
         } else {
-            Ok(Box::new(GuestPtr::<T>::new(VirtAddr::from(la))))
+            // SAFETY: caller must uphold safety requirements
+            unsafe {
+                BorrowedMapping::<'_, A, T>::from_address(la.into())
+                    .map_err(|_| InsnError::MapLinearAddr)
+            }
         }
     }
 
