@@ -8,7 +8,7 @@ mod decode;
 mod insn;
 mod opcode;
 
-pub use decode::{DecodedInsnCtx, InsnMachineCtx, InsnMachineMem};
+pub use decode::{DecodedInsnCtx, InsnMachineCtx};
 #[cfg(any(test, fuzzing))]
 pub use insn::test_utils::TestCtx;
 pub use insn::{
