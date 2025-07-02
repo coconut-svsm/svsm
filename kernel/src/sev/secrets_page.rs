@@ -12,10 +12,11 @@ use crate::types::GUEST_VMPL;
 
 extern crate alloc;
 use alloc::boxed::Box;
+use zerocopy::IntoBytes;
 
 pub const VMPCK_SIZE: usize = 32;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, IntoBytes)]
 #[repr(C, packed)]
 pub struct SecretsPage {
     version: u32,
