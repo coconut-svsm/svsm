@@ -16,7 +16,7 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
-use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::access::{Local, Mapping, OwnedMapping, WriteableMapping};
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
@@ -27,8 +27,9 @@ use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
-use core::{mem, ptr};
+use core::mem;
 use syscall::GlobalFeatureFlags;
+use zerocopy::IntoBytes;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -36,7 +37,7 @@ use bootlib::platform::SvsmPlatformType;
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
-#[derive(Debug)]
+#[derive(Debug, IntoBytes)]
 #[repr(C, packed)]
 pub struct TdMailbox {
     pub vcpu_index: u32,
@@ -45,13 +46,9 @@ pub struct TdMailbox {
 // Both structures must fit in a page
 const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
 
-// SAFETY: caller must ensure `mailbox` points to a valid memory address.
-unsafe fn wakeup_ap(mailbox: *mut TdMailbox, cpu_index: usize) {
-    // SAFETY: caller must ensure the address is valid and not aliased.
-    unsafe {
-        // PerCpu's CPU index has a direct mapping to TD vCPU index
-        (*mailbox).vcpu_index = cpu_index.try_into().unwrap();
-    }
+fn wakeup_ap<M: WriteableMapping<Local, TdMailbox>>(mut mailbox: M, cpu_index: usize) {
+    let vcpu_index = cpu_index.try_into().unwrap();
+    mailbox.write(TdMailbox { vcpu_index }).unwrap();
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -247,7 +244,9 @@ impl SvsmPlatform for TdpPlatform {
         // The mailbox page was already accepted by the BSP in stage2 and
         // therefore it's been initialized as a zero page.
         let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
-        let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;
+        let context_mapping =
+            // SAFETY: we do not alias the contents of this address anywhere else
+            unsafe { OwnedMapping::<_, u8>::map_local_slice(context_pa, PAGE_SIZE) }?;
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.
@@ -258,15 +257,13 @@ impl SvsmPlatform for TdpPlatform {
             hyperv_start_cpu(cpu, &ctx)?;
         }
 
-        // SAFETY: the address of the mailbox page was made valid when the
-        // `PerCPUPageMappingGuard` was created.
-        unsafe {
-            let mbx_va = context_mapping.virt_addr();
-            let size = mem::size_of::<ApStartContext>();
-            let context_ptr = (mbx_va + PAGE_SIZE - size).as_mut_ptr::<ApStartContext>();
-            ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
-            wakeup_ap(mbx_va.as_mut_ptr::<TdMailbox>(), cpu.get_cpu_index());
-        }
+        // AP start context is at the end of the page
+        context_mapping
+            .borrow_at::<ApStartContext>(PAGE_SIZE - mem::size_of::<ApStartContext>())?
+            .write(ap_context)?;
+        let mbox = context_mapping.borrow::<TdMailbox>()?;
+        wakeup_ap(mbox, cpu.get_cpu_index());
+
         Ok(())
     }
 
