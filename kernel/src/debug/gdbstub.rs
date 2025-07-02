@@ -18,8 +18,7 @@ pub mod svsm_gdbstub {
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
-    use crate::mm::access::OwnedMapping;
-    use crate::mm::guestmem::{read_u8, write_u8};
+    use crate::mm::access::{read_u8, write_u8, OwnedMapping};
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
     use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
