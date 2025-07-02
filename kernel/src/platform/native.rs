@@ -24,13 +24,13 @@ use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
 use crate::hyperv::IS_HYPERV;
 use crate::io::{IOPort, DEFAULT_IO_DRIVER};
-use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::access::{Mapping, OwnedMapping, WriteableMapping};
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
-use core::{mem, ptr};
+use core::mem::size_of;
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
@@ -211,16 +211,13 @@ impl SvsmPlatform for NativePlatform {
         let ap_context = create_ap_start_context(&context, self.transition_cr3);
 
         let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
-        let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;
+        // SAFETY: we trust the SIPI_STUB_GPA address
+        let context_mapping = unsafe { OwnedMapping::<_, [u8; PAGE_SIZE]>::map_local(context_pa) }?;
 
-        // SAFETY: the address of the transition page was made valid when the
-        // `PerCPUPageMappingGuard` was created.
-        unsafe {
-            let size = mem::size_of::<ApStartContext>();
-            let context_va = context_mapping.virt_addr() + PAGE_SIZE - size;
-            let context_ptr = context_va.as_mut_ptr::<ApStartContext>();
-            ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
-        }
+        // AP start context is at the end of the page
+        context_mapping
+            .borrow_at::<ApStartContext>(PAGE_SIZE - size_of::<ApStartContext>())?
+            .write(ap_context)?;
 
         // Now that the AP startup transition page has been configured, send
         // INIT-SIPI to start the processor.  No second SIPI is required when
