@@ -6,7 +6,6 @@
 
 use super::idt::common::X86ExceptionContext;
 use crate::address::Address;
-use crate::address::VirtAddr;
 use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
 use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
@@ -16,7 +15,7 @@ use crate::error::SvsmError;
 use crate::insn_decode::{
     DecodedInsn, DecodedInsnCtx, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE,
 };
-use crate::mm::GuestPtr;
+use crate::mm::access::{BorrowedMapping, Guest, ReadableMapping};
 use crate::sev::ghcb::GHCB;
 use core::fmt;
 
@@ -307,15 +306,16 @@ fn vc_decode_insn(ctx: &X86ExceptionContext) -> Result<Option<DecodedInsnCtx>, S
     // TODO: the instruction fetch will likely to be handled differently when
     // #VC exception will be raised from CPL > 0.
 
-    let rip: GuestPtr<[u8; MAX_INSN_SIZE]> = GuestPtr::new(VirtAddr::from(ctx.frame.rip));
-
     // rip and rip+15 addresses should belong to a mapped page.
-    // To ensure this, we rely on GuestPtr::read() that uses the exception table
-    // to handle faults while fetching.
+    // To ensure this, we rely on BorrowedMapping<Guest, _, _>, which uses the
+    // exception table to handle faults while fetching.
     // SAFETY: we trust the CPU-provided register state to be valid. Thus, RIP
     // will point to the instruction that caused #VC to be raised, so it can
     // safely be read.
-    let insn_raw = unsafe { rip.read()? };
+    let insn_raw = unsafe {
+        BorrowedMapping::<'_, Guest, [u8; MAX_INSN_SIZE]>::from_address(ctx.frame.rip.into())?
+            .read()?
+    };
 
     let insn = Instruction::new(insn_raw);
     Ok(Some(insn.decode(ctx)?))
