@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+pub mod access;
 pub mod address_space;
 pub mod alloc;
 pub mod global_memory;
