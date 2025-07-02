@@ -9,7 +9,6 @@ extern crate alloc;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::x86::smap::{clac, stac};
 use crate::error::SvsmError;
-use crate::insn_decode::{InsnError, InsnMachineMem};
 use crate::mm::{
     memory::valid_phys_region, ptguards::PerCPUPageMappingGuard, USER_MEM_END, USER_MEM_START,
 };
@@ -281,21 +280,6 @@ impl<T: Copy> GuestPtr<T> {
         GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
-
-impl<T: Copy> InsnMachineMem for GuestPtr<T> {
-    type Item = T;
-
-    /// Safety: See the GuestPtr's read() method documentation for safety requirements.
-    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-        unsafe { self.read().map_err(|_| InsnError::MemRead) }
-    }
-
-    /// Safety: See the GuestPtr's write() method documentation for safety requirements.
-    unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-        unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
-    }
-}
-
 struct UserAccessGuard;
 
 impl UserAccessGuard {

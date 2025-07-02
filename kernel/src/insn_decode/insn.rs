@@ -100,13 +100,12 @@ impl Instruction {
 
 #[cfg(any(test, fuzzing))]
 pub mod test_utils {
-    extern crate alloc;
-
     use crate::cpu::control_regs::{CR0Flags, CR4Flags};
     use crate::cpu::efer::EFERFlags;
     use crate::insn_decode::*;
+    use crate::mm::access::BorrowedMapping;
     use crate::types::Bytes;
-    use alloc::boxed::Box;
+    use zerocopy::{FromBytes, IntoBytes};
 
     pub const TEST_PORT: u16 = 0xE0;
 
@@ -171,11 +170,6 @@ pub mod test_utils {
                 mmio_reg: 0,
             }
         }
-    }
-
-    #[cfg_attr(not(test), expect(dead_code))]
-    struct TestMem<T: Copy> {
-        ptr: *mut T,
     }
 
     impl InsnMachineCtx for TestCtx {
@@ -250,13 +244,16 @@ pub mod test_utils {
             self.flags
         }
 
-        fn map_linear_addr<T: Copy + 'static>(
+        unsafe fn map_linear_addr<A, T: FromBytes + IntoBytes>(
             &self,
             la: usize,
             _write: bool,
             _fetch: bool,
-        ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
-            Ok(Box::new(TestMem { ptr: la as *mut T }))
+        ) -> Result<BorrowedMapping<'_, A, T>, InsnError> {
+            // SAFETY: caller must uphold safety requirements
+            unsafe {
+                BorrowedMapping::from_address(la.into()).map_err(|_| InsnError::MapLinearAddr)
+            }
         }
 
         fn ioio_in(&self, _port: u16, size: Bytes) -> Result<u64, InsnError> {
@@ -339,43 +336,6 @@ pub mod test_utils {
                 Bytes::Eight => unsafe { *(pa as *mut u64) = data },
                 _ => return Err(InsnError::HandleMmioWrite),
             }
-            Ok(())
-        }
-    }
-
-    #[cfg(test)]
-    impl<T: Copy> InsnMachineMem for TestMem<T> {
-        type Item = T;
-
-        /// # Safety
-        /// The caller is required to ensure the validity of the address
-        /// this object was initialized with.
-        unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-            // SAFETY: caller must ensure `ptr` was initialized with a valid
-            // address.
-            Ok(unsafe { *(self.ptr) })
-        }
-
-        /// # Safety
-        /// The caller is required to ensure the validity of the address
-        /// this object was initialized with.
-        unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-            // SAFETY: caller must ensure `ptr` was initialized with a valid
-            // address.
-            unsafe {
-                *(self.ptr) = data;
-            }
-            Ok(())
-        }
-    }
-
-    #[cfg(fuzzing)]
-    impl<T: Copy> InsnMachineMem for TestMem<T> {
-        type Item = T;
-
-        /// # Safety
-        /// No safety concerns under fuzzing.
-        unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
             Ok(())
         }
     }
