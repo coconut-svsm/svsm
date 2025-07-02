@@ -4,13 +4,12 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::VirtAddr;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::Emulation;
 use crate::error::SvsmError;
-use crate::mm::GuestPtr;
+use crate::mm::access::{Guest, RwMapping};
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
@@ -166,11 +165,11 @@ impl LocalApic {
         self.update_required = true;
     }
 
-    pub fn check_delivered_interrupts<T: GuestCpuState>(
-        &mut self,
-        cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
-    ) {
+    pub fn check_delivered_interrupts<T, M>(&mut self, cpu_state: &mut T, caa: Option<M>)
+    where
+        T: GuestCpuState,
+        M: RwMapping<Guest, SvsmCaa>,
+    {
         // Check to see if a previously delivered interrupt is still pending.
         // If so, move it back to the IRR.
         if self.interrupt_delivered {
@@ -200,12 +199,8 @@ impl LocalApic {
         // interrupt state prior to guest reentry, and that reprocessing will
         // reset the guest lazy EOI flag.
         if self.lazy_eoi_pending {
-            if let Some(virt_addr) = caa_addr {
-                let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
-                // SAFETY: guest vmsa and ca are always validated before being
-                // updated (core_remap_ca(), core_create_vcpu() or
-                // prepare_fw_launch()) so they're safe to use.
-                if let Ok(caa) = unsafe { calling_area.read() } {
+            if let Some(calling_area) = caa {
+                if let Ok(caa) = calling_area.read() {
                     if caa.no_eoi_required == 0 {
                         assert!(self.isr_stack_index != 0);
                         self.perform_eoi();
@@ -236,17 +231,14 @@ impl LocalApic {
         self.get_ppr_with_tpr(cpu_state.get_tpr())
     }
 
-    fn clear_guest_eoi_pending(caa_addr: Option<VirtAddr>) -> Option<GuestPtr<SvsmCaa>> {
-        let virt_addr = caa_addr?;
-        let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
-        // Ignore errors here, since nothing can be done if an error occurs.
-        // SAFETY: guest vmsa and ca are always validated before being updated
-        // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
-        // they're safe to use.
-        unsafe {
-            if let Ok(caa) = calling_area.read() {
-                let _ = calling_area.write(caa.update_no_eoi_required(0));
-            }
+    fn clear_guest_eoi_pending<M>(calling_area: Option<M>) -> Option<M>
+    where
+        M: RwMapping<Guest, SvsmCaa>,
+    {
+        let mut calling_area = calling_area?;
+        if let Ok(caa) = calling_area.read() {
+            // Ignore errors here, since nothing can be done if an error occurs.
+            let _ = calling_area.write(caa.update_no_eoi_required(0));
         }
         Some(calling_area)
     }
@@ -282,12 +274,15 @@ impl LocalApic {
         self.update_required = true;
     }
 
-    pub fn present_interrupts<T: GuestCpuState>(
+    pub fn present_interrupts<T, M>(
         &mut self,
         cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
-    ) {
+        mut caa: Option<M>,
+    ) where
+        T: GuestCpuState,
+        M: RwMapping<Guest, SvsmCaa>,
+    {
         // Make sure any interrupts being presented by the host have been
         // consumed.
         self.consume_host_interrupts();
@@ -300,7 +295,7 @@ impl LocalApic {
         if self.update_required {
             // Make sure that all previously delivered interrupts have been
             // processed before attempting to process any more.
-            self.check_delivered_interrupts(cpu_state, caa_addr);
+            self.check_delivered_interrupts(cpu_state, caa.as_mut());
             self.update_required = false;
 
             // If an NMI is pending, then present it first.
@@ -319,7 +314,7 @@ impl LocalApic {
             // Assume no lazy EOI can be attempted unless it is recalculated
             // below.
             self.lazy_eoi_pending = false;
-            let guest_caa = Self::clear_guest_eoi_pending(caa_addr);
+            Self::clear_guest_eoi_pending(caa.as_mut());
 
             // This interrupt is a candidate for delivery only if its priority
             // exceeds the priority of the highest priority interrupt currently
@@ -367,19 +362,17 @@ impl LocalApic {
                 // then an explicit EOI will be required to prompt
                 // delivery of the next interrupt.
                 if self.scan_irr() == 0 {
-                    if let Some(calling_area) = guest_caa {
+                    if let Some(mut calling_area) = caa {
                         // SAFETY: guest vmsa and ca are always validated
                         // before being upated (core_remap_ca(),
                         // core_create_vcpu() or prepare_fw_launch()) so
                         // they're safe to use.
-                        unsafe {
-                            if let Ok(caa) = calling_area.read() {
-                                if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
-                                    // Only track a pending lazy EOI if the
-                                    // calling area page could successfully be
-                                    // updated.
-                                    self.lazy_eoi_pending = true;
-                                }
+                        if let Ok(caa) = calling_area.read() {
+                            if calling_area.write(caa.update_no_eoi_required(1)).is_ok() {
+                                // Only track a pending lazy EOI if the
+                                // calling area page could successfully be
+                                // updated.
+                                self.lazy_eoi_pending = true;
                             }
                         }
                     }
@@ -582,16 +575,20 @@ impl LocalApic {
 
     /// Reads an APIC register, returning its value, or an error if an invalid
     /// register is requested.
-    pub fn read_register<T: GuestCpuState>(
+    pub fn read_register<T, M>(
         &mut self,
         cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<M>,
         register: u64,
-    ) -> Result<u64, SvsmError> {
+    ) -> Result<u64, SvsmError>
+    where
+        T: GuestCpuState,
+        M: RwMapping<Guest, SvsmCaa>,
+    {
         // Rewind any undelivered interrupt so it is reflected in any register
         // read.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa);
 
         match register {
             APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
@@ -639,16 +636,20 @@ impl LocalApic {
 
     /// Writes a value to the specified APIC register. Returns an error if an
     /// invalid register or value is specified.
-    pub fn write_register<T: GuestCpuState>(
+    pub fn write_register<T, M>(
         &mut self,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<M>,
         register: u64,
         value: u64,
-    ) -> Result<(), SvsmError> {
+    ) -> Result<(), SvsmError>
+    where
+        T: GuestCpuState,
+        M: RwMapping<Guest, SvsmCaa>,
+    {
         // Rewind any undelivered interrupt so it is correctly processed by
         // any register write.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa);
 
         match register {
             APIC_REGISTER_TPR => {
@@ -837,13 +838,13 @@ impl LocalApic {
         }
     }
 
-    pub fn disable_apic_emulation<T: GuestCpuState>(
-        &mut self,
-        cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
-    ) {
+    pub fn disable_apic_emulation<T, M>(&mut self, cpu_state: &mut T, mut caa: Option<M>)
+    where
+        T: GuestCpuState,
+        M: RwMapping<Guest, SvsmCaa>,
+    {
         // Ensure that any previous interrupt delivery is complete.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa.as_mut());
 
         // Rewind any pending NMI.
         if cpu_state.check_and_clear_pending_nmi() {
@@ -853,7 +854,7 @@ impl LocalApic {
         // Hand the current APIC state off to the host.
         self.handoff_to_host();
 
-        let _ = Self::clear_guest_eoi_pending(caa_addr);
+        let _ = Self::clear_guest_eoi_pending(caa.as_mut());
 
         // Disable alternate injection altogether.
         cpu_state.disable_alternate_injection();
