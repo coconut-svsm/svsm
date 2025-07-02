@@ -7,10 +7,9 @@
 use super::{set_guest_register, GuestExitMessage, GuestRegister};
 use crate::cpu::percpu::{this_cpu, GuestVmsaRef};
 use crate::cpu::{flush_tlb_global_sync, IrqGuard};
-use crate::mm::GuestPtr;
+use crate::mm::access::{ReadableMapping, WriteableMapping};
 use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
-use crate::requests::SvsmCaa;
 use crate::sev::ghcb::switch_to_vmpl;
 use crate::sev::vmsa::VMSAControl;
 use crate::types::GUEST_VMPL;
@@ -19,20 +18,12 @@ use core::ops::DerefMut;
 use cpuarch::vmsa::GuestVMExit;
 
 fn get_and_clear_caa_request_flag(vmsa_ref: &GuestVmsaRef) -> Result<bool, SvsmReqError> {
-    if let Some(caa_addr) = vmsa_ref.caa_addr() {
-        let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
-        // SAFETY: guest vmsa and ca are always validated before beeing updated
-        // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
-        // they're safe to use.
-        let caa = unsafe { calling_area.read()? };
+    if let Some(mut calling_area) = vmsa_ref.caa_addr() {
+        let caa = calling_area.read()?;
 
         let caa_serviced = caa.serviced();
 
-        // SAFETY: guest vmsa is always validated before beeing updated
-        // (core_remap_ca() or core_create_vcpu()) so it's safe to use.
-        unsafe {
-            calling_area.write(caa_serviced)?;
-        }
+        calling_area.write(caa_serviced)?;
 
         Ok(caa.call_pending())
     } else {
@@ -88,7 +79,7 @@ pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
     loop {
         // Modify guest registers before disabling interrupts.
         let mut vmsa_ref = cpu.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa_addr();
+        let caa = vmsa_ref.caa_addr();
         let vmsa = vmsa_ref.vmsa();
 
         for reg in regs {
@@ -108,7 +99,7 @@ pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
         let guard = IrqGuard::new();
 
         // Update APIC interrupt emulation state if required.
-        cpu.update_apic_emulation(vmsa, caa_addr);
+        cpu.update_apic_emulation(vmsa, caa);
 
         // Make VMSA runnable again by setting EFER.SVME.
         vmsa.enable();
