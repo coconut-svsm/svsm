@@ -10,8 +10,9 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::X86GeneralRegs;
 use crate::error::SvsmError;
+use crate::mm::access::OwnedMapping;
 use crate::mm::pagetable::PageFrame;
-use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
+use crate::mm::virt_to_frame;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
@@ -118,13 +119,8 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
                         // SAFETY: the caller takes responsibility for the
                         // correct usage of the physical address.
                         unsafe {
-                            let mapping =
-                                PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
-                            mapping
-                                .virt_addr()
-                                .as_mut_ptr::<u8>()
-                                .write_bytes(0, PAGE_SIZE_2M);
-                        }
+                            OwnedMapping::<_, u8>::map_local_slice(addr, PAGE_SIZE_2M)?.fill(0)?
+                        };
                     }
                     addr = addr + PAGE_SIZE_2M;
                     continue;
@@ -147,13 +143,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
                     // Zero the 4 KB page.
                     // SAFETY: the caller takes responsibility for the correct
                     // usage of the physical address.
-                    unsafe {
-                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
-                        mapping
-                            .virt_addr()
-                            .as_mut_ptr::<u8>()
-                            .write_bytes(0, PAGE_SIZE);
-                    }
+                    unsafe { OwnedMapping::<_, u8>::map_local_slice(addr, PAGE_SIZE)?.fill(0)? }
                 }
                 addr = addr + PAGE_SIZE;
             }
