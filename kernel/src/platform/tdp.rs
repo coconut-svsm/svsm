@@ -166,7 +166,7 @@ impl SvsmPlatform for TdpPlatform {
         Ok(())
     }
 
-    fn validate_physical_page_range(
+    unsafe fn validate_physical_page_range(
         &self,
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,

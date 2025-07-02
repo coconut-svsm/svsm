@@ -95,7 +95,11 @@ pub fn init_page_table(
     Ok(pgtable)
 }
 
-fn invalidate_boot_memory_region(
+/// # Safety
+///
+/// The caller must ensure that the given physical memory is not used again.
+/// See safety considerations for [`SvsmPlatform::validate_physical_page_range`].
+unsafe fn invalidate_boot_memory_region(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
@@ -105,7 +109,10 @@ fn invalidate_boot_memory_region(
     log::info!("Invalidating boot region {aligned_region:#018x}");
 
     if !aligned_region.is_empty() {
-        platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)?;
+        // SAFETY: the caller must uphold the security requirements
+        unsafe {
+            platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)
+        }?;
 
         if config.page_state_change_required() {
             platform.page_state_change(
@@ -133,13 +140,15 @@ pub fn invalidate_early_boot_memory(
             PhysAddr::from(0u64),
             PhysAddr::from(u64::from(LOWMEM_END)),
         );
-        invalidate_boot_memory_region(platform, config, lowmem_region)?;
+        // SAFETY: we never use lowmem, so we can invalidate it
+        unsafe { invalidate_boot_memory_region(platform, config, lowmem_region) }?;
     }
 
     let stage2_base = PhysAddr::from(launch_info.stage2_start);
     let stage2_end = PhysAddr::from(launch_info.stage2_end);
     let stage2_region = MemoryRegion::from_addresses(stage2_base, stage2_end);
-    invalidate_boot_memory_region(platform, config, stage2_region)?;
+    // SAFETY: we never use stage2 memory again, so we can invalidate it
+    unsafe { invalidate_boot_memory_region(platform, config, stage2_region) }?;
 
     let kernel_elf_size =
         launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
@@ -147,7 +156,9 @@ pub fn invalidate_early_boot_memory(
         PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
         kernel_elf_size.try_into().unwrap(),
     );
-    invalidate_boot_memory_region(platform, config, kernel_elf_region)?;
+    // SAFETY: we never use the kernel ELF passed to stage2 again, so we can
+    // invalidate it
+    unsafe { invalidate_boot_memory_region(platform, config, kernel_elf_region) }?;
 
     let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
     if kernel_fs_size > 0 {
@@ -155,7 +166,9 @@ pub fn invalidate_early_boot_memory(
             PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
             kernel_fs_size.try_into().unwrap(),
         );
-        invalidate_boot_memory_region(platform, config, kernel_fs_region)?;
+        // SAFETY: we never use the initial packed filesystem again, so we
+        // can invalidate it
+        unsafe { invalidate_boot_memory_region(platform, config, kernel_fs_region) }?;
     }
 
     if launch_info.stage2_igvm_params_size > 0 {
@@ -163,7 +176,9 @@ pub fn invalidate_early_boot_memory(
             PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
             launch_info.stage2_igvm_params_size as usize,
         );
-        invalidate_boot_memory_region(platform, config, igvm_params_region)?;
+        // SAFETY: we never use the initial IGVM parameters region again, so
+        // we can invalidate it
+        unsafe { invalidate_boot_memory_region(platform, config, igvm_params_region) }?;
     }
 
     Ok(())
