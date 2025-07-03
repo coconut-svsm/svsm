@@ -18,8 +18,8 @@ pub mod svsm_gdbstub {
     use crate::cpu::X86GeneralRegs;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
+    use crate::mm::access::OwnedMapping;
     use crate::mm::guestmem::{read_u8, write_u8};
-    use crate::mm::PerCPUPageMappingGuard;
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
     use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
@@ -407,14 +407,15 @@ pub mod svsm_gdbstub {
                 return unsafe { write_u8(addr, value) };
             };
 
-            let guard = PerCPUPageMappingGuard::create_4k(phys.page_align())?;
-            let dst = guard
-                .virt_addr()
-                .checked_add(phys.page_offset())
-                .ok_or(SvsmError::InvalidAddress)?;
-
-            // SAFETY: guard is a new mapped page, non controllable by user.
-            // We also checked that the destination address didn't overflow.
+            // If the address is mapped by the SVSM it may still be owned by the guest,
+            // since there might be a live OwnedMapping<Guest, _> over the address.
+            // Thus, map it as a local address (without making any checks) but use a
+            // safe accessor.
+            // SAFETY: it is up to the caller to not break the Rust memory model by
+            // writing to the given address.
+            let guard = unsafe { OwnedMapping::<_, u8>::map_local(phys) }?;
+            let dst = guard.data_vregion().start();
+            // // SAFETY: guard is a new mapped page, non controllable by user.
             unsafe { write_u8(dst, value) }
         }
     }
