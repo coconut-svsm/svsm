@@ -13,7 +13,6 @@ pub mod memory;
 pub mod page_visibility;
 mod pagebox;
 pub mod pagetable;
-pub mod ptguards;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;
@@ -21,7 +20,6 @@ pub mod vm;
 pub use address_space::*;
 pub use memory::{valid_phys_address, writable_phys_addr};
 pub use pagebox::*;
-pub use ptguards::*;
 
 pub use pagetable::PageTablePart;
 
