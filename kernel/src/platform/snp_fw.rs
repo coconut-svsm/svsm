@@ -15,13 +15,9 @@ use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
 use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use crate::utils::fw_meta::{find_table, RawMetaBuffer};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
-use bootlib::firmware::*;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
-
-use core::mem::{size_of, size_of_val};
 
 #[derive(Clone, Debug, Default)]
 pub struct SevFWMetaData {
@@ -61,110 +57,6 @@ struct SevMetaDataDesc {
     base: u32,
     len: u32,
     t: u32,
-}
-
-/// Parse the firmware metadata from the given slice.
-pub fn parse_fw_meta_data(mem: &[u8]) -> Result<SevFWMetaData, SvsmError> {
-    let mut meta_data = SevFWMetaData::new();
-
-    let raw_meta = RawMetaBuffer::ref_from_bytes(mem).map_err(|_| SvsmError::Firmware)?;
-
-    // Check the UUID
-    let uuid = raw_meta.header.uuid();
-    if uuid != OVMF_TABLE_FOOTER_GUID {
-        return Err(SvsmError::Firmware);
-    }
-
-    // Get the tables and their length
-    let data_len = raw_meta.header.data_len().ok_or(SvsmError::Firmware)?;
-    let data_start = size_of_val(&raw_meta.data)
-        .checked_sub(data_len)
-        .ok_or(SvsmError::Firmware)?;
-    let raw_data = raw_meta.data.get(data_start..).ok_or(SvsmError::Firmware)?;
-
-    // First check if this is the SVSM itself instead of OVMF
-    if find_table(&SVSM_INFO_GUID, raw_data).is_some() {
-        return Err(SvsmError::Firmware);
-    }
-
-    // Search and parse SEV metadata
-    parse_sev_meta(&mut meta_data, raw_meta, raw_data)?;
-
-    // Verify that the required elements are present.
-    if meta_data.cpuid_page.is_none() {
-        log::error!("FW does not specify CPUID_PAGE location");
-        return Err(SvsmError::Firmware);
-    }
-
-    Ok(meta_data)
-}
-
-fn parse_sev_meta(
-    meta: &mut SevFWMetaData,
-    raw_meta: &RawMetaBuffer,
-    raw_data: &[u8],
-) -> Result<(), SvsmError> {
-    // Find SEV metadata table
-    let Some(tbl) = find_table(&OVMF_SEV_METADATA_GUID, raw_data) else {
-        log::warn!("Could not find SEV metadata in firmware");
-        return Ok(());
-    };
-
-    // Find the location of the metadata header. We need to adjust the offset
-    // since it is computed by taking into account the trailing header and
-    // padding, and it is computed backwards.
-    let bytes: [u8; 4] = tbl.try_into().map_err(|_| SvsmError::Firmware)?;
-    let sev_meta_offset = (u32::from_le_bytes(bytes) as usize)
-        .checked_sub(size_of_val(&raw_meta.header) + raw_meta.pad_size())
-        .ok_or(SvsmError::Firmware)?;
-    // Now compute the start and end of the SEV metadata header
-    let sev_meta_start = size_of_val(&raw_meta.data)
-        .checked_sub(sev_meta_offset)
-        .ok_or(SvsmError::Firmware)?;
-    let sev_meta_end = sev_meta_start + size_of::<SevMetaDataHeader>();
-    // Bounds check the header and get a pointer to it
-    let bytes = raw_meta
-        .data
-        .get(sev_meta_start..sev_meta_end)
-        .ok_or(SvsmError::Firmware)?;
-    let sev_meta_hdr = SevMetaDataHeader::ref_from_bytes(bytes).map_err(|_| SvsmError::Firmware)?;
-
-    // Now find the descriptors
-    let bytes = &raw_meta.data[sev_meta_end..];
-    let num_desc = sev_meta_hdr.num_desc as usize;
-    let (descs, _) = <[SevMetaDataDesc]>::ref_from_prefix_with_elems(bytes, num_desc)
-        .map_err(|_| SvsmError::Firmware)?;
-
-    for desc in descs {
-        let t = desc.t;
-        let base = PhysAddr::from(desc.base as usize);
-        let len = desc.len as usize;
-
-        match t {
-            SEV_META_DESC_TYPE_MEM => meta.add_valid_mem(base, len),
-            SEV_META_DESC_TYPE_SECRETS => {
-                if len != PAGE_SIZE {
-                    return Err(SvsmError::Firmware);
-                }
-                meta.secrets_page = Some(base);
-            }
-            SEV_META_DESC_TYPE_CPUID => {
-                if len != PAGE_SIZE {
-                    return Err(SvsmError::Firmware);
-                }
-                meta.cpuid_page = Some(base);
-            }
-            SEV_META_DESC_TYPE_CAA => {
-                if len != PAGE_SIZE {
-                    return Err(SvsmError::Firmware);
-                }
-                meta.caa_page = Some(base);
-            }
-            _ => log::info!("Unknown metadata item type: {}", t),
-        }
-    }
-
-    Ok(())
 }
 
 fn validate_fw_mem_region(

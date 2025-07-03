@@ -141,31 +141,29 @@ pub fn invalidate_early_boot_memory(
     let stage2_region = MemoryRegion::from_addresses(stage2_base, stage2_end);
     invalidate_boot_memory_region(platform, config, stage2_region)?;
 
-    if config.invalidate_boot_data() {
-        let kernel_elf_size =
-            launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
-        let kernel_elf_region = MemoryRegion::new(
-            PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
-            kernel_elf_size.try_into().unwrap(),
+    let kernel_elf_size =
+        launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
+    let kernel_elf_region = MemoryRegion::new(
+        PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
+        kernel_elf_size.try_into().unwrap(),
+    );
+    invalidate_boot_memory_region(platform, config, kernel_elf_region)?;
+
+    let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
+    if kernel_fs_size > 0 {
+        let kernel_fs_region = MemoryRegion::new(
+            PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
+            kernel_fs_size.try_into().unwrap(),
         );
-        invalidate_boot_memory_region(platform, config, kernel_elf_region)?;
+        invalidate_boot_memory_region(platform, config, kernel_fs_region)?;
+    }
 
-        let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
-        if kernel_fs_size > 0 {
-            let kernel_fs_region = MemoryRegion::new(
-                PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
-                kernel_fs_size.try_into().unwrap(),
-            );
-            invalidate_boot_memory_region(platform, config, kernel_fs_region)?;
-        }
-
-        if launch_info.stage2_igvm_params_size > 0 {
-            let igvm_params_region = MemoryRegion::new(
-                PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
-                launch_info.stage2_igvm_params_size as usize,
-            );
-            invalidate_boot_memory_region(platform, config, igvm_params_region)?;
-        }
+    if launch_info.stage2_igvm_params_size > 0 {
+        let igvm_params_region = MemoryRegion::new(
+            PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
+            launch_info.stage2_igvm_params_size as usize,
+        );
+        invalidate_boot_memory_region(platform, config, igvm_params_region)?;
     }
 
     Ok(())

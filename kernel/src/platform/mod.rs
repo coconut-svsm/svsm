@@ -11,7 +11,7 @@ pub mod snp;
 pub mod tdp;
 
 mod snp_fw;
-pub use snp_fw::{parse_fw_meta_data, SevFWMetaData};
+pub use snp_fw::SevFWMetaData;
 
 use capabilities::Caps;
 use native::NativePlatform;

@@ -6,16 +6,12 @@
 
 extern crate alloc;
 
-use core::slice;
-
 use crate::acpi::tables::{load_fw_cpu_info, ACPICPUInfo};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::igvm_params::IgvmParams;
-use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, SIZE_1G};
-use crate::platform::{parse_fw_meta_data, SevFWMetaData, SvsmPlatform};
-use crate::serial::SERIAL_PORT;
+use crate::platform::{SevFWMetaData, SvsmPlatform};
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
@@ -61,20 +57,15 @@ fn check_ovmf_regions(
 #[derive(Debug)]
 pub struct SvsmConfig<'a> {
     fw_cfg: Option<FwCfg<'a>>,
-    igvm_params: Option<IgvmParams<'a>>,
+    igvm_params: IgvmParams<'a>,
 }
 
 impl<'a> SvsmConfig<'a> {
-    pub fn new(platform: &dyn SvsmPlatform, igvm_params: Option<IgvmParams<'a>>) -> SvsmConfig<'a> {
-        // Create a firmware config object if there is no IGVM parameter block,
-        // or if the IGVM parameter block indicates that firmwrae config
-        // services are available on this system.
-        let is_qemu = if let Some(ref igvm) = igvm_params {
-            igvm.is_qemu()
-        } else {
-            true
-        };
-        let fw_cfg = if is_qemu {
+    pub fn new(platform: &dyn SvsmPlatform, igvm_params: IgvmParams<'a>) -> SvsmConfig<'a> {
+        // Create a firmware config object if the IGVM parameter block
+        // indicates that firmwrae config services are available on this
+        // system.
+        let fw_cfg = if igvm_params.is_qemu() {
             let io_port = platform.get_io_port();
             Some(FwCfg::new(io_port))
         } else {
@@ -86,140 +77,73 @@ impl<'a> SvsmConfig<'a> {
         }
     }
 
-    pub fn get_igvm_params(&self) -> Option<&IgvmParams<'_>> {
-        self.igvm_params.as_ref()
+    pub fn get_igvm_params(&self) -> &IgvmParams<'_> {
+        &self.igvm_params
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.find_kernel_region(),
-            None => self.fw_cfg.as_ref().unwrap().find_kernel_region(),
-        }
+        self.igvm_params.find_kernel_region()
     }
     pub fn page_state_change_required(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.page_state_change_required(),
-            None => true,
-        }
+        self.igvm_params.page_state_change_required()
     }
     pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.get_memory_regions(),
-            None => self.fw_cfg.as_ref().unwrap().get_memory_regions(),
-        }
+        self.igvm_params.get_memory_regions()
     }
     pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.write_guest_memory_map(map),
-            None => Ok(()),
-        }
+        self.igvm_params.write_guest_memory_map(map)
     }
     pub fn reserved_kernel_area_size(&self) -> usize {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.reserved_kernel_area_size(),
-            None => 0,
-        }
+        self.igvm_params.reserved_kernel_area_size()
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
-        // If IGVM parameters are present, then attempt to collect the CPU
-        // information from the IGVM parameters.  Otherwise, fall back to
-        // firmware config.
-        if let Some(igvm_params) = &self.igvm_params {
-            if let Some(cpu_info) = igvm_params.load_cpu_info()? {
-                return Ok(cpu_info);
-            }
+        // Attempt to collect the CPU information from the IGVM parameters.
+        // This may fail if the MADT was not supplied via IGVM parameter
+        // injection.  In this case, fall back to firmware config.  This will
+        // panic if firmware config services are unavailable.
+        if let Some(cpu_info) = self.igvm_params.load_cpu_info()? {
+            Ok(cpu_info)
+        } else {
+            load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
         }
-
-        load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.should_launch_fw(),
-            None => true,
-        }
+        self.igvm_params.should_launch_fw()
     }
 
     pub fn debug_serial_port(&self) -> u16 {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.debug_serial_port(),
-            None => SERIAL_PORT,
-        }
+        self.igvm_params.debug_serial_port()
     }
 
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.get_fw_metadata(),
-            None => {
-                // Map the metadata location which is defined by the firmware config
-                let guard =
-                    PerCPUPageMappingGuard::create_4k(PhysAddr::from(4 * SIZE_1G - PAGE_SIZE))
-                        .expect("Failed to map FW metadata page");
-                let vstart = guard.virt_addr().as_ptr::<u8>();
-                // Safety: we just mapped a page, so the size must hold. The type
-                // of the slice elements is `u8` so there are no alignment requirements.
-                let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
-                Some(parse_fw_meta_data(metadata).expect("Failed to parse FW SEV meta-data"))
-            }
-        }
+        self.igvm_params.get_fw_metadata()
     }
 
     pub fn get_fw_regions(
         &self,
         kernel_region: &MemoryRegion<PhysAddr>,
     ) -> Vec<MemoryRegion<PhysAddr>> {
-        match &self.igvm_params {
-            Some(igvm_params) => {
-                let flash_regions = igvm_params.get_fw_regions();
-                if !igvm_params.fw_in_low_memory() {
-                    check_ovmf_regions(&flash_regions, kernel_region);
-                }
-                flash_regions
-            }
-            None => {
-                let flash_regions = self
-                    .fw_cfg
-                    .as_ref()
-                    .unwrap()
-                    .iter_flash_regions()
-                    .collect::<Vec<_>>();
-                check_ovmf_regions(&flash_regions, kernel_region);
-                flash_regions
-            }
+        let flash_regions = self.igvm_params.get_fw_regions();
+        if !self.igvm_params.fw_in_low_memory() {
+            check_ovmf_regions(&flash_regions, kernel_region);
         }
+        flash_regions
     }
 
     pub fn fw_in_low_memory(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.fw_in_low_memory(),
-            None => false,
-        }
-    }
-
-    pub fn invalidate_boot_data(&self) -> bool {
-        // Boot data should be invalidated if and only if IGVM parameters were
-        // present.
-        self.igvm_params.is_some()
+        self.igvm_params.fw_in_low_memory()
     }
 
     pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.initialize_guest_vmsa(vmsa),
-            None => Ok(()),
-        }
+        self.igvm_params.initialize_guest_vmsa(vmsa)
     }
 
     pub fn use_alternate_injection(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.use_alternate_injection(),
-            None => false,
-        }
+        self.igvm_params.use_alternate_injection()
     }
 
     pub fn is_qemu(&self) -> bool {
-        match &self.igvm_params {
-            Some(igvm_params) => igvm_params.is_qemu(),
-            None => true,
-        }
+        self.igvm_params.is_qemu()
     }
 }
