@@ -1345,7 +1345,7 @@ impl DecodedInsnCtx {
             )
         };
 
-        // Decoed the linear addresses and map as a memory object
+        // Decode the linear addresses and map as a memory object
         // which allows accessing to the memory represented by the
         // linear addresses.
         let linear_addr =
@@ -1353,9 +1353,10 @@ impl DecodedInsnCtx {
         if io_read {
             // Read data from IO port and then write to the memory location.
             let data = mctx.ioio_in(port, self.opsize)?;
-            // Safety: The linear address is decoded from the instruction and checked. It can be
-            // remapped to a memory object with the write permission successfully, and the remapped
-            // memory size matches the operand size of the instruction.
+            // SAFETY: The linear address is decoded from the instruction and
+            // verified. It can be successfully remapped to a memory object
+            // with write permission, and the remapped memory size matches the
+            // operand size of the instruction.
             unsafe {
                 match self.opsize {
                     Bytes::One => mctx
@@ -1373,9 +1374,10 @@ impl DecodedInsnCtx {
         } else {
             // Read data from memory location and then write to the IO port
             //
-            // Safety: The linear address is decoded from the instruction and checked. It can be
-            // remapped to a memory object with the read permission successfully, and the remapped
-            // memory size matches the operand size of the instruction.
+            // SAFETY: The linear address is decoded from the instruction and
+            // verified. It can be successfully remapped to a memory object
+            // with read permission, and the remapped memory size matches the
+            // operand size of the instruction.
             let data = unsafe {
                 match self.opsize {
                     Bytes::One => mctx

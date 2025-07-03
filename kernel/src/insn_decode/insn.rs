@@ -302,9 +302,13 @@ pub mod test_utils {
             }
 
             match size {
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::One => Ok(unsafe { *(pa as *const u8) } as u64),
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Two => Ok(unsafe { *(pa as *const u16) } as u64),
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Four => Ok(unsafe { *(pa as *const u32) } as u64),
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Eight => Ok(unsafe { *(pa as *const u64) }),
                 _ => Err(InsnError::HandleMmioRead),
             }
@@ -325,9 +329,13 @@ pub mod test_utils {
             }
 
             match size {
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::One => unsafe { *(pa as *mut u8) = data as u8 },
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Two => unsafe { *(pa as *mut u16) = data as u16 },
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Four => unsafe { *(pa as *mut u32) = data as u32 },
+                // SAFETY: caller must ensure `pa` points to a valid address
                 Bytes::Eight => unsafe { *(pa as *mut u64) = data },
                 _ => return Err(InsnError::HandleMmioWrite),
             }
@@ -339,11 +347,21 @@ pub mod test_utils {
     impl<T: Copy> InsnMachineMem for TestMem<T> {
         type Item = T;
 
+        /// # Safety
+        /// The caller is required to ensure the validity of the address
+        /// this object was initialized with.
         unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+            // SAFETY: caller must ensure `ptr` was initialized with a valid
+            // address.
             Ok(unsafe { *(self.ptr) })
         }
 
+        /// # Safety
+        /// The caller is required to ensure the validity of the address
+        /// this object was initialized with.
         unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+            // SAFETY: caller must ensure `ptr` was initialized with a valid
+            // address.
             unsafe {
                 *(self.ptr) = data;
             }
@@ -355,10 +373,8 @@ pub mod test_utils {
     impl<T: Copy> InsnMachineMem for TestMem<T> {
         type Item = T;
 
-        unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-            Err(InsnError::MemRead)
-        }
-
+        /// # Safety
+        /// No safety concerns under fuzzing.
         unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
             Ok(())
         }
