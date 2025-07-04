@@ -168,6 +168,8 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
         }
         RawLockGuard {
             holder: &self.holder,
+            // SAFETY: The lock is taken and enforces exclusive usage of the
+            // mutable reference.
             data: unsafe { &mut *self.data.get() },
             irq_state,
         }
@@ -213,6 +215,8 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
             if result.is_ok() {
                 return Some(RawLockGuard {
                     holder: &self.holder,
+                    // SAFETY: The lock is taken and enforces exclusive usage
+                    // of the mutable reference.
                     data: unsafe { &mut *self.data.get() },
                     irq_state,
                 });
