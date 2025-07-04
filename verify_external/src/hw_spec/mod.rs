@@ -4,4 +4,4 @@
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 #[cfg(verus_keep_ghost)]
-include!("bits.verus.rs");
+include!("mm.verus.rs");

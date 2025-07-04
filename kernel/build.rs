@@ -14,6 +14,8 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(fuzzing)");
     println!("cargo::rustc-check-cfg=cfg(test_in_svsm)");
     println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost)");
+    println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost_body)");
+    println!("cargo::rustc-check-cfg=cfg(verus_verify_core)");
     println!("cargo::rustc-check-cfg=cfg(RUST_VERSION_AFTER_VERUS)");
 
     // Stage 2
