@@ -53,6 +53,8 @@ macro_rules! enable_shadow_stacks {
 
         let token_addr = $bsp_percpu.get_top_of_shadow_stack().unwrap();
 
+        // SAFETY: This assembly enables shadow-stacks and does not impact Rust
+        // memory safety.
         unsafe {
             asm!(
                 // Enable shadow stacks.
