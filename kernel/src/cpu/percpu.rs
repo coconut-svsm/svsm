@@ -65,16 +65,19 @@ use cpuarch::vmsa::VMSA;
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 
-// We use an UnsafeCell to allow for a static with interior
-// mutability. Normally, we would need to guarantee synchronization
-// on the backing datatype, but this is not needed because writes to
-// the structure only occur at initialization, from CPU 0, and reads
-// should only occur after all writes are done.
+// We use an UnsafeCell to allow for a static with interior mutability.
+// Normally, we would need to guarantee synchronization on the backing
+// datatype, but this is not needed because writes to the structure only occur
+// at initialization, from CPU 0, and reads of the Vec should only occur after
+// all writes are done.
 #[derive(Debug)]
 pub struct PerCpuAreas {
     areas: UnsafeCell<Vec<&'static PerCpuShared>>,
 }
 
+// SAFETY: Any operation that can affect synchronization safety is declared as
+// unsafe, and therefore callers guarantee that synchronization is always
+// maintained. Also see comment above struct declaration.
 unsafe impl Sync for PerCpuAreas {}
 
 impl PerCpuAreas {
@@ -86,7 +89,7 @@ impl PerCpuAreas {
 
     /// # Safety
     /// The areas vector obtained here is not multi-thread safe, so the caller
-    /// must guarantee that is not used in a context that expects multiwthread
+    /// must guarantee that is not used in a context that expects multi-thread
     /// safety.
     unsafe fn get_areas(&self) -> &Vec<&'static PerCpuShared> {
         // SAFETY: the caller guarantees that accessing the unsafe cell is
@@ -1169,6 +1172,9 @@ impl PerCpu {
 }
 
 pub fn this_cpu() -> &'static PerCpu {
+    // SAFETY: The PerCPU area is always mapped at the same virtual address, so
+    // dereferencing a pointer to that address is safe. The PerCPU area is also
+    // never freed, so using a static lifetime is safe as well.
     unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
 }
 
