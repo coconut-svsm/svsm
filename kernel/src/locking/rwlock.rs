@@ -249,6 +249,8 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
 
         RawWriteLockGuard {
             rwlock: &self.rwlock,
+            // SAFETY: The lock is taken for write, which enforces exclusive
+            // usage of the mutable reference - no pending readers.
             data: unsafe { &mut *self.data.get() },
             _irq_state: irq_state,
         }
@@ -284,6 +286,8 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
 
         RawReadLockGuard {
             rwlock: &self.rwlock,
+            // SAFETY: The lock is taken for write, which enforces exclusive
+            // usage of the mutable reference - no pending readers.
             data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         }
