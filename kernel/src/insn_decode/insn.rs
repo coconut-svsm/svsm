@@ -288,7 +288,10 @@ pub mod test_utils {
             Ok((la, false))
         }
 
-        fn handle_mmio_read(
+        /// # Safety
+        /// The caller is required to ensure that `pa` points to a valid memory
+        /// range.
+        unsafe fn handle_mmio_read(
             &self,
             pa: usize,
             _shared: bool,
@@ -307,7 +310,10 @@ pub mod test_utils {
             }
         }
 
-        fn handle_mmio_write(
+        /// # Safety
+        /// The caller is required to ensure that `pa` points to a valid memory
+        /// range.
+        unsafe fn handle_mmio_write(
             &mut self,
             pa: usize,
             _shared: bool,
