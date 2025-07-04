@@ -49,6 +49,7 @@ fn xsaveopt_supported() -> bool {
 }
 
 fn xcr0_set() {
+    // SAFETY: No impact on memory safety, enables FPU87 and SSE XSAVE features
     unsafe {
         // set bits [0-2] in XCR0 to enable extended SSE
         let xr0 = _xgetbv(0) | SVSM_XCR0.load(Ordering::Relaxed);
