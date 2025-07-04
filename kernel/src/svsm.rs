@@ -24,7 +24,7 @@ use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
 use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::cpu::shadow_stack::{
-    determine_cet_support, is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET,
+    determine_cet_support, is_cet_ss_supported, shadow_stack_info, SCetFlags, MODE_64BIT, S_CET,
 };
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
@@ -280,6 +280,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     print_memory_info(&mem_info);
 
     boot_stack_info();
+    shadow_stack_info();
 
     platform
         .configure_alternate_injection(launch_info.use_alternate_injection)

@@ -31,7 +31,7 @@ pub struct VMPageFaultResolution {
     pub flags: PTEntryFlags,
 }
 
-pub trait VirtualMapping: core::fmt::Debug {
+pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     /// Request the size of the virtual memory mapping
     ///
     /// # Returns
