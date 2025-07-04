@@ -429,6 +429,9 @@ impl MemoryRegion {
     /// undefined, as the compiler is allowed to optimize assuming there will
     /// be no arithmetic overflows.
     unsafe fn page_info_mut_ptr(&mut self, pfn: usize) -> *mut PageStorageType {
+        // SAFETY: The start of the managed virtual address space always
+        // contains the meta-data about the pages. So this is safe, given the
+        // caller supplied a valid pfn.
         unsafe { self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn) }
     }
 
@@ -440,6 +443,9 @@ impl MemoryRegion {
     /// undefined, as the compiler is allowed to optimize assuming there will
     /// be no arithmetic overflows.
     unsafe fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
+        // SAFETY: The start of the managed virtual address space always
+        // contains the meta-data about the pages. So this is safe, given the
+        // caller supplied a valid pfn.
         unsafe { self.start_virt.as_ptr::<PageStorageType>().add(pfn) }
     }
 
@@ -945,8 +951,8 @@ impl PageRef {
         let src = self.virt_addr.as_ptr::<u8>();
         let dst = virt_addr.as_mut_ptr::<u8>();
         let size = PAGE_SIZE;
+        // SAFETY: `src` and `dst` are both valid.
         unsafe {
-            // SAFETY: `src` and `dst` are both valid.
             unsafe_copy_bytes(src, dst, size);
         }
 
@@ -962,8 +968,8 @@ impl PageRef {
         let src = buf.as_ptr();
         let dst = (self.virt_addr + offset).as_mut_ptr();
         let size = buf.len();
+        // SAFETY: `src` and `dst` are both valid.
         unsafe {
-            // SAFETY: `src` and `dst` are both valid.
             unsafe_copy_bytes(src, dst, size);
         }
     }
@@ -974,8 +980,8 @@ impl PageRef {
         let src = (self.virt_addr + offset).as_ptr();
         let dst = buf.as_mut_ptr();
         let size = buf.len();
+        // SAFETY: `src` and `dst` are both valid.
         unsafe {
-            // SAFETY: `src` and `dst` are both valid.
             unsafe_copy_bytes(src, dst, size);
         }
     }
@@ -1053,8 +1059,8 @@ impl PageRef {
         let size = PAGE_SIZE.checked_sub(offset).unwrap();
         let dst = (self.virt_addr + offset).as_mut_ptr::<u8>();
 
+        // SAFETY: `dst` is valid.
         unsafe {
-            // SAFETY: `dst` is valid.
             write_bytes(dst, size, value);
         }
     }
@@ -1369,13 +1375,22 @@ impl<const N: u16> SlabCommon<N> {
             }
 
             let next_page = page.get_next_page();
-            // Cannot fail with free slots on entry.
+            // SAFETY: Cannot fail with free slots on entry because an entry
+            // will be allocated before the end of the list is reached.
+            // Therefore next_page on the last page is never dereferenced.
+            // When next_page is set it is guaranteed to point to another
+            // SlabCommon page, see Self::add_slab_page().
             page = unsafe { next_page.aligned_mut().expect("Invalid next page") };
         }
     }
 
     /// Deallocate a slot given its virtual address
-    fn deallocate_slot(&mut self, vaddr: VirtAddr) {
+    ///
+    /// # Safety
+    ///
+    /// The virtual address must have been allocated from the same SlabCommon
+    /// object.
+    unsafe fn deallocate_slot(&mut self, vaddr: VirtAddr) {
         let mut page = &mut self.page;
         loop {
             let free = page.get_free();
@@ -1394,7 +1409,9 @@ impl<const N: u16> SlabCommon<N> {
             }
 
             let next_page = page.get_next_page();
-            // Will fail if the object does not belong to this slab.
+            // SAFETY: Safe because the virtual address to deallocate will be
+            // found before the end of the list is reached. Therefore next_page
+            // is always valid.
             page = unsafe { next_page.aligned_mut().expect("Invalid next page") };
         }
     }
@@ -1404,6 +1421,11 @@ impl<const N: u16> SlabCommon<N> {
         let mut last_page = &mut self.page;
         let mut next_page_vaddr = last_page.get_next_page();
         loop {
+            // SAFETY: This method is only called when at least 2 free pages
+            // are in the Slab, which means that there are more than one total
+            // pages in the Slab and also that the end of the linked list is
+            // never reached. Therefore next_page_vaddr always points to a
+            // valid Slab Page.
             let slab_page = unsafe {
                 next_page_vaddr
                     .aligned_mut::<SlabPage<N>>()
@@ -1469,11 +1491,17 @@ impl SlabPageSlab {
         assert_ne!(self.common.free, 0);
 
         let page_vaddr = self.common.allocate_slot();
+        // SAFETY: page_vaddr was just allocated and points to a memory region
+        // big enough for any instance of a SlabPage object.
         let slab_page = unsafe { &mut *page_vaddr.as_mut_ptr::<SlabPage<SLAB_PAGE_SIZE>>() };
 
         *slab_page = SlabPage::new();
         if let Err(e) = slab_page.init() {
-            self.common.deallocate_slot(page_vaddr);
+            // SAFETY: Safe as page_vaddr has been allocated above from the
+            // same Slab.
+            unsafe {
+                self.common.deallocate_slot(page_vaddr);
+            }
             return Err(e);
         }
 
@@ -1487,7 +1515,11 @@ impl SlabPageSlab {
         // The SlabPageSlab uses SlabPages on its own and freeing a SlabPage can empty another SlabPage.
         while self.common.free_pages > 1 {
             let slab_page = self.common.free_one_page();
-            self.common.deallocate_slot(VirtAddr::from(slab_page));
+            // SAFETY: Safe because free_one_page() returns a virtual address
+            // of a SlabPage belonging to this Slab.
+            unsafe {
+                self.common.deallocate_slot(VirtAddr::from(slab_page));
+            }
         }
     }
 
@@ -1506,8 +1538,17 @@ impl SlabPageSlab {
     /// # Arguments
     ///
     /// * `slab_page` - Pointer to the [`SlabPage`] to deallocate.
-    fn deallocate(&mut self, slab_page: *mut SlabPage<SLAB_PAGE_SIZE>) {
-        self.common.deallocate_slot(VirtAddr::from(slab_page));
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `slab_page` points to a SlabPage object
+    /// allocated from the SlabPageSlab.
+    unsafe fn deallocate(&mut self, slab_page: *mut SlabPage<SLAB_PAGE_SIZE>) {
+        // SAFETY: Safe as long as caller supplied a valid pointer to a
+        // SlabPageSlab object.
+        unsafe {
+            self.common.deallocate_slot(VirtAddr::from(slab_page));
+        }
         self.shrink_slab();
     }
 }
@@ -1541,10 +1582,17 @@ impl<const N: u16> Slab<N> {
 
         let slab_page_ptr = SLAB_PAGE_SLAB.lock().allocate()?;
         let page_ptr = slab_page_ptr.cast::<SlabPage<N>>();
+        // SAFETY: The write is safe because SLAB_PAGE_SLAB allocations return
+        // a pointer to a memory area big enough to contain a SlabPage.
         unsafe { page_ptr.write(SlabPage::<N>::new()) };
+        // SAFETY: page_ptr is safe to dereference, see above.
         let page = unsafe { &mut *page_ptr };
         if let Err(e) = page.init() {
-            SLAB_PAGE_SLAB.lock().deallocate(slab_page_ptr);
+            // SAFETY: Error path, the ptr deallocated here was allocated above
+            // from SLAB_PAGE_CACHE.
+            unsafe {
+                SLAB_PAGE_SLAB.lock().deallocate(slab_page_ptr);
+            }
             return Err(e);
         }
 
@@ -1558,7 +1606,11 @@ impl<const N: u16> Slab<N> {
         }
 
         let slab_page = self.common.free_one_page();
-        SLAB_PAGE_SLAB.lock().deallocate(slab_page.cast());
+        // SAFETY: free_one_page() returns a valid slab_page allocated via
+        // SLAB_PAGE_SLAB.
+        unsafe {
+            SLAB_PAGE_SLAB.lock().deallocate(slab_page.cast());
+        }
     }
 
     fn allocate(&mut self) -> Result<VirtAddr, AllocError> {
@@ -1566,8 +1618,17 @@ impl<const N: u16> Slab<N> {
         Ok(self.common.allocate_slot())
     }
 
-    fn deallocate(&mut self, vaddr: VirtAddr) {
-        self.common.deallocate_slot(vaddr);
+    /// Free an allocation from this Slab
+    ///
+    /// # Safety
+    ///
+    /// The vaddr parameter must point a a virtual address allocated from this
+    /// Slab.
+    unsafe fn deallocate(&mut self, vaddr: VirtAddr) {
+        // SAFETY: Safe when caller supplied a valid vaddr.
+        unsafe {
+            self.common.deallocate_slot(vaddr);
+        }
         self.shrink_slab();
     }
 }
@@ -1621,17 +1682,27 @@ impl SvsmAllocator {
         }
     }
 
-    fn deallocate(&self, addr: VirtAddr, size: usize) -> Option<()> {
+    /// Deallocates memory from a Slab.
+    ///
+    /// # Safety:
+    ///
+    /// The `addr` parameter must point to a virtual address allocated via a
+    /// Slab managed by / SvsmAllocator. The `size` parameter must match the
+    /// value used during / allocation of the virtual address.
+    unsafe fn deallocate(&self, addr: VirtAddr, size: usize) -> Option<()> {
         let size = size.checked_next_power_of_two()?;
-        match size {
-            ..=32 => self.slab32.lock().deallocate(addr),
-            64 => self.slab64.lock().deallocate(addr),
-            128 => self.slab128.lock().deallocate(addr),
-            256 => self.slab256.lock().deallocate(addr),
-            512 => self.slab512.lock().deallocate(addr),
-            1024 => self.slab1024.lock().deallocate(addr),
-            2048 => self.slab2048.lock().deallocate(addr),
-            _ => return None,
+        // SAFETY: Safe to call deallocate when addr and size are valid.
+        unsafe {
+            match size {
+                ..=32 => self.slab32.lock().deallocate(addr),
+                64 => self.slab64.lock().deallocate(addr),
+                128 => self.slab128.lock().deallocate(addr),
+                256 => self.slab256.lock().deallocate(addr),
+                512 => self.slab512.lock().deallocate(addr),
+                1024 => self.slab1024.lock().deallocate(addr),
+                2048 => self.slab2048.lock().deallocate(addr),
+                _ => return None,
+            }
         }
 
         Some(())
@@ -1651,6 +1722,8 @@ impl SvsmAllocator {
     }
 }
 
+// SAFETY: SvsmAllocator makes sure its allocation and deallocation routines
+// are safe given the safety requirements of the trait methods are fulfilled.
 unsafe impl GlobalAlloc for SvsmAllocator {
     /// Allocates memory based on the specified layout.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -1684,7 +1757,11 @@ unsafe impl GlobalAlloc for SvsmAllocator {
                 free_page(virt_addr);
             }
             PageInfo::Slab(_) => {
-                self.deallocate(virt_addr, size).expect("Invalid page info");
+                // SAFETY: The virtual address is located inside a Slab page,
+                // so virt_addr points to a Slab allocation.
+                unsafe {
+                    self.deallocate(virt_addr, size).expect("Invalid page info");
+                }
             }
             _ => {
                 panic!("Freeing memory on unsupported page type");
@@ -1795,6 +1872,8 @@ impl TestRootMem<'_> {
         let layout = Layout::from_size_align(size, PAGE_SIZE)
             .unwrap()
             .pad_to_align();
+        // SAFETY: Layout specifies non-zero size and following code does not
+        // rely on memory contents at ptr.
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
             handle_alloc_error(layout);
@@ -1821,6 +1900,8 @@ impl Drop for TestRootMem<'_> {
 
         let mut root_mem = ROOT_MEM.lock();
         let layout = Layout::from_size_align(root_mem.page_count * PAGE_SIZE, PAGE_SIZE).unwrap();
+        // SAFETY: Safe because layout calculates to the same size as during
+        // allocation of the memory region.
         unsafe { dealloc(root_mem.start_virt.as_mut_ptr::<u8>(), layout) };
         *root_mem = MemoryRegion::new();
 
@@ -2016,6 +2097,7 @@ mod test {
                 // Allocate four pages worth of objects from each Slab.
                 let n = (4 * PAGE_SIZE).div_ceil(size);
                 for _k in 0..n {
+                    // SAFETY: Safe as layout has non-zero size.
                     let p = unsafe { ALLOCATOR.alloc(layout) };
                     assert_ne!(p, ptr::null_mut());
                     allocs[j].push(p);
@@ -2029,6 +2111,9 @@ mod test {
                 assert_eq!(layout.size(), size);
 
                 for p in &allocs[j][..] {
+                    // SAFETY: Safe because *p was previously allocated from the same
+                    // allocator and is deallocated with the same layout
+                    // as it was allocated.
                     unsafe { ALLOCATOR.dealloc(*p, layout) };
                 }
                 j += 1;
@@ -2058,6 +2143,7 @@ mod test {
 
         let mut allocs: Vec<*mut u8> = Vec::new();
         for _i in 0..(2 * SLAB_PAGES_PER_PAGE * OBJECTS_PER_PAGE) {
+            // SAFETY: Safe as layout has non-zero size.
             let p = unsafe { ALLOCATOR.alloc(layout) };
             assert_ne!(p, ptr::null_mut());
             assert_ne!(SLAB_PAGE_SLAB.lock().common.capacity, 0);
@@ -2065,6 +2151,9 @@ mod test {
         }
 
         for p in allocs {
+            // SAFETY: Safe because p was previously allocated from the same
+            // allocator and is deallocated with the same layout
+            // as it was allocated.
             unsafe { ALLOCATOR.dealloc(p, layout) };
         }
 
@@ -2092,6 +2181,7 @@ mod test {
         let mut allocs: Vec<*mut u8> = Vec::new();
         let mut null_seen = false;
         for _i in 0..TEST_MEMORY_SIZE.div_ceil(OBJECT_SIZE) {
+            // SAFETY: Layout has non-zero size.
             let p = unsafe { ALLOCATOR.alloc(layout) };
             if p.is_null() {
                 null_seen = true;
@@ -2105,6 +2195,9 @@ mod test {
         }
 
         for p in allocs {
+            // SAFETY: Safe because p was previously allocated from the same
+            // allocator and is deallocated with the same layout
+            // as it was allocated.
             unsafe { ALLOCATOR.dealloc(p, layout) };
         }
     }

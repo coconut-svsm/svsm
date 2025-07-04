@@ -66,12 +66,12 @@ impl<T> PageBox<T> {
         T: FromZeros,
     {
         let mut pages = Self::try_new_uninit()?;
+        // SAFETY: Self::try_new_uninit() returns a valid and uninitialized
+        // memory location which this code still has exclusive access to.
         unsafe { MaybeUninit::as_mut_ptr(&mut pages).write_bytes(0, 1) };
-        Ok(unsafe {
-            // SAFETY: We know that all zeros is a valid representation because
-            // `T` implements `FromZeros`.
-            pages.assume_init()
-        })
+        // SAFETY: We know that all zeros is a valid representation because `T`
+        // implements `FromZeros`.
+        Ok(unsafe { pages.assume_init() })
     }
 
     /// Gets the page order required for an allocation to hold a `T`. It also
@@ -88,6 +88,8 @@ impl<T> PageBox<T> {
     pub fn try_new_uninit() -> Result<PageBox<MaybeUninit<T>>, SvsmError> {
         let order = const { Self::get_order() };
         let addr = NonNull::new(allocate_pages(order)?.as_mut_ptr()).unwrap();
+        // SAFETY: allocate_pages() returned a valid pointer to a memory
+        // location.
         unsafe { Ok(PageBox::from_raw(addr)) }
     }
 }
@@ -111,6 +113,7 @@ impl<T: ?Sized> PageBox<T> {
     /// contents will never be freed unless the mutable reference is
     /// converted back to a `PageBox` via [`from_raw()`](PageBox::from_raw).
     pub fn leak<'a>(b: Self) -> &'a mut T {
+        // SAFETY: Can only cause memory leak and does not harm memory safety.
         unsafe { ManuallyDrop::new(b).ptr.as_mut() }
     }
 
@@ -128,6 +131,8 @@ impl<T> PageBox<MaybeUninit<T>> {
     ///
     /// See the safety requirements for [`MaybeUninit::assume_init()`].
     pub unsafe fn assume_init(self) -> PageBox<T> {
+        // SAFETY: Returns an initialized PageBox when the safety requirements
+        // of MaybeUninit::assume_init() are met.
         unsafe {
             let leaked = PageBox::leak(self).assume_init_mut();
             let raw = NonNull::from(leaked);
@@ -179,7 +184,7 @@ impl<T> PageBox<[MaybeUninit<T>]> {
         // `NonNull<[MaybeUninit<T>]>` into `NonNull<[T]>`.
         let leaked = NonNull::from(PageBox::leak(self));
         let inited = NonNull::slice_from_raw_parts(leaked.cast(), leaked.len());
-        // We obtained this pointer from a previously leaked allocation, so
+        // SAFETY: We obtained this pointer from a previously leaked allocation, so
         // this is safe.
         unsafe { PageBox::from_raw(inited) }
     }
@@ -236,16 +241,17 @@ impl<T: ?Sized> AsMut<T> for PageBox<T> {
 impl<T: ?Sized> Drop for PageBox<T> {
     fn drop(&mut self) {
         let ptr = self.ptr.as_ptr();
+        // SAFETY: ptr fulfills the ptr::drop_in_place() safety requirements.
         unsafe { ptr.drop_in_place() };
         free_page(self.vaddr());
     }
 }
 
-/// `TryBox` is `Send` if `T` is `Send` because the data it
+/// SAFETY: `TryBox` is `Send` if `T` is `Send` because the data it
 /// references via its internal pointer is unaliased.
 unsafe impl<T: Send + ?Sized> Send for PageBox<T> {}
 
-/// `TryBox` is `Sync` if `T` is `Sync` because the data it
+/// SAFETY: `TryBox` is `Sync` if `T` is `Sync` because the data it
 /// references via its internal pointer is unaliased.
 unsafe impl<T: Sync + ?Sized> Sync for PageBox<T> {}
 
