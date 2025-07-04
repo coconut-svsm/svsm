@@ -340,6 +340,7 @@ mod tests {
     fn test_has_memory_encryption_info_cpuid() {
         const CPUID_EXTENDED_FUNCTION_INFO: u32 = 0x8000_0000;
         const CPUID_MEMORY_ENCRYPTION_INFO: u32 = 0x8000_001F;
+        // SAFETY: CPUID_EXTENDED_FUNCTION_INFO is a valid CPUID leaf.
         let extended_info = unsafe { __cpuid_count(CPUID_EXTENDED_FUNCTION_INFO, 0) };
         assert!(extended_info.eax >= CPUID_MEMORY_ENCRYPTION_INFO);
     }
@@ -350,6 +351,7 @@ mod tests {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             const CPUID_VENDOR_INFO: u32 = 0;
 
+            // SAFETY: CPUID_VENDOR_INFO is a valid CPUID leaf.
             let vendor_info = unsafe { __cpuid_count(CPUID_VENDOR_INFO, 0) };
 
             let vendor_name_bytes = [vendor_info.ebx, vendor_info.edx, vendor_info.ecx]
@@ -370,6 +372,7 @@ mod tests {
         let ghcb = current_ghcb();
         let ptr: *const GHCB = core::ptr::from_ref(ghcb);
         let ghcb_bytes =
+            // SAFETY: The pointer points to a GHCB.
             unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
         assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
     }
@@ -388,6 +391,7 @@ mod tests {
     const TESTDEV_ECHO_LAST_PORT: u16 = 0xe0;
 
     fn inb(port: u16) -> u8 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u8;
             asm!("inb %dx, %al", in("dx") port, out("al") ret, options(att_syntax));
@@ -395,6 +399,7 @@ mod tests {
         }
     }
     fn inb_from_testdev_echo() -> u8 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u8;
             asm!("inb $0xe0, %al", out("al") ret, options(att_syntax));
@@ -403,14 +408,17 @@ mod tests {
     }
 
     fn outb(port: u16, value: u8) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outb %al, %dx", in("al") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outb_to_testdev_echo(value: u8) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outb %al, $0xe0", in("al") value, options(att_syntax)) }
     }
 
     fn inw(port: u16) -> u16 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u16;
             asm!("inw %dx, %ax", in("dx") port, out("ax") ret, options(att_syntax));
@@ -418,6 +426,7 @@ mod tests {
         }
     }
     fn inw_from_testdev_echo() -> u16 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u16;
             asm!("inw $0xe0, %ax", out("ax") ret, options(att_syntax));
@@ -426,14 +435,17 @@ mod tests {
     }
 
     fn outw(port: u16, value: u16) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outw %ax, %dx", in("ax") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outw_to_testdev_echo(value: u16) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outw %ax, $0xe0", in("ax") value, options(att_syntax)) }
     }
 
     fn inl(port: u16) -> u32 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u32;
             asm!("inl %dx, %eax", in("dx") port, out("eax") ret, options(att_syntax));
@@ -441,6 +453,7 @@ mod tests {
         }
     }
     fn inl_from_testdev_echo() -> u32 {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe {
             let ret: u32;
             asm!("inl $0xe0, %eax", out("eax") ret, options(att_syntax));
@@ -449,20 +462,24 @@ mod tests {
     }
 
     fn outl(port: u16, value: u32) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outl %eax, %dx", in("eax") value, in("dx") port, options(att_syntax)) }
     }
 
     fn outl_to_testdev_echo(value: u32) {
+        // SAFETY: The assembly code does not modify any memory.
         unsafe { asm!("outl %eax, $0xe0", in("eax") value, options(att_syntax)) }
     }
 
     fn rep_outsw(port: u16, data: &[u16]) {
+        // SAFETY: Assembly code reads a u16 slice. This is safe because u16 is Send.
         unsafe {
             asm!("rep outsw", in("dx") port, in("rsi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
     }
 
     fn rep_insw(port: u16, data: &mut [u16]) {
+        // SAFETY: Assembly code reads data to an exclusively owned u16 slice.
         unsafe {
             asm!("rep insw", in("dx") port, in("rdi") data.as_ptr(), inout("rcx") data.len() => _, options(att_syntax))
         }
@@ -612,6 +629,8 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_error() {
+        // SAFETY: Calls into the VC handler and issues a vmmcall there. VMM
+        // can only modify shared data.
         let res = verify_ghcb_gets_altered(|| unsafe { raw_vmmcall(1005, 0, 0, 0) });
         assert_eq!(res, -1000);
     }
@@ -623,6 +642,8 @@ mod tests {
         if is_qemu_test_env() && is_test_platform_type(SvsmPlatformType::Snp) {
             const VMMCALL_HC_VAPIC_POLL_IRQ: u32 = 1;
 
+            // SAFETY: Calls into the VC handler and issues a vmmcall
+            // there. VMM can only modify shared data.
             let res = verify_ghcb_gets_altered(|| unsafe {
                 raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0)
             });
@@ -685,6 +706,7 @@ mod tests {
     // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_wbinvd() {
+        // SAFETY: wbinvd does not harm memory safety.
         verify_ghcb_gets_altered(|| unsafe {
             asm!("wbinvd");
         });
@@ -700,6 +722,7 @@ mod tests {
         let mut version: u32 = 0;
         let address = u32::try_from(APIC_DEFAULT_PHYS_BASE + APIC_DEFAULT_VERSION_REGISTER_OFFSET)
             .expect("APIC address should fit in 32 bits");
+        // SAFETY: Reads the APIC version, which does not harm memory safety.
         verify_ghcb_gets_altered(|| unsafe {
             asm!(
                 "mov (%edx), %eax",

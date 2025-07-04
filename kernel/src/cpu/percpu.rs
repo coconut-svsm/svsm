@@ -69,12 +69,15 @@ pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
 // mutability. Normally, we would need to guarantee synchronization
 // on the backing datatype, but this is not needed because writes to
 // the structure only occur at initialization, from CPU 0, and reads
-// should only occur after all writes are done.
+// should only occur after all writes are done. The exception is the IpiState
+// structure, which is changed at runtime. But IpiState is Sync, which makes
+// the runtime access safe.
 #[derive(Debug)]
 pub struct PerCpuAreas {
     areas: UnsafeCell<Vec<&'static PerCpuShared>>,
 }
 
+// SAFETY: See comment above struct declaration
 unsafe impl Sync for PerCpuAreas {}
 
 impl PerCpuAreas {
@@ -1169,6 +1172,8 @@ impl PerCpu {
 }
 
 pub fn this_cpu() -> &'static PerCpu {
+    // SAFETY: The PerCPU area is always mapped at the same virtual address, so
+    // dereferencing a pointer to that address is safe.
     unsafe { &*SVSM_PERCPU_BASE.as_ptr::<PerCpu>() }
 }
 
