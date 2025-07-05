@@ -6,14 +6,13 @@
 
 extern crate alloc;
 
-use core::slice;
-
 use crate::acpi::tables::{load_fw_cpu_info, ACPICPUInfo};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fw_cfg::FwCfg;
 use crate::igvm_params::IgvmParams;
-use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, SIZE_1G};
+use crate::mm::access::OwnedMapping;
+use crate::mm::{PAGE_SIZE, SIZE_1G};
 use crate::platform::{parse_fw_meta_data, SevFWMetaData, SvsmPlatform};
 use crate::serial::SERIAL_PORT;
 use crate::utils::MemoryRegion;
@@ -152,13 +151,15 @@ impl<'a> SvsmConfig<'a> {
             Some(igvm_params) => igvm_params.get_fw_metadata(),
             None => {
                 // Map the metadata location which is defined by the firmware config
-                let guard =
-                    PerCPUPageMappingGuard::create_4k(PhysAddr::from(4 * SIZE_1G - PAGE_SIZE))
-                        .expect("Failed to map FW metadata page");
-                let vstart = guard.virt_addr().as_ptr::<u8>();
-                // Safety: we just mapped a page, so the size must hold. The type
-                // of the slice elements is `u8` so there are no alignment requirements.
-                let metadata = unsafe { slice::from_raw_parts(vstart, PAGE_SIZE) };
+                let paddr = PhysAddr::from(4 * SIZE_1G - PAGE_SIZE);
+                // SAFETY: we trust the firwmare-defined address
+                let guard = unsafe {
+                    OwnedMapping::<_, u8>::map_local_slice(paddr, PAGE_SIZE)
+                        .expect("Failed to map FW metadata page")
+                };
+                // SAFETY: we do not access the same physical address anywhere else
+                // in the code.
+                let metadata = unsafe { guard.as_slice() };
                 Some(parse_fw_meta_data(metadata).expect("Failed to parse FW SEV meta-data"))
             }
         }

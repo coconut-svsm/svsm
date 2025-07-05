@@ -21,8 +21,9 @@ use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::access::OwnedMapping;
 use crate::mm::memory::write_guest_memory_map;
-use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::mm::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
@@ -49,7 +50,13 @@ static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
-fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Result<(), SvsmError> {
+/// # Safety
+///
+/// See safety considerations for [`pvalidate_range()`].
+unsafe fn pvalidate_page_range(
+    range: MemoryRegion<PhysAddr>,
+    op: PvalidateOp,
+) -> Result<(), SvsmError> {
     // In the future, it is likely that this function will need to be prepared
     // to execute both PVALIDATE and RMPADJUST over the same set of addresses,
     // so the loop is structured to anticipate that possibility.
@@ -62,11 +69,10 @@ fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Resul
         } else {
             PAGE_SIZE
         };
-        let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0)?;
-        // SAFETY: The mapping correctly represents the physical address range
-        // and therefore is safe with respect to other memory operations.
+        // SAFETY: the caller must uphold the safety requirements
         unsafe {
-            pvalidate_range(MemoryRegion::new(mapping.virt_addr(), len), op)?;
+            let mapping = OwnedMapping::<_, u8>::map_local_slice(paddr, len)?;
+            pvalidate_range(mapping.mapping_vregion(), op)?;
         }
         paddr = paddr + len;
     }
@@ -133,8 +139,11 @@ impl SvsmPlatform for SnpPlatform {
             print_fw_meta(fw_meta);
             write_guest_memory_map(config)?;
             validate_fw_memory(config, fw_meta, &kernel_region)?;
-            copy_tables_to_fw(fw_meta, &kernel_region)?;
-            validate_fw(config, &kernel_region)?;
+            // SAFETY: we just checked the firmware memory addresses
+            unsafe {
+                copy_tables_to_fw(fw_meta, &kernel_region)?;
+                validate_fw(config, &kernel_region)?;
+            };
             prepare_fw_launch(fw_meta)?;
         }
         Ok(())
@@ -272,12 +281,13 @@ impl SvsmPlatform for SnpPlatform {
         current_ghcb().page_state_change(region, size, op)
     }
 
-    fn validate_physical_page_range(
+    unsafe fn validate_physical_page_range(
         &self,
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        pvalidate_page_range(region, PvalidateOp::from(op))
+        // SAFETY: the caller must uphold the security requirements
+        unsafe { pvalidate_page_range(region, PvalidateOp::from(op)) }
     }
 
     /// # Safety
