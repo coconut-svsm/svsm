@@ -119,6 +119,11 @@ fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
 }
 
+// Returns true if the address is shared.
+fn is_shared(paddr: PhysAddr) -> bool {
+    (paddr.bits() & shared_pte_mask()) != 0
+}
+
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
     PhysAddr::from(paddr.bits() & !(shared_pte_mask() | private_pte_mask()))
 }
@@ -239,6 +244,11 @@ impl PTEntry {
     /// Check if the page table entry is user-accessible.
     pub fn user(&self) -> bool {
         self.flags().contains(PTEntryFlags::USER)
+    }
+
+    /// Check if the page table entry is global.
+    pub fn global(&self) -> bool {
+        self.flags().contains(PTEntryFlags::GLOBAL)
     }
 
     /// Check if the page table entry has reserved bits set.
@@ -1185,6 +1195,53 @@ impl PageTable {
             let entry = &mut self.root[idx];
             entry.set(make_private_address(paddr), flags);
         }
+    }
+
+    /// Makes the memory region pages read-only.
+    /// This method is meant for global pages only.
+    ///
+    /// # Safety
+    ///
+    /// The caller should verify that `region` can be made read-only, i.e. that
+    /// no write can happen or that a #PF raised by any tentative write is
+    /// expected.
+    /// The caller must also ensure that the region start and size are 4k or 2M
+    /// aligned.
+    pub unsafe fn make_region_ro(
+        &mut self,
+        region: MemoryRegion<VirtAddr>,
+    ) -> Result<(), SvsmError> {
+        let page_size = if region.start().is_aligned(PageSize::Huge as usize) {
+            PageSize::Huge
+        } else {
+            debug_assert!(region.start().is_aligned(PageSize::Regular as usize));
+            PageSize::Regular
+        };
+
+        for page in region.iter_pages(page_size) {
+            match self.walk_addr(page) {
+                Mapping::Level0(entry) | Mapping::Level1(entry) => {
+                    if !entry.present() || !entry.global() {
+                        return Err(SvsmError::Mem);
+                    }
+
+                    let mut flags = if is_shared(entry.address()) {
+                        PTEntryFlags::data_ro().bits() as usize | shared_pte_mask()
+                    } else {
+                        PTEntryFlags::data_ro().bits() as usize | private_pte_mask()
+                    };
+
+                    if entry.huge() {
+                        flags |= PTEntryFlags::HUGE.bits() as usize;
+                    }
+
+                    entry.0 = PhysAddr::from(entry.address().bits() | flags);
+                }
+                _ => return Err(SvsmError::Mem),
+            }
+        }
+
+        Ok(())
     }
 }
 
