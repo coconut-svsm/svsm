@@ -1000,8 +1000,8 @@ mod tests {
     #[test]
     fn queue_too_big() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         assert_eq!(
             VirtQueue::<FakeHal, 8>::new(&mut transport, 0, false, false).unwrap_err(),
@@ -1012,8 +1012,8 @@ mod tests {
     #[test]
     fn queue_already_used() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(
@@ -1025,8 +1025,8 @@ mod tests {
     #[test]
     fn add_empty() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(
@@ -1039,8 +1039,8 @@ mod tests {
     #[test]
     fn add_too_many() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(queue.available_desc(), 4);
@@ -1054,14 +1054,16 @@ mod tests {
     #[test]
     fn add_buffers() {
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
         assert_eq!(queue.available_desc(), 4);
 
         // Add a buffer chain consisting of two device-readable parts followed by two
         // device-writable parts.
+        // SAFETY: Both buffers are at least valid for the duration of the call to add(). The
+        // buffers are not accessed otherwise during this test case.
         let token = unsafe { queue.add(&[&[1, 2], &[3]], &mut [&mut [0, 0], &mut [0]]) }.unwrap();
 
         assert_eq!(queue.available_desc(), 0);
@@ -1119,14 +1121,16 @@ mod tests {
         use core::ptr::slice_from_raw_parts;
 
         let mut header = VirtIOHeader::make_fake_header(MODERN_VERSION, 1, 0, 0, 4);
-        // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
         let mut transport =
+            // SAFETY: `header` was created by `VirtIOHeader::make_fake_header()`.
             unsafe { MmioTransport::<FakeHal>::new(NonNull::from(&mut header)) }.unwrap();
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, true, false).unwrap();
         assert_eq!(queue.available_desc(), 4);
 
         // Add a buffer chain consisting of two device-readable parts followed by two
         // device-writable parts.
+        // SAFETY: Both buffers are at least valid for the duration of the call to add(). The
+        // buffers are not accessed otherwise during this test case.
         let token = unsafe { queue.add(&[&[1, 2], &[3]], &mut [&mut [0, 0], &mut [0]]) }.unwrap();
 
         assert_eq!(queue.available_desc(), 4);
@@ -1187,6 +1191,7 @@ mod tests {
 
         // Check that the avail ring's flag is zero by default.
         assert_eq!(
+            // SAFETY: queue was created above; we can assume that its `avail` field is readable.
             unsafe { (*queue.avail.as_ptr()).flags.load(Ordering::Acquire) },
             0x0
         );
@@ -1195,6 +1200,7 @@ mod tests {
 
         // Check that the avail ring's flag is 1 after `disable_dev_notify`.
         assert_eq!(
+            // SAFETY: queue was created above; we can assume that its `avail` field is readable.
             unsafe { (*queue.avail.as_ptr()).flags.load(Ordering::Acquire) },
             0x1
         );
@@ -1203,6 +1209,7 @@ mod tests {
 
         // Check that the avail ring's flag is 0 after `enable_dev_notify`.
         assert_eq!(
+            // SAFETY: queue was created above; we can assume that its `avail` field is readable.
             unsafe { (*queue.avail.as_ptr()).flags.load(Ordering::Acquire) },
             0x0
         );
@@ -1227,6 +1234,8 @@ mod tests {
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, false).unwrap();
 
         // Add a buffer chain with a single device-readable part.
+        // SAFETY: Both buffers are at least valid for the duration of the call to add(). The
+        // buffers are not accessed otherwise during this test case.
         unsafe { queue.add(&[&[42]], &mut []) }.unwrap();
 
         // Check that the transport would be notified.
@@ -1262,6 +1271,8 @@ mod tests {
         let mut queue = VirtQueue::<FakeHal, 4>::new(&mut transport, 0, false, true).unwrap();
 
         // Add a buffer chain with a single device-readable part.
+        // SAFETY: Both buffers are at least valid for the duration of the call to add(). The
+        // buffers are not accessed otherwise during this test case.
         assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 0);
 
         // Check that the transport would be notified.
@@ -1280,6 +1291,8 @@ mod tests {
         assert!(!queue.should_notify());
 
         // Add another buffer chain.
+        // SAFETY: Both buffers are at least valid for the duration of the call to add(). The
+        // buffers are not accessed otherwise during this test case.
         assert_eq!(unsafe { queue.add(&[&[42]], &mut []) }.unwrap(), 1);
 
         // Check that the transport should be notified again now.
