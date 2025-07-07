@@ -268,7 +268,17 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     ///
     /// A `Result` containing the read data if success or an `InsnError` if
     /// the operation fails.
-    fn handle_mmio_read(&self, _pa: usize, _shared: bool, _size: Bytes) -> Result<u64, InsnError> {
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that, when memory safety may be impacted, this
+    /// operation does not cause Undefined Behavior.
+    unsafe fn handle_mmio_read(
+        &self,
+        _pa: usize,
+        _shared: bool,
+        _size: Bytes,
+    ) -> Result<u64, InsnError> {
         Err(InsnError::HandleMmioRead)
     }
 
@@ -284,7 +294,12 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     /// # Returns
     ///
     /// A `Result` indicating success or an `InsnError` if the operation fails.
-    fn handle_mmio_write(
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that, when memory safety may be impacted, this
+    /// operation does not cause Undefined Behavior.
+    unsafe fn handle_mmio_write(
         &mut self,
         _pa: usize,
         _shared: bool,
@@ -1330,7 +1345,7 @@ impl DecodedInsnCtx {
             )
         };
 
-        // Decoed the linear addresses and map as a memory object
+        // Decode the linear addresses and map as a memory object
         // which allows accessing to the memory represented by the
         // linear addresses.
         let linear_addr =
@@ -1338,9 +1353,10 @@ impl DecodedInsnCtx {
         if io_read {
             // Read data from IO port and then write to the memory location.
             let data = mctx.ioio_in(port, self.opsize)?;
-            // Safety: The linear address is decoded from the instruction and checked. It can be
-            // remapped to a memory object with the write permission successfully, and the remapped
-            // memory size matches the operand size of the instruction.
+            // SAFETY: The linear address is decoded from the instruction and
+            // verified. It can be successfully remapped to a memory object
+            // with write permission, and the remapped memory size matches the
+            // operand size of the instruction.
             unsafe {
                 match self.opsize {
                     Bytes::One => mctx
@@ -1358,9 +1374,10 @@ impl DecodedInsnCtx {
         } else {
             // Read data from memory location and then write to the IO port
             //
-            // Safety: The linear address is decoded from the instruction and checked. It can be
-            // remapped to a memory object with the read permission successfully, and the remapped
-            // memory size matches the operand size of the instruction.
+            // SAFETY: The linear address is decoded from the instruction and
+            // verified. It can be successfully remapped to a memory object
+            // with read permission, and the remapped memory size matches the
+            // operand size of the instruction.
             let data = unsafe {
                 match self.opsize {
                     Bytes::One => mctx
@@ -1482,7 +1499,12 @@ impl DecodedInsnCtx {
         ea: usize,
     ) -> Result<u64, InsnError> {
         mctx.translate_linear_addr(self.get_linear_addr(mctx, seg, ea, false)?, false, false)
-            .and_then(|(addr, shared)| mctx.handle_mmio_read(addr, shared, self.opsize))
+            .and_then(|(addr, shared)| {
+                // SAFETY: The linear address is decoded from the instruction
+                // and verified. It can be successfully translated to a
+                // physical address with read permission.
+                unsafe { mctx.handle_mmio_read(addr, shared, self.opsize) }
+            })
     }
 
     #[inline]
@@ -1494,7 +1516,12 @@ impl DecodedInsnCtx {
         data: u64,
     ) -> Result<(), InsnError> {
         mctx.translate_linear_addr(self.get_linear_addr(mctx, seg, ea, true)?, true, false)
-            .and_then(|(addr, shared)| mctx.handle_mmio_write(addr, shared, self.opsize, data))
+            .and_then(|(addr, shared)| {
+                // SAFETY: The linear address is decoded from the instruction
+                // and verified. It can be successfully translated to a
+                // physical address with write permission.
+                unsafe { mctx.handle_mmio_write(addr, shared, self.opsize, data) }
+            })
     }
 
     fn emulate_mov<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
