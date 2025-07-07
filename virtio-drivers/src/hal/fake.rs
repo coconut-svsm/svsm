@@ -18,8 +18,7 @@ pub struct FakeHal;
 
 /// Fake HAL implementation for use in unit tests.
 ///
-/// # Safety
-/// Follows the safety requirements outlined for the Hal trait.
+/// SAFETY: Follows the safety requirements outlined for the Hal trait.
 unsafe impl Hal for FakeHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (PhysAddr, NonNull<u8>) {
         assert_ne!(pages, 0);
