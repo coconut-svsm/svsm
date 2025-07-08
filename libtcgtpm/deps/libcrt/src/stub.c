@@ -2,7 +2,12 @@
 
 #include <libcrt.h>
 
-#define NOT_IMPLEMENTED printf("WARNING: %s not implemented\n", __func__)
+#define NOT_IMPLEMENTED                                                        \
+  do {                                                                         \
+    printf("ERROR: libcrt: %s not implemented\n", __func__);                   \
+    abort();                                                                   \
+  } while (0)
+
 
 // errno.h
 
