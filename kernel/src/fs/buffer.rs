@@ -7,7 +7,9 @@
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::FsError;
-use crate::mm::{copy_from_user, copy_to_user};
+use crate::mm::access::{
+    BorrowedMapping, Mapping, ReadableSliceMapping, User, WriteableSliceMapping,
+};
 use core::cmp;
 
 pub trait Buffer {
@@ -104,34 +106,40 @@ impl Buffer for SliceRefBuffer<'_> {
 
 #[derive(Debug)]
 pub struct UserBuffer {
-    addr: VirtAddr,
-    size: usize,
+    // Userspace memory is always mapped in the same virtual range,
+    // so `'static` is correct.
+    mem: BorrowedMapping<'static, User, [u8]>,
 }
 
 impl UserBuffer {
-    pub fn new(addr: VirtAddr, size: usize) -> Self {
-        Self { addr, size }
+    pub fn new(addr: VirtAddr, size: usize) -> Result<Self, SvsmError> {
+        let mem = BorrowedMapping::user_slice_from_address(addr, size)?;
+        Ok(Self { mem })
     }
 }
 
 impl Buffer for UserBuffer {
     fn read_buffer(&self, buf: &mut [u8], offset: usize) -> Result<usize, SvsmError> {
-        let size = cmp::min(buf.len(), self.size.checked_sub(offset).unwrap());
+        let size = cmp::min(buf.len(), self.mem.len().checked_sub(offset).unwrap());
         if size > 0 {
-            copy_from_user(self.addr + offset, &mut buf[..size])?;
+            self.mem
+                .borrow_slice_at(offset, size)?
+                .read_to(&mut buf[..size])?;
         }
         Ok(size)
     }
 
     fn write_buffer(&mut self, buf: &[u8], offset: usize) -> Result<usize, SvsmError> {
-        let size = cmp::min(buf.len(), self.size.checked_sub(offset).unwrap());
+        let size = cmp::min(buf.len(), self.mem.len().checked_sub(offset).unwrap());
         if size > 0 {
-            copy_to_user(&buf[..size], self.addr + offset)?;
+            self.mem
+                .borrow_slice_at(offset, size)?
+                .write_from(&buf[..size])?;
         }
         Ok(size)
     }
 
     fn size(&self) -> usize {
-        self.size
+        self.mem.len()
     }
 }

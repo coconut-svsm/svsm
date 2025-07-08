@@ -164,7 +164,11 @@ pub trait SvsmPlatform: Sync {
 
     /// Marks a physical range of pages as valid or invalid for use as private
     /// pages.  Not usable in stage2.
-    fn validate_physical_page_range(
+    ///
+    /// # Safety
+    ///
+    /// See safety considerations for [SvsmPlatform::validate_virtual_page_range].
+    unsafe fn validate_physical_page_range(
         &self,
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,

@@ -15,7 +15,9 @@ use crate::greq::{
     pld_report::{SnpReportRequest, SnpReportResponse},
     services::get_regular_report,
 };
-use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
+use crate::mm::access::{
+    OwnedMapping, ReadableMapping, ReadableSliceMapping, WriteableSliceMapping,
+};
 use crate::protocols::{errors::SvsmReqError, RequestParams};
 use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -86,7 +88,9 @@ impl AttestServicesOp {
             return Err(SvsmReqError::invalid_parameter());
         }
 
-        read_bytes_from_guest(gpa, nonce_size).map_err(|_| SvsmReqError::invalid_parameter())
+        OwnedMapping::<_, u8>::map_guest_slice(gpa, nonce_size)
+            .and_then(|m| m.read_to_vec())
+            .map_err(|_| SvsmReqError::invalid_parameter())
     }
 
     /// Returns the manifest buffer gpa and size
@@ -291,7 +295,8 @@ fn write_report_and_manifest(
         return Err(SvsmError::Attestation(AttestError::Report).into());
     }
 
-    copy_slice_to_guest(report, report_region.start())?;
+    OwnedMapping::<_, u8>::map_guest_slice(report_region.start(), report.len())?
+        .write_from(report)?;
 
     // Set report size in bytes in r8 register
     params.r8 = report
@@ -299,7 +304,8 @@ fn write_report_and_manifest(
         .try_into()
         .map_err(|_| SvsmError::Attestation(AttestError::Report))?;
 
-    copy_slice_to_guest(manifest, manifest_region.start())?;
+    OwnedMapping::<_, u8>::map_guest_slice(manifest_region.start(), manifest.len())?
+        .write_from(manifest)?;
 
     // Set the manifest size in bytes in rcx register
     params.rcx = manifest
@@ -343,8 +349,9 @@ fn attest_single_vtpm(
 fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op =
-        read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
+    let attest_op = OwnedMapping::<_, AttestServicesOp>::map_guest(gpa)
+        .and_then(|m| m.read())
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     // Attest multiple services is expected to return a GUID table (mixed endian ordering) of the
     // enumerated active services' attestation manifest. A service that does not have its own
@@ -379,7 +386,8 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
     // Get the gpa of Attest Single Service Operation structure
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
+    let attest_op = OwnedMapping::<_, AttestSingleServiceOp>::map_guest(gpa)
+        .and_then(|m| m.read())
         .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     // Extract the GUID from the Attest Single Service Operation structure.

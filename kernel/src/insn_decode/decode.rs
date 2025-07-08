@@ -39,17 +39,16 @@
 // https://github.com/projectacrn/acrn-hypervisor/blob/master/hypervisor/
 // arch/x86/guest/instr_emul.c
 
-extern crate alloc;
-
 use super::insn::{DecodedInsn, Immediate, Operand, MAX_INSN_SIZE};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
 use crate::cpu::control_regs::{CR0Flags, CR4Flags};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::registers::{RFlags, SegDescAttrFlags};
+use crate::mm::access::{BorrowedMapping, Guest, ReadableMapping, WriteableMapping};
 use crate::types::Bytes;
-use alloc::boxed::Box;
 use bitflags::bitflags;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// Represents the raw bytes of an instruction and
 /// tracks the number of bytes being processed.
@@ -180,12 +179,16 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     ///
     /// A `Result` containing a boxed trait object representing the mapped
     /// memory, or an `InsnError` if mapping fails.
-    fn map_linear_addr<T: Copy + 'static>(
+    ///
+    /// # Safety
+    ///
+    /// See the safety considerations for [`BorrowedMapping::from_address`]
+    unsafe fn map_linear_addr<A, T: FromBytes + IntoBytes>(
         &self,
         _la: usize,
         _write: bool,
         _fetch: bool,
-    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+    ) -> Result<BorrowedMapping<'_, A, T>, InsnError> {
         Err(InsnError::MapLinearAddr)
     }
 
@@ -307,44 +310,6 @@ pub trait InsnMachineCtx: core::fmt::Debug {
         _data: u64,
     ) -> Result<(), InsnError> {
         Err(InsnError::HandleMmioWrite)
-    }
-}
-
-/// Trait representing a machine memory for instruction decoding.
-pub trait InsnMachineMem {
-    type Item;
-
-    /// Read data from the memory at the specified offset.
-    ///
-    /// # Safety
-    ///
-    /// The caller must verify not to read data from arbitrary memory. The object implements this
-    /// trait should guarantee the memory region is readable.
-    ///
-    /// # Returns
-    ///
-    /// Returns the read data on success, or an `InsnError` if the read
-    /// operation fails.
-    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-        Err(InsnError::MemRead)
-    }
-
-    /// Write data to the memory at the specified offset.
-    ///
-    /// # Safety
-    ///
-    /// The caller must verify not to write data to corrupt arbitrary memory. The object implements
-    /// this trait should guarantee the memory region is writable.
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - The data to write to the memory.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok`on success, or an `InsnError` if the write operation fails.
-    unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
-        Err(InsnError::MemWrite)
     }
 }
 
@@ -1360,14 +1325,17 @@ impl DecodedInsnCtx {
             unsafe {
                 match self.opsize {
                     Bytes::One => mctx
-                        .map_linear_addr::<u8>(linear_addr, io_read, false)?
-                        .mem_write(data as u8)?,
+                        .map_linear_addr::<Guest, u8>(linear_addr, io_read, false)?
+                        .write(data as u8)
+                        .map_err(|_| InsnError::IoIoIn)?,
                     Bytes::Two => mctx
-                        .map_linear_addr::<u16>(linear_addr, io_read, false)?
-                        .mem_write(data as u16)?,
+                        .map_linear_addr::<Guest, u16>(linear_addr, io_read, false)?
+                        .write(data as u16)
+                        .map_err(|_| InsnError::IoIoIn)?,
                     Bytes::Four => mctx
-                        .map_linear_addr::<u32>(linear_addr, io_read, false)?
-                        .mem_write(data as u32)?,
+                        .map_linear_addr::<Guest, u32>(linear_addr, io_read, false)?
+                        .write(data as u32)
+                        .map_err(|_| InsnError::IoIoIn)?,
                     _ => return Err(InsnError::IoIoIn),
                 };
             }
@@ -1381,14 +1349,17 @@ impl DecodedInsnCtx {
             let data = unsafe {
                 match self.opsize {
                     Bytes::One => mctx
-                        .map_linear_addr::<u8>(linear_addr, io_read, false)?
-                        .mem_read()? as u64,
+                        .map_linear_addr::<Guest, u8>(linear_addr, io_read, false)?
+                        .read()
+                        .map_err(|_| InsnError::IoIoOut)? as u64,
                     Bytes::Two => mctx
-                        .map_linear_addr::<u16>(linear_addr, io_read, false)?
-                        .mem_read()? as u64,
+                        .map_linear_addr::<Guest, u16>(linear_addr, io_read, false)?
+                        .read()
+                        .map_err(|_| InsnError::IoIoOut)? as u64,
                     Bytes::Four => mctx
-                        .map_linear_addr::<u32>(linear_addr, io_read, false)?
-                        .mem_read()? as u64,
+                        .map_linear_addr::<Guest, u32>(linear_addr, io_read, false)?
+                        .read()
+                        .map_err(|_| InsnError::IoIoOut)? as u64,
                     _ => return Err(InsnError::IoIoOut),
                 }
             };
