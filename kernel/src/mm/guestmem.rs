@@ -23,11 +23,26 @@ use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
 use syscall::PATH_MAX;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+/// Read one byte from a virtual address.
+///
+/// # Arguments
+///
+/// - `v` - Virtual address to read.
+///
+/// # Returns
+///
+/// `Ok(u8)` with the value read on success, `Err(SvsmError)` on failure.
+///
+/// # Safety
+///
+/// Any safety requirements for accessing raw pointers apply here as well.
 #[inline]
-pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
+pub unsafe fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
+    // SAFETY: Assembly dereferences the pointer, which is safe when the
+    // function's safety requirements are fulfilled.
     unsafe {
         asm!("1: movb ({0}), %al",
              "   xorq %rcx, %rcx",
@@ -51,7 +66,7 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
     }
 }
 
-/// Writes 1 byte at a virtual address.
+/// Writes one byte at a virtual address.
 ///
 /// # Safety
 ///
@@ -66,6 +81,8 @@ pub fn read_u8(v: VirtAddr) -> Result<u8, SvsmError> {
 pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
+    // SAFETY: Assembly writes to virtual address, safe when function's safety
+    // requirements are fulfilled.
     unsafe {
         asm!("1: movb %al, ({0})",
              "   xorq %rcx, %rcx",
@@ -88,12 +105,27 @@ pub unsafe fn write_u8(v: VirtAddr, val: u8) -> Result<(), SvsmError> {
     }
 }
 
+/// Read one word from a virtual address.
+///
+/// # Arguments
+///
+/// - `v` - Virtual address to read.
+///
+/// # Returns
+///
+/// `Ok(u16)` with the value read on success, `Err(SvsmError)` on failure.
+///
+/// # Safety
+///
+/// Any safety requirements for accessing raw pointers apply here as well.
 #[expect(dead_code)]
 #[inline]
 unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
+    // SAFETY: Assembly dereferences the pointer, which is safe when the
+    // function's safety requirements are fulfilled.
     unsafe {
         asm!("1: movw ({0}), {1}",
              "   xorq %rcx, %rcx",
@@ -117,12 +149,27 @@ unsafe fn read_u16(v: VirtAddr) -> Result<u16, SvsmError> {
     }
 }
 
+/// Read one dword from a virtual address.
+///
+/// # Arguments
+///
+/// - `v` - Virtual address to read.
+///
+/// # Returns
+///
+/// `Ok(u32)` with the value read on success, `Err(SvsmError)` on failure.
+///
+/// # Safety
+///
+/// Any safety requirements for accessing raw pointers apply here as well.
 #[expect(dead_code)]
 #[inline]
 unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
+    // SAFETY: Assembly dereferences the pointer, which is safe when the
+    // function's safety requirements are fulfilled.
     unsafe {
         asm!("1: movl ({0}), {1}",
              "   xorq %rcx, %rcx",
@@ -146,12 +193,27 @@ unsafe fn read_u32(v: VirtAddr) -> Result<u32, SvsmError> {
     }
 }
 
+/// Read one qword from a virtual address.
+///
+/// # Arguments
+///
+/// - `v` - Virtual address to read.
+///
+/// # Returns
+///
+/// `Ok(u32)` with the value read on success, `Err(SvsmError)` on failure.
+///
+/// # Safety
+///
+/// Any safety requirements for accessing raw pointers apply here as well.
 #[expect(dead_code)]
 #[inline]
 unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     let mut rcx: u64;
     let mut val: u64;
 
+    // SAFETY: Assembly dereferences the pointer, which is safe when the
+    // function's safety requirements are fulfilled.
     unsafe {
         asm!("1: movq ({0}), {1}",
              "   xorq %rcx, %rcx",
@@ -173,10 +235,18 @@ unsafe fn read_u64(v: VirtAddr) -> Result<u64, SvsmError> {
     }
 }
 
+/// Copies `size` number of bytes from `src` to `dst`, catching any fault that
+/// might happen during the operation.
+///
+/// # Safety
+///
+/// The caller must make sure that writing to `dst` does not harm memory safety.
 #[inline]
 unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), SvsmError> {
     let mut rcx: u64;
 
+    // SAFETY: Safe as long as the function's safety requirements are met. Any
+    // fault that might happen is handled via the exception handlers.
     unsafe {
         asm!("1:cld
                 rep movsb
@@ -199,6 +269,11 @@ unsafe fn copy_bytes(src: *const u8, dst: *mut u8, size: usize) -> Result<(), Sv
     }
 }
 
+/// Copies `src` to `dst`.
+///
+/// # Safety
+///
+/// The caller must make sure that writing to `dst` does not harm memory safety.
 #[inline]
 unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
     let size: usize = size_of::<T>();
@@ -237,6 +312,8 @@ impl<T: Copy> GuestPtr<T> {
     pub unsafe fn read(&self) -> Result<T, SvsmError> {
         let mut buf = MaybeUninit::<T>::uninit();
 
+        // SAFETY: Safe because `dst` is on the local stack. The data is
+        // explicitly uninitialized and no one else has access to it.
         unsafe {
             do_movsb(self.ptr, buf.as_mut_ptr())?;
             Ok(buf.assume_init())
@@ -254,6 +331,8 @@ impl<T: Copy> GuestPtr<T> {
     /// with the appropriate write permissions.
     #[inline]
     pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError> {
+        // SAFETY: Safe when self.ptr does not point to SVSM memory because
+        // then the write can not harm memory safety.
         unsafe { do_movsb(&buf, self.ptr) }
     }
 
@@ -268,6 +347,8 @@ impl<T: Copy> GuestPtr<T> {
     /// with the appropriate write permissions.
     #[inline]
     pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
+        // SAFETY: Safe when self.ptr does not point to SVSM memory because
+        // then the write can not harm memory safety.
         unsafe { do_movsb(buf, self.ptr) }
     }
 
@@ -278,6 +359,8 @@ impl<T: Copy> GuestPtr<T> {
 
     #[inline]
     pub fn offset(&self, count: isize) -> Self {
+        // SAFETY: Safe when self.ptr does not point to SVSM memory because
+        // then the write can not harm memory safety.
         GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
     }
 }
@@ -285,13 +368,19 @@ impl<T: Copy> GuestPtr<T> {
 impl<T: Copy> InsnMachineMem for GuestPtr<T> {
     type Item = T;
 
-    /// Safety: See the GuestPtr's read() method documentation for safety requirements.
+    /// # Safety
+    ///
+    /// See the GuestPtr's read() method documentation for safety requirements.
     unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+        // SAFETY: Safe when GuestPtr::read safety requirements are met.
         unsafe { self.read().map_err(|_| InsnError::MemRead) }
     }
 
-    /// Safety: See the GuestPtr's write() method documentation for safety requirements.
+    /// # Safety
+    ///
+    /// See the GuestPtr's write() method documentation for safety requirements.
     unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+        // SAFETY: Safe when GuestPtr::write safety requirements are met.
         unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
     }
 }
@@ -340,6 +429,7 @@ impl<T: Copy> UserPtr<T> {
             return Err(SvsmError::InvalidAddress);
         }
         let _guard = UserAccessGuard::new();
+        // SAFETY: Target pointer is guaranteed to point to user memory.
         unsafe { self.guest_ptr.read() }
     }
 
@@ -354,6 +444,7 @@ impl<T: Copy> UserPtr<T> {
             return Err(SvsmError::InvalidAddress);
         }
         let _guard = UserAccessGuard::new();
+        // SAFETY: Target pointer is guaranteed to point to user memory.
         unsafe { self.guest_ptr.write_ref(buf) }
     }
 
@@ -610,7 +701,8 @@ mod tests {
         let test_buffer: [u8; 6] = [0; 6];
         let test_address = VirtAddr::from(test_buffer.as_ptr());
 
-        let result = read_u8(test_address).unwrap();
+        // SAFETY: The address is mapped and can be safely accessed.
+        let result = unsafe { read_u8(test_address).unwrap() };
 
         assert_eq!(result, test_buffer[0]);
     }

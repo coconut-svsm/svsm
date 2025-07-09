@@ -364,6 +364,8 @@ impl PTEntry {
     /// raw pointer read.  The caller must be certain to calculate the correct
     /// address.
     pub unsafe fn read_pte(vaddr: VirtAddr) -> Self {
+        // SAFETY: When the methods safety requirements are met, the raw
+        // pointer read is safe.
         unsafe { *vaddr.as_ptr::<Self>() }
     }
 }
@@ -395,6 +397,8 @@ impl PTPage {
     /// The given reference must correspond to a valid previously allocated
     /// page table page.
     unsafe fn free(page: &'static Self) {
+        // SAFETY: The page put into the PageBox is a previously allocated
+        // page table page.
         unsafe {
             let _ = PageBox::from_raw(NonNull::from(page));
         }
@@ -409,6 +413,8 @@ impl PTPage {
         }
 
         let address = phys_to_virt(entry.address());
+        // SAFETY: Every PTEntry points to a previously allocated page-table
+        // page, so this pointer dereference is safe.
         Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
     }
 }
@@ -491,6 +497,7 @@ impl PageTable {
     /// Load the current page table into the CR3 register.
     ///
     /// # Safety
+    ///
     /// The caller must ensure to take other actions to make sure a memory safe
     /// execution state is warranted (e.g. changing the stack and register state)
     pub unsafe fn load(&self) {
@@ -658,10 +665,10 @@ impl PageTable {
         let pdpe_addr = Self::get_pte_address(pde_addr);
         let pml4e_addr = Self::get_pte_address(pdpe_addr);
 
-        // Check each entry in the paging hierarchy to determine whether this
-        // address is mapped.  Because the hierarchy is read from the top
-        // down using self-map addresses that were calculated correctly,
-        // the reads are safe to perform.
+        // SAFETY: Check each entry in the paging hierarchy to determine
+        // whether this address is mapped.  Because the hierarchy is read from
+        // the top down using self-map addresses that were calculated
+        // correctly, the reads are safe to perform.
         let pml4e = unsafe { PTEntry::read_pte(pml4e_addr) };
         if !pml4e.present() {
             return None;
@@ -672,6 +679,9 @@ impl PageTable {
         // entry.  If a large page is detected at a lower level of the
         // hierarchy, the low bits from the virtual address must be combined
         // with the physical address from the PDE/PDPE.
+
+        // SAFETY: The PML4E was checked to be present, so the PDPE exists and
+        // can be read safely.
         let pdpe = unsafe { PTEntry::read_pte(pdpe_addr) };
         if !pdpe.present() {
             return None;
@@ -681,6 +691,8 @@ impl PageTable {
             return Some(PageFrame::Size1G(pa));
         }
 
+        // SAFETY: The PDPE was checked to be present and not to be a huge
+        // page. So the PDE exists and can be read safely.
         let pde = unsafe { PTEntry::read_pte(pde_addr) };
         if !pde.present() {
             return None;
@@ -690,6 +702,8 @@ impl PageTable {
             return Some(PageFrame::Size2M(pa));
         }
 
+        // SAFETY: The PDE was checked to be present and not to be a huge
+        // page. So the PTE exists and can be read safely.
         let pte = unsafe { PTEntry::read_pte(pte_addr) };
         if pte.present() {
             let pa = pte.address() + (usize::from(vaddr) & 0xFFF);

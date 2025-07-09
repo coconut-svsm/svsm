@@ -121,6 +121,10 @@ impl<T: FromZeros> SharedBox<T> {
         let ptr = NonNull::from(PageBox::leak(page_box)).cast::<T>();
 
         for offset in (0..core::mem::size_of::<T>()).step_by(PAGE_SIZE) {
+            // SAFETY: The memory marked shared was just allocated, so there is
+            // no type and no other user associated with it. The memory is also
+            // marked private again in the error path or when the SharedBox is
+            // dropped.
             let r1 = unsafe { make_page_shared(vaddr + offset) };
             if let Err(e1) = r1 {
                 for off in (0..offset).step_by(PAGE_SIZE) {
@@ -239,18 +243,23 @@ impl<T: FromBytes + Sync> AsRef<T> for SharedBox<T> {
     }
 }
 
+// SAFETY: SharedBox can be Send when T is Send because the Sharedbox
+// implementation does not implement any !Send behavior around type T.
 unsafe impl<T> Send for SharedBox<T> where T: Send {}
-unsafe impl<T> Sync for SharedBox<T> where T: Sync {}
 
 impl<T> Drop for SharedBox<T> {
     fn drop(&mut self) {
         // Re-encrypt the pages.
         let res = (0..size_of::<Self>())
             .step_by(PAGE_SIZE)
+            // SAFETY: This makes the owned pages private again. Since this is
+            // the drop() method, there are no users left.
             .try_for_each(|offset| unsafe { make_page_private(self.addr() + offset) });
 
         // If re-encrypting was successful free the memory otherwise leak it.
         if res.is_ok() {
+            // SAFETY: The ptr was previously allocated via a PageBox and is
+            // therefore valid.
             drop(unsafe { PageBox::from_raw(self.ptr.cast::<MaybeUninit<T>>()) });
         } else {
             log::error!("failed to set pages to encrypted. Memory leak!");

@@ -32,6 +32,9 @@ fn bitmap_elems(region: MemoryRegion<PhysAddr>) -> NonZeroUsize {
 pub unsafe fn init_valid_bitmap_ptr(region: MemoryRegion<PhysAddr>, raw: NonNull<u64>) {
     let len = bitmap_elems(region);
     let ptr = NonNull::slice_from_raw_parts(raw, len.get());
+    // SAFETY: Valid bitmap pointers are allocated via
+    // init_valid_bitmap_alloc(), which uses a PageBox for allocation. So
+    // converting the pointer back to PageBox is safe.
     let bitmap = unsafe { PageBox::from_raw(ptr) };
     *VALID_BITMAP.lock() = Some(ValidBitmap::new(region, bitmap));
 }
