@@ -239,12 +239,16 @@ impl TaskList {
         None
     }
 
-    fn terminate(&mut self, task: TaskPointer) {
+    /// # Safety
+    /// The caller must ensure that `task` is already a member of this task
+    /// list.
+    unsafe fn terminate(&mut self, task: TaskPointer) {
         // Set the task state as terminated. If the task being terminated is the
         // current task then the task context will still need to be in scope until
         // the next schedule() has completed. Schedule will keep a reference to this
         // task until some time after the context switch.
         task.set_task_terminated();
+        // SAFETY: `task` must be a task pointer that is part of this list.
         let mut cursor = unsafe { self.list().cursor_mut_from_ptr(task.as_ref()) };
         cursor.remove();
     }
@@ -336,7 +340,10 @@ pub fn current_task_terminated() {
         .current_task
         .as_mut()
         .expect("Task termination handler called when there is no current task");
-    TASKLIST.lock().terminate(task_node.clone());
+    // SAFETY: the scheduler guarantees that `current_task` always points to a
+    // valid task, and every task has its pointer pushed into the global task
+    // list during its creation.
+    unsafe { TASKLIST.lock().terminate(task_node.clone()) }
 }
 
 pub fn terminate() {
@@ -479,6 +486,10 @@ pub fn schedule() {
         }
 
         // Get task-pointers, consuming the Arcs and release their reference
+        //
+        // SAFETY: the scheduler guarantees that both `current` and `next`
+        // always point to valid tasks. The XSAVE area in each task must be
+        // valid and not aliased.
         unsafe {
             let a = task_pointer(current);
             let b = task_pointer(next);

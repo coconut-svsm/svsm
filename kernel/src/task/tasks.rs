@@ -496,8 +496,19 @@ impl Task {
             .checked_sub(8)
             .unwrap()
             .is_aligned(16));
+        // Make sure there is room for TaskContext
+        debug_assert!(
+            (percpu_mapping.virt_addr() + bounds.start().bits())
+                <= VirtAddr::from(stack_ptr)
+                    .checked_sub(size_of::<TaskContext>())
+                    .unwrap()
+        );
 
         // 'Push' the task frame onto the stack
+        //
+        // SAFETY: we ensure that both `TaskContext` and the function pointer
+        // can be written to valid memory. The address storing the function
+        // pointer is always 8b-aligned.
         unsafe {
             let task_context = stack_ptr
                 .sub(size_of::<TaskContext>())
@@ -550,8 +561,18 @@ impl Task {
         // ret instruction in switch_context to ensure stack frames are
         // 16b-aligned
         debug_assert!(VirtAddr::from(stack_ptr).is_aligned(16));
+        // Make sure there is room for TaskContext
+        debug_assert!(
+            (percpu_mapping.virt_addr() + bounds.start().bits())
+                <= VirtAddr::from(stack_ptr)
+                    .checked_sub(size_of::<TaskContext>())
+                    .unwrap()
+        );
 
         // 'Push' the task frame onto the stack
+        //
+        // SAFETY: we ensure that both `X86ExceptionContext` and `TaskContext`
+        // can be written to valid memory.
         unsafe {
             // Setup IRQ return frame.  User-mode tasks always run with
             // interrupts enabled.
@@ -567,7 +588,11 @@ impl Task {
             let stack_iret_frame = stack_ptr.cast::<X86ExceptionContext>();
             *stack_iret_frame = iret_frame;
 
-            let mut task_context = TaskContext {
+            let task_context = TaskContext {
+                regs: X86GeneralRegs {
+                    rdi: xsa_addr, // XSAVE area addr
+                    ..Default::default()
+                },
                 ret_addr: VirtAddr::from(return_new_task as *const ())
                     .bits()
                     .try_into()
@@ -575,8 +600,6 @@ impl Task {
                 ..Default::default()
             };
 
-            // xsave area addr
-            task_context.regs.rdi = xsa_addr;
             let stack_task_context = stack_ptr
                 .sub(size_of::<TaskContext>())
                 .cast::<TaskContext>();
