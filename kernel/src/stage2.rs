@@ -11,7 +11,7 @@ pub mod boot_stage2;
 
 use bootlib::kernel_launch::{
     KernelLaunchInfo, Stage2LaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START,
-    STAGE2_START,
+    STAGE2_STACK, STAGE2_STACK_END, STAGE2_START,
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
@@ -29,6 +29,7 @@ use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
 use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
 use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
+use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
@@ -65,6 +66,10 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     // on multi-threaded access to the per-cpu areas.
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
     let bsp_percpu = PerCpu::alloc(percpu_shared)?;
+    bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
+        VirtAddr::from(STAGE2_STACK_END as u64),
+        VirtAddr::from(STAGE2_STACK as u64),
+    ));
     // SAFETY: pgtable is properly aligned and is never freed within the
     // lifetime of stage2. We go through a raw pointer to promote it to a
     // static mut. Only the BSP is able to get a reference to it so no
@@ -169,6 +174,8 @@ unsafe fn setup_env(
     init_percpu(platform).expect("Failed to initialize per-cpu area");
 
     // Init IDT again with handlers requiring GHCB (eg. #VC handler)
+    // Must be done after init_percpu() to catch early #PFs
+    //
     // SAFETY: the caller guarantees that the lifetime of this IDT is suitable.
     unsafe {
         early_idt_init(idt);
@@ -549,10 +556,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     log::info!("Starting SVSM kernel...");
 
-    // Shut down the GHCB
     // SAFETY: the addreses used to invoke the kernel have been calculated
     // correctly for use in the assembly trampoline.
     unsafe {
+        // Shut down the PerCpu instance
         shutdown_percpu();
 
         asm!("jmp *%rax",
@@ -569,6 +576,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 fn panic(info: &PanicInfo<'_>) -> ! {
     log::error!("Panic! COCONUT-SVSM Version: {}", COCONUT_VERSION);
     log::error!("Info: {}", info);
+
+    print_stack(3);
+
     loop {
         platform::halt();
     }

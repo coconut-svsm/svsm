@@ -403,7 +403,7 @@ unsafe fn switch_to(prev: *const Task, next: *const Task) {
         // in the new page tables. To protect against this, we switch to another
         // stack that's mapped into both the old and the new set of page tables.
         // That way we always have a valid stack to handle exceptions on.
-        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().into();
+        let tos_cs: u64 = this_cpu().get_top_of_context_switch_stack().unwrap().into();
 
         // Switch to new task
         asm!(

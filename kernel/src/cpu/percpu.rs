@@ -578,20 +578,20 @@ impl PerCpu {
             .unwrap_or(ptr::null())
     }
 
-    pub fn get_top_of_shadow_stack(&self) -> VirtAddr {
-        self.init_shadow_stack.get().unwrap()
+    pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
+        self.init_shadow_stack.get()
     }
 
-    pub fn get_top_of_context_switch_stack(&self) -> VirtAddr {
-        self.context_switch_stack.get().unwrap()
+    pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
+        self.context_switch_stack.get()
     }
 
-    pub fn get_top_of_df_stack(&self) -> VirtAddr {
-        self.ist.double_fault_stack.get().unwrap()
+    pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
+        self.ist.double_fault_stack.get()
     }
 
-    pub fn get_top_of_df_shadow_stack(&self) -> VirtAddr {
-        self.ist.double_fault_shadow_stack.get().unwrap()
+    pub fn get_top_of_df_shadow_stack(&self) -> Option<VirtAddr> {
+        self.ist.double_fault_shadow_stack.get()
     }
 
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
@@ -709,7 +709,7 @@ impl PerCpu {
     }
 
     fn setup_tss(&self) {
-        let double_fault_stack = self.get_top_of_df_stack();
+        let double_fault_stack = self.get_top_of_df_stack().unwrap();
         // SAFETY: the stck pointer is known to be correct.
         unsafe {
             self.tss.set_ist_stack(IST_DF, double_fault_stack);
@@ -717,7 +717,7 @@ impl PerCpu {
     }
 
     fn setup_isst(&self) {
-        let double_fault_shadow_stack = self.get_top_of_df_shadow_stack();
+        let double_fault_shadow_stack = self.get_top_of_df_shadow_stack().unwrap();
         let mut isst = self.isst.get();
         isst.set(IST_DF, double_fault_shadow_stack);
         self.isst.set(isst);
@@ -872,7 +872,7 @@ impl PerCpu {
             // page table because it resides in the PerCpu virtual range.
             //
             // See switch_to() for details.
-            rsp: self.get_top_of_context_switch_stack().into(),
+            rsp: self.get_top_of_context_switch_stack().unwrap().into(),
             rflags: 2,
 
             cs: svsm_code_segment(),

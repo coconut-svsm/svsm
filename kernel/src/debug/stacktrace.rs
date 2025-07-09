@@ -4,6 +4,8 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
+extern crate alloc;
+
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
@@ -11,6 +13,8 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
+use alloc::format;
+use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
 use core::{arch::asm, mem};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -43,6 +47,11 @@ extern "C" {
     static bsp_stack_end: u8;
 }
 
+fn is_stage2() -> bool {
+    // If the default BSP stack lands under 16MB, we're in Stage2.
+    (&raw const bsp_stack_end as usize) < (16 << 20)
+}
+
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -53,22 +62,35 @@ impl StackUnwinder {
 
         let stacks: StacksBounds = if let Some(cpu) = try_this_cpu() {
             let current_stack = cpu.get_current_stack();
-            let top_of_cs_stack = cpu.get_top_of_context_switch_stack();
-            let top_of_df_stack = cpu.get_top_of_df_stack();
-            [
-                current_stack,
-                MemoryRegion::from_addresses(top_of_cs_stack - STACK_SIZE, top_of_cs_stack),
-                MemoryRegion::from_addresses(top_of_df_stack - STACK_SIZE, top_of_df_stack),
-            ]
+            let cs_stack = cpu
+                .get_top_of_context_switch_stack()
+                .map_or(MemoryRegion::new(VirtAddr::null(), 0), |tos| {
+                    MemoryRegion::from_addresses(tos - STACK_SIZE, tos)
+                });
+            let df_stack = cpu
+                .get_top_of_df_stack()
+                .map_or(MemoryRegion::new(VirtAddr::null(), 0), |tos| {
+                    MemoryRegion::from_addresses(tos - STACK_SIZE, tos)
+                });
+            [current_stack, cs_stack, df_stack]
         } else {
-            // Use default stack addresses
-            let bsp_init_stack = MemoryRegion::from_addresses(
-                VirtAddr::from(&raw const bsp_stack),
-                VirtAddr::from(&raw const bsp_stack_end),
-            );
-            let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
-            let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
-            [bsp_init_stack, cs_stack, df_stack]
+            // Use default stack addresses.
+            if is_stage2() {
+                let bsp_init_stack = MemoryRegion::from_addresses(
+                    VirtAddr::from(STAGE2_STACK_END as u64),
+                    VirtAddr::from(STAGE2_STACK as u64),
+                );
+                let no_stack = MemoryRegion::new(VirtAddr::null(), 0);
+                [bsp_init_stack, no_stack, no_stack]
+            } else {
+                let bsp_init_stack = MemoryRegion::from_addresses(
+                    VirtAddr::from(&raw const bsp_stack),
+                    VirtAddr::from(&raw const bsp_stack_end),
+                );
+                let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
+                let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
+                [bsp_init_stack, cs_stack, df_stack]
+            }
         };
 
         Self::new(VirtAddr::from(rbp), stacks)
@@ -90,10 +112,9 @@ impl StackUnwinder {
     ) -> UnwoundStackFrame {
         // The next frame's rsp or rbp should live on some valid stack,
         // otherwise mark the unwound frame as invalid.
-        let Some(stack) = stacks
-            .iter()
-            .find(|stack| stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
-        else {
+        let Some(stack) = stacks.iter().find(|stack| {
+            !stack.is_empty() && (stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
+        }) else {
             log::info!("check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack");
             return UnwoundStackFrame::Invalid;
         };
@@ -126,6 +147,7 @@ impl StackUnwinder {
     fn unwind_framepointer_frame(rbp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
         let rsp = rbp;
 
+        // Storage for return address + saved %rbp
         let Some(range) = MemoryRegion::checked_new(rsp, 2 * mem::size_of::<VirtAddr>()) else {
             return UnwoundStackFrame::Invalid;
         };
@@ -134,8 +156,10 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
+        // Saved %rbp
         let rbp = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
+        // Return address
         let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
 
@@ -152,7 +176,13 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         }
 
-        let ctx = unsafe { &*rsp.as_ptr::<X86ExceptionContext>() };
+        // SAFETY: rsp is in a valid memory range as checked previously
+        // in this function. It is always properly aligned because
+        // X86ExceptionContext is packed(1). It's in the per-CPU stack
+        // so no aliasing can occur.
+        let Some(ctx) = (unsafe { rsp.as_ptr::<X86ExceptionContext>().as_ref() }) else {
+            return UnwoundStackFrame::Invalid;
+        };
         let rbp = VirtAddr::from(ctx.regs.rbp);
         let rip = VirtAddr::from(ctx.frame.rip);
         let rsp = VirtAddr::from(ctx.frame.rsp);
@@ -199,16 +229,26 @@ impl Iterator for StackUnwinder {
     }
 }
 
+fn print_stack_frame(frame: StackFrame) {
+    let mut annotated = false;
+    let mut msg = format!("  [{:016x}]", frame.rip);
+
+    if frame.is_exception_frame {
+        msg.push_str(" @");
+        annotated = true;
+    }
+    if !frame.is_aligned {
+        msg.push_str(if annotated { "#" } else { " #" });
+    }
+    log::info!("{}", msg);
+}
+
 pub fn print_stack(skip: usize) {
     let unwinder = StackUnwinder::unwind_this_cpu();
     log::info!("---BACKTRACE---:");
     for frame in unwinder.skip(skip) {
         match frame {
-            UnwoundStackFrame::Valid(item) => log::info!(
-                "  [{:016x}]{}",
-                item.rip,
-                if !item.is_aligned { " #" } else { "" }
-            ),
+            UnwoundStackFrame::Valid(item) => print_stack_frame(item),
             UnwoundStackFrame::Invalid => log::info!("  Invalid frame"),
         }
     }
