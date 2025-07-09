@@ -6,17 +6,12 @@
 
 extern crate alloc;
 
-use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
-use crate::mm::pagetable::max_phys_addr;
-use crate::utils::MemoryRegion;
-use bootlib::kernel_launch::{STAGE2_MAXLEN, STAGE2_START};
 use zerocopy::FromBytes;
 
 use super::io::IOPort;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::iter;
 use core::mem::size_of;
 
 const FW_CFG_CTL: u16 = 0x510;
@@ -25,13 +20,7 @@ const FW_CFG_DATA: u16 = 0x511;
 const _FW_CFG_ID: u16 = 0x01;
 const FW_CFG_FILE_DIR: u16 = 0x19;
 
-// Must be a power-of-2
-const KERNEL_REGION_SIZE: u64 = 16 * 1024 * 1024;
-const KERNEL_REGION_SIZE_MASK: u64 = !(KERNEL_REGION_SIZE - 1);
-
 const MAX_FW_CFG_FILES: u32 = 0x1000;
-
-//use crate::println;
 
 mod hardware_info {
     use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -96,7 +85,7 @@ impl FwCfgFile {
 }
 
 #[derive(Debug)]
-pub struct FwCfgFileIterator<'a> {
+struct FwCfgFileIterator<'a> {
     fw_cfg: &'a FwCfg<'a>,
     file_size: usize,
 }
@@ -143,20 +132,7 @@ impl<'a> FwCfg<'a> {
         }
     }
 
-    pub fn read_le<T>(&self) -> T
-    where
-        T: core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> + From<u8>,
-    {
-        let mut val = T::from(0u8);
-        let io = &self.driver;
-
-        for i in 0..size_of::<T>() {
-            val = (T::from(io.inb(FW_CFG_DATA)) << (i * 8)) | val;
-        }
-        val
-    }
-
-    pub fn read_be<T>(&self) -> T
+    fn read_be<T>(&self) -> T
     where
         T: core::ops::Shl<usize, Output = T> + core::ops::BitOr<T, Output = T> + From<u8>,
     {
@@ -169,15 +145,8 @@ impl<'a> FwCfg<'a> {
         val
     }
 
-    pub fn read_u8(&self) -> u8 {
+    fn read_u8(&self) -> u8 {
         self.driver.inb(FW_CFG_DATA)
-    }
-
-    pub fn read<T: FromBytes>(&self) -> T {
-        let buf: Vec<u8> = iter::from_fn(|| Some(self.read_u8()))
-            .take(size_of::<T>())
-            .collect();
-        T::read_from_bytes(buf.as_slice()).unwrap()
     }
 
     pub fn file_selector(&self, name: &str) -> Result<FwCfgFile, SvsmError> {
@@ -209,97 +178,6 @@ impl<'a> FwCfg<'a> {
         }
 
         Err(SvsmError::FwCfg(FwCfgError::FileNotFound))
-    }
-
-    fn find_svsm_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
-        let file = self.file_selector("etc/sev/svsm")?;
-
-        if file.size != 16 {
-            return Err(SvsmError::FwCfg(FwCfgError::FileSize(file.size)));
-        }
-
-        self.select(file.selector);
-        Ok(self.read_memory_region())
-    }
-
-    fn read_memory_region(&self) -> MemoryRegion<PhysAddr> {
-        let start = PhysAddr::from(self.read_le::<u64>());
-        let size = self.read_le::<u64>();
-        let end = start.saturating_add(size as usize);
-
-        assert!(start <= max_phys_addr(), "{start:#018x} is out of range");
-        assert!(end <= max_phys_addr(), "{end:#018x} is out of range");
-
-        MemoryRegion::from_addresses(start, end)
-    }
-
-    pub fn get_memory_regions(&self) -> Result<Vec<MemoryRegion<PhysAddr>>, SvsmError> {
-        let mut regions = Vec::new();
-        let file = self.file_selector("etc/e820")?;
-        let entries = file.size / 20;
-
-        self.select(file.selector);
-
-        for _ in 0..entries {
-            let region = self.read_memory_region();
-            let t: u32 = self.read_le();
-
-            if t == 1 {
-                regions.push(region);
-            }
-        }
-
-        Ok(regions)
-    }
-
-    fn find_kernel_region_e820(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
-        let regions = self.get_memory_regions()?;
-        let kernel_region = regions
-            .iter()
-            .max_by_key(|region| region.start())
-            .ok_or(SvsmError::FwCfg(FwCfgError::KernelRegion))?;
-
-        let start = PhysAddr::from(
-            kernel_region
-                .end()
-                .bits()
-                .saturating_sub(KERNEL_REGION_SIZE as usize)
-                & KERNEL_REGION_SIZE_MASK as usize,
-        );
-
-        if start < kernel_region.start() {
-            return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
-        }
-
-        Ok(MemoryRegion::new(start, kernel_region.len()))
-    }
-
-    pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
-        let kernel_region = self
-            .find_svsm_region()
-            .or_else(|_| self.find_kernel_region_e820())?;
-
-        // Make sure that the kernel region doesn't overlap with the loader.
-        if kernel_region.start() < PhysAddr::from(u64::from(STAGE2_START + STAGE2_MAXLEN)) {
-            return Err(SvsmError::FwCfg(FwCfgError::KernelRegion));
-        }
-
-        Ok(kernel_region)
-    }
-
-    // This needs to be &mut self to prevent iterator invalidation, where the caller
-    // could do fw_cfg.select() while iterating. Having a mutable reference prevents
-    // other references.
-    pub fn iter_flash_regions(&self) -> impl Iterator<Item = MemoryRegion<PhysAddr>> + '_ {
-        let num = match self.file_selector("etc/flash") {
-            Ok(file) => {
-                self.select(file.selector);
-                file.size as usize / 16
-            }
-            Err(_) => 0,
-        };
-
-        (0..num).map(|_| self.read_memory_region())
     }
 
     /// Try reading an instance of T from the iterator.

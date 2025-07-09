@@ -229,13 +229,7 @@ fn get_svsm_config(
     launch_info: &Stage2LaunchInfo,
     platform: &dyn SvsmPlatform,
 ) -> Result<SvsmConfig<'static>, SvsmError> {
-    let igvm_params = if launch_info.igvm_params == 0 {
-        None
-    } else {
-        Some(IgvmParams::new(VirtAddr::from(
-            launch_info.igvm_params as u64,
-        ))?)
-    };
+    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))?;
 
     Ok(SvsmConfig::new(platform, igvm_params))
 }
@@ -473,31 +467,23 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
             .expect("Failed to load kernel ELF");
 
     // Load the IGVM params, if present. Update loaded region accordingly.
-    let (igvm_vregion, igvm_pregion) = if let Some(igvm_params) = config.get_igvm_params() {
-        // SAFETY: The loaded kernel region was correctly calculated above and
-        // is sized appropriately to include a copy of the IGVM parameters.
-        let (igvm_vregion, igvm_pregion) = unsafe {
-            load_igvm_params(
-                launch_info,
-                igvm_params,
-                &loaded_kernel_vregion,
-                &loaded_kernel_pregion,
-                platform,
-                &config,
-            )
-        }
-        .expect("Failed to load IGVM params");
-
-        // Update the loaded kernel region
-        loaded_kernel_pregion = loaded_kernel_pregion.expand(igvm_vregion.len());
-        loaded_kernel_vregion = loaded_kernel_vregion.expand(igvm_pregion.len());
-        (igvm_vregion, igvm_pregion)
-    } else {
-        (
-            MemoryRegion::new(VirtAddr::null(), 0),
-            MemoryRegion::new(PhysAddr::null(), 0),
+    // SAFETY: The loaded kernel region was correctly calculated above and
+    // is sized appropriately to include a copy of the IGVM parameters.
+    let (igvm_vregion, igvm_pregion) = unsafe {
+        load_igvm_params(
+            launch_info,
+            config.get_igvm_params(),
+            &loaded_kernel_vregion,
+            &loaded_kernel_pregion,
+            platform,
+            &config,
         )
-    };
+    }
+    .expect("Failed to load IGVM params");
+
+    // Update the loaded kernel region
+    loaded_kernel_pregion = loaded_kernel_pregion.expand(igvm_vregion.len());
+    loaded_kernel_vregion = loaded_kernel_vregion.expand(igvm_pregion.len());
 
     // Use remaining space after kernel image as heap space.
     let (heap_vregion, heap_pregion) = prepare_heap(
