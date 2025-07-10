@@ -11,6 +11,11 @@
 //
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
+    // Comment the following 2 lines if you really want to enable gdbstub in
+    // release build because memory safety is not guaranteed.
+    #[cfg(not(debug_assertions))]
+    compile_error!("This module must not be built in release mode!");
+
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, DB_VECTOR, VC_VECTOR};
