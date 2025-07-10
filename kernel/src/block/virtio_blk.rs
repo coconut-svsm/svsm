@@ -71,7 +71,7 @@ impl BlockDriver for VirtIOBlkDriver {
 #[cfg(all(test, test_in_svsm))]
 mod tests {
     use crate::{
-        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::is_qemu_test_env,
+        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
     };
     use core::cmp::min;
     extern crate alloc;
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_4sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_read(4);
         }
     }
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_8sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_read(8);
         }
     }
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_9sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_read(9);
         }
     }
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_read_17sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_read(17);
         }
     }
@@ -172,7 +172,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_4sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_write(4);
         }
     }
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_8sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_write(8);
         }
     }
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_9sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_write(9);
         }
     }
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_virtio_write_17sectors() {
-        if is_qemu_test_env() {
+        if has_test_iorequests() {
             virtio_write(17);
         }
     }

@@ -8,7 +8,7 @@ use crate::{
     platform::SVSM_PLATFORM,
     serial::SerialPort,
     sev::ghcb::GHCBIOSize,
-    testutils::is_qemu_test_env,
+    testutils::has_qemu_testdev,
 };
 
 #[macro_export]
@@ -90,7 +90,7 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 }
 
 fn exit() -> ! {
-    if is_qemu_test_env() {
+    if has_qemu_testdev() {
         const QEMU_EXIT_PORT: u16 = 0xf4;
         current_ghcb()
             .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)

@@ -119,12 +119,20 @@ pub struct IgvmParamBlock {
     /// Indicates whether the guest can support alternate injection.
     pub use_alternate_injection: u8,
 
-    /// Indicates whether the guest can assume firmware services specific to
-    /// QEMU.
-    pub is_qemu: u8,
+    /// Indicates whether SVSM should suppress interrupts when running on SEV-SNP.
+    pub suppress_svsm_interrupts_on_snp: u8,
+
+    /// Indicates whether SVSM can assume that the qemu testdev device exists to assist testing.
+    pub has_qemu_testdev: u8,
+
+    /// Indicates whether SVSM should use an IO port to read the qemu FwCfg.
+    pub has_fw_cfg_port: u8,
+
+    /// Indicates whether SVSM can use "IORequest"s to assist with testing.
+    pub has_test_iorequests: u8,
 
     #[doc(hidden)]
-    pub _reserved: [u8; 4],
+    pub _reserved: [u8; 1],
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
@@ -159,6 +167,12 @@ pub struct IgvmParamBlock {
     /// The value of vTOM used by the guest, or zero if not used.
     pub vtom: u64,
 }
+
+const _: () = {
+    // Assert that the reserved fields are properly aligning the rest of the fields.
+    assert!(core::mem::offset_of!(IgvmParamBlock, firmware) % 4 == 0);
+    assert!(core::mem::offset_of!(IgvmParamBlock, stage1_base) % 8 == 0);
+};
 
 /// The IGVM context page is a measured page that is used to specify the start
 /// context for the guest VMPL.  If present, it overrides the processor state
