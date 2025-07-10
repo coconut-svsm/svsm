@@ -195,8 +195,10 @@ pub mod svsm_gdbstub {
     }
 
     impl GdbTaskContext {
+        // FIXME: This is unsafe and might cause a crash, but okay until we find
+        // a better way since this is a debug module.
         #[must_use = "The task switch will have no effect if the context is dropped"]
-        fn switch_to_task(id: u32) -> Self {
+        unsafe fn switch_to_task(id: u32) -> Self {
             let cr3 = if is_current_task(id) {
                 0
             } else {
@@ -204,6 +206,10 @@ pub mod svsm_gdbstub {
                 let cr3 = read_cr3();
                 let task = tl.get_task(id);
                 if let Some(task) = task {
+                    // FIXME: cr3 being switched to might not map the current
+                    // CPUs per-cpu space. This might cause a crash when any
+                    // external event, like an #HV comes in when in the other
+                    // tasks context.
                     unsafe {
                         task.page_table.lock().load();
                     }
@@ -486,8 +492,9 @@ pub mod svsm_gdbstub {
                 if let Some(task) = task {
                     // The registers are stored in the top of the task stack as part of the
                     // saved context. We need to switch to the task pagetable to access them.
-                    let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+                    // FIXME: GdbTaskContext::switch_to_task() could be dangerous
                     unsafe {
+                        let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
                     regs.regs[7] = task.rsp;
@@ -538,7 +545,8 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             // Switch to the task pagetable if necessary. The switch back will
             // happen automatically when the variable falls out of scope
-            let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+            // FIXME: GdbTaskContext::switch_to_task() could be dangerous
+            let _task_context = unsafe { GdbTaskContext::switch_to_task(tid.get() as u32) };
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
                 // SAFETY: Unsafe but ok since this is a debug access
