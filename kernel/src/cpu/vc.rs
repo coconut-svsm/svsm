@@ -165,7 +165,10 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         // will cause either an exception via DB_VECTOR if the DEBUG_SWAP sev_feature is
         // clear, or a VC exception with an error code of X86_TRAP if set.
         (X86_TRAP, _) => {
-            handle_debug_exception(ctx, vector);
+            // SAFETY: gdbstub could compromise memory safety, but this function is
+            // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+            // enabled on release builds.
+            unsafe { handle_debug_exception(ctx, vector) };
             Ok(())
         }
         (SVM_EXIT_CPUID, Some(DecodedInsn::Cpuid)) => handle_cpuid(ctx),
