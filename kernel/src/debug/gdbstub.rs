@@ -4,6 +4,12 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+// Some unsafe blocks can really compromise memory safety, so we are unable to
+// provide appropriate SAFETY comments. However, this is acceptable since
+// all public functions are a nop if `enable-gdb` feature is disabled.
+// `enable-gdb` can't be enabled on release builds.
+#![allow(clippy::undocumented_unsafe_blocks)]
+
 //
 // For release builds this module should not be compiled into the
 // binary. See the bottom of this file for placeholders that are
