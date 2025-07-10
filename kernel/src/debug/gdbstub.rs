@@ -53,6 +53,10 @@ pub mod svsm_gdbstub {
     ///
     /// Starting the gdbstub is not multi-thread safe, so the caller must
     /// ensure to call this function on a single processor.
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
     // The static mutable reference to the stack is protected by the GDB_STATE lock.
     #[allow(static_mut_refs)]
     pub unsafe fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
@@ -92,7 +96,12 @@ pub mod svsm_gdbstub {
         }
     }
 
-    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let exception_type = ExceptionType::from(exception);
         let id = this_cpu().runqueue().lock_read().current_task_id();
         let mut task_ctx = TaskContext {
@@ -175,7 +184,12 @@ pub mod svsm_gdbstub {
         }
     }
 
-    pub fn debug_break() {
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn debug_break() {
         if GDB_INITIALISED.load(Ordering::Acquire) {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
@@ -779,11 +793,25 @@ pub mod svsm_gdbstub {
     ///
     /// Starting the gdbstub is not multi-thread safe, so the caller must
     /// ensure to call this function on a single processor.
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
     pub unsafe fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         Ok(())
     }
 
-    pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
 
-    pub fn debug_break() {}
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn debug_break() {}
 }
