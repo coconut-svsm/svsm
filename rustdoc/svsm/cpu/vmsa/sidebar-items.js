@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["init_guest_vmsa","init_svsm_vmsa","real_mode_code_segment","real_mode_data_segment","real_mode_sys_seg","svsm_code_segment","svsm_data_segment","svsm_gdt_segment","svsm_idt_segment","vmsa_mut_ref_from_vaddr","vmsa_ref_from_vaddr"]};

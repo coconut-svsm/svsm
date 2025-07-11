@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["APIC_PROTOCOL_VERSION_MAX","APIC_PROTOCOL_VERSION_MIN","SVSM_REQ_APIC_CONFIGURE","SVSM_REQ_APIC_CONFIGURE_VECTOR","SVSM_REQ_APIC_QUERY_FEATURES","SVSM_REQ_APIC_READ_REGISTER","SVSM_REQ_APIC_WRITE_REGISTER"],"fn":["apic_configure","apic_configure_vector","apic_protocol_request","apic_query_features","apic_read_register","apic_write_register"]};
