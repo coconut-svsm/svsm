@@ -76,6 +76,11 @@ while [[ $# -gt 0 ]]; do
       CGS=nocc
       shift
       ;;
+    --aproxy)
+      COM3_SERIAL="-serial unix:$2"
+      shift
+      shift
+      ;;
     --)
       shift
       break
