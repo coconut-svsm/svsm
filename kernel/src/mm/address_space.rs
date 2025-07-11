@@ -174,14 +174,16 @@ pub const SVSM_PERCPU_STACKS_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LE
 pub const SVSM_SHADOW_STACKS_INIT_TASK: VirtAddr = SVSM_PERCPU_STACKS_BASE;
 
 /// Stack address to use during context switches
-pub const SVSM_CONTEXT_SWITCH_STACK: VirtAddr = SVSM_SHADOW_STACKS_INIT_TASK.const_add(PAGE_SIZE);
+pub const SVSM_CONTEXT_SWITCH_STACK: VirtAddr =
+    SVSM_SHADOW_STACKS_INIT_TASK.const_add(STACK_TOTAL_SIZE);
 
 /// Shadow stack address to use during context switches
 pub const SVSM_CONTEXT_SWITCH_SHADOW_STACK: VirtAddr =
     SVSM_CONTEXT_SWITCH_STACK.const_add(STACK_TOTAL_SIZE);
 
 ///  IST Stacks base address
-pub const SVSM_STACKS_IST_BASE: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(PAGE_SIZE);
+pub const SVSM_STACKS_IST_BASE: VirtAddr =
+    SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(STACK_TOTAL_SIZE);
 
 /// DoubleFault IST stack base address
 pub const SVSM_STACK_IST_DF_BASE: VirtAddr = SVSM_STACKS_IST_BASE;
@@ -190,7 +192,8 @@ pub const SVSM_SHADOW_STACK_ISST_DF_BASE: VirtAddr =
     SVSM_STACKS_IST_BASE.const_add(STACK_TOTAL_SIZE);
 
 /// PerCPU XSave Context area base address
-pub const SVSM_XSAVE_AREA_BASE: VirtAddr = SVSM_SHADOW_STACK_ISST_DF_BASE.const_add(PAGE_SIZE);
+pub const SVSM_XSAVE_AREA_BASE: VirtAddr =
+    SVSM_SHADOW_STACK_ISST_DF_BASE.const_add(STACK_TOTAL_SIZE);
 
 /// Base Address for temporary mappings - used by page-table guards
 pub const SVSM_PERCPU_TEMP_BASE: VirtAddr = SVSM_PERCPU_BASE.const_add(SIZE_LEVEL2);
@@ -213,16 +216,6 @@ pub const SVSM_PERTASK_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PERTASK);
 
 /// End address of task memory region
 pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
-
-/// Kernel stack for a task
-pub const SVSM_PERTASK_STACK_BASE_OFFSET: usize = 0;
-
-/// Kernel shadow stack for normal execution of a task
-pub const SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET: usize =
-    SVSM_PERTASK_STACK_BASE_OFFSET + STACK_TOTAL_SIZE;
-
-/// SSE context save area for a task
-pub const SVSM_PERTASK_XSAVE_AREA_BASE: usize = SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET + PAGE_SIZE;
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;

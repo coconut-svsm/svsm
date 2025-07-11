@@ -16,11 +16,12 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
+use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
 use crate::cpu::x86::{ApicAccess, X86Apic};
-use crate::cpu::{IrqGuard, IrqState, LocalApic};
+use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::{self, HypercallPage};
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
@@ -28,10 +29,7 @@ use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{
-    Mapping, ShadowStackInit, VMKernelShadowStack, VMKernelStack, VMPhysMem, VMRMapping,
-    VMReserved, VMR,
-};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
 use crate::mm::{
     virt_to_phys, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK,
     SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M,
@@ -630,7 +628,7 @@ impl PerCpu {
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
-        let top_of_stack = stack.top_of_stack(base);
+        let top_of_stack = (base + stack.top_of_stack()).align_down(16);
         let mapping = Arc::new(Mapping::new(stack));
 
         self.vm_range.insert_at(base, mapping)?;
@@ -643,9 +641,13 @@ impl PerCpu {
         base: VirtAddr,
         init: ShadowStackInit,
     ) -> Result<VirtAddr, SvsmError> {
-        let (shadow_stack, _, ssp) = VMKernelShadowStack::new(base, init)?;
-        self.vm_range
+        let shadow_stack = VMKernelStack::new_shadow()?;
+        let offset = shadow_stack.top_of_stack();
+        let shadow_stack_page = shadow_stack.shadow_page();
+        let shadow_stack_base = self
+            .vm_range
             .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
+        let (_, ssp) = init_shadow_stack(&shadow_stack_page, shadow_stack_base + offset, init);
         Ok(ssp)
     }
 

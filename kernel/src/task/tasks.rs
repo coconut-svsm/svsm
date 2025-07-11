@@ -18,65 +18,28 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
 use crate::cpu::percpu::{current_task, PerCpu};
-use crate::cpu::shadow_stack::is_cet_ss_supported;
+use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
-use crate::cpu::{irqs_enable, X86ExceptionContext, X86GeneralRegs};
+use crate::cpu::{irqs_enable, ShadowStackInit, X86ExceptionContext, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::fs::{opendir, stdout_open, Directory, FileHandle};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::vm::{
-    Mapping, ShadowStackInit, VMFileMappingFlags, VMKernelShadowStack, VMKernelStack, VMR,
-};
+use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
-    alloc::AllocError, mappings::create_anon_mapping, mappings::create_file_mapping, PageBox,
-    VMMappingGuard, SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END,
-    SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET, SVSM_PERTASK_STACK_BASE_OFFSET, USER_MEM_END,
-    USER_MEM_START,
+    mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
+    SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
 };
 use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
-use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::{is_aligned, MemoryRegion};
 use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
 
 use super::schedule::{after_task_switch, current_task_terminated, schedule};
-
-pub static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
-    SpinLock::new(BitmapAllocator1024::new_empty());
+use super::task_mm::{TaskKernelMapping, TaskMM};
 
 pub const INITIAL_TASK_ID: u32 = 1;
-
-// The task virtual range guard manages the allocation of a task virtual
-// address range within the task address space.  The address range is reserved
-// as long as the guard continues to exist.
-#[derive(Debug)]
-struct TaskVirtualRegionGuard {
-    index: usize,
-}
-
-impl TaskVirtualRegionGuard {
-    fn alloc() -> Result<Self, SvsmError> {
-        let index = KTASK_VADDR_BITMAP
-            .lock()
-            .alloc(1, 0)
-            .ok_or(SvsmError::Alloc(AllocError::OutOfMemory))?;
-        Ok(Self { index })
-    }
-
-    fn vaddr_region(&self) -> MemoryRegion<VirtAddr> {
-        const SPAN: usize = SIZE_LEVEL3 / BitmapAllocator1024::CAPACITY;
-        let base = SVSM_PERTASK_BASE + (self.index * SPAN);
-        MemoryRegion::<VirtAddr>::new(base, SPAN)
-    }
-}
-
-impl Drop for TaskVirtualRegionGuard {
-    fn drop(&mut self) {
-        KTASK_VADDR_BITMAP.lock().free(self.index, 1);
-    }
-}
 
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
@@ -171,16 +134,14 @@ pub struct Task {
     /// Page table that is loaded when the task is scheduled
     pub page_table: SpinLock<PageBox<PageTable>>,
 
-    /// Virtual address region that has been allocated for this task.
-    /// This is not referenced but must be stored so that it is dropped when
-    /// the Task is dropped.
-    _ktask_region: TaskVirtualRegionGuard,
+    /// Task kernel stack mapping
+    _kernel_stack: TaskKernelMapping,
 
-    /// Task virtual memory range for use at CPL 0
-    vm_kernel_range: VMR,
+    /// Task shadow stack mapping
+    _shadow_stack: Option<TaskKernelMapping>,
 
-    /// Task virtual memory range for use at CPL 3 - None for kernel tasks
-    vm_user_range: Option<VMR>,
+    /// Task memory management state
+    mm: Arc<TaskMM>,
 
     /// State relevant for scheduler
     sched_state: RWLock<TaskSchedState>,
@@ -251,6 +212,9 @@ struct CreateTaskArguments {
 
     // The root directory that will be associated with this task.
     rootdir: Arc<dyn Directory>,
+
+    // Share state with another task (aka create a thread)
+    thread_of: Option<TaskPointer>,
 }
 
 impl Task {
@@ -259,26 +223,23 @@ impl Task {
 
         cpu.populate_page_table(&mut pgtable);
 
-        let ktask_region = TaskVirtualRegionGuard::alloc()?;
-        let vaddr_region = ktask_region.vaddr_region();
-        let vm_kernel_range = VMR::new(
-            vaddr_region.start(),
-            vaddr_region.end(),
-            PTEntryFlags::empty(),
-        );
-        // SAFETY: The selected kernel mode task address range is the only
-        // range that will live within the top-level entry associated with the
-        // task address space.
-        unsafe {
-            vm_kernel_range.initialize()?;
-        }
+        let (task_mm, objtree) = {
+            if let Some(parent_thread) = args.thread_of {
+                (parent_thread.mm.clone(), parent_thread.objs.clone())
+            } else {
+                (
+                    Arc::new(TaskMM::create(args.vm_user_range)?),
+                    Arc::new(RWLock::new(BTreeMap::new())),
+                )
+            }
+        };
 
         let xsa = Self::allocate_xsave_area();
         let xsa_addr = u64::from(xsa.vaddr()) as usize;
 
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
-        let (entry_return, exit_return) = if args.vm_user_range.is_some() {
+        let (entry_return, exit_return) = if task_mm.has_user() {
             (return_new_task as usize, None)
         } else {
             (run_kernel_task as usize, Some(task_exit as usize))
@@ -286,36 +247,48 @@ impl Task {
 
         let mut shadow_stack_offset = VirtAddr::null();
         let mut shadow_stack_base = VirtAddr::null();
-        if is_cet_ss_supported() {
-            let shadow_stack;
+        let shadow_stack_mapping = if is_cet_ss_supported() {
+            // Allocate shadow stack and safe top_of_stack offset
+            let shadow_stack = VMKernelStack::new_shadow()?;
+            let offset = shadow_stack.top_of_stack();
+            let shadow_stack_page = shadow_stack.shadow_page();
+
             let base_token_addr;
-            (shadow_stack, base_token_addr, shadow_stack_offset) = VMKernelShadowStack::new(
-                vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
+
+            // Map shadow stack into virtual address range
+            let mapping =
+                TaskKernelMapping::new(task_mm.clone(), Arc::new(Mapping::new(shadow_stack)))?;
+            let stack_base = mapping.virt_addr();
+
+            // Initialize shadow stack
+            (base_token_addr, shadow_stack_offset) = init_shadow_stack(
+                &shadow_stack_page,
+                stack_base + offset,
                 ShadowStackInit::Normal {
                     entry_return,
                     exit_return,
                 },
-            )?;
+            );
+
             if let Some(base_addr) = base_token_addr {
                 shadow_stack_base = base_addr;
             }
 
-            vm_kernel_range.insert_at(
-                vaddr_region.start() + SVSM_PERTASK_SHADOW_STACK_BASE_OFFSET,
-                Arc::new(Mapping::new(shadow_stack)),
-            )?;
-        }
+            Some(mapping)
+        } else {
+            None
+        };
 
         // Call the correct stack creation routine for this task.
-        let (stack, raw_bounds, rsp_offset) = if args.vm_user_range.is_some() {
+        let (stack, raw_bounds, rsp_offset) = if task_mm.has_user() {
             Self::allocate_utask_stack(cpu, args.entry, xsa_addr)?
         } else {
             Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
         };
-        let stack_start = vaddr_region.start() + SVSM_PERTASK_STACK_BASE_OFFSET;
-        vm_kernel_range.insert_at(stack_start, stack)?;
+        let kernel_stack_mapping = TaskKernelMapping::new(task_mm.clone(), stack)?;
+        let stack_start = kernel_stack_mapping.virt_addr();
 
-        vm_kernel_range.populate(&mut pgtable);
+        task_mm.kernel_range().populate(&mut pgtable);
 
         // Remap at the per-task offset
         let bounds = MemoryRegion::new(stack_start + raw_bounds.start().into(), raw_bounds.len());
@@ -333,9 +306,9 @@ impl Task {
             stack_bounds: bounds,
             shadow_stack_base,
             page_table: SpinLock::new(pgtable),
-            _ktask_region: ktask_region,
-            vm_kernel_range,
-            vm_user_range: args.vm_user_range,
+            _kernel_stack: kernel_stack_mapping,
+            _shadow_stack: shadow_stack_mapping,
+            mm: task_mm,
             sched_state: RWLock::new(TaskSchedState {
                 idle_task: false,
                 state: TaskState::RUNNING,
@@ -346,7 +319,7 @@ impl Task {
             rootdir: args.rootdir,
             list_link: LinkedListAtomicLink::default(),
             runlist_link: LinkedListAtomicLink::default(),
-            objs: Arc::new(RWLock::new(BTreeMap::new())),
+            objs: objtree,
         }))
     }
 
@@ -362,6 +335,7 @@ impl Task {
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
+            thread_of: None,
         };
         Self::create_common(cpu, create_args)
     }
@@ -384,6 +358,39 @@ impl Task {
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
+            thread_of: None,
+        };
+        Self::create_common(cpu, create_args)
+    }
+
+    /// Create a new thread for an existing task.
+    ///
+    /// # Arguments
+    ///
+    /// * `cpu` - Reference to the `[PerCpu]` structure of the local CPU.
+    /// * `entry` - Pointer the function to run in the thread.
+    /// * `start_parameter` - `usize` to pass as parameter when calling `entry`.
+    /// * `name` - User-visible name of the thread.
+    /// * `thread_of` - Pointer to existing task for which the new thread will
+    ///   be created.
+    ///
+    /// # Returns
+    ///
+    /// `Some(TaskPointer)` with the new thread on success, `Err(SvsmError)` on failure.
+    pub fn create_thread(
+        cpu: &PerCpu,
+        entry: extern "C" fn(usize),
+        start_parameter: usize,
+        name: String,
+        thread: TaskPointer,
+    ) -> Result<TaskPointer, SvsmError> {
+        let create_args = CreateTaskArguments {
+            entry: entry as usize,
+            start_parameter,
+            name,
+            vm_user_range: None,
+            rootdir: opendir("/")?,
+            thread_of: Some(thread),
         };
         Self::create_common(cpu, create_args)
     }
@@ -446,12 +453,12 @@ impl Task {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        self.vm_kernel_range.handle_page_fault(vaddr, write)
+        self.mm.kernel_range().handle_page_fault(vaddr, write)
     }
 
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.vm_user_range.is_some() {
-            let vmr = self.vm_user_range.as_ref().unwrap();
+        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.mm.has_user() {
+            let vmr = self.mm.user_range().unwrap();
             let mut pgtbl = self.page_table.lock();
             vmr.populate_addr(&mut pgtbl, vaddr);
             vmr.handle_page_fault(vaddr, write)?;
@@ -647,7 +654,7 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
-        Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)
+        Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)
     }
 
     pub fn mmap_kernel_guard<'a>(
@@ -658,8 +665,8 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VMMappingGuard<'a>, SvsmError> {
-        let vaddr = Self::mmap_common(&self.vm_kernel_range, addr, file, offset, size, flags)?;
-        Ok(VMMappingGuard::new(&self.vm_kernel_range, vaddr))
+        let vaddr = Self::mmap_common(self.mm.kernel_range(), addr, file, offset, size, flags)?;
+        Ok(VMMappingGuard::new(self.mm.kernel_range(), vaddr))
     }
 
     pub fn mmap_user(
@@ -670,27 +677,18 @@ impl Task {
         size: usize,
         flags: VMFileMappingFlags,
     ) -> Result<VirtAddr, SvsmError> {
-        if self.vm_user_range.is_none() {
-            return Err(SvsmError::Mem);
-        }
-
-        let vmr = self.vm_user_range.as_ref().unwrap();
-
+        let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
         Self::mmap_common(vmr, addr, file, offset, size, flags)
     }
 
     pub fn munmap_kernel(&self, addr: VirtAddr) -> Result<(), SvsmError> {
-        self.vm_kernel_range.remove(addr)?;
+        self.mm.kernel_range().remove(addr)?;
         Ok(())
     }
 
     pub fn munmap_user(&self, addr: VirtAddr) -> Result<(), SvsmError> {
-        if self.vm_user_range.is_none() {
-            return Err(SvsmError::Mem);
-        }
-
-        self.vm_user_range.as_ref().unwrap().remove(addr)?;
-        Ok(())
+        let vmr = self.mm.user_range().ok_or(SvsmError::Mem)?;
+        vmr.remove(addr).map(|_| ())
     }
 
     /// Adds an object to the current task.
