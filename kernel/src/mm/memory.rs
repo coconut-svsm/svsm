@@ -11,6 +11,7 @@ use crate::config::SvsmConfig;
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
 use crate::locking::RWLock;
+use crate::protocols::memmap::{memmap_protocol_add_memory, memmap_protocol_add_reserved};
 use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
@@ -84,7 +85,9 @@ pub fn init_memory_map(
     log::info!("Guest Memory Regions:");
     for r in regions.iter() {
         log::info!("  {r:#018x}");
+        memmap_protocol_add_memory(r);
     }
+    memmap_protocol_add_reserved(&kernel_region);
 
     let mut map = MEMORY_MAP.lock_write();
     *map = regions;
