@@ -28,6 +28,7 @@ pub struct RequestParams {
     rcx: u64,
     rdx: u64,
     r8: u64,
+    r9: u64,
 }
 
 impl RequestParams {
@@ -37,6 +38,7 @@ impl RequestParams {
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
             r8: vmsa.r8,
+            r9: vmsa.r9,
         }
     }
 
@@ -44,5 +46,6 @@ impl RequestParams {
         regs.push(GuestRegister::X64Rcx(self.rcx));
         regs.push(GuestRegister::X64Rdx(self.rdx));
         regs.push(GuestRegister::X64R8(self.r8));
+        regs.push(GuestRegister::X64R9(self.r9));
     }
 }
