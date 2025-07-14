@@ -16,8 +16,10 @@ use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
+use crate::protocols::memmap::{MEMMAP_PROTOCOL_VERSION_MAX, MEMMAP_PROTOCOL_VERSION_MIN};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+    SVSM_MEMMAP_PROTOCOL,
 };
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
@@ -246,6 +248,11 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             version,
             ATTEST_PROTOCOL_VERSION_MIN,
             ATTEST_PROTOCOL_VERSION_MAX,
+        ),
+        SVSM_MEMMAP_PROTOCOL => protocol_supported(
+            version,
+            MEMMAP_PROTOCOL_VERSION_MIN,
+            MEMMAP_PROTOCOL_VERSION_MAX,
         ),
         _ => 0,
     };
