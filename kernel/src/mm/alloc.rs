@@ -19,10 +19,13 @@ use core::{cmp, ptr, slice};
 #[cfg(any(test, fuzzing))]
 use crate::locking::LockGuard;
 
+use verus_stub::*;
+
 #[cfg(verus_keep_ghost)]
 include!("alloc.verus.rs");
 
 /// Represents possible errors that can occur during memory allocation.
+#[verus_verify]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AllocError {
     /// The provided page type is invalid.
@@ -48,6 +51,7 @@ impl From<AllocError> for SvsmError {
 }
 
 /// Maximum order of page allocations (up to 128kb)
+#[verus_verify]
 pub const MAX_ORDER: usize = 6;
 
 /// Calculates the order of a given size for page allocation.
@@ -68,6 +72,7 @@ pub const fn get_order(size: usize) -> usize {
 }
 
 /// Enum representing the type of a memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 #[repr(u64)]
 enum PageType {
@@ -80,8 +85,13 @@ enum PageType {
     Reserved = (1u64 << PageStorageType::TYPE_SHIFT) - 1,
 }
 
+#[verus_verify]
 impl TryFrom<u64> for PageType {
     type Error = AllocError;
+    #[verus_spec(ret =>
+        ensures
+            PageType::ens_try_from(val, ret),
+    )]
     fn try_from(val: u64) -> Result<Self, Self::Error> {
         match val {
             v if v == Self::Free as u64 => Ok(Self::Free),
@@ -96,10 +106,12 @@ impl TryFrom<u64> for PageType {
 }
 
 /// Storage type of a memory page, including encoding and decoding methods
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
 struct PageStorageType(u64);
 
+#[verus_verify]
 impl PageStorageType {
     const TYPE_SHIFT: u64 = 4;
     const TYPE_MASK: u64 = (1u64 << Self::TYPE_SHIFT) - 1;
@@ -117,6 +129,8 @@ impl PageStorageType {
     /// # Returns
     ///
     /// A new instance of [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_new))]
+    #[verus_spec(returns Self::spec_new(t))]
     const fn new(t: PageType) -> Self {
         Self(t as u64)
     }
@@ -130,6 +144,8 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_order))]
+    #[verus_spec(returns self.spec_encode_order(order))]
     fn encode_order(self, order: usize) -> Self {
         Self(self.0 | ((order as u64) & Self::ORDER_MASK) << Self::TYPE_SHIFT)
     }
@@ -143,6 +159,8 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_next))]
+    #[verus_spec(returns self.spec_encode_next(next_page))]
     fn encode_next(self, next_page: usize) -> Self {
         Self(self.0 | (next_page as u64) << Self::NEXT_SHIFT)
     }
@@ -156,6 +174,8 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`]
+    #[verus_verify(dual_spec(spec_encode_slab))]
+    #[verus_spec(returns self.spec_encode_slab(slab))]
     fn encode_slab(self, slab: u64) -> Self {
         let item_size = slab & Self::SLAB_MASK;
         Self(self.0 | (item_size << Self::TYPE_SHIFT))
@@ -170,37 +190,77 @@ impl PageStorageType {
     /// # Returns
     ///
     /// The updated [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_refcount))]
+    #[verus_spec(returns self.spec_encode_refcount(refcount))]
     fn encode_refcount(self, refcount: u64) -> Self {
         Self(self.0 | refcount << Self::TYPE_SHIFT)
     }
 
     /// Decodes the order of the page.
+    #[verus_verify(dual_spec(spec_decode_order))]
+    #[verus_spec(ret =>
+        ensures
+            ret <= Self::ORDER_MASK,
+        returns
+            self.spec_decode_order()
+    )]
     fn decode_order(&self) -> usize {
+        proof! {broadcast use lemma_bit_u64_and_bound;}
         ((self.0 >> Self::TYPE_SHIFT) & Self::ORDER_MASK) as usize
     }
 
     /// Decodes the index of the next page.
+    #[verus_verify(dual_spec(spec_decode_next))]
+    #[verus_spec(ret =>
+        ensures
+            ret < (1u64 << (u64::BITS - Self::NEXT_SHIFT) as u64),
+        returns
+            self.spec_decode_next()
+    )]
     fn decode_next(&self) -> usize {
+        proof! {broadcast use lemma_bit_u64_shr_bound;}
         (self.0 >> Self::NEXT_SHIFT) as usize
     }
 
     /// Decodes the slab
+    #[verus_verify(dual_spec(spec_decode_slab))]
+    #[verus_spec(ret =>
+        ensures
+            ret <= Self::SLAB_MASK,
+        returns
+            self.spec_decode_slab(),
+    )]
     fn decode_slab(&self) -> u64 {
+        proof! {broadcast use lemma_bit_u64_and_bound;}
         (self.0 >> Self::TYPE_SHIFT) & Self::SLAB_MASK
     }
 
     /// Decodes the reference count.
+    #[verus_verify(dual_spec(spec_decode_refcount))]
+    #[verus_spec(ret =>
+        ensures
+            ret < (1u64 << (u64::BITS - Self::TYPE_SHIFT) as u64),
+        returns
+            self.spec_decode_refcount()
+    )]
     fn decode_refcount(&self) -> u64 {
+        proof! {broadcast use lemma_bit_u64_shr_bound;}
         self.0 >> Self::TYPE_SHIFT
     }
 
     /// Retrieves the page type from the [`PageStorageType`].
+    #[verus_spec(ret =>
+        ensures
+            ret.is_ok() == PageType::spec_decode(*self).is_some(),
+            ret.is_ok() ==> ret.unwrap() == PageType::spec_decode(*self).unwrap(),
+    )]
     fn page_type(&self) -> Result<PageType, AllocError> {
         PageType::try_from(self.0 & Self::TYPE_MASK)
     }
 }
 
 /// Struct representing information about a free memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct FreeInfo {
     /// Index of the next free page.
@@ -211,6 +271,8 @@ struct FreeInfo {
 
 impl FreeInfo {
     /// Encodes the [`FreeInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Free)
             .encode_order(self.order)
@@ -218,6 +280,13 @@ impl FreeInfo {
     }
 
     /// Decodes a [`FreeInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(
+        requires
+            Self::spec_decode_impl(mem).order < MAX_ORDER,
+        returns
+            Self::spec_decode_impl(mem)
+    )]
     fn decode(mem: PageStorageType) -> Self {
         let next_page = mem.decode_next();
         let order = mem.decode_order();
@@ -226,6 +295,7 @@ impl FreeInfo {
 }
 
 /// Struct representing information about an allocated memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct AllocatedInfo {
     order: usize,
@@ -233,11 +303,20 @@ struct AllocatedInfo {
 
 impl AllocatedInfo {
     /// Encodes the [`AllocatedInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Allocated).encode_order(self.order)
     }
 
     /// Decodes a [`PageStorageType`] into an [`AllocatedInfo`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(
+        requires
+            Self::spec_decode_impl(mem).order < MAX_ORDER,
+        returns
+            Self::spec_decode_impl(mem)
+    )]
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         Self { order }
@@ -245,6 +324,7 @@ impl AllocatedInfo {
 }
 
 /// Struct representing information about a slab memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct SlabPageInfo {
     item_size: u64,
@@ -252,11 +332,15 @@ struct SlabPageInfo {
 
 impl SlabPageInfo {
     /// Encodes the [`SlabPageInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::SlabPage).encode_slab(self.item_size)
     }
 
     /// Decodes a [`PageStorageType`] into a [`SlabPageInfo`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(returns Self::spec_decode_impl(mem))]
     fn decode(mem: PageStorageType) -> Self {
         let item_size = mem.decode_slab();
         Self { item_size }
@@ -264,6 +348,7 @@ impl SlabPageInfo {
 }
 
 /// Struct representing information about a compound memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct CompoundInfo {
     order: usize,
@@ -271,11 +356,20 @@ struct CompoundInfo {
 
 impl CompoundInfo {
     /// Encodes the [`CompoundInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Compound).encode_order(self.order)
     }
 
     /// Decodes a [`PageStorageType`] into a [`CompoundInfo`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(
+        requires
+            Self::spec_decode_impl(mem).order < MAX_ORDER,
+        returns
+            Self::spec_decode_impl(mem)
+    )]
     fn decode(mem: PageStorageType) -> Self {
         let order = mem.decode_order();
         Self { order }
@@ -283,22 +377,28 @@ impl CompoundInfo {
 }
 
 /// Struct representing information about a reserved memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct ReservedInfo;
 
 impl ReservedInfo {
     /// Encodes the [`ReservedInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::Reserved)
     }
 
     /// Decodes a [`PageStorageType`] into a [`ReservedInfo`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(returns Self::spec_decode_impl(_mem))]
     fn decode(_mem: PageStorageType) -> Self {
         Self
     }
 }
 
 /// Struct representing information about a file memory page.
+#[verus_verify]
 #[derive(Clone, Copy, Debug)]
 struct FileInfo {
     /// Reference count of the file page.
@@ -307,16 +407,29 @@ struct FileInfo {
 
 impl FileInfo {
     /// Creates a new [`FileInfo`] with the specified reference count.
+    #[verus_verify(dual_spec(spec_new))]
+    #[verus_spec(
+        requires
+            ref_count < (1u64 << (u64::BITS - PageStorageType::TYPE_SHIFT) as u64),
+        returns
+            Self::spec_new(ref_count)
+    )]
     const fn new(ref_count: u64) -> Self {
         Self { ref_count }
     }
 
     /// Encodes the [`FileInfo`] into a [`PageStorageType`].
+    #[verus_verify(dual_spec(spec_encode_impl))]
+    #[verus_spec(returns self.spec_encode_impl())]
     fn encode(&self) -> PageStorageType {
         PageStorageType::new(PageType::File).encode_refcount(self.ref_count)
     }
 
     /// Decodes a [`PageStorageType`] into a [`FileInfo`].
+    #[verus_verify(dual_spec(spec_decode_impl))]
+    #[verus_spec(
+        returns Self::spec_decode_impl(mem)
+    )]
     fn decode(mem: PageStorageType) -> Self {
         let ref_count = mem.decode_refcount();
         Self { ref_count }
@@ -325,6 +438,7 @@ impl FileInfo {
 
 /// Enum representing different types of page information.
 #[derive(Clone, Copy, Debug)]
+#[verus_verify]
 enum PageInfo {
     Free(FreeInfo),
     Allocated(AllocatedInfo),
@@ -334,9 +448,20 @@ enum PageInfo {
     Reserved(ReservedInfo),
 }
 
+#[verus_verify]
 impl PageInfo {
     /// Converts [`PageInfo`] into a [`PageStorageType`].
+    #[verus_spec(ret =>
+        ensures
+            Self::spec_decode(ret) == Some(self),
+        returns
+            self.spec_encode().unwrap()
+    )]
     fn to_mem(self) -> PageStorageType {
+        proof! {
+            self.use_type_invariant();
+            self.proof_encode_decode();
+        }
         match self {
             Self::Free(fi) => fi.encode(),
             Self::Allocated(ai) => ai.encode(),
@@ -348,6 +473,10 @@ impl PageInfo {
     }
 
     /// Converts a [`PageStorageType`] into [`PageInfo`].
+    #[verus_spec(
+        requires mem.wf(),
+        returns Self::spec_decode(mem).unwrap(),
+    )]
     fn from_mem(mem: PageStorageType) -> Self {
         let Ok(page_type) = mem.page_type() else {
             panic!("Unknown page type in {:?}", mem);
