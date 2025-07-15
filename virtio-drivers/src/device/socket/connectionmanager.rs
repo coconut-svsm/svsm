@@ -121,6 +121,17 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
         self.driver.guest_cid()
     }
 
+    /// Returns the status of a connection
+    pub fn get_connection_status(
+        &mut self,
+        destination: VsockAddr,
+        src_port: u32,
+    ) -> Result<ConnectionStatus> {
+        let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
+
+        Ok(connection.status)
+    }
+
     /// Allows incoming connections on the given port number.
     pub fn listen(&mut self, port: u32) {
         if !self.listening_ports.contains(&port) {
