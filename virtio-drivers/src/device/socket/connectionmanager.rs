@@ -54,10 +54,28 @@ pub struct VsockConnectionManager<
     listening_ports: Vec<u32>,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+/// Enum for the status of a connection
+pub enum ConnectionStatus {
+    /// new socket
+    New,
+    /// listening
+    Listen,
+    /// connection that has not been ack'd by the other peer
+    Connecting,
+    /// connected
+    Connected,
+    /// sent or received a shutdown
+    Closing,
+    /// closed
+    Close,
+}
+
 #[derive(Debug)]
 struct Connection {
     info: ConnectionInfo,
     buffer: RingBuffer,
+    status: ConnectionStatus,
     /// The peer sent a SHUTDOWN request, but we haven't yet responded with a RST because there is
     /// still data in the buffer.
     peer_requested_shutdown: bool,
@@ -70,6 +88,7 @@ impl Connection {
         Self {
             info,
             buffer: RingBuffer::new(buffer_capacity.try_into().unwrap()),
+            status: ConnectionStatus::New,
             peer_requested_shutdown: false,
         }
     }
@@ -126,10 +145,11 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
             return Err(SocketError::ConnectionExists.into());
         }
 
-        let new_connection =
+        let mut new_connection =
             Connection::new(destination, src_port, self.per_connection_buffer_capacity);
 
         self.driver.connect(&new_connection.info)?;
+        new_connection.status = ConnectionStatus::Connecting;
         debug!("Connection requested: {:?}", new_connection.info);
         self.connections.push(new_connection);
         Ok(())
@@ -138,6 +158,9 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     /// Sends the buffer to the destination.
     pub fn send(&mut self, destination: VsockAddr, src_port: u32, buffer: &[u8]) -> Result {
         let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
+        if connection.status != ConnectionStatus::Connected {
+            return Err(SocketError::NotConnected.into());
+        }
 
         self.driver.send(buffer, &mut connection.info)
     }
@@ -167,7 +190,9 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
                     event.destination.port,
                     per_connection_buffer_capacity,
                 ));
-                connections.last_mut().unwrap()
+                let connection = connections.last_mut().unwrap();
+                connection.status = ConnectionStatus::Connected;
+                connection
             } else {
                 return Ok(None);
             };
@@ -206,8 +231,12 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
                     return Ok(None);
                 }
             }
-            VsockEventType::Connected => {}
+            VsockEventType::Connected => {
+                connection.status = ConnectionStatus::Connected;
+            }
             VsockEventType::Disconnected { reason } => {
+                connection.status = ConnectionStatus::Closing;
+
                 // Wait until client reads all data before removing connection.
                 if connection.buffer.is_empty() {
                     if reason == DisconnectReason::Shutdown {
@@ -237,6 +266,10 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     pub fn recv(&mut self, peer: VsockAddr, src_port: u32, buffer: &mut [u8]) -> Result<usize> {
         let (connection_index, connection) = get_connection(&mut self.connections, peer, src_port)?;
 
+        if connection.status != ConnectionStatus::Connected {
+            return Err(SocketError::NotConnected.into());
+        }
+
         // Copy from ring buffer
         let bytes_read = connection.buffer.drain(buffer);
 
@@ -258,12 +291,20 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     /// contain any data.
     pub fn recv_buffer_available_bytes(&mut self, peer: VsockAddr, src_port: u32) -> Result<usize> {
         let (_, connection) = get_connection(&mut self.connections, peer, src_port)?;
+        if connection.status != ConnectionStatus::Connected {
+            return Err(SocketError::NotConnected.into());
+        }
+
         Ok(connection.buffer.used())
     }
 
     /// Sends a credit update to the given peer.
     pub fn update_credit(&mut self, peer: VsockAddr, src_port: u32) -> Result {
         let (_, connection) = get_connection(&mut self.connections, peer, src_port)?;
+        if connection.status != ConnectionStatus::Connected {
+            return Err(SocketError::NotConnected.into());
+        }
+
         self.driver.credit_update(&connection.info)
     }
 
@@ -287,6 +328,11 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     pub fn shutdown(&mut self, destination: VsockAddr, src_port: u32) -> Result {
         let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
 
+        if connection.status != ConnectionStatus::Connected {
+            return Err(SocketError::NotConnected.into());
+        }
+
+        connection.status = ConnectionStatus::Closing;
         self.driver.shutdown(&connection.info)
     }
 
