@@ -34,6 +34,8 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 	rm -f $@
 	ar rcsTPD $@ $^
 
+.PHONY: $(LIBCRT)
+
 # libcrt
 $(LIBCRT):
 	$(MAKE) -C $(LIBCRT_DIR)
