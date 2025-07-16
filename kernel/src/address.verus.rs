@@ -8,7 +8,12 @@ use crate::utils::util::{
     align_down_integer_ens, align_up_integer_ens, proof_align_down, proof_align_up,
 };
 use verify_external::convert::{exists_into, forall_into, FromSpec};
-use vstd::std_specs::ops::{SpecAddRequires, SpecSubRequires};
+use verify_external::hw_spec::SpecVAddrImpl;
+use vstd::raw_ptr::{ptr_from_data, ptr_mut_from_data, PtrData};
+use vstd::set_lib::set_int_range;
+use vstd::std_specs::cmp::PartialOrdSpec;
+use vstd::std_specs::ops::AddSpec;
+
 verus! {
 
 pub broadcast group sign_extend_proof {
@@ -166,7 +171,8 @@ impl VirtAddr {
     }
 
     pub open spec fn new_ensures(self, addr: InnerAddr) -> bool {
-        sign_extend_ensures(addr, self@)
+        &&& sign_extend_ensures(addr, self@)
+        &&& VirtAddr::from_spec(addr) == self
     }
 
     pub open spec fn pgtbl_idx_ensures(&self, l: usize, ret: usize) -> bool {
@@ -178,35 +184,57 @@ impl VirtAddr {
     }
 }
 
-impl SpecAddRequires<InnerAddr> for VirtAddr {
-    /* Specifications for methods */
-    // requires that adding offset will not cause not overflow.
-    // If a low address, adding offset to it should not have set any bits in upper 16 bits.
-    // If a high address, should not exceed usize::MAX
-    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
-        self.offset() + offset < VADDR_RANGE_SIZE
-    }
-}
-
 impl VirtAddr {
     pub open spec fn spec_add_ensures(self, offset: InnerAddr, ret: VirtAddr) -> bool {
         &&& self.offset() + offset == ret.offset()
         &&& ret === VirtAddr::from_spec((self@ + offset) as InnerAddr)
+        &&& ret === VirtAddr::from_spec((self.offset() + offset) as InnerAddr)
+    }
+}
+
+impl vstd::std_specs::ops::AddSpecImpl<InnerAddr> for VirtAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn add_req(self, offset: InnerAddr) -> bool {
+        self.offset() + offset < VADDR_RANGE_SIZE
+    }
+
+    open spec fn add_spec(self, offset: InnerAddr) -> VirtAddr {
+        VirtAddr::from_spec((self@ + offset) as InnerAddr)
+    }
+
+    open spec fn obeys_add_spec() -> bool {
+        true
     }
 }
 
 // Get a new addr by subtracting an offset from an existing virtual address
-impl SpecSubRequires<InnerAddr> for VirtAddr {
-    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
-        self.offset() >= rhs
+impl vstd::std_specs::ops::SubSpecImpl<InnerAddr> for VirtAddr {
+    open spec fn sub_req(self, offset: InnerAddr) -> bool {
+        self.offset() >= offset
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, offset: InnerAddr) -> VirtAddr {
+        VirtAddr::from_spec((self@ - offset) as InnerAddr)
     }
 }
 
 // Compute the offset between two virtual addresses.
-impl SpecSubRequires<VirtAddr> for VirtAddr {
+impl vstd::std_specs::ops::SubSpecImpl<VirtAddr> for VirtAddr {
     /// Do not assume they are both high/low addresses.
-    open spec fn spec_sub_requires(self, rhs: VirtAddr) -> bool {
+    open spec fn sub_req(self, rhs: VirtAddr) -> bool {
         self@ >= rhs@
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: VirtAddr) -> InnerAddr {
+        (self.offset() - rhs.offset()) as _
     }
 }
 
@@ -240,6 +268,75 @@ impl FromSpec<VirtAddr> for u64 {
     }
 }
 
+/// @Property: address can be identified by an integer.
+impl SpecVAddrImpl for VirtAddr {
+    #[verifier(inline)]
+    open spec fn spec_int_addr(&self) -> Option<int> {
+        Some(self@ as int)
+    }
+
+    #[verifier(opaque)]
+    open spec fn region_to_dom(&self, size: nat) -> Set<int> {
+        if self.is_canonical() {
+            Set::new(
+                |v: int|
+                    exists|addr: VirtAddr|
+                        addr@ == v && v <= usize::MAX && addr.is_canonical() && self.offset()
+                            <= addr.offset() < self.offset() + size,
+            )
+        } else {
+            Set::empty()
+        }
+    }
+
+    #[verus_verify(spinoff_prover)]
+    proof fn lemma_unique(v1: &Self, v2: &Self) {
+    }
+
+    #[verus_verify(spinoff_prover)]
+    proof fn lemma_vaddr_region_len(&self, size: nat)
+        ensures
+            self.is_canonical() ==> self.region_to_dom(size).len() > 0,
+    {
+        reveal(<VirtAddr as SpecVAddrImpl>::region_to_dom);
+        if self.is_canonical() {
+            assert(self.region_to_dom(size).contains(self@ as int));
+        }
+        self.lemma_valid_small_size(1, size);
+        vstd::set_lib::lemma_int_range(0, usize::MAX + 1);
+        vstd::set_lib::lemma_len_subset(self.region_to_dom(1), set_int_range(0, usize::MAX + 1));
+        vstd::set_lib::lemma_len_subset(self.region_to_dom(size), set_int_range(0, usize::MAX + 1));
+        vstd::set_lib::lemma_len_subset(self.region_to_dom(1), self.region_to_dom(size));
+    }
+
+    #[verus_verify(spinoff_prover)]
+    proof fn lemma_valid_small_size(&self, size1: nat, size2: nat) {
+        reveal(<VirtAddr as SpecVAddrImpl>::region_to_dom);
+    }
+}
+
+impl VirtAddr {
+    #[verus_verify(spinoff_prover)]
+    pub proof fn lemma_region_to_dom_merge(self, size1: nat, vaddr2: VirtAddr, size2: nat)
+        requires
+            self.is_canonical() && vaddr2.is_canonical(),
+            vaddr2.offset() == self.offset() + size1,
+        ensures
+            self.region_to_dom(size1) + vaddr2.region_to_dom(size2) == self.region_to_dom(
+                size1 + size2,
+            ),
+            self.region_to_dom(size1 + size2).difference(self.region_to_dom(size1))
+                == vaddr2.region_to_dom(size2),
+    {
+        reveal(<VirtAddr as SpecVAddrImpl>::region_to_dom);
+        assert(self.region_to_dom(size1) + vaddr2.region_to_dom(size2) =~= self.region_to_dom(
+            size1 + size2,
+        ));
+        assert(self.region_to_dom(size1 + size2).difference(self.region_to_dom(size1))
+            =~= vaddr2.region_to_dom(size2))
+    }
+}
+
 // Define a view (@) for PhysAddr
 impl View for PhysAddr {
     type V = InnerAddr;
@@ -261,21 +358,109 @@ impl FromSpec<PhysAddr> for InnerAddr {
     }
 }
 
-impl SpecSubRequires<PhysAddr> for PhysAddr {
-    open spec fn spec_sub_requires(self, rhs: PhysAddr) -> bool {
+impl vstd::std_specs::ops::SubSpecImpl<PhysAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn sub_req(self, rhs: PhysAddr) -> bool {
         self@ >= rhs@
     }
-}
 
-impl SpecSubRequires<InnerAddr> for PhysAddr {
-    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
-        self@ >= rhs
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: PhysAddr) -> InnerAddr {
+        (self@ - rhs@) as _
     }
 }
 
-impl SpecAddRequires<InnerAddr> for PhysAddr {
-    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
+impl vstd::std_specs::ops::SubSpecImpl<InnerAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn sub_req(self, rhs: InnerAddr) -> bool {
+        self@ >= rhs
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: InnerAddr) -> PhysAddr {
+        PhysAddr::from_spec((self@ - rhs) as InnerAddr)
+    }
+}
+
+impl vstd::std_specs::ops::AddSpecImpl<InnerAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn add_req(self, offset: InnerAddr) -> bool {
         self@ + offset <= InnerAddr::MAX
+    }
+
+    open spec fn obeys_add_spec() -> bool {
+        true
+    }
+
+    open spec fn add_spec(self, offset: InnerAddr) -> PhysAddr {
+        PhysAddr::from_spec((self@ + offset) as InnerAddr)
+    }
+}
+
+} // verus!
+verus! {
+
+/// Assumptions for PartialOrd since it is derived.
+impl vstd::std_specs::cmp::PartialOrdSpecImpl<VirtAddr> for VirtAddr {
+    open spec fn obeys_partial_cmp_spec() -> bool {
+        true
+    }
+
+    open spec fn partial_cmp_spec(&self, other: &VirtAddr) -> Option<core::cmp::Ordering> {
+        PartialOrdSpec::partial_cmp_spec(&self@, &other@)
+    }
+}
+
+/// Assumptions for PartialOrd since it is derived.
+impl vstd::std_specs::cmp::PartialOrdSpecImpl<PhysAddr> for PhysAddr {
+    open spec fn obeys_partial_cmp_spec() -> bool {
+        true
+    }
+
+    open spec fn partial_cmp_spec(&self, other: &PhysAddr) -> Option<core::cmp::Ordering> {
+        PartialOrdSpec::partial_cmp_spec(&self@, &other@)
+    }
+}
+
+/// Assumptions for PartialEq since it is derived.
+pub assume_specification[ <VirtAddr as PartialEq<VirtAddr>>::eq ](
+    x: &VirtAddr,
+    y: &VirtAddr,
+) -> bool
+;
+
+/// Assumptions for PartialEq since it is derived.
+impl vstd::std_specs::cmp::PartialEqSpecImpl<VirtAddr> for VirtAddr {
+    open spec fn obeys_eq_spec() -> bool {
+        true
+    }
+
+    open spec fn eq_spec(&self, other: &VirtAddr) -> bool {
+        self@ == other@
+    }
+}
+
+/// Assumptions for PartialEq since it is derived.
+pub assume_specification[ <PhysAddr as PartialEq<PhysAddr>>::eq ](
+    x: &PhysAddr,
+    y: &PhysAddr,
+) -> bool
+;
+
+/// Assumptions for PartialEq since it is derived.
+impl vstd::std_specs::cmp::PartialEqSpecImpl<PhysAddr> for PhysAddr {
+    open spec fn obeys_eq_spec() -> bool {
+        true
+    }
+
+    open spec fn eq_spec(&self, other: &PhysAddr) -> bool {
+        self@ == other@
     }
 }
 

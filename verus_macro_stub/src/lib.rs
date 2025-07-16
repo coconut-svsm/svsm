@@ -20,3 +20,13 @@ pub fn verus(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn proof(_input: TokenStream) -> TokenStream {
     TokenStream::new()
 }
+
+#[proc_macro]
+pub fn proof_decl(_input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}
+
+#[proc_macro]
+pub fn proof_with(_input: TokenStream) -> TokenStream {
+    TokenStream::new()
+}

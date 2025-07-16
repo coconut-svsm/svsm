@@ -5,6 +5,8 @@
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
 // Specifications related to util.rs that are used in proof_align_down and proof_align_up.
+use vstd::std_specs::ops::{AddSpec, BitAndSpec, NotSpec, SubSpec};
+
 #[verus_verify]
 pub trait AlignUpSpec:
     Add<Output = Self>
@@ -57,7 +59,6 @@ verus! {
 
 use verify_external::convert::*;
 use verify_proof::bits::is_pow_of_2;
-use vstd::std_specs::ops::*;
 
 #[verifier(inline)]
 pub open spec fn align_requires(align: u64) -> bool {
@@ -92,7 +93,9 @@ pub open spec fn align_down_integer_ens<T>(val: T, align: T, ret: T) -> bool whe
 
 pub open spec fn align_down_requires<T>(args: (T, T)) -> bool where T: AlignDownSpec {
     let (val, align) = args;
-    &&& forall|one| #[trigger] call_ensures(T::from, (1u8,), one) ==> spec_sub_requires(align, one)
+    &&& forall|x: T| x.not_req()
+    &&& forall|x: T, y: T| x.bitand_req(y)
+    &&& forall|one| #[trigger] call_ensures(T::from, (1u8,), one) ==> align.sub_req(one)
 }
 
 pub open spec fn align_down_ens<T>(args: (T, T), ret: T) -> bool where T: AlignDownSpec {
@@ -109,9 +112,11 @@ pub open spec fn align_down_ens<T>(args: (T, T), ret: T) -> bool where T: AlignD
 pub open spec fn align_up_requires<T>(args: (T, T)) -> bool where T: AlignUpSpec {
     let (val, align) = args;
     &&& align_down_requires(args)
+    &&& forall|x: T| x.not_req()
+    &&& forall|x: T, y: T| x.bitand_req(y)
     &&& forall|one: T, mask: T|
         (call_ensures(T::from, (1u8,), one) && #[trigger] call_ensures(T::sub, (align, one), mask))
-            ==> spec_add_requires(val, mask)
+            ==> val.add_req(mask)
 }
 
 pub open spec fn align_up_ens<T>(args: (T, T), ret: T) -> bool where T: AlignUpSpec {
@@ -128,7 +133,7 @@ pub open spec fn align_up_ens<T>(args: (T, T), ret: T) -> bool where T: AlignUpS
 
 pub open spec fn is_aligned_requires<T>(args: (T, T)) -> bool where T: IsAlignedSpec {
     let (val, align) = args;
-    &&& forall|one| #[trigger] call_ensures(T::from, (1u8,), one) ==> spec_sub_requires(align, one)
+    &&& forall|one| #[trigger] call_ensures(T::from, (1u8,), one) ==> align.sub_req(one)
     &&& forall|one: T, mask: T| #[trigger]
         call_ensures(T::from, (1u8,), one) && #[trigger] call_ensures(T::sub, (align, one), mask)
             ==> call_requires(T::bitand, (val, mask))

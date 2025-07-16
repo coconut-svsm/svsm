@@ -5,16 +5,12 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 fn main() {
-    // Verification tool only support rust version lower than 1.82
-    // If new features are used, may need to disable them until verus is upraded.
-    if rustc_version::version_meta().unwrap().semver > rustc_version::Version::new(1, 80, 2) {
-        println!("cargo:rustc-cfg=RUST_VERSION_AFTER_VERUS");
-    }
     // Extra cfgs
     println!("cargo::rustc-check-cfg=cfg(fuzzing)");
     println!("cargo::rustc-check-cfg=cfg(test_in_svsm)");
     println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost)");
-    println!("cargo::rustc-check-cfg=cfg(RUST_VERSION_AFTER_VERUS)");
+    println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost_body)");
+    println!("cargo::rustc-check-cfg=cfg(verus_verify_core)");
 
     // Stage 2
     println!("cargo:rustc-link-arg-bin=stage2=-nostdlib");

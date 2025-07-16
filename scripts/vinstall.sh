@@ -6,7 +6,7 @@
 # Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 # A script to install verus tools
 
-VERISMO_REV=a120c45
+VERISMO_REV=7545c6c
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV cargo-v
 builtin=`cargo metadata --format-version 1 | jq -r '.packages[] | select(.name == "builtin_macros") | .targets[].src_path'`
 verus=`dirname $builtin`/../../../source/target-verus/release/verus
@@ -22,4 +22,4 @@ fi
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV verus-rustc
 
 # verus formatter
-cargo install --git https://github.com/verus-lang/verusfmt --rev v0.5.4
+cargo install --git https://github.com/verus-lang/verusfmt --rev v0.5.7

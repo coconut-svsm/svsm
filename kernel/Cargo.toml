@@ -42,6 +42,7 @@ uuid.workspace = true
 virtio-drivers = { workspace = true, optional = true }
 
 builtin = { workspace = true, optional = true }
+builtin_macros = { workspace = true, optional = true }
 vstd = { workspace = true, optional = true}
 verify_proof = { workspace = true, optional = true}
 verify_external = { workspace = true, optional = true}
@@ -56,7 +57,7 @@ enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
 nosmep = []
 nosmap = []
-verus_all = ["builtin", "vstd", "verify_proof/verus", "verify_external/verus", "verus_stub/disable"]
+verus_all = ["builtin", "builtin_macros", "vstd", "verify_proof/verus", "verify_external/verus", "verus_stub/disable"]
 verus = ["verus_all", "verify_proof/noverify", "verify_external/noverify"]
 noverify = []
 virtio-drivers = ["dep:virtio-drivers"]
