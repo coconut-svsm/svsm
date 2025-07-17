@@ -13,6 +13,15 @@ cd svsm
 ./scripts/vinstall.sh
 ```
 
+> Why am I using a different Rust toolchain?
+>> Verus requires a specific version of Rust (e.g., 1.88.0) because it depends
+  on the compiler’s internal libraries for verification. Thanks to Rust’s strong
+  backward compatibility guarantees, Verus can analyze code written against
+  older versions. However, some newer Verus features depend on recent rustc
+  versions, so we may occasionally upgrade the toolchain to support those
+  features, which does not guarantee it is the exact version defined by
+  `rust-toolchain.toml`
+
 ## Build
 
 ### Build svsm with verification
@@ -35,7 +44,7 @@ You can specify extra arguments using the environmental variable
 
 **Examples**
 
-* Compiles a crate without verifying svsm crate:
+* Compiles a crate without verifying svsm crate using verus compilation:
 
     ```
     svsm_lib_VERUS_ARGS="--no-verify" cargo verify
@@ -87,21 +96,30 @@ and to write specification and proofs in ghost mode.
   traits from external crates lack specifications from vstd, define their
   specifications in `verify_external/`.
 * Performance: Store expensive and reusable proofs in `verify_proof/` if not
-  provided by `vstd`. The `svsm/build.rs` sets `rlimit=1`, while
+  provided by `vstd`. The `svsm/kernel/build.rs` sets `rlimit=1`, while
   `verify_proof/build.rs` sets `rlimit=4`, helping developers decide when they
-  need more proof engineering to run verification within minutes.
+  need more proof engineering to run verification within minutes. For some proofs that
+  are tightly related to the project code, we may still put them under svsm/kernel with
+  `#[verus_verify(rlimit=x)]`
 
 ### Annotation in Executable Rust
-
 * #[verus_verify]: Indicates the item is Verus-aware.
 * #[verus_verify(external_body)]: Indicates the item is Verus-aware, but marks the function body as uninterpreted by the verifier.
 * #[verus_verify(external)]: Instructs Verus to ignore the item. By default, items are treated as #[verus_verify(external)].
-* #[requires(x,y,z)]: Specifies preconditions to a function.
-* #[ensures(|ret: RetType| [x,y,z])]: Specifies postconditions to a function.
-* #[invariant(x,y,z)]: Specifies loop invariant.
+* #[verus_spec($specificaton)]: Specifies pre/postconditions for executable codes.
+  $specificaton is in format of
+  ```
+  => $ret
+  requires precondition($inputs),
+  ensures postcondition($inputs, $ret),
+  returns ret_spec,
+  decreases termination_condition
+  ```
 * proof!{...}: Inserts proofs to help solver to avoid false positives or improve
   performance. You can also add assert(..) inside proof macro to statically
   check assertions.
+* More annotations usage can be found in https://github.com/verus-lang/verus/tree/main/source/rust_verify_test/tests/syntax_attr.rs
+
 
 For example,
 
@@ -110,8 +128,7 @@ For example,
 use vstd::prelude::*;
 #[verus_verify]
 trait A: Sized {
-  #[requires(m > 0)]
-  #[ensures(|ret: usize| 0 <= ret < m )]
+  #[verus_spec(ret => requires(m > 0), ensures 0 <= ret < m)]
   fn op(self, m: usize) -> usize;
 }
 
@@ -137,7 +154,7 @@ impl A for u64 {
 While Verus allows you to write specifications and proofs in Rust, it's
 beneficial to use the verus!{} macro for a more concise, mathematical syntax
 similar to Dafny, F*, and Coq. To get started, be sure to read the [Verus
-Tutorial](https://verus-lang.github.io/verus/guide/overview.html). To find
+Tutorial](https://verus-lang.github.io/verus/guide/overview.html). You can use [Verus playground](https://play.verus-lang.org/) to play with verus without install it. To find
 examples about recursive proof, quantifier, traits, pointers, type invariant, or
 other advanced usage, please refer to [Verus
 Tests](https://github.com/verus-lang/verus/tree/main/source/rust_verify_test/tests)
