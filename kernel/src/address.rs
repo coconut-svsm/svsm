@@ -280,10 +280,6 @@ impl ops::Sub<PhysAddr> for PhysAddr {
     type Output = InnerAddr;
 
     #[inline]
-    #[verus_spec(ret =>
-        ensures
-            ret == self@ - other@
-    )]
     fn sub(self, other: PhysAddr) -> Self::Output {
         self.0 - other.0
     }
@@ -414,7 +410,7 @@ impl VirtAddr {
 
     #[verus_spec(ret =>
         requires
-            (*self).spec_add_requires(offset),
+            (*self).add_req(offset),
         ensures
             self.spec_add_ensures(offset, ret),
     )]
@@ -542,7 +538,7 @@ impl ops::Sub<VirtAddr> for VirtAddr {
     #[inline]
     #[verus_spec(ret =>
         ensures
-            ret == self.offset() - other.offset()
+            ret == self.offset() - other.offset(),
     )]
     fn sub(self, other: VirtAddr) -> InnerAddr {
         proof! {

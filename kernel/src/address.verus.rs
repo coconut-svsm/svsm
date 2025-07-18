@@ -8,7 +8,7 @@ use crate::utils::util::{
     align_down_integer_ens, align_up_integer_ens, proof_align_down, proof_align_up,
 };
 use verify_external::convert::{exists_into, forall_into, FromSpec};
-use vstd::std_specs::ops::{SpecAddRequires, SpecSubRequires};
+use vstd::std_specs::ops::AddSpec;
 verus! {
 
 pub broadcast group sign_extend_proof {
@@ -166,7 +166,8 @@ impl VirtAddr {
     }
 
     pub open spec fn new_ensures(self, addr: InnerAddr) -> bool {
-        sign_extend_ensures(addr, self@)
+        &&& sign_extend_ensures(addr, self@)
+        &&& VirtAddr::from_spec(addr) == self
     }
 
     pub open spec fn pgtbl_idx_ensures(&self, l: usize, ret: usize) -> bool {
@@ -178,16 +179,6 @@ impl VirtAddr {
     }
 }
 
-impl SpecAddRequires<InnerAddr> for VirtAddr {
-    /* Specifications for methods */
-    // requires that adding offset will not cause not overflow.
-    // If a low address, adding offset to it should not have set any bits in upper 16 bits.
-    // If a high address, should not exceed usize::MAX
-    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
-        self.offset() + offset < VADDR_RANGE_SIZE
-    }
-}
-
 impl VirtAddr {
     pub open spec fn spec_add_ensures(self, offset: InnerAddr, ret: VirtAddr) -> bool {
         &&& self.offset() + offset == ret.offset()
@@ -195,18 +186,49 @@ impl VirtAddr {
     }
 }
 
+impl vstd::std_specs::ops::AddSpecImpl<InnerAddr> for VirtAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn add_req(self, offset: InnerAddr) -> bool {
+        self.offset() + offset < VADDR_RANGE_SIZE
+    }
+
+    open spec fn add_spec(self, offset: InnerAddr) -> VirtAddr {
+        VirtAddr::from_spec((self@ + offset) as InnerAddr)
+    }
+
+    open spec fn obeys_add_spec() -> bool {
+        true
+    }
+}
+
 // Get a new addr by subtracting an offset from an existing virtual address
-impl SpecSubRequires<InnerAddr> for VirtAddr {
-    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
-        self.offset() >= rhs
+impl vstd::std_specs::ops::SubSpecImpl<InnerAddr> for VirtAddr {
+    open spec fn sub_req(self, offset: InnerAddr) -> bool {
+        self.offset() >= offset
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, offset: InnerAddr) -> VirtAddr {
+        VirtAddr::from_spec((self@ - offset) as InnerAddr)
     }
 }
 
 // Compute the offset between two virtual addresses.
-impl SpecSubRequires<VirtAddr> for VirtAddr {
+impl vstd::std_specs::ops::SubSpecImpl<VirtAddr> for VirtAddr {
     /// Do not assume they are both high/low addresses.
-    open spec fn spec_sub_requires(self, rhs: VirtAddr) -> bool {
+    open spec fn sub_req(self, rhs: VirtAddr) -> bool {
         self@ >= rhs@
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: VirtAddr) -> InnerAddr {
+        (self.offset() - rhs.offset()) as _
     }
 }
 
@@ -261,21 +283,48 @@ impl FromSpec<PhysAddr> for InnerAddr {
     }
 }
 
-impl SpecSubRequires<PhysAddr> for PhysAddr {
-    open spec fn spec_sub_requires(self, rhs: PhysAddr) -> bool {
+impl vstd::std_specs::ops::SubSpecImpl<PhysAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn sub_req(self, rhs: PhysAddr) -> bool {
         self@ >= rhs@
     }
-}
 
-impl SpecSubRequires<InnerAddr> for PhysAddr {
-    open spec fn spec_sub_requires(self, rhs: InnerAddr) -> bool {
-        self@ >= rhs
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: PhysAddr) -> InnerAddr {
+        (self@ - rhs@) as _
     }
 }
 
-impl SpecAddRequires<InnerAddr> for PhysAddr {
-    open spec fn spec_add_requires(self, offset: InnerAddr) -> bool {
+impl vstd::std_specs::ops::SubSpecImpl<InnerAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn sub_req(self, rhs: InnerAddr) -> bool {
+        self@ >= rhs
+    }
+
+    open spec fn obeys_sub_spec() -> bool {
+        true
+    }
+
+    open spec fn sub_spec(self, rhs: InnerAddr) -> PhysAddr {
+        PhysAddr::from_spec((self@ - rhs) as InnerAddr)
+    }
+}
+
+impl vstd::std_specs::ops::AddSpecImpl<InnerAddr> for PhysAddr {
+    /// Do not assume they are both high/low addresses.
+    open spec fn add_req(self, offset: InnerAddr) -> bool {
         self@ + offset <= InnerAddr::MAX
+    }
+
+    open spec fn obeys_add_spec() -> bool {
+        true
+    }
+
+    open spec fn add_spec(self, offset: InnerAddr) -> PhysAddr {
+        PhysAddr::from_spec((self@ + offset) as InnerAddr)
     }
 }
 
