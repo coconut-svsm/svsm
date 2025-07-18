@@ -4,6 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::error::SvsmError;
 use core::arch::asm;
 use core::fmt::Debug;
 
@@ -63,3 +64,17 @@ pub struct DefaultIOPort {}
 impl IOPort for DefaultIOPort {}
 
 pub static DEFAULT_IO_DRIVER: DefaultIOPort = DefaultIOPort {};
+
+/// Generic Read trait to be implemented over any transport channel when reading multiple bytes.
+pub trait Read {
+    type Err: Into<SvsmError>;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err>;
+}
+
+/// Generic Write trait to be implemented over any transport channel when writing multiple bytes.
+pub trait Write {
+    type Err: Into<SvsmError>;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err>;
+}
