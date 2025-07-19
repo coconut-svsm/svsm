@@ -38,6 +38,7 @@ use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
+use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
@@ -334,6 +335,9 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
+
+    // Make ro_after_init section read-only
+    make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
         .expect("Failed to invalidate early boot memory");

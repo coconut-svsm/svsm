@@ -12,10 +12,13 @@ use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::GLOBAL_GDT;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_supported;
+use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
-use crate::mm::{GuestPtr, PageBox};
+use crate::mm::ro_after_init::make_ro;
+use crate::mm::{GuestPtr, PageBox, PAGE_SIZE};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
+use crate::utils::{is_aligned, MemoryRegion};
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
@@ -370,6 +373,30 @@ impl<'a> IDT<'a> {
         unsafe {
             asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
         }
+    }
+
+    /// Make the IDT read-only.
+    /// This is supposed to be used for the global IDT only.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure this method is called on the global IDT, and
+    /// after it is initialized.
+    pub unsafe fn make_ro(&self) -> Result<(), SvsmError> {
+        let idt_start = self.entries.as_ptr();
+
+        assert!(is_aligned(idt_start.addr(), PAGE_SIZE));
+
+        // Size of IDT is not supposed to be bigger than PAGE_SIZE.
+        let region = MemoryRegion::from_addresses(
+            VirtAddr::from(idt_start),
+            VirtAddr::from(idt_start) + PAGE_SIZE,
+        );
+
+        // SAFETY: 4k alignement on start address and size are verified.
+        // The check that this method is called on the initialized global IDT
+        // is delegated to the caller.
+        unsafe { make_ro(region) }
     }
 }
 
