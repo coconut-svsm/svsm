@@ -7,7 +7,7 @@ use super::*;
 
 verus! {
 
-use vstd::std_specs::ops::{spec_add_requires, spec_sub_requires};
+use vstd::std_specs::ops::{SubSpec, AddSpec};
 
 broadcast use verify_proof::bits::lemma_bit_usize_shl_values;
 
@@ -135,15 +135,12 @@ pub broadcast proof fn lemma_align_up_requires<A: AddressSpec>(
         #[trigger] crate::utils::util::align_up_requires((iaddr, align)),
 {
     assert forall|one: usize|
-        call_ensures(usize::from, (1u8,), one) implies #[trigger] spec_sub_requires(align, one) by {
-        vstd::std_specs::ops::axiom_sub_requires(align, one);
+        call_ensures(usize::from, (1u8,), one) implies #[trigger] align.sub_req(one) by {
+        //vstd::std_specs::ops::axiom_sub_requires(align, one);
     }
 
-    assert forall|a: usize, y: usize| a + y <= usize::MAX implies #[trigger] spec_add_requires(
-        a,
-        y,
-    ) by {
-        vstd::std_specs::ops::axiom_add_requires(a, y);
+    assert forall|a: usize, y: usize| a + y <= usize::MAX implies #[trigger] a.add_req(y) by {
+        //vstd::std_specs::ops::axiom_add_requires(a, y);
     }
 }
 

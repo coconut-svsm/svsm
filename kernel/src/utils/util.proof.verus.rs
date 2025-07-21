@@ -101,29 +101,6 @@ mod util_align_up {
         ret
     }
 
-    pub proof fn lemma_align_up_u32(x: u32, align: u32) -> (ret: u32)
-        requires
-            is_pow_of_2(align as u64),
-            x + align - 1 <= u32::MAX,
-        ensures
-            ret == add(x, sub(align, 1)) & !sub(align, 1),
-            ret == spec_align_up(x as int, align as int),
-    {
-        assert(align > 0) by {
-            broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
-
-        }
-        let mask = sub(align, 1);
-        let r = add(x, sub(align, 1));
-        let ret = add(x, sub(align, 1)) & !sub(align, 1);
-        verify_proof::bits::lemma_bit_u32_and_mask(r, mask);
-        verify_proof::bits::lemma_bit_u32_and_mask(r, !mask);
-        verify_proof::bits::lemma_bit_u64_and_mask(r as u64, mask as u64);
-        verify_proof::bits::lemma_bit_u64_and_mask(r as u64, !sub(align as u64, 1));
-        lemma_align_up(x as u64, align as u64);
-        ret
-    }
-
 }
 
 pub use util_align_up::*;
@@ -139,22 +116,6 @@ mod util_align_down {
     {
         broadcast use group_align_proofs;
 
-    }
-
-    pub proof fn lemma_align_down_u32(x: u32, align: u32)
-        requires
-            align_requires(align as u64),
-        ensures
-            (x & !((align - 1) as u32)) == spec_align_down(x as int, align as int),
-    {
-        broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
-
-        let mask = sub(align, 1);
-        verify_proof::bits::lemma_bit_u32_and_mask(x, mask);
-        verify_proof::bits::lemma_bit_u32_and_mask(x, !mask);
-        verify_proof::bits::lemma_bit_u64_and_mask(x as u64, mask as u64);
-        verify_proof::bits::lemma_bit_u64_and_mask(x as u64, !sub(align as u64, 1));
-        lemma_align_down(x as u64, align as u64);
     }
 
 }
@@ -196,7 +157,7 @@ pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + FromInto
 mod util_integer_align {
     use super::*;
 
-    broadcast use vstd::group_vstd_default, verify_external::external_axiom;
+    broadcast use {vstd::group_vstd_default, verify_external::external_axiom};
 
     impl IntegerAligned for u64 {
         proof fn lemma_is_aligned(val: u64, align: u64, ret: bool) {
@@ -215,15 +176,34 @@ mod util_integer_align {
 
     impl IntegerAligned for usize {
         proof fn lemma_is_aligned(val: usize, align: usize, ret: bool) {
-            u64::lemma_is_aligned(val as u64, align as u64, ret)
+            broadcast use group_align_proofs;
+
         }
 
         proof fn lemma_align_down(val: Self, align: Self, ret: Self) {
-            u64::lemma_align_down(val as u64, align as u64, ret as u64)
+            broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
+
+            let mask = sub(align, 1);
+            verify_proof::bits::lemma_bit_usize_and_mask(val, mask);
+            verify_proof::bits::lemma_bit_usize_and_mask(val, !mask);
+            verify_proof::bits::lemma_bit_u64_and_mask(val as u64, mask as u64);
+            verify_proof::bits::lemma_bit_u64_and_mask(val as u64, !sub(align as u64, 1));
+            lemma_align_down(val as u64, align as u64);
         }
 
         proof fn lemma_align_up(val: Self, align: Self, ret: Self) {
-            u64::lemma_align_up(val as u64, align as u64, ret as u64)
+            assert(align > 0) by {
+                broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
+
+            }
+            let mask = sub(align, 1);
+            let r = add(val, sub(align, 1));
+            let ret = add(val, sub(align, 1)) & !sub(align, 1);
+            verify_proof::bits::lemma_bit_usize_and_mask(r, mask);
+            verify_proof::bits::lemma_bit_usize_and_mask(r, !mask);
+            verify_proof::bits::lemma_bit_u64_and_mask(r as u64, mask as u64);
+            verify_proof::bits::lemma_bit_u64_and_mask(r as u64, !sub(align as u64, 1));
+            lemma_align_up(val as u64, align as u64);
         }
     }
 
@@ -234,11 +214,29 @@ mod util_integer_align {
         }
 
         proof fn lemma_align_down(val: Self, align: Self, ret: Self) {
-            util_align_down::lemma_align_down_u32(val, align);
+            broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
+
+            let mask = sub(align, 1);
+            verify_proof::bits::lemma_bit_u32_and_mask(val, mask);
+            verify_proof::bits::lemma_bit_u32_and_mask(val, !mask);
+            verify_proof::bits::lemma_bit_u64_and_mask(val as u64, mask as u64);
+            verify_proof::bits::lemma_bit_u64_and_mask(val as u64, !sub(align as u64, 1));
+            lemma_align_down(val as u64, align as u64);
         }
 
         proof fn lemma_align_up(val: Self, align: Self, ret: Self) {
-            util_align_up::lemma_align_up_u32(val, align);
+            assert(align > 0) by {
+                broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
+
+            }
+            let mask = sub(align, 1);
+            let r = add(val, sub(align, 1));
+            let ret = add(val, sub(align, 1)) & !sub(align, 1);
+            verify_proof::bits::lemma_bit_u32_and_mask(r, mask);
+            verify_proof::bits::lemma_bit_u32_and_mask(r, !mask);
+            verify_proof::bits::lemma_bit_u64_and_mask(r as u64, mask as u64);
+            verify_proof::bits::lemma_bit_u64_and_mask(r as u64, !sub(align as u64, 1));
+            lemma_align_up(val as u64, align as u64);
         }
     }
 
