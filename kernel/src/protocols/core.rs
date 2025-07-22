@@ -7,12 +7,11 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{this_cpu, this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
-use crate::cpu::vmsa::{vmsa_mut_ref_from_vaddr, vmsa_ref_from_vaddr};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
+use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
@@ -121,8 +120,10 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Time to map the VMSA. No need to clean up the registered VMSA on the
     // error path since this is a fatal error anyway.
-    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr();
+    // SAFETY: the physical address is known to point to a VMSA which is not
+    // already mapped.
+    let new_vmsa = unsafe { PerCPUMapping::<VMSA>::create(paddr)? };
+    let vaddr = new_vmsa.virt_addr();
 
     // Prevent any parallel PVALIDATE requests from being processed
     let lock = PVALIDATE_LOCK.lock_write();
@@ -139,11 +140,10 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
 
-    let new_vmsa = vmsa_ref_from_vaddr(vaddr);
     let svme_mask: u64 = 1u64 << 12;
 
     // VMSA validity checks according to SVSM spec
-    if !check_vmsa(new_vmsa, params.sev_features, svme_mask) {
+    if !check_vmsa(&new_vmsa, params.sev_features, svme_mask) {
         // SAFETY: this address has already been validated as a guest-owned
         // address.
         unsafe {
@@ -176,20 +176,22 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     // Map the VMSA
-    let mapping_guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-    let vaddr = mapping_guard.virt_addr();
+    // SAFETY: the physical address is known to point to a VMSA which is not
+    // already mapped.
+    let mut del_vmsa = unsafe { PerCPUMapping::<VMSA>::create(paddr)? };
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
     // disable() will loop until that is not the case
-    let del_vmsa = vmsa_mut_ref_from_vaddr(vaddr);
     del_vmsa.disable();
 
     // Do not return early here, as we need to do a TLB flush
     // SAFETY: this page is known to already be in use as a guest VMSA.
-    let res = unsafe { rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmReqError::invalid_address()) };
+    let res = unsafe {
+        rmp_clear_guest_vmsa(del_vmsa.virt_addr()).map_err(|_| SvsmReqError::invalid_address())
+    };
 
     // Unmap the page
-    drop(mapping_guard);
+    drop(del_vmsa);
 
     // Tell everyone the news and flush temporary mapping
     flush_tlb_global_sync();

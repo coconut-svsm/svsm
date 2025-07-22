@@ -16,7 +16,7 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
-use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::PerCPUMapping;
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
@@ -27,9 +27,11 @@ use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{is_aligned, MemoryRegion};
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use core::mem;
+use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU32, Ordering};
-use core::{mem, ptr};
 use syscall::GlobalFeatureFlags;
+use zerocopy::FromBytes;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -37,7 +39,7 @@ use bootlib::platform::SvsmPlatformType;
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
-#[derive(Debug)]
+#[derive(Debug, FromBytes)]
 #[repr(C)]
 pub struct TdMailbox {
     pub vcpu_index: AtomicU32,
@@ -46,15 +48,11 @@ pub struct TdMailbox {
 // Both structures must fit in a page
 const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
 
-// SAFETY: caller must ensure `mailbox` points to a valid memory address.
-unsafe fn wakeup_ap(mailbox: *const TdMailbox, cpu_index: usize) {
-    // SAFETY: caller must ensure the address is valid and not aliased.
-    unsafe {
-        // PerCpu's CPU index has a direct mapping to TD vCPU index
-        (*mailbox)
-            .vcpu_index
-            .store(cpu_index.try_into().unwrap(), Ordering::Release);
-    }
+fn wakeup_ap(mailbox: &TdMailbox, cpu_index: usize) {
+    // PerCpu's CPU index has a direct mapping to TD vCPU index
+    mailbox
+        .vcpu_index
+        .store(cpu_index.try_into().unwrap(), Ordering::Release);
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -236,21 +234,25 @@ impl SvsmPlatform for TdpPlatform {
     fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
-        //
-        // transition_cr3 is not needed since all TD APs are using the stage2
-        // page table set up by the BSP.
-        let context = cpu.get_initial_context(start_rip);
-        let mut ap_context = create_ap_start_context(&context, 0);
+        let mut context = cpu.get_initial_context(start_rip);
 
         // Set the initial EFER to zero so that it is not reloaded.  This
         // is necessary since the TDX module does not permit changes to EFER
         // when running in the L1.
-        ap_context.efer = 0;
+        context.efer = 0;
 
         // The mailbox page was already accepted by the BSP in stage2 and
         // therefore it's been initialized as a zero page.
-        let context_pa = PhysAddr::new(SIPI_STUB_GPA as usize);
-        let context_mapping = PerCPUPageMappingGuard::create_4k(context_pa)?;
+        let context_pa = SIPI_STUB_GPA as usize + PAGE_SIZE - mem::size_of::<ApStartContext>();
+        // SAFETY: the physical address is known to point to the location where
+        // the start context is to be created.
+        let mut context_mapping = unsafe {
+            PerCPUMapping::<MaybeUninit<ApStartContext>>::create(PhysAddr::new(context_pa))?
+        };
+
+        // transition_cr3 is not needed since all TD APs are using the stage2
+        // page table set up by the BSP.
+        context_mapping.write(create_ap_start_context(&context, 0));
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.
@@ -261,15 +263,20 @@ impl SvsmPlatform for TdpPlatform {
             hyperv_start_cpu(cpu, &ctx)?;
         }
 
-        // SAFETY: the address of the mailbox page was made valid when the
-        // `PerCPUPageMappingGuard` was created.
-        unsafe {
-            let mbx_va = context_mapping.virt_addr();
-            let size = mem::size_of::<ApStartContext>();
-            let context_ptr = (mbx_va + PAGE_SIZE - size).as_mut_ptr::<ApStartContext>();
-            ptr::copy_nonoverlapping(&ap_context, context_ptr, 1);
-            wakeup_ap(mbx_va.as_ptr::<TdMailbox>(), cpu.get_cpu_index());
-        }
+        drop(context_mapping);
+
+        // The wakeup mailbox lives at the base of the context page.  While it
+        // would be possible to borrow the same per-CPU page mapping as the
+        // context page, this involves unsafe operations, and creating a
+        // separate mapping is entirely safe.  The optimization of reusing
+        // the existing mapping is not significant enough to be worth the use
+        // of unsafe code.
+        // SAFETY: the physical address is known to point to a mailbox
+        // structure.
+        let mailbox =
+            unsafe { PerCPUMapping::<TdMailbox>::create(PhysAddr::from(SIPI_STUB_GPA as usize))? };
+        wakeup_ap(mailbox.as_ref(), cpu.get_cpu_index());
+
         Ok(())
     }
 
