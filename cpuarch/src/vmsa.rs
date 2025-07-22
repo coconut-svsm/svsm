@@ -7,10 +7,10 @@
 #![allow(non_camel_case_types)]
 
 use bitfield_struct::bitfield;
-use zerocopy::FromZeros;
+use zerocopy::FromBytes;
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, FromZeros, PartialEq)]
+#[derive(Clone, Copy, Debug, FromBytes, PartialEq)]
 #[allow(dead_code)]
 pub struct GuestVMExit(u64);
 
@@ -57,7 +57,7 @@ impl GuestVMExit {
 }
 
 #[bitfield(u64)]
-#[derive(FromZeros)]
+#[derive(FromBytes)]
 pub struct VIntrCtrl {
     pub v_tpr: u8,
     pub v_irq: bool,
@@ -104,7 +104,7 @@ impl VmsaEventType {
 }
 
 #[bitfield(u64)]
-#[derive(FromZeros)]
+#[derive(FromBytes)]
 pub struct VmsaEventInject {
     pub vector: u8,
     #[bits(3)]
@@ -117,7 +117,7 @@ pub struct VmsaEventInject {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, Default, Clone, Copy, FromZeros)]
+#[derive(Debug, Default, Clone, Copy, FromBytes)]
 pub struct VMSASegment {
     pub selector: u16,
     pub flags: u16,
@@ -126,7 +126,7 @@ pub struct VMSASegment {
 }
 
 #[repr(C, packed)]
-#[derive(Debug, FromZeros)]
+#[derive(Debug, FromBytes)]
 pub struct VMSA {
     pub es: VMSASegment,
     pub cs: VMSASegment,
