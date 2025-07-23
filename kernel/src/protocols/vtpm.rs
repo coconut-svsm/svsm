@@ -13,7 +13,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::{
     address::{Address, PhysAddr},
-    mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest},
+    mm::access::{
+        Mapping, OwnedMapping, ReadableMapping, ReadableSliceMapping, WriteableSliceMapping,
+    },
     protocols::{errors::SvsmReqError, RequestParams},
     types::PAGE_SIZE,
     vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
@@ -192,7 +194,11 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     //     IN: platform command
     //    OUT: platform command response size
 
-    let command = read_from_guest::<u32>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+    let mapping =
+        OwnedMapping::<_, u32>::map_guest(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+    let command = mapping
+        .read()
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
 
     let cmd = TpmPlatformCommand::try_from(command)?;
 
@@ -203,9 +209,10 @@ fn vtpm_command_request(params: &RequestParams) -> Result<(), SvsmReqError> {
     match cmd {
         TpmPlatformCommand::SendCommand => {
             // The vTPM buffer size is one page, but it not required to be page aligned.
-            let mut buffer = read_bytes_from_guest(paddr, PAGE_SIZE)?;
-            tpm_send_command_request(&mut buffer[..])?;
-            copy_slice_to_guest(&buffer[..], paddr)?;
+            let mut page = mapping.borrow_slice::<u8>(PAGE_SIZE)?;
+            let mut buffer = page.read_to_vec()?;
+            tpm_send_command_request(&mut buffer)?;
+            page.write_from(&buffer)?;
         }
     };
 

@@ -11,12 +11,13 @@ use crate::config::SvsmConfig;
 use crate::cpu::cpuid::copy_cpuid_table_to;
 use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
-use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::access::{Mapping, OwnedMapping, WriteableMapping};
 use crate::platform::PageStateChangeOp;
-use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
+use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags, SecretsPage};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use crate::utils::{zero_mem_region, MemoryRegion};
+use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
+use cpuarch::snp_cpuid::SnpCpuidTable;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 #[derive(Clone, Debug, Default)]
@@ -59,7 +60,11 @@ struct SevMetaDataDesc {
     t: u32,
 }
 
-fn validate_fw_mem_region(
+/// # Safety
+///
+/// The caller must have verified that the given physical memory region is
+/// private to the CVM and that it does not alias SVSM memory.
+unsafe fn validate_fw_mem_region(
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -75,8 +80,10 @@ fn validate_fw_mem_region(
     }
 
     for paddr in region.iter_pages(PageSize::Regular) {
-        let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-        let vaddr = guard.virt_addr();
+        // SAFETY: the caller must uphold the safety requirements for the
+        // physical memory region.
+        let mut guard = unsafe { OwnedMapping::<_, u8>::map_local_slice(paddr, PAGE_SIZE) }?;
+        let vaddr = guard.mapping_vregion().start();
 
         // SAFETY: the virtual address mapping is known to point to the guest
         // physical address range supplied by the caller.
@@ -90,14 +97,18 @@ fn validate_fw_mem_region(
                 PageSize::Regular,
             )?;
 
-            zero_mem_region(vaddr, vaddr + PAGE_SIZE);
+            guard.fill(0)?;
         }
     }
 
     Ok(())
 }
 
-fn validate_fw_memory_vec(
+/// # Safety
+///
+/// The caller must have verified that the given physical memory regions are
+/// private to the CVM and that they do not alias SVSM memory.
+unsafe fn validate_fw_memory_vec(
     config: &SvsmConfig<'_>,
     regions: Vec<MemoryRegion<PhysAddr>>,
 ) -> Result<(), SvsmError> {
@@ -116,8 +127,11 @@ fn validate_fw_memory_vec(
         }
     }
 
-    validate_fw_mem_region(config, region)?;
-    validate_fw_memory_vec(config, next_vec)
+    // SAFETY: the caller must uphold the safety requirements
+    unsafe {
+        validate_fw_mem_region(config, region)?;
+        validate_fw_memory_vec(config, next_vec)
+    }
 }
 
 pub fn validate_fw_memory(
@@ -153,7 +167,9 @@ pub fn validate_fw_memory(
         }
     }
 
-    validate_fw_memory_vec(config, regions)
+    // SAFETY: we've just checked that the firmware regions do not overlap with
+    // the SVSM kernel
+    unsafe { validate_fw_memory_vec(config, regions) }
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
@@ -179,33 +195,28 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     }
 }
 
-fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-
-    // SAFETY: this is called from CPU 0, so the underlying physical address
-    // is not being aliased. We are mapping a full page, which is 4K-aligned,
-    // and is enough for SnpCpuidTable.
-    unsafe {
-        copy_cpuid_table_to(guard.virt_addr());
-    }
-
-    Ok(())
+/// # Safety
+///
+/// The caller must ensure that the given physical address is vaalid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    // SAFETY: the caller must uphold the security requirements
+    let page = unsafe { OwnedMapping::<_, SnpCpuidTable>::map_local(fw_addr) }?;
+    copy_cpuid_table_to(page)
 }
 
-fn copy_secrets_page_to_fw(
+/// # Safety
+///
+/// The caller must ensure that the given physical address is vaalid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn copy_secrets_page_to_fw(
     fw_addr: PhysAddr,
     caa_addr: PhysAddr,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let start = guard.virt_addr();
-
-    // Zero target
-    // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
-    // valid pointer to a correctly mapped region of size PAGE_SIZE.
-    unsafe {
-        zero_mem_region(start, start + PAGE_SIZE);
-    }
+    // SAFETY: the caller must provide a valid physical address
+    let mut page = unsafe { OwnedMapping::<_, SecretsPage>::map_local(fw_addr) }?;
+    page.borrow_slice_at::<u8>(0, PAGE_SIZE)?.fill(0)?;
 
     // Copy secrets page
     let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
@@ -216,46 +227,45 @@ fn copy_secrets_page_to_fw(
         u64::from(caa_addr),
     );
 
-    // SAFETY: start points to a new allocated and zeroed page.
-    unsafe {
-        fw_secrets_page.copy_to(start);
-    }
-
-    Ok(())
+    page.write(fw_secrets_page)
 }
 
-fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
-    let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
-    let vaddr = guard.virt_addr();
-
-    // SAFETY: we trust PerCPUPageMappingGuard::create_4k() to return a
-    // valid pointer to a correctly mapped region of size PAGE_SIZE.
-    unsafe {
-        zero_mem_region(vaddr, vaddr + PAGE_SIZE);
-    }
-
-    Ok(())
+/// # Safety
+///
+/// The caller must ensure that the given physical address is valid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+    // SAFETY: caller must ensure that the given address is valid
+    unsafe { OwnedMapping::<_, u8>::map_local_slice(fw_addr, PAGE_SIZE) }?.fill(0)
 }
 
-pub fn copy_tables_to_fw(
+pub unsafe fn copy_tables_to_fw(
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     if let Some(addr) = fw_meta.cpuid_page {
-        copy_cpuid_table_to_fw(addr)?;
+        // SAFETY: caller must ensure physical addresses in fw_meta are
+        // valid
+        unsafe { copy_cpuid_table_to_fw(addr) }?;
     }
 
     let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
     let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
 
-    copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
-
-    zero_caa_page(caa_page)?;
+    // SAFETY: caller must ensure physical addresses in fw_meta are valid
+    unsafe {
+        copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
+        zero_caa_page(caa_page)?;
+    };
 
     Ok(())
 }
 
-pub fn validate_fw(
+/// # Safety
+///
+/// The caller must have verified that the firmware physical memory regions in
+/// `config` are private to the CVM and that they do not alias SVSM memory.
+pub unsafe fn validate_fw(
     config: &SvsmConfig<'_>,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -270,8 +280,10 @@ pub fn validate_fw(
         );
 
         for paddr in region.iter_pages(PageSize::Regular) {
-            let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
-            let vaddr = guard.virt_addr();
+            // SAFETY: the caller must uphold the safety requirements for this
+            // function.
+            let guard = unsafe { OwnedMapping::<_, u8>::map_local_slice(paddr, PAGE_SIZE) }?;
+            let vaddr = guard.mapping_vregion().start();
             // SAFETY: the address is known to be a guest page.
             if let Err(e) = unsafe {
                 rmp_adjust(

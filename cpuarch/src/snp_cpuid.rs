@@ -4,9 +4,11 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use zerocopy::IntoBytes;
+
 const SNP_CPUID_MAX_COUNT: usize = 64;
 
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, IntoBytes)]
 #[repr(C, packed)]
 pub struct SnpCpuidFn {
     pub eax_in: u32,
@@ -20,7 +22,7 @@ pub struct SnpCpuidFn {
     pub reserved_1: u64,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, IntoBytes)]
 #[repr(C, packed)]
 pub struct SnpCpuidTable {
     pub count: u32,

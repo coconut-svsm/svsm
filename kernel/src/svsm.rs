@@ -326,8 +326,12 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
-    populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
-        .expect("Failed to unpack FS archive");
+    // SAFETY: we trust the LAUNCH_INFO addresses. We never mutably reference the
+    // initial RAM filesystem.
+    unsafe {
+        populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
+            .expect("Failed to unpack FS archive")
+    }
 
     init_capabilities();
 

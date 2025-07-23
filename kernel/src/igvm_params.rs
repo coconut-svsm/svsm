@@ -10,7 +10,8 @@ use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo, ACPITable};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
-use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
+use crate::mm::access::{Mapping, OwnedMapping, WriteableSliceMapping};
+use crate::mm::PAGE_SIZE;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SevFWMetaData, SVSM_PLATFORM};
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
@@ -195,9 +196,18 @@ impl IgvmParams<'_> {
             mem_map_region.len(),
         );
 
-        let mem_map_mapping =
-            PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
-        let mem_map_va = mem_map_mapping.virt_addr();
+        // Calculate the maximum number of entries that can be inserted.
+        let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE
+            / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+        // Return an error if an overflow occurs.
+        if map.len() > max_entries {
+            return Err(SvsmError::Firmware);
+        }
+
+        let mem_map = OwnedMapping::<_, IGVM_VHS_MEMORY_MAP_ENTRY>::map_guest_slice(
+            mem_map_region.start(),
+            max_entries.min(map.len()),
+        )?;
 
         // The guest expects the pages in the memory map to be treated like
         // host-provided IGVM parameters, which requires the pages to be
@@ -211,58 +221,46 @@ impl IgvmParams<'_> {
             )?;
         }
 
-        let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
         // SAFETY: the virtual address region was created above to map the
         // specified physical address range and is therefore safe.
         unsafe {
             SVSM_PLATFORM
-                .validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+                .validate_virtual_page_range(mem_map.mapping_vregion(), PageValidateOp::Validate)?;
         }
 
-        // Calculate the maximum number of entries that can be inserted.
-        let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE
-            / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
-
-        // Generate a guest pointer range to hold the memory map.
-        let mem_map = GuestPtr::new(mem_map_va);
-
+        const ENTRY_SIZE: usize = size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
         for (i, entry) in map.iter().enumerate() {
-            // Return an error if an overflow occurs.
-            if i >= max_entries {
-                return Err(SvsmError::Firmware);
-            }
-
-            // SAFETY: mem_map_va points to newly mapped memory, whose physical
-            // address is defined in the IGVM config.
+            let mut buf = [0u8; ENTRY_SIZE];
+            // SAFETY: IGVM_VHS_MEMORY_MAP_ENTRY does not implement IntoBytes
+            // because the igvm_defs crate uses an older version of zerocopy
+            // which does not have this trait. The type however is a plain C
+            // structure with no invalid representations, so do the transmute
+            // manually.
             unsafe {
+                // FIXME: write the structure directly once it implements IntoBytes
+                let ptr = core::mem::transmute::<
+                    &mut [u8; ENTRY_SIZE],
+                    &mut IGVM_VHS_MEMORY_MAP_ENTRY,
+                >(&mut buf);
+                *ptr = IGVM_VHS_MEMORY_MAP_ENTRY {
+                    starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
+                    number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
+                    entry_type: MemoryMapEntryType::default(),
+                    flags: 0,
+                    reserved: 0,
+                };
                 mem_map
-                    .offset(i as isize)
-                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
-                        starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
-                        number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
-                        entry_type: MemoryMapEntryType::default(),
-                        flags: 0,
-                        reserved: 0,
-                    })?;
-            }
+                    .borrow_slice_at::<u8>(i * ENTRY_SIZE, ENTRY_SIZE)?
+                    .write_from(&buf)?;
+            };
         }
 
         // Write a zero page count into the last entry to terminate the list.
-        let index = map.len();
-        if index < max_entries {
-            // SAFETY: mem_map_va points to newly mapped memory, whose physical
-            // address is defined in the IGVM config.
-            unsafe {
-                mem_map
-                    .offset(index as isize)
-                    .write(IGVM_VHS_MEMORY_MAP_ENTRY {
-                        starting_gpa_page_number: 0,
-                        number_of_pages: 0,
-                        entry_type: MemoryMapEntryType::default(),
-                        flags: 0,
-                        reserved: 0,
-                    })?;
-            }
+        if map.len() < max_entries {
+            let buf = [0u8; ENTRY_SIZE];
+            mem_map
+                .borrow_slice_at::<u8>(map.len() * ENTRY_SIZE, ENTRY_SIZE)?
+                .write_from(&buf)?;
         }
 
         Ok(())
