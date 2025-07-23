@@ -148,7 +148,7 @@ fi
 
 # Setup a disk if an image has been specified
 if [ ! -z $IMAGE ]; then
-  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=on \
+  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=off \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
     -device scsi-hd,drive=disk0"
 fi
@@ -191,7 +191,7 @@ $SUDO_CMD \
     $SNP_GUEST \
     -smp 4 \
     -no-reboot \
-    -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
+    -netdev user,id=vmnic,hostfwd=tcp::5555-:22 -device e1000,netdev=vmnic,romfile= \
     $IMAGE_DISK \
     -nographic \
     -vga none \
