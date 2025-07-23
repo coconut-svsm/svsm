@@ -40,22 +40,8 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy on no_std x86_64-unknown-none
-        run: cargo clippy --all-features --package svsm --target=x86_64-unknown-none -- -D warnings
-
-      - name: Clippy on std x86_64-unknown-linux-gnu
-        run: cargo clippy --all-features --workspace --exclude svsm --exclude stage1 --exclude svsm-fuzz -- -D warnings
-
-      - name: Clippy on stage1
-        run: cargo clippy --all-features --package stage1 --target=x86_64-unknown-none -- -D warnings -C panic=abort
-
-      - name: Clippy on svsm-fuzz
-        run: cargo clippy --all-features --package svsm-fuzz -- -D warnings
-        env:
-          RUSTFLAGS: --cfg fuzzing
-
-      - name: Clippy on tests
-        run: cargo clippy --all-features --workspace --tests --exclude packit -- -D warnings
+      - name: Clippy
+        run: make clippy
 
       - name: Check documentation
         run: make doc
