@@ -132,11 +132,19 @@ fn real_mode_sys_seg(flags: u16) -> VMSASegment {
     }
 }
 
-pub fn vmsa_ref_from_vaddr(vaddr: VirtAddr) -> &'static VMSA {
+/// # Safety
+/// The caller must only call this function on a page that was committed for
+/// use as a guest VMSA.
+pub unsafe fn vmsa_ref_from_vaddr(vaddr: VirtAddr) -> &'static VMSA {
+    // SAFETY: the caller guarantees that this address can be used as a guest VMSA
     unsafe { vaddr.as_ptr::<VMSA>().as_ref().unwrap() }
 }
 
-pub fn vmsa_mut_ref_from_vaddr(vaddr: VirtAddr) -> &'static mut VMSA {
+/// # Safety
+/// The caller must only call this function on a page that was committed for
+/// use as a guest VMSA.
+pub unsafe fn vmsa_mut_ref_from_vaddr(vaddr: VirtAddr) -> &'static mut VMSA {
+    // SAFETY: the caller guarantees that this address can be used as a guest VMSA
     unsafe { vaddr.as_mut_ptr::<VMSA>().as_mut().unwrap() }
 }
 
