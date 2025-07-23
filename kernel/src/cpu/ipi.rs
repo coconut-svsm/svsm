@@ -673,24 +673,22 @@ mod tests {
         }
     }
 
-    /// # Safety
-    /// The test IPI method has no references that are consumed as part of the
-    /// message (the `drop_count` reference is only used on the sending the
-    /// CPU, and this is enforced in the drop method) and therefore the message
-    /// can safely use the default copy implementations from the IPI message
-    /// traits.
+    // SAFETY: The test IPI method has no references that are consumed as part
+    // of the message (the `drop_count` reference is only used on the sending
+    // the CPU, and this is enforced in the drop method) and therefore the
+    // message can safely use the default copy implementations from the IPI
+    // message traits.
     unsafe impl IpiMessage for TestIpi<'_> {
         fn invoke(&self) {
             assert_eq!(self.value, 4);
         }
     }
 
-    /// # Safety
-    /// The test IPI method has no references that are consumed as part of the
-    /// message (the `drop_count` reference is only used on the sending the
-    /// CPU, and this is enforced in the drop method) and therefore the message
-    /// can safely use the default copy implementations from the IPI message
-    /// traits.
+    // SAFETY: The test IPI method has no references that are consumed as part
+    // of the message (the `drop_count` reference is only used on the sending
+    // the CPU, and this is enforced in the drop method) and therefore the
+    // message can safely use the default copy implementations from the IPI
+    // message traits.
     unsafe impl IpiMessageMut for TestIpi<'_> {
         fn invoke(&mut self) {
             self.value += 1;
@@ -734,10 +732,9 @@ mod tests {
         cpu_count: AtomicUsize,
     }
 
-    /// # Safety
-    /// The test IPI method has no references and can safely use the default
-    /// copy implementations from the IPI message traits.  It requires a
-    /// finalize routine to capture the atomic result.
+    // SAFETY: The test IPI method has no references and can safely use the
+    // default copy implementations from the IPI message traits.  It requires a
+    // finalize routine to capture the atomic result.
     unsafe impl IpiMessage for AtomicIpi {
         fn invoke(&self) {
             self.cpu_count.fetch_add(1, Ordering::Relaxed);
