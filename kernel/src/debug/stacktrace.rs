@@ -55,6 +55,8 @@ fn is_stage2() -> bool {
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
+        // SAFETY: Inline assembly to read RPB, which does not change any state
+        // related to memory safety.
         unsafe {
             asm!("movq %rbp, {}", out(reg) rbp,
                  options(att_syntax));
@@ -157,9 +159,17 @@ impl StackUnwinder {
         }
 
         // Saved %rbp
+        //
+        // SAFETY: This function always works on the stacks of the current
+        // context, so de-referencing pointers from the stacks of the context
+        // is safe.
         let rbp = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
         // Return address
+        //
+        // SAFETY: This function always works on the stacks of the current
+        // context, so de-referencing pointers from the stacks of the context
+        // is safe.
         let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
 

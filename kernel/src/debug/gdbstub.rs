@@ -4,6 +4,12 @@
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
 
+// Some unsafe blocks can really compromise memory safety, so we are unable to
+// provide appropriate SAFETY comments. However, this is acceptable since
+// all public functions are a nop if `enable-gdb` feature is disabled.
+// `enable-gdb` can't be enabled on release builds.
+#![allow(clippy::undocumented_unsafe_blocks)]
+
 //
 // For release builds this module should not be compiled into the
 // binary. See the bottom of this file for placeholders that are
@@ -11,6 +17,11 @@
 //
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
+    // Comment the following 2 lines if you really want to enable gdbstub in
+    // release build because memory safety is not guaranteed.
+    #[cfg(not(debug_assertions))]
+    compile_error!("This module must not be built in release mode!");
+
     use crate::address::{Address, VirtAddr};
     use crate::cpu::control_regs::read_cr3;
     use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, DB_VECTOR, VC_VECTOR};
@@ -44,11 +55,21 @@ pub mod svsm_gdbstub {
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
 
+    /// # Safety
+    ///
+    /// Starting the gdbstub is not multi-thread safe, so the caller must
+    /// ensure to call this function on a single processor.
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
     // The static mutable reference to the stack is protected by the GDB_STATE lock.
     #[allow(static_mut_refs)]
-    pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+    pub unsafe fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+        let mut target = GdbStubTarget::new();
+        // SAFETY: the caller guarantees to call this function on a single processor,
+        // so it's safe to use mutable static variables.
         unsafe {
-            let mut target = GdbStubTarget::new();
             #[expect(static_mut_refs)]
             let gdb = GdbStubBuilder::new(GdbStubConnection::new(platform))
                 .with_packet_buffer(&mut PACKET_BUFFER)
@@ -81,7 +102,12 @@ pub mod svsm_gdbstub {
         }
     }
 
-    pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let exception_type = ExceptionType::from(exception);
         let id = this_cpu().runqueue().lock_read().current_task_id();
         let mut task_ctx = TaskContext {
@@ -164,11 +190,18 @@ pub mod svsm_gdbstub {
         }
     }
 
-    pub fn debug_break() {
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn debug_break() {
         if GDB_INITIALISED.load(Ordering::Acquire) {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
+            // SAFETY: Inline assembly to generate a software interrupt,
+            // which does not change any state related to memory safety.
             unsafe {
                 asm!("int3");
             }
@@ -187,8 +220,10 @@ pub mod svsm_gdbstub {
     }
 
     impl GdbTaskContext {
+        // FIXME: This is unsafe and might cause a crash, but okay until we find
+        // a better way since this is a debug module.
         #[must_use = "The task switch will have no effect if the context is dropped"]
-        fn switch_to_task(id: u32) -> Self {
+        unsafe fn switch_to_task(id: u32) -> Self {
             let cr3 = if is_current_task(id) {
                 0
             } else {
@@ -196,6 +231,10 @@ pub mod svsm_gdbstub {
                 let cr3 = read_cr3();
                 let task = tl.get_task(id);
                 if let Some(task) = task {
+                    // FIXME: cr3 being switched to might not map the current
+                    // CPUs per-cpu space. This might cause a crash when any
+                    // external event, like an #HV comes in when in the other
+                    // tasks context.
                     unsafe {
                         task.page_table.lock().load();
                     }
@@ -211,6 +250,8 @@ pub mod svsm_gdbstub {
     impl Drop for GdbTaskContext {
         fn drop(&mut self) {
             if self.cr3 != 0 {
+                // SAFETY: This is safe because it just restores the previous
+                // page-table, given that the percpu mappings is taken care of.
                 unsafe {
                     asm!("mov %rax, %cr3",
                          in("rax") self.cr3,
@@ -476,8 +517,9 @@ pub mod svsm_gdbstub {
                 if let Some(task) = task {
                     // The registers are stored in the top of the task stack as part of the
                     // saved context. We need to switch to the task pagetable to access them.
-                    let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+                    // FIXME: GdbTaskContext::switch_to_task() could be dangerous
                     unsafe {
+                        let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
                     regs.regs[7] = task.rsp;
@@ -528,7 +570,8 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             // Switch to the task pagetable if necessary. The switch back will
             // happen automatically when the variable falls out of scope
-            let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+            // FIXME: GdbTaskContext::switch_to_task() could be dangerous
+            let _task_context = unsafe { GdbTaskContext::switch_to_task(tid.get() as u32) };
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
                 // SAFETY: Unsafe but ok since this is a debug access
@@ -752,11 +795,29 @@ pub mod svsm_gdbstub {
     use crate::cpu::X86ExceptionContext;
     use crate::platform::SvsmPlatform;
 
-    pub fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+    /// # Safety
+    ///
+    /// Starting the gdbstub is not multi-thread safe, so the caller must
+    /// ensure to call this function on a single processor.
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn gdbstub_start(_platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         Ok(())
     }
 
-    pub fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn handle_debug_exception(_ctx: &mut X86ExceptionContext, _exception: usize) {}
 
-    pub fn debug_break() {}
+    /// # Safety
+    ///
+    /// Some gdbstub operations are very dangerous and could compromise memory
+    /// safety, but these are not avoidable for now, so the caller must be sure
+    /// to use gdbstub carefully (and only in debug mode).
+    pub unsafe fn debug_break() {}
 }
