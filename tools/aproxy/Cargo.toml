@@ -11,9 +11,11 @@ kbs-types.workspace = true
 anyhow = "1.0.93"
 base64 = { workspace = true, features = ["std"] }
 clap = { version = "4.5", features = ["derive"] }
+const_format = "0.2"
 libaproxy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+vsock = "0.5.1"
 
 [lints]
 workspace = true

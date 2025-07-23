@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 
 type Result<T> = core::result::Result<T, Error>;
 
+/// Default vsock port used for communicating with the proxy
+pub const ATTEST_DEFAULT_VSOCK_PORT: u32 = 1995;
+
 /// The format of the public key that is used to encrypt secrets sent to SVSM upon successful
 /// attestation.
 ///
