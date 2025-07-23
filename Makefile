@@ -11,9 +11,6 @@ endif
 
 CLIPPY_OPTIONS ?=
 CLIPPY_ARGS ?= -D warnings
-ifdef UNSAFE_BLOCKS
-CLIPPY_ARGS += -W warnings -W clippy::undocumented_unsafe_blocks
-endif
 
 ifdef RELEASE
 TARGET_PATH=release
