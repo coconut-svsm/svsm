@@ -31,11 +31,8 @@ jobs:
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
-      # ubuntu-latest does not have binutils 2.39, which we need for
-      # ld to work, so build all the objects without performing the
-      # final linking step.
       - name: Build
-        run: make FEATURES="default,enable-gdb" STAGE1_RUSTC_ARGS="--emit=obj -C linker=/usr/bin/true" stage1_elf_full stage1_elf_trampoline
+        run: make FEATURES="default,enable-gdb"
 
       - name: Run tests
         run: make test
