@@ -140,13 +140,9 @@ pub struct UefiMmManifestFlags {
 
 #[allow(dead_code)]
 #[derive(IntoBytes, Immutable)]
-struct UefiMmManifestHeader {
+struct UefiMmManifest {
+    pub version: u32,
     pub flags: UefiMmManifestFlags,
-    // number of 'db' bytes (following this header).
-    // This should only be included in case secure boot is enabled.
-    pub db_size: u32,
-    // same for 'dbx'
-    pub dbx_size: u32,
 }
 
 pub fn uefi_mm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
@@ -155,43 +151,11 @@ pub fn uefi_mm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
     let pk = store.get("PK", &guids::EfiGlobalVariable);
     let sb = pk.is_ok();
 
-    let db;
-    let dbx;
-    if sb {
-        db = store.get("db", &guids::EfiImageSecurityDatabase).ok();
-        dbx = store.get("dbx", &guids::EfiImageSecurityDatabase).ok();
-    } else {
-        db = None;
-        dbx = None;
-    }
-
-    let db_size = match db {
-        Some(v) => v.data.len() as u32,
-        None => 0,
-    };
-    let dbx_size = match dbx {
-        Some(v) => v.data.len() as u32,
-        None => 0,
-    };
-
     let flags = UefiMmManifestFlags::new()
         .with_persistent_nv_vars(false)
         .with_secureboot_enabled(sb)
         .with_secureboot_dbs_writable(false);
-    let header = UefiMmManifestHeader {
-        flags,
-        db_size,
-        dbx_size,
-    };
+    let manifest = UefiMmManifest { version: 1, flags };
 
-    let mut manifest = Vec::new();
-    manifest.extend_from_slice(header.as_bytes());
-    if let Some(v) = db {
-        manifest.extend_from_slice(&v.data);
-    }
-    if let Some(v) = dbx {
-        manifest.extend_from_slice(&v.data);
-    }
-
-    Ok(manifest)
+    Ok(manifest.as_bytes().to_vec())
 }
