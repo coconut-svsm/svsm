@@ -132,7 +132,7 @@ pub struct UefiMmManifestFlags {
     // secure boot databases ('db' + 'dbx') can be updated by the
     // guest (assuming proper pkcs7 signature of course).
     // This should only be set in case secure boot is enabled.
-    pub secureboot_dbs_writable: bool,
+    pub secureboot_db_update: bool,
 
     #[bits(29)]
     _reserved: u32,
@@ -154,8 +154,8 @@ pub fn uefi_mm_get_manifest() -> Result<Vec<u8>, SvsmReqError> {
     let flags = UefiMmManifestFlags::new()
         .with_persistent_nv_vars(false)
         .with_secureboot_enabled(sb)
-        .with_secureboot_dbs_writable(false);
-    let manifest = UefiMmManifest { version: 1, flags };
+        .with_secureboot_db_update(false);
+    let manifest = UefiMmManifest { version: 0, flags };
 
     Ok(manifest.as_bytes().to_vec())
 }
