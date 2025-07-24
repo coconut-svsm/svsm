@@ -9,6 +9,7 @@ use crate::utils::util::{
 };
 use verify_external::convert::{exists_into, forall_into, FromSpec};
 use verify_external::hw_spec::SpecVAddrImpl;
+use vstd::raw_ptr::{ptr_from_data, ptr_mut_from_data, PtrData};
 use vstd::set_lib::set_int_range;
 use vstd::std_specs::cmp::PartialOrdSpec;
 use vstd::std_specs::ops::AddSpec;
@@ -402,6 +403,7 @@ impl vstd::std_specs::ops::AddSpecImpl<InnerAddr> for PhysAddr {
     }
 }
 
+/// Assumptions for PartialOrd since it is derived.
 impl vstd::std_specs::cmp::PartialOrdSpecImpl<VirtAddr> for VirtAddr {
     open spec fn obeys_partial_cmp_spec() -> bool {
         true
@@ -412,6 +414,7 @@ impl vstd::std_specs::cmp::PartialOrdSpecImpl<VirtAddr> for VirtAddr {
     }
 }
 
+/// Assumptions for PartialOrd since it is derived.
 impl vstd::std_specs::cmp::PartialOrdSpecImpl<PhysAddr> for PhysAddr {
     open spec fn obeys_partial_cmp_spec() -> bool {
         true
@@ -419,6 +422,42 @@ impl vstd::std_specs::cmp::PartialOrdSpecImpl<PhysAddr> for PhysAddr {
 
     open spec fn partial_cmp_spec(&self, other: &PhysAddr) -> Option<core::cmp::Ordering> {
         PartialOrdSpec::partial_cmp_spec(&self@, &other@)
+    }
+}
+
+/// Assumptions for PartialEq since it is derived.
+pub assume_specification[ <VirtAddr as PartialEq<VirtAddr>>::eq ](
+    x: &VirtAddr,
+    y: &VirtAddr,
+) -> bool
+;
+
+/// Assumptions for PartialEq since it is derived.
+impl vstd::std_specs::cmp::PartialEqSpecImpl<VirtAddr> for VirtAddr {
+    open spec fn obeys_eq_spec() -> bool {
+        true
+    }
+
+    open spec fn eq_spec(&self, other: &VirtAddr) -> bool {
+        self@ == other@
+    }
+}
+
+/// Assumptions for PartialEq since it is derived.
+pub assume_specification[ <PhysAddr as PartialEq<PhysAddr>>::eq ](
+    x: &PhysAddr,
+    y: &PhysAddr,
+) -> bool
+;
+
+/// Assumptions for PartialEq since it is derived.
+impl vstd::std_specs::cmp::PartialEqSpecImpl<PhysAddr> for PhysAddr {
+    open spec fn obeys_eq_spec() -> bool {
+        true
+    }
+
+    open spec fn eq_spec(&self, other: &PhysAddr) -> bool {
+        self@ == other@
     }
 }
 
