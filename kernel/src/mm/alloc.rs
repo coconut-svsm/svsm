@@ -735,14 +735,10 @@ impl MemoryRegion {
 
     /// Allocates a slab page.
     fn allocate_slab_page(&mut self, item_size: u16) -> Result<VirtAddr, AllocError> {
-        self.refill_page_list(0)?;
-
-        let pfn = self.get_next_page(0)?;
         let pg = PageInfo::Slab(SlabPageInfo {
             item_size: u64::from(item_size),
         });
-        self.write_page_info(pfn, pg);
-        Ok(self.start_virt + (pfn * PAGE_SIZE))
+        self.allocate_pages_info(0, pg)
     }
 
     /// Allocates a file page with initial reference count.
