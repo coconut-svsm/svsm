@@ -14,6 +14,8 @@ use crate::{
     serial::SerialPort,
     utils::vec::{try_to_vec, vec_sized},
 };
+#[cfg(feature = "vsock")]
+use crate::{types::ATTEST_DEFAULT_VSOCK_PORT, vsock::stream::VsockStream, vsock::VMADDR_CID_HOST};
 use aes::{cipher::BlockDecrypt, Aes256Dec};
 use aes_gcm::KeyInit;
 use alloc::{string::ToString, vec::Vec};
@@ -38,22 +40,57 @@ use serde::Serialize;
 use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
+use crate::types::ATTEST_DEFAULT_SERIAL_IO_ADDR;
+
 enum Transport<'a> {
+    #[cfg(feature = "vsock")]
+    Vsock(VsockStream),
     Serial(SerialPort<'a>),
 }
 
 impl Transport<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
         match self {
+            #[cfg(feature = "vsock")]
+            Transport::Vsock(vsock) => vsock.write(buf),
             Transport::Serial(serial) => serial.write(buf),
         }
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
         match self {
+            #[cfg(feature = "vsock")]
+            Transport::Vsock(vsock) => vsock.read(buf),
             Transport::Serial(serial) => serial.read(buf),
         }
     }
+
+    #[cfg(feature = "vsock")]
+    fn new() -> Self {
+        match VsockStream::connect(ATTEST_DEFAULT_VSOCK_PORT, VMADDR_CID_HOST) {
+            Ok(value) => Transport::Vsock(value),
+            Err(e) => {
+                log::info!(
+                    "Vsock error: {:?} occurred when attempting to start attestation on port {}. Attempting to start again using the serial port.",
+                    e, ATTEST_DEFAULT_VSOCK_PORT
+                );
+                create_serial_transport()
+            }
+        }
+    }
+
+    #[cfg(not(feature = "vsock"))]
+    fn new() -> Self {
+        create_serial_transport()
+    }
+}
+
+fn create_serial_transport<'a>() -> Transport<'a> {
+    // TODO: Make the IO port configurable/discoverable for other transport mechanisms such as
+    // virtio-vsock.
+    let sp = SerialPort::new(&DEFAULT_IO_DRIVER, ATTEST_DEFAULT_SERIAL_IO_ADDR);
+    sp.init();
+    Transport::Serial(sp)
 }
 
 /// The attestation driver that communicates with the proxy via some communication channel (serial
@@ -69,11 +106,6 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
     type Error = SvsmError;
 
     fn try_from(tee: Tee) -> Result<Self, Self::Error> {
-        // TODO: Make the IO port configurable/discoverable for other transport mechanisms such as
-        // virtio-vsock.
-        let sp = SerialPort::new(&DEFAULT_IO_DRIVER, 0x3e8); // COM3
-        sp.init();
-
         match tee {
             Tee::Snp => (),
             _ => return Err(AttestationError::UnsupportedTee.into()),
@@ -82,7 +114,8 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        let transport = Transport::Serial(sp);
+        let transport = Transport::new();
+
         Ok(Self {
             transport,
             tee,
