@@ -8,6 +8,8 @@
 set -e
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+VSOCK_PORT=12345
+VSOCK_CID=10
 
 test_io(){
     PIPE_IN=$1
@@ -28,6 +30,13 @@ test_io(){
             "02")
               sha256sum "$TEST_DIR/svsm_state.raw" | cut -f 1 -d ' ' | xxd -p -r > "$PIPE_IN"
               ;;
+            "03")
+              # virtio-vsock in svsm does not handle half duplex connections.
+              echo -n "hello_world" | ncat --no-shutdown -l --vsock -p $VSOCK_PORT &
+              sleep 1
+              # write port number as an unsigned int and not as ascii
+              python3 -c "import sys,struct; sys.stdout.buffer.write(struct.pack('I', $VSOCK_PORT))" > $PIPE_IN
+              ;;
             "")
                 # skip EOF
                 ;;
@@ -44,15 +53,22 @@ mkfifo $TEST_DIR/pipe.out
 # Create a raw disk image (512kB in size) for virtio-blk tests containing random data
 dd if=/dev/urandom of="$TEST_DIR/svsm_state.raw" bs=512 count=1024
 
-test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out &
-TEST_IO_PID=$!
-
 LAUNCH_GUEST_ARGS=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
     --nocc)
       LAUNCH_GUEST_ARGS+="--nocc "
+      shift
+      ;;
+    --vsock-cid)
+      VSOCK_CID="$2"
+      shift
+      shift
+      ;;
+    --vsock-port)
+      VSOCK_PORT="$2"
+      shift
       shift
       ;;
     --)
@@ -66,9 +82,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out &
+TEST_IO_PID=$!
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
+    --vsock "$VSOCK_CID" \
     --unit-tests $TEST_DIR/pipe \
     $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
 
