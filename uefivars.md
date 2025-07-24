@@ -51,7 +51,13 @@ protocol guid or an efi event guid), and therefore also the format of
 the request data following this header.  The `size` field specified
 the size of the request data (excluding the header).
 
-### edk2 references
+### uefi spec references
+
+ * UEFI Platform Initialization Specification, section IV-5.7 "MM
+   Communication Protocol" describes the EFI_MM_COMMUNICATE_HEADER
+   struct.
+
+### edk2 code references
 
  * MdePkg/Include/Protocol/MmCommunication.h
  * MdeModulePkg/Include/Guid/SmmVariableCommon.h
