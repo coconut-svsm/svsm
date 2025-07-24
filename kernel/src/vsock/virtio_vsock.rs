@@ -171,3 +171,81 @@ impl Write for VsockStream {
             .map_err(|_| SvsmError::Vsock(VsockError::SendFailed))
     }
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use crate::{
+        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
+    };
+
+    use super::*;
+
+    fn start_vsock_server_host() {
+        use crate::serial::Terminal;
+        use crate::testing::{svsm_test_io, IORequest};
+
+        let sp = svsm_test_io().unwrap();
+
+        sp.put_byte(IORequest::StartVsockServer as u8);
+
+        let _ = sp.get_byte();
+    }
+
+    fn get_vsock_device() -> VirtIOVsockDriver {
+        let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
+
+        let dev = cfg
+            .get_virtio_mmio_addresses()
+            .unwrap_or_default()
+            .iter()
+            .find_map(|a| VirtIOVsockDriver::new(PhysAddr::from(*a)).ok())
+            .expect("No virtio-vsock device found");
+
+        dev
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let device = get_vsock_device();
+
+        let cid = 2;
+        let local_port = 1234;
+        let remote_port = 12345;
+
+        device
+            .connect(cid, local_port, remote_port)
+            .expect("Connection failed");
+
+        device
+            .connect(cid, local_port, remote_port)
+            .expect_err("The second connection operation was expected to fail, but it succeeded.");
+
+        let mut buffer: [u8; 11] = [0; 11];
+        let n_bytes = device
+            .recv(cid, local_port, remote_port, &mut buffer)
+            .expect("Recv failed");
+
+        assert!(
+            n_bytes == buffer.len(),
+            "Received less bytes than requested"
+        );
+
+        let string = core::str::from_utf8(&buffer).unwrap();
+        log::info!("received: {string:?}");
+
+        device
+            .close(cid, local_port, remote_port)
+            .expect("Close failed");
+
+        device
+            .send(cid, local_port, remote_port, &buffer)
+            .expect_err("The send operation was expected to fail, but it succeeded.");
+    }
+}
