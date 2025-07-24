@@ -33,11 +33,35 @@ use serde::Serialize;
 use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
+enum Transport<'a> {
+    Serial(SerialPort<'a>),
+}
+
+impl Read for Transport<'_> {
+    type Err = SvsmError;
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Err> {
+        match self {
+            Transport::Serial(serial) => serial.read(buf),
+        }
+    }
+}
+
+impl Write for Transport<'_> {
+    type Err = SvsmError;
+
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Err> {
+        match self {
+            Transport::Serial(serial) => serial.write(buf),
+        }
+    }
+}
+
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
 #[allow(missing_debug_implementations)]
 pub struct AttestationDriver<'a> {
-    sp: SerialPort<'a>,
+    transport: Transport<'a>,
     tee: Tee,
     ecc: EccKey,
 }
@@ -59,7 +83,12 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        Ok(Self { sp, tee, ecc })
+        let transport = Transport::Serial(sp);
+        Ok(Self {
+            transport,
+            tee,
+            ecc,
+        })
     }
 }
 
@@ -184,7 +213,7 @@ impl AttestationDriver<'_> {
     fn read(&mut self) -> Result<Vec<u8>, AttestationError> {
         let len = {
             let mut bytes = [0u8; 8];
-            self.sp
+            self.transport
                 .read(&mut bytes)
                 .or(Err(AttestationError::ProxyRead))?;
 
@@ -193,7 +222,7 @@ impl AttestationDriver<'_> {
 
         let mut buf: Vec<u8> = vec_sized(len).or(Err(AttestationError::VecAlloc))?;
 
-        self.sp
+        self.transport
             .read(&mut buf)
             .or(Err(AttestationError::ProxyRead))?;
 
@@ -206,10 +235,10 @@ impl AttestationDriver<'_> {
 
         // The receiving party is unaware of how many bytes to read from the port. Write an 8-byte
         // header indicating the length of the buffer before writing the buffer itself.
-        self.sp
+        self.transport
             .write(&bytes.len().to_ne_bytes())
             .or(Err(AttestationError::ProxyWrite))?;
-        self.sp
+        self.transport
             .write(&bytes)
             .or(Err(AttestationError::ProxyWrite))?;
 
