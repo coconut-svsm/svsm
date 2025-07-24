@@ -39,6 +39,8 @@ pub enum IORequest {
     GetLaunchMeasurement = 0x01,
     /// Virtio-blk tests: Get Sha256 hash of the svsm state disk image
     GetStateImageSha256 = 0x02,
+    /// Virtio-vsock tests: Ask host to start a vsock server
+    StartVsockServer = 0x03,
 }
 
 /// Return the serial port to communicate with the host for a given request

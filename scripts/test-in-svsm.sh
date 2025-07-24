@@ -28,6 +28,12 @@ test_io(){
             "02")
               sha256sum "$TEST_DIR/svsm_state.raw" | cut -f 1 -d ' ' | xxd -p -r > "$PIPE_IN"
               ;;
+            "03")
+              # virtio-vsock in svsm does not handle half duplex connections.
+              echo -n "hello_world" | ncat --no-shutdown -l --vsock -p 12345 &
+              sleep 1
+              echo -n "0" > $PIPE_IN
+              ;;
             "")
                 # skip EOF
                 ;;
@@ -69,6 +75,7 @@ done
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
+    --vsock 3 \
     --unit-tests $TEST_DIR/pipe \
     $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
 

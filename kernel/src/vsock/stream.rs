@@ -184,3 +184,133 @@ impl Drop for VsockStream {
         let _ = VSOCK_DEVICE.force_shutdown(self.remote_cid, self.local_port, self.remote_port);
     }
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use crate::{testutils::has_test_iorequests, vsock::VMADDR_CID_HOST};
+
+    use super::*;
+
+    fn start_vsock_server_host() {
+        use crate::serial::Terminal;
+        use crate::testing::{IORequest, svsm_test_io};
+
+        let sp = svsm_test_io().unwrap();
+
+        sp.put_byte(IORequest::StartVsockServer as u8);
+
+        let _ = sp.get_byte();
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock_double_connect() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port: u32 = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        VsockStream::connect(remote_port, VMADDR_CID_HOST)
+            .expect_err("The second connection operation was expected to fail, but it succeeded.");
+
+        stream.shutdown().expect("shutdown failed");
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock_write() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port: u32 = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        let buffer: &[u8] = b"Hello world!";
+
+        let n_bytes = stream.write(buffer).expect("write failed");
+        assert!(n_bytes == buffer.len(), "Sent less bytes than requested");
+
+        stream.shutdown().expect("shutdown failed");
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock_read() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port: u32 = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        let mut buffer: [u8; 11] = [0; 11];
+        let n_bytes = stream.read(&mut buffer).expect("read failed");
+        assert!(
+            n_bytes == buffer.len(),
+            "Received less bytes than requested"
+        );
+
+        let string = core::str::from_utf8(&buffer).unwrap();
+        log::info!("received: {string:?}");
+
+        stream.shutdown().expect("shutdown failed");
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock_read_shutdown() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port: u32 = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        stream.shutdown().expect("shutdown failed");
+
+        let mut buffer: [u8; 11] = [0; 11];
+        stream
+            .read(&mut buffer)
+            .expect_err("The read operation was expected to fail, but it succeeded");
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock_write_shutdown() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port: u32 = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        stream.shutdown().expect("shutdown failed");
+
+        stream
+            .write(b"hello world")
+            .expect_err("The write operation was expected to fail, but it succeeded");
+    }
+}
