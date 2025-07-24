@@ -543,6 +543,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
+    #[cfg(feature = "virtio-drivers")]
+    initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
+
     #[cfg(feature = "attest")]
     {
         let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
@@ -556,9 +559,6 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();
-
-    #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params) {
         panic!("Failed to launch FW: {e:?}");
