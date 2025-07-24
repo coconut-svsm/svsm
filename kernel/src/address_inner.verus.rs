@@ -18,7 +18,7 @@ pub spec const VADDR_MAX_BITS: nat = 48;
 pub spec const VADDR_LOWER_MASK: InnerAddr = 0x7fff_ffff_ffff as InnerAddr;
 
 #[verifier(inline)]
-pub spec const VADDR_UPPER_MASK: InnerAddr = !VADDR_LOWER_MASK;
+pub spec const VADDR_UPPER_MASK: InnerAddr = 0xffff_8000_0000_0000u64 as InnerAddr;
 
 #[verifier(inline)]
 pub spec const VADDR_RANGE_SIZE: InnerAddr = 0x1_0000_0000_0000u64 as InnerAddr;
