@@ -528,9 +528,7 @@ impl MemoryRegion {
     /// Converts a physical address within this memory region to a virtual address.
     #[expect(dead_code)]
     fn phys_to_virt(&self, paddr: PhysAddr) -> Option<VirtAddr> {
-        let end_phys = self.start_phys + (self.page_count * PAGE_SIZE);
-
-        if paddr < self.start_phys || paddr >= end_phys {
+        if paddr < self.start_phys || (paddr - self.start_phys) >= (self.page_count * PAGE_SIZE) {
             // For the initial stage2 identity mapping, the root page table
             // pages are static and outside of the heap memory region.
             if VirtAddr::from(self.start_phys.bits()) == self.start_virt {
@@ -591,11 +589,6 @@ impl MemoryRegion {
         }
     }
 
-    /// Calculates the end virtual address of the memory region.
-    fn end_virt(&self) -> VirtAddr {
-        self.start_virt + (self.page_count * PAGE_SIZE)
-    }
-
     /// Writes page information for a given page frame number.
     fn write_page_info(&mut self, pfn: usize, pi: PageInfo) {
         self.check_pfn(pfn);
@@ -616,7 +609,8 @@ impl MemoryRegion {
 
     /// Gets the virtual offset of a virtual address within the memory region.
     fn get_virt_offset(&self, vaddr: VirtAddr) -> Option<usize> {
-        (self.start_virt <= vaddr && vaddr < self.end_virt()).then(|| vaddr - self.start_virt)
+        (self.start_virt <= vaddr && (vaddr - self.start_virt) < self.page_count * PAGE_SIZE)
+            .then(|| vaddr - self.start_virt)
     }
 
     /// Gets the page frame number for a given virtual address.
