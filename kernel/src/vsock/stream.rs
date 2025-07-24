@@ -178,3 +178,62 @@ impl Drop for VsockStream {
         let _ = VSOCK_DEVICE.force_shutdown(self.remote_cid, self.local_port, self.remote_port);
     }
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    use crate::{testutils::has_test_iorequests, vsock::VMADDR_CID_HOST};
+
+    use super::*;
+
+    fn start_vsock_server_host() {
+        use crate::serial::Terminal;
+        use crate::testing::{svsm_test_io, IORequest};
+
+        let sp = svsm_test_io().unwrap();
+
+        sp.put_byte(IORequest::StartVsockServer as u8);
+
+        let _ = sp.get_byte();
+    }
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_virtio_vsock() {
+        if !has_test_iorequests() {
+            return;
+        }
+
+        start_vsock_server_host();
+
+        let remote_port = 12345;
+
+        let mut stream =
+            VsockStream::connect(remote_port, VMADDR_CID_HOST).expect("connection failed");
+
+        VsockStream::connect(remote_port, VMADDR_CID_HOST)
+            .expect_err("The second connection operation was expected to fail, but it succeeded.");
+
+        let mut buffer: [u8; 11] = [0; 11];
+        let n_bytes = stream.read(&mut buffer).expect("read failed");
+        assert!(
+            n_bytes == buffer.len(),
+            "Received less bytes than requested"
+        );
+
+        let string = core::str::from_utf8(&buffer).unwrap();
+        log::info!("received: {string:?}");
+
+        let n_bytes = stream.write(&buffer).expect("write failed");
+        assert!(n_bytes == buffer.len(), "Sent less bytes than requested");
+
+        stream.shutdown().expect("shutdown failed");
+
+        stream
+            .write(&buffer)
+            .expect_err("The write operation was expected to fail, but it succeeded.");
+
+        stream
+            .read(&mut buffer)
+            .expect_err("The read operation was expected to fail, but it succeeded");
+    }
+}
