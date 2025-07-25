@@ -9,6 +9,7 @@ edition = "2021"
 builtin = { workspace = true, optional = true }
 builtin_macros = { workspace = true }
 vstd = { workspace = true, optional = true }
+state_machines_macros = { workspace = true }
 paste = "1.0"
 seq-macro = "0.3"
 
