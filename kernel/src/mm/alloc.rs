@@ -104,7 +104,6 @@ impl PageStorageType {
     const TYPE_SHIFT: u64 = 4;
     const TYPE_MASK: u64 = (1u64 << Self::TYPE_SHIFT) - 1;
     const NEXT_SHIFT: u64 = 12;
-    const NEXT_MASK: u64 = !((1u64 << Self::NEXT_SHIFT) - 1);
     const ORDER_MASK: u64 = (1u64 << (Self::NEXT_SHIFT - Self::TYPE_SHIFT)) - 1;
     // Slab item sizes are encoded in a u16
     const SLAB_MASK: u64 = 0xffff;
@@ -182,7 +181,7 @@ impl PageStorageType {
 
     /// Decodes the index of the next page.
     fn decode_next(&self) -> usize {
-        ((self.0 & Self::NEXT_MASK) >> Self::NEXT_SHIFT) as usize
+        (self.0 >> Self::NEXT_SHIFT) as usize
     }
 
     /// Decodes the slab
