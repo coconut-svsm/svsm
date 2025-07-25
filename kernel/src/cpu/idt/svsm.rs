@@ -172,13 +172,19 @@ pub fn idt_init() -> Result<(), SvsmError> {
 // Debug handler
 #[no_mangle]
 extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
-    handle_debug_exception(ctx, DB_VECTOR);
+    // SAFETY: gdbstub could compromise memory safety, but this function is
+    // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+    // enabled on release builds.
+    unsafe { handle_debug_exception(ctx, DB_VECTOR) };
 }
 
 // Breakpoint handler
 #[no_mangle]
 extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
-    handle_debug_exception(ctx, BP_VECTOR);
+    // SAFETY: gdbstub could compromise memory safety, but this function is
+    // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+    // enabled on release builds.
+    unsafe { handle_debug_exception(ctx, BP_VECTOR) };
 }
 
 // Doube-Fault handler
@@ -269,7 +275,10 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
         .is_err()
         && !handle_exception_table(ctxt)
     {
-        handle_debug_exception(ctxt, vector);
+        // SAFETY: gdbstub could compromise memory safety, but this function is
+        // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+        // enabled on release builds.
+        unsafe { handle_debug_exception(ctxt, vector) };
         panic!(
             "Unhandled Page-Fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x}",
             rip, cr2, err
