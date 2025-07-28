@@ -356,6 +356,9 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
         if config.has_qemu_testdev() {
             crate::testutils::set_has_qemu_testdev();
         }
+        if config.has_test_iorequests() {
+            crate::testutils::set_has_test_iorequests();
+        }
         crate::test_main();
     }
 
