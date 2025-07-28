@@ -166,6 +166,11 @@ pub fn idt_init() -> Result<(), SvsmError> {
         idt.load();
     }
 
+    // SAFETY: `idt` is the global static IDT, and it's populated.
+    unsafe {
+        idt.make_ro()?;
+    }
+
     GLOBAL_IDT.init(idt).map_err(|_| SvsmError::PlatformInit)
 }
 

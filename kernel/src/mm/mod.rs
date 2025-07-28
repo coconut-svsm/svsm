@@ -14,6 +14,7 @@ pub mod page_visibility;
 mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
+pub mod ro_after_init;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;
