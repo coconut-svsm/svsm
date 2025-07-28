@@ -58,6 +58,14 @@ pub enum AttestError {
 
     /// An error related to attestation manifest.
     Manifest = 1,
+
+    /// An error related to attestation manifest selector.
+    ManifestSelector = 2,
+
+    /// Any error above this number should be interpreted as a TPM_RC.
+    /// Note TpmRcBase may be used for a non-TPM ATTEST protocol error
+    /// since TPM_RC 0 corresponds to success.
+    TpmRcBase = 0x100,
 }
 
 /// A generic error during SVSM operation.
