@@ -25,7 +25,7 @@ pub mod svsm_gdbstub {
     use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
     use core::fmt;
-    use core::sync::atomic::{AtomicBool, Ordering};
+    use core::sync::atomic::{AtomicU32, Ordering};
     use gdbstub::common::{Signal, Tid};
     use gdbstub::conn::Connection;
     use gdbstub::stub::state_machine::GdbStubStateMachine;
@@ -47,6 +47,15 @@ pub mod svsm_gdbstub {
     // The static mutable reference to the stack is protected by the GDB_STATE lock.
     #[allow(static_mut_refs)]
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+        // Debugger initialization must only be attempted once.
+        assert!(GDB_INIT_STATE
+            .compare_exchange(
+                GdbInitState::Uninitialized as u32,
+                GdbInitState::Initializing as u32,
+                Ordering::SeqCst,
+                Ordering::Relaxed
+            )
+            .is_ok());
         unsafe {
             let mut target = GdbStubTarget::new();
             #[expect(static_mut_refs)]
@@ -59,7 +68,7 @@ pub mod svsm_gdbstub {
             *GDB_STATE.lock() = Some(SvsmGdbStub { gdb, target });
             GDB_STACK_TOP = GDB_STACK.as_mut_ptr().offset(GDB_STACK.len() as isize - 1);
         }
-        GDB_INITIALISED.store(true, Ordering::Relaxed);
+        GDB_INIT_STATE.store(GdbInitState::Initialized as u32, Ordering::Relaxed);
         Ok(())
     }
 
@@ -165,7 +174,7 @@ pub mod svsm_gdbstub {
     }
 
     pub fn debug_break() {
-        if GDB_INITIALISED.load(Ordering::Acquire) {
+        if GDB_INIT_STATE.load(Ordering::Acquire) == GdbInitState::Initialized as u32 {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
@@ -175,7 +184,14 @@ pub mod svsm_gdbstub {
         }
     }
 
-    static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
+    #[repr(u32)]
+    enum GdbInitState {
+        Uninitialized = 0,
+        Initializing = 1,
+        Initialized = 2,
+    }
+
+    static GDB_INIT_STATE: AtomicU32 = AtomicU32::new(GdbInitState::Uninitialized as u32);
     static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
