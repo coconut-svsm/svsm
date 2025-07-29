@@ -15,4 +15,5 @@ nav:
     - Rustdoc Guidelines: 'developer/RUSTDOC-GUIDELINES.md'
     - Fuzzing: 'developer/FUZZING.md'
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
+    - Formal Verification: 'developer/VERIFICATION.md'
   - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'
