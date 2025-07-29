@@ -553,30 +553,23 @@ impl MemoryRegion {
     /// Gets a mutable pointer to the page information for a given page frame
     /// number.
     ///
-    /// # Safety
-    ///
-    /// The caller must provide a valid pfn, otherwise the returned pointer is
-    /// undefined, as the compiler is allowed to optimize assuming there will
-    /// be no arithmetic overflows.
-    unsafe fn page_info_mut_ptr(&mut self, pfn: usize) -> *mut PageStorageType {
-        // SAFETY: The start of the managed virtual address space always
-        // contains the meta-data about the pages. So this is safe, given the
-        // caller supplied a valid pfn.
-        unsafe { self.start_virt.as_mut_ptr::<PageStorageType>().add(pfn) }
+    /// The caller must provide a valid pfn, otherwise the returned pointer
+    /// is not valid for access.
+    #[expect(clippy::needless_pass_by_ref_mut)]
+    fn page_info_mut_ptr(&mut self, pfn: usize) -> *mut PageStorageType {
+        self.start_virt
+            .as_mut_ptr::<PageStorageType>()
+            .wrapping_add(pfn)
     }
 
     /// Gets a pointer to the page information for a given page frame number.
     ///
-    /// # Safety
-    ///
-    /// The caller must provide a valid pfn, otherwise the returned pointer is
-    /// undefined, as the compiler is allowed to optimize assuming there will
-    /// be no arithmetic overflows.
-    unsafe fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
-        // SAFETY: The start of the managed virtual address space always
-        // contains the meta-data about the pages. So this is safe, given the
-        // caller supplied a valid pfn.
-        unsafe { self.start_virt.as_ptr::<PageStorageType>().add(pfn) }
+    /// The caller must provide a valid pfn, otherwise the returned pointer
+    /// is not valid for access
+    fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
+        self.start_virt
+            .as_ptr::<PageStorageType>()
+            .wrapping_add(pfn)
     }
 
     /// Checks if a page frame number is valid.
