@@ -807,23 +807,20 @@ impl MemoryRegion {
             return Err(AllocError::InvalidPageOrder(order));
         }
 
-        let nr_pages: usize = 1 << (order + 1);
+        let new_order = order + 1;
         let pfn = pfn1.min(pfn2);
 
         // Write new compound head
-        let pg = PageInfo::Allocated(AllocatedInfo { order: order + 1 });
+        let pg = PageInfo::Allocated(AllocatedInfo { order: new_order });
         self.write_page_info(pfn, pg);
 
         // Write compound pages
-        let pg = PageInfo::Compound(CompoundInfo { order: order + 1 });
-        for i in 1..nr_pages {
-            self.write_page_info(pfn + i, pg);
-        }
+        self.mark_compound_page(pfn, new_order);
 
         // Do the accounting - none of the pages is free yet, so free_pages is
         // not updated here.
         self.nr_pages[order] -= 2;
-        self.nr_pages[order + 1] += 1;
+        self.nr_pages[new_order] += 1;
 
         Ok(pfn)
     }
