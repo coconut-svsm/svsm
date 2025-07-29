@@ -11,6 +11,7 @@ use crate::fs::Buffer;
 use crate::locking::SpinLock;
 use crate::mm::virt_to_phys;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
+use crate::utils::tcb_ptr::{ptr_read, ptr_write};
 use crate::utils::{align_down, align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
 use core::mem::size_of;
@@ -595,7 +596,9 @@ impl MemoryRegion {
 
         let info: PageStorageType = pi.to_mem();
         // SAFETY: we have checked that the pfn is valid via check_pfn() above.
-        unsafe { self.page_info_mut_ptr(pfn).write(info) };
+        unsafe {
+            ptr_write(self.page_info_mut_ptr(pfn), info);
+        }
     }
 
     /// Reads page information for a given page frame number.
@@ -603,7 +606,7 @@ impl MemoryRegion {
         self.check_pfn(pfn);
 
         // SAFETY: we have checked that the pfn is valid via check_pfn() above.
-        let info = unsafe { self.page_info_ptr(pfn).read() };
+        let info = unsafe { ptr_read(self.page_info_ptr(pfn)) };
         PageInfo::from_mem(info)
     }
 
