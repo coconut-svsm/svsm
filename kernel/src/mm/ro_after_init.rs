@@ -72,13 +72,14 @@ mod tests {
 
         // SAFETY: writing to ro_after_init_start is supposed to fail preventing memory safety break.
         let res_w1 = unsafe {
-            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).write(0x41)
+            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_start)).write(0x41u8)
         };
         assert!(res_w1.is_err());
 
-        // SAFETY: writing to ro_after_init_end is supposed to fail preventing memory safety break.
+        // SAFETY: writing up to ro_after_init_end is supposed to fail preventing memory safety break.
         let res_w2 = unsafe {
-            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_end)).write(0x41)
+            GuestPtr::<u8>::new(VirtAddr::from(&raw const ro_after_init_end).const_sub(1))
+                .write(0x41u8)
         };
         assert!(res_w2.is_err());
     }
