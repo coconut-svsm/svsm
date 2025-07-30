@@ -73,6 +73,16 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     }
 }
 
+#[cfg(target_os = "none")]
+pub fn virt_to_page_frame(vaddr: VirtAddr) -> PhysAddr {
+    match PageTable::virt_to_frame(vaddr) {
+        Some(paddr) => paddr.page_frame(),
+        None => {
+            panic!("Invalid virtual address {:#018x}", vaddr);
+        }
+    }
+}
+
 pub fn virt_to_frame(vaddr: VirtAddr) -> PageFrame {
     match PageTable::virt_to_frame(vaddr) {
         Some(paddr) => paddr,
@@ -97,9 +107,14 @@ pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
 }
 
 #[cfg(not(target_os = "none"))]
-pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+pub fn virt_to_page_frame(vaddr: VirtAddr) -> PhysAddr {
     use crate::address::Address;
     PhysAddr::from(vaddr.bits())
+}
+
+#[cfg(not(target_os = "none"))]
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    virt_to_page_frame(vaddr)
 }
 
 #[cfg(not(target_os = "none"))]

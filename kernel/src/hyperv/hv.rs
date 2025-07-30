@@ -16,7 +16,7 @@ use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::{virt_to_phys, SVSM_HYPERCALL_CODE_PAGE};
+use crate::mm::{virt_to_page_frame, SVSM_HYPERCALL_CODE_PAGE};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -43,7 +43,7 @@ impl HypercallPage {
     /// Attempts to allocate a new shared hypercall page.
     pub fn try_new() -> Result<Self, SvsmError> {
         let page = SharedBox::<[u8; PAGE_SIZE]>::try_new_zeroed()?;
-        let paddr = virt_to_phys(page.addr());
+        let paddr = virt_to_page_frame(page.addr());
         Ok(Self { page, paddr })
     }
 
@@ -299,9 +299,11 @@ pub fn setup_hypercall_page() -> Result<(), SvsmError> {
 
     // Map the page as executable at a known address.
     let hypercall_va = SVSM_HYPERCALL_CODE_PAGE;
-    this_cpu()
-        .get_pgtable()
-        .map_4k(hypercall_va, virt_to_phys(page), PTEntryFlags::exec())?;
+    this_cpu().get_pgtable().map_4k(
+        hypercall_va,
+        virt_to_page_frame(page),
+        PTEntryFlags::exec(),
+    )?;
 
     HYPERV_HYPERCALL_CODE_PAGE
         .init(hypercall_va)
@@ -309,7 +311,7 @@ pub fn setup_hypercall_page() -> Result<(), SvsmError> {
 
     // Set the hypercall code page address to the physical address of the
     // allocated page, and mark it enabled.
-    let pa = virt_to_phys(page);
+    let pa = virt_to_page_frame(page);
     // SAFETY: we trust the page allocator to allocate a valid page to which pa
     // points.
     unsafe { write_msr(HyperVMsr::Hypercall.into(), u64::from(pa) | 1) };
