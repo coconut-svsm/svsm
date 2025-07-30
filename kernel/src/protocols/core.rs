@@ -139,7 +139,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // TLB flush needed to propagate new permissions
     flush_tlb_global_sync();
 
-    let new_vmsa = vmsa_ref_from_vaddr(vaddr);
+    // SAFETY: this page has already been validated for use as a guest VMSA
+    let new_vmsa = unsafe { vmsa_ref_from_vaddr(vaddr) };
     let svme_mask: u64 = 1u64 << 12;
 
     // VMSA validity checks according to SVSM spec
@@ -181,7 +182,8 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
 
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
     // disable() will loop until that is not the case
-    let del_vmsa = vmsa_mut_ref_from_vaddr(vaddr);
+    // SAFETY: this page is known to already be in use as a guest VMSA.
+    let del_vmsa = unsafe { vmsa_mut_ref_from_vaddr(vaddr) };
     del_vmsa.disable();
 
     // Do not return early here, as we need to do a TLB flush

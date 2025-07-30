@@ -303,9 +303,15 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
 pub extern "C" fn svsm_main(cpu_index: usize) {
     debug_assert_eq!(cpu_index, 0);
 
-    // If required, the GDB stub can be started earlier, just after the console
-    // is initialised in svsm_start() above.
-    gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
+    // SAFETY: We are calling this only on CPU 0, since it is not multi-thread safe.
+    // gdbstub could compromise memory safety, but this function is
+    // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+    // enabled on release builds.
+    unsafe {
+        // If required, the GDB stub can be started earlier, just after the console
+        // is initialised in svsm_start() above.
+        gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
+    }
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
@@ -401,7 +407,10 @@ fn panic(info: &PanicInfo<'_>) -> ! {
     print_stack(3);
 
     loop {
-        debug_break();
+        // SAFETY: gdbstub could compromise memory safety, but this function is
+        // a nop if `enable-gdb` feature is disabled. `enable-gdb` can't be
+        // enabled on release builds.
+        unsafe { debug_break() };
         platform::halt();
     }
 }
