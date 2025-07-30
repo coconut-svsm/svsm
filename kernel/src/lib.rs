@@ -12,6 +12,8 @@
 
 pub mod acpi;
 pub mod address;
+#[cfg(feature = "attest")]
+pub mod attest;
 pub mod block;
 pub mod config;
 pub mod console;

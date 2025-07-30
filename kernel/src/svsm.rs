@@ -15,6 +15,8 @@ use core::panic::PanicInfo;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
+#[cfg(feature = "attest")]
+use svsm::attest::AttestationDriver;
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -57,6 +59,9 @@ use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use alloc::string::String;
 use release::COCONUT_VERSION;
+
+#[cfg(feature = "attest")]
+use kbs_types::Tee;
 
 extern "C" {
     static bsp_stack: u8;
@@ -344,6 +349,15 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
 
     if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, new_kernel_region(&LAUNCH_INFO)) {
         panic!("Failed to prepare guest FW: {e:#?}");
+    }
+
+    #[cfg(feature = "attest")]
+    {
+        let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
+        let _data = proxy.attest().unwrap();
+
+        // Nothing to do with data at the moment, simply print a success message.
+        log::info!("attestation successful");
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]

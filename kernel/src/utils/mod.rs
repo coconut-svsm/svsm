@@ -9,6 +9,7 @@ pub mod immut_after_init;
 pub mod memory_region;
 pub mod scoped;
 pub mod util;
+pub mod vec;
 
 pub use memory_region::MemoryRegion;
 pub use scoped::{ScopedMut, ScopedRef};
