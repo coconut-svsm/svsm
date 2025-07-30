@@ -22,10 +22,10 @@ pub mod svsm_gdbstub {
     use crate::mm::PerCPUPageMappingGuard;
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
-    use crate::task::{is_current_task, TaskContext, INITIAL_TASK_ID, TASKLIST};
+    use crate::task::{is_current_task, TaskContext, TaskPointer, INITIAL_TASK_ID, TASKLIST};
     use core::arch::asm;
     use core::fmt;
-    use core::sync::atomic::{AtomicBool, Ordering};
+    use core::sync::atomic::{AtomicU32, Ordering};
     use gdbstub::common::{Signal, Tid};
     use gdbstub::conn::Connection;
     use gdbstub::stub::state_machine::GdbStubStateMachine;
@@ -47,6 +47,19 @@ pub mod svsm_gdbstub {
     // The static mutable reference to the stack is protected by the GDB_STATE lock.
     #[allow(static_mut_refs)]
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
+        // Debugger initialization must only be attempted once.
+        assert!(GDB_INIT_STATE
+            .compare_exchange(
+                GdbInitState::Uninitialized as u32,
+                GdbInitState::Initializing as u32,
+                Ordering::SeqCst,
+                Ordering::Relaxed
+            )
+            .is_ok());
+        // SAFETY: the use of mutable statics is acceptable because their use
+        // is limited to the debugger package, which uses them only during
+        // interactive debugging, at which time the runtime environment is
+        // stopped for single-threaded debugger activity.
         unsafe {
             let mut target = GdbStubTarget::new();
             #[expect(static_mut_refs)]
@@ -59,7 +72,7 @@ pub mod svsm_gdbstub {
             *GDB_STATE.lock() = Some(SvsmGdbStub { gdb, target });
             GDB_STACK_TOP = GDB_STACK.as_mut_ptr().offset(GDB_STACK.len() as isize - 1);
         }
-        GDB_INITIALISED.store(true, Ordering::Relaxed);
+        GDB_INIT_STATE.store(GdbInitState::Initialized as u32, Ordering::Relaxed);
         Ok(())
     }
 
@@ -165,17 +178,26 @@ pub mod svsm_gdbstub {
     }
 
     pub fn debug_break() {
-        if GDB_INITIALISED.load(Ordering::Acquire) {
+        if GDB_INIT_STATE.load(Ordering::Acquire) == GdbInitState::Initialized as u32 {
             log::info!("***********************************");
             log::info!("* Waiting for connection from GDB *");
             log::info!("***********************************");
+            // SAFETY: Inline assembly to generate a software interrupt,
+            // which does not change any state related to memory safety.
             unsafe {
                 asm!("int3");
             }
         }
     }
 
-    static GDB_INITIALISED: AtomicBool = AtomicBool::new(false);
+    #[repr(u32)]
+    enum GdbInitState {
+        Uninitialized = 0,
+        Initializing = 1,
+        Initialized = 2,
+    }
+
+    static GDB_INIT_STATE: AtomicU32 = AtomicU32::new(GdbInitState::Uninitialized as u32);
     static GDB_STATE: SpinLock<Option<SvsmGdbStub<'_>>> = SpinLock::new(None);
     static mut PACKET_BUFFER: [u8; 4096] = [0; 4096];
     // Allocate the GDB stack as an array of u64's to ensure 8 byte alignment of the stack.
@@ -184,33 +206,48 @@ pub mod svsm_gdbstub {
 
     struct GdbTaskContext {
         cr3: usize,
+        _task_pointer: Option<TaskPointer>,
     }
 
     impl GdbTaskContext {
+        /// # Safety
+        /// The caller is required to ensure that switching address spaces does
+        /// not violate memory safety.
         #[must_use = "The task switch will have no effect if the context is dropped"]
-        fn switch_to_task(id: u32) -> Self {
-            let cr3 = if is_current_task(id) {
-                0
+        unsafe fn switch_to_task(id: u32) -> Self {
+            let (cr3, task_pointer) = if is_current_task(id) {
+                (0, None)
             } else {
                 let tl = TASKLIST.lock();
                 let cr3 = read_cr3();
                 let task = tl.get_task(id);
                 if let Some(task) = task {
+                    // SAFETY: the caller promises that it is safe to load the
+                    // target page table.  And since the task pointer that owns
+                    // the target page table is referenced and included in the
+                    // context return object, the task cannot be destroyed
+                    // (and thus the page tables remain valid) while the
+                    // task page table remains active.
                     unsafe {
                         task.page_table.lock().load();
                     }
-                    cr3.bits()
+                    (cr3.bits(), Some(task.clone()))
                 } else {
-                    0
+                    (0, None)
                 }
             };
-            Self { cr3 }
+            Self {
+                cr3,
+                _task_pointer: task_pointer,
+            }
         }
     }
 
     impl Drop for GdbTaskContext {
         fn drop(&mut self) {
             if self.cr3 != 0 {
+                // SAFETY: This is safe because it just restores the previous
+                // page-table, given that the percpu mappings is taken care of.
                 unsafe {
                     asm!("mov %rax, %cr3",
                          in("rax") self.cr3,
@@ -474,9 +511,15 @@ pub mod svsm_gdbstub {
             } else {
                 let task = TASKLIST.lock().get_task(tid.get() as u32);
                 if let Some(task) = task {
-                    // The registers are stored in the top of the task stack as part of the
-                    // saved context. We need to switch to the task pagetable to access them.
-                    let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+                    // The registers are stored in the top of the task stack as
+                    // part of the saved context. We need to switch to the task
+                    // pagetable to access them.
+                    // SAFETY: the debugger knows it is safe to operate in the
+                    // context of the specified task.
+                    let _task_context = unsafe { GdbTaskContext::switch_to_task(tid.get() as u32) };
+                    // SAFETY: the task stack is known to contain a register
+                    // context at the top of the stack, so the registers can
+                    // safely be copied through the stack pointer.
                     unsafe {
                         *regs = X86_64CoreRegs::from(&*(task.rsp as *const TaskContext));
                     };
@@ -528,7 +571,9 @@ pub mod svsm_gdbstub {
         ) -> gdbstub::target::TargetResult<(), Self> {
             // Switch to the task pagetable if necessary. The switch back will
             // happen automatically when the variable falls out of scope
-            let _task_context = GdbTaskContext::switch_to_task(tid.get() as u32);
+            // SAFETY: the debugger knows it is safe to operate in the context
+            // of the specified task, if it exists.
+            let _task_context = unsafe { GdbTaskContext::switch_to_task(tid.get() as u32) };
             let start_addr = VirtAddr::from(start_addr);
             for (off, dst) in data.iter_mut().enumerate() {
                 // SAFETY: Unsafe but ok since this is a debug access
