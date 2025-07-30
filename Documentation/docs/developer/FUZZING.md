@@ -42,11 +42,11 @@ RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz build --s
 
 As mentioned before, you may run a specific harness, building it if
 needed, by using the `run` subcommand and specifying its name. The
-following will run the `fw_meta` fuzzer:
+following will run the `alloc` fuzzer:
 
 
 ```bash
-RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run fw_meta --strip-dead-code
+RUSTFLAGS="-Clinker=clang -Clink-arg=-fuse-ld=lld" cargo +nightly fuzz run alloc --strip-dead-code
 ```
 
 The generated test cases, as well as any found crashes, will be placed
