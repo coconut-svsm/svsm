@@ -95,12 +95,17 @@ impl RawRamFile {
         let page_offset = page_offset(file_offset);
         let page_index = file_offset / PAGE_SIZE;
 
+        // Make sure the page exists before trying to read from it.
+        let Some(page) = self.pages.get(page_index) else {
+            return Ok(0);
+        };
+
         // Minimum of space bytes-to-read on the page and remaining space in buffer
         let buffer_min = min(buffer.size() - buffer_offset, PAGE_SIZE - page_offset);
         // Make sure to not read beyond EOF
         let size = min(self.size.checked_sub(file_offset).unwrap(), buffer_min);
 
-        self.pages[page_index].copy_to_buffer(buffer, buffer_offset, page_offset, size)
+        page.copy_to_buffer(buffer, buffer_offset, page_offset, size)
     }
 
     /// Write data from [`Buffer`] object to a file page.
