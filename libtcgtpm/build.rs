@@ -22,12 +22,23 @@ fn main() {
     let out_path = PathBuf::from(out_dir.clone());
 
     let bindings = bindgen::Builder::default()
-        .header("deps/libtcgtpm.h".to_string())
-        .allowlist_file("deps/libtcgtpm.h")
+        .header("deps/tpm-20-ref/TPMCmd/Platform/include/Platform.h".to_string())
+        .allowlist_function("_plat__RunCommand")
+        .allowlist_function("_plat__LocalitySet")
+        .allowlist_function("_plat__SetNvAvail")
+        .allowlist_function("_plat__Signal_PowerOn")
+        .allowlist_function("_plat__Signal_Reset")
+        .allowlist_function("_plat__NVDisable")
+        .allowlist_function("_plat__NVEnable")
+        .allowlist_function("TPM_Manufacture")
+        .allowlist_function("TPM_TearDown")
         .use_core()
         .clang_arg("-Wno-incompatible-library-redeclaration")
+        .clang_arg("-nostdinc")
         .clang_arg("-isystemdeps/libcrt/include/")
         .clang_arg("-fno-pie") // libcrt.h hides symbols if pie is enabled
+        .clang_arg("-Ideps/tpm-20-ref/TPMCmd/tpm/include")
+        .clang_arg("-Ideps/TpmConfiguration")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .unwrap_or_else(|_| panic!("Unable to generate bindings for deps/libtcgtpm.h"));
