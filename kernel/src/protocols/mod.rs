@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+pub mod memmap;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
@@ -21,6 +22,7 @@ pub const SVSM_CORE_PROTOCOL: u32 = 0;
 pub const SVSM_ATTEST_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
+pub const SVSM_MEMMAP_PROTOCOL: u32 = 42;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {
@@ -28,6 +30,7 @@ pub struct RequestParams {
     rcx: u64,
     rdx: u64,
     r8: u64,
+    r9: u64,
 }
 
 impl RequestParams {
@@ -37,6 +40,7 @@ impl RequestParams {
             rcx: vmsa.rcx,
             rdx: vmsa.rdx,
             r8: vmsa.r8,
+            r9: vmsa.r9,
         }
     }
 
@@ -44,5 +48,6 @@ impl RequestParams {
         regs.push(GuestRegister::X64Rcx(self.rcx));
         regs.push(GuestRegister::X64Rdx(self.rdx));
         regs.push(GuestRegister::X64R8(self.r8));
+        regs.push(GuestRegister::X64R9(self.r9));
     }
 }
