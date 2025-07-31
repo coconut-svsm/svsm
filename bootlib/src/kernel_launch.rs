@@ -6,7 +6,7 @@
 
 use crate::platform::SvsmPlatformType;
 use core::mem::size_of;
-use zerocopy::{Immutable, IntoBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 // The SIPI stub is placed immediately below the stage 2 heap.
 pub const SIPI_STUB_GPA: u32 = 0xF000;
@@ -91,7 +91,7 @@ pub struct Stage2LaunchInfo {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, IntoBytes)]
 pub struct ApStartContext {
     // All fields of this context must remain in the same order because they
     // are referenced from assembly.
