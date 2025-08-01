@@ -9,6 +9,7 @@
 #![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
 #![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]
 #![cfg_attr(all(test, test_in_svsm), reexport_test_harness_main = "test_main")]
+#![cfg_attr(verus_keep_ghost, feature(proc_macro_hygiene))]
 
 pub mod acpi;
 pub mod address;
