@@ -186,6 +186,15 @@ impl<'a> FwCfg<'a> {
         T::read_from_bytes(buffer.as_slice()).map_err(|_| FwCfgError::InvalidFormat)
     }
 
+    #[cfg(all(feature = "attest", feature = "vsock"))]
+    pub fn get_vsock_attest_port(&self) -> Result<u32, SvsmError> {
+        let mut it = FwCfgFileIterator::new(self, "opt/org.svsm/VsockAttestPort")?;
+        let data = Self::read_from_it::<[u8; 4]>(&mut it)?;
+        String::from_utf8_lossy(&data)
+            .parse::<u32>()
+            .map_err(|_| SvsmError::FwCfg(FwCfgError::InvalidFormat))
+    }
+
     pub fn get_virtio_mmio_addresses(&self) -> Result<Vec<u64>, SvsmError> {
         use hardware_info::*;
 
