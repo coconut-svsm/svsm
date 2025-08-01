@@ -9,13 +9,13 @@ use crate::backend;
 use anyhow::Context;
 use libaproxy::*;
 use serde::Serialize;
-use std::{
-    io::{Read, Write},
-    os::unix::net::UnixStream,
-};
+use std::io::{Read, Write};
 
 /// Attest an SVSM client session.
-pub fn attest(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
+pub fn attest(
+    stream: &mut (impl Read + Write),
+    http: &mut backend::HttpClient,
+) -> anyhow::Result<()> {
     negotiation(stream, http)?;
     attestation(stream, http)?;
 
@@ -30,7 +30,10 @@ pub fn attest(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow
 /// server and gather all data required (i.e. a nonce) that should be hashed into the attestation
 /// evidence. The proxy will also reply with the type of hash algorithm to use for the negotiation
 /// parameters.
-fn negotiation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
+fn negotiation(
+    stream: &mut (impl Read + Write),
+    http: &mut backend::HttpClient,
+) -> anyhow::Result<()> {
     // Read the negotiation parameters from SVSM.
     let request: NegotiationRequest = {
         let payload = proxy_read(stream)?;
@@ -51,7 +54,10 @@ fn negotiation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyho
 /// Attestation phase of SVSM attestation. SVSM will send an attestation request containing the TEE
 /// evidence. Proxy will respond with an attestation response containing the status
 /// (success/failure) and an optional secret upon successful attestation.
-fn attestation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyhow::Result<()> {
+fn attestation(
+    stream: &mut (impl Read + Write),
+    http: &mut backend::HttpClient,
+) -> anyhow::Result<()> {
     let request: AttestationRequest = {
         let payload = proxy_read(stream)?;
         serde_json::from_slice(&payload)
@@ -69,7 +75,7 @@ fn attestation(stream: &mut UnixStream, http: &mut backend::HttpClient) -> anyho
 
 /// Read bytes from the UNIX socket connected to SVSM. With each write, SVSM first writes an 8-byte
 /// header indicating the length of the buffer. Once the length is read, the buffer can be read.
-fn proxy_read(stream: &mut UnixStream) -> anyhow::Result<Vec<u8>> {
+fn proxy_read(stream: &mut impl Read) -> anyhow::Result<Vec<u8>> {
     let len = {
         let mut bytes = [0u8; 8];
 
@@ -91,7 +97,7 @@ fn proxy_read(stream: &mut UnixStream) -> anyhow::Result<Vec<u8>> {
 
 /// Write bytes to the UNIX socket connected to SVSM. With each write, an 8-byte header indicating
 /// the length of the buffer is written. Once the length is written, the buffer is written.
-fn proxy_write(stream: &mut UnixStream, buf: impl Serialize) -> anyhow::Result<()> {
+fn proxy_write(stream: &mut impl Write, buf: impl Serialize) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(&buf).context("unable to convert buffer to JSON bytes")?;
     let len = bytes.len().to_ne_bytes();
 

@@ -71,6 +71,7 @@ test.workspace = true
 
 [features]
 attest = ["dep:aes", "dep:base64", "dep:cocoon-tpm-crypto", "dep:cocoon-tpm-tpm2-interface", "dep:cocoon-tpm-utils-common", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
+vsock = []
 
 default = []
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
