@@ -125,7 +125,11 @@ fn is_shared(paddr: PhysAddr) -> bool {
 }
 
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !(shared_pte_mask() | private_pte_mask()))
+    PhysAddr::from(paddr.bits() & !private_pte_mask())
+}
+
+fn strip_shared_address_bits(paddr: PhysAddr) -> PhysAddr {
+    PhysAddr::from(paddr.bits() & !shared_pte_mask())
 }
 
 bitflags! {
@@ -360,10 +364,15 @@ impl PTEntry {
         self.0 = PhysAddr::from(addr | supported_flags(flags).bits());
     }
 
-    /// Get the address from the page table entry, excluding the C bit.
-    pub fn address(&self) -> PhysAddr {
+    /// Get the address from the page table entry, including the shared bit.
+    pub fn page_frame(&self) -> PhysAddr {
         let addr = PhysAddr::from(self.0.bits() & 0x000f_ffff_ffff_f000);
         strip_confidentiality_bits(addr)
+    }
+
+    /// Get the address from the page table entry, excluding the C/shared bit.
+    pub fn address(&self) -> PhysAddr {
+        strip_shared_address_bits(self.page_frame())
     }
 
     /// Read a page table entry from the specified virtual address.
@@ -470,12 +479,17 @@ pub enum PageFrame {
 }
 
 impl PageFrame {
-    pub fn address(&self) -> PhysAddr {
-        match *self {
+    pub fn page_frame(&self) -> PhysAddr {
+        let paddr = match *self {
             Self::Size4K(pa) => pa,
             Self::Size2M(pa) => pa,
             Self::Size1G(pa) => pa,
-        }
+        };
+        strip_confidentiality_bits(paddr)
+    }
+
+    pub fn address(&self) -> PhysAddr {
+        strip_shared_address_bits(self.page_frame())
     }
 
     pub fn size(&self) -> usize {
@@ -697,7 +711,7 @@ impl PageTable {
             return None;
         }
         if pdpe.huge() {
-            let pa = pdpe.address() + (usize::from(vaddr) & 0x3FFF_FFFF);
+            let pa = pdpe.page_frame() + (usize::from(vaddr) & 0x3FFF_FFFF);
             return Some(PageFrame::Size1G(pa));
         }
 
@@ -708,7 +722,7 @@ impl PageTable {
             return None;
         }
         if pde.huge() {
-            let pa = pde.address() + (usize::from(vaddr) & 0x001F_FFFF);
+            let pa = pde.page_frame() + (usize::from(vaddr) & 0x001F_FFFF);
             return Some(PageFrame::Size2M(pa));
         }
 
@@ -716,7 +730,7 @@ impl PageTable {
         // page. So the PTE exists and can be read safely.
         let pte = unsafe { PTEntry::read_pte(pte_addr) };
         if pte.present() {
-            let pa = pte.address() + (usize::from(vaddr) & 0xFFF);
+            let pa = pte.page_frame() + (usize::from(vaddr) & 0xFFF);
             Some(PageFrame::Size4K(pa))
         } else {
             None
