@@ -42,12 +42,48 @@ struct GuidBlockResetVector {
     compatibility_mask: u32,
 }
 
+trait Metadata {
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>>;
+}
+
 #[derive(FromBytes, KnownLayout)]
 #[repr(C)]
 struct SevMetadataEntry {
     base: u32,
     len: u32,
     metadata_type: u32,
+}
+
+struct SevMetadata {}
+
+impl Metadata for SevMetadata {
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>> {
+        let (entry, remainder) = SevMetadataEntry::read_from_prefix(data)
+            .map_err(|e| format!("Cannot parse SEV metadata entry: {e}"))?;
+        match entry.metadata_type {
+            SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
+                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
+                    return Err("OVMF metadata defines too many memory regions".into());
+                }
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
+                fw_info.prevalidated_count += 1;
+            }
+            SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
+            SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
+            SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
+            _ => {}
+        }
+        Ok(remainder)
+    }
 }
 
 #[derive(FromBytes, KnownLayout)]
@@ -76,9 +112,10 @@ fn read_table(data: &[u8]) -> Result<TableInfo<'_>, Box<dyn Error>> {
     ))
 }
 
-fn parse_sev_metadata(
+fn parse_metadata(
     data: &[u8],
     fw_img: &[u8],
+    metadata: &dyn Metadata,
     fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
     let offset_from_end = GuidBlockMetadata::read_from_bytes(data)
@@ -92,23 +129,7 @@ fn parse_sev_metadata(
         .map_err(|e| format!("Cannot parse OVMF metadata descriptor: {e}"))?;
 
     for _ in 0..desc.num_desc as usize {
-        let (entry, remainder) = SevMetadataEntry::read_from_prefix(buf)
-            .map_err(|e| format!("Cannot parse OVMF metadata entry: {e}"))?;
-        match entry.metadata_type {
-            SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
-                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
-                    return Err("OVMF metadata defines too many memory regions".into());
-                }
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
-                fw_info.prevalidated_count += 1;
-            }
-            SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
-            SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
-            SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
-            _ => {}
-        }
-        buf = remainder;
+        buf = metadata.parse(buf, fw_info)?;
     }
     Ok(())
 }
@@ -148,7 +169,7 @@ fn parse_inner_table<'a>(
     let (uuid, body, remainder) = read_table(data)?;
 
     match uuid {
-        OVMF_SEV_METADATA_GUID => parse_sev_metadata(body, fw_img, fw_info)?,
+        OVMF_SEV_METADATA_GUID => parse_metadata(body, fw_img, &SevMetadata {}, fw_info)?,
         SEV_INFO_BLOCK_GUID => parse_sev_info_block(body, fw_info)?,
         OVMF_RESET_VECTOR_GUID => *compat_mask = parse_reset_vector(body, fw_info)?,
         _ => {}
