@@ -16,7 +16,6 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::{
     address::{PhysAddr, VirtAddr},
-    cpu::percpu::this_cpu,
     mm::{page_visibility::*, *},
 };
 
@@ -198,11 +197,6 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ///
     /// `src` must be properly aligned and reside at a readable memory address.
     unsafe fn mmio_read<T: FromBytes + Immutable>(src: &T) -> T {
-        let paddr = this_cpu()
-            .get_pgtable()
-            .phys_addr(VirtAddr::from(addr_of!(*src)))
-            .unwrap();
-
         let mut b = MaybeUninit::<T>::uninit();
         // SAFETY: We are trusting the caller (the virtio driver) to ensure `src` is a valid MMIO
         // address and that it is aligned properly. If SVSM_PLATFORM.mmio_read() doesn't fail
@@ -215,7 +209,9 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
                 b.as_mut_ptr().cast::<MaybeUninit<u8>>(),
                 size_of::<T>(),
             );
-            SVSM_PLATFORM.mmio_read(paddr, b_slice).unwrap();
+            SVSM_PLATFORM
+                .mmio_read(VirtAddr::from(addr_of!(*src)), b_slice)
+                .unwrap();
             b.assume_init()
         }
     }
@@ -229,14 +225,11 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ///
     /// `dst` must be properly aligned and reside at a writable memory address.
     unsafe fn mmio_write<T: IntoBytes + Immutable>(dst: &mut T, v: T) {
-        let paddr = this_cpu()
-            .get_pgtable()
-            .phys_addr(VirtAddr::from(addr_of!(*dst)))
-            .unwrap();
-
         // SAFETY: We are trusting the caller (the virtio driver) to ensure validity of `paddr` and alignment of data.
         unsafe {
-            SVSM_PLATFORM.mmio_write(paddr, v.as_bytes()).unwrap();
+            SVSM_PLATFORM
+                .mmio_write(VirtAddr::from(addr_of!(*dst)), v.as_bytes())
+                .unwrap();
         }
     }
 }

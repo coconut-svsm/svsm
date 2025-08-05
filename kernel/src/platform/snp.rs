@@ -381,9 +381,11 @@ impl SvsmPlatform for SnpPlatform {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_write(&self, paddr: PhysAddr, data: &[u8]) -> Result<(), SvsmError> {
+    unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError> {
+        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
+
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_write(paddr, data) }
     }
@@ -392,13 +394,14 @@ impl SvsmPlatform for SnpPlatform {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
     unsafe fn mmio_read(
         &self,
-        paddr: PhysAddr,
+        vaddr: VirtAddr,
         data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
+        let paddr = this_cpu().get_pgtable().phys_addr(vaddr)?;
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }

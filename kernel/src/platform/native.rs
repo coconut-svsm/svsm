@@ -233,13 +233,13 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
+    unsafe fn mmio_write(&self, _vaddr: VirtAddr, _data: &[u8]) -> Result<(), SvsmError> {
         unimplemented!()
     }
 
     unsafe fn mmio_read(
         &self,
-        _paddr: PhysAddr,
+        _vaddr: VirtAddr,
         _data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
         unimplemented!()
