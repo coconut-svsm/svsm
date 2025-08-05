@@ -9,11 +9,13 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_address_percpu;
 use crate::error::SvsmError;
-use crate::insn_decode::{InsnError, InsnMachineMem};
 use crate::mm::virtualrange::VRangeAlloc;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::MemoryRegion;
+use crate::utils::align_up;
 use core::marker::PhantomData;
+use core::mem;
+use core::ops::{Deref, DerefMut};
+use zerocopy::FromBytes;
 
 /// Guard for a per-CPU page mapping to ensure adequate cleanup if drop.
 #[derive(Debug)]
@@ -48,9 +50,9 @@ impl PerCPUPageMappingGuard {
     ) -> Result<Self, SvsmError> {
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
-        assert!((size & align_mask) == 0);
-        assert!((paddr_start.bits() & align_mask) == 0);
-        assert!((paddr_end.bits() & align_mask) == 0);
+        assert_eq!((size & align_mask), 0);
+        assert_eq!((paddr_start.bits() & align_mask), 0);
+        assert_eq!((paddr_end.bits() & align_mask), 0);
 
         let flags = PTEntryFlags::data();
         let huge = ((paddr_start.bits() & (PAGE_SIZE_2M - 1)) == 0)
@@ -137,142 +139,68 @@ impl Drop for PerCPUPageMappingGuard {
     }
 }
 
-/// Represents a guard for a specific memory range mapping, which will
-/// unmap the specific memory range after being dropped.
+/// Describes a per-CPU mapping of type `T`.  This object has a lifetime that
+/// ensures that references to the mapped object cannot outlive the
+/// underlying mapping.
 #[derive(Debug)]
-pub struct MemMappingGuard<T> {
-    // The guard of holding the temporary mapping for a specific memory range.
-    guard: PerCPUPageMappingGuard,
-    // The starting offset of the memory range.
-    start_off: usize,
-
+pub struct PerCPUMapping<T> {
+    mapping: PerCPUPageMappingGuard,
+    offset: usize,
     phantom: PhantomData<T>,
 }
 
-impl<T: Copy> MemMappingGuard<T> {
-    /// Creates a new `MemMappingGuard` with the given `PerCPUPageMappingGuard`
-    /// and starting offset.
-    ///
-    /// # Arguments
-    ///
-    /// * `guard` - The `PerCPUPageMappingGuard` to associate with the `MemMappingGuard`.
-    /// * `start_off` - The starting offset for the memory mapping.
-    ///
-    /// # Returns
-    ///
-    /// Self is returned.
-    pub fn new(guard: PerCPUPageMappingGuard, start_off: usize) -> Result<Self, SvsmError> {
-        if start_off >= guard.mapping.region().len() {
-            Err(SvsmError::Mem)
-        } else {
-            Ok(Self {
-                guard,
-                start_off,
-                phantom: PhantomData,
-            })
-        }
+impl<T> PerCPUMapping<T> {
+    /// Creates a new mapping of type `T` to the specified physical address
+    /// using 4 KB page mappings.
+    /// # Safety
+    /// The caller must guarantee that the physical address is valid.
+    pub unsafe fn create(paddr: PhysAddr) -> Result<Self, SvsmError> {
+        let offset = paddr.bits() & (PAGE_SIZE - 1);
+        assert_eq!(offset & (mem::align_of::<T>() - 1), 0);
+        let base = paddr - offset;
+        let size = align_up(offset + mem::size_of::<T>(), PAGE_SIZE);
+        let mapping = PerCPUPageMappingGuard::create(base, base + size, 0)?;
+        Ok(Self {
+            mapping,
+            offset,
+            phantom: PhantomData,
+        })
     }
 
-    /// Reads data from a virtual address region specified by an offset
-    ///
-    /// # Safety
-    ///
-    /// The caller must verify not to read from arbitrary memory regions. The region to read must
-    /// be checked to guarantee the memory is mapped by the guard and is valid for reading.
-    ///
-    /// # Arguments
-    ///
-    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
-    ///   region to read from.
-    ///
-    /// # Returns
-    ///
-    /// This function returns a `Result` that indicates the success or failure of the operation.
-    /// If the read operation is successful, it returns `Ok(T)` which contains the read back data.
-    /// If the virtual address region cannot be retrieved, it returns `Err(SvsmError::Mem)`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must make sure that reading from the mapping does not harm
-    /// Rusts memory safety.
-    pub unsafe fn read(&self, offset: usize) -> Result<T, SvsmError> {
-        let size = core::mem::size_of::<T>();
-        self.virt_addr_region(offset * size, size)
-            // SAFETY: The region was mapped by PerCPUPageMappingGuard and is
-            // safe to access.
-            .map_or(Err(SvsmError::Mem), |region| unsafe {
-                Ok(*(region.start().as_ptr::<T>()))
-            })
-    }
-
-    /// Writes data from a provided data into a virtual address region specified by an offset.
-    ///
-    /// # Safety
-    ///
-    /// The caller must verify not to write to arbitrary memory regions. The memory region to write
-    /// must be checked to guarantee the memory is mapped by the guard and is valid for writing.
-    ///
-    /// # Arguments
-    ///
-    /// * `offset`: The offset (in unit of `size_of::<T>()`) from the start of the virtual address
-    ///   region to write to.
-    /// * `data`: Data to write.
-    ///
-    /// # Returns
-    ///
-    /// This function returns a `Result` that indicates the success or failure of the operation.
-    /// If the write operation is successful, it returns `Ok(())`. If the virtual address region
-    /// cannot be retrieved or if the buffer size is larger than the region size, it returns
-    /// `Err(SvsmError::Mem)`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must make sure that writing to the mapping does not harm
-    /// Rusts memory safety.
-    pub unsafe fn write(&self, offset: usize, data: T) -> Result<(), SvsmError> {
-        let size = core::mem::size_of::<T>();
-        self.virt_addr_region(offset * size, size)
-            .map_or(Err(SvsmError::Mem), |region| {
-                // SAFETY: The region was mapped by PerCPUPageMappingGuard and
-                // is safe to access.
-                unsafe {
-                    *(region.start().as_mut_ptr::<T>()) = data;
-                }
-                Ok(())
-            })
-    }
-
-    fn virt_addr_region(&self, offset: usize, len: usize) -> Option<MemoryRegion<VirtAddr>> {
-        if len != 0 {
-            MemoryRegion::checked_new(
-                self.guard
-                    .virt_addr()
-                    .checked_add(self.start_off + offset)?,
-                len,
-            )
-            .filter(|v| self.guard.mapping.region().contains_region(v))
-        } else {
-            None
-        }
+    pub fn virt_addr(&self) -> VirtAddr {
+        self.mapping.virt_addr() + self.offset
     }
 }
 
-impl<T: Copy> InsnMachineMem for MemMappingGuard<T> {
-    type Item = T;
-
-    /// # Safety
-    ///
-    /// See the MemMappingGuard's read() method documentation for safety requirements.
-    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
-        // SAFETY: Save when MemMappingGuard::read() safety requirements are met.
-        unsafe { self.read(0).map_err(|_| InsnError::MemRead) }
+impl<T: Sync + FromBytes> AsRef<T> for PerCPUMapping<T> {
+    fn as_ref(&self) -> &T {
+        let addr = self.mapping.virt_addr() + self.offset;
+        // SAFETY: the mapping is known to be unique and valid by the
+        // construction of the `PerCPUPageMappingGuard`, and is known to be
+        // aligned by the construction of the `PerCPUMapping`.
+        unsafe { &*addr.as_ptr::<T>() }
     }
+}
 
-    /// # Safety
-    ///
-    /// See the MemMappingGuard's write() method documentation for safety requirements.
-    unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
-        // SAFETY: Save when MemMappingGuard::write() safety requirements are met.
-        unsafe { self.write(0, data).map_err(|_| InsnError::MemWrite) }
+impl<T: Sync + FromBytes> AsMut<T> for PerCPUMapping<T> {
+    fn as_mut(&mut self) -> &mut T {
+        let addr = self.mapping.virt_addr() + self.offset;
+        // SAFETY: the mapping is known to be unique and valid by the
+        // construction of the `PerCPUPageMappingGuard`, and is known to be
+        // aligned by the construction of the `PerCPUMapping`.
+        unsafe { &mut *addr.as_mut_ptr::<T>() }
+    }
+}
+
+impl<T: Sync + FromBytes> Deref for PerCPUMapping<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.as_ref()
+    }
+}
+
+impl<T: Sync + FromBytes> DerefMut for PerCPUMapping<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.as_mut()
     }
 }
