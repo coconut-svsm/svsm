@@ -21,8 +21,9 @@ fn git_version() -> Result<String, ()> {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let mut lines = stdout.lines();
     let first_line = lines.next().unwrap().trim();
-
-    Ok(String::from(first_line))
+    // Strip leading `v` from git tag
+    let version = first_line.strip_prefix("v").unwrap_or(first_line);
+    Ok(String::from(version))
 }
 
 fn write_version(version: String) {
