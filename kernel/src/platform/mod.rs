@@ -20,6 +20,7 @@ use tdp::TdpPlatform;
 
 use core::arch::asm;
 use core::fmt::Debug;
+use core::mem::MaybeUninit;
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
@@ -224,9 +225,13 @@ pub trait SvsmPlatform: Sync {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError>;
+    unsafe fn mmio_read(
+        &self,
+        paddr: PhysAddr,
+        data: &mut [MaybeUninit<u8>],
+    ) -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait

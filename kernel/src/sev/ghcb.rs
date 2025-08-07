@@ -22,7 +22,7 @@ use crate::utils::MemoryRegion;
 
 use crate::mm::PageBox;
 use core::arch::global_asm;
-use core::mem::{self, offset_of};
+use core::mem::{self, offset_of, MaybeUninit};
 use core::ops::Deref;
 use core::ptr;
 use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
@@ -548,7 +548,11 @@ impl GHCB {
         Ok(())
     }
 
-    fn read_buffer_slice(&self, data: &mut [u8], offset: usize) -> Result<(), GhcbError> {
+    fn read_buffer_slice(
+        &self,
+        data: &mut [MaybeUninit<u8>],
+        offset: usize,
+    ) -> Result<(), GhcbError> {
         let src = &self
             .buffer
             .get(offset..)
@@ -556,7 +560,7 @@ impl GHCB {
             .get(..data.len())
             .ok_or(GhcbError::InvalidOffset)?;
         for (d, s) in data.iter_mut().zip(src.iter()) {
-            *d = s.load(Ordering::Relaxed);
+            d.write(s.load(Ordering::Relaxed));
         }
         Ok(())
     }
@@ -587,7 +591,11 @@ impl GHCB {
     ///
     /// Caller must ensure that `pa` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
-    pub unsafe fn mmio_read(&self, pa: PhysAddr, value: &mut [u8]) -> Result<(), SvsmError> {
+    pub unsafe fn mmio_read(
+        &self,
+        pa: PhysAddr,
+        value: &mut [MaybeUninit<u8>],
+    ) -> Result<(), SvsmError> {
         self.clear();
         self.pepare_buffer();
         self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), value.len() as u64)?;

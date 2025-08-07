@@ -38,6 +38,7 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
+use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(test)]
@@ -393,7 +394,11 @@ impl SvsmPlatform for SnpPlatform {
     ///
     /// Caller must ensure that `paddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_read(&self, paddr: PhysAddr, data: &mut [u8]) -> Result<(), SvsmError> {
+    unsafe fn mmio_read(
+        &self,
+        paddr: PhysAddr,
+        data: &mut [MaybeUninit<u8>],
+    ) -> Result<(), SvsmError> {
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }

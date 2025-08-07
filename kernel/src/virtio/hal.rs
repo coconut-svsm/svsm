@@ -9,6 +9,7 @@ use crate::{locking::SpinLock, platform::SVSM_PLATFORM};
 use alloc::vec::Vec;
 use core::{
     cell::OnceCell,
+    mem::{size_of, MaybeUninit},
     ptr::{addr_of, NonNull},
 };
 use zerocopy::{FromBytes, Immutable, IntoBytes};
@@ -202,13 +203,21 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
             .phys_addr(VirtAddr::from(addr_of!(*src)))
             .unwrap();
 
-        let mut b = alloc::vec![0; size_of::<T>()];
+        let mut b = MaybeUninit::<T>::uninit();
         // SAFETY: We are trusting the caller (the virtio driver) to ensure `src` is a valid MMIO
-        // address and that it is alinged properly.
+        // address and that it is aligned properly. If SVSM_PLATFORM.mmio_read() doesn't fail
+        // we can assume that all the bytes are read from the device.
         unsafe {
-            SVSM_PLATFORM.mmio_read(paddr, &mut b).unwrap();
+            // MaybeUninit::as_bytes_mut() can avoid this, but it's still
+            // unstable. When it will be stabilized, we can simply use
+            // `b.as_bytes_mut()` instead of creating `b_slice`.
+            let b_slice = core::slice::from_raw_parts_mut(
+                b.as_mut_ptr().cast::<MaybeUninit<u8>>(),
+                size_of::<T>(),
+            );
+            SVSM_PLATFORM.mmio_read(paddr, b_slice).unwrap();
+            b.assume_init()
         }
-        T::try_read_from_bytes(b.as_slice()).unwrap()
     }
 
     /// Performs memory mapped write of `value` to the location of `dst`.
