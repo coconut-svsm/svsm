@@ -9,11 +9,17 @@ extern crate alloc;
 
 use crate::{
     error::SvsmError,
+    fw_cfg::FwCfg,
     greq::{pld_report::*, services::get_regular_report},
     io::{Read, Write, DEFAULT_IO_DRIVER},
+    platform::SVSM_PLATFORM,
     serial::SerialPort,
     utils::vec::{try_to_vec, vec_sized},
 };
+
+#[cfg(feature = "vsock")]
+use crate::vsock::virtio_vsock::VsockStream;
+
 use aes::{cipher::BlockDecrypt, Aes256Dec};
 use aes_gcm::KeyInit;
 use alloc::{string::ToString, vec::Vec};
@@ -38,11 +44,52 @@ use serde::Serialize;
 use sha2::{Digest, Sha512};
 use zerocopy::{FromBytes, IntoBytes};
 
+enum Transport<'a> {
+    #[cfg(feature = "vsock")]
+    Vsock(VsockStream),
+    Serial(SerialPort<'a>),
+}
+
+impl Transport<'_> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, SvsmError> {
+        match self {
+            #[cfg(feature = "vsock")]
+            Transport::Vsock(vsock) => vsock.write(buf),
+            Transport::Serial(serial) => serial.write(buf),
+        }
+    }
+
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, SvsmError> {
+        match self {
+            #[cfg(feature = "vsock")]
+            Transport::Vsock(vsock) => vsock.read(buf),
+            Transport::Serial(serial) => serial.read(buf),
+        }
+    }
+}
+
+fn create_serial_transport<'a>() -> Transport<'a> {
+    let sp = SerialPort::new(&DEFAULT_IO_DRIVER, 0x3e8); // COM3
+    sp.init();
+    Transport::Serial(sp)
+}
+
+#[cfg(feature = "vsock")]
+fn get_vsock_attest_port() -> u32 {
+    pub const VSOCK_ATTEST_DEFAULT_PORT: u32 = 1995;
+
+    let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
+    match cfg.get_vsock_attest_port() {
+        Ok(port) => port,
+        Err(_) => VSOCK_ATTEST_DEFAULT_PORT,
+    }
+}
+
 /// The attestation driver that communicates with the proxy via some communication channel (serial
 /// port, virtio-vsock, etc...).
 #[allow(missing_debug_implementations)]
 pub struct AttestationDriver<'a> {
-    sp: SerialPort<'a>,
+    transport: Transport<'a>,
     tee: Tee,
     ecc: EccKey,
 }
@@ -53,8 +100,6 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
     fn try_from(tee: Tee) -> Result<Self, Self::Error> {
         // TODO: Make the IO port configurable/discoverable for other transport mechanisms such as
         // virtio-vsock.
-        let sp = SerialPort::new(&DEFAULT_IO_DRIVER, 0x3e8); // COM3
-        sp.init();
 
         match tee {
             Tee::Snp => (),
@@ -64,7 +109,28 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
         let curve = Curve::new(TpmEccCurve::NistP521).map_err(AttestationError::Crypto)?;
         let ecc = sc_key_generate(&curve).map_err(AttestationError::Crypto)?;
 
-        Ok(Self { sp, tee, ecc })
+        let transport = {
+            #[cfg(feature = "vsock")]
+            {
+                match VsockStream::connect(1234, get_vsock_attest_port(), 2) {
+                    Ok(value) => Transport::Vsock(value),
+                    Err(e) => {
+                        log::info!("{:?} Falling back to the serial", e);
+                        create_serial_transport()
+                    }
+                }
+            }
+            #[cfg(not(feature = "vsock"))]
+            {
+                create_serial_transport()
+            }
+        };
+
+        Ok(Self {
+            transport,
+            tee,
+            ecc,
+        })
     }
 }
 
@@ -168,7 +234,7 @@ impl AttestationDriver<'_> {
     fn read(&mut self) -> Result<Vec<u8>, AttestationError> {
         let len = {
             let mut bytes = [0u8; 8];
-            self.sp
+            self.transport
                 .read(&mut bytes)
                 .or(Err(AttestationError::ProxyRead))?;
 
@@ -177,7 +243,7 @@ impl AttestationDriver<'_> {
 
         let mut buf: Vec<u8> = vec_sized(len).or(Err(AttestationError::VecAlloc))?;
 
-        self.sp
+        self.transport
             .read(&mut buf)
             .or(Err(AttestationError::ProxyRead))?;
 
@@ -190,10 +256,10 @@ impl AttestationDriver<'_> {
 
         // The receiving party is unaware of how many bytes to read from the port. Write an 8-byte
         // header indicating the length of the buffer before writing the buffer itself.
-        self.sp
+        self.transport
             .write(&bytes.len().to_ne_bytes())
             .or(Err(AttestationError::ProxyWrite))?;
-        self.sp
+        self.transport
             .write(&bytes)
             .or(Err(AttestationError::ProxyWrite))?;
 
