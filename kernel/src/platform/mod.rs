@@ -224,9 +224,11 @@ pub trait SvsmPlatform: Sync {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `pa` points to a properly aligned memory location and the
-    /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError>;
+    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range. The `buf` pointer must be valid for
+    /// writes of `size` bytes.
+    unsafe fn mmio_read(&self, paddr: PhysAddr, buf: *mut u8, size: usize)
+        -> Result<(), SvsmError>;
 }
 
 //FIXME - remove Copy trait
