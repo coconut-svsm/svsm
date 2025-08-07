@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_bounds_user","checked_guest_region","copy_bytes","copy_from_guest","copy_from_user","copy_slice_from_guest","copy_slice_to_guest","copy_to_user","do_movsb","read_bytes_from_guest","read_from_guest","read_u16","read_u32","read_u64","read_u8","write_to_guest","write_u8"],"struct":["GuestPtr","UserAccessGuard","UserPtr"]};
