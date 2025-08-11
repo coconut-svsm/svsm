@@ -21,24 +21,24 @@ use crate::igvm_builder::{NATIVE_COMPATIBILITY_MASK, SNP_COMPATIBILITY_MASK};
 // Offset from the end of the file where the OVMF table footer GUID should be.
 const FOOTER_OFFSET: usize = 32;
 
-struct MetadataDesc {
-    pub base: u32,
-    pub len: u32,
-    pub metadata_type: u32,
+struct SevMetadataEntry {
+    base: u32,
+    len: u32,
+    metadata_type: u32,
 }
 
-impl MetadataDesc {
+impl SevMetadataEntry {
     pub fn size() -> usize {
-        size_of::<u32>() * 3
+        size_of::<Self>()
     }
 }
 
-impl TryFrom<&[u8]> for MetadataDesc {
+impl TryFrom<&[u8]> for SevMetadataEntry {
     type Error = Box<dyn Error>;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() < Self::size() {
-            return Err("Cannot parse OVMF metadata descriptor - invalid buffer size".into());
+            return Err("Cannot parse OVMF metadata entry - invalid buffer size".into());
         }
         Ok(Self {
             base: read_u32(&value[0..4])?,
@@ -48,25 +48,25 @@ impl TryFrom<&[u8]> for MetadataDesc {
     }
 }
 
-struct SevMetadata {
-    pub _sig: u32,
-    pub _len: u32,
-    pub _version: u32,
-    pub num_desc: u32,
+struct MetadataDesc {
+    _sig: u32,
+    _len: u32,
+    _version: u32,
+    num_desc: u32,
 }
 
-impl SevMetadata {
+impl MetadataDesc {
     pub fn size() -> usize {
-        size_of::<u32>() * 4
+        size_of::<Self>()
     }
 }
 
-impl TryFrom<&[u8]> for SevMetadata {
+impl TryFrom<&[u8]> for MetadataDesc {
     type Error = Box<dyn Error>;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() < Self::size() {
-            return Err("Cannot parse OVMF metadata - invalid buffer size".into());
+            return Err("Cannot parse OVMF metadata descriptor - invalid buffer size".into());
         }
         Ok(Self {
             _sig: read_u32(&value[0..4])?,
@@ -124,29 +124,27 @@ fn read_table(current_offset: usize, data: &[u8]) -> Result<TableInfo, Box<dyn E
 fn parse_sev_metadata(
     data: &[u8],
     table_data_offset: usize,
-    firmware: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
     let offset = data.len() - read_u32(&data[table_data_offset..table_data_offset + 4])? as usize;
-    let metadata = SevMetadata::try_from(&data[offset..offset + SevMetadata::size()])?;
+    let desc = MetadataDesc::try_from(&data[offset..offset + MetadataDesc::size()])?;
 
-    for i in 0..metadata.num_desc as usize {
-        let desc_offset = offset + SevMetadata::size() + i * MetadataDesc::size();
-        let metadata_desc =
-            MetadataDesc::try_from(&data[desc_offset..desc_offset + MetadataDesc::size()])?;
-        match metadata_desc.metadata_type {
+    for i in 0..desc.num_desc as usize {
+        let desc_offset = offset + MetadataDesc::size() + i * SevMetadataEntry::size();
+        let entry =
+            SevMetadataEntry::try_from(&data[desc_offset..desc_offset + SevMetadataEntry::size()])?;
+        match entry.metadata_type {
             SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
-                if firmware.prevalidated_count as usize == firmware.prevalidated.len() {
+                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
                     return Err("OVMF metadata defines too many memory regions".into());
                 }
-                firmware.prevalidated[firmware.prevalidated_count as usize].base =
-                    metadata_desc.base;
-                firmware.prevalidated[firmware.prevalidated_count as usize].size =
-                    metadata_desc.len;
-                firmware.prevalidated_count += 1;
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
+                fw_info.prevalidated_count += 1;
             }
-            SEV_META_DESC_TYPE_SECRETS => firmware.secrets_page = metadata_desc.base,
-            SEV_META_DESC_TYPE_CPUID => firmware.cpuid_page = metadata_desc.base,
-            SEV_META_DESC_TYPE_CAA => firmware.caa_page = metadata_desc.base,
+            SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
+            SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
+            SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
             _ => {}
         }
     }
@@ -156,27 +154,27 @@ fn parse_sev_metadata(
 
 fn parse_sev_info_block(
     _data: &[u8],
-    _firmware: &mut IgvmParamBlockFwInfo,
+    _fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
     // Not currently used
-    //firmware.reset_addr = read_u32(&data[0..4])?;
+    //fw_info.reset_addr = read_u32(&data[0..4])?;
     Ok(())
 }
 
 fn parse_inner_table(
     current_offset: usize,
     data: &[u8],
-    firmware: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut IgvmParamBlockFwInfo,
     compat_mask: &mut u32,
 ) -> Result<usize, Box<dyn Error>> {
     let table = read_table(current_offset, data)?;
 
     if table.uuid == OVMF_SEV_METADATA_GUID.to_bytes_le() {
-        parse_sev_metadata(data, table.data_offset, firmware)?;
+        parse_sev_metadata(data, table.data_offset, fw_info)?;
     } else if table.uuid == SEV_INFO_BLOCK_GUID.to_bytes_le() {
         parse_sev_info_block(
             &data[table.data_offset..table.data_offset + table.data_length as usize],
-            firmware,
+            fw_info,
         )?;
     } else if table.uuid == OVMF_RESET_VECTOR_GUID.to_bytes_le() {
         assert_eq!(table.data_length, 8);
@@ -190,7 +188,7 @@ fn parse_inner_table(
                 .try_into()
                 .unwrap(),
         );
-        firmware.start = reset_vector - firmware.size + 16;
+        fw_info.start = reset_vector - fw_info.size + 16;
         *compat_mask = mask;
     }
 
@@ -199,7 +197,7 @@ fn parse_inner_table(
 
 pub fn parse_ovmf(
     data: &[u8],
-    firmware: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut IgvmParamBlockFwInfo,
     compat_mask: &mut u32,
 ) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
@@ -214,7 +212,7 @@ pub fn parse_ovmf(
     current_offset = ovmf_table.data_offset + ovmf_table.data_length as usize;
 
     while current_offset > ovmf_table.data_offset {
-        current_offset = parse_inner_table(current_offset, data, firmware, compat_mask)?;
+        current_offset = parse_inner_table(current_offset, data, fw_info, compat_mask)?;
     }
 
     Ok(())
@@ -248,7 +246,7 @@ impl OvmfFirmware {
             size: len as u32,
             ..Default::default()
         };
-        // OVMF is not compatible with TDP by default
+        // OVMF is not compatible with TDP by default.
         let mut fw_compat_mask =
             compatibility_mask & (SNP_COMPATIBILITY_MASK | NATIVE_COMPATIBILITY_MASK);
 
