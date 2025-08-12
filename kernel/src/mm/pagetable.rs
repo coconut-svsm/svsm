@@ -479,6 +479,7 @@ pub enum PageFrame {
 }
 
 impl PageFrame {
+    /// Get the address from the page frame, including the shared bit.
     pub fn page_frame(&self) -> PhysAddr {
         let paddr = match *self {
             Self::Size4K(pa) => pa,
@@ -488,6 +489,7 @@ impl PageFrame {
         strip_confidentiality_bits(paddr)
     }
 
+    /// Get the address from the page frame, excluding the C/shared bit.
     pub fn address(&self) -> PhysAddr {
         strip_shared_address_bits(self.page_frame())
     }
