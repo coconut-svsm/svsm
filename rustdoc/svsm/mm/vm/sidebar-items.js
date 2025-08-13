@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VMR_GRANULE"],"mod":["mapping","range"],"struct":["Mapping","RawAllocMapping","VMFileMapping","VMFileMappingFlags","VMKernelStack","VMM","VMMAdapter","VMPhysMem","VMR","VMRMapping","VMReserved","VMalloc"],"trait":["VirtualMapping"]};
