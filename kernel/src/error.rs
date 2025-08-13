@@ -33,6 +33,8 @@ use crate::task::TaskError;
 use crate::tdx::TdxError;
 #[cfg(feature = "virtio-drivers")]
 use crate::virtio::VirtioError;
+#[cfg(feature = "vsock")]
+use crate::vsock::VsockError;
 use elf::ElfError;
 use syscall::SysCallError;
 
@@ -129,6 +131,9 @@ pub enum SvsmError {
     /// Errors related to attesting SVSM's launch evidence.
     #[cfg(feature = "attest")]
     TeeAttestation(AttestationError),
+    /// Errors related to vsock.
+    #[cfg(feature = "vsock")]
+    Vsock(VsockError),
 }
 
 impl From<ElfError> for SvsmError {
@@ -165,6 +170,13 @@ impl From<VirtioError> for SvsmError {
 impl From<BlockDeviceError> for SvsmError {
     fn from(err: BlockDeviceError) -> Self {
         Self::Block(err)
+    }
+}
+
+#[cfg(feature = "vsock")]
+impl From<VsockError> for SvsmError {
+    fn from(err: VsockError) -> Self {
+        Self::Vsock(err)
     }
 }
 
