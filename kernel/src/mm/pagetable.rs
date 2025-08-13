@@ -111,25 +111,25 @@ fn supported_flags(flags: PTEntryFlags) -> PTEntryFlags {
 
 /// Set address as shared via mask.
 fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !private_pte_mask() | shared_pte_mask())
+    (strip_confidentiality_bits(paddr).bits() | shared_pte_mask()).into()
 }
 
 /// Set address as private via mask.
 fn make_private_address(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !shared_pte_mask() | private_pte_mask())
+    (strip_shared_address_bits(paddr).bits() | private_pte_mask()).into()
 }
 
 // Returns true if the address is shared.
 fn is_shared(paddr: PhysAddr) -> bool {
-    paddr == make_shared_address(strip_confidentiality_bits(paddr))
+    paddr == make_shared_address(paddr)
 }
 
 fn strip_confidentiality_bits(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !private_pte_mask())
+    (paddr.bits() & !private_pte_mask()).into()
 }
 
 fn strip_shared_address_bits(paddr: PhysAddr) -> PhysAddr {
-    PhysAddr::from(paddr.bits() & !shared_pte_mask())
+    (paddr.bits() & !shared_pte_mask()).into()
 }
 
 bitflags! {
@@ -479,6 +479,7 @@ pub enum PageFrame {
 }
 
 impl PageFrame {
+    /// Get the address from the page frame, including the shared bit.
     pub fn page_frame(&self) -> PhysAddr {
         let paddr = match *self {
             Self::Size4K(pa) => pa,
@@ -488,6 +489,7 @@ impl PageFrame {
         strip_confidentiality_bits(paddr)
     }
 
+    /// Get the address from the page frame, excluding the C/shared bit.
     pub fn address(&self) -> PhysAddr {
         strip_shared_address_bits(self.page_frame())
     }
