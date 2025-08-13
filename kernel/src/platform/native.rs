@@ -237,7 +237,12 @@ impl SvsmPlatform for NativePlatform {
         unimplemented!()
     }
 
-    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
+    unsafe fn mmio_read(
+        &self,
+        _paddr: PhysAddr,
+        _buf: *mut u8,
+        _size: usize,
+    ) -> Result<(), SvsmError> {
         unimplemented!()
     }
 }

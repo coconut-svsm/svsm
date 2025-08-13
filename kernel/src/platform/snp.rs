@@ -392,10 +392,17 @@ impl SvsmPlatform for SnpPlatform {
     /// # Safety
     ///
     /// Caller must ensure that `paddr` points to a properly aligned memory location and the
-    /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_read(&self, paddr: PhysAddr, data: &mut [u8]) -> Result<(), SvsmError> {
-        // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
-        unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
+    /// memory accessed is part of a valid MMIO range. The `buf` pointer must be valid for
+    /// writes of `size` bytes.
+    unsafe fn mmio_read(
+        &self,
+        paddr: PhysAddr,
+        buf: *mut u8,
+        size: usize,
+    ) -> Result<(), SvsmError> {
+        // SAFETY: We are trusting the caller to ensure validity of `paddr`, alignment of data and
+        // `buf` requirements.
+        unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, buf, size) }
     }
 }
 

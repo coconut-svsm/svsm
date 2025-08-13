@@ -548,15 +548,23 @@ impl GHCB {
         Ok(())
     }
 
-    fn read_buffer_slice(&self, data: &mut [u8], offset: usize) -> Result<(), GhcbError> {
+    unsafe fn read_buffer_pointer(
+        &self,
+        dst: *mut u8,
+        len: usize,
+        offset: usize,
+    ) -> Result<(), GhcbError> {
         let src = &self
             .buffer
             .get(offset..)
             .ok_or(GhcbError::InvalidOffset)?
-            .get(..data.len())
+            .get(..len)
             .ok_or(GhcbError::InvalidOffset)?;
-        for (d, s) in data.iter_mut().zip(src.iter()) {
-            *d = s.load(Ordering::Relaxed);
+        for (i, s) in src.iter().enumerate() {
+            // SAFETY: The caller must ensure that `dst` is a valid pointer for `len` bytes.
+            unsafe {
+                ptr::write(dst.add(i), s.load(Ordering::Relaxed));
+            }
         }
         Ok(())
     }
@@ -586,12 +594,19 @@ impl GHCB {
     /// # Safety
     ///
     /// Caller must ensure that `pa` points to a properly aligned memory location and the
-    /// memory accessed is part of a valid MMIO range.
-    pub unsafe fn mmio_read(&self, pa: PhysAddr, value: &mut [u8]) -> Result<(), SvsmError> {
+    /// memory accessed is part of a valid MMIO range. The `buf` pointer must be valid for
+    /// writes of `size` bytes.
+    pub unsafe fn mmio_read(
+        &self,
+        pa: PhysAddr,
+        buf: *mut u8,
+        size: usize,
+    ) -> Result<(), SvsmError> {
         self.clear();
         self.pepare_buffer();
-        self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), value.len() as u64)?;
-        self.read_buffer_slice(value, 0)?;
+        self.vmgexit(GHCBExitCode::MMIO_READ, u64::from(pa), size as u64)?;
+        // SAFETY: The caller must ensure that `buf` is a valid pointer for `size` bytes.
+        unsafe { self.read_buffer_pointer(buf, size, 0)? };
         Ok(())
     }
 
