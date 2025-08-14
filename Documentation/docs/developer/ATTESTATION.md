@@ -96,10 +96,10 @@ $ BASE64_SECRET="$(echo HelloWorld | base64 -w 0)"
 $ cargo run -- --measurement $BASE64_EXPECTED_MEASUREMENT --secret $BASE64_SECRET
 ```
 
-Note that the `--secret` argument is unsued for this demo, but **can** be used
+Note that the `--secret` argument is unused for this demo, but **can** be used
 with small modifications.
 
-This will run a the `kbs-test` server at http://0.0.0.0:8080.
+This will run the `kbs-test` server at http://0.0.0.0:8080.
 
 2. Clone and build SVSM
 
