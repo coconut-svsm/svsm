@@ -88,7 +88,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
    `--secret`: base64-encoded secret to be released upon successful attestation.
 
 ```
-$ git clone https://github.com/tylerfanelli/kbs-test.git
+$ git clone https://github.com/coconut-svsm/kbs-test.git
 $ cd kbs-test
 $ MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
 $ BASE64_EXPECTED_MEASUREMENT="$(echo $MEASUREMENT | xxd -r -p | base64 -w 0)"
