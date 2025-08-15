@@ -56,6 +56,17 @@ pub struct AttestServicesOp {
 }
 
 impl AttestServicesOp {
+    /// Take a PhysAddr and return Self
+    pub fn try_from_guest(paddr: PhysAddr) -> Result<Self, SvsmReqError> {
+        let ops = read_from_guest::<Self>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+
+        if !ops.is_reserved_clear() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(ops)
+    }
+
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let ops: &Self =
@@ -189,6 +200,17 @@ pub struct AttestSingleServiceOp {
 }
 
 impl AttestSingleServiceOp {
+    /// Take a PhysAddr and return Self
+    pub fn try_from_guest(paddr: PhysAddr) -> Result<Self, SvsmReqError> {
+        let ops = read_from_guest::<Self>(paddr).map_err(|_| SvsmReqError::invalid_parameter())?;
+
+        if !ops.is_reserved_clear() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(ops)
+    }
+
     /// Take a slice and return a reference for Self
     pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
         let ops: &Self =
@@ -343,8 +365,7 @@ fn attest_single_vtpm(
 fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op =
-        read_from_guest::<AttestServicesOp>(gpa).map_err(|_| SvsmReqError::invalid_parameter())?;
+    let attest_op = AttestServicesOp::try_from_guest(gpa)?;
 
     // Attest multiple services is expected to return a GUID table (mixed endian ordering) of the
     // enumerated active services' attestation manifest. A service that does not have its own
@@ -379,8 +400,7 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
     // Get the gpa of Attest Single Service Operation structure
     let gpa = PhysAddr::from(params.rcx);
 
-    let attest_op = read_from_guest::<AttestSingleServiceOp>(gpa)
-        .map_err(|_| SvsmReqError::invalid_parameter())?;
+    let attest_op = AttestSingleServiceOp::try_from_guest(gpa)?;
 
     // Extract the GUID from the Attest Single Service Operation structure.
     // The GUID is used to determine the specific service to be attested.
