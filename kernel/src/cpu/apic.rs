@@ -618,15 +618,10 @@ impl LocalApic {
     fn handle_icr_write(&mut self, value: u64) -> Result<(), SvsmError> {
         let icr = ApicIcr::from(value);
 
-        // Verify that this message type is supported.
-        let valid_type = match icr.message_type() {
-            IcrMessageType::Fixed => {
-                // Only asserted edge-triggered interrupts can be handled.
-                !icr.trigger_mode() && icr.assert()
-            }
-            IcrMessageType::Nmi => true,
-            _ => false,
-        };
+        let valid_type = matches!(
+            icr.message_type(),
+            IcrMessageType::Fixed | IcrMessageType::Nmi
+        );
 
         if !valid_type {
             return Err(SvsmError::Apic(Emulation));
