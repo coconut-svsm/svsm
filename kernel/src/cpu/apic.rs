@@ -620,10 +620,7 @@ impl LocalApic {
 
         // Verify that this message type is supported.
         let valid_type = match icr.message_type() {
-            IcrMessageType::Fixed => {
-                // Only asserted edge-triggered interrupts can be handled.
-                !icr.trigger_mode() && icr.assert()
-            }
+            IcrMessageType::Fixed => true,
             IcrMessageType::Nmi => true,
             _ => false,
         };
