@@ -15,7 +15,7 @@
     "kernel": {
         "svsm": {
             "features": "vtpm",
-            "binary": true
+            "binary": false
         },
         "stage2": {
             "manifest": "kernel/Cargo.toml",
