@@ -141,9 +141,7 @@ pub unsafe fn pvalidate(
     unsafe {
         asm!("xorq %r8, %r8",
              "pvalidate",
-             "jnc 1f",
-             "incq %r8",
-             "1:",
+             "adcq %r8, %r8",
              in("rax")  rax,
              in("rcx")  rcx,
              in("rdx")  rdx,
