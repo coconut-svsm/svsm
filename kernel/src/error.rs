@@ -60,6 +60,13 @@ pub enum AttestError {
 
     /// An error related to attestation manifest.
     Manifest = 1,
+
+    /// An error related to attestation certificates.
+    Certificate = 2,
+
+    /// Error reported when size of the certificates exceeds the size of the supplied
+    /// certificate buffer. Required size in bytes is returned in RDX register.
+    CertificateSize = 3,
 }
 
 /// A generic error during SVSM operation.
