@@ -8,10 +8,11 @@ mod fw;
 mod helpers;
 mod igvm;
 mod kernel;
+mod version;
 
 use crate::{
     features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig,
-    kernel::KernelConfig,
+    kernel::KernelConfig, version::generate_release_file,
 };
 use clap::Parser;
 use serde::Deserialize;
@@ -402,6 +403,8 @@ fn main() -> BuildResult<()> {
     let mut features = Features::create_from_args(&args);
 
     features.print_empty_features();
+
+    generate_release_file();
 
     for filename in args.recipes.iter() {
         let f = File::open(filename)?;

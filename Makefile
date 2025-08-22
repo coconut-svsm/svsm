@@ -61,7 +61,7 @@ APROXYBIN = bin/aproxy
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
 
-all: bin/svsm.bin igvm
+all: igvm
 
 aproxy: $(APROXY) $(APROXYBIN)
 
@@ -186,9 +186,6 @@ bin/stage1-trampoline: stage1_elf_trampoline
 
 bin/svsm-test: stage1_elf_test
 	cp -f $(STAGE1_ELF) $@
-
-bin/svsm.bin: bin/svsm
-	objcopy -O binary $< $@
 
 bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
