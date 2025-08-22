@@ -3,7 +3,8 @@
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
 use crate::{
-    helpers::HELPERS, run_cmd_checked, Args, BuildResult, BuildTarget, Component, ComponentConfig,
+    features::Features, helpers::HELPERS, run_cmd_checked, Args, BuildResult, BuildTarget,
+    Component, ComponentConfig,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -26,7 +27,12 @@ impl FsConfig {
     /// Builds the filesystem image based on the config's components,
     /// and returns the path to the built image if there were any
     /// files to pack.
-    pub fn build(&self, args: &Args, mut dst: PathBuf) -> BuildResult<Option<PathBuf>> {
+    pub fn build(
+        &self,
+        args: &Args,
+        mut dst: PathBuf,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<Option<PathBuf>> {
         if dst.try_exists()? {
             std::fs::remove_dir_all(&dst)?;
         }
@@ -38,7 +44,7 @@ impl FsConfig {
 
         // Build all components and copy them to the output path
         for comp in self.components() {
-            let bin = comp.build(args, BuildTarget::svsm_user())?;
+            let bin = comp.build(args, BuildTarget::svsm_user(), cmd_feats)?;
             let mut dst_file = comp
                 .config
                 .path
@@ -56,7 +62,7 @@ impl FsConfig {
 
         // Now build filesystem image from all components
         let fs = PathBuf::from("bin/svsm-fs.bin");
-        let mut cmd = Command::new(HELPERS.packit(args));
+        let mut cmd = Command::new(HELPERS.packit(args, cmd_feats));
         cmd.arg("pack")
             .arg("--input")
             .arg(&dst)

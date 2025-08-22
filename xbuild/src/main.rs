@@ -2,6 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
+mod features;
 mod fs;
 mod fw;
 mod helpers;
@@ -9,11 +10,13 @@ mod igvm;
 mod kernel;
 
 use crate::{
-    fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig, kernel::KernelConfig,
+    features::Features, fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig,
+    kernel::KernelConfig,
 };
 use clap::Parser;
 use serde::Deserialize;
 use std::borrow::{Borrow, BorrowMut};
+use std::boxed::Box;
 use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -45,9 +48,16 @@ impl<S: AsRef<str>, B: Borrow<ComponentConfig>> Component<S, B> {
     }
 
     /// Build the component with the given user arguments and target.
-    fn build(&self, args: &Args, target: BuildTarget) -> BuildResult<PathBuf> {
+    fn build(
+        &self,
+        args: &Args,
+        target: BuildTarget,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
         println!("Building {}...", self.name.as_ref());
-        self.config.borrow().build(args, self.name.as_ref(), target)
+        self.config
+            .borrow()
+            .build(args, self.name.as_ref(), target, cmd_feats)
     }
 }
 
@@ -139,15 +149,27 @@ struct ComponentConfig {
 
 impl ComponentConfig {
     /// Build this component with the specified target
-    fn build(&self, args: &Args, pkg: &str, target: BuildTarget) -> BuildResult<PathBuf> {
+    fn build(
+        &self,
+        args: &Args,
+        pkg: &str,
+        target: BuildTarget,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
         match self.build_type {
-            BuildType::Cargo => self.cargo_build(args, pkg, target),
+            BuildType::Cargo => self.cargo_build(args, pkg, target, cmd_feats),
             BuildType::Make => self.makefile_build(args),
         }
     }
 
     /// Build this component as a cargo binary
-    fn cargo_build(&self, args: &Args, pkg: &str, target: BuildTarget) -> BuildResult<PathBuf> {
+    fn cargo_build(
+        &self,
+        args: &Args,
+        pkg: &str,
+        target: BuildTarget,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
         let mut bin = PathBuf::from("target");
 
         let mut cmd = Command::new("cargo");
@@ -163,12 +185,17 @@ impl ComponentConfig {
         if args.all_features {
             cmd.args(["--all-features"]);
         } else {
-            let features: String = if let Some(feat) = self.features.as_ref() {
-                String::from(feat)
-            } else {
-                String::new()
-            };
-            cmd.args(["--features", features.as_str()]);
+            let features: Vec<String> = self
+                .features
+                .clone()
+                .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
+                .unwrap_or_default();
+
+            let cargo_features = cmd_feats.feature_list(pkg, features);
+
+            if !cargo_features.is_empty() {
+                cmd.args(["--features", cargo_features.join(",").as_str()]);
+            }
         }
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
@@ -227,9 +254,13 @@ impl Recipe {
     /// Builds the kernel components for this recipe. Returns a
     /// [`RecipePartsBuilder`] that can be used to keep track of
     /// built components for the recipe.
-    fn build_kernel(&self, args: &Args) -> BuildResult<RecipePartsBuilder> {
+    fn build_kernel(
+        &self,
+        args: &Args,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<RecipePartsBuilder> {
         let mut parts = RecipePartsBuilder::new();
-        for obj in self.kernel.build(args, PathBuf::from("bin"))? {
+        for obj in self.kernel.build(args, PathBuf::from("bin"), cmd_feats)? {
             match obj.file_name().and_then(|s| s.to_str()).unwrap_or_default() {
                 "tdx-stage1" => parts.set_stage1(obj),
                 "stage2" => parts.set_stage2(obj),
@@ -241,19 +272,19 @@ impl Recipe {
     }
 
     /// Builds all the components for this recipe
-    fn build(&self, args: &Args) -> BuildResult<()> {
+    fn build(&self, args: &Args, cmd_feats: &mut Features) -> BuildResult<()> {
         // Build kernel, guest firmware and guest filesystem
-        let mut parts = self.build_kernel(args)?;
+        let mut parts = self.build_kernel(args, cmd_feats)?;
         if let Some(fw) = self.firmware.build(args)? {
             parts.set_fw(fw);
         }
-        if let Some(fs) = self.fs.build(args, PathBuf::from("bin/fs"))? {
+        if let Some(fs) = self.fs.build(args, PathBuf::from("bin/fs"), cmd_feats)? {
             parts.set_fs(fs);
         }
 
         // Check that we have all pieces and build the IGVM file
         let parts = parts.build()?;
-        self.igvm.build(args, &parts)?;
+        self.igvm.build(args, &parts, cmd_feats)?;
         Ok(())
     }
 }
@@ -327,6 +358,15 @@ struct Args {
     /// Compile all cargo components with all features (default: false)
     #[clap(short, long, value_parser)]
     all_features: bool,
+    /// Add more cargo features to specified components, e.g. '-f svsm:attest'.
+    /// If component is omitted, it defaults to `svsm`.
+    #[clap(
+        short,
+        long = "feature",
+        value_delimiter = ',',
+        value_name = "FEATURES"
+    )]
+    features: Vec<String>,
     /// Enable verbose output (default: false)
     #[clap(short, long, value_parser)]
     verbose: bool,
@@ -357,7 +397,11 @@ fn check_root_path() -> BuildResult<()> {
 
 fn main() -> BuildResult<()> {
     check_root_path()?;
+
     let args = Args::parse();
+    let mut features = Features::create_from_args(&args);
+
+    features.print_empty_features();
 
     for filename in args.recipes.iter() {
         let f = File::open(filename)?;
@@ -365,8 +409,10 @@ fn main() -> BuildResult<()> {
         if args.print_config {
             println!("{}: {recipe:#?}", filename.display());
         }
-        recipe.build(&args)?;
+        recipe.build(&args, &mut features)?;
     }
+
+    features.print_unused_features();
 
     Ok(())
 }

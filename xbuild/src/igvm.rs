@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{run_cmd_checked, Args, BuildResult, RecipeParts, HELPERS};
+use crate::{features::Features, run_cmd_checked, Args, BuildResult, RecipeParts, HELPERS};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -112,9 +112,10 @@ impl IgvmTargetConfig {
         args: &Args,
         target: IgvmTarget,
         parts: &RecipeParts,
+        cmd_feats: &mut Features,
     ) -> BuildResult<PathBuf> {
         let output = PathBuf::from_iter(["bin".as_ref(), self.output.as_os_str()]);
-        let mut cmd = Command::new(HELPERS.igvmbuilder(args));
+        let mut cmd = Command::new(HELPERS.igvmbuilder(args, cmd_feats));
         cmd.arg("--sort")
             .arg("--output")
             .arg(&output)
@@ -146,8 +147,8 @@ impl IgvmTargetConfig {
         Ok(output)
     }
 
-    fn igvmmeasure(&self, args: &Args, bin: PathBuf) -> BuildResult<()> {
-        let mut cmd = Command::new(HELPERS.igvmmeasure(args));
+    fn igvmmeasure(&self, args: &Args, bin: PathBuf, cmd_feats: &mut Features) -> BuildResult<()> {
+        let mut cmd = Command::new(HELPERS.igvmmeasure(args, cmd_feats));
         if self.check_kvm {
             cmd.arg("--check-kvm");
         }
@@ -158,9 +159,15 @@ impl IgvmTargetConfig {
         run_cmd_checked(cmd, args)
     }
 
-    fn build(&self, args: &Args, target: IgvmTarget, parts: &RecipeParts) -> BuildResult<()> {
-        let bin = self.igvmbuild(args, target, parts)?;
-        self.igvmmeasure(args, bin)?;
+    fn build(
+        &self,
+        args: &Args,
+        target: IgvmTarget,
+        parts: &RecipeParts,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<()> {
+        let bin = self.igvmbuild(args, target, parts, cmd_feats)?;
+        self.igvmmeasure(args, bin, cmd_feats)?;
         Ok(())
     }
 }
@@ -174,9 +181,14 @@ pub struct IgvmConfig {
 }
 
 impl IgvmConfig {
-    pub fn build(&self, args: &Args, parts: &RecipeParts) -> BuildResult<()> {
+    pub fn build(
+        &self,
+        args: &Args,
+        parts: &RecipeParts,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<()> {
         for (target, config) in self.targets.iter() {
-            config.build(args, *target, parts)?;
+            config.build(args, *target, parts, cmd_feats)?;
         }
         Ok(())
     }
