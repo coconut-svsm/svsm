@@ -7,9 +7,11 @@ mod fw;
 mod helpers;
 mod igvm;
 mod kernel;
+mod version;
 
 use crate::{
     fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig, kernel::KernelConfig,
+    version::generate_release_file,
 };
 use clap::Parser;
 use serde::Deserialize;
@@ -392,6 +394,8 @@ fn check_root_path() -> BuildResult<()> {
 fn main() -> BuildResult<()> {
     check_root_path()?;
     let args = Args::parse();
+
+    generate_release_file();
 
     for filename in args.recipes.iter() {
         let f = File::open(filename)?;
