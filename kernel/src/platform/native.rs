@@ -233,11 +233,107 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
-        unimplemented!()
+    /// Perform a write to a memory-mapped IO area
+    ///
+    /// This function expects data to be 1, 2, 4 or 8 bytes long.
+    ///
+    /// It is not possible to loop and write one byte at a time because mmio devices (e.g., those emulated by QEMU)
+    /// expect certain registers to be writeen with a single operation. Using a generic on SvsmPlatform is
+    /// not possible because it uses the dyn trait.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError> {
+        match data.len() {
+            1 => {
+                let ptr = vaddr.as_mut_ptr::<u8>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    ptr.write_volatile(*(data.as_ptr()));
+                }
+            }
+            2 => {
+                let ptr = vaddr.as_mut_ptr::<u16>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    ptr.write_volatile(*(data.as_ptr() as *const u16));
+                }
+            }
+            4 => {
+                let ptr = vaddr.as_mut_ptr::<u32>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    ptr.write_volatile(*(data.as_ptr() as *const u32));
+                }
+            }
+            8 => {
+                let ptr = vaddr.as_mut_ptr::<u64>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    ptr.write_volatile(*(data.as_ptr() as *const u64));
+                }
+            }
+            _ => return Err(SvsmError::InvalidBytes),
+        };
+
+        Ok(())
     }
 
-    unsafe fn mmio_read(&self, _paddr: PhysAddr, _data: &mut [u8]) -> Result<(), SvsmError> {
-        unimplemented!()
+    /// Perform a read from a memory-mapped IO area
+    ///
+    ///  This function expects reads to be 1, 2, 4 or 8 bytes long.
+    ///
+    /// It is not possible to loop and read one byte at a time because mmio devices (e.g., those emulated by QEMU)
+    /// expect certain registers to be read with a single operation. Using a generic on SvsmPlatform is
+    /// not possible because it uses the dyn trait.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_read(&self, vaddr: VirtAddr, data: &mut [u8]) -> Result<(), SvsmError> {
+        match data.len() {
+            1 => {
+                let ptr = vaddr.as_mut_ptr::<u8>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    data.copy_from_slice(&ptr.read_volatile().to_ne_bytes());
+                }
+            }
+            2 => {
+                let ptr = vaddr.as_mut_ptr::<u16>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    data.copy_from_slice(&ptr.read_volatile().to_ne_bytes());
+                }
+            }
+            4 => {
+                let ptr = vaddr.as_mut_ptr::<u32>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    data.copy_from_slice(&ptr.read_volatile().to_ne_bytes());
+                }
+            }
+            8 => {
+                let ptr = vaddr.as_mut_ptr::<u64>();
+
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr` and alignment of data.
+                unsafe {
+                    data.copy_from_slice(&ptr.read_volatile().to_ne_bytes());
+                }
+            }
+            _ => return Err(SvsmError::InvalidBytes),
+        };
+
+        Ok(())
     }
 }
