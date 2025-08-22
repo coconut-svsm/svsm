@@ -163,12 +163,32 @@ impl ComponentConfig {
         if args.all_features {
             cmd.args(["--all-features"]);
         } else {
-            let features: String = if let Some(feat) = self.features.as_ref() {
-                String::from(feat)
-            } else {
-                String::new()
-            };
-            cmd.args(["--features", features.as_str()]);
+            let mut features: Vec<String> = self
+                .features
+                .clone()
+                .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
+                .unwrap_or_default();
+            let mut cmdline_features: Vec<String> = args
+                .features
+                .iter()
+                .filter_map(|f| {
+                    if let Some((a, b)) = f.split_once(':') {
+                        if pkg == a {
+                            Some(String::from(b.trim()))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            features.append(&mut cmdline_features);
+
+            if !features.is_empty() {
+                cmd.args(["--features", features.join(",").as_str()]);
+            }
         }
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
@@ -327,6 +347,14 @@ struct Args {
     /// Compile all cargo components with all features (default: false)
     #[clap(short, long, value_parser)]
     all_features: bool,
+    /// Add more cargo features to specified components, e.g. '-f svsm:attest'
+    #[clap(
+        short,
+        long = "feature",
+        value_delimiter = ',',
+        value_name = "FEATURES"
+    )]
+    features: Vec<String>,
     /// Enable verbose output (default: false)
     #[clap(short, long, value_parser)]
     verbose: bool,
