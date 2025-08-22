@@ -160,9 +160,16 @@ impl ComponentConfig {
             cmd.args(["--target", triple]);
             bin.push(triple);
         };
-        if let Some(feat) = self.features.as_ref() {
-            cmd.args(["--features", feat]);
-        };
+        if args.all_features {
+            cmd.args(["--all-features"]);
+        } else {
+            let features: String = if let Some(feat) = self.features.as_ref() {
+                String::from(feat)
+            } else {
+                String::new()
+            };
+            cmd.args(["--features", features.as_str()]);
+        }
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
         }
@@ -317,6 +324,9 @@ struct Args {
     /// Perform a release build (default: false)
     #[clap(short, long, value_parser)]
     release: bool,
+    /// Compile all cargo components with all features (default: false)
+    #[clap(short, long, value_parser)]
+    all_features: bool,
     /// Enable verbose output (default: false)
     #[clap(short, long, value_parser)]
     verbose: bool,
