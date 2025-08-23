@@ -84,8 +84,15 @@ $ sudo zypper refresh
 $ sudo zypper si -d qemu-kvm
 ```
 
-Support for IGVM within QEMU depends on the IGVM library. This will need to be
-built and installed prior to building QEMU.
+Support for IGVM within QEMU depends on the IGVM library. This needs to be
+built and installed prior to building QEMU. Newer versions of the IGVM library
+require `cargo-c` to build, install it with:
+
+```
+cargo install cargo-c
+```
+
+When `cargo-c` is installed, the IGVM library can be built:
 
 ```
 git clone https://github.com/microsoft/igvm
