@@ -18,7 +18,7 @@
 To unlock early persistent state in SVSM (for example, persistent vTPM data), an
 attestation of the launch environment must take place to ensure that SVSM is
 running on trusted hardware and launched correctly. As SVSM does not have a
-network stack available, a proxy runs on the host that facilitate attestation
+network stack available, a proxy runs on the host that facilitates attestation
 between SVSM and a remote verification server such as KBS.
 
 ## Attestation Phases
