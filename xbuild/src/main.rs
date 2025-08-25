@@ -7,9 +7,11 @@ mod fw;
 mod helpers;
 mod igvm;
 mod kernel;
+mod version;
 
 use crate::{
     fs::FsConfig, fw::FirmwareConfig, helpers::HELPERS, igvm::IgvmConfig, kernel::KernelConfig,
+    version::generate_release_file,
 };
 use clap::Parser;
 use serde::Deserialize;
@@ -160,9 +162,42 @@ impl ComponentConfig {
             cmd.args(["--target", triple]);
             bin.push(triple);
         };
-        if let Some(feat) = self.features.as_ref() {
-            cmd.args(["--features", feat]);
-        };
+        if args.all_features {
+            cmd.args(["--all-features"]);
+        } else {
+            let mut features: Vec<String> = self
+                .features
+                .clone()
+                .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
+                .unwrap_or_default();
+            let mut cmdline_features: Vec<String> = args
+                .features
+                .iter()
+                .filter_map(|f| {
+                    if let Some((a, b)) = f.split_once(':') {
+                        if pkg == a {
+                            // Package specific feature
+                            Some(String::from(b.trim()))
+                        } else {
+                            None
+                        }
+                    } else {
+                        // Features without package prefix are only used for 'svsm'
+                        if pkg == "svsm" {
+                            Some(String::from(f))
+                        } else {
+                            None
+                        }
+                    }
+                })
+                .collect();
+
+            features.append(&mut cmdline_features);
+
+            if !features.is_empty() {
+                cmd.args(["--features", features.join(",").as_str()]);
+            }
+        }
         if let Some(manifest) = self.manifest.as_ref() {
             cmd.args(["--manifest-path".as_ref(), manifest.as_os_str()]);
         }
@@ -317,6 +352,17 @@ struct Args {
     /// Perform a release build (default: false)
     #[clap(short, long, value_parser)]
     release: bool,
+    /// Compile all cargo components with all features (default: false)
+    #[clap(short, long, value_parser)]
+    all_features: bool,
+    /// Add more cargo features to specified components, e.g. '-f svsm:attest'
+    #[clap(
+        short,
+        long = "feature",
+        value_delimiter = ',',
+        value_name = "FEATURES"
+    )]
+    features: Vec<String>,
     /// Enable verbose output (default: false)
     #[clap(short, long, value_parser)]
     verbose: bool,
@@ -348,6 +394,8 @@ fn check_root_path() -> BuildResult<()> {
 fn main() -> BuildResult<()> {
     check_root_path()?;
     let args = Args::parse();
+
+    generate_release_file();
 
     for filename in args.recipes.iter() {
         let f = File::open(filename)?;

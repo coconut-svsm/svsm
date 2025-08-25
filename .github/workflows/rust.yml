@@ -32,13 +32,13 @@ jobs:
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
       - name: Build debug image
-        run: make
+        run: cargo xbuild ./configs/*
 
       - name: Build debug image with all features
-        run: make FEATURES= SVSM_ARGS="--all-features"
+        run: cargo xbuild --all-features ./configs/*
 
       - name: Build release image
-        run: make RELEASE=1
+        run: cargo xbuild --release ./configs/*
 
       - name: Run tests
         run: make test
