@@ -174,12 +174,18 @@ impl ComponentConfig {
                 .filter_map(|f| {
                     if let Some((a, b)) = f.split_once(':') {
                         if pkg == a {
+                            // Package specific feature
                             Some(String::from(b.trim()))
                         } else {
                             None
                         }
                     } else {
-                        None
+                        // Features without package prefix are only used for 'svsm'
+                        if pkg == "svsm" {
+                            Some(String::from(f))
+                        } else {
+                            None
+                        }
                     }
                 })
                 .collect();
