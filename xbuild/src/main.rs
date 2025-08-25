@@ -190,7 +190,6 @@ impl ComponentConfig {
                 .clone()
                 .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
                 .unwrap_or_default();
-
             let cargo_features = cmd_feats.feature_list(pkg, features);
 
             if !cargo_features.is_empty() {
