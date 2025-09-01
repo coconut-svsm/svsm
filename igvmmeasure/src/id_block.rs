@@ -15,8 +15,7 @@ use p384::ecdsa::signature::Signer;
 use p384::ecdsa::{Signature, SigningKey};
 use p384::elliptic_curve::bigint::ArrayEncoding;
 use p384::{EncodedPoint, SecretKey};
-use zerocopy::{Immutable, IntoBytes};
-use zerocopy07::FromZeroes;
+use zerocopy::{FromZeros, Immutable, IntoBytes};
 
 use crate::igvm_measure::IgvmMeasure;
 use crate::utils::{get_compatibility_mask, get_policy};

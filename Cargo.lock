@@ -212,9 +212,9 @@ dependencies = [
 
 [[package]]
 name = "bitfield-struct"
-version = "0.7.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c2ce686adbebce0ee484a502c440b4657739adbad65eadf06d64f5816ee9765"
+checksum = "2be5a46ba01b60005ae2c51a36a29cfe134bcacae2dd5cedcd4615fbaad1494b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1078,31 +1078,32 @@ dependencies = [
 
 [[package]]
 name = "igvm"
-version = "0.3.4"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b4ae8479aa3163c8a0fa716aa6ef08a6553e1097f8a89544f46fee695b5a162"
+checksum = "67578b05ebcdfa1aa0fe13f77a13bdd7d87036128898a327f1bf8e7356cf09cd"
 dependencies = [
- "bitfield-struct 0.7.0",
+ "bitfield-struct 0.10.1",
  "crc32fast",
  "hex",
  "igvm_defs",
  "open-enum",
  "range_map_vec",
- "thiserror 1.0.69",
+ "static_assertions",
+ "thiserror",
  "tracing",
- "zerocopy 0.7.35",
+ "zerocopy 0.8.26",
 ]
 
 [[package]]
 name = "igvm_defs"
-version = "0.3.4"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4f70c18b574e5c7fa6222c1f0ebd8bfe2e14b762573b799faf8697c044b0e2a"
+checksum = "eedd8c64460676101062f9f2ecdeb52d8f43e622da6a6c5bf5158f4ef08b0906"
 dependencies = [
- "bitfield-struct 0.7.0",
+ "bitfield-struct 0.10.1",
  "open-enum",
  "static_assertions",
- "zerocopy 0.7.35",
+ "zerocopy 0.8.26",
 ]
 
 [[package]]
@@ -1114,7 +1115,6 @@ dependencies = [
  "igvm",
  "igvm_defs",
  "uuid",
- "zerocopy 0.7.35",
  "zerocopy 0.8.26",
 ]
 
@@ -1127,7 +1127,6 @@ dependencies = [
  "igvm_defs",
  "p384",
  "sha2",
- "zerocopy 0.7.35",
  "zerocopy 0.8.26",
 ]
 
@@ -1236,7 +1235,7 @@ dependencies = [
  "base64",
  "serde",
  "serde_json",
- "thiserror 2.0.12",
+ "thiserror",
 ]
 
 [[package]]
@@ -2020,31 +2019,11 @@ version = "0.1.0"
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
- "thiserror-impl 2.0.12",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "thiserror-impl",
 ]
 
 [[package]]
