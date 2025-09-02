@@ -10,7 +10,7 @@ use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, PAGE_SIZE_4K};
 use sha2::{Digest, Sha256};
-use zerocopy07::AsBytes;
+use zerocopy::IntoBytes;
 
 use crate::page_info::PageInfo;
 

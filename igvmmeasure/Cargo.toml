@@ -12,8 +12,6 @@ igvm.workspace = true
 igvm_defs.workspace = true
 p384.workspace = true
 zerocopy.workspace = true
-# igvm_defs still uses 0.7, so we need to import the zerocopy 0.7 traits to use them.
-zerocopy07 = { package = "zerocopy", version = "0.7" }
 
 [lints]
 workspace = true

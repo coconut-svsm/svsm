@@ -8,7 +8,7 @@ use igvm::registers::{SegmentRegister, X86Register};
 use igvm::snp_defs::{SevFeatures, SevSelector, SevVmsa};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
-use zerocopy07::FromZeroes;
+use zerocopy::FromZeros;
 
 use crate::cmd_options::{Hypervisor, SevExtraFeatures};
 
@@ -66,7 +66,8 @@ pub fn construct_native_start_context(
     regs: &[X86Register],
     compatibility_mask: u32,
 ) -> IgvmDirectiveHeader {
-    let mut context_box = IgvmNativeVpContextX64::new_box_zeroed();
+    let mut context_box =
+        IgvmNativeVpContextX64::new_box_zeroed().expect("Failed to allocate memory for context");
     let context = context_box.as_mut();
 
     // Copy values from the register list.
@@ -186,7 +187,7 @@ pub fn construct_vmsa(
     extra_features: &Vec<SevExtraFeatures>,
     hypervisor: Hypervisor,
 ) -> IgvmDirectiveHeader {
-    let mut vmsa_box = SevVmsa::new_box_zeroed();
+    let mut vmsa_box = SevVmsa::new_box_zeroed().expect("Failed to allocate memory for VMSA");
     let vmsa = vmsa_box.as_mut();
 
     // Copy values from the register list.
