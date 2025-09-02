@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{Args, BuildResult, BuildTarget, Component, ComponentConfig};
+use crate::{features::Features, Args, BuildResult, BuildTarget, Component, ComponentConfig};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,7 +22,12 @@ impl KernelConfig {
             .map(|(name, conf)| Component::new(name.as_str(), conf))
     }
 
-    pub fn build(&self, args: &Args, mut dst: PathBuf) -> BuildResult<Vec<PathBuf>> {
+    pub fn build(
+        &self,
+        args: &Args,
+        mut dst: PathBuf,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<Vec<PathBuf>> {
         if !dst.try_exists()? {
             std::fs::create_dir(&dst)?;
         }
@@ -31,7 +36,7 @@ impl KernelConfig {
         let mut objs = Vec::new();
         for comp in self.components() {
             // Build the component and objcopy it into bin/
-            let bin = comp.build(args, BuildTarget::svsm_kernel())?;
+            let bin = comp.build(args, BuildTarget::svsm_kernel(), cmd_feats)?;
             dst.push(comp.name);
             comp.config.objcopy.copy(&bin, &dst, args)?;
             objs.push(dst.clone());
