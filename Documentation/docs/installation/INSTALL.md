@@ -92,13 +92,12 @@ require `cargo-c` to build, install it with:
 cargo install cargo-c
 ```
 
-When `cargo-c` is installed, the IGVM library can be built:
+When `cargo-c` is installed, a local IGVM library and header can be built:
 
 ```
 git clone https://github.com/microsoft/igvm
 cd igvm
-make -f igvm_c/Makefile
-sudo make -f igvm_c/Makefile install
+DESTDIR=$HOME/igvminst make -f igvm_c/Makefile install
 ```
 
 After the build dependencies are installed, clone the QEMU repository
@@ -114,8 +113,8 @@ Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
 ```
-$ ./configure --prefix=$HOME/bin/qemu-svsm/ --target-list=x86_64-softmmu --enable-igvm
-$ ninja -C build/
+$ CONFIG_IGVM=$HOME/igvminst ./configure --prefix=$HOME/bin/qemu-svsm/ --target-list=x86_64-softmmu --enable-igvm
+$ C_INCLUDE_PATH=$HOME/igvminst/usr/include/ LIBRARY_PATH=$HOME/igvminst/usr/lib/x86_64-linux-gnu/ ninja -C build/
 $ make install
 ```
 
