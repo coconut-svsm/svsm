@@ -18,6 +18,8 @@ members = [
     "syscall",
     # PackIt library and command line utility
     "packit",
+    # Run-Length encoded bit map
+    "rlebits",
     # verification libraries for svsm
     "verify_proof",
     "verify_external",

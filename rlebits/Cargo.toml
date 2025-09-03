@@ -1,0 +1,32 @@
+[package]
+name = "rlebits"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.86.0"
+
+[features]
+default = []
+std = []
+thread-safe = ["spin"]
+
+[dependencies]
+spin = { version = "0.9", optional = true }
+
+[dev-dependencies]
+proptest = "1.7.0"
+rand = "0.9.2"
+
+# Integration tests with required features
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+
+[[example]]
+name = "sync_benchmark"
+path = "examples/sync_benchmark.rs"
+required-features = ["thread-safe"]
+
+[[example]]
+name = "global_thread_safe"
+path = "examples/global_thread_safe.rs"
+required-features = ["thread-safe"]
