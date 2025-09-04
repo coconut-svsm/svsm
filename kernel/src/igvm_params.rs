@@ -338,8 +338,9 @@ impl IgvmParams<'_> {
         assert!(self.should_launch_fw());
 
         let mut regions = Vec::new();
+        let fw_info = &self.igvm_param_block.firmware;
 
-        if self.igvm_param_block.firmware.in_low_memory != 0 {
+        if fw_info.in_low_memory != 0 {
             // Add the lowmem region to the firmware region list so
             // permissions can be granted to the guest VMPL for that range.
             regions.push(MemoryRegion::from_addresses(
@@ -348,10 +349,36 @@ impl IgvmParams<'_> {
             ));
         }
 
-        regions.push(MemoryRegion::new(
-            PhysAddr::new(self.igvm_param_block.firmware.start as usize),
-            self.igvm_param_block.firmware.size as usize,
-        ));
+        let fw_region =
+            MemoryRegion::new(PhysAddr::new(fw_info.start as usize), fw_info.size as usize);
+        regions.push(fw_region);
+
+        // If this firmware expects an IGVM memory map but the IGVM memory
+        // map is not within any of the firmware GPA ranges, then add the IGVM
+        // memory map to the set of firmware regions.
+        if fw_info.memory_map_page_count != 0 {
+            let map_region = MemoryRegion::new(
+                PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64),
+                fw_info.memory_map_page_count as usize * PAGE_SIZE,
+            );
+            // Scan all the firmware regions to determine whether any of them
+            // contain the memory map.  If not, the memory map should be added
+            // separately.
+            if !regions.iter().any(|region| {
+                if region.contains_region(&map_region) {
+                    true
+                } else {
+                    // A properly constructed image should never place the
+                    // memory map partially inside and partially outside of the
+                    // firmware region, so reject such a case to prevent
+                    // overlapping firmware regions.
+                    assert!(!region.overlap(&map_region));
+                    false
+                }
+            }) {
+                regions.push(map_region);
+            }
+        }
 
         regions
     }
