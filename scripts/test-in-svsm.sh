@@ -28,6 +28,11 @@ test_io(){
             "02")
               sha256sum "$TEST_DIR/svsm_state.raw" | cut -f 1 -d ' ' | xxd -p -r > "$PIPE_IN"
               ;;
+            "03")
+              echo -n "hello_world" | nc -l --vsock 12345 &
+              sleep 1
+              echo -n "0" > $PIPE_IN
+              ;;
             "")
                 # skip EOF
                 ;;
@@ -49,6 +54,7 @@ TEST_IO_PID=$!
 
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
+    --vsock 3 \
     --unit-tests $TEST_DIR/pipe || true
 
 kill $TEST_IO_PID 2> /dev/null || true
