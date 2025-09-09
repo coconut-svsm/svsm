@@ -36,6 +36,8 @@ pub mod io;
 pub mod kernel_region;
 pub mod locking;
 pub mod mm;
+#[cfg(feature = "cocoonfs")]
+pub mod persistence;
 pub mod platform;
 pub mod protocols;
 pub mod requests;
