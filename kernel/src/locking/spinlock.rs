@@ -7,6 +7,7 @@
 use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
+use core::convert::From;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -235,6 +236,12 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
         // SAFETY: the returned reference carries an exclusive borrow on self,
         // thereby establishing exclusive access.
         unsafe { &mut *self.data.get() }
+    }
+}
+
+impl<T: Send, I: IrqLocking> From<T> for RawSpinLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 

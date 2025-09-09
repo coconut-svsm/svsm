@@ -7,6 +7,7 @@
 use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
+use core::convert::From;
 use core::marker::PhantomData;
 use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
@@ -579,6 +580,12 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
     #[inline]
     pub fn read_noblock(&self) -> RawReadLockGuard<'_, T, I> {
         self.try_lock_read().expect("Detected potential deadlock")
+    }
+}
+
+impl<T: Send, I: IrqLocking> From<T> for RawRWLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 
