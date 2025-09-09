@@ -389,9 +389,9 @@ dependencies = [
 
 [[package]]
 name = "cocoon-tpm-crypto"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b7633b7e5996b4b5d15929736d10910c087713a9bdf9b7a05c1f16d192ae413"
+checksum = "71653c30341696a1a0e29b527b27fbaa9880c666ddb5999bdc6f47aca5e02562"
 dependencies = [
  "aes",
  "camellia",
@@ -414,15 +414,15 @@ dependencies = [
 
 [[package]]
 name = "cocoon-tpm-tpm2-interface"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd87d8fabcfd5949ef574c04814c6c783858310bdcc58d807003fc8da56eac23"
+checksum = "f524208dcc8aa8c63f8d0a1a64f458beeb6eff7d7d64deec515be639a57811ea"
 
 [[package]]
 name = "cocoon-tpm-utils-common"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19fa8730c221b252c85b70e895101b9022cd5777d8c8d3c35e9f92d1a27d1b45"
+checksum = "8ac4f8367a407cdc3781da84c898cb0de567866816ee8f62bf2195e2605e068b"
 dependencies = [
  "cmpa",
  "zeroize",
