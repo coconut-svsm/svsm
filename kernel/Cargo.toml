@@ -41,6 +41,7 @@ cocoon-tpm-crypto = { workspace = true, features = [
     "ecc_nist_p384", "ecc_nist_p521",
 ]}
 cocoon-tpm-tpm2-interface = { workspace = true }
+cocoon-tpm-utils-async = { workspace = true }
 cocoon-tpm-utils-common = { workspace = true }
 concat-kdf = { workspace = true, optional = true }
 gdbstub = { workspace = true, optional = true }

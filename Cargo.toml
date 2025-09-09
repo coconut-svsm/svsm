@@ -68,6 +68,7 @@ bitflags = "2.6"
 clap = { version = "4.4.14", default-features = false }
 cocoon-tpm-crypto = { version = "0.1.3", default-features = false }
 cocoon-tpm-tpm2-interface = { version = "0.1.1", default-features = false }
+cocoon-tpm-utils-async = { version = "0.1.2", default-features = false }
 cocoon-tpm-utils-common = { version = "0.1.2", default-features = false }
 concat-kdf = "0.1.0"
 gdbstub = { version = "0.6.6", default-features = false }
