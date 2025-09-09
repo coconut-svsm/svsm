@@ -40,6 +40,7 @@ cocoon-tpm-crypto = { workspace = true, features = [
     "ecc_nist_p224", "ecc_nist_p256",
     "ecc_nist_p384", "ecc_nist_p521",
 ]}
+cocoon-tpm-storage = { workspace = true, features = ["zeroize"], optional = true }
 cocoon-tpm-tpm2-interface = { workspace = true }
 cocoon-tpm-utils-async = { workspace = true }
 cocoon-tpm-utils-common = { workspace = true }
@@ -75,6 +76,7 @@ test.workspace = true
 attest = ["dep:aes-kw", "dep:concat-kdf", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
 
 default = []
+cocoonfs = ["dep:cocoon-tpm-storage", "virtio-drivers"]
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
 nosmep = []
