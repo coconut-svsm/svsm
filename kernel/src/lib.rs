@@ -21,6 +21,7 @@
 
 pub mod acpi;
 pub mod address;
+pub mod r#async;
 #[cfg(feature = "attest")]
 pub mod attest;
 #[cfg(feature = "block")]
