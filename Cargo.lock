@@ -427,12 +427,26 @@ dependencies = [
  "cocoon-tpm-utils-common",
  "crypto-common",
  "digest",
+ "ecb",
  "generic-array 1.2.0",
  "hmac",
  "ofb",
  "sha2",
  "sm4",
  "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "cocoon-tpm-storage"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52f37a0b074eb3fd44ded6b25ad6f5a2c4715b95ed4b80efacca6e99a3b6b5f2"
+dependencies = [
+ "cocoon-tpm-crypto",
+ "cocoon-tpm-tpm2-interface",
+ "cocoon-tpm-utils-async",
+ "cocoon-tpm-utils-common",
  "zeroize",
 ]
 
@@ -620,6 +634,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95249b50c6c185bee49034bcb378a49dc2b5dff0be90ff6616d31d64febab05d"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "ecb"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a8bfa975b1aec2145850fcaa1c6fe269a16578c44705a532ae3edc92b8881c7"
+dependencies = [
+ "cipher",
 ]
 
 [[package]]
@@ -1923,6 +1946,7 @@ dependencies = [
  "builtin",
  "builtin_macros",
  "cocoon-tpm-crypto",
+ "cocoon-tpm-storage",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-async",
  "cocoon-tpm-utils-common",
