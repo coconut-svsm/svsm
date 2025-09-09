@@ -255,6 +255,17 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
             _irq_state: irq_state,
         }
     }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the `RawRWLock` mutably, no actual locking needs to take place --
+    /// the mutable borrow statically guarantees no new locks can be acquired while this reference
+    /// exists.
+    pub fn get_mut(&mut self) -> &mut T {
+        // SAFETY: the returned reference carries an exclusive borrow on self,
+        // thereby establishing exclusive access.
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 /// A lock can only be acquired for read access if its inner type implements
