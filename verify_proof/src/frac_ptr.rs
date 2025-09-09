@@ -126,7 +126,7 @@ pub struct UniqueByPtr {
 }
 
 impl UniqueByPtr {
-    // inst is only created once at the begining and thus all share the same inst_id;
+    // inst is only created once at the beginning and thus all share the same inst_id;
     pub uninterp spec fn spec_uniq_inst_id() -> InstanceId;
 
     #[verifier::type_invariant]
