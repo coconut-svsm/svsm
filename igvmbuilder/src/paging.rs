@@ -32,14 +32,14 @@ pub fn construct_init_page_tables(
 ) {
     let mut page_tables: InitPageTables = InitPageTables::default();
 
-    // The initial page tables comparise a single PML4E that points to a page
+    // The initial page tables comprise a single PML4E that points to a page
     // that includes entries which map the low 4 GB of the address space
     // with an identity map of 1 GB pages.
-    // This PML4E is present, writable, accesed, and dirty.
+    // This PML4E is present, writable, accessed, and dirty.
     page_tables.pages[0].ptes[0] = 0x63 | (init_page_table_gpa + PAGE_SIZE_4K);
 
     for i in 0..4 {
-        // This PTE is present, writable, accesed, dirty, and large page.
+        // This PTE is present, writable, accessed, dirty, and large page.
         page_tables.pages[1].ptes[i] = 0xE3 | ((i as u64) << 30);
     }
 
