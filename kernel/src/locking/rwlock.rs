@@ -7,6 +7,7 @@
 use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
+use core::convert::From;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -302,6 +303,12 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
             data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         }
+    }
+}
+
+impl<T: Send, I: IrqLocking> From<T> for RawRWLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 
