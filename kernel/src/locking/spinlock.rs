@@ -238,6 +238,12 @@ impl<T: Send, I: IrqLocking> RawSpinLock<T, I> {
     }
 }
 
+impl<T: Send, I: IrqLocking> From<T> for RawSpinLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 pub type SpinLock<T> = RawSpinLock<T, IrqUnsafeLocking>;
 pub type SpinLockIrqSafe<T> = RawSpinLock<T, IrqGuardLocking>;
 pub type SpinLockAnyTpr<T, const TPR: usize> = RawSpinLock<T, TprGuardLocking<TPR>>;

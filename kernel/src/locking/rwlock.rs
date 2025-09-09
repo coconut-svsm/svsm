@@ -582,6 +582,12 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
     }
 }
 
+impl<T: Send, I: IrqLocking> From<T> for RawRWLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
 pub type RWLock<T> = RawRWLock<T, IrqUnsafeLocking>;
 pub type RWLockIrqSafe<T> = RawRWLock<T, IrqGuardLocking>;
 pub type RWLockAnyTpr<T, const TPR: usize> = RawRWLock<T, TprGuardLocking<TPR>>;
