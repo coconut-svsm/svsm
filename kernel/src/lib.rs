@@ -42,6 +42,8 @@ pub mod kernel_region;
 pub mod locking;
 pub mod log_buffer;
 pub mod mm;
+#[cfg(feature = "persistence")]
+pub mod persistence;
 pub mod platform;
 pub mod protocols;
 pub mod requests;
