@@ -478,6 +478,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f524208dcc8aa8c63f8d0a1a64f458beeb6eff7d7d64deec515be639a57811ea"
 
 [[package]]
+name = "cocoon-tpm-utils-async"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff56a8746df3ead93d408761fed1e39974e4395fcab63084272fd7b8b33d8391"
+dependencies = [
+ "cocoon-tpm-utils-common",
+]
+
+[[package]]
 name = "cocoon-tpm-utils-common"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2079,6 +2088,7 @@ dependencies = [
  "bootimg",
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
+ "cocoon-tpm-utils-async",
  "cocoon-tpm-utils-common",
  "concat-kdf",
  "cpuarch",
