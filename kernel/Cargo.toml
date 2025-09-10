@@ -76,7 +76,7 @@ test.workspace = true
 attest = ["dep:aes-kw", "dep:concat-kdf", "dep:kbs-types", "dep:libaproxy", "dep:serde", "dep:serde_json"]
 
 default = []
-cocoonfs = ["dep:cocoon-tpm-storage", "virtio-drivers"]
+cocoonfs = ["dep:cocoon-tpm-storage", "virtio-drivers", "attest"]
 enable-gdb = ["dep:gdbstub", "dep:gdbstub_arch"]
 vtpm = ["dep:libtcgtpm"]
 nosmep = []

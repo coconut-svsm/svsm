@@ -5,22 +5,33 @@
 //! Functionality related to persistent SVSM storage.
 
 extern crate alloc;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec::Vec};
 
-use core::{fmt::Debug, pin, task};
+use core::{fmt::Debug, future::Future, pin, task};
 
 use cocoon_tpm_storage::{
     blkdev::{
         NvBlkDev, NvBlkDevFuture, NvBlkDevIoError, NvBlkDevReadRequest, NvBlkDevWriteRequest,
     },
+    fs::{
+        cocoonfs::{self, CocoonFs},
+        NvFsError, NvFsIoError,
+    },
     nvblkdev_err_internal,
 };
-use cocoon_tpm_utils_common::fixed_vec::FixedVec;
+use cocoon_tpm_utils_async::sync_types;
+use cocoon_tpm_utils_common::{alloc::box_try_new, fixed_vec::FixedVec, zeroize::Zeroizing};
 
-use crate::block::{api::BlockDriver, BlockDeviceError};
+use crate::address::PhysAddr;
+use crate::block::{api::BlockDriver, virtio_blk::VirtIOBlkDriver, BlockDeviceError};
+use crate::crypto::get_svsm_rng;
 use crate::error::SvsmError;
+use crate::fw_cfg::FwCfg;
 use crate::mm::alloc::AllocError;
+use crate::platform::SVSM_PLATFORM;
+use crate::r#async::{task_busypoll_to_completion, SvsmSyncTypes};
 use crate::types::PAGE_SHIFT;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 /// Wrapper around [`BlockDriver`] implementors, itself implementing the `cocoon-tpm-storage`
 /// crate's [`NvBlkDev`] block device abstraction.
@@ -577,4 +588,135 @@ impl NvBlkDevFuture<SvsmNvBlkDev> for SvsmNvBlkDevTrimFuture {
 
         task::Poll::Ready(Ok(()))
     }
+}
+
+fn nvfs_error_to_svsm_error(e: NvFsError) -> SvsmError {
+    match e {
+        NvFsError::MemoryAllocationFailure => SvsmError::Alloc(AllocError::OutOfMemory),
+        NvFsError::IoError(NvFsIoError::IoFailure) => SvsmError::Block(BlockDeviceError::Failed),
+        _ => SvsmError::Block(BlockDeviceError::Failed),
+    }
+}
+
+type SvsmCocoonFsType = CocoonFs<SvsmSyncTypes, SvsmNvBlkDev>;
+type SvsmCocoonFsSyncRcPtrType =
+    <<SvsmSyncTypes as sync_types::SyncTypes>::SyncRcPtrFactory as sync_types::SyncRcPtrFactory>
+    ::SyncRcPtr<SvsmCocoonFsType>;
+
+static SVSM_COCOONFS_INSTANCE: ImmutAfterInitCell<Option<pin::Pin<SvsmCocoonFsSyncRcPtrType>>> =
+    ImmutAfterInitCell::uninit();
+
+/// Instantiate a [`cocoonfs::OpenFsFuture`].
+///
+/// The `cocoonfs::OpenFsFuture` is huge, and by instantiating it in an `inline(never)` function and
+/// `Box`ing it right after, the stack allocations required for the moves are hopefully getting
+/// freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_open_fut(
+    blkdev: SvsmNvBlkDev,
+    key: Zeroizing<Vec<u8>>,
+) -> Result<Box<cocoonfs::OpenFsFuture<SvsmSyncTypes, SvsmNvBlkDev>>, NvFsError> {
+    let rng = box_try_new(get_svsm_rng().map_err(NvFsError::from)?).map_err(NvFsError::from)?;
+    let cocoonfs_open_fut = match cocoonfs::OpenFsFuture::new(blkdev, key, false, rng) {
+        Ok(cocoonfs_open_fut) => cocoonfs_open_fut,
+        Err((_blkdev, _key, _rng, e)) => return Err(e),
+    };
+    box_try_new(cocoonfs_open_fut).map_err(NvFsError::from)
+}
+
+/// Initialize the persistence subsystem.
+///
+/// Must get invoked at most once at startup, any subsequent reinitialization attempt will result in
+/// a panic.
+///
+/// Iterate over available block devices and attempt to open a CocoonFs instance with the provided
+/// `key` on each, until one that works has been found. Any CocoonFs instances that appear to have a
+/// valid filesystem, header but that could not get opened successfully, e.g. because the
+/// authentication with `key` failed, are getting reported in the log and being skipped over. In
+/// case a CocoonFs "filesystem creation info header" is being encountered in the search, the
+/// filesystem is formatted for use with `key` in the course.
+///
+/// The first successfully opened CocoonFs instance, if any, will henceforth be used to serve all
+/// the SVSM's persistence related needs.
+///
+/// # Arguments:
+///
+/// * `key` - The CocoonFs root key used (indirectly) for authentication and encryption.
+pub fn persistence_init(mut key: Zeroizing<Vec<u8>>) -> Result<(), SvsmError> {
+    // Iterate through all Virtio block devices and see if there's a CocoonFs on it, either already
+    // formatted or one with with a mkfsinfo header, which will get formatted transparently at first
+    // filesystem opening time.
+    log::debug!("attempting to find persistent CocoonFs storage...");
+    let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
+    for virtio_blk in cfg
+        .get_virtio_mmio_addresses()
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|a| VirtIOBlkDriver::new(PhysAddr::from(*a)).ok())
+    {
+        let virtio_blk =
+            box_try_new(virtio_blk).map_err(|_| SvsmError::Alloc(AllocError::OutOfMemory))?;
+        let blkdev = SvsmNvBlkDev::new(virtio_blk);
+        let mut cocoonfs_open_fut = match instantiate_cocoonfs_open_fut(blkdev, key) {
+            Ok(cocoonfs_open_fut) => cocoonfs_open_fut,
+            Err(e) => {
+                log::error!("failed to initiate CocoonFs opening operation: {:?}", e);
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        key = match task_busypoll_to_completion(|cx| {
+            Future::poll(pin::Pin::new(&mut cocoonfs_open_fut), cx)
+        }) {
+            Ok((_rng, Ok(cocoonfs_instance))) => {
+                SVSM_COCOONFS_INSTANCE
+                    .init(Some(cocoonfs_instance))
+                    .expect("SVSM CocoonFs instance already initialized");
+                log::info!("persistent CocoonFs storage opened successfully");
+                return Ok(());
+            }
+            Ok((_rng, Err((_chip, key, e)))) => {
+                if e == NvFsError::from(cocoonfs::FormatError::InvalidImageHeaderMagic) {
+                    log::debug!("skipping over block device with no CocoonFs header");
+                } else if e == NvFsError::from(cocoonfs::FormatError::InvalidImageHeaderChecksum) {
+                    log::warn!("skipping over block device with invalid CocoonFs header checksum");
+                } else {
+                    log::error!(
+                        "failed to open CocoonFs block device: {:?}, trying next one, if any",
+                        e
+                    );
+                }
+                key
+            }
+            Err(e) => {
+                // If not even the key is getting returned back, it's likely an internal error of
+                // the implementation.
+                log::error!("failed to open CocoonFs block device: {:?}", e);
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+    }
+
+    // No CocoonFs block device available.
+    log::info!("no persistent CocoonFs storage found");
+    SVSM_COCOONFS_INSTANCE
+        .init(None)
+        .expect("SVSM CocoonFs instance already initialized");
+
+    Ok(())
+}
+
+/// Test whether persistence functionality is available.
+///
+/// Persistence functionality is available only if a block device with a valid CocoonFs instance on
+/// it could get opened successfully from [`persistence_init()`].
+///
+/// `persistence_available()` may get invoked even if [`persistence_init()`] has not been run at all,
+/// in which case it would report `false`.
+pub fn persistence_available() -> bool {
+    SVSM_COCOONFS_INSTANCE
+        .try_get_inner()
+        .ok()
+        .and_then(|i| i.as_ref())
+        .is_some()
 }
