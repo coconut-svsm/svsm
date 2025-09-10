@@ -11,6 +11,7 @@ mod backend;
 use anyhow::Context;
 use clap::Parser;
 use std::{fs, os::unix::net::UnixListener};
+use vsock::{VsockAddr, VsockListener};
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
@@ -26,8 +27,17 @@ struct Args {
     backend: backend::Protocol,
 
     /// UNIX domain socket path to the SVSM serial port
-    #[clap(long)]
+    #[clap(long, conflicts_with_all = ["vsock_cid", "vsock_port"], default_value_t = String::from(""))]
     unix: String,
+
+    /// CID for vsock
+    /// FIXME: idea is to accept connections only from this CID
+    #[clap(long, conflicts_with = "unix", default_value_t = 0)]
+    vsock_cid: u32,
+
+    /// Port for vsock
+    #[clap(long, conflicts_with = "unix", default_value_t = 0)]
+    vsock_port: u32,
 
     /// Force Unix domain socket removal before bind
     #[clap(long, short, default_value_t = false)]
@@ -41,16 +51,31 @@ fn main() -> anyhow::Result<()> {
         let _ = fs::remove_file(args.unix.clone());
     }
 
-    let listener = UnixListener::bind(args.unix).context("unable to bind to UNIX socket")?;
-
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
-                attest::attest(&mut stream, &mut http_client)?;
+    if args.vsock_cid != 0 && args.vsock_port != 0 {
+        let listener = VsockListener::bind(&VsockAddr::new(u32::MAX, args.vsock_port))
+            .context("bind and listen failed")?;
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut stream) => {
+                    let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
+                    attest::attest(&mut stream, &mut http_client)?;
+                }
+                Err(_) => {
+                    panic!("error");
+                }
             }
-            Err(_) => {
-                panic!("error");
+        }
+    } else {
+        let listener = UnixListener::bind(args.unix).context("unable to bind to UNIX socket")?;
+        for stream in listener.incoming() {
+            match stream {
+                Ok(mut stream) => {
+                    let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
+                    attest::attest(&mut stream, &mut http_client)?;
+                }
+                Err(_) => {
+                    panic!("error");
+                }
             }
         }
     }
