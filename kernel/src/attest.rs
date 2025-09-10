@@ -23,6 +23,7 @@ use cocoon_tpm_crypto::{
     CryptoError,
 };
 use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
+use cocoon_tpm_utils_common::zeroize::Zeroizing;
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -61,7 +62,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
+    pub fn attest(&mut self) -> Result<Zeroizing<Vec<u8>>, SvsmError> {
         let negotiation = self.negotiation()?;
 
         Ok(self.attestation(negotiation)?)
@@ -85,7 +86,10 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    fn attestation(
+        &mut self,
+        n: NegotiationResponse,
+    ) -> Result<Zeroizing<Vec<u8>>, AttestationError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -124,7 +128,7 @@ impl AttestationDriver<'_> {
 
         self.decrypt(&mut secret, decryption)?;
 
-        Ok(secret)
+        Ok(Zeroizing::new(secret))
     }
 
     /// Decrypt a secret from the attestation server with the TEE private key. Secrets are
