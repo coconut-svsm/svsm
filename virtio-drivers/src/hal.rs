@@ -151,12 +151,12 @@ pub unsafe trait Hal {
     ///
     /// # Safety
     ///
-    /// `src` must be properly alinged and reside at a readable memory address.
+    /// `src` must be properly aligned and reside at a readable memory address.
     unsafe fn mmio_read<T>(src: &T) -> T
     where
         T: FromBytes + Immutable,
     {
-        // SAFETY: `src` is assumed to be properly aligned and within readale memory
+        // SAFETY: `src` is assumed to be properly aligned and within readable memory
         unsafe { (src as *const T).read_volatile() }
     }
 
@@ -167,12 +167,12 @@ pub unsafe trait Hal {
     ///
     /// # Safety
     ///
-    /// `dst` must be properly alinged and reside at a writable memory address.
+    /// `dst` must be properly aligned and reside at a writable memory address.
     unsafe fn mmio_write<T>(dst: &mut T, value: T)
     where
         T: IntoBytes + Immutable,
     {
-        // SAFETY: dst is assumed to be properly alinged and within writeble memory
+        // SAFETY: dst is assumed to be properly aligned and within writable memory
         unsafe {
             (dst as *mut T).write_volatile(value);
         }

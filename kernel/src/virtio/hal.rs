@@ -196,7 +196,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ///
     /// # Safety
     ///
-    /// `src` must be properly alinged and reside at a readable memory address.
+    /// `src` must be properly aligned and reside at a readable memory address.
     unsafe fn mmio_read<T: FromBytes + Immutable>(src: &T) -> T {
         let paddr = this_cpu()
             .get_pgtable()
@@ -227,7 +227,7 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ///
     /// # Safety
     ///
-    /// `dst` must be properly alinged and reside at a writable memory address.
+    /// `dst` must be properly aligned and reside at a writable memory address.
     unsafe fn mmio_write<T: IntoBytes + Immutable>(dst: &mut T, v: T) {
         let paddr = this_cpu()
             .get_pgtable()
