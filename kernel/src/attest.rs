@@ -27,6 +27,7 @@ use cocoon_tpm_crypto::{
     CryptoError,
 };
 use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
+use cocoon_tpm_utils_common::zeroize::Zeroizing;
 use core::cmp::min;
 use kbs_types::Tee;
 use libaproxy::*;
@@ -66,7 +67,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
+    pub fn attest(&mut self) -> Result<Zeroizing<Vec<u8>>, SvsmError> {
         let negotiation = self.negotiation()?;
 
         Ok(self.attestation(negotiation)?)
@@ -90,7 +91,10 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    fn attestation(
+        &mut self,
+        n: NegotiationResponse,
+    ) -> Result<Zeroizing<Vec<u8>>, AttestationError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -137,7 +141,7 @@ impl AttestationDriver<'_> {
         &self,
         ciphertext: Vec<u8>,
         pub_key: TpmsEccPoint<'static>,
-    ) -> Result<Vec<u8>, AttestationError> {
+    ) -> Result<Zeroizing<Vec<u8>>, AttestationError> {
         let shared_secret =
             ecdh_c_1e_1s_cdh_party_v_key_gen(TpmiAlgHash::Sha256, "", &self.ecc, &pub_key)
                 .map_err(AttestationError::Crypto)?;
@@ -147,7 +151,7 @@ impl AttestationDriver<'_> {
         // Decrypt each 16-byte block of the ciphertext with the symmetric key.
         let mut ptr = 0;
         let len = ciphertext.len();
-        let mut vec: Vec<u8> = Vec::new();
+        let mut vec: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
         while ptr < len {
             let remain = min(16, len - ptr);
             let mut arr: [u8; 16] = [0u8; 16];
