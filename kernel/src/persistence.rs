@@ -15,7 +15,7 @@ use cocoon_tpm_storage::{
     },
     fs::{
         cocoonfs::{self, CocoonFs},
-        NvFsError, NvFsIoError,
+        NvFs, NvFsError, NvFsFuture, NvFsIoError, TransactionCommitError,
     },
     nvblkdev_err_internal,
 };
@@ -26,6 +26,7 @@ use crate::address::PhysAddr;
 use crate::block::{api::BlockDriver, virtio_blk::VirtIOBlkDriver, BlockDeviceError};
 use crate::crypto::get_svsm_rng;
 use crate::error::SvsmError;
+use crate::fs::FsError;
 use crate::fw_cfg::FwCfg;
 use crate::mm::alloc::AllocError;
 use crate::platform::SVSM_PLATFORM;
@@ -602,6 +603,8 @@ type SvsmCocoonFsType = CocoonFs<SvsmSyncTypes, SvsmNvBlkDev>;
 type SvsmCocoonFsSyncRcPtrType =
     <<SvsmSyncTypes as sync_types::SyncTypes>::SyncRcPtrFactory as sync_types::SyncRcPtrFactory>
     ::SyncRcPtr<SvsmCocoonFsType>;
+type SvsmCocoonFsSyncRcPtrRefType<'a> =
+    <SvsmCocoonFsSyncRcPtrType as sync_types::SyncRcPtr<SvsmCocoonFsType>>::SyncRcPtrRef<'a>;
 
 static SVSM_COCOONFS_INSTANCE: ImmutAfterInitCell<Option<pin::Pin<SvsmCocoonFsSyncRcPtrType>>> =
     ImmutAfterInitCell::uninit();
@@ -719,4 +722,257 @@ pub fn persistence_available() -> bool {
         .ok()
         .and_then(|i| i.as_ref())
         .is_some()
+}
+
+/// Instantiate a [`CocoonFs::StartTransactionFut`].
+///
+/// The [`CocoonFs::StartTransactionFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_start_transaction_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::StartTransactionFut>, NvFsError> {
+    let start_transaction_fut = SvsmCocoonFsType::start_transaction(fs_instance, None);
+    box_try_new(start_transaction_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::CommitTransactionFut`].
+///
+/// The [`CocoonFs::CommitTransactionFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_commit_transaction_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+    transaction: <SvsmCocoonFsType as NvFs>::Transaction,
+    issue_sync: bool,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::CommitTransactionFut>, NvFsError> {
+    let commit_transaction_fut =
+        SvsmCocoonFsType::commit_transaction(fs_instance, transaction, None, None, issue_sync);
+    box_try_new(commit_transaction_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::WriteInodeFut`].
+///
+/// The [`CocoonFs::WriteInodeFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_write_inode_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+    transaction: <SvsmCocoonFsType as NvFs>::Transaction,
+    inode: u32,
+    data: Zeroizing<Vec<u8>>,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::WriteInodeFut>, NvFsError> {
+    let write_inode_fut = SvsmCocoonFsType::write_inode(fs_instance, transaction, inode, data);
+    box_try_new(write_inode_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`CocoonFs::ReadInodeFut`].
+///
+/// The [`CocoonFs::ReadInodeFut`] is not exactly small -- by instantiating it in an
+/// `inline(never)` function and `Box`ing it right after, the stack allocations required for the
+/// moves are hopefully getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_read_inode_fut(
+    fs_instance: &pin::Pin<SvsmCocoonFsSyncRcPtrRefType<'_>>,
+    inode: u32,
+) -> Result<Box<<SvsmCocoonFsType as NvFs>::ReadInodeFut>, NvFsError> {
+    let read_inode_fut = SvsmCocoonFsType::read_inode(fs_instance, None, inode);
+    box_try_new(read_inode_fut).map_err(NvFsError::from)
+}
+
+/// Synchronously write data to an inode on persistent storage.
+///
+/// If the `inode` does not exist yet, it will get created. All of the inode's contents will get
+/// replaced with `data`.
+///
+/// The inode data writes are all-or-nothing and atomic: on successful completion, all of the
+/// `inode`'s data has been replaced with the new `data`, whereas on error its original contents are
+/// retained. Furthermore, there is a total order among all (successful) writes ever issued to the
+/// backing persistent storage volume, possibly to different target inodes even.
+///
+/// `persistence_write_inode_sync()` assumes ownership of the `data` buffer for the duration of the
+/// operation. It gets returned back unmodified to the caller on success.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_write_inode_sync()` itself.
+///
+/// # Arguments:
+///
+/// * `inode` - Number of the inode to update.
+/// * `data` - The data to write to `inode`.
+/// * `issue_sync` - Whether or not to issue a sync request to the underlying storage after the
+///   write has completed. That's best effort though and relies on the host to behave well.
+#[allow(unused)]
+pub fn persistence_write_inode_sync(
+    inode: u32,
+    mut data: Zeroizing<Vec<u8>>,
+    issue_sync: bool,
+) -> Result<Zeroizing<Vec<u8>>, SvsmError> {
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.as_ref() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence write: failed to get rng instance: {:?}", e);
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    loop {
+        let mut transaction = match instantiate_cocoonfs_start_transaction_fut(&fs_instance)
+            .and_then(|mut start_transaction_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *start_transaction_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            }) {
+            Ok(transaction) => transaction,
+            Err(NvFsError::Retry) => continue,
+            Err(e) => {
+                log::error!("persistence write: failed to start transaction: {:?}", e);
+                return Err(nvfs_error_to_svsm_error(e));
+            }
+        };
+
+        // The Future instantiation step can fail only due to memory allocation
+        // failures. NvFsError::Retry is potentially getting returned only by the actual polling, in
+        // which case 'data' needs to get restored for the retry.
+        {
+            let mut write_inode_fut = match instantiate_cocoonfs_write_inode_fut(
+                &fs_instance,
+                transaction,
+                inode,
+                data,
+            ) {
+                Ok(write_inode_fut) => write_inode_fut,
+                Err(e) => {
+                    log::error!(
+                        "persistence write: failed to stage inode write at transaction: {:?}",
+                        e
+                    );
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+            (transaction, data) = match task_busypoll_to_completion(|cx| {
+                NvFsFuture::poll(
+                    pin::Pin::new(&mut *write_inode_fut),
+                    &fs_instance,
+                    &mut rng,
+                    cx,
+                )
+            }) {
+                (returned_data, Ok((transaction, Ok(())))) => (transaction, returned_data),
+                (returned_data, Ok((_, Err(NvFsError::Retry))) | Err(NvFsError::Retry)) => {
+                    data = returned_data;
+                    continue;
+                }
+                (_, Ok((_, Err(e))) | Err(e)) => {
+                    log::error!(
+                        "persistence write: failed to stage inode write at transaction: {:?}",
+                        e
+                    );
+                    return Err(nvfs_error_to_svsm_error(e));
+                }
+            };
+        }
+
+        if let Err(e) =
+            instantiate_cocoonfs_commit_transaction_fut(&fs_instance, transaction, issue_sync)
+                .and_then(|mut commit_transaction_fut| {
+                    task_busypoll_to_completion(|cx| {
+                        NvFsFuture::poll(
+                            pin::Pin::new(&mut *commit_transaction_fut),
+                            &fs_instance,
+                            &mut rng,
+                            cx,
+                        )
+                    })
+                    .map_err(|e| match e {
+                        TransactionCommitError::LogStateClean { reason } => reason,
+                        TransactionCommitError::LogStateIndeterminate { reason } => reason,
+                    })
+                })
+        {
+            if e == NvFsError::Retry {
+                continue;
+            }
+
+            log::error!("persistence write: failed to commit transaction: {:?}", e);
+            return Err(nvfs_error_to_svsm_error(e));
+        }
+
+        break;
+    }
+
+    Ok(data)
+}
+
+/// Synchronously read data from an inode on persistent storage.
+///
+/// In case the `inode` does not exist, `None` is returned, otherwise all of the inode's data
+/// is returned wrapped in `Some`. Note that a non-existing inode and an existing one with
+/// empty data are considered different.
+///
+/// Any error propagated back to the caller indicates an actual problem -- in particular requests to
+/// retry received from the backing filesystem implementation are handled transparently within
+/// `persistence_read_inode_sync()` itself.
+///
+/// # Arguments:
+///
+/// * `inode` - Number of the inode whose data to read.
+#[allow(unused)]
+pub fn persistence_read_inode_sync(inode: u32) -> Result<Option<Zeroizing<Vec<u8>>>, SvsmError> {
+    let fs_instance = match SVSM_COCOONFS_INSTANCE.as_ref() {
+        Some(fs_instance) => <pin::Pin<SvsmCocoonFsSyncRcPtrType> as sync_types::SyncRcPtr<
+            SvsmCocoonFsType,
+        >>::as_ref(fs_instance),
+        None => {
+            return Err(SvsmError::FileSystem(FsError::NotSupported));
+        }
+    };
+
+    let mut rng = match get_svsm_rng() {
+        Ok(rng) => rng,
+        Err(e) => {
+            log::error!("persistence read: failed to get rng instance: {:?}", e);
+            return Err(nvfs_error_to_svsm_error(NvFsError::from(e)));
+        }
+    };
+
+    loop {
+        match instantiate_cocoonfs_read_inode_fut(&fs_instance, inode).and_then(
+            |mut read_inode_fut| {
+                task_busypoll_to_completion(|cx| {
+                    NvFsFuture::poll(
+                        pin::Pin::new(&mut *read_inode_fut),
+                        &fs_instance,
+                        &mut rng,
+                        cx,
+                    )
+                })
+            },
+        ) {
+            Ok((_read_context, Ok(data))) => break Ok(data),
+            Ok((_, Err(NvFsError::Retry))) | Err(NvFsError::Retry) => (),
+            Ok((_, Err(e))) | Err(e) => {
+                log::error!("persistence read: failed to read inode data: {:?}", e);
+                break Err(nvfs_error_to_svsm_error(e));
+            }
+        }
+    }
 }
