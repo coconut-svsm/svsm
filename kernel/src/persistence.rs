@@ -1,23 +1,38 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// Copyright 2025 SUSE LLC
+// Copyright 2025-2026 SUSE LLC
 // Author: Nicolai Stange <nstange@suse.de>
 
 //! Functionality related to persistent SVSM storage.
 
-use core::{fmt::Debug, ops, pin, task};
+extern crate alloc;
+use alloc::{boxed::Box, vec::Vec};
+
+use core::{fmt::Debug, future::Future, ops, pin, task};
 
 use cocoon_tpm_storage::{
     blkdev::{
         NvBlkDev, NvBlkDevFuture, NvBlkDevIoError, NvBlkDevReadRequest, NvBlkDevWriteRequest,
     },
+    fs::{
+        NvFsError, NvFsIoError,
+        cocoonfs::{self, CocoonFs},
+    },
     nvblkdev_err_internal,
 };
-use cocoon_tpm_utils_common::fixed_vec::FixedVec;
+use cocoon_tpm_utils_async::sync_types;
+use cocoon_tpm_utils_common::{
+    alloc::{box_try_new, try_alloc_zeroizing_vec},
+    fixed_vec::FixedVec,
+    zeroize::Zeroizing,
+};
 
-use crate::block::{BlockDeviceError, api::BlockDriver};
+use crate::r#async::{SvsmSyncTypes, task_busypoll_to_completion};
+use crate::block::{BLOCK_DEVICE, BlockDeviceError, api::BlockDriver};
+use crate::crypto::get_svsm_rng;
 use crate::error::SvsmError;
 use crate::mm::alloc::AllocError;
 use crate::types::PAGE_SHIFT;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 /// Wrapper around [`BlockDriver`] implementors, itself implementing the `cocoon-tpm-storage`
 /// crate's [`NvBlkDev`] block device abstraction.
@@ -610,4 +625,196 @@ impl<D: 'static + ops::Deref<Target: BlockDriver> + Send + Sync + Unpin>
 
         task::Poll::Ready(Ok(()))
     }
+}
+
+fn nvfs_error_to_svsm_error(e: NvFsError) -> SvsmError {
+    match e {
+        NvFsError::MemoryAllocationFailure => SvsmError::Alloc(AllocError::OutOfMemory),
+        NvFsError::IoError(NvFsIoError::IoFailure) => SvsmError::Block(BlockDeviceError::Failed),
+        _ => SvsmError::Block(BlockDeviceError::Failed),
+    }
+}
+
+type SvsmCocoonFsType = CocoonFs<SvsmSyncTypes, SvsmNvBlkDev<&'static dyn BlockDriver>>;
+type SvsmCocoonFsSyncRcPtrType =
+    <<SvsmSyncTypes as sync_types::SyncTypes>::SyncRcPtrFactory as sync_types::SyncRcPtrFactory>
+    ::SyncRcPtr<SvsmCocoonFsType>;
+
+static SVSM_COCOONFS_INSTANCE: ImmutAfterInitCell<pin::Pin<SvsmCocoonFsSyncRcPtrType>> =
+    ImmutAfterInitCell::uninit();
+
+/// Instantiate a [`cocoonfs::ReadFsMetadataFuture`].
+///
+/// The `cocoonfs::ReadFsMetadataFuture` is huge, and by instantiating it in an `inline(never)`
+/// function and `Box`ing it right after, the stack allocations required for the moves are hopefully
+/// getting freed up quickly again.
+#[inline(never)]
+fn instantiate_cocoonfs_read_fs_metadata_fut(
+    blkdev: SvsmNvBlkDev<&'static dyn BlockDriver>,
+) -> Result<Box<cocoonfs::ReadFsMetadataFuture<SvsmNvBlkDev<&'static dyn BlockDriver>>>, NvFsError>
+{
+    let read_fs_metadata_fut =
+        cocoonfs::ReadFsMetadataFuture::new(blkdev).map_err(|(_blkdev, e)| e)?;
+    box_try_new(read_fs_metadata_fut).map_err(NvFsError::from)
+}
+
+/// Instantiate a [`cocoonfs::OpenFsFuture`].
+///
+/// The `cocoonfs::OpenFsFuture` is huge, and by instantiating it in an `inline(never)` function and
+/// `Box`ing it right after, the stack allocations required for the moves are hopefully getting
+/// freed up quickly again.
+#[allow(clippy::type_complexity)]
+#[inline(never)]
+fn instantiate_cocoonfs_open_fut(
+    blkdev: SvsmNvBlkDev<&'static dyn BlockDriver>,
+    fs_metadata: cocoonfs::FsMetadata,
+    key: Zeroizing<Vec<u8>>,
+) -> Result<
+    Box<cocoonfs::OpenFsFuture<SvsmSyncTypes, SvsmNvBlkDev<&'static dyn BlockDriver>>>,
+    NvFsError,
+> {
+    let rng = box_try_new(get_svsm_rng().map_err(NvFsError::from)?).map_err(NvFsError::from)?;
+    let cocoonfs_open_fut = cocoonfs::OpenFsFuture::new(blkdev, Some(fs_metadata), key, false, rng)
+        .map_err(|(_blkdev, _key, _rng, e)| e)?;
+    box_try_new(cocoonfs_open_fut).map_err(NvFsError::from)
+}
+
+/// Persistence metadata info returned by [`persistence_discover()`].
+///
+/// `PersistenceBootstrapInfo` gets returned by [`persistence_discover()`], is supposed to serve as
+/// input to the attestation, and, once the key has been obtained, to eventually get passed to
+/// [`persistence_init()`] for the unlocking.
+#[allow(missing_debug_implementations)]
+pub struct PersistenceBootstrapInfo {
+    blkdev: SvsmNvBlkDev<&'static dyn BlockDriver>,
+    fs_metadata: cocoonfs::FsMetadata,
+}
+
+impl PersistenceBootstrapInfo {
+    /// Access the matadata.
+    pub fn get_fs_metadata(&self) -> &cocoonfs::FsMetadata {
+        &self.fs_metadata
+    }
+}
+
+/// Obtain persistence bootstrap info from block devices, if any.
+///
+/// Persistence initialization is a split operation. In a first step, the metadata is read from any
+/// block devices via `persistence_discover()`, if any. That metadata is then served as input to the
+/// attestation procedure in order to obtain a key. Eventually, the bootstrap info and the key get
+/// passed to `persistence_init()` for the unlocking.
+///
+/// # See also:
+///
+/// * [`persistence_init()`]
+pub fn persistence_discover() -> Result<Option<PersistenceBootstrapInfo>, SvsmError> {
+    // Inspect the global BLOCK_DEVICE and see if there's a CocoonFs on it, either already formatted
+    // or one with with a mkfsinfo header, which will get formatted transparently at first
+    // filesystem opening time.
+    log::debug!("attempting to find persistent CocoonFs storage...");
+    let blkdev = match BLOCK_DEVICE.try_get_inner().ok() {
+        Some(blkdev) => SvsmNvBlkDev::new(&**blkdev),
+        None => {
+            log::debug!("no block device found");
+            return Ok(None);
+        }
+    };
+
+    let mut read_fs_metadata_fut =
+        instantiate_cocoonfs_read_fs_metadata_fut(blkdev).map_err(nvfs_error_to_svsm_error)?;
+    match task_busypoll_to_completion(|cx| {
+        Future::poll(pin::Pin::new(&mut read_fs_metadata_fut), cx)
+    }) {
+        Ok((blkdev, Ok(fs_metadata))) => {
+            // Found one, return it.
+            log::debug!("found persistent CocoonFs storage");
+            Ok(Some(PersistenceBootstrapInfo {
+                blkdev,
+                fs_metadata,
+            }))
+        }
+        Ok((_blkdev, Err(e))) => {
+            if e == NvFsError::from(cocoonfs::FormatError::InvalidImageHeader) {
+                log::debug!("skipping over block device with no CocoonFs header");
+            } else {
+                log::error!("failed to read CocoonFs metadata from block device: {e:?}");
+            }
+            // No CocoonFs block device available.
+            log::info!("no persistent CocoonFs storage found");
+            Ok(None)
+        }
+        Err(e) => {
+            // If not even the blkdev is getting returned back, it's likely an internal error of
+            // the implementation.
+            log::error!("failed to read CocoonFs metadata from block device: {e:?}");
+            Err(nvfs_error_to_svsm_error(e))
+        }
+    }
+}
+
+/// Finalize the initialization of the persistence subsystem.
+///
+/// Must get invoked at most once at startup, any subsequent reinitialization attempt will result in
+/// a panic.
+///
+/// The successfully opened CocoonFs instance, if any, will henceforth be used to serve all
+/// the SVSM's persistence related needs.
+///
+/// # Arguments:
+///
+/// * `bootstrap_info` - The bootstrap info previously obtained from [`persistence_discover()`] and
+///   provided to the attestation in order to obtain the `key`.
+/// * `key` - The CocoonFs root key used (indirectly) for authentication and encryption.
+///
+/// # See also:
+///
+/// * [`persistence_discover()`]
+pub fn persistence_init(
+    bootstrap_info: PersistenceBootstrapInfo,
+    key: &[u8],
+) -> Result<(), SvsmError> {
+    let PersistenceBootstrapInfo {
+        blkdev,
+        fs_metadata,
+    } = bootstrap_info;
+
+    // Make a copy for the OpenFsFuture.
+    let mut owned_key = try_alloc_zeroizing_vec(key.len())
+        .map_err(|_| SvsmError::Alloc(AllocError::OutOfMemory))?;
+    owned_key.copy_from_slice(key);
+
+    let mut cocoonfs_open_fut = match instantiate_cocoonfs_open_fut(blkdev, fs_metadata, owned_key)
+    {
+        Ok(cocoonfs_open_fut) => cocoonfs_open_fut,
+        Err(e) => {
+            log::error!("failed to initiate CocoonFs opening operation: {e:?}");
+            return Err(nvfs_error_to_svsm_error(e));
+        }
+    };
+
+    match task_busypoll_to_completion(|cx| Future::poll(pin::Pin::new(&mut cocoonfs_open_fut), cx))
+    {
+        Ok((_rng, Ok(cocoonfs_instance))) => {
+            SVSM_COCOONFS_INSTANCE
+                .init(cocoonfs_instance)
+                .expect("SVSM CocoonFs instance already initialized");
+            log::info!("persistent CocoonFs storage opened successfully");
+            Ok(())
+        }
+        Ok((_, Err((_, _, e)))) | Err(e) => {
+            log::error!("failed to open CocoonFs block device: {e:?}");
+            Err(nvfs_error_to_svsm_error(e))
+        }
+    }
+}
+
+/// Test whether persistence functionality is available.
+///
+/// Persistence functionality is available only if a block device with a valid CocoonFs instance on
+/// it could get opened successfully from [`persistence_init()`].
+///
+/// `persistence_available()` may get invoked even if [`persistence_init()`] has not been run at all,
+/// in which case it would report `false`.
+pub fn persistence_available() -> bool {
+    SVSM_COCOONFS_INSTANCE.try_get_inner().is_ok()
 }
