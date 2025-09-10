@@ -55,7 +55,7 @@ use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
 #[cfg(feature = "cocoonfs")]
-use svsm::persistence::{persistence_discover, persistence_init};
+use svsm::persistence::{persistence_demo, persistence_discover, persistence_init};
 use svsm::platform::PageValidateOp;
 use svsm::platform::PlatformPageType;
 use svsm::platform::SVSM_PLATFORM;
@@ -564,6 +564,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         #[cfg(feature = "cocoonfs")]
         if let Some(persistence_bootstrap_info) = persistence_bootstrap_info {
             persistence_init(persistence_bootstrap_info, &secret).unwrap();
+            persistence_demo();
         }
     }
 
