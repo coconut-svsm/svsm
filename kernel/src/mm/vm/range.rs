@@ -150,7 +150,7 @@ impl VMR {
     ///
     /// # Safety
     /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// appropriately aligned to prevent the possibility that adjacent address
     /// ranges may attempt to share top-level paging entries.  If any overlap
     /// is attempted, page tables may be corrupted.
     ///
@@ -173,7 +173,7 @@ impl VMR {
     ///
     /// # Safety
     /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// appropriately aligned to prevent the possibility that adjacent address
     /// ranges may attempt to share top-level paging entries.  If any overlap
     /// is attempted, page tables may be corrupted.
     ///
@@ -181,7 +181,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibilty for ensuring that the address
+        // SAFETY: The caller takes responsibility for ensuring that the address
         // bounds of the range have appropriate alignment with respect to
         // the page table alignment boundaries.
         unsafe { self.initialize_common(false) }
@@ -191,7 +191,7 @@ impl VMR {
     ///
     /// # Safety
     /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibilty that adjacent address
+    /// appropriately aligned to prevent the possibility that adjacent address
     /// ranges may attempt to share top-level paging entries.  If any overlap
     /// is attempted, page tables may be corrupted.
     ///
@@ -199,7 +199,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize_lazy(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibilty for ensuring that the address
+        // SAFETY: The caller takes responsibility for ensuring that the address
         // bounds of the range have appropriate alignment with respect to
         // the page table alignment boundaries.
         unsafe { self.initialize_common(true) }

@@ -202,7 +202,7 @@ impl StackUnwinder {
 
     fn frame_is_last(rbp: VirtAddr) -> bool {
         // A new task is launched with RBP = 0, which is pushed onto the stack
-        // immediatly and can serve as a marker when the end of the stack has
+        // immediately and can serve as a marker when the end of the stack has
         // been reached.
         rbp == VirtAddr::null()
     }

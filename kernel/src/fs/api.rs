@@ -18,7 +18,7 @@ use packit::PackItError;
 
 pub type FileName = String;
 
-/// Represents the type of error occured
+/// Represents the type of error occurred
 /// while doing SVSM filesystem operations.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum FsError {
