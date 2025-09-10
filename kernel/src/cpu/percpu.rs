@@ -828,7 +828,7 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn setup_idle_task(&self, entry: extern "C" fn(usize)) -> Result<(), SvsmError> {
+    pub fn setup_idle_task(&self, entry: fn(usize)) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, entry, self.shared.cpu_index, String::from("idle"))?;
         self.runqueue.lock_write().set_idle_task(idle_task);
         Ok(())
@@ -1369,7 +1369,7 @@ pub fn current_task() -> TaskPointer {
     this_cpu().runqueue.lock_read().current_task()
 }
 
-pub extern "C" fn cpu_idle_loop(cpu_index: usize) {
+pub fn cpu_idle_loop(cpu_index: usize) {
     debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
 
     loop {

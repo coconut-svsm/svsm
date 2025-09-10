@@ -325,7 +325,7 @@ impl Task {
 
     pub fn create(
         cpu: &PerCpu,
-        entry: extern "C" fn(usize),
+        entry: fn(usize),
         start_parameter: usize,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
@@ -379,7 +379,7 @@ impl Task {
     /// `Some(TaskPointer)` with the new thread on success, `Err(SvsmError)` on failure.
     pub fn create_thread(
         cpu: &PerCpu,
-        entry: extern "C" fn(usize),
+        entry: fn(usize),
         start_parameter: usize,
         name: String,
         thread: TaskPointer,
@@ -851,7 +851,7 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     }
 }
 
-extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_parameter: usize) {
+fn run_kernel_task(entry: fn(usize), xsa_addr: u64, start_parameter: usize) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
@@ -860,7 +860,7 @@ extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_
     entry(start_parameter);
 }
 
-extern "C" fn task_exit() {
+fn task_exit() {
     current_task_terminated();
     schedule();
 }
@@ -964,7 +964,7 @@ mod tests {
             .expect("Failed to launch request processing task");
     }
 
-    extern "C" fn task1(start_parameter: usize) {
+    fn task1(start_parameter: usize) {
         assert_eq!(start_parameter, 1);
 
         let ret: u64;
@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(ret, 0);
     }
 
-    extern "C" fn task2(start_parameter: usize) {
+    fn task2(start_parameter: usize) {
         assert_eq!(start_parameter, 2);
         unsafe {
             asm!("call alter_fpu", options(att_syntax));

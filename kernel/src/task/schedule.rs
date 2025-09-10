@@ -267,7 +267,7 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn start_kernel_task(
-    entry: extern "C" fn(usize),
+    entry: fn(usize),
     start_parameter: usize,
     name: String,
 ) -> Result<TaskPointer, SvsmError> {
@@ -296,7 +296,7 @@ pub fn start_kernel_task(
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn start_kernel_thread(
-    entry: extern "C" fn(usize),
+    entry: fn(usize),
     start_parameter: usize,
 ) -> Result<TaskPointer, SvsmError> {
     let current_task = current_task();

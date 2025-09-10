@@ -87,7 +87,7 @@ fn request_loop_once(
     }
 }
 
-pub extern "C" fn request_loop_main(cpu_index: usize) {
+pub fn request_loop_main(cpu_index: usize) {
     log::info!("Launching request-processing task on CPU {}", cpu_index);
 
     if cpu_index != 0 {

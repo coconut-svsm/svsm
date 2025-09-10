@@ -305,7 +305,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-pub extern "C" fn svsm_main(cpu_index: usize) {
+pub fn svsm_main(cpu_index: usize) {
     debug_assert_eq!(cpu_index, 0);
 
     // If required, the GDB stub can be started earlier, just after the console
