@@ -1,6 +1,7 @@
 FEATURES ?= vtpm
 ifneq ($(FEATURES),)
 SVSM_ARGS += --features ${FEATURES}
+XBUILD_ARGS += -f ${FEATURES}
 endif
 
 FEATURES_TEST ?= vtpm,virtio-drivers
@@ -15,6 +16,7 @@ CLIPPY_ARGS ?= -D warnings
 ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
+XBUILD_ARGS += --release
 else
 TARGET_PATH=debug
 endif
@@ -59,7 +61,7 @@ APROXYBIN = bin/aproxy
 RUSTDOC_OUTPUT = target/x86_64-unknown-none/doc
 DOC_SITE = target/x86_64-unknown-none/site
 
-all: bin/svsm.bin igvm
+all: igvm
 
 aproxy: $(APROXY) $(APROXYBIN)
 
@@ -86,13 +88,14 @@ $(IGVMBUILDER):
 $(IGVMMEASURE):
 	cargo build ${CARGO_ARGS} --package igvmmeasure
 
-bin/coconut-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
-	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} qemu --snp --tdp --native
-	$(IGVMMEASURE) --check-kvm $@ measure
+bin/coconut-qemu.igvm:
+	cargo xbuild $(XBUILD_ARGS) ./configs/qemu-target.json
 
-bin/coconut-hyperv.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --comport 3 hyper-v --snp --tdp --vsm
-	$(IGVMMEASURE) $@ measure
+bin/coconut-hyperv.igvm:
+	cargo xbuild $(XBUILD_ARGS) ./configs/hyperv-target.json
+
+bin/coconut-vanadium.igvm:
+	cargo xbuild $(XBUILD_ARGS) ./configs/vanadium-target.json
 
 bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu --snp --tdp --native
@@ -101,10 +104,6 @@ bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.
 bin/coconut-test-hyperv.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf --comport 3 hyper-v --snp --tdp --vsm
 	$(IGVMMEASURE) $@ measure
-
-bin/coconut-vanadium.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/svsm-kernel.elf bin/stage2.bin ${FS_BIN}
-	$(IGVMBUILDER) --sort --policy 0x30000 --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/svsm-kernel.elf --filesystem ${FS_BIN} ${BUILD_FW} vanadium --snp --tdp
-	$(IGVMMEASURE) --check-kvm --native-zero $@ measure
 
 bin/coconut-test-vanadium.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
 	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf vanadium --snp --tdp
@@ -188,9 +187,6 @@ bin/stage1-trampoline: stage1_elf_trampoline
 bin/svsm-test: stage1_elf_test
 	cp -f $(STAGE1_ELF) $@
 
-bin/svsm.bin: bin/svsm
-	objcopy -O binary $< $@
-
 bin/stage1-trampoline.bin: bin/stage1-trampoline
 	objcopy -O binary $< $@
 
@@ -213,4 +209,4 @@ clean:
 distclean: clean
 	$(MAKE) -C libtcgtpm $@
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN)
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)
