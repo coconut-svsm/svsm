@@ -102,9 +102,9 @@ global_asm!(
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
-         * to svsm_start as required by the C calling convention for x86-64.
+         * to svsm_entry as required by the C calling convention for x86-64.
          */
-        call svsm_start
+        call svsm_entry
         int3
 
         .bss
@@ -169,8 +169,7 @@ fn init_cpuid_table(addr: VirtAddr) {
     register_cpuid_table(&CPUID_PAGE);
 }
 
-#[no_mangle]
-extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
+fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
     let launch_info: KernelLaunchInfo = *li;
     init_platform_type(launch_info.platform_type);
 
@@ -266,11 +265,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
 
     idt_init().expect("Failed to allocate IDT");
 
-    if is_cet_ss_supported() {
-        set_cet_ss_enabled();
-        enable_shadow_stacks!(bsp_percpu);
-    }
-
     initialize_fs();
 
     // Idle task must be allocated after PerCPU data is mapped
@@ -288,7 +282,6 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     print_memory_info(&mem_info);
 
     boot_stack_info();
-    shadow_stack_info();
 
     platform
         .configure_alternate_injection(launch_info.use_alternate_injection)
@@ -297,6 +290,22 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     platform_cell.global_init();
 
     sse_init();
+
+    bsp_percpu.get_top_of_shadow_stack()
+}
+
+#[no_mangle]
+extern "C" fn svsm_entry(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
+    let ssp_token = svsm_start(li, vb_addr);
+
+    // Shadow stacks must be enabled once no further function returns are
+    // possible.
+    if is_cet_ss_supported() {
+        set_cet_ss_enabled();
+        let ssp_token_addr = ssp_token.unwrap();
+        enable_shadow_stacks!(ssp_token_addr);
+    }
+    shadow_stack_info();
 
     // SAFETY: there is no current task running on this processor yet, so
     // initializing the scheduler is safe.
@@ -307,9 +316,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-pub fn svsm_main(cpu_index: usize) {
-    debug_assert_eq!(cpu_index, 0);
-
+fn svsm_init() {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
     gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
@@ -395,8 +402,13 @@ pub fn svsm_main(cpu_index: usize) {
         )
         .expect("Failed to launch request loop task");
     }
+}
 
-    cpu_idle_loop(cpu_index);
+pub fn svsm_main(_context: usize) {
+    svsm_init();
+
+    // Launch the idle loop for the BSP, which has CPU index zero.
+    cpu_idle_loop(0);
 }
 
 #[panic_handler]
