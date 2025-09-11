@@ -49,10 +49,12 @@ use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
-use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
+use svsm::svsm_paging::{
+    enumerate_early_boot_regions, init_page_table, invalidate_early_boot_memory,
+};
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion, ScopedRef};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -121,7 +123,6 @@ global_asm!(
 );
 
 static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
-static LAUNCH_INFO: ImmutAfterInitCell<KernelLaunchInfo> = ImmutAfterInitCell::uninit();
 
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
@@ -172,16 +173,21 @@ fn init_cpuid_table(addr: VirtAddr) {
     register_cpuid_table(&CPUID_PAGE);
 }
 
-fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
-    let launch_info: KernelLaunchInfo = *li;
+/// # Safety
+/// The caller must pass a valid pointer from the kernel heap as the launch
+/// info pointer.
+unsafe fn svsm_start(li: *const KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
+    // SAFETY: the caller guarantees the correctness of the launch info
+    // pointer.
+    let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(launch_info.platform_type);
 
     let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
 
-    mapping_info_init(&launch_info);
+    mapping_info_init(launch_info.as_ref());
 
     // SAFETY: we trust the previous stage to pass a valid pointer
-    unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
+    unsafe { init_valid_bitmap_ptr(new_kernel_region(launch_info.as_ref()), vb_ptr) };
 
     GLOBAL_GDT.load_selectors();
 
@@ -195,13 +201,9 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
 
     // Capture the debug serial port before the launch info disappears from
     // the address space.
-    let debug_serial_port = li.debug_serial_port;
+    let debug_serial_port = launch_info.debug_serial_port;
 
-    LAUNCH_INFO
-        .init_from_ref(li)
-        .expect("Already initialized launch info");
-
-    let mut platform_cell = SvsmPlatformCell::new(li.suppress_svsm_interrupts);
+    let mut platform_cell = SvsmPlatformCell::new(launch_info.suppress_svsm_interrupts);
     let platform = platform_cell.platform_mut();
 
     if launch_info.cpuid_page != 0 {
@@ -227,7 +229,7 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
-    memory_init(&launch_info);
+    memory_init(launch_info.as_ref());
     migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
 
     let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
@@ -244,8 +246,8 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
     };
 
     paging_init(platform, false).expect("Failed to initialize paging");
-    let init_pgtable =
-        init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
+    let init_pgtable = init_page_table(launch_info.as_ref(), &kernel_elf)
+        .expect("Could not initialize the page table");
     // SAFETY: we are initializing the state, including stack and registers
     unsafe {
         init_pgtable.load();
@@ -274,8 +276,11 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
     initialize_fs();
 
     // Idle task must be allocated after PerCPU data is mapped
+    // SAFETY: the pointer to the launch information is the correct start
+    // parameter for the startup routine.
+    let start_info = unsafe { KernelThreadStartInfo::new_unsafe(svsm_main, li as usize) };
     bsp_percpu
-        .setup_idle_task(svsm_main)
+        .setup_bsp_idle_task(start_info)
         .expect("Failed to allocate idle task for BSP");
 
     platform
@@ -308,10 +313,9 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
 /// heap.
 #[no_mangle]
 unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, vb_addr: usize) -> ! {
-    // SAFETY: the launch info pointer is known to be a pointer in the kernel
-    // heap, which can be freed once it is no longer used.
-    let launch_info = unsafe { PageBox::<KernelLaunchInfo>::from_raw(NonNull::new(li).unwrap()) };
-    let ssp_token = svsm_start(launch_info.as_ref(), vb_addr);
+    // SAFETY: the caller ensures that the launch info pointer is a valid
+    // pointer.
+    let ssp_token = unsafe { svsm_start(li, vb_addr) };
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.
@@ -331,7 +335,7 @@ unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, vb_addr: usize) -> ! 
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-fn svsm_init() {
+fn svsm_init(launch_info: &KernelLaunchInfo) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
     gdbstub_start(&**SVSM_PLATFORM).expect("Could not start GDB stub");
@@ -345,7 +349,6 @@ fn svsm_init() {
 
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
-    let launch_info = &*LAUNCH_INFO;
     // SAFETY: the address in the launch info is known to be correct.
     let igvm_params = unsafe { IgvmBox::new(VirtAddr::from(launch_info.igvm_params_virt_addr)) }
         .expect("Invalid IGVM parameters");
@@ -355,9 +358,9 @@ fn svsm_init() {
 
     let config = SvsmConfig::new(&igvm_params);
 
-    init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
+    init_memory_map(&config, launch_info).expect("Failed to init guest memory map");
 
-    populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
+    populate_ram_fs(launch_info.kernel_fs_start, launch_info.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
     init_capabilities();
@@ -369,10 +372,13 @@ fn svsm_init() {
     // Make ro_after_init section read-only
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, launch_info)
+    let kernel_region = new_kernel_region(launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(&config, launch_info);
+
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");
 
-    if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, new_kernel_region(&LAUNCH_INFO)) {
+    if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, kernel_region) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
@@ -430,10 +436,21 @@ fn svsm_init() {
     }
 }
 
-pub fn svsm_main(_context: usize) {
-    svsm_init();
+/// # Safety
+/// The caller is required to ensure that the start parameter is a pointer to
+/// a valid `KernelLaunchInfo` structure that was allocated from the kernel
+/// heap..
+pub unsafe fn svsm_main(li: usize) {
+    // SAFETY: the caller takes responsibility for the correctness of the
+    // pointer.
+    let launch_info = unsafe {
+        PageBox::<KernelLaunchInfo>::from_raw(NonNull::new(li as *mut KernelLaunchInfo).unwrap())
+    };
+    svsm_init(launch_info.as_ref());
 
-    // Launch the idle loop for the BSP, which has CPU index zero.
+    // The launch info is no lnoger used and can be freed now.
+    drop(launch_info);
+
     cpu_idle_loop(0);
 }
 
