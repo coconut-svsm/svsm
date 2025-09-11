@@ -9,9 +9,7 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::ipi::ipi_start_cpu;
-use crate::cpu::percpu::{
-    cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu, PerCpuShared, PERCPU_AREAS,
-};
+use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu, PerCpuShared, PERCPU_AREAS};
 use crate::cpu::shadow_stack::{is_cet_ss_enabled, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
@@ -179,7 +177,7 @@ extern "C" fn start_ap() -> ! {
         .expect("setup_on_cpu() failed");
 
     percpu
-        .setup_idle_task(cpu_idle_loop)
+        .setup_idle_task()
         .expect("Failed to allocate idle task for AP");
 
     // Send a life-sign
