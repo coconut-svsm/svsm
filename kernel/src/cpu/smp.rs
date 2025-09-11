@@ -170,7 +170,8 @@ extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
 
     if is_cet_ss_enabled() {
-        enable_shadow_stacks!(percpu);
+        let ssp_token = percpu.get_top_of_shadow_stack().unwrap();
+        enable_shadow_stacks!(ssp_token);
     }
 
     percpu
