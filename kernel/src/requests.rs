@@ -11,6 +11,7 @@ use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
+use crate::protocols::reboot::reboot_protocol_request;
 use crate::task::{go_idle, set_affinity, start_kernel_thread, KernelThreadStartInfo};
 use crate::vmm::{enter_guest, GuestExitMessage, GuestRegister};
 
@@ -19,6 +20,7 @@ use crate::protocols::attest::attest_protocol_request;
 use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+    SVSM_REBOOT_PROTOCOL,
 };
 
 use alloc::vec::Vec;
@@ -83,6 +85,7 @@ fn request_loop_once(
         #[cfg(all(feature = "vtpm", not(test)))]
         SVSM_VTPM_PROTOCOL => vtpm_protocol_request(request, params),
         SVSM_APIC_PROTOCOL => apic_protocol_request(request, params),
+        SVSM_REBOOT_PROTOCOL => reboot_protocol_request(request, params),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }

@@ -8,6 +8,7 @@ pub mod apic;
 pub mod attest;
 pub mod core;
 pub mod errors;
+pub mod reboot;
 #[cfg(all(feature = "vtpm", not(test)))]
 pub mod vtpm;
 
@@ -21,6 +22,7 @@ pub const SVSM_CORE_PROTOCOL: u32 = 0;
 pub const SVSM_ATTEST_PROTOCOL: u32 = 1;
 pub const SVSM_VTPM_PROTOCOL: u32 = 2;
 pub const SVSM_APIC_PROTOCOL: u32 = 3;
+pub const SVSM_REBOOT_PROTOCOL: u32 = 5;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RequestParams {

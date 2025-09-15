@@ -6,14 +6,15 @@
 
 use super::capabilities::Caps;
 use super::snp_fw::{
-    copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
+    copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, relaunch_fw, validate_fw,
+    validate_fw_memory,
 };
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
-use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
+use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
 use crate::error::ApicError::Registration;
@@ -84,6 +85,7 @@ impl From<PageValidateOp> for PvalidateOp {
     }
 }
 
+static CAA_PAGE: ImmutAfterInitCell<PhysAddr> = ImmutAfterInitCell::uninit();
 #[derive(Clone, Copy, Debug)]
 pub struct SnpPlatform {
     can_use_interrupts: bool,
@@ -137,8 +139,16 @@ impl SvsmPlatform for SnpPlatform {
             copy_tables_to_fw(fw_meta, &kernel_region)?;
             validate_fw(config, &kernel_region)?;
             prepare_fw_launch(fw_meta)?;
+            let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
+            let _ = CAA_PAGE.init(caa_page);
         }
         Ok(())
+    }
+
+    fn relaunch_fw(&self) -> Result<(), SvsmError> {
+        this_cpu_shared().update_guest_caa(*CAA_PAGE);
+
+        relaunch_fw()
     }
 
     fn launch_fw(&self, config: &SvsmConfig<'_>) -> Result<(), SvsmError> {

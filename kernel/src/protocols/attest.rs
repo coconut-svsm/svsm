@@ -16,6 +16,7 @@ use crate::greq::{
     services::get_regular_report,
 };
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
+use crate::protocols::reboot::reboot_get_manifest;
 use crate::protocols::{errors::SvsmReqError, RequestParams};
 use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -35,6 +36,7 @@ const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 
 #[cfg(all(feature = "vtpm", not(test)))]
 const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+const SVSM_ATTEST_REBOOT_GUID: Uuid = uuid!("0cc20f93-afaa-4013-9fb6-9d16fc42ceae");
 
 // Attest services operation structure, as defined in Table 11 of Secure VM Service Module for
 // SEV-SNP Guests 58019 Rev, 1.00 July 2023
@@ -340,6 +342,13 @@ fn attest_single_vtpm(
     attest_single_service(vtpm_get_manifest()?.as_slice(), params, ops)
 }
 
+fn attest_single_reboot(
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOp,
+) -> Result<(), SvsmReqError> {
+    attest_single_service(reboot_get_manifest()?.as_slice(), params, ops)
+}
+
 fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     let gpa = PhysAddr::from(params.rcx);
 
@@ -354,6 +363,7 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
 
     #[cfg(all(feature = "vtpm", not(test)))]
     services.push(SVSM_ATTEST_VTPM_GUID, vtpm_get_manifest()?);
+    services.push(SVSM_ATTEST_REBOOT_GUID, reboot_get_manifest()?);
 
     let manifest = services.to_vec()?;
     let mut nonce_and_manifest = attest_op.get_nonce()?;
@@ -390,6 +400,7 @@ fn attest_single_service_handler(params: &mut RequestParams) -> Result<(), SvsmR
     match attest_op.get_guid() {
         #[cfg(all(feature = "vtpm", not(test)))]
         SVSM_ATTEST_VTPM_GUID => attest_single_vtpm(params, &attest_op),
+        SVSM_ATTEST_REBOOT_GUID => attest_single_reboot(params, &attest_op),
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }
