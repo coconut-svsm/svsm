@@ -66,6 +66,7 @@ vstd = { workspace = true, optional = true}
 verify_proof = { workspace = true, optional = true}
 verify_external = { workspace = true, optional = true}
 verus_stub = { workspace = true }
+rlebits = { version = "0.1.0", path = "../rlebits" }
 
 [target."x86_64-unknown-none".dev-dependencies]
 test.workspace = true
