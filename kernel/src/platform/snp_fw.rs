@@ -9,7 +9,7 @@ extern crate alloc;
 use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
 use crate::cpu::cpuid::copy_cpuid_table_to;
-use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
+use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared, PERCPU_VMSAS};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
@@ -296,6 +296,22 @@ pub fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
 
     log::info!("Launching Firmware");
     current_ghcb().register_guest_vmsa(vmsa_pa, 0, GUEST_VMPL as u64, sev_features)?;
+
+    Ok(())
+}
+
+pub fn relaunch_fw() -> Result<(), SvsmError> {
+    let cpu = this_cpu();
+    let mut vmsa_ref = cpu.guest_vmsa_ref();
+    let vmsa_pa = vmsa_ref.vmsa_phys().unwrap_or_default();
+    let vmsa = vmsa_ref.vmsa();
+
+    // For now, it seems the IGVM doesn't include VMSA values, so we need to
+    // revert to the "reset" condition. If we do need to use IGVM values,
+    // launch_fw will have to save the config reference so we can use it here.
+    cpu.reset_vmsa(vmsa)?;
+
+    PERCPU_VMSAS.empty(vmsa_pa)?;
 
     Ok(())
 }
