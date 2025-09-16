@@ -42,7 +42,7 @@ use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer};
+use crate::task::{schedule, schedule_task, KernelThreadStartInfo, RunQueue, Task, TaskPointer};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -829,7 +829,11 @@ impl PerCpu {
     }
 
     pub fn setup_idle_task(&self, entry: fn(usize)) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, self.shared.cpu_index, String::from("idle"))?;
+        let idle_task = Task::create(
+            self,
+            KernelThreadStartInfo::new(entry, self.shared.cpu_index),
+            String::from("idle"),
+        )?;
         self.runqueue.lock_write().set_idle_task(idle_task);
         Ok(())
     }

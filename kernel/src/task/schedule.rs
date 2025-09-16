@@ -30,8 +30,9 @@
 
 extern crate alloc;
 
-use super::INITIAL_TASK_ID;
-use super::{Task, TaskListAdapter, TaskPointer, TaskRunListAdapter};
+use super::{
+    KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter, INITIAL_TASK_ID,
+};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::ipi::{send_multicast_ipi, IpiMessage, IpiTarget};
 use crate::cpu::irq_state::raw_get_tpr;
@@ -267,12 +268,11 @@ pub static TASKLIST: SpinLock<TaskList> = SpinLock::new(TaskList::new());
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
 pub fn start_kernel_task(
-    entry: fn(usize),
-    start_parameter: usize,
+    start_info: KernelThreadStartInfo,
     name: String,
 ) -> Result<TaskPointer, SvsmError> {
     let cpu = this_cpu();
-    let task = Task::create(cpu, entry, start_parameter, name)?;
+    let task = Task::create(cpu, start_info, name)?;
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
@@ -295,16 +295,12 @@ pub fn start_kernel_task(
 /// # Returns
 ///
 /// A new instance of [`TaskPointer`] on success, [`SvsmError`] on failure.
-pub fn start_kernel_thread(
-    entry: fn(usize),
-    start_parameter: usize,
-) -> Result<TaskPointer, SvsmError> {
+pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPointer, SvsmError> {
     let current_task = current_task();
     let cpu = this_cpu();
     let task = Task::create_thread(
         cpu,
-        entry,
-        start_parameter,
+        start_info,
         current_task.get_task_name().clone(),
         current_task,
     )?;
