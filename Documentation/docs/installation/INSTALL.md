@@ -309,10 +309,13 @@ $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -drive file=/path/to/guest/image.qcow2,if=none,id=disk0,format=qcow2,snapshot=off \
   -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
   -device scsi-hd,drive=disk0,bootindex=0 \
-  -vga std \
+  -vga none \
   -serial stdio \
   -serial pty
 ```
+Note: With QEMU 10.1 (which includes IGVM support), guests may fail to boot
+during VGA initialization. The `-vga none` option is added temporarily to
+disable VGA init until this issue is resolved.
 
 If everything works, initialization messages of the SVSM should appear
 in the terminal:
