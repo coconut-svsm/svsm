@@ -43,6 +43,8 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
+#[cfg(feature = "cocoonfs")]
+use svsm::persistence::{persistence_demo, persistence_init};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::requests::request_loop_main;
@@ -354,10 +356,16 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
     #[cfg(feature = "attest")]
     {
         let mut proxy = AttestationDriver::try_from(Tee::Snp).unwrap();
-        let _data = proxy.attest().unwrap();
-
-        // Nothing to do with data at the moment, simply print a success message.
+        let secret = proxy.attest().unwrap();
         log::info!("attestation successful");
+
+        #[cfg(not(feature = "cocoonfs"))]
+        let _ = secret;
+        #[cfg(feature = "cocoonfs")]
+        {
+            persistence_init(secret).unwrap();
+            persistence_demo();
+        }
     }
 
     #[cfg(all(feature = "vtpm", not(test)))]
