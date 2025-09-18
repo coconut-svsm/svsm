@@ -36,9 +36,10 @@ const SVSM_REQ_CORE_DEPOSIT_MEM: u32 = 4;
 const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
+const SVSM_REQ_CORE_REBOOT: u32 = 8;
 
 pub const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
-pub const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
+pub const CORE_PROTOCOL_VERSION_MAX: u32 = 2;
 
 // This lock prevents races around PVALIDATE and CREATE_VCPU
 //
@@ -269,6 +270,19 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
+use rlebits::sync::ThreadSafeRleBits;
+/// Bitmap tracking which guest physical pages are validated
+///
+/// Each bit represents a 4K page. A set bit means the page is valid.
+/// The bitmap covers the entire guest physical address space.
+///
+/// The bitmap is initialized with all bits cleared, meaning all pages
+/// are invalid.
+///
+/// The bitmap is protected by a lock, so it can be safely accessed
+/// from multiple CPUs.
+static GUEST_VALID: ThreadSafeRleBits = ThreadSafeRleBits::new(1_usize << 52);
+
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
@@ -295,6 +309,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
+    let page_index = paddr.bits() >> 12; // 4K pages
 
     // Take lock to prevent races with CREATE_VCPU calls
     let lock = PVALIDATE_LOCK.lock_read();
@@ -314,6 +329,12 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     }
 
     drop(lock);
+
+    // Update bitmap...
+    let value = (valid == PvalidateOp::Valid) as u8;
+    GUEST_VALID
+        .set(page_index, value)
+        .map_err(|_| SvsmReqError::FatalError(SvsmError::Fault))?;
 
     if valid == PvalidateOp::Valid {
         // Zero out a page when it is validated and before giving other VMPLs
@@ -457,6 +478,54 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+fn invalidate_guest_pages() -> Result<(), SvsmReqError> {
+    let runs = GUEST_VALID.sanity_check();
+    let mut start = 0;
+    for i in 0..runs {
+        let run_len = GUEST_VALID.get_run(i);
+        if i % 2 == 1 {
+            // Valid run, invalidate pages
+            for page in start..(start + run_len) {
+                let paddr = PhysAddr::from(page << 12); // 4K pages
+                let guard =
+                    PerCPUPageMappingGuard::create(paddr, paddr + PAGE_SIZE, VIRT_ALIGN_4K)?;
+                let vaddr = guard.virt_addr();
+
+                // Take lock to prevent races with CREATE_VCPU calls
+                let lock = PVALIDATE_LOCK.lock_read();
+
+                // rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
+
+                let e;
+                // SAFETY: the physical address was guaranteed to be a guest address and
+                // cannot affect memory safety.
+                unsafe {
+                    e = pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid);
+                }
+                drop(lock);
+
+                if let Err(err) = e {
+                    log::error!("Failed to invalidate guest page {:#x}: {:#?}", paddr, err);
+                }
+            }
+        }
+        start += run_len;
+    }
+
+    // Clear GUEST_VALID page list
+    GUEST_VALID.reset();
+
+    flush_tlb_global_sync();
+
+    Ok(())
+}
+
+fn core_reboot(_params: &RequestParams) -> Result<(), SvsmReqError> {
+    invalidate_guest_pages()?;
+    crate::platform::SVSM_PLATFORM.relaunch_fw()?;
+    Ok(())
+}
+
 pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_REQ_CORE_REMAP_CA => core_remap_ca(params),
@@ -467,6 +536,7 @@ pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result
         SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(params),
         SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(params),
         SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(params),
+        SVSM_REQ_CORE_REBOOT => core_reboot(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }
