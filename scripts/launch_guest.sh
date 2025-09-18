@@ -172,6 +172,7 @@ if [ -t 0 ]; then
   stty intr ^]
 fi
 
+# Temporarily use -vga none to avoid IGVM VGA init failure in QEMU 10.1
 $SUDO_CMD \
   $QEMU \
     -cpu $CPU \
@@ -184,6 +185,7 @@ $SUDO_CMD \
     -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
     $IMAGE_DISK \
     -nographic \
+    -vga none \
     -monitor none \
     $COM1_SERIAL \
     $COM2_SERIAL \
