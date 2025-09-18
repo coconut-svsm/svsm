@@ -20,7 +20,7 @@ use super::common::{
 use crate::address::VirtAddr;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
 use crate::cpu::registers::RFlags;
-use crate::cpu::shadow_stack::IS_CET_SUPPORTED;
+use crate::cpu::shadow_stack::IS_CET_ENABLED;
 use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
@@ -506,6 +506,6 @@ global_asm!(
     EXCEP_CS_OFF = const offset_of!(X86ExceptionContext, frame.cs),
     EXCEP_FLAGS_OFF = const offset_of!(X86ExceptionContext, frame.flags),
     EXCEP_FRAME_OFF = const offset_of!(X86ExceptionContext, frame),
-    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
+    IS_CET_ENABLED = sym IS_CET_ENABLED,
     options(att_syntax)
 );

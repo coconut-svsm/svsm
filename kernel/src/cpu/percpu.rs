@@ -10,13 +10,12 @@ use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
-use super::shadow_stack::{is_cet_ss_supported, ISST_ADDR};
+use super::shadow_stack::{init_shadow_stack, is_cet_ss_enabled, is_cet_ss_supported, ISST_ADDR};
 use super::tss::{X86Tss, IST_DF};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
-use crate::cpu::shadow_stack::init_shadow_stack;
 use crate::cpu::tss::TSS_LIMIT;
 use crate::cpu::vmsa::{init_guest_vmsa, init_svsm_vmsa};
 use crate::cpu::vmsa::{svsm_code_segment, svsm_data_segment, svsm_gdt_segment, svsm_idt_segment};
@@ -860,7 +859,7 @@ impl PerCpu {
         // TSS and ISST to ensure a memory safe execution state
         unsafe { self.get_pgtable().load() };
         self.load_gdt_tss(false);
-        if is_cet_ss_supported() {
+        if is_cet_ss_enabled() {
             self.load_isst();
         }
     }
