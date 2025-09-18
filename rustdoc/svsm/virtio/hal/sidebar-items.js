@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["virtio_init"],"static":["SHARED_MEM"],"struct":["PageStore","SvsmHal"]};
