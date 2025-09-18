@@ -11,7 +11,7 @@ use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
-use crate::task::{go_idle, set_affinity, start_kernel_thread};
+use crate::task::{go_idle, set_affinity, start_kernel_thread, KernelThreadStartInfo};
 use crate::vmm::{enter_guest, GuestExitMessage, GuestRegister};
 
 use crate::protocols::attest::attest_protocol_request;
@@ -87,7 +87,7 @@ fn request_loop_once(
     }
 }
 
-pub extern "C" fn request_loop_main(cpu_index: usize) {
+pub fn request_loop_main(cpu_index: usize) {
     log::info!("Launching request-processing task on CPU {}", cpu_index);
 
     if cpu_index != 0 {
@@ -98,7 +98,7 @@ pub extern "C" fn request_loop_main(cpu_index: usize) {
         // request loop task for each other processor in the system.
         let cpu_count = PERCPU_AREAS.len();
         for task_index in 1..cpu_count {
-            start_kernel_thread(request_loop_main, task_index)
+            start_kernel_thread(KernelThreadStartInfo::new(request_loop_main, task_index))
                 .expect("Failed to launch request loop thread");
         }
     }
