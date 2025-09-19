@@ -7,7 +7,10 @@
 
 use super::*;
 use anyhow::Context;
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{
+    prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
+    Engine,
+};
 use kbs_types::*;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -31,7 +34,7 @@ impl AttestationProtocol for KbsProtocol {
             return Err(anyhow!("invalid request version"));
         }
         let req = Request {
-            version: "0.1.0".to_string(), // unused.
+            version: "0.4.0".to_string(),
             tee: request.tee,
             extra_params: Value::String("".to_string()), // unused.
         };
@@ -79,19 +82,15 @@ impl AttestationProtocol for KbsProtocol {
     ) -> anyhow::Result<AttestationResponse> {
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
-            tee_pubkey: match request.key {
-                AttestationKey::EC {
-                    crv,
-                    x_b64url,
-                    y_b64url,
-                } => TeePubKey::EC {
-                    crv,
-                    alg: "EC".to_string(),
-                    x: x_b64url,
-                    y: y_b64url,
-                },
+            init_data: None,
+            runtime_data: RuntimeData {
+                nonce: BASE64_STANDARD.encode(request.challenge),
+                tee_pubkey: request.key.into(),
             },
-            tee_evidence: Value::String(request.evidence),
+            tee_evidence: CompositeEvidence {
+                primary_evidence: Value::String(BASE64_STANDARD.encode(request.evidence)),
+                additional_evidence: String::new(),
+            },
         };
 
         // Attest TEE evidence at KBS /attest endpoint.
@@ -102,23 +101,26 @@ impl AttestationProtocol for KbsProtocol {
             .send()
             .context("unable to POST to KBS /attest endpoint")?;
 
-        // The JSON response from the /attest endpoint is basically ignored here. Instead, we check
-        // the HTTP status to indicate successful attestation.
-        //
-        // FIXME
         if http_resp.status() != StatusCode::OK {
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
-                pub_key: None,
+                decryption: None,
             });
         }
 
-        // Successful attestation. Fetch the secret (which should be stored as "svsm_secret" within
-        // the KBS's RVPS.
+        // Successful attestation. Fetch the secret (which should be stored at
+        // /resource/default/sample/test in the KBS server instance.
+        //
+        // KBS offers a resource backend repository for testing, which includes the
+        // default/sample/test file. Fetch the secret "hello, world" from this file to demonstrate
+        // a secret fetch.
+        //
+        // TODO: Further modify this backend to support the KBS module's PKCS11 plugin.
+        // With this, wrapped secrets can be POSTed to the PKCS11 plugin for unwrapping.
         let http_resp = http
             .cli
-            .post(format!("{}/kbs/v0/svsm_secret", http.url))
+            .get(format!("{}/kbs/v0/resource/default/sample/test", http.url))
             .send()
             .context("unable to POST to KBS /attest endpoint")?;
 
@@ -127,7 +129,7 @@ impl AttestationProtocol for KbsProtocol {
             return Ok(AttestationResponse {
                 success: false,
                 secret: None,
-                pub_key: None,
+                decryption: None,
             });
         }
 
@@ -138,33 +140,56 @@ impl AttestationProtocol for KbsProtocol {
         let resp: Response = serde_json::from_str(&text)
             .context("unable to convert KBS /resource response to KBS Response object")?;
 
-        let pub_key = {
-            let val = serde_json::from_slice(&resp.encrypted_key).unwrap();
-            let Value::Object(map) = val else {
-                panic!();
-            };
-
-            let x = map.get("x_b64url").unwrap();
-            let Value::String(x) = x else {
-                panic!();
-            };
-
-            let y = map.get("y_b64url").unwrap();
-            let Value::String(y) = y else {
-                panic!();
-            };
-
-            AttestationKey::EC {
-                crv: "EC521".to_string(),
-                x_b64url: x.to_string(),
-                y_b64url: y.to_string(),
-            }
-        };
+        let epk = unwrap_epk(&resp)?;
+        let aad = resp
+            .protected
+            .generate_aad()
+            .context("unable to generate AAD")?;
 
         Ok(AttestationResponse {
             success: true,
             secret: Some(resp.ciphertext),
-            pub_key: Some(pub_key),
+            decryption: Some(AesGcmData {
+                epk,
+                wrapped_cek: resp.encrypted_key,
+                aad,
+                iv: resp.iv,
+                tag: resp.tag,
+            }),
         })
     }
+}
+
+fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
+    let epk = resp
+        .protected
+        .other_fields
+        .get("epk")
+        .context("epk not found")?;
+
+    let _crv = epk
+        .get("crv")
+        .context("EC crv value not found")?
+        .as_str()
+        .context("unable to convert EC crv value to string")?;
+
+    let x = BASE64_URL_SAFE_NO_PAD
+        .decode(
+            epk.get("x")
+                .context("EC x value not found")?
+                .as_str()
+                .context("unable to convert EC x value to string")?,
+        )
+        .context("unable to decode EC x value from base64")?;
+
+    let y = BASE64_URL_SAFE_NO_PAD
+        .decode(
+            epk.get("y")
+                .context("EC y value not found")?
+                .as_str()
+                .context("unable to convert EC y value to string")?,
+        )
+        .context("unable to decode EC y value from base64")?;
+
+    Ok(EcP256PublicKey { x, y })
 }

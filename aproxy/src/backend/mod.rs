@@ -5,10 +5,10 @@
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
-mod kbs_test;
+mod kbs;
 
 use anyhow::{anyhow, Context};
-use kbs_test::KbsProtocol;
+use kbs::KbsProtocol;
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
 use std::{str::FromStr, sync::Arc};
@@ -35,13 +35,13 @@ impl HttpClient {
         // Depending on the underlying protocol of the attestation server, gather negotiation
         // parameters accordingly.
         match self.protocol {
-            Protocol::KbsTest(mut kbs) => kbs.negotiation(self, req),
+            Protocol::Kbs(mut kbs) => kbs.negotiation(self, req),
         }
     }
 
     pub fn attestation(&mut self, req: AttestationRequest) -> anyhow::Result<AttestationResponse> {
         match self.protocol {
-            Protocol::KbsTest(mut kbs) => kbs.attestation(self, req),
+            Protocol::Kbs(mut kbs) => kbs.attestation(self, req),
         }
     }
 }
@@ -49,7 +49,7 @@ impl HttpClient {
 /// Attestation Protocol identifier.
 #[derive(Clone, Copy, Debug)]
 pub enum Protocol {
-    KbsTest(KbsProtocol),
+    Kbs(KbsProtocol),
 }
 
 impl FromStr for Protocol {
@@ -57,7 +57,7 @@ impl FromStr for Protocol {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match &s.to_lowercase()[..] {
-            "kbs-test" => Ok(Self::KbsTest(KbsProtocol)),
+            "kbs" => Ok(Self::Kbs(KbsProtocol)),
             _ => Err(anyhow!("invalid backend attestation protocol selected")),
         }
     }

@@ -12,3 +12,10 @@ mod negotiation;
 
 pub use attestation::*;
 pub use negotiation::*;
+
+#[derive(Debug)]
+pub enum Error {
+    InvalidKeyType,
+    KeyParamDecode(base64::DecodeError),
+    InvalidParams,
+}
