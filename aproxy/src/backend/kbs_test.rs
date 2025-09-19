@@ -7,6 +7,7 @@
 
 use super::*;
 use anyhow::Context;
+use base64::{prelude::BASE64_STANDARD, Engine};
 use kbs_types::*;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -54,7 +55,11 @@ impl AttestationProtocol for KbsProtocol {
         // decode the bytes and hash them into the TEE evidence.
         let params = vec![
             NegotiationParam::EcPublicKeyBytes,
-            NegotiationParam::Base64StdBytes(challenge.nonce),
+            NegotiationParam::Bytes(
+                BASE64_STANDARD
+                    .decode(challenge.nonce)
+                    .context("unable to decode challenge nonce from base64")?,
+            ),
         ];
 
         let resp = NegotiationResponse { params };

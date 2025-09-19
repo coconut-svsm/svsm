@@ -24,7 +24,7 @@ pub enum NegotiationParam {
     EcPublicKeyBytes,
     /// A base64-encoded byte array. This could represent a nonce or any other data the
     /// attestation server would like to embed in TEE evidence.
-    Base64StdBytes(String),
+    Bytes(Vec<u8>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

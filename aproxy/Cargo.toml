@@ -9,6 +9,7 @@ kbs-types = "0.10.0"
 
 [dependencies]
 anyhow = "1.0.93"
+base64 = { workspace = true, features = ["std"] }
 clap = { version = "4.5", features = ["derive"] }
 libaproxy.workspace = true
 serde.workspace = true
