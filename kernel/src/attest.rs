@@ -17,10 +17,7 @@ use crate::{
 use aes::{cipher::BlockDecrypt, Aes256Dec};
 use aes_gcm::KeyInit;
 use alloc::{string::ToString, vec::Vec};
-use base64::{
-    prelude::{BASE64_STANDARD, BASE64_URL_SAFE},
-    Engine,
-};
+use base64::{prelude::BASE64_STANDARD, Engine};
 use cocoon_tpm_crypto::{
     ecc::{curve::Curve, ecdh::ecdh_c_1e_1s_cdh_party_v_key_gen, EccKey},
     rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
@@ -107,7 +104,7 @@ impl AttestationDriver<'_> {
         let evidence = evidence(&self.tee, hash(n, &pub_key)?)?;
 
         let req = AttestationRequest {
-            evidence: BASE64_URL_SAFE.encode(evidence),
+            evidence: BASE64_STANDARD.encode(evidence),
             key: (self.ecc.pub_key().get_curve_id(), &pub_key)
                 .try_into()
                 .map_err(|_| AttestationError::AttestationDeserialize)?,
@@ -314,12 +311,8 @@ fn hash(
 
     for p in &n.params {
         match p {
-            NegotiationParam::Base64StdBytes(s) => {
-                let decoded = BASE64_STANDARD
-                    .decode(s)
-                    .map_err(|_| AttestationError::NegotiationDeserialize)?;
-
-                sha.update(decoded);
+            NegotiationParam::Bytes(bytes) => {
+                sha.update(bytes);
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
