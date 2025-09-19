@@ -7,6 +7,7 @@
 
 use super::*;
 use anyhow::Context;
+use base64::{prelude::BASE64_URL_SAFE, Engine};
 use kbs_types::*;
 use reqwest::StatusCode;
 use serde_json::Value;
@@ -85,7 +86,7 @@ impl AttestationProtocol for KbsProtocol {
                     y: y_b64url,
                 },
             },
-            tee_evidence: Value::String(request.evidence),
+            tee_evidence: Value::String(BASE64_URL_SAFE.encode(request.evidence)),
         };
 
         // Attest TEE evidence at KBS /attest endpoint.
