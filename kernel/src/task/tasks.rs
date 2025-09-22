@@ -41,6 +41,46 @@ use super::task_mm::{TaskKernelMapping, TaskMM};
 
 pub const INITIAL_TASK_ID: u32 = 1;
 
+/// This trait is used to describe a type that can be used as the start
+/// parameter for a kernel thread.  The thread start path requires that all
+/// start paremeters be able to fit into a single register, which constrains
+/// them to `usize`.  Other types can be used as long as there is an
+/// appropriate mechanism to covert those types to and from the `usize` that
+/// must be passed via the parameter register.  This trait defines such a
+/// conversion mechanism.
+///
+/// # Safety
+///
+/// Implementations of this thread must ensure that the `to_usize` and
+/// `from_usize` methods correctly preserve the safety of the parameter as it
+/// transitions from its native type to and from a temporary `usize`
+/// representation.
+pub unsafe trait KernelThreadStartParameter {
+    fn to_usize(parameter: Self) -> usize;
+
+    /// # Safety
+    /// This function must only be called with a `usize` parameter that was
+    /// previously returned from a call to `to_usize()`.
+    unsafe fn from_usize(parameter: usize) -> Self;
+}
+
+// SAFETY: types that implement `From` for conversions to and from `usize` are
+// trivially convertible to and from `usize` and thus will always preserve
+// safety of the parameter during conversion.
+unsafe impl<T> KernelThreadStartParameter for T
+where
+    T: From<usize>,
+    usize: From<T>,
+{
+    fn to_usize(parameter: Self) -> usize {
+        usize::from(parameter)
+    }
+
+    unsafe fn from_usize(parameter: usize) -> Self {
+        Self::from(parameter)
+    }
+}
+
 #[derive(Debug)]
 pub struct KernelThreadStartInfo {
     entry: usize,
@@ -49,14 +89,10 @@ pub struct KernelThreadStartInfo {
 }
 
 impl KernelThreadStartInfo {
-    pub fn new<T>(entry: fn(T), start_parameter: T) -> Self
-    where
-        T: From<usize>,
-        usize: From<T>,
-    {
+    pub fn new<T: KernelThreadStartParameter>(entry: fn(T), start_parameter: T) -> Self {
         Self {
             entry: entry as usize,
-            start_parameter: usize::from(start_parameter),
+            start_parameter: T::to_usize(start_parameter),
             start_routine: run_kernel_task::<T> as usize,
         }
     }
@@ -890,16 +926,25 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
 /// This function must only be invoked as a thread start function, and must
 /// be invoked according to the start parameter data type expected by the entry
 /// point.
-unsafe fn run_kernel_task<T>(entry: fn(T), xsa_addr: u64, start_parameter: usize)
-where
-    T: From<usize>,
-{
+unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
+    entry: fn(T),
+    xsa_addr: u64,
+    start_parameter: usize,
+) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
         setup_new_task_common(xsa_addr);
     }
-    entry(T::from(start_parameter));
+
+    // SAFETY: the `usize` start parameter was generated from an earlier call
+    // to `KernelThreadStartParameter::to_usize` when the start argument was
+    // prepared for use in the initial stack context, and therefore the safety
+    // requirements of `from_usize` are met.  The exception is if this task
+    // starts via an unsafe start function, in which case safety is the
+    // responsibility of whoever created the thread, and is not required to be
+    // assured here.
+    entry(unsafe { T::from_usize(start_parameter) });
 }
 
 fn task_exit() {
