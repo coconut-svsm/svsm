@@ -310,8 +310,8 @@ fn hash(
 
     for p in &n.params {
         match p {
-            NegotiationParam::Bytes(bytes) => {
-                sha.update(bytes);
+            NegotiationParam::Challenge => {
+                sha.update(n.challenge.clone());
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
