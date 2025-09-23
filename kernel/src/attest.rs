@@ -101,10 +101,11 @@ impl AttestationDriver<'_> {
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(n, &pub_key)?)?;
+        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
 
         let req = AttestationRequest {
             evidence: BASE64_STANDARD.encode(evidence),
+            challenge: n.challenge.clone(),
             key: (self.ecc.pub_key().get_curve_id(), &pub_key)
                 .try_into()
                 .map_err(|_| AttestationError::AttestationDeserialize)?,
@@ -304,7 +305,7 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
-    n: NegotiationResponse,
+    n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
     let mut sha = Sha512::new();
@@ -312,7 +313,7 @@ fn hash(
     for p in &n.params {
         match p {
             NegotiationParam::Challenge => {
-                sha.update(n.challenge.clone());
+                sha.update(&n.challenge);
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
