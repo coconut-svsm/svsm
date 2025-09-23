@@ -127,7 +127,8 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size as usize / PAGE_SIZE,
+        launch_info.heap_area_page_count as usize,
+        launch_info.heap_area_allocated as usize,
     );
 }
 
@@ -137,9 +138,11 @@ fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
+    let heap_start = VirtAddr::from(launch_info.heap_area_virt_start);
+    let heap_size = launch_info.heap_area_page_count as usize * PAGE_SIZE;
     let kernel_mapping = FixedAddressMappingRange::new(
-        VirtAddr::from(launch_info.heap_area_virt_start),
-        VirtAddr::from(launch_info.heap_area_virt_end()),
+        heap_start,
+        heap_start + heap_size,
         PhysAddr::from(launch_info.heap_area_phys_start),
     );
     init_kernel_mapping_info(kernel_mapping, None);
