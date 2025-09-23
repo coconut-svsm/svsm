@@ -55,14 +55,15 @@ impl AttestationProtocol for KbsProtocol {
         // decode the bytes and hash them into the TEE evidence.
         let params = vec![
             NegotiationParam::EcPublicKeyBytes,
-            NegotiationParam::Bytes(
-                BASE64_STANDARD
-                    .decode(challenge.nonce)
-                    .context("unable to decode challenge nonce from base64")?,
-            ),
+            NegotiationParam::Challenge,
         ];
 
-        let resp = NegotiationResponse { params };
+        let resp = NegotiationResponse {
+            challenge: BASE64_STANDARD
+                .decode(challenge.nonce)
+                .context("unable to decode challenge nonce from base64")?,
+            params,
+        };
 
         Ok(resp)
     }
