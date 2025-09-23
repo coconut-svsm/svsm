@@ -32,7 +32,7 @@ use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
-use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
     init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
@@ -43,7 +43,7 @@ use svsm::platform::{
     init_platform_type, PageStateChangeOp, PageValidateOp, SvsmPlatform, SvsmPlatformCell,
 };
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{is_aligned, MemoryRegion};
+use svsm::utils::{is_aligned, round_to_pages, MemoryRegion};
 
 use release::COCONUT_VERSION;
 
@@ -52,13 +52,71 @@ extern "C" {
     static mut pgtable: PageTable;
 }
 
+#[derive(Debug)]
+pub struct KernelHeap {
+    virt_base: VirtAddr,
+    phys_base: PhysAddr,
+    page_count: usize,
+    next_free: usize,
+}
+
+impl KernelHeap {
+    pub fn create(virt_base: VirtAddr, prange: MemoryRegion<PhysAddr>) -> Self {
+        Self {
+            virt_base,
+            phys_base: prange.start(),
+            page_count: prange.len() / PAGE_SIZE,
+            next_free: 0,
+        }
+    }
+
+    pub fn virt_base(&self) -> VirtAddr {
+        self.virt_base
+    }
+
+    pub fn phys_base(&self) -> PhysAddr {
+        self.phys_base
+    }
+
+    pub fn page_count(&self) -> usize {
+        self.page_count
+    }
+
+    pub fn next_free(&self) -> usize {
+        self.next_free
+    }
+
+    pub fn allocate(&mut self, size: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
+        let page_count = round_to_pages(size);
+        self.allocate_pages(page_count)
+    }
+
+    pub fn allocate_pages(&mut self, page_count: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
+        // Verify that this allocation will not overflow the heap.
+        let next_free = self.next_free + page_count;
+        if next_free > self.page_count {
+            return Err(AllocError::OutOfMemory.into());
+        }
+
+        // Calculate the allocation base based on the current position within
+        // the heap.
+        let offset = self.next_free * PAGE_SIZE;
+        let virt_addr = self.virt_base + offset;
+        let phys_addr = self.phys_base + offset;
+
+        // Move the allocation cursor beyond this allocation.
+        self.next_free = next_free;
+        Ok((virt_addr, phys_addr))
+    }
+}
+
 fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
     let vstart = VirtAddr::from(heap_start);
     let vend = VirtAddr::from(heap_end);
     let pstart = PhysAddr::from(vstart.bits()); // Identity mapping
     let nr_pages = (vend - vstart) / PAGE_SIZE;
 
-    root_mem_init(pstart, vstart, nr_pages);
+    root_mem_init(pstart, vstart, nr_pages, 0);
 }
 
 fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
@@ -353,43 +411,34 @@ fn load_kernel_elf(
     Ok((entry, region))
 }
 
-/// Loads the IGVM params at the next contiguous location from the loaded
-/// kernel image. Returns the virtual and physical memory regions hosting the
-/// loaded data.
+/// Loads the IGVM params.  Returns the virtual and physical memory regions
+/// containing the loaded data.
 /// # Safety
 /// Ther caller is required to specify the correct virtual address for the
 /// kernel virtual region.
-unsafe fn load_igvm_params(
-    launch_info: &Stage2LaunchInfo,
-    params: &IgvmParams<'_>,
-    loaded_kernel_vregion: &MemoryRegion<VirtAddr>,
-    loaded_kernel_pregion: &MemoryRegion<PhysAddr>,
-    platform: &dyn SvsmPlatform,
+fn load_igvm_params(
+    kernel_heap: &mut KernelHeap,
     config: &SvsmConfig<'_>,
-) -> Result<(MemoryRegion<VirtAddr>, MemoryRegion<PhysAddr>), SvsmError> {
-    // Map and validate destination region
-    let igvm_vregion = MemoryRegion::new(loaded_kernel_vregion.end(), params.size());
-    let igvm_pregion = MemoryRegion::new(loaded_kernel_pregion.end(), params.size());
-    // SAFETY: the virtual address region was computed not to overlap the
-    // kernel image.
-    unsafe {
-        map_and_validate(platform, config, igvm_vregion, igvm_pregion.start())?;
-    }
+    launch_info: &Stage2LaunchInfo,
+) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
+    let params = config.get_igvm_params();
+    let params_size = params.size();
+
+    // Allocate space in the kernel area to hold the parameters.
+    let (vaddr, _) = kernel_heap.allocate(params_size)?;
 
     // Copy the contents over
     let src_addr = VirtAddr::from(launch_info.igvm_params as u64);
     // SAFETY: the source address specified in the launch info was mapped
     // by the loader, which promises to supply a correctly formed IGRM
     // parameter block
-    let igvm_src = unsafe { slice::from_raw_parts(src_addr.as_ptr::<u8>(), igvm_vregion.len()) };
-    // SAFETY: the destination address is calculated to follow the kernel ELF
-    // image, which the caller is required to calculate correctly.
-    let igvm_dst = unsafe {
-        slice::from_raw_parts_mut(igvm_vregion.start().as_mut_ptr::<u8>(), igvm_vregion.len())
-    };
+    let igvm_src = unsafe { slice::from_raw_parts(src_addr.as_ptr::<u8>(), params_size) };
+    // SAFETY: the destination address came from the heap allocation above and
+    // can be used safely.
+    let igvm_dst = unsafe { slice::from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), params_size) };
     igvm_dst.copy_from_slice(igvm_src);
 
-    Ok((igvm_vregion, igvm_pregion))
+    Ok(MemoryRegion::new(vaddr, params_size))
 }
 
 /// Maps any remaining memory between the end of the kernel image and the end
@@ -407,7 +456,7 @@ fn prepare_heap(
     loaded_kernel_vregion: MemoryRegion<VirtAddr>,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
-) -> Result<(MemoryRegion<VirtAddr>, MemoryRegion<PhysAddr>), SvsmError> {
+) -> Result<KernelHeap, SvsmError> {
     // Heap starts after kernel
     let heap_pstart = loaded_kernel_pregion.end();
     let heap_vstart = loaded_kernel_vregion.end();
@@ -428,7 +477,7 @@ fn prepare_heap(
         map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
     }
 
-    Ok((heap_vregion, heap_pregion))
+    Ok(KernelHeap::create(heap_vstart, heap_pregion))
 }
 
 #[no_mangle]
@@ -465,38 +514,25 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
     // Load first the kernel ELF and update the loaded physical region
-    let (kernel_entry, mut loaded_kernel_vregion) =
+    let (kernel_entry, loaded_kernel_vregion) =
         load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
-    // Load the IGVM params, if present. Update loaded region accordingly.
-    // SAFETY: The loaded kernel region was correctly calculated above and
-    // is sized appropriately to include a copy of the IGVM parameters.
-    let (igvm_vregion, igvm_pregion) = unsafe {
-        load_igvm_params(
-            launch_info,
-            config.get_igvm_params(),
-            &loaded_kernel_vregion,
-            &loaded_kernel_pregion,
-            platform,
-            &config,
-        )
-    }
-    .expect("Failed to load IGVM params");
-
-    // Update the loaded kernel region
-    loaded_kernel_pregion = loaded_kernel_pregion.expand(igvm_vregion.len());
-    loaded_kernel_vregion = loaded_kernel_vregion.expand(igvm_pregion.len());
-
-    // Use remaining space after kernel image as heap space.
-    let (heap_vregion, heap_pregion) = prepare_heap(
+    // Create the page heap used in the kernel region.
+    let mut kernel_heap = prepare_heap(
         kernel_region,
         loaded_kernel_pregion,
         loaded_kernel_vregion,
         platform,
         &config,
     )
-    .expect("Failed to map and validate heap");
+    .expect("Could not create kernel heap");
+
+    // Load the IGVM params, if present. Update loaded region accordingly.
+    // SAFETY: The loaded kernel region was correctly calculated above and
+    // is sized appropriately to include a copy of the IGVM parameters.
+    let igvm_vregion = load_igvm_params(&mut kernel_heap, &config, launch_info)
+        .expect("Failed to load IGVM params");
 
     // Determine whether use of interrupts on the SVSM should be suppressed.
     // This is required when running SNP under KVM/QEMU.
@@ -510,9 +546,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let launch_info = KernelLaunchInfo {
         kernel_region_phys_start: u64::from(kernel_region.start()),
         kernel_region_phys_end: u64::from(kernel_region.end()),
-        heap_area_phys_start: u64::from(heap_pregion.start()),
-        heap_area_virt_start: u64::from(heap_vregion.start()),
-        heap_area_size: heap_vregion.len() as u64,
+        heap_area_phys_start: u64::from(kernel_heap.phys_base()),
+        heap_area_virt_start: u64::from(kernel_heap.virt_base()),
+        heap_area_page_count: kernel_heap.page_count().try_into().unwrap(),
+        heap_area_allocated: kernel_heap.next_free().try_into().unwrap(),
         kernel_region_virt_start: u64::from(loaded_kernel_vregion.start()),
         kernel_elf_stage2_virt_start: u64::from(launch_info.kernel_elf_start),
         kernel_elf_stage2_virt_end: u64::from(launch_info.kernel_elf_end),
@@ -523,8 +560,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         cpuid_page: launch_info.cpuid_page as u64,
         secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
-        stage2_igvm_params_size: igvm_pregion.len() as u64,
-        igvm_params_phys_addr: u64::from(igvm_pregion.start()),
+        stage2_igvm_params_size: igvm_vregion.len() as u64,
         igvm_params_virt_addr: u64::from(igvm_vregion.start()),
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),

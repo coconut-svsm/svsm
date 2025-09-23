@@ -1453,7 +1453,7 @@ impl HeapMemoryRegion {
     /// as allocated. It then frees all pages and organizes them into their
     /// respective order buckets.
     #[verus_verify(external_body)]
-    fn init_memory(&mut self) {
+    fn init_memory(&mut self, allocated: usize) {
         let size = size_of::<PageStorageType>();
         let meta_pages = align_up(self.page_count * size, PAGE_SIZE) / PAGE_SIZE;
 
@@ -1474,18 +1474,26 @@ impl HeapMemoryRegion {
             self.write_page_info(i, pg);
         }
 
-        /* Now free all pages.  Any runs of pages aligned to the maximum order
-         * will be freed directly into the maximum order bucket, and all other
-         * pages will be freed individually so the correct orders can be
-         * generated */
+        /* Now free all pages other than the pages that must remain allocated.
+         * Any runs of pages aligned to the maximum order will be freed
+         * directly into the maximum order bucket, and all other pages will be
+         * freed individually so the correct orders can be generated */
         let alignment = 1 << (MAX_ORDER - 1);
+        let first_aligned_page = align_up(allocated, alignment);
         let last_aligned_page = align_down(alloc_pages, alignment);
 
-        if last_aligned_page > 0 {
-            self.nr_pages[MAX_ORDER - 1] += last_aligned_page / alignment;
-            for i in (0..last_aligned_page).step_by(alignment) {
+        if last_aligned_page > first_aligned_page {
+            self.nr_pages[MAX_ORDER - 1] += (last_aligned_page - first_aligned_page) / alignment;
+            for i in (first_aligned_page..last_aligned_page).step_by(alignment) {
                 self.mark_compound_page(i, MAX_ORDER - 1);
                 self.free_page_raw(i, MAX_ORDER - 1);
+            }
+
+            if first_aligned_page > allocated {
+                self.nr_pages[0] += first_aligned_page - allocated;
+                for i in allocated..first_aligned_page {
+                    self.free_page_order(i, 0);
+                }
             }
 
             if last_aligned_page < alloc_pages {
@@ -1496,8 +1504,8 @@ impl HeapMemoryRegion {
             }
         } else {
             // Special case: Memory region size smaller than a MAX_ORDER allocation
-            self.nr_pages[0] = alloc_pages;
-            for i in 0..alloc_pages {
+            self.nr_pages[0] = alloc_pages - allocated;
+            for i in allocated..alloc_pages {
                 self.free_page_order(i, 0);
             }
         }
@@ -2366,13 +2374,13 @@ static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start
 /// address, virtual start address, and page count.
-pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
+pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize, allocated: usize) {
     {
         let mut region = ROOT_MEM.lock();
         region.start_phys = pstart;
         region.start_virt = vstart;
         region.page_count = page_count;
-        region.init_memory();
+        region.init_memory(allocated);
         // drop lock here so slab initialization does not deadlock
     }
 
@@ -2475,7 +2483,7 @@ impl TestRootMem<'_> {
         let guard = Self(TEST_ROOT_MEM_LOCK.lock());
         let vaddr = VirtAddr::from(ptr);
         let paddr = PhysAddr::from(vaddr.bits()); // Identity mapping
-        root_mem_init(paddr, vaddr, page_count);
+        root_mem_init(paddr, vaddr, page_count, 0);
         guard
     }
 }

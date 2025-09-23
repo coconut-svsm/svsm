@@ -57,6 +57,10 @@ pub fn page_align_up(x: usize) -> usize {
     align_up(x, PAGE_SIZE)
 }
 
+pub fn round_to_pages(x: usize) -> usize {
+    page_align_up(x) / PAGE_SIZE
+}
+
 pub fn page_offset(x: usize) -> usize {
     x & (PAGE_SIZE - 1)
 }

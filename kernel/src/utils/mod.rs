@@ -15,5 +15,6 @@ pub mod vec;
 pub use memory_region::MemoryRegion;
 pub use scoped::{ScopedMut, ScopedRef};
 pub use util::{
-    align_down, align_up, is_aligned, overlap, page_align_up, page_offset, zero_mem_region,
+    align_down, align_up, is_aligned, overlap, page_align_up, page_offset, round_to_pages,
+    zero_mem_region,
 };

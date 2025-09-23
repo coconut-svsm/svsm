@@ -35,7 +35,8 @@ pub struct KernelLaunchInfo {
     /// Exclusive end of the kernel in physical memory.
     pub kernel_region_phys_end: u64,
     pub heap_area_phys_start: u64, // Start of trailing heap area within the physical memory region.
-    pub heap_area_size: u64,
+    pub heap_area_page_count: u64,
+    pub heap_area_allocated: u64,
     pub kernel_region_virt_start: u64,
     pub heap_area_virt_start: u64, // Start of virtual heap area mapping.
     pub kernel_elf_stage2_virt_start: u64, // Virtual address of kernel ELF in Stage2 mapping.
@@ -48,19 +49,12 @@ pub struct KernelLaunchInfo {
     pub secrets_page: u64,
     pub stage2_igvm_params_phys_addr: u64,
     pub stage2_igvm_params_size: u64,
-    pub igvm_params_phys_addr: u64,
     pub igvm_params_virt_addr: u64,
     pub vtom: u64,
     pub debug_serial_port: u16,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
     pub platform_type: SvsmPlatformType,
-}
-
-impl KernelLaunchInfo {
-    pub fn heap_area_virt_end(&self) -> u64 {
-        self.heap_area_virt_start + self.heap_area_size
-    }
 }
 
 // Stage 2 launch info from stage1
