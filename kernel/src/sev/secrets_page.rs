@@ -12,6 +12,7 @@ use crate::types::GUEST_VMPL;
 
 extern crate alloc;
 use alloc::boxed::Box;
+use core::ptr;
 
 pub const VMPCK_SIZE: usize = 32;
 
@@ -69,7 +70,7 @@ impl SecretsPage {
 
         // SAFETY: demanded to the caller
         unsafe {
-            *self = *from;
+            from.copy_to(ptr::from_mut(self), 1);
         }
     }
 
@@ -87,12 +88,24 @@ impl SecretsPage {
 
         // SAFETY: demanded to the caller
         unsafe {
-            *to = *self;
+            to.copy_from(ptr::from_ref(self), 1);
         }
     }
 
     pub fn copy_for_vmpl(&self, vmpl: usize) -> Box<SecretsPage> {
-        let mut sp = Box::new(*self);
+        // SAFETY: the new box is uninitialized so data can be copied into it,
+        // which will complete the initialization process and make it ready for
+        // use.  This unsafe copy pattern is used to eliminate the need for a
+        // temporary stack copy of the secrets page.
+        let mut sp = unsafe {
+            let mut sp_uninit = Box::new_uninit();
+            // The Box is explicitly dereferenced here so there is no ambiguity
+            // that the as_mut_ptr() call applies to the inner MaybeUninit and
+            // not to the Box itself.
+            ptr::from_ref(self).copy_to_nonoverlapping((*sp_uninit).as_mut_ptr(), 1);
+            sp_uninit.assume_init()
+        };
+
         for idx in 0..vmpl {
             sp.clear_vmpck(idx);
         }
