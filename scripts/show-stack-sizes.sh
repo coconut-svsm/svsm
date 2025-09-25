@@ -1,4 +1,4 @@
-#!/bin/env sh
+#!/bin/bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # Author: Tom Dohrmann <erbse.13@gmx.de>
