@@ -20,7 +20,9 @@ jobs:
           submodules: recursive
 
       - name: Install rust toolchain
-        run: rustup toolchain install --profile minimal
+        run: |
+          rustup +nightly target add x86_64-unknown-none
+          rustup toolchain install --profile minimal
 
       - name: Add rust components
         run: rustup component add rustfmt rust-src clippy
@@ -39,6 +41,9 @@ jobs:
 
       - name: Build release image
         run: cargo xbuild --release ./configs/*
+
+      - name: Build test images (test-in-svsm)
+        run: make test-igvm
 
       - name: Run tests
         run: make test
