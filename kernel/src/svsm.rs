@@ -49,7 +49,7 @@ use svsm::requests::request_loop_main;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::schedule_init;
-use svsm::task::{exec_user, start_kernel_task};
+use svsm::task::{exec_user, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -305,7 +305,7 @@ extern "C" fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
-pub extern "C" fn svsm_main(cpu_index: usize) {
+pub fn svsm_main(cpu_index: usize) {
     debug_assert_eq!(cpu_index, 0);
 
     // If required, the GDB stub can be started earlier, just after the console
@@ -387,8 +387,11 @@ pub extern "C" fn svsm_main(cpu_index: usize) {
 
     // Start request processing on this CPU if required.
     if SVSM_PLATFORM.start_svsm_request_loop() {
-        start_kernel_task(request_loop_main, 0, String::from("request-loop on CPU 0"))
-            .expect("Failed to launch request loop task");
+        start_kernel_task(
+            KernelThreadStartInfo::new(request_loop_main, 0),
+            String::from("request-loop on CPU 0"),
+        )
+        .expect("Failed to launch request loop task");
     }
 
     cpu_idle_loop(cpu_index);

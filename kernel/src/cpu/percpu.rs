@@ -42,7 +42,7 @@ use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{schedule, schedule_task, RunQueue, Task, TaskPointer};
+use crate::task::{schedule, schedule_task, KernelThreadStartInfo, RunQueue, Task, TaskPointer};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -828,8 +828,12 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn setup_idle_task(&self, entry: extern "C" fn(usize)) -> Result<(), SvsmError> {
-        let idle_task = Task::create(self, entry, self.shared.cpu_index, String::from("idle"))?;
+    pub fn setup_idle_task(&self, entry: fn(usize)) -> Result<(), SvsmError> {
+        let idle_task = Task::create(
+            self,
+            KernelThreadStartInfo::new(entry, self.shared.cpu_index),
+            String::from("idle"),
+        )?;
         self.runqueue.lock_write().set_idle_task(idle_task);
         Ok(())
     }
@@ -1369,7 +1373,7 @@ pub fn current_task() -> TaskPointer {
     this_cpu().runqueue.lock_read().current_task()
 }
 
-pub extern "C" fn cpu_idle_loop(cpu_index: usize) {
+pub fn cpu_idle_loop(cpu_index: usize) {
     debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
 
     loop {

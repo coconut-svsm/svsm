@@ -41,6 +41,81 @@ use super::task_mm::{TaskKernelMapping, TaskMM};
 
 pub const INITIAL_TASK_ID: u32 = 1;
 
+/// This trait is used to describe a type that can be used as the start
+/// parameter for a kernel thread.  The thread start path requires that all
+/// start paremeters be able to fit into a single register, which constrains
+/// them to `usize`.  Other types can be used as long as there is an
+/// appropriate mechanism to covert those types to and from the `usize` that
+/// must be passed via the parameter register.  This trait defines such a
+/// conversion mechanism.
+///
+/// # Safety
+///
+/// Implementations of this thread must ensure that the `to_usize` and
+/// `from_usize` methods correctly preserve the safety of the parameter as it
+/// transitions from its native type to and from a temporary `usize`
+/// representation.
+pub unsafe trait KernelThreadStartParameter {
+    fn to_usize(parameter: Self) -> usize;
+
+    /// # Safety
+    /// This function must only be called with a `usize` parameter that was
+    /// previously returned from a call to `to_usize()`.
+    unsafe fn from_usize(parameter: usize) -> Self;
+}
+
+// SAFETY: types that implement `From` for conversions to and from `usize` are
+// trivially convertible to and from `usize` and thus will always preserve
+// safety of the parameter during conversion.
+unsafe impl<T> KernelThreadStartParameter for T
+where
+    T: From<usize>,
+    usize: From<T>,
+{
+    fn to_usize(parameter: Self) -> usize {
+        usize::from(parameter)
+    }
+
+    unsafe fn from_usize(parameter: usize) -> Self {
+        Self::from(parameter)
+    }
+}
+
+#[derive(Debug)]
+pub struct KernelThreadStartInfo {
+    entry: usize,
+    start_parameter: usize,
+    start_routine: usize,
+}
+
+impl KernelThreadStartInfo {
+    pub fn new<T: KernelThreadStartParameter>(entry: fn(T), start_parameter: T) -> Self {
+        Self {
+            entry: entry as usize,
+            start_parameter: T::to_usize(start_parameter),
+            start_routine: run_kernel_task::<T> as usize,
+        }
+    }
+
+    /// # Safety
+    /// The caller is required to provide a start parameter that is appropriate
+    /// to the entry point according to the safety requirements of the entry
+    /// point.
+    pub unsafe fn new_unsafe(entry: unsafe fn(usize), start_parameter: usize) -> Self {
+        Self {
+            entry: entry as usize,
+            start_parameter,
+            start_routine: run_kernel_task::<usize> as usize,
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ThreadStartInfo {
+    Kernel(KernelThreadStartInfo),
+    User(usize),
+}
+
 #[derive(PartialEq, Debug, Copy, Clone, Default)]
 pub enum TaskState {
     RUNNING,
@@ -196,12 +271,8 @@ impl fmt::Debug for Task {
 }
 
 struct CreateTaskArguments {
-    // The entry point of the task.  For user tasks, this is a user-mode
-    // address, and for kernel tasks, it is a kernel address,
-    entry: usize,
-
-    // A start parameter for kernel tasks.
-    start_parameter: usize,
+    // The thread start information.
+    start_info: ThreadStartInfo,
 
     // The name of the task.
     name: String,
@@ -239,10 +310,9 @@ impl Task {
 
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
-        let (entry_return, exit_return) = if task_mm.has_user() {
-            (return_new_task as usize, None)
-        } else {
-            (run_kernel_task as usize, Some(task_exit as usize))
+        let (entry_return, exit_return) = match args.start_info {
+            ThreadStartInfo::User(_) => (return_new_task as usize, None),
+            ThreadStartInfo::Kernel(ref info) => (info.start_routine, Some(task_exit as usize)),
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
@@ -280,10 +350,15 @@ impl Task {
         };
 
         // Call the correct stack creation routine for this task.
-        let (stack, raw_bounds, rsp_offset) = if task_mm.has_user() {
-            Self::allocate_utask_stack(cpu, args.entry, xsa_addr)?
-        } else {
-            Self::allocate_ktask_stack(cpu, args.entry, xsa_addr, args.start_parameter)?
+        let (stack, raw_bounds, rsp_offset) = match args.start_info {
+            ThreadStartInfo::User(entry) => Self::allocate_utask_stack(cpu, entry, xsa_addr)?,
+            ThreadStartInfo::Kernel(ref info) => Self::allocate_ktask_stack(
+                cpu,
+                info.entry,
+                info.start_routine,
+                xsa_addr,
+                info.start_parameter,
+            )?,
         };
         let kernel_stack_mapping = TaskKernelMapping::new(task_mm.clone(), stack)?;
         let stack_start = kernel_stack_mapping.virt_addr();
@@ -325,13 +400,11 @@ impl Task {
 
     pub fn create(
         cpu: &PerCpu,
-        entry: extern "C" fn(usize),
-        start_parameter: usize,
+        start_info: KernelThreadStartInfo,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
-            entry: entry as usize,
-            start_parameter,
+            start_info: ThreadStartInfo::Kernel(start_info),
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
@@ -353,8 +426,7 @@ impl Task {
             vm_user_range.initialize_lazy()?;
         }
         let create_args = CreateTaskArguments {
-            entry: user_entry,
-            start_parameter: 0,
+            start_info: ThreadStartInfo::User(user_entry),
             name,
             vm_user_range: Some(vm_user_range),
             rootdir: root,
@@ -379,14 +451,12 @@ impl Task {
     /// `Some(TaskPointer)` with the new thread on success, `Err(SvsmError)` on failure.
     pub fn create_thread(
         cpu: &PerCpu,
-        entry: extern "C" fn(usize),
-        start_parameter: usize,
+        start_info: KernelThreadStartInfo,
         name: String,
         thread: TaskPointer,
     ) -> Result<TaskPointer, SvsmError> {
         let create_args = CreateTaskArguments {
-            entry: entry as usize,
-            start_parameter,
+            start_info: ThreadStartInfo::Kernel(start_info),
             name,
             vm_user_range: None,
             rootdir: opendir("/")?,
@@ -480,6 +550,7 @@ impl Task {
     fn allocate_ktask_stack(
         cpu: &PerCpu,
         entry: usize,
+        start_routine: usize,
         xsa_addr: usize,
         start_parameter: usize,
     ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
@@ -531,7 +602,7 @@ impl Task {
             (*task_context).regs.rsi = xsa_addr;
             // start argument parameter.
             (*task_context).regs.rdx = start_parameter;
-            (*task_context).ret_addr = run_kernel_task as *const () as u64;
+            (*task_context).ret_addr = start_routine as u64;
             // Task termination handler for when entry point returns
             stack_ptr.cast::<u64>().write(task_exit as *const () as u64);
         }
@@ -851,16 +922,32 @@ unsafe fn setup_new_task_common(xsa_addr: u64) {
     }
 }
 
-extern "C" fn run_kernel_task(entry: extern "C" fn(usize), xsa_addr: u64, start_parameter: usize) {
+/// # Safety
+/// This function must only be invoked as a thread start function, and must
+/// be invoked according to the start parameter data type expected by the entry
+/// point.
+unsafe fn run_kernel_task<T: KernelThreadStartParameter>(
+    entry: fn(T),
+    xsa_addr: u64,
+    start_parameter: usize,
+) {
     // SAFETY: the save area address is provided by the context switch assembly
     // code.
     unsafe {
         setup_new_task_common(xsa_addr);
     }
-    entry(start_parameter);
+
+    // SAFETY: the `usize` start parameter was generated from an earlier call
+    // to `KernelThreadStartParameter::to_usize` when the start argument was
+    // prepared for use in the initial stack context, and therefore the safety
+    // requirements of `from_usize` are met.  The exception is if this task
+    // starts via an unsafe start function, in which case safety is the
+    // responsibility of whoever created the thread, and is not required to be
+    // assured here.
+    entry(unsafe { T::from_usize(start_parameter) });
 }
 
-extern "C" fn task_exit() {
+fn task_exit() {
     current_task_terminated();
     schedule();
 }
@@ -964,7 +1051,7 @@ mod tests {
             .expect("Failed to launch request processing task");
     }
 
-    extern "C" fn task1(start_parameter: usize) {
+    fn task1(start_parameter: usize) {
         assert_eq!(start_parameter, 1);
 
         let ret: u64;
@@ -981,7 +1068,7 @@ mod tests {
         assert_eq!(ret, 0);
     }
 
-    extern "C" fn task2(start_parameter: usize) {
+    fn task2(start_parameter: usize) {
         assert_eq!(start_parameter, 2);
         unsafe {
             asm!("call alter_fpu", options(att_syntax));
