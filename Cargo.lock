@@ -336,9 +336,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.1"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 
 [[package]]
 name = "cipher"
@@ -413,9 +413,9 @@ dependencies = [
 
 [[package]]
 name = "cocoon-tpm-crypto"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cf4b0ad6a24beadf53f694d96cdf2d0f3791e0ad1763d460bb0f78a0cae65ef"
+checksum = "1b7633b7e5996b4b5d15929736d10910c087713a9bdf9b7a05c1f16d192ae413"
 dependencies = [
  "aes",
  "camellia",
@@ -427,6 +427,7 @@ dependencies = [
  "cocoon-tpm-utils-common",
  "crypto-common",
  "digest",
+ "ecb",
  "generic-array 1.2.0",
  "hmac",
  "ofb",
@@ -437,19 +438,38 @@ dependencies = [
 ]
 
 [[package]]
-name = "cocoon-tpm-tpm2-interface"
-version = "0.1.0"
+name = "cocoon-tpm-storage"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd87d8fabcfd5949ef574c04814c6c783858310bdcc58d807003fc8da56eac23"
+checksum = "52f37a0b074eb3fd44ded6b25ad6f5a2c4715b95ed4b80efacca6e99a3b6b5f2"
 dependencies = [
+ "cocoon-tpm-crypto",
+ "cocoon-tpm-tpm2-interface",
+ "cocoon-tpm-utils-async",
+ "cocoon-tpm-utils-common",
  "zeroize",
 ]
 
 [[package]]
-name = "cocoon-tpm-utils-common"
+name = "cocoon-tpm-tpm2-interface"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e47c0d6914fa0e6d7e03d39838585b14542f018933a38edb66d5254218986f66"
+checksum = "dd87d8fabcfd5949ef574c04814c6c783858310bdcc58d807003fc8da56eac23"
+
+[[package]]
+name = "cocoon-tpm-utils-async"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0253567d056078aed415a341f21a22b0c4a3649df827be335c9566f6ff491178"
+dependencies = [
+ "cocoon-tpm-utils-common",
+]
+
+[[package]]
+name = "cocoon-tpm-utils-common"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19fa8730c221b252c85b70e895101b9022cd5777d8c8d3c35e9f92d1a27d1b45"
 dependencies = [
  "cmpa",
  "zeroize",
@@ -614,6 +634,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95249b50c6c185bee49034bcb378a49dc2b5dff0be90ff6616d31d64febab05d"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "ecb"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a8bfa975b1aec2145850fcaa1c6fe269a16578c44705a532ae3edc92b8881c7"
+dependencies = [
+ "cipher",
 ]
 
 [[package]]
@@ -1251,9 +1280,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.174"
+version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1171693293099992e19cddea4e8b849964e9846f4acee11b3948bcc337be8776"
+checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -1916,7 +1945,9 @@ dependencies = [
  "builtin",
  "builtin_macros",
  "cocoon-tpm-crypto",
+ "cocoon-tpm-storage",
  "cocoon-tpm-tpm2-interface",
+ "cocoon-tpm-utils-async",
  "cocoon-tpm-utils-common",
  "cpuarch",
  "elf",
