@@ -1,4 +1,4 @@
-#!/bin/env sh
+#!/bin/bash
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
 # Author: Tom Dohrmann <erbse.13@gmx.de>
@@ -9,7 +9,7 @@
 export RUSTUP_TOOLCHAIN=nightly
 
 # Append -Z emit-stack-sizes to the set of rustflags. The RUSTFLAGS environment variable overrides the flags in the config.
-RUSTFLAGS=$(yq '.build.rustflags | join(" ")' .cargo/config.toml)
+RUSTFLAGS=$(yq '.target.x86_64-unknown-none.rustflags | join(" ")' .cargo/config.toml)
 export RUSTFLAGS="$RUSTFLAGS -Z emit-stack-sizes"
 
 # Build the SVSM kernel.
