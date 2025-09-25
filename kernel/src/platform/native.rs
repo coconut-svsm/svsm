@@ -233,15 +233,123 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError> {
-        unimplemented!()
+    /// Perform a write to a memory-mapped IO area
+    ///
+    /// This function expects data to be 1, 2, 4 or 8 bytes long.
+    ///
+    /// It is not possible to loop and write one byte at a time because mmio devices (e.g., those emulated by QEMU)
+    /// expect certain registers to be written with a single operation. Using a generic on SvsmPlatform is
+    /// not possible because it uses the dyn trait.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
+    unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError> {
+        match data.len() {
+            1 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_write_type::<u8>(vaddr, data);
+                }
+            }
+            2 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_write_type::<u16>(vaddr, data);
+                }
+            }
+            4 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_write_type::<u32>(vaddr, data);
+                }
+            }
+            8 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_write_type::<u64>(vaddr, data);
+                }
+            }
+            _ => return Err(SvsmError::InvalidBytes),
+        };
+
+        Ok(())
     }
 
+    /// Perform a read from a memory-mapped IO area
+    ///
+    /// This function expects reads to be 1, 2, 4 or 8 bytes long.
+    ///
+    /// It is not possible to loop and read one byte at a time because mmio devices (e.g., those emulated by QEMU)
+    /// expect certain registers to be read with a single operation. Using a generic on SvsmPlatform is
+    /// not possible because it uses the dyn trait.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
+    /// memory accessed is part of a valid MMIO range.
     unsafe fn mmio_read(
         &self,
-        _paddr: PhysAddr,
-        _data: &mut [MaybeUninit<u8>],
+        vaddr: VirtAddr,
+        data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
-        unimplemented!()
+        match data.len() {
+            1 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_read_type::<u8>(vaddr, data);
+                }
+            }
+            2 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_read_type::<u16>(vaddr, data);
+                }
+            }
+            4 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_read_type::<u32>(vaddr, data);
+                }
+            }
+            8 => {
+                // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+                unsafe {
+                    mmio_read_type::<u64>(vaddr, data);
+                }
+            }
+            _ => return Err(SvsmError::InvalidBytes),
+        };
+
+        Ok(())
     }
+}
+
+unsafe fn mmio_write_type<T: Copy>(vaddr: VirtAddr, data: &[u8]) {
+    let data_ptr = data.as_ptr().cast::<T>();
+    let ptr = vaddr.as_mut_ptr::<T>();
+
+    // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+    unsafe {
+        if data_ptr.is_aligned() {
+            ptr.write_volatile(data_ptr.read());
+        } else {
+            ptr.write_volatile(data_ptr.read_unaligned());
+        }
+    };
+}
+
+unsafe fn mmio_read_type<T>(vaddr: VirtAddr, data: &mut [MaybeUninit<u8>]) {
+    let data_ptr = data.as_mut_ptr().cast::<T>();
+    let ptr = vaddr.as_mut_ptr::<T>();
+
+    // SAFETY: We are trusting the caller to ensure validity of `vaddr`.
+    unsafe {
+        if data_ptr.is_aligned() {
+            data_ptr.write(ptr.read_volatile());
+        } else {
+            data_ptr.write_unaligned(ptr.read_volatile());
+        }
+    };
 }
