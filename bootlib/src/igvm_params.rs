@@ -71,11 +71,12 @@ pub struct IgvmParamBlockFwInfo {
 
     /// The guest physical address of the IGVM memory map consumed by the
     /// guest firmware.
-    pub memory_map_page: u32,
+    pub memory_map_address: u32,
 
-    /// The number of pages reserved for the IGVM memory map consumed by the
-    /// guest firmware.
-    pub memory_map_page_count: u32,
+    /// The number of bytes reserved for the IGVM memory map consumed by the
+    /// guest firmware.  Use byte-level size here because the firmware is
+    /// allowed to define a memory map area that isn't page-sized.
+    pub memory_map_size: u32,
 
     /// The number of prevalidated memory regions defined by the firmware.
     pub prevalidated_count: u32,
