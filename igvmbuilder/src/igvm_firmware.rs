@@ -308,23 +308,13 @@ impl IgvmFirmware {
         if let Some(gpa) = parameter_area.gpa {
             if parameter_area.memory_map {
                 // Capture the memory map in the firmware information.
-                let memory_map_page = gpa / PAGE_SIZE_4K;
-                self.fw_info.memory_map_page = memory_map_page as u32;
-                if self.fw_info.memory_map_page as u64 != memory_map_page {
-                    let e = format!("Memory map address {:#018x} is larger than 32 bits", gpa);
-                    return Err(e.into());
-                }
-                let page_count = parameter_area.number_of_bytes.div_ceil(PAGE_SIZE_4K);
-                // Truncate the page count if it is too large to fit into a
+                self.fw_info.memory_map_address = u32::try_from(gpa)?;
+                // Truncate the byte count if it is too large to fit into a
                 // 32-bit number.  It is acceptable for the SVSM to provide a
                 // smaller set of data than the firmware is capable of
                 // handling.
-                self.fw_info.memory_map_page_count = if page_count > 0xFFFF_FFFF {
-                    0xFFFF_FFFF
-                } else {
-                    page_count as u32
-                };
-
+                self.fw_info.memory_map_size =
+                    u32::try_from(parameter_area.number_of_bytes).unwrap_or(u32::MAX);
                 Ok(false)
             } else if parameter_area.parameter_list.is_empty() {
                 Ok(false)

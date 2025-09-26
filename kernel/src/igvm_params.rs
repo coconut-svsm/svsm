@@ -179,16 +179,13 @@ impl IgvmParams<'_> {
         // If the parameters do not include a guest memory map area, then no
         // work is required.
         let fw_info = &self.igvm_param_block.firmware;
-        if fw_info.memory_map_page_count == 0 {
+        if fw_info.memory_map_size == 0 {
             return Ok(());
         }
 
         // Map the guest memory map area into the address space.
-        let mem_map_gpa = PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64);
-        let mem_map_region = MemoryRegion::<PhysAddr>::new(
-            mem_map_gpa,
-            fw_info.memory_map_page_count as usize * PAGE_SIZE,
-        );
+        let mem_map_gpa = PhysAddr::from(fw_info.memory_map_address as u64);
+        let mem_map_region = MemoryRegion::new(mem_map_gpa, fw_info.memory_map_size as usize);
         log::info!(
             "Filling guest IGVM memory map at {:#018x} size {:#018x}",
             mem_map_region.start(),
@@ -220,18 +217,21 @@ impl IgvmParams<'_> {
         }
 
         // Calculate the maximum number of entries that can be inserted.
-        let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE
-            / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+        let max_entries = fw_info.memory_map_size as usize / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+        // Return an error if an overflow occurs.
+        if map.len() > max_entries {
+            log::warn!(
+                "Too many IGVM memory map entries ({}), max is {}",
+                map.len(),
+                max_entries
+            );
+            return Err(SvsmError::Firmware);
+        }
 
         // Generate a guest pointer range to hold the memory map.
         let mem_map = GuestPtr::new(mem_map_va);
 
         for (i, entry) in map.iter().enumerate() {
-            // Return an error if an overflow occurs.
-            if i >= max_entries {
-                return Err(SvsmError::Firmware);
-            }
-
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
             // address is defined in the IGVM config.
             unsafe {
@@ -239,7 +239,7 @@ impl IgvmParams<'_> {
                     .offset(i as isize)
                     .write(IGVM_VHS_MEMORY_MAP_ENTRY {
                         starting_gpa_page_number: u64::from(entry.start()) / PAGE_SIZE as u64,
-                        number_of_pages: entry.len() as u64 / PAGE_SIZE as u64,
+                        number_of_pages: (entry.len() / PAGE_SIZE) as u64,
                         entry_type: MemoryMapEntryType::default(),
                         flags: 0,
                         reserved: 0,
@@ -356,10 +356,10 @@ impl IgvmParams<'_> {
         // If this firmware expects an IGVM memory map but the IGVM memory
         // map is not within any of the firmware GPA ranges, then add the IGVM
         // memory map to the set of firmware regions.
-        if fw_info.memory_map_page_count != 0 {
+        if fw_info.memory_map_size != 0 {
             let map_region = MemoryRegion::new(
-                PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64),
-                fw_info.memory_map_page_count as usize * PAGE_SIZE,
+                PhysAddr::from(fw_info.memory_map_address as u64),
+                fw_info.memory_map_size as usize,
             );
             // Scan all the firmware regions to determine whether any of them
             // contain the memory map.  If not, the memory map should be added
