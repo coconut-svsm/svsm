@@ -35,6 +35,13 @@ pub struct IgvmParamBlockFwMem {
     pub size: u32,
 }
 
+/// IGVM memory map index for SEV
+pub const MEM_MAP_SEV: usize = 0;
+/// IGVM memory map index for TDX
+pub const MEM_MAP_TDX: usize = 1;
+/// Max number of IGVM memory maps contained in firmware
+pub const MEM_MAP_MAX: usize = 2;
+
 /// The portion of the IGVM parameter block that describes metadata about
 /// the firmware image embedded in the IGVM file.
 #[repr(C, packed)]
@@ -71,11 +78,11 @@ pub struct IgvmParamBlockFwInfo {
 
     /// The guest physical address of the IGVM memory map consumed by the
     /// guest firmware.
-    pub memory_map_page: u32,
+    pub memory_map_page: [u32; MEM_MAP_MAX],
 
     /// The number of pages reserved for the IGVM memory map consumed by the
     /// guest firmware.
-    pub memory_map_page_count: u32,
+    pub memory_map_page_count: [u32; MEM_MAP_MAX],
 
     /// The number of prevalidated memory regions defined by the firmware.
     pub prevalidated_count: u32,

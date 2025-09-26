@@ -30,14 +30,12 @@ use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use bootlib::platform::SvsmPlatformType;
 use core::mem;
 use core::mem::MaybeUninit;
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
-
-#[cfg(test)]
-use bootlib::platform::SvsmPlatformType;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {
@@ -58,7 +56,6 @@ impl NativePlatform {
 }
 
 impl SvsmPlatform for NativePlatform {
-    #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType {
         SvsmPlatformType::Native
     }

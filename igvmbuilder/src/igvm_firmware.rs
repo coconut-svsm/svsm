@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo, MEM_MAP_SEV, MEM_MAP_TDX};
 use bootlib::kernel_launch::{LOWMEM_END, STAGE2_HEAP_END};
 use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
@@ -309,22 +309,19 @@ impl IgvmFirmware {
             if parameter_area.memory_map {
                 // Capture the memory map in the firmware information.
                 let memory_map_page = gpa / PAGE_SIZE_4K;
-                self.fw_info.memory_map_page = memory_map_page as u32;
-                if self.fw_info.memory_map_page as u64 != memory_map_page {
-                    let e = format!("Memory map address {:#018x} is larger than 32 bits", gpa);
-                    return Err(e.into());
-                }
-                let page_count = parameter_area.number_of_bytes.div_ceil(PAGE_SIZE_4K);
+                self.fw_info.memory_map_page[MEM_MAP_SEV] = u32::try_from(memory_map_page)
+                    .map_err(|_| format!("Memory map address {gpa:#19x} is too large"))?;
+                self.fw_info.memory_map_page[MEM_MAP_TDX] =
+                    self.fw_info.memory_map_page[MEM_MAP_SEV];
+                let page_count = parameter_area.number_of_bytes / PAGE_SIZE_4K;
                 // Truncate the page count if it is too large to fit into a
                 // 32-bit number.  It is acceptable for the SVSM to provide a
                 // smaller set of data than the firmware is capable of
                 // handling.
-                self.fw_info.memory_map_page_count = if page_count > 0xFFFF_FFFF {
-                    0xFFFF_FFFF
-                } else {
-                    page_count as u32
-                };
-
+                self.fw_info.memory_map_page_count[MEM_MAP_SEV] =
+                    u32::try_from(page_count).unwrap_or(u32::MAX);
+                self.fw_info.memory_map_page_count[MEM_MAP_TDX] =
+                    self.fw_info.memory_map_page_count[MEM_MAP_SEV];
                 Ok(false)
             } else if parameter_area.parameter_list.is_empty() {
                 Ok(false)
