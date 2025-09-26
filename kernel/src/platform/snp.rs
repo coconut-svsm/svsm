@@ -41,7 +41,6 @@ use syscall::GlobalFeatureFlags;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-#[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
@@ -98,7 +97,6 @@ impl SnpPlatform {
 }
 
 impl SvsmPlatform for SnpPlatform {
-    #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType {
         SvsmPlatformType::Snp
     }

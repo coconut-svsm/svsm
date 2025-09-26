@@ -67,7 +67,6 @@ pub enum PageValidateOp {
 /// This defines a platform abstraction to permit the SVSM to run on different
 /// underlying architectures.
 pub trait SvsmPlatform: Sync {
-    #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType;
 
     /// Halts the system as required by the platform.

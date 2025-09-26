@@ -17,8 +17,11 @@ use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
+use bootlib::igvm_params::{
+    IgvmGuestContext, IgvmParamBlock, IgvmParamPage, MEM_MAP_SEV, MEM_MAP_TDX,
+};
 use bootlib::kernel_launch::LOWMEM_END;
+use bootlib::platform::SvsmPlatformType;
 use core::mem::size_of;
 use core::slice;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
@@ -176,19 +179,23 @@ impl IgvmParams<'_> {
     }
 
     pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
+        let map_index = match SVSM_PLATFORM.platform_type() {
+            SvsmPlatformType::Snp => MEM_MAP_SEV,
+            SvsmPlatformType::Tdp => MEM_MAP_TDX,
+            _ => panic!("IGVM memory map unsupported!"),
+        };
+        let fw_info = &self.igvm_param_block.firmware;
+        let map_page = fw_info.memory_map_page[map_index] as u64;
+        let map_page_count = fw_info.memory_map_page_count[map_index] as usize;
         // If the parameters do not include a guest memory map area, then no
         // work is required.
-        let fw_info = &self.igvm_param_block.firmware;
-        if fw_info.memory_map_page_count == 0 {
+        if map_page_count == 0 {
             return Ok(());
         }
 
         // Map the guest memory map area into the address space.
-        let mem_map_gpa = PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64);
-        let mem_map_region = MemoryRegion::<PhysAddr>::new(
-            mem_map_gpa,
-            fw_info.memory_map_page_count as usize * PAGE_SIZE,
-        );
+        let mem_map_gpa = PhysAddr::from(map_page * PAGE_SIZE as u64);
+        let mem_map_region = MemoryRegion::new(mem_map_gpa, map_page_count * PAGE_SIZE);
         log::info!(
             "Filling guest IGVM memory map at {:#018x} size {:#018x}",
             mem_map_region.start(),
@@ -220,8 +227,7 @@ impl IgvmParams<'_> {
         }
 
         // Calculate the maximum number of entries that can be inserted.
-        let max_entries = fw_info.memory_map_page_count as usize * PAGE_SIZE
-            / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+        let max_entries = map_page_count * PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
 
         // Generate a guest pointer range to hold the memory map.
         let mem_map = GuestPtr::new(mem_map_va);
@@ -356,10 +362,21 @@ impl IgvmParams<'_> {
         // If this firmware expects an IGVM memory map but the IGVM memory
         // map is not within any of the firmware GPA ranges, then add the IGVM
         // memory map to the set of firmware regions.
-        if fw_info.memory_map_page_count != 0 {
+        let (map_page, map_page_count) = match SVSM_PLATFORM.platform_type() {
+            SvsmPlatformType::Snp => (
+                fw_info.memory_map_page[MEM_MAP_SEV],
+                fw_info.memory_map_page_count[MEM_MAP_SEV],
+            ),
+            SvsmPlatformType::Tdp => (
+                fw_info.memory_map_page[MEM_MAP_TDX],
+                fw_info.memory_map_page_count[MEM_MAP_TDX],
+            ),
+            _ => (0, 0),
+        };
+        if map_page_count != 0 {
             let map_region = MemoryRegion::new(
-                PhysAddr::from(fw_info.memory_map_page as u64 * PAGE_SIZE as u64),
-                fw_info.memory_map_page_count as usize * PAGE_SIZE,
+                PhysAddr::from(map_page as u64 * PAGE_SIZE as u64),
+                map_page_count as usize * PAGE_SIZE,
             );
             // Scan all the firmware regions to determine whether any of them
             // contain the memory map.  If not, the memory map should be added

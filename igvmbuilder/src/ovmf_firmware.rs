@@ -10,7 +10,7 @@ use std::io::Read;
 use std::mem::size_of;
 
 use bootlib::firmware::*;
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo, MEM_MAP_MAX, MEM_MAP_SEV};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;
@@ -81,7 +81,7 @@ impl Metadata for SevMetadata {
             SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
             SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
             SEV_META_DESC_TYPE_IGVM_MEM_MAP => {
-                write_fw_info_memory_map(entry.base.into(), entry.len.into(), fw_info)?
+                write_fw_info_memory_map(entry.base.into(), entry.len.into(), MEM_MAP_SEV, fw_info)?
             }
             _ => {}
         }
@@ -102,17 +102,22 @@ struct MetadataDesc {
 fn write_fw_info_memory_map(
     start: u64,
     len: u64,
+    index: usize,
     fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
+    assert!(index < MEM_MAP_MAX);
+    assert!(fw_info.memory_map_page[index] == 0);
+    assert!(fw_info.memory_map_page_count[index] == 0);
+
     let memory_map_page = start / PAGE_SIZE_4K;
-    fw_info.memory_map_page = u32::try_from(memory_map_page)
+    fw_info.memory_map_page[index] = u32::try_from(memory_map_page)
         .map_err(|_| format!("Memory map address {start:#018x} is too large"))?;
     let page_count = len / PAGE_SIZE_4K;
     // Truncate the page count if it is too large to fit into a
     // 32-bit number. It is acceptable for the SVSM to provide a
     // smaller set of data than the firmware is capable of
     // handling.
-    fw_info.memory_map_page_count = u32::try_from(page_count).unwrap_or(u32::MAX);
+    fw_info.memory_map_page_count[index] = u32::try_from(page_count).unwrap_or(u32::MAX);
     Ok(())
 }
 
