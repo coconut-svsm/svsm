@@ -25,9 +25,6 @@ use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 
-extern crate alloc;
-use alloc::boxed::Box;
-
 /// Number of entries in a page table (4KB/8B).
 const ENTRY_COUNT: usize = 512;
 
@@ -1518,7 +1515,7 @@ impl Drop for RawPageTablePart {
 #[derive(Debug)]
 pub struct PageTablePart {
     /// The root of the page-table sub-tree
-    raw: Option<Box<RawPageTablePart>>,
+    raw: Option<PageBox<RawPageTablePart>>,
     /// The top-level index this PageTablePart is populated at
     idx: usize,
 }
@@ -1545,7 +1542,10 @@ impl PageTablePart {
     }
 
     fn get_or_init_mut(&mut self) -> &mut RawPageTablePart {
-        self.raw.get_or_insert_with(Box::default)
+        self.raw.get_or_insert_with(|| {
+            PageBox::try_new(RawPageTablePart::default())
+                .expect("Failed to allocate page table page")
+        })
     }
 
     fn get_mut(&mut self) -> Option<&mut RawPageTablePart> {
