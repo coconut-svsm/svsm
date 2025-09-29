@@ -1241,10 +1241,6 @@ impl PageTable {
         &mut self,
         region: MemoryRegion<VirtAddr>,
     ) -> Result<(), SvsmError> {
-        // Since 4k alignment is explicitly mentioned in the safety requirements,
-        // let's use a debug assert here.
-        debug_assert!(!region.start().is_aligned(usize::from(PageSize::Huge)));
-
         for page in region.iter_pages(PageSize::Regular) {
             match self.walk_addr(page) {
                 Mapping::Level0(entry) => {
