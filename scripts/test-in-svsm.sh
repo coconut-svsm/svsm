@@ -47,9 +47,38 @@ dd if=/dev/urandom of="$TEST_DIR/svsm_state.raw" bs=512 count=1024
 test_io $TEST_DIR/pipe.in $TEST_DIR/pipe.out &
 TEST_IO_PID=$!
 
+LAUNCH_GUEST_ARGS=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --nocc)
+      LAUNCH_GUEST_ARGS+="--nocc "
+      shift
+      ;;
+    *)
+      echo "Invalid parameter $1"
+      exit 1
+      ;;
+  esac
+done
+
+
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
-    --unit-tests $TEST_DIR/pipe || true
+    --unit-tests $TEST_DIR/pipe \
+    $LAUNCH_GUEST_ARGS || svsm_exit_code=$?
+
+# SVSM writes 0x10 to the QEMU exit port when all tests passed.
+# This results in QEMU returning 0x21 ((0x10 << 1) | 1)
+if [[ $svsm_exit_code -eq 0x21 ]]; then
+    echo "All tests passed"
+    exit_value=0
+else
+    echo "Test Failed"
+    exit_value=1
+fi
 
 kill $TEST_IO_PID 2> /dev/null || true
 rm -rf $TEST_DIR
+
+exit $exit_value
