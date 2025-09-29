@@ -338,6 +338,10 @@ mod tests {
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_has_memory_encryption_info_cpuid() {
+        if is_test_platform_type(SvsmPlatformType::Native) {
+            return;
+        }
+
         const CPUID_EXTENDED_FUNCTION_INFO: u32 = 0x8000_0000;
         const CPUID_MEMORY_ENCRYPTION_INFO: u32 = 0x8000_001F;
         // SAFETY: CPUID does never affect safety.
