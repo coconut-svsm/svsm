@@ -88,13 +88,26 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 }
 
 fn exit() -> ! {
-    if has_qemu_testdev() {
-        const QEMU_EXIT_PORT: u16 = 0xf4;
-        SVSM_PLATFORM.get_io_port().outl(QEMU_EXIT_PORT, 0x10);
-    }
+    qemu_write_exit(QEMUExitValue::Success);
     // SAFETY: HLT instruction does not affect memory.
     unsafe {
         asm!("hlt");
     }
     unreachable!();
+}
+
+#[repr(u32)]
+#[derive(Debug)]
+pub enum QEMUExitValue {
+    Success = 0x10,
+    Fail = 0x11,
+}
+
+pub fn qemu_write_exit(value: QEMUExitValue) {
+    if has_qemu_testdev() {
+        const QEMU_EXIT_PORT: u16 = 0xf4;
+        SVSM_PLATFORM
+            .get_io_port()
+            .outl(QEMU_EXIT_PORT, value as u32);
+    }
 }
