@@ -3,11 +3,9 @@ use log::info;
 use test::ShouldPanic;
 
 use crate::{
-    cpu::percpu::current_ghcb,
     locking::{LockGuard, SpinLock},
     platform::SVSM_PLATFORM,
     serial::SerialPort,
-    sev::ghcb::GHCBIOSize,
     testutils::has_qemu_testdev,
 };
 
@@ -92,9 +90,7 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 fn exit() -> ! {
     if has_qemu_testdev() {
         const QEMU_EXIT_PORT: u16 = 0xf4;
-        current_ghcb()
-            .ioio_out(QEMU_EXIT_PORT, GHCBIOSize::Size32, 0)
-            .unwrap();
+        SVSM_PLATFORM.get_io_port().outl(QEMU_EXIT_PORT, 0);
     }
     // SAFETY: HLT instruction does not affect memory.
     unsafe {
