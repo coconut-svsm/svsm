@@ -63,6 +63,8 @@ use release::COCONUT_VERSION;
 #[cfg(feature = "attest")]
 use kbs_types::Tee;
 
+use svsm::utils::util::{qemu_write_exit, QEMUExitValue};
+
 extern "C" {
     static bsp_stack: u8;
     static bsp_stack_end: u8;
@@ -419,6 +421,7 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     loop {
         debug_break();
+        qemu_write_exit(QEMUExitValue::Fail);
         platform::halt();
     }
 }
