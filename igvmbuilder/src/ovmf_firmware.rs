@@ -10,7 +10,9 @@ use std::io::Read;
 use std::mem::size_of;
 
 use bootlib::firmware::*;
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
+use bootlib::igvm_params::{
+    IgvmGuestContext, IgvmParamBlockFwInfo, MEM_MAP_MAX, MEM_MAP_SEV, MEM_MAP_TDX,
+};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;
@@ -42,12 +44,80 @@ struct GuidBlockResetVector {
     compatibility_mask: u32,
 }
 
+trait Metadata {
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>>;
+}
+
 #[derive(FromBytes, KnownLayout)]
 #[repr(C)]
 struct SevMetadataEntry {
     base: u32,
     len: u32,
     metadata_type: u32,
+}
+
+struct SevMetadata {}
+
+impl Metadata for SevMetadata {
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>> {
+        let (entry, remainder) = SevMetadataEntry::read_from_prefix(data)
+            .map_err(|e| format!("Cannot parse OVMF metadata entry: {e}"))?;
+        match entry.metadata_type {
+            SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
+                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
+                    return Err("OVMF metadata defines too many memory regions".into());
+                }
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
+                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
+                fw_info.prevalidated_count += 1;
+            }
+            SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
+            SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
+            SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
+            SEV_META_DESC_TYPE_IGVM_MEM_MAP => {
+                write_fw_info_memory_map(entry.base.into(), entry.len.into(), MEM_MAP_SEV, fw_info)?
+            }
+            _ => {}
+        }
+        Ok(remainder)
+    }
+}
+
+#[derive(FromBytes, KnownLayout)]
+#[repr(C)]
+struct TdxMetadataEntry {
+    _raw_offset: u32,
+    _raw_size: u32,
+    mem_address: u64,
+    mem_size: u64,
+    section_type: u32,
+    _attributes: u32,
+}
+
+struct TdxMetadata {}
+
+impl Metadata for TdxMetadata {
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>> {
+        let (entry, remainder) = TdxMetadataEntry::read_from_prefix(data)
+            .map_err(|e| format!("Cannot parse OVMF metadata entry: {e}"))?;
+
+        if entry.section_type == TDX_META_SECTION_TYPE_IGVM {
+            write_fw_info_memory_map(entry.mem_address, entry.mem_size, MEM_MAP_TDX, fw_info)?;
+        }
+        Ok(remainder)
+    }
 }
 
 #[derive(FromBytes, KnownLayout)]
@@ -57,6 +127,29 @@ struct MetadataDesc {
     _len: u32,
     _version: u32,
     num_desc: u32,
+}
+
+// Capture the memory map in the firmware information.
+fn write_fw_info_memory_map(
+    start: u64,
+    len: u64,
+    index: usize,
+    fw_info: &mut IgvmParamBlockFwInfo,
+) -> Result<(), Box<dyn Error>> {
+    assert!(index < MEM_MAP_MAX);
+    assert!(fw_info.memory_map_page[index] == 0);
+    assert!(fw_info.memory_map_page_count[index] == 0);
+
+    let memory_map_page = start / PAGE_SIZE_4K;
+    fw_info.memory_map_page[index] = u32::try_from(memory_map_page)
+        .map_err(|_| format!("Memory map address {start:#018x} is too large"))?;
+    let page_count = len / PAGE_SIZE_4K;
+    // Truncate the page count if it is too large to fit into a
+    // 32-bit number. It is acceptable for the SVSM to provide a
+    // smaller set of data than the firmware is capable of
+    // handling.
+    fw_info.memory_map_page_count[index] = u32::try_from(page_count).unwrap_or(u32::MAX);
+    Ok(())
 }
 
 // (table uuid, table body, remaining data)
@@ -76,9 +169,10 @@ fn read_table(data: &[u8]) -> Result<TableInfo<'_>, Box<dyn Error>> {
     ))
 }
 
-fn parse_sev_metadata(
+fn parse_metadata(
     data: &[u8],
     fw_img: &[u8],
+    metadata: &dyn Metadata,
     fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
     let offset_from_end = GuidBlockMetadata::read_from_bytes(data)
@@ -92,23 +186,7 @@ fn parse_sev_metadata(
         .map_err(|e| format!("Cannot parse OVMF metadata descriptor: {e}"))?;
 
     for _ in 0..desc.num_desc as usize {
-        let (entry, remainder) = SevMetadataEntry::read_from_prefix(buf)
-            .map_err(|e| format!("Cannot parse OVMF metadata entry: {e}"))?;
-        match entry.metadata_type {
-            SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
-                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
-                    return Err("OVMF metadata defines too many memory regions".into());
-                }
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
-                fw_info.prevalidated_count += 1;
-            }
-            SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
-            SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
-            SEV_META_DESC_TYPE_CAA => fw_info.caa_page = entry.base,
-            _ => {}
-        }
-        buf = remainder;
+        buf = metadata.parse(buf, fw_info)?;
     }
     Ok(())
 }
@@ -148,8 +226,9 @@ fn parse_inner_table<'a>(
     let (uuid, body, remainder) = read_table(data)?;
 
     match uuid {
-        OVMF_SEV_METADATA_GUID => parse_sev_metadata(body, fw_img, fw_info)?,
+        OVMF_SEV_METADATA_GUID => parse_metadata(body, fw_img, &SevMetadata {}, fw_info)?,
         SEV_INFO_BLOCK_GUID => parse_sev_info_block(body, fw_info)?,
+        OVMF_TDX_METADATA_GUID => parse_metadata(body, fw_img, &TdxMetadata {}, fw_info)?,
         OVMF_RESET_VECTOR_GUID => *compat_mask = parse_reset_vector(body, fw_info)?,
         _ => {}
     }
