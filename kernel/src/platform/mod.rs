@@ -217,19 +217,19 @@ pub trait SvsmPlatform: Sync {
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `pa` points to a properly aligned memory location and the
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
-    unsafe fn mmio_write(&self, _paddr: PhysAddr, _data: &[u8]) -> Result<(), SvsmError>;
+    unsafe fn mmio_write(&self, vaddr: VirtAddr, data: &[u8]) -> Result<(), SvsmError>;
 
     /// Perfrom a read from a memory-mapped IO area
     ///
     /// # Safety
     ///
-    /// Caller must ensure that `paddr` points to a properly aligned memory location and the
+    /// Caller must ensure that `vaddr` points to a properly aligned memory location and the
     /// memory accessed is part of a valid MMIO range.
     unsafe fn mmio_read(
         &self,
-        paddr: PhysAddr,
+        vaddr: VirtAddr,
         data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError>;
 }
