@@ -98,6 +98,9 @@ panic = 'abort'
 
 [profile.dev]
 panic = 'abort'
+# Without any optimization whatsoever, stackframes can easily get too
+# large and result in unusable builds.
+opt-level = 1
 
 [workspace.lints.rust]
 future_incompatible = { level = "deny", priority = 127 }
