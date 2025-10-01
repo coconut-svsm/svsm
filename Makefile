@@ -10,6 +10,8 @@ ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
 endif
 
+TEST_ARGS ?=
+
 CLIPPY_OPTIONS ?=
 CLIPPY_ARGS ?= -D warnings
 
@@ -115,7 +117,7 @@ test:
 test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 
 test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
-	./scripts/test-in-svsm.sh
+	./scripts/test-in-svsm.sh $(TEST_ARGS)
 
 test-in-hyperv: bin/coconut-test-hyperv.igvm
 
