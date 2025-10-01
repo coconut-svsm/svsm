@@ -24,9 +24,7 @@ use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
-
-extern crate alloc;
-use alloc::boxed::Box;
+use zerocopy::FromZeros;
 
 /// Number of entries in a page table (4KB/8B).
 const ENTRY_COUNT: usize = 512;
@@ -211,7 +209,7 @@ impl PagingMode {
 
 /// Represents a page table entry.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, FromZeros)]
 pub struct PTEntry(PhysAddr);
 
 impl PTEntry {
@@ -391,7 +389,7 @@ impl PTEntry {
 
 /// A pagetable page with multiple entries.
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, FromZeros)]
 pub struct PTPage {
     entries: [PTEntry; ENTRY_COUNT],
 }
@@ -404,7 +402,7 @@ impl PTPage {
     ///
     /// Returns [`SvsmError`] if the page cannot be allocated.
     fn alloc() -> Result<(&'static mut Self, PhysAddr), SvsmError> {
-        let page = PageBox::try_new(PTPage::default())?;
+        let page: PageBox<Self> = PageBox::try_new_zeroed()?;
         let paddr = virt_to_phys(page.vaddr());
         Ok((PageBox::leak(page), paddr))
     }
@@ -435,13 +433,6 @@ impl PTPage {
         // SAFETY: Every PTEntry points to a previously allocated page-table
         // page, so this pointer dereference is safe.
         Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
-    }
-}
-
-impl Default for PTPage {
-    fn default() -> Self {
-        let entries = [PTEntry::default(); ENTRY_COUNT];
-        PTPage { entries }
     }
 }
 
@@ -514,7 +505,7 @@ impl PageFrame {
 
 /// Page table structure containing a root page with multiple entries.
 #[repr(C)]
-#[derive(Default, Debug)]
+#[derive(Debug, FromZeros)]
 pub struct PageTable {
     root: PTPage,
 }
@@ -544,7 +535,7 @@ impl PageTable {
     /// # Errors
     /// Returns [`SvsmError`] if the page cannot be allocated.
     pub fn allocate_new() -> Result<PageBox<Self>, SvsmError> {
-        let mut pgtable = PageBox::try_new(PageTable::default())?;
+        let mut pgtable: PageBox<Self> = PageBox::try_new_zeroed()?;
         let paddr = virt_to_phys(pgtable.vaddr());
 
         // Set the self-map entry.
@@ -1273,7 +1264,7 @@ impl PageTable {
 }
 
 /// Represents a sub-tree of a page-table which can be mapped at a top-level index
-#[derive(Default, Debug)]
+#[derive(Debug, FromZeros)]
 struct RawPageTablePart {
     page: PTPage,
 }
@@ -1514,7 +1505,7 @@ impl Drop for RawPageTablePart {
 #[derive(Debug)]
 pub struct PageTablePart {
     /// The root of the page-table sub-tree
-    raw: Option<Box<RawPageTablePart>>,
+    raw: Option<PageBox<RawPageTablePart>>,
     /// The top-level index this PageTablePart is populated at
     idx: usize,
 }
@@ -1541,7 +1532,9 @@ impl PageTablePart {
     }
 
     fn get_or_init_mut(&mut self) -> &mut RawPageTablePart {
-        self.raw.get_or_insert_with(Box::default)
+        self.raw.get_or_insert_with(|| {
+            PageBox::try_new_zeroed().expect("Failed to allocate page table page")
+        })
     }
 
     fn get_mut(&mut self) -> Option<&mut RawPageTablePart> {
