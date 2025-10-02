@@ -25,9 +25,6 @@
 // Are building for a BIG_ENDIAN processor?
 #define  BIG_ENDIAN_TPM             NO
 #define  LITTLE_ENDIAN_TPM          !BIG_ENDIAN_TPM
-// Does the processor put the most-significant bit at bit position 0?
-#define MOST_SIGNIFICANT_BIT_0      NO
-#define LEAST_SIGNIFICANT_BIT_0     !MOST_SIGNIFICANT_BIT_0
 // Does processor support Auto align?
 #define  AUTO_ALIGN                 NO
 
@@ -175,6 +172,8 @@
 #define RH_ACT_E                                ( NO * ACT_SUPPORT)
 #define RH_ACT_F                                ( NO * ACT_SUPPORT)
 
+// number of vendor properties, must currently be 1.
+#define MAX_VENDOR_PROPERTY                 (1)
 
 //***********************************************
 // Enable VENDOR_PERMANENT_AUTH_HANDLE?
@@ -222,5 +221,12 @@
 // NOTE: enabling this doesn't necessarily mean that the expanded
 // (external-NV-specific) attributes are supported.
 #define EXTERNAL_NV                           YES
+
+//***********************************************
+// Defines controlling secure channel functionality
+//***********************************************
+// This flag enables support for PolicyTransportSPDM.
+// See CC_PolicyTransportSPDM.
+#define SEC_CHANNEL_SUPPORT                   YES
 
 #endif // _TPM_PROFILE_COMMON_H_

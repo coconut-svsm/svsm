@@ -42,6 +42,10 @@
 
 // Additional error codes defined by TPM library:
 #define FATAL_ERROR_ASSERT           (500)
+#define FATAL_ERROR_NV_INIT          (501)
+#define FATAL_ERROR_CRYPTO_INIT      (502)
+#define FATAL_ERROR_NO_INIT          (503)
+
 // Platform library violated interface contract.
 #define FATAL_ERROR_PLATFORM         (600)
 

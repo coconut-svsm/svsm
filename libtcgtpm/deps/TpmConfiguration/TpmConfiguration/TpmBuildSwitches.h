@@ -51,10 +51,20 @@
 // ones in the Simulator project.
 #define SIMULATION                  NO
 
+// ENABLE_TPM_DEBUG_PRINT enables arbitrary string printing.
+// enables the TPM_DEBUG_PRINT macro to route debugging strings
+// to the _plat_debug_out function
+#define ENABLE_TPM_DEBUG_PRINT      (YES * SIMULATION)
+
+//  ENABLE_TPM_DEBUG_TRACE enables code tracing macros - depends on TPM_DEBUG_PRINT
+#define ENABLE_TPM_DEBUG_TRACE      (NO  * ENABLE_TPM_DEBUG_PRINT)
+
+//  ENABLE_CRYPTO_DEBUG enables printing of actual crypto values. This is entirely insecure.
+#define ENABLE_CRYPTO_DEBUG         (YES * ENABLE_TPM_DEBUG_PRINT)
 
 // The CRYPTO_LIB_REPORTING switch allows the TPM to report its
 // crypto library implementation, e.g., at simulation startup.
-#define CRYPTO_LIB_REPORTING        NO
+#define CRYPTO_LIB_REPORTING        (YES * SIMULATION)
 
 // If doing debug, can set the DRBG to print out the intermediate test values.
 // Before enabling this, make sure that the dbgDumpMemBlock() function
@@ -62,7 +72,7 @@
 #define DRBG_DEBUG_PRINT            (NO  * DEBUG)
 
 // This define is used to control the debug for the CertifyX509 command.
-#define CERTIFYX509_DEBUG           (YES * DEBUG)
+#define CERTIFYX509_DEBUG           (NO * DEBUG)
 
 // This provides fixed seeding of the RNG when doing debug on a simulator. This
 // should allow consistent results on test runs as long as the input parameters
@@ -89,9 +99,9 @@
 ////////////////////////////////////////////////////////////////
 // The SIMULATION flag can enable test crypto behaviors and caching that
 // significantly change the behavior of the code.  This flag controls only the
-// g_forceFailureMode flag in the TPM library while leaving the rest of the TPM
-// behavior alone.  Useful for testing when the full set of options controlled by
-// SIMULATION may not be desired.
+// ability of the platform library to force failure mode while leaving the rest
+// of the TPM behavior alone.  Useful for testing when the full set of options
+// controlled by SIMULATION may not be desired.
 #define ALLOW_FORCE_FAILURE_MODE    NO
 
 ////////////////////////////////////////////////////////////////
@@ -144,36 +154,11 @@
 ////////////////////////////////////////////////////////////////
 // Implementation alternatives - don't  change external behavior
 ////////////////////////////////////////////////////////////////
-
-// Define TABLE_DRIVEN_DISPATCH to use tables rather than case statements
-// for command dispatch and handle unmarshaling
-#define TABLE_DRIVEN_DISPATCH       YES
+// does the target system have longjmp support, AND we want to use it?
+#define LONGJMP_SUPPORTED           NO
 
 // This define is used to enable the new table-driven marshaling code.
 #define TABLE_DRIVEN_MARSHAL        NO
-
-// This switch allows use of #defines in place of pass-through marshaling or
-// unmarshaling code. A pass-through function just calls another function to do
-// the required function and does no parameter checking of its own. The
-// table-driven dispatcher calls directly to the lowest level
-// marshaling/unmarshaling code and by-passes any pass-through functions.
-#define USE_MARSHALING_DEFINES      YES
-
-// Switch added to support packed lists that leave out space associated with
-// unimplemented commands. Comment this out to use linear lists.
-// Note: if vendor specific commands are present, the associated list is always
-// in compressed form.
-#define COMPRESSED_LISTS            YES
-
-// This define is used to eliminate the use of bit-fields. It can be enabled for big-
-// or little-endian machines. For big-endian architectures that numbers bits in
-// registers from left to right (MSb0) this must be enabled. Little-endian machines
-// number from right to left with the least significant bit having assigned a bit
-// number of 0. These are LSb0 machines (they are also little-endian so they are also
-// least-significant byte 0 (LSB0) machines. Big-endian (MSB0) machines may number in
-// either direction (MSb0 or LSb0). For an MSB0+MSb0 machine this value is required to
-// be 'NO'
-#define USE_BIT_FIELD_STRUCTURES    NO
 
 // Enable the generation of RSA primes using a sieve.
 #define RSA_KEY_SIEVE               YES
@@ -207,6 +192,6 @@
 #define FAIL_TRACE                  YES
 
 // TODO_RENAME_INC_FOLDER: public refers to the TPM_CoreLib public headers
-#include <public/CompilerDependencies.h>
+#include <tpm_public/CompilerDependencies.h>
 
 #endif  // _TPM_BUILD_SWITCHES_H_
