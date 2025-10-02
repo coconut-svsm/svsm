@@ -203,9 +203,8 @@ You may also need to install the TPM 2.0 Reference Implementation build
 dependencies. On OpenSUSE you can do this by:
 
 ```
-$ sudo zypper in system-user-mail make gcc curl patterns-devel-base-devel_basis \
-      glibc-devel-static git libclang13 autoconf autoconf-archive pkg-config \
-      automake perl
+$ sudo zypper in system-user-mail make gcc gcc-c++ curl patterns-devel-base-devel_basis \
+      glibc-devel-static git libclang13 cmake pkg-config perl
 ```
 
 Then checkout the SVSM repository and build the SVSM binary:

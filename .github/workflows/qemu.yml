@@ -110,7 +110,7 @@ jobs:
         run: rustup toolchain install nightly -t x86_64-unknown-none --profile minimal --force -c rustfmt
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
-        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
+        run: sudo apt install -y build-essential cmake pkg-config
 
       - name: Build test
         run: make bin/coconut-test-qemu.igvm
