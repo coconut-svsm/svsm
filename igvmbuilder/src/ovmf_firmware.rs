@@ -43,6 +43,8 @@ struct GuidBlockResetVector {
 }
 
 trait Metadata {
+    fn signature(&self) -> [u8; 4];
+
     fn parse<'a>(
         &self,
         data: &'a [u8],
@@ -61,6 +63,10 @@ struct SevMetadataEntry {
 struct SevMetadata {}
 
 impl Metadata for SevMetadata {
+    fn signature(&self) -> [u8; 4] {
+        [b'A', b'S', b'E', b'V']
+    }
+
     fn parse<'a>(
         &self,
         data: &'a [u8],
@@ -89,7 +95,7 @@ impl Metadata for SevMetadata {
 #[derive(FromBytes, KnownLayout)]
 #[repr(C)]
 struct MetadataDesc {
-    _sig: u32,
+    sig: [u8; 4],
     _len: u32,
     _version: u32,
     num_desc: u32,
@@ -128,6 +134,9 @@ fn parse_metadata(
     let (desc, mut buf) = MetadataDesc::read_from_prefix(&fw_img[offset..])
         .map_err(|e| format!("Cannot parse OVMF metadata descriptor: {e}"))?;
 
+    if desc.sig != metadata.signature() {
+        return Err(format!("OVMF metadata signature mismatch: {:?}", desc.sig).into());
+    }
     for _ in 0..desc.num_desc as usize {
         buf = metadata.parse(buf, fw_info)?;
     }
