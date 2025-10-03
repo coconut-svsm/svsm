@@ -196,24 +196,26 @@ impl IgvmParams<'_> {
             PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
         let mem_map_va = mem_map_mapping.virt_addr();
 
-        // The guest expects the pages in the memory map to be treated like
-        // host-provided IGVM parameters, which requires the pages to be
-        // validated.  Since the memory was not declared as part of the guest
-        // firmware image, the pages must be validated here.
-        if self.page_state_change_required() {
-            SVSM_PLATFORM.page_state_change(
-                mem_map_region,
-                PageSize::Regular,
-                PageStateChangeOp::Private,
-            )?;
-        }
+        if self.igvm_param_block.firmware.memory_map_prevalidated == 0 {
+            // The guest expects the pages in the memory map to be treated like
+            // host-provided IGVM parameters, which requires the pages to be
+            // validated.  Since the memory was not declared as part of the
+            // guest firmware image, the pages must be validated here.
+            if self.page_state_change_required() {
+                SVSM_PLATFORM.page_state_change(
+                    mem_map_region,
+                    PageSize::Regular,
+                    PageStateChangeOp::Private,
+                )?;
+            }
 
-        let mem_map_va_region = MemoryRegion::<VirtAddr>::new(mem_map_va, mem_map_region.len());
-        // SAFETY: the virtual address region was created above to map the
-        // specified physical address range and is therefore safe.
-        unsafe {
-            SVSM_PLATFORM
-                .validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+            let mem_map_va_region = MemoryRegion::new(mem_map_va, mem_map_region.len());
+            // SAFETY: the virtual address region was created above to map the
+            // specified physical address range and is therefore safe.
+            unsafe {
+                SVSM_PLATFORM
+                    .validate_virtual_page_range(mem_map_va_region, PageValidateOp::Validate)?;
+            }
         }
 
         // Calculate the maximum number of entries that can be inserted.
