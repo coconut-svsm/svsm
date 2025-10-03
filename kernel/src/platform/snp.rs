@@ -132,8 +132,8 @@ impl SvsmPlatform for SnpPlatform {
     ) -> Result<(), SvsmError> {
         if let Some(fw_meta) = &config.get_fw_metadata() {
             print_fw_meta(fw_meta);
-            write_guest_memory_map(config)?;
             validate_fw_memory(config, fw_meta, &kernel_region)?;
+            write_guest_memory_map(config)?;
             copy_tables_to_fw(fw_meta, &kernel_region)?;
             validate_fw(config, &kernel_region)?;
             prepare_fw_launch(fw_meta)?;
