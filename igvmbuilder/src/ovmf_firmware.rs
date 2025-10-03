@@ -46,7 +46,7 @@ trait Metadata {
     fn signature(&self) -> [u8; 4];
 
     fn parse<'a>(
-        &self,
+        &mut self,
         data: &'a [u8],
         fw_info: &mut IgvmParamBlockFwInfo,
     ) -> Result<&'a [u8], Box<dyn Error>>;
@@ -68,7 +68,7 @@ impl Metadata for SevMetadata {
     }
 
     fn parse<'a>(
-        &self,
+        &mut self,
         data: &'a [u8],
         fw_info: &mut IgvmParamBlockFwInfo,
     ) -> Result<&'a [u8], Box<dyn Error>> {
@@ -76,12 +76,7 @@ impl Metadata for SevMetadata {
             .map_err(|e| format!("Cannot parse SEV metadata entry: {e}"))?;
         match entry.metadata_type {
             SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
-                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
-                    return Err("OVMF metadata defines too many memory regions".into());
-                }
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
-                fw_info.prevalidated_count += 1;
+                add_preval_region(fw_info, entry.base, entry.len)?
             }
             SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
             SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
@@ -111,7 +106,7 @@ impl Metadata for TdxMetadata {
     }
 
     fn parse<'a>(
-        &self,
+        &mut self,
         data: &'a [u8],
         _fw_info: &mut IgvmParamBlockFwInfo,
     ) -> Result<&'a [u8], Box<dyn Error>> {
@@ -124,11 +119,80 @@ impl Metadata for TdxMetadata {
 
 #[derive(FromBytes, KnownLayout)]
 #[repr(C)]
+struct IgvmMetadataEntry {
+    start: u32,
+    len: u32,
+    metadata_type: u32,
+}
+
+struct IgvmMetadata {
+    param_base: Option<u32>,
+}
+
+impl IgvmMetadata {
+    fn new() -> Self {
+        IgvmMetadata { param_base: None }
+    }
+}
+
+impl Metadata for IgvmMetadata {
+    fn signature(&self) -> [u8; 4] {
+        [b'I', b'G', b'V', b'M']
+    }
+
+    fn parse<'a>(
+        &mut self,
+        data: &'a [u8],
+        fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>> {
+        let (entry, remainder) = IgvmMetadataEntry::read_from_prefix(data)
+            .map_err(|e| format!("Cannot parse IGVM metadata entry: {e}"))?;
+        match entry.metadata_type {
+            IGVM_META_DESC_TYPE_PARAM_AREA => {
+                if self.param_base.is_some() {
+                    return Err("Found multiple IGVM param areas".into());
+                }
+                self.param_base = Some(entry.start);
+                add_preval_region(fw_info, entry.start, entry.len)?
+            }
+            IGVM_META_DESC_TYPE_MEMORY_MAP => {
+                // IGVM_META_DESC_TYPE_PARAM_AREA must precede it.
+                let param_base = self.param_base.ok_or("IGVM param area not found")?;
+                // Capture the memory map in the firmware information.
+                fw_info.memory_map_address = param_base
+                    .checked_add(entry.start)
+                    .ok_or("IGVM memory map address too large")?;
+                fw_info.memory_map_size = entry.len;
+            }
+            IGVM_META_DESC_TYPE_HOB_AREA => add_preval_region(fw_info, entry.start, entry.len)?,
+            _ => {}
+        }
+        Ok(remainder)
+    }
+}
+
+#[derive(FromBytes, KnownLayout)]
+#[repr(C)]
 struct MetadataDesc {
     sig: [u8; 4],
     _len: u32,
     _version: u32,
     num_desc: u32,
+}
+
+fn add_preval_region(
+    fw_info: &mut IgvmParamBlockFwInfo,
+    base: u32,
+    size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let preval_count = fw_info.prevalidated_count as usize;
+    if preval_count == fw_info.prevalidated.len() {
+        return Err("OVMF metadata defines too many memory regions".into());
+    }
+    fw_info.prevalidated[preval_count].base = base;
+    fw_info.prevalidated[preval_count].size = size;
+    fw_info.prevalidated_count += 1;
+    Ok(())
 }
 
 // (table uuid, table body, remaining data)
@@ -151,7 +215,7 @@ fn read_table(data: &[u8]) -> Result<TableInfo<'_>, Box<dyn Error>> {
 fn parse_metadata(
     data: &[u8],
     fw_img: &[u8],
-    metadata: &dyn Metadata,
+    metadata: &mut dyn Metadata,
     fw_info: &mut IgvmParamBlockFwInfo,
 ) -> Result<(), Box<dyn Error>> {
     let offset_from_end = GuidBlockMetadata::read_from_bytes(data)
@@ -208,9 +272,10 @@ fn parse_inner_table<'a>(
     let (uuid, body, remainder) = read_table(data)?;
 
     match uuid {
-        OVMF_SEV_METADATA_GUID => parse_metadata(body, fw_img, &SevMetadata {}, fw_info)?,
+        OVMF_SEV_METADATA_GUID => parse_metadata(body, fw_img, &mut SevMetadata {}, fw_info)?,
         SEV_INFO_BLOCK_GUID => parse_sev_info_block(body, fw_info)?,
-        OVMF_TDX_METADATA_GUID => parse_metadata(body, fw_img, &TdxMetadata {}, fw_info)?,
+        OVMF_TDX_METADATA_GUID => parse_metadata(body, fw_img, &mut TdxMetadata {}, fw_info)?,
+        OVMF_IGVM_METADATA_GUID => parse_metadata(body, fw_img, &mut IgvmMetadata::new(), fw_info)?,
         OVMF_RESET_VECTOR_GUID => *compat_mask = parse_reset_vector(body, fw_info)?,
         _ => {}
     }
