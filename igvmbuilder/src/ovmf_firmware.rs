@@ -94,6 +94,36 @@ impl Metadata for SevMetadata {
 
 #[derive(FromBytes, KnownLayout)]
 #[repr(C)]
+struct TdxMetadataEntry {
+    _raw_offset: u32,
+    _raw_size: u32,
+    _mem_address: u64,
+    _mem_size: u64,
+    _section_type: u32,
+    _attributes: u32,
+}
+
+struct TdxMetadata {}
+
+impl Metadata for TdxMetadata {
+    fn signature(&self) -> [u8; 4] {
+        [b'T', b'D', b'V', b'F']
+    }
+
+    fn parse<'a>(
+        &self,
+        data: &'a [u8],
+        _fw_info: &mut IgvmParamBlockFwInfo,
+    ) -> Result<&'a [u8], Box<dyn Error>> {
+        let (_entry, remainder) = TdxMetadataEntry::read_from_prefix(data)
+            .map_err(|e| format!("Cannot parse TDX metadata entry: {e}"))?;
+        // Do nothing other than making sure parsing succeeds for now
+        Ok(remainder)
+    }
+}
+
+#[derive(FromBytes, KnownLayout)]
+#[repr(C)]
 struct MetadataDesc {
     sig: [u8; 4],
     _len: u32,
@@ -180,6 +210,7 @@ fn parse_inner_table<'a>(
     match uuid {
         OVMF_SEV_METADATA_GUID => parse_metadata(body, fw_img, &SevMetadata {}, fw_info)?,
         SEV_INFO_BLOCK_GUID => parse_sev_info_block(body, fw_info)?,
+        OVMF_TDX_METADATA_GUID => parse_metadata(body, fw_img, &TdxMetadata {}, fw_info)?,
         OVMF_RESET_VECTOR_GUID => *compat_mask = parse_reset_vector(body, fw_info)?,
         _ => {}
     }
