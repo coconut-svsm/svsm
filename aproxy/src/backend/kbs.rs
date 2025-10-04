@@ -6,13 +6,14 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 use super::*;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use base64::{
     prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
     Engine,
 };
 use kbs_types::*;
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -80,6 +81,8 @@ impl AttestationProtocol for KbsProtocol {
         http: &mut HttpClient,
         request: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse> {
+        let evidence: KbsEvidence = (&request).try_into()?;
+
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
             init_data: None,
@@ -88,7 +91,8 @@ impl AttestationProtocol for KbsProtocol {
                 tee_pubkey: request.key.into(),
             },
             tee_evidence: CompositeEvidence {
-                primary_evidence: Value::String(BASE64_STANDARD.encode(request.evidence)),
+                primary_evidence: serde_json::to_value(&evidence)
+                    .context("unable to serialize attestation evidence to JSON")?,
                 additional_evidence: String::new(),
             },
         };
@@ -192,4 +196,42 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
         .context("unable to decode EC y value from base64")?;
 
     Ok(EcP256PublicKey { x, y })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum KbsEvidence {
+    Snp {
+        #[serde(rename = "snp-report")]
+        snp_report: String,
+        #[serde(rename = "certs-buf")]
+        certs_buf: Option<String>,
+    },
+}
+
+impl TryFrom<&AttestationRequest> for KbsEvidence {
+    type Error = anyhow::Error;
+
+    // At the moment, only SEV-SNP evidence is allowed. However, preserve the following match
+    // statement to describe how other TEE architectures would serialize AttestationEvidence.
+    #[allow(irrefutable_let_patterns)]
+    fn try_from(data: &AttestationRequest) -> anyhow::Result<Self> {
+        match data.tee {
+            Tee::Snp => {
+                let AttestationEvidence::Snp {
+                    ref report,
+                    ref certs_buf,
+                } = data.evidence
+                else {
+                    bail!("invalid SEV-SNP evidence")
+                };
+
+                Ok(Self::Snp {
+                    snp_report: BASE64_STANDARD.encode(report),
+                    certs_buf: certs_buf.clone().map(|certs| BASE64_STANDARD.encode(certs)),
+                })
+            }
+            _ => Err(anyhow!("invalid TEE")),
+        }
+    }
 }

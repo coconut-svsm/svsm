@@ -1871,7 +1871,6 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "aes-kw",
- "base64",
  "bitfield-struct 0.6.2",
  "bitflags 2.10.0",
  "bootlib",
