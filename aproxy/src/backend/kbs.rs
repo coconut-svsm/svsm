@@ -13,6 +13,7 @@ use base64::{
 };
 use kbs_types::*;
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -80,6 +81,8 @@ impl AttestationProtocol for KbsProtocol {
         http: &mut HttpClient,
         request: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse> {
+        let evidence: KbsEvidence = request.evidence.into();
+
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
             init_data: None,
@@ -88,7 +91,8 @@ impl AttestationProtocol for KbsProtocol {
                 tee_pubkey: request.key.into(),
             },
             tee_evidence: CompositeEvidence {
-                primary_evidence: Value::String(BASE64_STANDARD.encode(request.evidence)),
+                primary_evidence: serde_json::to_value(&evidence)
+                    .context("unable to serialize attestation evidence to JSON")?,
                 additional_evidence: String::new(),
             },
         };
@@ -192,4 +196,26 @@ fn unwrap_epk(resp: &Response) -> anyhow::Result<EcP256PublicKey> {
         .context("unable to decode EC y value from base64")?;
 
     Ok(EcP256PublicKey { x, y })
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum KbsEvidence {
+    Snp {
+        #[serde(rename = "snp-report")]
+        snp_report: String,
+        #[serde(rename = "certs-buf")]
+        certs_buf: Option<String>,
+    },
+}
+
+impl From<AttestationEvidence> for KbsEvidence {
+    fn from(svsm: AttestationEvidence) -> Self {
+        match svsm {
+            AttestationEvidence::Snp { report, certs_buf } => Self::Snp {
+                snp_report: BASE64_STANDARD.encode(report),
+                certs_buf: certs_buf.map(|certs| BASE64_STANDARD.encode(certs)),
+            },
+        }
+    }
 }
