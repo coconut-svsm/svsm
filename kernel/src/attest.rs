@@ -102,6 +102,7 @@ impl AttestationDriver<'_> {
         let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
 
         let req = AttestationRequest {
+            tee: self.tee,
             evidence,
             challenge: n.challenge.clone(),
             key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
@@ -289,7 +290,7 @@ fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
 }
 
 /// Hash negotiation parameters and fetch TEE evidence.
-fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
+fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, AttestationError> {
     let evidence = match tee {
         &Tee::Snp => {
             let mut user_data = [0u8; 64];
@@ -316,7 +317,13 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
 
             // Get the attestation report as bytes for serialization in the
             // AttestationRequest.
-            try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?
+            let report =
+                try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?;
+
+            AttestationEvidence::Snp {
+                report,
+                certs_buf: None,
+            }
         }
         // We check for supported TEE architectures in the AttestationDriver's constructor.
         _ => unreachable!(),
