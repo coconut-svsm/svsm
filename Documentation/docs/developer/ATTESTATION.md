@@ -99,21 +99,16 @@ SEV-SNP machine with an SVSM-enabled kernel.
 1. Clone and run the `kbs-test` server used for testing. Supply two arguments
    on the command line:
 
-   `--measurement`: base64-encoded expected launch measurement (64 bytes in size).
-   `--secret`: base64-encoded secret to be released upon successful attestation.
+   `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
 
     ```shell
     # SVSM=<path to your Coconut SVSM directory>
     git clone https://github.com/coconut-svsm/kbs-test.git
     cd kbs-test
     MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
-    BASE64_EXPECTED_MEASUREMENT="$(echo $MEASUREMENT | xxd -r -p | base64 -w 0)"
-    BASE64_SECRET="$(echo HelloWorld | base64 -w 0)"
-    cargo run -- --measurement $BASE64_EXPECTED_MEASUREMENT --secret $BASE64_SECRET
+    HEX_EXPECTED_MEASUREMENT="$(echo $MEASUREMENT | xxd -p)"
+    cargo run -- --measurement $HEX_EXPECTED_MEASUREMENT
     ```
-
-    Note that the `--secret` argument is unused for this demo, but **can** be used
-    with small modifications.
 
     This will run the `kbs-test` server at <http://0.0.0.0:8080>.
 
@@ -190,8 +185,8 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
     ```text
     launch measurement not as expected
-    expected:"abcdaab+7GuPU52efdhq3PtvEcQpXl1lmnop75WQ1lzvgGz0Xmyyt9SSGoJImshp"
-    found:"fNcbjTk+7GuPU52wSQ6q3PtvEcQpXl1KXOzV75WQ1lzvgGz0Xmyyt9SSGoJImshp"
+    expected:"ef638e43239d319025e23c766c440c6f3e51660c2960bfc7045d30aee840f3981b15e4db8c6c7395dcdda91d005c6fe9"
+    found:"9ef6c500d19addcd5937c6c8bd4e51b1893f048eea03d5407cfb0692c06615e3f6c044c667c32e520913d93234e836fe"
     ```
 
     Restart the server process giving the `found` launch measurement in the
@@ -200,5 +195,5 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
     ```shell
     cd kbs-test
-    cargo run -- --measurement fNcbjTk+7GuPU52wSQ6q3PtvEcQpXl1KXOzV75WQ1lzvgGz0Xmyyt9SSGoJImshp --secret $BASE64_SECRET
+    cargo run -- --measurement 9ef6c500d19addcd5937c6c8bd4e51b1893f048eea03d5407cfb0692c06615e3f6c044c667c32e520913d93234e836fe
     ```
