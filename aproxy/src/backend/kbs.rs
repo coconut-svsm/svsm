@@ -19,6 +19,11 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KbsProtocol;
 
+#[derive(Deserialize, Debug)]
+struct TokenResponse {
+    pub token: String,
+}
+
 impl AttestationProtocol for KbsProtocol {
     /// KBS servers usually want two components hashed into attestation evidence: the public
     /// components of the TEE key, and a nonce provided in the KBS challenge that is fetched
@@ -110,8 +115,17 @@ impl AttestationProtocol for KbsProtocol {
                 success: false,
                 secret: None,
                 decryption: None,
+                token: None,
             });
         }
+
+        // Get the attestation token from the response.
+        let token_resp: TokenResponse = serde_json::from_str(
+            &http_resp
+                .text()
+                .context("unable to convert /attest response to text")?,
+        )
+        .context("unable to convert /attest response to JSON object")?;
 
         // Successful attestation. Fetch the secret (which should be stored at
         // /resource/default/sample/test in the KBS server instance.
@@ -134,6 +148,7 @@ impl AttestationProtocol for KbsProtocol {
                 success: false,
                 secret: None,
                 decryption: None,
+                token: None,
             });
         }
 
@@ -160,6 +175,7 @@ impl AttestationProtocol for KbsProtocol {
                 iv: resp.iv,
                 tag: resp.tag,
             }),
+            token: Some(AttestationToken::Jwt(token_resp.token)),
         })
     }
 }
