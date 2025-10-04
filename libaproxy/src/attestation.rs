@@ -7,7 +7,10 @@
 
 extern crate alloc;
 use super::Error;
-use alloc::{string::ToString, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer, TpmEccCurve, TpmsEccPoint};
 use core::convert::TryFrom;
@@ -108,6 +111,15 @@ pub enum AttestationEvidence {
     },
 }
 
+/// Token typically returned in successful attestations.
+#[derive(Serialize, Deserialize, Debug)]
+pub enum AttestationToken {
+    /// Token serialized to JSON (JWT).
+    Jwt(String),
+    /// Token serialized to CBOR (CWT).
+    Cwt(String),
+}
+
 /// Response from proxy to SVSM indicating the status of attestation as well as an optional secret
 /// if successful.
 #[derive(Serialize, Deserialize, Debug)]
@@ -118,6 +130,8 @@ pub struct AttestationResponse {
     pub secret: Option<Vec<u8>>,
     /// Server's public key used for symmetric encryption/decryption.
     pub decryption: Option<AesGcmData>,
+    /// EAR or other token received from successful attestation.
+    pub token: Option<AttestationToken>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
