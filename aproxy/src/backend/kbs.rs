@@ -13,7 +13,7 @@ use base64::{
 };
 use kbs_types::*;
 use reqwest::StatusCode;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct KbsProtocol;
@@ -80,6 +80,17 @@ impl AttestationProtocol for KbsProtocol {
         http: &mut HttpClient,
         request: AttestationRequest,
     ) -> anyhow::Result<AttestationResponse> {
+        let primary_evidence: Value = match request.evidence {
+            AttestationEvidence::Snp { report, certs_buf } => {
+                json!({
+                    "report": BASE64_STANDARD.encode(report),
+                    "certs_buf": match certs_buf {
+                        Some(buf) => BASE64_STANDARD.encode(buf),
+                        None => "".to_string(),
+                    }
+                })
+            }
+        };
         // Create a KBS attestation object from the TEE evidence and key.
         let attestation = Attestation {
             init_data: None,
@@ -88,7 +99,7 @@ impl AttestationProtocol for KbsProtocol {
                 tee_pubkey: request.key.into(),
             },
             tee_evidence: CompositeEvidence {
-                primary_evidence: Value::String(BASE64_STANDARD.encode(request.evidence)),
+                primary_evidence,
                 additional_evidence: String::new(),
             },
         };
