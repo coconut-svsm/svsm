@@ -12,31 +12,34 @@
 #  error CC_YES and CC_NO should be defined by the command line file, not before
 #endif
 
+// Change these definitions to turn all commands ON or OFF. That is, to turn all
+// commands on, set CC_NO to YES. This is intended as a debug feature.
 #define CC_YES YES
 #define CC_NO  NO
 
-//
+// do not format automatically - the comments confuse clang-format.
+// clang-format off
+
 // Defines for Implemented Commands
-//
 
 // Commands that are defined in the spec, but not implemented for various
 // reasons:
 
 // The TPM reference implementation does not implement attached-component
 // features, and the Compliance test suite has no test cases.
-#define CC_AC_GetCapability CC_NO
-#define CC_AC_Send          CC_NO
+#define CC_AC_GetCapability           CC_NO
+#define CC_AC_Send                    CC_NO
 
 // The TPM reference implementation does not implement firmware upgrade.
-#define CC_FieldUpgradeData  CC_NO
-#define CC_FieldUpgradeStart CC_NO
-#define CC_FirmwareRead      CC_NO
+#define CC_FieldUpgradeData           CC_NO
+#define CC_FieldUpgradeStart          CC_NO
+#define CC_FirmwareRead               CC_NO
 
 // A prototype of CertifyX509 is provided here for informative purposes only.
 // While all of the TPM reference implementation is provided "AS IS" without any
 // warranty, the current design and implementation of CertifyX509 are considered
 // to be especially unsuitable for product use.
-#define CC_CertifyX509 CC_NO
+#define CC_CertifyX509                CC_NO
 
 // Normal commands:
 
@@ -155,11 +158,16 @@
 #define CC_StirRandom                 CC_YES
 #define CC_TestParms                  CC_YES
 #define CC_Unseal                     CC_YES
-#define CC_Vendor_TCG_Test            CC_YES
 #define CC_VerifySignature            CC_YES
 #define CC_ZGen_2Phase                (CC_YES && ALG_ECC)
 #define CC_NV_DefineSpace2            CC_YES
 #define CC_NV_ReadPublic2             CC_YES
 #define CC_SetCapability              CC_NO
+#define CC_ReadOnlyControl            CC_YES
+#define CC_PolicyTransportSPDM        CC_YES
+
+// clang-format on
+
+#include <TpmConfiguration/VendorCommands/VendorCommandList.h>
 
 #endif  // _TPM_PROFILE_COMMAND_LIST_H_

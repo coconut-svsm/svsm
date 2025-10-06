@@ -1,8 +1,3 @@
-# Microsoft Reference Implementation for TPM 2.0
-# Copyright (c) Microsoft Corporation
-# This software is being made available under certain license terms, as detailed at
-# https://github.com/microsoft/ms-tpm-20-ref/blob/main/LICENSE
-#
 ##########################################################
 # DO NOT MODIFY - TPM Configuration Library
 ##########################################################
@@ -43,8 +38,24 @@ install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/TpmProfile_Common.h
         ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/TpmProfile_ErrorCodes.h
         ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/TpmProfile_Misc.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorInfo.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/TpmConfiguration)
+
+install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/VendorCommandList.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/CommandAttributeData_s_ccAttr.inl
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/CommandAttributeData_s_commandAttributes.inl
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/CommandDispatchData_CommandStructures.inl
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/CommandDispatchData_s_CommandDataArray.inl
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/CommandDispatcher.inl
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/HandleProcess.inl
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/TpmConfiguration/VendorCommands)
+
+install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/TpmConfiguration/VendorCommands/prototypes/Vendor_TCG_Test_fp.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/TpmConfiguration/VendorCommands/prototypes)
+
 
 # LAST: create the targets.cmake file for this package
 export_targets_cmake_file(${PROJECT_NAME})
+
+add_subdirectory(TpmVendorCommandHandlers)
