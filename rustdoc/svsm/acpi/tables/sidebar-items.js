@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MADT_HEADER_SIZE","MAX_ACPI_TABLES_SIZE"],"fn":["load_acpi_cpu_info","load_fw_cpu_info"],"struct":["ACPICPUInfo","ACPITable","ACPITableBuffer","ACPITableHeader","ACPITableMeta","RSDPDesc","RawACPITableHeader","RawMADTEntryHeader","RawMADTEntryLocalApic","RawMADTEntryLocalX2Apic"]};
