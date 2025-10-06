@@ -112,7 +112,7 @@ jobs:
             --profile minimal
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
-        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
+        run: sudo apt install -y build-essential cmake pkg-config
 
       - name: Build SVSM
         run: cargo xbuild configs/qemu-target.json
