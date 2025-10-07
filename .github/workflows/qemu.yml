@@ -17,7 +17,7 @@ env:
 
 jobs:
   check:
-    name: QEMU NOCC boot test
+    name: QEMU NOCC test-in-svsm
     runs-on: ubuntu-latest
     steps:
 
@@ -106,20 +106,18 @@ jobs:
       ## TODO: We can replace the SVSM build step and download the IGVM file as an artifact
         # from the "Rust check" jobs instread to speed things up.
 
-      - name: Install Rust x86_64-unknown-none
-        run: |
-          rustup toolchain install \
-            --profile minimal
+      - name: Install latest nightly
+        run: rustup toolchain install nightly -t x86_64-unknown-none --profile minimal --force -c rustfmt
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
 
-      - name: Build SVSM
-        run: cargo xbuild configs/qemu-target.json
+      - name: Build test
+        run: make bin/coconut-test-qemu.igvm
 
       ########################
 
-      - name: Run SVSM in QEMU
+      - name: Run test-in-svsm in QEMU
         run: |
-          QEMU=./tools/bin/qemu-system-x86_64 scripts/test-qemu-nocc-boot.sh
+          QEMU=./tools/bin/qemu-system-x86_64 scripts/test-qemu-nocc-svsm.sh
 
