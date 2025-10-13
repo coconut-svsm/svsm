@@ -65,7 +65,7 @@ pub enum MmioError {
 }
 
 impl Display for MmioError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::BadMagic(magic) => write!(
                 f,
