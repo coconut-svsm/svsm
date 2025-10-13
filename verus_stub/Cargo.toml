@@ -12,3 +12,6 @@ verus_macro_stub = { workspace = true, optional = true}
 [features]
 default = ["dep:verus_macro_stub"]
 disable = ["builtin_macros", "vstd"]
+
+[lints]
+workspace = true

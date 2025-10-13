@@ -22,3 +22,6 @@ zerocopy = { workspace = true, features = ["derive"] }
 [features]
 default = ["alloc"]
 alloc = ["zerocopy/alloc"]
+
+[lints]
+workspace = true
