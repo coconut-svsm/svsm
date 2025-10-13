@@ -2,7 +2,7 @@
 
 use crate::Hal;
 /// An MMIO register which can only be read from.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct ReadOnly<T: FromBytes + Immutable>(pub(crate) T);
 
@@ -14,12 +14,12 @@ impl<T: FromBytes + Immutable> ReadOnly<T> {
 }
 
 /// An MMIO register which can only be written to.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct WriteOnly<T: IntoBytes + Immutable>(pub(crate) T);
 
 /// An MMIO register which may be both read and written.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct Volatile<T: FromBytes + IntoBytes + Immutable>(T);
 

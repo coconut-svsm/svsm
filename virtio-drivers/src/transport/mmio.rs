@@ -83,6 +83,7 @@ impl Display for MmioError {
 /// MMIO Device Register Interface, both legacy and modern.
 ///
 /// Ref: 4.2.2 MMIO Device Register Layout and 4.2.4 Legacy interface
+#[derive(Debug)]
 #[repr(C)]
 pub struct VirtIOHeader {
     /// Magic value

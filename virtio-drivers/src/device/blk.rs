@@ -48,6 +48,7 @@ const SUPPORTED_FEATURES: BlkFeature = BlkFeature::RO
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct VirtIOBlk<H: Hal, T: Transport> {
     transport: T,
     queue: VirtQueue<H, { QUEUE_SIZE as usize }>,
