@@ -267,9 +267,12 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
             reserved: 0,
             sector: block_id as u64,
         };
-        let token = self
-            .queue
-            .add(&[req.as_bytes()], &mut [buf, resp.as_mut_bytes()])?;
+        // SAFETY: The caller is responsible for ensuring that `req` and `resp` are not accessed before the
+        // request is completed
+        let token = unsafe {
+            self.queue
+                .add(&[req.as_bytes()], &mut [buf, resp.as_mut_bytes()])?
+        };
         if self.queue.should_notify() {
             self.transport.notify(QUEUE);
         }
@@ -289,8 +292,12 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
         buf: &mut [u8],
         resp: &mut BlkResp,
     ) -> Result<()> {
-        self.queue
-            .pop_used(token, &[req.as_bytes()], &mut [buf, resp.as_mut_bytes()])?;
+        // SAFETY: The caller is responsible for ensuring that `req` and `resp` are the same ones passed
+        // to `read_blocks_nb` when it returned the token.
+        unsafe {
+            self.queue
+                .pop_used(token, &[req.as_bytes()], &mut [buf, resp.as_mut_bytes()])?;
+        }
         resp.status.into()
     }
 
@@ -349,9 +356,12 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
             reserved: 0,
             sector: block_id as u64,
         };
-        let token = self
-            .queue
-            .add(&[req.as_bytes(), buf], &mut [resp.as_mut_bytes()])?;
+        // SAFETY: The caller is responsible for ensuring that `req` and `resp` are not accessed before the
+        // request is completed
+        let token = unsafe {
+            self.queue
+                .add(&[req.as_bytes(), buf], &mut [resp.as_mut_bytes()])?
+        };
         if self.queue.should_notify() {
             self.transport.notify(QUEUE);
         }
@@ -371,8 +381,12 @@ impl<H: Hal, T: Transport> VirtIOBlk<H, T> {
         buf: &[u8],
         resp: &mut BlkResp,
     ) -> Result<()> {
-        self.queue
-            .pop_used(token, &[req.as_bytes(), buf], &mut [resp.as_mut_bytes()])?;
+        // SAFETY: The caller is responsible for ensuring that `req` and `resp` are the same ones passed
+        // to `write_blocks_nb` when it returned the token.
+        unsafe {
+            self.queue
+                .pop_used(token, &[req.as_bytes(), buf], &mut [resp.as_mut_bytes()])?;
+        }
         resp.status.into()
     }
 

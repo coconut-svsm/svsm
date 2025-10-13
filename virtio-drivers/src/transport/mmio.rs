@@ -292,14 +292,17 @@ impl<H: Hal> MmioTransport<H> {
     /// `header` must point to a properly aligned valid VirtIO MMIO region, which must remain valid
     /// for the lifetime of the transport that is returned.
     pub unsafe fn new(header: NonNull<VirtIOHeader>) -> Result<Self, MmioError> {
-        let magic = volread!(H, header, magic);
+        // SAFETY: header is non-null and we delegate to the caller that it is properly aligned
+        let magic = unsafe { volread!(H, header, magic) };
         if magic != MAGIC_VALUE {
             return Err(MmioError::BadMagic(magic));
         }
-        if volread!(H, header, device_id) == 0 {
+        // SAFETY: header is non-null and we delegate to the caller that it is properly aligned
+        if unsafe { volread!(H, header, device_id) } == 0 {
             return Err(MmioError::ZeroDeviceId);
         }
-        let version = volread!(H, header, version).try_into()?;
+        // SAFETY: header is non-null and we delegate to the caller that it is properly aligned
+        let version = unsafe { volread!(H, header, version).try_into()? };
         Ok(Self {
             header,
             version,
