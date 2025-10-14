@@ -76,12 +76,7 @@ impl Metadata for SevMetadata {
             .map_err(|e| format!("Cannot parse SEV metadata entry: {e}"))?;
         match entry.metadata_type {
             SEV_META_DESC_TYPE_MEM | SEV_META_DESC_TYPE_KERNEL_HASHES => {
-                if fw_info.prevalidated_count as usize == fw_info.prevalidated.len() {
-                    return Err("OVMF metadata defines too many memory regions".into());
-                }
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].base = entry.base;
-                fw_info.prevalidated[fw_info.prevalidated_count as usize].size = entry.len;
-                fw_info.prevalidated_count += 1;
+                add_preval_region(fw_info, entry.base, entry.len)?
             }
             SEV_META_DESC_TYPE_SECRETS => fw_info.secrets_page = entry.base,
             SEV_META_DESC_TYPE_CPUID => fw_info.cpuid_page = entry.base,
@@ -129,6 +124,55 @@ struct MetadataDesc {
     _len: u32,
     _version: u32,
     num_desc: u32,
+}
+
+fn region_contiguous(this: (u32, u32), that: (u32, u32)) -> bool {
+    let (this_start, this_end) = this;
+    let (that_start, that_end) = that;
+    this_start <= that_end && this_end >= that_start
+}
+
+fn region_merge(this: (u32, u32), that: (u32, u32)) -> (u32, u32) {
+    let (this_start, this_end) = this;
+    let (that_start, that_end) = that;
+    let start = this_start.min(that_start);
+    let end = this_end.max(that_end);
+    (start, end)
+}
+
+fn add_preval_region(
+    fw_info: &mut IgvmParamBlockFwInfo,
+    base: u32,
+    size: u32,
+) -> Result<(), Box<dyn Error>> {
+    let preval_count = fw_info.prevalidated_count as usize;
+    let end = base.checked_add(size).ok_or(format!(
+        "OVMF pre-validated area [{base:#x}-{base:#x}+{size:#x}] exceeds 32 bits"
+    ))?;
+    if let Some(pos) = fw_info
+        .prevalidated
+        .iter()
+        .take(preval_count)
+        .position(|preval| region_contiguous((preval.base, preval.base + preval.size), (base, end)))
+    {
+        let pstart = fw_info.prevalidated[pos].base;
+        let pend = pstart + fw_info.prevalidated[pos].size;
+        let merged = region_merge((pstart, pend), (base, end));
+        println!(
+            "Region [{:#x}-{:#x}] merged with existing pre-validated area {} [{:#x}-{:#x}] -> [{:#x}-{:#x}]",
+            base, end, pos, pstart, pend, merged.0, merged.1
+        );
+        fw_info.prevalidated[pos].base = merged.0;
+        fw_info.prevalidated[pos].size = merged.1 - merged.0;
+    } else {
+        if preval_count >= fw_info.prevalidated.len() {
+            return Err("OVMF metadata defines too many memory regions".into());
+        }
+        fw_info.prevalidated[preval_count].base = base;
+        fw_info.prevalidated[preval_count].size = size;
+        fw_info.prevalidated_count += 1;
+    }
+    Ok(())
 }
 
 // (table uuid, table body, remaining data)
