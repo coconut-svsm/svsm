@@ -216,6 +216,7 @@ pub enum VsockEventType {
 ///
 /// `RX_BUFFER_SIZE` is the size in bytes of each buffer used in the RX virtqueue. This must be
 /// bigger than `size_of::<VirtioVsockHdr>()`.
+#[derive(Debug)]
 pub struct VirtIOSocket<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize = DEFAULT_RX_BUFFER_SIZE>
 {
     transport: T,
