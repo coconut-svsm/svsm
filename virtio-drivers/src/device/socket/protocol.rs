@@ -175,7 +175,7 @@ impl TryFrom<U16<LittleEndian>> for VirtioVsockOp {
 }
 
 impl fmt::Debug for VirtioVsockOp {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Invalid => write!(f, "VIRTIO_VSOCK_OP_INVALID"),
             Self::Request => write!(f, "VIRTIO_VSOCK_OP_REQUEST"),
