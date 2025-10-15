@@ -43,6 +43,7 @@ const DEFAULT_PER_CONNECTION_BUFFER_CAPACITY: u32 = 1024;
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct VsockConnectionManager<
     H: Hal,
     T: Transport,
