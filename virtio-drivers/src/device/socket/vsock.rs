@@ -216,6 +216,7 @@ pub enum VsockEventType {
 ///
 /// `RX_BUFFER_SIZE` is the size in bytes of each buffer used in the RX virtqueue. This must be
 /// bigger than `size_of::<VirtioVsockHdr>()`.
+#[derive(Debug)]
 pub struct VirtIOSocket<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize = DEFAULT_RX_BUFFER_SIZE>
 {
     transport: T,
@@ -249,8 +250,8 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize> VirtIOSocket<H, T, RX_BU
         let negotiated_features = transport.begin_init(SUPPORTED_FEATURES);
 
         let config = transport.config_space::<VirtioVsockConfig>()?;
-        debug!("config: {:?}", config);
-        // Safe because config is a valid pointer to the device configuration space.
+        debug!("config: {config:?}");
+        // SAFETY: Safe because config is a valid pointer to the device configuration space.
         let guest_cid = unsafe {
             volread!(H, config, guest_cid_low) as u64
                 | (volread!(H, config, guest_cid_high) as u64) << 32

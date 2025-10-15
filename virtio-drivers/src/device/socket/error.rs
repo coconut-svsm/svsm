@@ -32,7 +32,7 @@ pub enum SocketError {
 }
 
 impl fmt::Display for SocketError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ConnectionExists => write!(
                 f,
