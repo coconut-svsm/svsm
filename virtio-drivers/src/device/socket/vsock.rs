@@ -251,7 +251,7 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize> VirtIOSocket<H, T, RX_BU
 
         let config = transport.config_space::<VirtioVsockConfig>()?;
         debug!("config: {:?}", config);
-        // Safe because config is a valid pointer to the device configuration space.
+        // SAFETY: Safe because config is a valid pointer to the device configuration space.
         let guest_cid = unsafe {
             volread!(H, config, guest_cid_low) as u64
                 | (volread!(H, config, guest_cid_high) as u64) << 32
