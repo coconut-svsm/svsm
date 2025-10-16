@@ -15,16 +15,23 @@ TCGTPM_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
 LIBCRT = $(LIBCRT_DIR)/libcrt.a
 LIBCRYPTO = $(OPENSSL_DIR)/libcrypto.a
 
-LIBTPM_A = tpm/src/libtpm.a
-LIBTPM = $(TCGTPM_DIR)/$(LIBTPM_A)
+LIBTPM_TARGET = Tpm_CoreLib
+LIBTPM = $(TCGTPM_BUILD_DIR)/tpm/src/lib$(LIBTPM_TARGET).a
 
-LIBPLATFORM_A = Platform/src/libplatform.a
-LIBPLATFORM = $(TCGTPM_DIR)/$(LIBPLATFORM_A)
+LIBPLATFORM_TARGET = Tpm_PlatformLib
+LIBPLATFORM = $(TCGTPM_BUILD_DIR)/Platform/lib$(LIBPLATFORM_TARGET).a
+
+LIBTPMBIGNUM_TARGET = Tpm_CryptoLib_TpmBigNum
+LIBTPMBIGNUM = $(TCGTPM_BUILD_DIR)/tpm/cryptolibs/TpmBigNum/lib$(LIBTPMBIGNUM_TARGET).a
+
+LIBBNMATH_TARGET = Tpm_CryptoLib_Math_Ossl
+LIBBNMATH = $(TCGTPM_BUILD_DIR)/cryptolib_Ossl/lib$(LIBBNMATH_TARGET).a
 
 OPENSSL_MAKEFILE = $(OPENSSL_DIR)/Makefile
-TCGTPM_MAKEFILE = $(TCGTPM_DIR)/Makefile
+TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
+TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
-LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBTPM) $(LIBPLATFORM)
+LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
 
 OUT_DIR ?= $(CWD)
 
@@ -146,40 +153,41 @@ $(OPENSSL_MAKEFILE):
 			-Wl,rpath=$(LIBCRT_DIR) -lcrt)
 
 # tcgtpm
-$(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_DIR) $(LIBTPM_A)
+$(LIBBNMATH): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBBNMATH_TARGET)
+
+$(LIBTPMBIGNUM): $(TCGTPM_MAKEFILE) $(LIBBNMATH)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPMBIGNUM_TARGET)
+
+$(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBTPMBIGNUM)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPM_TARGET)
 
 $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_DIR) $(LIBPLATFORM_A)
+	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
 
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
 TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 
-TCGTPM_EXTRA_CFLAGS = -I $(DEPS_DIR)/TpmConfiguration
-
-# Configure the TPM 2.0 Reference Implementation and remove the pthread requirement.
-# In fact, pthread is required only in the TPM simulator, but we
-# are not building the simulator.
 $(TCGTPM_MAKEFILE):
-	(cd $(TCGTPM_DIR) && \
-		./bootstrap && \
-		./configure \
-			--disable-pthread \
-			EXTRA_CFLAGS="${TCGTPM_EXTRA_CFLAGS}" \
-			CFLAGS="${TCGTPM_CFLAGS}" \
-			LIBCRYPTO_LIBS="$(LIBCRT) $(LIBCRYPTO)" \
-			LIBCRYPTO_CFLAGS="${TCGTPM_CFLAGS}")
+	mkdir -p $(TCGTPM_BUILD_DIR)
+	(cd $(TCGTPM_BUILD_DIR) && \
+		cmake \
+			-DCMAKE_C_FLAGS="${TCGTPM_CFLAGS}" \
+			-DOPENSSL_CRYPTO_LIBRARY="$(LIBCRYPTO)" \
+			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_DIR)/include" \
+			-Duser_TpmConfiguration_Dir="$(DEPS_DIR)/TpmConfiguration" \
+			..)
 
 clean: $(OPENSSL_MAKEFILE) $(TCGTPM_MAKEFILE)
 	make -C $(LIBCRT_DIR) clean
 	make -C $(OPENSSL_DIR) clean
-	make -C $(TCGTPM_DIR) clean
+	make -C $(TCGTPM_BUILD_DIR) clean
 	rm -f libtcgtpm.a
 
 distclean: clean
 	rm -f $(OPENSSL_MAKEFILE)
-	rm -f $(TCGTPM_MAKEFILE)
+	rm -rf $(TCGTPM_BUILD_DIR)
 
 .PHONY: all clean distclean
