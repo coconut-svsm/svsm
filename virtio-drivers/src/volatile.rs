@@ -2,7 +2,7 @@
 
 use crate::Hal;
 /// An MMIO register which can only be read from.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct ReadOnly<T: FromBytes + Immutable>(pub(crate) T);
 
@@ -14,12 +14,12 @@ impl<T: FromBytes + Immutable> ReadOnly<T> {
 }
 
 /// An MMIO register which can only be written to.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct WriteOnly<T: IntoBytes + Immutable>(pub(crate) T);
 
 /// An MMIO register which may be both read and written.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[repr(transparent)]
 pub struct Volatile<T: FromBytes + IntoBytes + Immutable>(T);
 
@@ -33,53 +33,81 @@ impl<T: FromBytes + IntoBytes + Immutable> Volatile<T> {
 /// A trait implemented by MMIO registers which may be read from.
 pub trait VolatileReadable<T> {
     /// Performs a volatile read from the MMIO register.
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for passing a non-null, aligned and readable `self`
     unsafe fn vread_hal<H: Hal>(self) -> T;
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for passing a non-null, aligned and readable `self`
     unsafe fn vread(self) -> T;
 }
 
 impl<T: FromBytes + Immutable> VolatileReadable<T> for *const ReadOnly<T> {
     unsafe fn vread_hal<H: Hal>(self) -> T {
-        H::mmio_read(&(*self).0)
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and readable
+        unsafe { H::mmio_read(&(*self).0) }
     }
 
     unsafe fn vread(self) -> T {
-        self.read_volatile().0
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and readable
+        unsafe { self.read_volatile().0 }
     }
 }
 
 impl<T: IntoBytes + FromBytes + Immutable> VolatileReadable<T> for *const Volatile<T> {
     unsafe fn vread_hal<H: Hal>(self) -> T {
-        H::mmio_read(&(*self).0)
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and readable
+        unsafe { H::mmio_read(&(*self).0) }
     }
     unsafe fn vread(self) -> T {
-        self.read_volatile().0
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and readable
+        unsafe { self.read_volatile().0 }
     }
 }
 
 /// A trait implemented by MMIO registers which may be written to.
 pub trait VolatileWritable<T> {
     /// Performs a volatile write to the MMIO register.
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for passing a non-null, aligned and writable `self`
     unsafe fn vwrite_hal<H: Hal>(self, value: T);
+    ///
+    /// # Safety
+    ///
+    /// Caller is responsible for passing a non-null, aligned and writable `self`
     unsafe fn vwrite(self, value: T);
 }
 
 impl<T: IntoBytes + Immutable> VolatileWritable<T> for *mut WriteOnly<T> {
     unsafe fn vwrite(self, value: T) {
-        (self as *mut T).write_volatile(value)
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and writable
+        unsafe { (self as *mut T).write_volatile(value) }
     }
     unsafe fn vwrite_hal<H: Hal>(self, value: T) {
-        let x = &mut (*self).0;
-        H::mmio_write(x, value);
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and writable
+        unsafe {
+            let x = &mut (*self).0;
+            H::mmio_write(x, value);
+        }
     }
 }
 
 impl<T: IntoBytes + FromBytes + Immutable> VolatileWritable<T> for *mut Volatile<T> {
     unsafe fn vwrite(self, value: T) {
-        (self as *mut T).write_volatile(value)
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and writable
+        unsafe { (self as *mut T).write_volatile(value) }
     }
     unsafe fn vwrite_hal<H: Hal>(self, value: T) {
-        let x = &mut (*self).0;
-        H::mmio_write(x, value);
+        // SAFETY: we delegate to the caller that self is non-null, properly aligned and writable
+        unsafe {
+            let x = &mut (*self).0;
+            H::mmio_write(x, value);
+        }
     }
 }
 
