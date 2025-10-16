@@ -8,6 +8,4 @@
 #include <TpmConfiguration/TpmProfile_CommandList.h>
 #include <TpmConfiguration/TpmProfile_Misc.h>
 #include <TpmConfiguration/TpmProfile_ErrorCodes.h>
-#include <TpmConfiguration/VendorInfo.h>
-
 #endif  // _TPM_PROFILE_H_
