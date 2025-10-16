@@ -36,13 +36,149 @@ is fresh and legitimate. The negotiation phase returns the parameters that SVSM
 should include in its attestation evidence based on the underlying attestation
 server and protocol.
 
+In the negotiation phase, a `NegotiationRequest` is sent from SVSM to the proxy.
+An example `NegotiationRequest` is shown below.
+```json
+{
+    "version": "0.1.0",
+    "tee": "snp",
+}
+```
+
+- `version`: The SVSM attestation protocol version to use. In place to ensure
+backwards compatibility with updated protocol versions should modifications
+occur. The API follows [SemVer](https://semver.org/).
+- `tee`: The TEE hardware architecture that SVSM is running on.
+
+The proxy will then complete the negotiation phase with the remote attestation
+server and reply with a list of negotiation parameters that must be included in
+the attestation evidence.
+
+A `NegotiationResponse` is sent from the proxy to SVSM.
+An example `NegotiationResponse` is shown below.
+```json
+{
+    "challenge": [93,11,16,123,114,198,71,58,163,70,55,25,15,84,35,45],
+    "params": [
+                "EcPublicKeyBytes",
+                "Challenge"
+              ]
+}
+```
+- `challenge`: The challenge nonce returned by the remote attestation server
+that will likely need to be hashed into the attestation evidence to ensure
+freshness.
+- `params`: The negotiation parameters. Each `NegotiationParam` represents some
+form of data that must be hashed into the attestation evidence. This hash will
+be reconstructed by the remote attestation server when the evidence is presented
+from SVSM.
+
+SVSM can then collect the attestation evidence (with the negotiation parameters
+embedded within the report data) and continue to the attestation phase.
+
 ### Attestation Phase
 
-With all relevant data embedded in TEE evidence, SVSM sends its evidence to the
-remote server for evaluation. Upon successful attestation, the proxy will obtain
-an encrypted secret (only decryptable by SVSM's TEE private key) for SVSM to
-use. For example, SVSM could use this secret to unlock encrypted persistent
+With all relevant data embedded in the TEE evidence, SVSM sends the evidence to
+the remote server for evaluation. Upon successful attestation, the proxy will
+obtain an encrypted secret (only decryptable by SVSM's attestation private key)
+for SVSM to use. For example, SVSM could use this secret to unlock encrypted
 storage.
+
+In the attestation phase, an `AttestationRequest` is sent from SVSM to the proxy.
+An example `AttestationRequest` is shown below.
+```json
+{
+    "tee": "snp",
+    "evidence":{
+        "Snp":{
+            "report": [$SEV-SNP-REPORT-BYTES],
+            "certs_buf": null
+        }
+    },
+    "challenge": [93,11,16,123,114,198,71,58,163,70,55,25,15,84,35,45],
+    "key":{
+        "x": [1,208,233,42,140,148,96,21,171,52,75,93,208,212,66,34,228,169,41,
+              200,177,235,216,46,99,247,185,253,204,80,106,88,194,178,2,12,235,
+              91,86,142,216,43,163,47,154,243,215,38,164,190,101,225,224,70,180,
+              106,207,25,151,154,180,73,223,255,91,61],
+        "y": [0,186,247,147,40,49,92,28,8,193,191,16,180,208,124,243,227,99,25,
+              47,228,14,235,111,12,13,93,139,140,104,21,2,144,190,43,16,43,13,
+              205,58,142,200,48,36,182,221,138,88,75,49,205,13,151,18,189,127,
+              112,217,20,38,149,19,232,114,155,125]
+    }
+}
+```
+
+- `tee`: The TEE architecture that the evidence should be interpreted as.
+- `evidence`: The attestation evidence (i.e. report) from the TEE processor.
+Based on the underlying TEE architecture (SEV-SNP being represented in the
+example).
+- `challenge`: The original challenge nonce given in the `NegotiationResponse`.
+- `key`: The EC public key that will be used to encrypt secret payloads received
+from the remote server upon a successful attestation. Public key x and y
+coordinates supplied.
+
+The proxy will forward the evidence and metadata to the remote attestation
+server for evaluation. Upon successful attestation, the proxy should be able to
+retrieve some secret payload from the remote server. The proxy will retrieve
+this secret and reply to SVSM with an `AttestationResponse`.
+An example `AttestationResponse` is shown below.
+```json
+{
+    "success": true,
+    "secret": [198,102,83,251,55,253,210,235,237,118,23,89],
+    "decryption":{
+        "epk":{
+            "x":[1,95,8,128,213,15,40,179,138,81,40,224,204,9,244,120,161,171,
+                 77,247,182,253,40,44,139,167,14,93,10,192,115,243,31,92,247,
+                 153,128,159,51,28,31,29,98,170,205,153,3,227,175,236,195,11,5,
+                 149,220,128,12,43,39,53,3,236,107,227,201,110],
+            "y":[0,170,175,77,27,25,112,249,44,31,214,71,255,20,83,226,147,250,
+                 248,106,35,169,144,42,246,95,4,124,81,152,126,115,55,176,237,
+                 142,5,232,212,13,83,245,204,214,77,36,67,155,227,50,145,139,57,
+                 177,65,254,99,92,186,179,5,138,64,54,170,245]
+        },
+        "wrapped_cek":[22,126,164,68,101,129,98,97,46,18,192,141,216,131,93,119,
+                       35,227,240,36,173,165,96,136,183,24,118,193,166,205,36,
+                       173,230,19,104,52,38,154,236,57],
+        "aad":[101,121,74,104,98,71,99,105,79,105,74,70,81,48,82,73,76,85,86,84,
+               75,48,69,121,78,84,90,76,86,121,73,115,73,109,86,117,89,121,73,
+               54,73,107,69,121,78,84,90,72,81,48,48,105,76,67,74,108,99,71,115,
+               105,79,110,115,105,89,51,74,50,73,106,111,105,85,67,48,49,77,106,
+               69,105,76,67,74,114,100,72,107,105,79,105,74,70,81,121,73,115,73,
+               110,103,105,79,105,74,66,86,106,104,74,90,48,53,86,85,69,116,77,
+               84,48,116,86,85,50,112,110,101,107,70,117,77,71,86,76,82,51,74,
+               85,90,109,85,121,88,49,78,110,99,50,107,50,89,48,57,89,85,88,74,
+               66,89,49,57,78,90,108,104,81,90,86,112,110,83,106,104,54,83,69,
+               73,52,90,70,108,120,99,107,53,116,85,86,66,113,99,105,49,54,82,
+               69,78,51,86,49,89,122,83,85,70,78,83,51,108,106,77,85,69,116,101,
+               72,73,48,79,71,120,49,73,105,119,105,101,83,73,54,73,107,70,76,
+               99,88,90,85,85,110,78,97,89,49,66,114,99,48,103,53,87,107,104,
+               102,101,70,74,85,78,72,66,81,78,105,49,72,98,50,112,120,87,107,
+               70,120,79,87,119,52,82,87,90,71,82,49,108,109,98,107,48,122,99,
+               48,56,121,84,48,74,108,97,108,86,69,86,108,65,120,101,107,53,97,
+               84,107,112,70,84,50,73,48,101,107,116,83,97,88,112,116,101,70,70,
+               109,78,87,112,89,84,72,70,54,81,108,108,119,81,85,53,120,99,106,
+               69,105,102,88,48],
+        "iv":[74,131,36,224,204,41,89,237,217,125,139,21],
+        "tag":[171,247,224,98,73,117,75,48,112,27,125,47,55,197,105,205]
+    },
+    "token":{
+        "Jwt":"test-token"
+    }
+}
+```
+- `success`: Indicates if attestation was ultimately successful.
+- `secret`: The encrypted secret payload.
+- `decryption`: ECDH-ES-A256KW data needed to perform the handshake and derive
+the AES key for the encrypted payload. Data is formatted for decryption with
+ECDH-ES+A256KW, described in RFC 7518, section 4.6.2.
+- `token`: Token returned from server that contains the claims validated in the
+attestation. Could be serialized in JSON (JWT) or CBOR (CWT).
+
+With a successful attestation, SVSM can now use the secret payload for some
+purpose (for example, to unlock some persistent state required for booting the
+OS) and continue with execution.
 
 ## Attestation Host Proxy
 
@@ -107,7 +243,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
     cd kbs-test
     MEASUREMENT="$(${SVSM}/bin/igvmmeasure --check-kvm ${SVSM}/bin/coconut-qemu.igvm measure -b)"
     HEX_EXPECTED_MEASUREMENT="$(echo $MEASUREMENT | xxd -p)"
-    cargo run -- --measurement $HEX_EXPECTED_MEASUREMENT
+    cargo run -- --measurement $HEX_EXPECTED_MEASUREMENT --secret $HEX_SECRET
     ```
 
     This will run the `kbs-test` server at <http://0.0.0.0:8080>.
