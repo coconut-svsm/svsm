@@ -10,10 +10,10 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 # When we see this string on the serial output, consider
 # SVSM booted and the test passed.
-SUCCESS="Terminating task init"
+SUCCESS="All tests passed"
 
 # Fail the test after this timeout
-TIMEOUT=4s
+TIMEOUT=180s
 
 # Clone STDOUT for live log reporting
 exec 3>&1
@@ -21,7 +21,7 @@ exec 3>&1
 echo "================================================================================"
 timeout $TIMEOUT \
   grep -q -m 1 "$SUCCESS" \
-  <("$SCRIPT_DIR/launch_guest.sh" --nocc | tee /proc/self/fd/3)
+  <("$SCRIPT_DIR/test-in-svsm.sh" --nocc | tee /proc/self/fd/3)
 RES=$?
 echo "================================================================================"
 

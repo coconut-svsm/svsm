@@ -419,6 +419,8 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     loop {
         debug_break();
+        #[cfg(all(test, test_in_svsm))]
+        crate::testing::qemu_write_exit(crate::testing::QEMUExitValue::Fail);
         platform::halt();
     }
 }
