@@ -11,6 +11,7 @@ extern crate alloc;
 use crate::address::{Address, PhysAddr};
 use crate::crypto::digest::{Algorithm, Sha512};
 use crate::error::{AttestError, SvsmError};
+use crate::greq::services::get_extended_report;
 use crate::greq::{
     pld_report::{SnpReportRequest, SnpReportResponse},
     services::get_regular_report,
@@ -25,6 +26,8 @@ use alloc::{boxed::Box, vec::Vec};
 use uuid::{uuid, Uuid};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
+use crate::sev::ghcb::GhcbError;
+
 pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;
 pub const ATTEST_PROTOCOL_VERSION_MAX: u32 = 1;
 
@@ -35,6 +38,18 @@ const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 
 #[cfg(all(feature = "vtpm", not(test)))]
 const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+
+// According to
+// https://github.com/torvalds/linux/blob/155a3c003e555a7300d156a5252c004c392ec6b0/drivers/virt/coco/sev-guest/sev-guest.c#L370
+// https://github.com/torvalds/linux/blob/155a3c003e555a7300d156a5252c004c392ec6b0/include/linux/psp-sev.h#L17
+// the maximum size of the certificate buffer is 0x4000 bytes (16K).
+// Could not find the  maximum size of the certificate buffer in the
+// "Secure VM Service Module for SEV-SNP Guests, Revision 1.0",
+// "SEV Secure Nested Paging Firmware ABI Specification, Revision 1.58"
+// or "SEV-ES Guest-Hypervisor Communication Block Standardization, Revision 2.04"
+// If future specifications update the maximum certificate buffer size, update the
+// MAX_CERTIFICATE_SIZE constant below to match the new value.
+const MAX_CERTIFICATE_SIZE: usize = 0x4000;
 
 // Attest services operation structure, as defined in Table 11 of Secure VM Service Module for
 // SEV-SNP Guests 58019 Rev, 1.00 July 2023
@@ -115,6 +130,44 @@ impl AttestServicesOp {
         }
 
         Ok(MemoryRegion::new(gpa, size))
+    }
+
+    /// Returns an optional MemoryRegion describing the certificate buffer.
+    ///
+    /// Behaviour:
+    /// - certificate_size == 0 -> Ok(None)
+    ///   (caller did not request certificates / extended report)
+    /// - 0 < certificate_size <= MAX_CERTIFICATE_SIZE and certificate_gpa page aligned
+    ///   -> Ok(Some(MemoryRegion))
+    /// - Otherwise -> Err(SvsmReqError::invalid_parameter())
+    ///
+    /// Notes:
+    /// - Buffer may span multiple pages but must be physically contiguous.
+    /// - Buffer GPA must be page aligned.
+    /// - Size is capped at MAX_CERTIFICATE_SIZE (0x4000 bytes).
+    pub fn get_certificate_region(&self) -> Result<Option<MemoryRegion<PhysAddr>>, SvsmReqError> {
+        let size = usize::try_from(self.certificate_size)
+            .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+        // If size is 0, the certificate buffer is not present.
+        // This is valid and shall not return an error.
+        // It is used to indicate that the user does not want an extended attestation
+        // that returns certificates.
+        if size == 0 {
+            return Ok(None);
+        }
+
+        // Ensure that size is not greater than MAX_CERTIFICATE_SIZE
+        if size > MAX_CERTIFICATE_SIZE {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        let gpa = PhysAddr::from(self.certificate_gpa);
+        if !gpa.is_page_aligned() {
+            return Err(SvsmReqError::invalid_parameter());
+        }
+
+        Ok(Some(MemoryRegion::new(gpa, size)))
     }
 }
 
@@ -237,6 +290,23 @@ impl AttestSingleServiceOp {
     pub fn get_guid(&self) -> uuid::Uuid {
         Uuid::from_bytes_le(self.guid)
     }
+
+    /// See [`AttestServicesOp::get_certificate_region`] for details.
+    pub fn get_certificate_region(&self) -> Result<Option<MemoryRegion<PhysAddr>>, SvsmReqError> {
+        self.op.get_certificate_region()
+    }
+
+    /// Returns true if an extended report is requested
+    /// Extended report is requested by providing a certificate buffer gpa and
+    /// providing a non-zero certificate buffer size.
+    /// See [`AttestServicesOp::get_certificate_region`] for details.
+    pub fn is_extended_report(&self) -> Result<bool, SvsmReqError> {
+        // If certificate buffer size is greater than 0, it is an extended report.
+        // else it is a regular report.
+        let size = usize::try_from(self.op.certificate_size)
+            .map_err(|_| SvsmReqError::invalid_parameter())?;
+        Ok(size > 0)
+    }
 }
 
 fn get_attestation_report(nonce: &[u8]) -> Result<Box<SnpReportResponse>, SvsmReqError> {
@@ -255,6 +325,35 @@ fn get_attestation_report(nonce: &[u8]) -> Result<Box<SnpReportResponse>, SvsmRe
     let _response_size = get_regular_report(resp_buffer)?;
 
     Ok(resp)
+}
+
+fn get_attestation_report_extended(
+    nonce: &[u8],
+) -> Result<(Box<SnpReportResponse>, Box<[u8; MAX_CERTIFICATE_SIZE]>), SvsmReqError> {
+    let mut resp = SnpReportResponse::new_box_zeroed()
+        .map_err(|_| SvsmReqError::FatalError(SvsmError::Mem))?;
+    let resp_buffer = resp.as_mut_bytes();
+    // Cast error is infallibly discarded.
+    let (report_req, _) = SnpReportRequest::mut_from_prefix(resp_buffer)
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    // Extended report requires a certificate buffer.
+    // Allocate a zero initialized buffer for certificates.
+    // MAX_CERTIFICATE_SIZE is defined as 0x4000 bytes (16k).
+    let mut certs = <[u8; MAX_CERTIFICATE_SIZE]>::new_box_zeroed()
+        .map_err(|_| SvsmReqError::FatalError(SvsmError::Mem))?;
+    let certs_buffer = certs.as_mut_bytes();
+
+    // Zero initialized, so
+    // vmpl=0
+    // flags=1: Use VCEK.
+    report_req.user_data = nonce
+        .try_into()
+        .map_err(|_| SvsmReqError::invalid_parameter())?;
+
+    let _response_size = get_extended_report(resp_buffer, certs_buffer)?;
+
+    Ok((resp, certs))
 }
 
 fn write_report_and_manifest(
@@ -313,6 +412,58 @@ fn write_report_and_manifest(
     Ok(())
 }
 
+fn write_certs(
+    certs: &[u8],
+    params: &mut RequestParams,
+    ops: &AttestSingleServiceOp,
+) -> Result<(), SvsmReqError> {
+    // Get certificate buffer's gPA from call's Attest Single Service Operation structure.
+    // The buffer is required to be page aligned but can be bigger than 4K so can cross pages.
+    // If it is bigger than 4K, it must be physically contiguous.
+    let cert_region = ops.get_certificate_region()?;
+
+    // If certificate region is None, it means that the certificate buffer is not present.
+    // This is valid and shall not return an error.
+    let cert_region = match cert_region {
+        Some(region) => region,
+        None => {
+            // If the certificate region is None, it means that the certificate buffer is not present.
+            // This is valid and shall not return an error.
+            // It is used to indicate that the user does not want an extended attestation
+            // that returns certificates.
+            // Set certificate size to 0, so that the caller knows that there is no certificate.
+            params.rdx = 0;
+            return Ok(());
+        }
+    };
+
+    // According to "SEV-ES Guest-Hypervisor Communication Block Standardization, Revision 2.04"
+    // the initial 24 bytes of the certificate buffer is the certificate header and will be all zeros
+    // if there is no certificate returned.
+    // This is valid and shall not return an error.
+    // Set certificate size to 0, so that the caller knows that there is no certificate.
+    if certs[..24] == [0; 24] {
+        params.rdx = 0;
+        return Ok(());
+    }
+
+    // Check that certificates fit in the buffer. If too large,
+    // return an error indicating the buffer is too small .
+    if certs.len() > cert_region.len() {
+        return Err(SvsmError::Attestation(AttestError::CertificateSize).into());
+    }
+
+    copy_slice_to_guest(certs, cert_region.start())?;
+
+    // Set certificate size in bytes in rdx register
+    params.rdx = certs
+        .len()
+        .try_into()
+        .map_err(|_| SvsmError::Attestation(AttestError::Certificate))?;
+
+    Ok(())
+}
+
 #[allow(dead_code)]
 fn attest_single_service(
     manifest: &[u8],
@@ -326,10 +477,36 @@ fn attest_single_service(
     let nonce_and_manifest = [&nonce[..], manifest].concat();
     let hash = Sha512::digest(&nonce_and_manifest);
 
-    // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
-    let resp = get_attestation_report(hash.as_slice())?;
+    if ops.is_extended_report()? {
+        // If the report is an extended report, it means that the caller requested a certificate.
+        // Get extended attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
+        // Handle SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(certs_buffer_size,psp_rc,)))
+        // from the PSP indicating that the certificate buffer is too small.
+        // The required size is in certs_buffer_size.
+        // Per spec, return required size in rdx register and raise an error.
+        let (resp, certs) = match get_attestation_report_extended(hash.as_slice()) {
+            Ok((resp, certs)) => (resp, certs),
+            Err(SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(
+                certs_buffer_size,
+                _psp_rc,
+            )))) => {
+                // The PSP returned an error code indicating that the buffer size is too small.
+                // The required size is in certs_buffer_size.
+                // Per spec, return required size in rdx  and raise an error
+                params.rdx = certs_buffer_size;
+                return Err(SvsmError::Attestation(AttestError::CertificateSize).into());
+            }
+            Err(e) => return Err(e),
+        };
 
-    write_report_and_manifest(manifest, params, &ops.op, resp.report.as_bytes())
+        write_report_and_manifest(manifest, params, &ops.op, resp.report.as_bytes())?;
+        write_certs(certs.as_slice(), params, ops)
+    } else {
+        // Get attestation report from PSP with Sha512(nonce||manifest) as REPORT_DATA.
+        let resp = get_attestation_report(hash.as_slice())?;
+
+        write_report_and_manifest(manifest, params, &ops.op, resp.report.as_bytes())
+    }
 }
 
 #[cfg(all(feature = "vtpm", not(test)))]
