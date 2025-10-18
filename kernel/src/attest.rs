@@ -76,7 +76,7 @@ impl AttestationDriver<'_> {
     /// mechanism).
     fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
         let request = NegotiationRequest {
-            version: "0.1.0".to_string(), // Only version supported at present.
+            version: (0, 1, 0), // Only version supported at present.
             tee: self.tee,
         };
 
