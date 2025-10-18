@@ -6,14 +6,15 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 /// The initial payload sent from SVSM to the attestation proxy. The version indicates the version
 /// of the SVSM attestation protocol to use.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationRequest {
-    pub version: String,
+    /// Version of the attestation protocol, represented as semver (MAJOR.MINOR.PATCH).
+    pub version: (u32, u32, u32),
     pub tee: kbs_types::Tee,
 }
 

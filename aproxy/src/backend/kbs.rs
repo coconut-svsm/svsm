@@ -36,7 +36,7 @@ impl AttestationProtocol for KbsProtocol {
         http: &mut HttpClient,
         request: NegotiationRequest,
     ) -> anyhow::Result<NegotiationResponse> {
-        if request.version != *"0.1.0" {
+        if request.version != (0, 1, 0) {
             return Err(anyhow!("invalid request version"));
         }
         let req = Request {
