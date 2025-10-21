@@ -6,6 +6,8 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 extern crate alloc;
+
+use super::*;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +32,10 @@ pub enum NegotiationParam {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationResponse {
     /// Challenge returned from the attestation server to verify freshness of attestation evidence.
+    #[serde(
+        serialize_with = "serialize_base64",
+        deserialize_with = "deserialize_base64"
+    )]
     pub challenge: Vec<u8>,
     /// Parameters to be hashed in the specific order defined by the array
     pub params: Vec<NegotiationParam>,
