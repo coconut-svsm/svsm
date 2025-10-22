@@ -17,7 +17,6 @@ use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
 use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
 use crate::utils::{zero_mem_region, MemoryRegion};
 use alloc::vec::Vec;
-use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 #[derive(Clone, Debug, Default)]
 pub struct SevFWMetaData {
@@ -40,23 +39,6 @@ impl SevFWMetaData {
     pub fn add_valid_mem(&mut self, base: PhysAddr, len: usize) {
         self.valid_mem.push(MemoryRegion::new(base, len));
     }
-}
-
-#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
-#[repr(C, packed)]
-struct SevMetaDataHeader {
-    signature: [u8; 4],
-    len: u32,
-    version: u32,
-    num_desc: u32,
-}
-
-#[derive(Clone, Copy, Debug, FromBytes, KnownLayout, Immutable)]
-#[repr(C, packed)]
-struct SevMetaDataDesc {
-    base: u32,
-    len: u32,
-    t: u32,
 }
 
 fn validate_fw_mem_region(
