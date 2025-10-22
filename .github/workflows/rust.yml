@@ -29,7 +29,7 @@ jobs:
         run: cargo update --workspace --locked
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
-        run: sudo apt install -y autoconf autoconf-archive pkg-config build-essential automake
+        run: sudo apt install -y build-essential cmake pkg-config
 
       - name: Build debug image
         run: cargo xbuild ./configs/*
