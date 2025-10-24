@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PvalidateOp","SevSnpError"],"fn":["get_dr7","pvalidate","pvalidate_range","pvalidate_range_4k","raw_vmgexit","raw_vmmcall","rmp_adjust","rmp_clear_guest_vmsa","rmp_grant_guest_access","rmp_revoke_guest_access","rmp_set_guest_vmsa","set_dr7"],"struct":["RMPFlags"]};
