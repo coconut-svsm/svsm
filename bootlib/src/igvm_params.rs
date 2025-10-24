@@ -54,8 +54,11 @@ pub struct IgvmParamBlockFwInfo {
     /// memory and will not be loaded into the ROM range.
     pub in_low_memory: u8,
 
+    /// Indicates that the memory map is part of a prevalidated memory region.
+    pub memory_map_prevalidated: u8,
+
     #[doc(hidden)]
-    pub _reserved: [u8; 7],
+    pub _reserved: [u8; 6],
 
     /// The guest physical address at which the firmware expects to find the
     /// secrets page.
@@ -71,11 +74,12 @@ pub struct IgvmParamBlockFwInfo {
 
     /// The guest physical address of the IGVM memory map consumed by the
     /// guest firmware.
-    pub memory_map_page: u32,
+    pub memory_map_address: u32,
 
-    /// The number of pages reserved for the IGVM memory map consumed by the
-    /// guest firmware.
-    pub memory_map_page_count: u32,
+    /// The number of bytes reserved for the IGVM memory map consumed by the
+    /// guest firmware.  Use byte-level size here because the firmware is
+    /// allowed to define a memory map area that isn't page-sized.
+    pub memory_map_size: u32,
 
     /// The number of prevalidated memory regions defined by the firmware.
     pub prevalidated_count: u32,
