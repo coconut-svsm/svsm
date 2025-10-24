@@ -1,0 +1,14 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 014d2eb600351c16fee46f8947a5386c3b1ac6a522a21b3261a168d69f894e5b # shrinks to length = 38, idx = 0, value = 1
+cc 977dafac54991f2cb0799e74084ad211f24215834ee10c24ede6ff55757d5948 # shrinks to length = 38, start = 0, range = 1, value = 1
+cc f84ceaa4624d745696ea0ed6e07c809b9709434ea9a24491bbcbd3ca792f18cb # shrinks to length = 43, ops = [(0, 1)]
+cc 94ea3a7bcd0df9f58aac2ae6ea5e1b686038a747f795c6d990f24b408ef23585 # shrinks to length = 53, start = 40, range = 13, value = 1
+cc 814f57a0597fdca3c27ff92d301a0c1c51d0a23246716ce05478d008e98fbfa6 # shrinks to length = 63, ops = [(62, 1), (62, 0)]
+cc fa73e83b025a172b2d9432497a11807c53c4efdc53f872c803a6da2b1dc7bbab # shrinks to length = 7, start = 0, range = 1, value = true
+cc f35c8ba212b5409a89c0e4d3cdaebe03776dcfedb0e3d780b4ff08852cdf9997 # shrinks to length = 2, idx = 0, value = true
+cc 5184fc73106563e1caec0152577069efbdc54c94cf8d5032e291843561d16692 # shrinks to length = 2, ops = [(1, true), (0, true)]
