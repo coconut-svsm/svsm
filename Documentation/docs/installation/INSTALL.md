@@ -113,7 +113,10 @@ Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
 ```
-$ CONFIG_IGVM=$HOME/igvminst ./configure --prefix=$HOME/bin/qemu-svsm/ --target-list=x86_64-softmmu --enable-igvm
+$ PKGCONFIG_PATH="${PKGCONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
+    --prefix=$HOME/bin/qemu-svsm/ \
+    --target-list=x86_64-softmmu \
+    --enable-igvm
 $ C_INCLUDE_PATH=$HOME/igvminst/usr/include/ LIBRARY_PATH=$HOME/igvminst/usr/lib/x86_64-linux-gnu/ ninja -C build/
 $ make install
 ```
