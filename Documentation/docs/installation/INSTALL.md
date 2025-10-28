@@ -263,7 +263,7 @@ $ ACPI_RSDP_PATH=path/to/acpi/rsdp ACPI_TABLES_PATH=path/to/acpi/tables FW_FILE=
 ```
 This should only be necessary if using an alternate hypervisor and if SVSM panics
 with an error such as `Failed to load ACPI tables: FwCfg(FileNotFound)`. The default
-values are "etc/acpi/rsdp" and "etc/acpi/tables", respectively.
+values are `etc/acpi/rsdp` and `etc/acpi/tables`, respectively.
 
 Putting it all together
 -----------------------
@@ -397,7 +397,7 @@ Debugging using GDB
 
 The SVSM can be built to incorporate a GDB stub that can be used to provide full
 source-level debugging of the SVSM kernel code. To enable the GDB stub pass
-```FEATURES=enable-gdb``` to the ```make``` comannd line:
+```FEATURES=enable-gdb``` to the ```make``` command line:
 
 ```
 $ FW_FILE=/path/to/firmware/OVMF.fd make FEATURES=enable-gdb
@@ -415,11 +415,7 @@ serial port connection and display this message in the console:
 
 The GDB stub uses a hardware serial port at IO port 0x2f8, which is the second
 simulated serial port in the QEMU configuration. Using the example configuration
-above, the serial port is configured using:
-
-```
-  - serial pty
-```
+above, the serial port is configured using `-serial pty`.
 
 QEMU will create a virtual serial port on the host at `/dev/pts/[n]` where `[n]`
 is the device index. This index will be reported by QEMU in the console when the
@@ -447,7 +443,5 @@ of these limitations may be addressed in future updates.
   target code.
 * Debugging is currently limited to the SVSM kernel itself. OVMF and the guest
   OS cannot be debugged using the SVSM GDB stub.
-
-
 
 Have a lot of fun!
