@@ -149,7 +149,7 @@ sudo zypper si -d qemu-ovmf-x86_64
 ```
 
 Then go back to the EDK2 source directory and follow the steps below to
-build the firmware. `-DTPM2_ENABLE` is required only if you want to use
+build the firmware. `-D TPM2_ENABLE` is required only if you want to use
 the SVSM vTPM.
 
 ```shell
@@ -157,11 +157,21 @@ export PYTHON3_ENABLE=TRUE
 export PYTHON_COMMAND=python3
 make -j16 -C BaseTools/
 source ./edksetup.sh --reconfig
-build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -DTPM2_ENABLE -p OvmfPkg/OvmfPkgX64.dsc
+build -p OvmfPkg/OvmfPkgX64.dsc -a X64 \
+      -b DEBUG -t GCC \
+      -D DEBUG_ON_SERIAL_PORT \
+      -D DEBUG_VERBOSE \
+      -D TPM2_ENABLE \
+      --pcd PcdUninstallMemAttrProtocol=TRUE
 ```
 
 This will build the OVMF binary that will be packaged into the IGVM file to use
 with QEMU.
+
+The switch `--pcd PcdUninstallMemAttrProtocol=TRUE` is required for booting
+guest images of distros that still ship shim/GRUB without proper support
+for the `EFI_MEMORY_ATTRIBUTE_PROTOCOL`.
+
 You can copy the firmware file to a known location after the build is complete:
 
 ```shell
