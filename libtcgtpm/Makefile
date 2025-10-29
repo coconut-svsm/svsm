@@ -35,6 +35,11 @@ LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFO
 
 OUT_DIR ?= $(CWD)
 
+# Avoid running jobs of this Makefile in parallel to avoid possible conflicts
+# when building the TPM libraries, which use the same Makefile and subdirectory.
+# Parallel builds are still used inside the sub-targets (-j flag)
+.NOTPARALLEL:
+
 all: $(OUT_DIR)/libtcgtpm.a
 
 $(OUT_DIR)/libtcgtpm.a: $(LIBS)
