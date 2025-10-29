@@ -35,6 +35,8 @@ LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFO
 
 OUT_DIR ?= $(CWD)
 
+.NOTPARALLEL:
+
 all: $(OUT_DIR)/libtcgtpm.a
 
 $(OUT_DIR)/libtcgtpm.a: $(LIBS)
