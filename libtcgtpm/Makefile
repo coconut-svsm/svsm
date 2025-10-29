@@ -50,7 +50,7 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 
 # libcrt
 $(LIBCRT):
-	$(MAKE) -C $(LIBCRT_DIR)
+	$(MAKE) -j$$(nproc) -C $(LIBCRT_DIR)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
