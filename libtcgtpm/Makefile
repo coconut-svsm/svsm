@@ -32,8 +32,8 @@ TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-
-OUT_DIR ?= $(CWD)
+ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+OUT_DIR ?= $(ROOT_DIR)
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
 # when building the TPM libraries, which use the same Makefile and subdirectory.
