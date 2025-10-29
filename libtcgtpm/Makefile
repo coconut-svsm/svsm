@@ -197,3 +197,10 @@ distclean: clean
 	rm -rf $(TCGTPM_BUILD_DIR)
 
 .PHONY: all clean distclean
+
+.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto tcgtpm
+libcrt: $(LIBCRT)
+configure_openssl: $(OPENSSL_MAKEFILE)
+libcrypto: $(LIBCRYPTO)
+configure_tcgtpm: $(TCGTPM_MAKEFILE)
+tcgtpm: $(OUT_DIR)/libtcgtpm.a
