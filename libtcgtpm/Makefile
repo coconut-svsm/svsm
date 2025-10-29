@@ -45,6 +45,13 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 
 .PHONY: $(LIBCRT)
 
+.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto tcgtpm
+libcrt: $(LIBCRT)
+configure_openssl: $(OPENSSL_MAKEFILE)
+libcrypto: $(LIBCRYPTO)
+configure_tcgtpm: $(TCGTPM_MAKEFILE)
+tcgtpm: $(OUT_DIR)/libtcgtpm.a
+
 # libcrt
 $(LIBCRT):
 	$(MAKE) -j$$(nproc) -C $(LIBCRT_DIR)
