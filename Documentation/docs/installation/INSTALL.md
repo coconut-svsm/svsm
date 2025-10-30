@@ -31,10 +31,10 @@ It is based on kernel 6.5 and code written by AMD to support [linux-svsm](https:
 
 To use it, check out the svsm branch:
 
-```
-$ git clone https://github.com/coconut-svsm/linux
-$ cd linux
-$ git checkout svsm
+```shell
+git clone https://github.com/coconut-svsm/linux
+cd linux
+git checkout svsm
 ```
 
 Build, install and boot a kernel from that branch. For best chances of
@@ -43,15 +43,15 @@ sure the configuration includes support for AMD Secure Processor which is
 a requirement for SEV support (`CONFIG_KVM_AMD_SEV`). On openSUSE (other
 distributions may vary) the kernel configuration can be obtained by:
 
-```
-$ gunzip -c /proc/config.gz > .config
-$ make olddefconfig
+```shell
+gunzip -c /proc/config.gz > .config
+make olddefconfig
 ```
 
 After the new kernel is booted, the kernel log contains SEV-SNP
 initialization messages:
 
-```
+```plain
 $ dmesg | grep SEV
 [    4.224504] SEV-SNP: RMP table physical address [0x0000000064000000 - 0x00000000747fffff]
 [    8.437424] ccp 0000:42:00.1: SEV firmware update successful
@@ -79,22 +79,22 @@ and DEB based distributions provide ways to install build dependencies
 for a given package. On openSUSE the source repositories need to be
 enabled and then the packages can be installed by:
 
-```
-$ sudo zypper refresh
-$ sudo zypper si -d qemu-kvm
+```shell
+sudo zypper refresh
+sudo zypper si -d qemu-kvm
 ```
 
 Support for IGVM within QEMU depends on the IGVM library. This needs to be
 built and installed prior to building QEMU. Newer versions of the IGVM library
 require `cargo-c` to build, install it with:
 
-```
+```shell
 cargo install cargo-c
 ```
 
 When `cargo-c` is installed, a local IGVM library and header can be built:
 
-```
+```shell
 git clone https://github.com/microsoft/igvm
 cd igvm
 DESTDIR=$HOME/igvminst make -f igvm_c/Makefile install
@@ -103,22 +103,22 @@ DESTDIR=$HOME/igvminst make -f igvm_c/Makefile install
 After the build dependencies are installed, clone the QEMU repository
 and switch to the branch that supports IGVM:
 
-```
-$ git clone https://github.com/coconut-svsm/qemu
-$ cd qemu
-$ git checkout svsm-igvm
+```shell
+git clone https://github.com/coconut-svsm/qemu
+cd qemu
+git checkout svsm-igvm
 ```
 
 Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
-```
-$ PKGCONFIG_PATH="${PKGCONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
+```shell
+PKGCONFIG_PATH="${PKGCONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
     --prefix=$HOME/bin/qemu-svsm/ \
     --target-list=x86_64-softmmu \
     --enable-igvm
-$ C_INCLUDE_PATH=$HOME/igvminst/usr/include/ LIBRARY_PATH=$HOME/igvminst/usr/lib/x86_64-linux-gnu/ ninja -C build/
-$ make install
+C_INCLUDE_PATH=$HOME/igvminst/usr/include/ LIBRARY_PATH=$HOME/igvminst/usr/lib/x86_64-linux-gnu/ ninja -C build/
+make install
 ```
 
 QEMU is now installed and ready to run an AMD SEV-SNP guest with an
@@ -133,39 +133,49 @@ linux-svsm. But these changes were re-based and enhanced to support the
 COCONUT-SVSM code base. To build the OVMF binary for the guest, checkout
 this repository:
 
-```
-$ git clone https://github.com/coconut-svsm/edk2.git
-$ cd edk2/
-$ git checkout svsm
-$ git submodule init
-$ git submodule update
+```shell
+git clone https://github.com/coconut-svsm/edk2.git
+cd edk2/
+git checkout svsm
+git submodule init
+git submodule update
 ```
 
 Also make sure to have the build dependencies for OVMF installed. On
 openSUSE you can do this by:
 
-```
-$ sudo zypper si -d qemu-ovmf-x86_64
+```shell
+sudo zypper si -d qemu-ovmf-x86_64
 ```
 
 Then go back to the EDK2 source directory and follow the steps below to
-build the firmware. `-DTPM2_ENABLE` is required only if you want to use
+build the firmware. `-D TPM2_ENABLE` is required only if you want to use
 the SVSM vTPM.
 
-```
-$ export PYTHON3_ENABLE=TRUE
-$ export PYTHON_COMMAND=python3
-$ make -j16 -C BaseTools/
-$ source ./edksetup.sh --reconfig
-$ build -a X64 -b DEBUG -t GCC5 -D DEBUG_ON_SERIAL_PORT -D DEBUG_VERBOSE -DTPM2_ENABLE -p OvmfPkg/OvmfPkgX64.dsc
+```shell
+export PYTHON3_ENABLE=TRUE
+export PYTHON_COMMAND=python3
+make -j16 -C BaseTools/
+source ./edksetup.sh --reconfig
+build -p OvmfPkg/OvmfPkgX64.dsc -a X64 \
+      -b DEBUG -t GCC \
+      -D DEBUG_ON_SERIAL_PORT \
+      -D DEBUG_VERBOSE \
+      -D TPM2_ENABLE \
+      --pcd PcdUninstallMemAttrProtocol=TRUE
 ```
 
 This will build the OVMF binary that will be packaged into the IGVM file to use
 with QEMU.
+
+The switch `--pcd PcdUninstallMemAttrProtocol=TRUE` is required for booting
+guest images of distros that still ship shim/GRUB without proper support
+for the `EFI_MEMORY_ATTRIBUTE_PROTOCOL`.
+
 You can copy the firmware file to a known location after the build is complete:
 
-```
-$ cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF.fd /path/to/firmware/
+```shell
+cp Build/OvmfX64/DEBUG_GCC5/FV/OVMF.fd /path/to/firmware/
 ```
 
 Preparing the guest image
@@ -179,10 +189,10 @@ linux-svsm you can re-use the guest image.
 Otherwise you need to build a new guest kernel. From within the guest
 image, do:
 
-```
-$ git clone https://github.com/coconut-svsm/linux
-$ cd linux
-$ git checkout svsm
+```shell
+git clone https://github.com/coconut-svsm/linux
+cd linux
+git checkout svsm
 ```
 
 Build a kernel from that branch and install it in the guest image. For
@@ -197,37 +207,38 @@ Building the COCONUT-SVSM
 -------------------------
 
 Building the SVSM itself requires:
-- a recent Rust compiler and build environment installed. Please refer to
+
+* a recent Rust compiler and build environment installed. Please refer to
   [https://rustup.rs/](https://rustup.rs/) on how to get this environment installed.
-- `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
-- `binutils` >= 2.39
+* `x86_64-unknown-none` target toolchain installed (`rustup target add x86_64-unknown-none`)
+* `binutils` >= 2.39
 
 You may also need to install the TPM 2.0 Reference Implementation build
 dependencies. On OpenSUSE you can do this by:
 
-```
-$ sudo zypper in system-user-mail make gcc gcc-c++ curl patterns-devel-base-devel_basis \
+```shell
+sudo zypper in system-user-mail make gcc gcc-c++ curl patterns-devel-base-devel_basis \
       glibc-devel-static git libclang13 cmake pkg-config perl
 ```
 
 Then checkout the SVSM repository and build the SVSM binary:
 
-```
-$ git clone https://github.com/coconut-svsm/svsm
-$ cd svsm
-$ git submodule update --init
+```shell
+git clone https://github.com/coconut-svsm/svsm
+cd svsm
+git submodule update --init
 ```
 
 That checks out the SVSM which can be built by
 
-```
-$ FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild configs/qemu-target.json
+```shell
+FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild configs/qemu-target.json
 ```
 
 to get a debug build of the SVSM, or
 
-```
-$ FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild --release configs/qemu-target.json
+```shell
+FW_FILE=/path/to/firmware/OVMF.fd cargo xbuild --release configs/qemu-target.json
 ```
 
 to build the SVSM with the release target. When the build is finished
@@ -236,14 +247,14 @@ repository. This is the file which needs to be passed to QEMU.
 
 The project also contains a number of unit-tests which can be run by
 
-```
-$ make test
+```shell
+make test
 ```
 
 Unit tests can be run inside the SVSM by
 
-```
-$ QEMU=/path/to/qemu make test-in-svsm
+```shell
+QEMU=/path/to/qemu make test-in-svsm
 ```
 
 Note: to compile the test kernel used for unit tests, we use the nightly
@@ -251,19 +262,21 @@ toolchain, so if the test kernel build fails, try installing the
 `x86_64-unknown-none` target for the nightly toolchain via your distro or
 using rustup:
 
-```
-$ rustup +nightly target add x86_64-unknown-none
+```shell
+rustup +nightly target add x86_64-unknown-none
 ```
 
 Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
 different paths. If this is the case, they can be provided as environment
 variables, e.g.
+
+```shell
+ACPI_RSDP_PATH=path/to/acpi/rsdp ACPI_TABLES_PATH=path/to/acpi/tables FW_FILE=/path/to/firmware/OVMF.fd make
 ```
-$ ACPI_RSDP_PATH=path/to/acpi/rsdp ACPI_TABLES_PATH=path/to/acpi/tables FW_FILE=/path/to/firmware/OVMF.fd make
-```
+
 This should only be necessary if using an alternate hypervisor and if SVSM panics
 with an error such as `Failed to load ACPI tables: FwCfg(FileNotFound)`. The default
-values are "etc/acpi/rsdp" and "etc/acpi/tables", respectively.
+values are `etc/acpi/rsdp` and `etc/acpi/tables`, respectively.
 
 Putting it all together
 -----------------------
@@ -275,7 +288,7 @@ limited to the root user.
 There are a couple of parameters required to launch an AMD SEV-SNP
 guest:
 
-```
+```plain
   -cpu EPYC-v4 \
   -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
   -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
@@ -296,9 +309,9 @@ the COCONUT-SVSM.
 
 A complete QEMU command-line may look like this:
 
-```
-$ export IGVM=/path/to/coconut-qemu.igvm
-$ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
+```shell
+export IGVM=/path/to/coconut-qemu.igvm
+sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -enable-kvm \
   -cpu EPYC-v4 \
   -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
@@ -315,6 +328,7 @@ $ sudo $HOME/bin/qemu-svsm/bin/qemu-system-x86_64 \
   -serial stdio \
   -serial pty
 ```
+
 Note: With QEMU 10.1 (which includes IGVM support), guests may fail to boot
 during VGA initialization. The `-vga none` option is added temporarily to
 disable VGA init until this issue is resolved.
@@ -322,7 +336,7 @@ disable VGA init until this issue is resolved.
 If everything works, initialization messages of the SVSM should appear
 in the terminal:
 
-```
+```plain
 [Stage2] COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader
 [Stage2] Mapping kernel region 0xffffff8000000000-0xffffff8010000000 to 0x0000008000000000
 [Stage2] Order-00: total pages:    11 free pages:     1
@@ -363,21 +377,21 @@ guest that supports SEV-SNP with COCONUT-SVSM. If the QEMU built in the previous
 step is installed and in your PATH then you can start the guest by running the
 script from the root of the repository:
 
-```
+```shell
 scripts/launch_guest.sh
 ```
 
 The script makes use of the `cbit` utility to determine the correct value for
 the `cbitpos` QEMU parameter. This needs to be built with the following command:
 
-```
+```shell
 make utils/cbit
 ```
 
 The path to QEMU can also be specified either by setting the `QEMU` variable, or
 by passing the path as a parameter:
 
-```
+```shell
 QEMU=/path/to/qemu-system-x86_64 scripts/launch_guest.sh
 
 scripts/launch_guest.sh --qemu /path/to/qemu-system-x86_64
@@ -397,17 +411,17 @@ Debugging using GDB
 
 The SVSM can be built to incorporate a GDB stub that can be used to provide full
 source-level debugging of the SVSM kernel code. To enable the GDB stub pass
-```FEATURES=enable-gdb``` to the ```make``` comannd line:
+```FEATURES=enable-gdb``` to the ```make``` command line:
 
-```
-$ FW_FILE=/path/to/firmware/OVMF.fd make FEATURES=enable-gdb
+```shell
+FW_FILE=/path/to/firmware/OVMF.fd make FEATURES=enable-gdb
 ```
 
 The GDB stub remains dormant until a CPU exception occurs, either through a
 kernel panic or via a debug breakpoint, at which time the GDB stub will await a
 serial port connection and display this message in the console:
 
-```
+```plain
 [SVSM] ***********************************
 [SVSM] * Waiting for connection from GDB *
 [SVSM] ***********************************
@@ -415,25 +429,21 @@ serial port connection and display this message in the console:
 
 The GDB stub uses a hardware serial port at IO port 0x2f8, which is the second
 simulated serial port in the QEMU configuration. Using the example configuration
-above, the serial port is configured using:
-
-```
-  - serial pty
-```
+above, the serial port is configured using `-serial pty`.
 
 QEMU will create a virtual serial port on the host at `/dev/pts/[n]` where `[n]`
 is the device index. This index will be reported by QEMU in the console when the
 virtual machine is started. You can then connect GDB to the waiting SVSM using
 the command, replacing `[n]` with the correct device index:
 
-```
-$ sudo gdb --ex "target extended-remote /dev/pts/[n]`
+```shell
+sudo gdb --ex "target extended-remote /dev/pts/[n]`
 ```
 
 If you have the source code available on the host system then you can add the
 debug symbols and use source-level debugging:
 
-```
+```plain
 (gdb) symbol-file target/x86_64-unknown-none/debug/svsm
 ```
 
@@ -447,7 +457,5 @@ of these limitations may be addressed in future updates.
   target code.
 * Debugging is currently limited to the SVSM kernel itself. OVMF and the guest
   OS cannot be debugged using the SVSM GDB stub.
-
-
 
 Have a lot of fun!
