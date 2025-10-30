@@ -14,15 +14,11 @@ use crate::{
     serial::SerialPort,
     utils::vec::{try_to_vec, vec_sized},
 };
-use aes::{cipher::BlockDecrypt, Aes256Dec};
-use aes_gcm::KeyInit;
+use aes_gcm::{aead::generic_array::GenericArray, AeadInPlace, Aes256Gcm, KeyInit, Nonce};
+use aes_kw::{Kek, KekAes256};
 use alloc::{string::ToString, vec::Vec};
-use base64::{
-    prelude::{BASE64_STANDARD, BASE64_URL_SAFE},
-    Engine,
-};
 use cocoon_tpm_crypto::{
-    ecc::{curve::Curve, ecdh::ecdh_c_1e_1s_cdh_party_v_key_gen, EccKey},
+    ecc::{curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z, EccKey},
     rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
     CryptoError, EmptyCryptoIoSlices,
 };
@@ -31,7 +27,6 @@ use cocoon_tpm_utils_common::{
     alloc::try_alloc_zeroizing_vec,
     io_slices::{self, IoSlicesIterCommon as _},
 };
-use core::cmp::min;
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -81,7 +76,7 @@ impl AttestationDriver<'_> {
     /// mechanism).
     fn negotiation(&mut self) -> Result<NegotiationResponse, AttestationError> {
         let request = NegotiationRequest {
-            version: "0.1.0".to_string(), // Only version supported at present.
+            version: (0, 1, 0), // Only version supported at present.
             tee: self.tee,
         };
 
@@ -104,13 +99,13 @@ impl AttestationDriver<'_> {
             .to_tpms_ecc_point(&curve.curve_ops().map_err(AttestationError::Crypto)?)
             .map_err(AttestationError::Crypto)?;
 
-        let evidence = evidence(&self.tee, hash(n, &pub_key)?)?;
+        let evidence = evidence(&self.tee, hash(&n, &pub_key)?)?;
 
         let req = AttestationRequest {
-            evidence: BASE64_URL_SAFE.encode(evidence),
-            key: (self.ecc.pub_key().get_curve_id(), &pub_key)
-                .try_into()
-                .map_err(|_| AttestationError::AttestationDeserialize)?,
+            tee: self.tee,
+            evidence,
+            challenge: n.challenge.clone(),
+            key: (self.ecc.pub_key().get_curve_id(), &pub_key).into(),
         };
 
         self.write(req)?;
@@ -123,45 +118,66 @@ impl AttestationDriver<'_> {
             return Err(AttestationError::Failed);
         }
 
-        let Some(ak) = response.pub_key else {
+        let Some(decryption) = response.decryption else {
             return Err(AttestationError::PublicKeyMissing)?;
         };
 
-        let pub_key: TpmsEccPoint<'static> = ak.try_into().map_err(AttestationError::Crypto)?;
-
-        let Some(ciphertext) = response.secret else {
+        let Some(mut secret) = response.secret else {
             return Err(AttestationError::SecretMissing);
         };
 
-        self.decrypt(ciphertext, pub_key)
+        self.decrypt(&mut secret, decryption)?;
+
+        Ok(secret)
     }
 
-    /// Decrypt a secret from the attestation server with the TEE private key.
-    fn decrypt(
-        &self,
-        ciphertext: Vec<u8>,
-        pub_key: TpmsEccPoint<'static>,
-    ) -> Result<Vec<u8>, AttestationError> {
-        let shared_secret =
-            ecdh_c_1e_1s_cdh_party_v_key_gen(TpmiAlgHash::Sha256, "", &self.ecc, &pub_key)
-                .map_err(AttestationError::Crypto)?;
+    /// Decrypt a secret from the attestation server with the TEE private key. Secrets are
+    /// encrypted with ECDH-ES+A256KW as described in RFC 7518, section 4.6.2.
+    fn decrypt(&self, secret: &mut [u8], decryption: AesGcmData) -> Result<(), AttestationError> {
+        let epk: TpmsEccPoint<'static> = decryption.epk.into();
+        let z = ecdh_c_1_1_cdh_compute_z(&self.ecc, &epk).map_err(AttestationError::Crypto)?;
 
-        let aes = Aes256Dec::new_from_slice(&shared_secret[..])
-            .map_err(|_| AttestationError::AesGenerate)?;
-        // Decrypt each 16-byte block of the ciphertext with the symmetric key.
-        let mut ptr = 0;
-        let len = ciphertext.len();
-        let mut vec: Vec<u8> = Vec::new();
-        while ptr < len {
-            let remain = min(16, len - ptr);
-            let mut arr: [u8; 16] = [0u8; 16];
-            arr[..remain].copy_from_slice(&ciphertext[ptr..ptr + remain]);
-            aes.decrypt_block((&mut arr).into());
-            vec.append(&mut try_to_vec(&arr).or(Err(AttestationError::VecAlloc))?);
-            ptr += remain;
-        }
+        let mut kdm = Vec::new();
+        let alg_str = "ECDH-ES+A256KW".to_string();
 
-        Ok(vec)
+        kdm.extend_from_slice(&(alg_str.len() as u32).to_be_bytes());
+        kdm.extend_from_slice(alg_str.as_bytes());
+        kdm.extend_from_slice(&(0_u32).to_be_bytes());
+        kdm.extend_from_slice(&(0_u32).to_be_bytes());
+        kdm.extend_from_slice(&(256_u32).to_be_bytes());
+
+        let wrapping_key: KekAes256 = {
+            let mut buf: Vec<u8> = vec_sized(32).or(Err(AttestationError::VecAlloc))?;
+
+            concat_kdf::derive_key_into::<sha2::Sha256>(&z, &kdm, &mut buf)
+                .map_err(AttestationError::KeyDerivation)?;
+
+            let sized: [u8; 32] = buf
+                .try_into()
+                .or(Err(AttestationError::WrapKeyArrayConvert))?;
+
+            Kek::new(&GenericArray::from(sized))
+        };
+
+        let mut cek =
+            vec_sized(&decryption.wrapped_cek.len() - 8).or(Err(AttestationError::VecAlloc))?;
+
+        wrapping_key
+            .unwrap(&decryption.wrapped_cek, &mut cek)
+            .or(Err(AttestationError::CekUnwrap))?;
+
+        let cipher = Aes256Gcm::new(GenericArray::from_slice(&cek));
+
+        cipher
+            .decrypt_in_place_detached(
+                Nonce::from_slice(&decryption.iv),
+                &decryption.aad,
+                secret,
+                GenericArray::from_slice(&decryption.tag),
+            )
+            .map_err(AttestationError::SecretDecrypt)?;
+
+        Ok(())
     }
 
     /// Read attestation data from the serial port.
@@ -208,8 +224,14 @@ pub enum AttestationError {
     AesGenerate,
     /// Error deserializing the attestation response from JSON bytes.
     AttestationDeserialize,
+    // Unable to unwrap Content Encryption Key (CEK).
+    CekUnwrap,
+    /// Unable to generate secure channel key.
+    Crypto(CryptoError),
     /// Guest has failed attestation.
     Failed,
+    // Unable to derive wrap key.
+    KeyDerivation(concat_kdf::Error),
     /// Error deserializing the negotiation response from JSON bytes.
     NegotiationDeserialize,
     /// Error serializing the negotiation request to JSON bytes.
@@ -220,18 +242,18 @@ pub enum AttestationError {
     ProxyWrite,
     /// Attestation successful, but no public key found.
     PublicKeyMissing,
-    /// Unsupported TEE architecture.
-    UnsupportedTee,
-    /// Unable to generate secure channel key.
-    Crypto(CryptoError),
     /// Attestation successful, but unable to decrypt secret.
-    SecretDecrypt,
+    SecretDecrypt(aes_gcm::Error),
     /// Attestation successful, but no secret found.
     SecretMissing,
     /// Unable to fetch SEV-SNP attestation report.
     SnpGetReport,
+    /// Unsupported TEE architecture.
+    UnsupportedTee,
     /// Unable to allocate memory for Vec.
     VecAlloc,
+    // Unable to convert wrap key to 32 byte array.
+    WrapKeyArrayConvert,
 }
 
 impl From<AttestationError> for SvsmError {
@@ -268,7 +290,7 @@ fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
 }
 
 /// Hash negotiation parameters and fetch TEE evidence.
-fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
+fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<AttestationEvidence, AttestationError> {
     let evidence = match tee {
         &Tee::Snp => {
             let mut user_data = [0u8; 64];
@@ -295,7 +317,13 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
 
             // Get the attestation report as bytes for serialization in the
             // AttestationRequest.
-            try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?
+            let report =
+                try_to_vec(resp.report().as_bytes()).or(Err(AttestationError::VecAlloc))?;
+
+            AttestationEvidence::Snp {
+                report,
+                certs_buf: None,
+            }
         }
         // We check for supported TEE architectures in the AttestationDriver's constructor.
         _ => unreachable!(),
@@ -307,19 +335,15 @@ fn evidence(tee: &Tee, hash: Vec<u8>) -> Result<Vec<u8>, AttestationError> {
 /// Hash the negotiation parameters from the attestation server for inclusion in the
 /// attestation evidence.
 fn hash(
-    n: NegotiationResponse,
+    n: &NegotiationResponse,
     pub_key: &TpmsEccPoint<'static>,
 ) -> Result<Vec<u8>, AttestationError> {
     let mut sha = Sha512::new();
 
     for p in &n.params {
         match p {
-            NegotiationParam::Base64StdBytes(s) => {
-                let decoded = BASE64_STANDARD
-                    .decode(s)
-                    .map_err(|_| AttestationError::NegotiationDeserialize)?;
-
-                sha.update(decoded);
+            NegotiationParam::Challenge => {
+                sha.update(&n.challenge);
             }
             #[allow(irrefutable_let_patterns)]
             NegotiationParam::EcPublicKeyBytes => {
