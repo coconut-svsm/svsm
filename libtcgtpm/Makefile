@@ -32,8 +32,10 @@ TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
+ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+OUT_DIR ?= $(ROOT_DIR)
 
-OUT_DIR ?= $(CWD)
+.NOTPARALLEL:
 
 all: $(OUT_DIR)/libtcgtpm.a
 
@@ -43,9 +45,16 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 
 .PHONY: $(LIBCRT)
 
+.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto tcgtpm
+libcrt: $(LIBCRT)
+configure_openssl: $(OPENSSL_MAKEFILE)
+libcrypto: $(LIBCRYPTO)
+configure_tcgtpm: $(TCGTPM_MAKEFILE)
+tcgtpm: $(OUT_DIR)/libtcgtpm.a
+
 # libcrt
 $(LIBCRT):
-	$(MAKE) -C $(LIBCRT_DIR)
+	$(MAKE) -j$$(nproc) -C $(LIBCRT_DIR)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
@@ -170,7 +179,7 @@ TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
 TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 
-$(TCGTPM_MAKEFILE):
+$(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 	mkdir -p $(TCGTPM_BUILD_DIR)
 	(cd $(TCGTPM_BUILD_DIR) && \
 		cmake \
