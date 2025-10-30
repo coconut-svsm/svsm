@@ -106,6 +106,11 @@ pub trait SvsmPlatform: Sync {
         Ok(())
     }
 
+    /// Relaunches guest boot firmware (part of a guest reboot)
+    fn relaunch_fw(&self) -> Result<(), SvsmError> {
+        Err(SvsmError::NotSupported)
+    }
+
     /// Completes initialization of a per-CPU object during construction.
     fn setup_percpu(&self, cpu: &PerCpu) -> Result<(), SvsmError>;
 
