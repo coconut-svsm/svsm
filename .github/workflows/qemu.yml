@@ -32,12 +32,17 @@ jobs:
           submodules: true
           fetch-depth: 1
 
-      - name: Get QEMU form cache
+      - name: Calculate SHA for qemu.yml
+        run: |
+          QEMU_YML_SHA=$(shasum .github/workflows/qemu.yml | awk '{print $1}')
+          echo "QEMU_YML_SHA=${QEMU_YML_SHA}" >> "$GITHUB_ENV"
+
+      - name: Get QEMU from cache
         id: qemu_cache
         uses: actions/cache@v4
         with:
           path: tools
-          key: qemu-${{ env.QEMU_SHA }}--rust-${{ env.RUST_VERSION_IGVM }}--igvm-${{ env.IGVM_REF }}
+          key: qemu-${{ env.QEMU_SHA }}--config-${{ env.QEMU_YML_SHA }}
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
         name: Enable Ubuntu source repositories
