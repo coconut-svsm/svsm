@@ -106,6 +106,7 @@ jobs:
             --enable-kvm \
             --enable-slirp \
             --enable-strip \
+            --enable-vhost-kernel \
             --static \
             --disable-docs \
             --disable-user \
@@ -124,6 +125,12 @@ jobs:
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y build-essential cmake pkg-config
+
+      - name: Install netcat used by test-in-svsm for vsock tests
+        run: sudo apt install -y ncat
+
+      - name: Set up vhost-vsock permissions
+        run: sudo chmod 666 /dev/vhost-vsock
 
       - name: Build test
         run: make bin/coconut-test-qemu.igvm
