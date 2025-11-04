@@ -100,6 +100,7 @@ panic = 'abort'
 panic = 'abort'
 # Without any optimization whatsoever, stackframes can easily get too
 # large and result in unusable builds.
+# ciao
 opt-level = 1
 
 [workspace.lints.rust]
