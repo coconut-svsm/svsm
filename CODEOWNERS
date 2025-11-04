@@ -1,0 +1,7 @@
+# CODEOWNERS file for COCONUT-SVSM
+
+# Technical Steering Committee (TSC)
+# Joerg Roedel, Jon Lange, Peter Fang, Stefano Garzarella
+* joerg.roedel@amd.com jlange@microsoft.com peter.fang@intel.com sgarzare@redhat.com
+
+# Subsystem Maintainers
