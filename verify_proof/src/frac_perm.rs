@@ -8,7 +8,7 @@
 // This is motivated by PCM lib from vstd.
 // The state-machine proofs are motivated from the proof for Rc in vstd.
 use crate::sum::{lemma_sum_insert, lemma_sum_remove, sum, CountTrait};
-use state_machines_macros::*;
+use verus_state_machines_macros::*;
 use vstd::modes::tracked_swap;
 use vstd::multiset::*;
 use vstd::prelude::*;

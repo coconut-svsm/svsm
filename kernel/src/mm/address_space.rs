@@ -21,6 +21,7 @@ pub struct FixedAddressMappingRange {
     phys_start: PhysAddr,
 }
 
+#[verus_verify]
 impl FixedAddressMappingRange {
     #[verus_spec(ret =>
         requires

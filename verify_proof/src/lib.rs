@@ -8,7 +8,7 @@
 #![allow(unused_braces)]
 #![allow(unexpected_cfgs)]
 #![allow(missing_debug_implementations)]
-use builtin_macros::*;
+use verus_builtin_macros::*;
 
 pub mod bits;
 #[cfg(verus_keep_ghost)]
