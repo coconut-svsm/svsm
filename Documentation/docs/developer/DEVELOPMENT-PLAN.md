@@ -241,6 +241,10 @@ terms this would be similar to SELinux.
 
 Move the vTPM emulation code into a user-mode service.
 
+### Provide UEFI Variable Store Service
+
+Implement a service to store UEFI variables in the SVSM.
+
 ## Paravisor Support
 
 Besides enlightened guest operating systems COCONUT-SVSM should support
