@@ -74,15 +74,11 @@ This sections lists proposed work items on the COCONUT-SVSM core parts.
 
 ### Convert to Fallible Allocators
 
-The current COCONUT kernel uses the standard Rust allocator interface. This
-comes with implicit panics on allocations failures and only supports one
+The COCONUT kernel uses the standard Rust allocator interface. This
+comes with implicit panics on allocation failures and only supports one
 backend allocator. A panic on a memory allocation failure is not acceptable in a
 kernel environment so a conversion to a better allocator interface is required.
-The interface needs to return an errors for allocation failures.
-
-This is currently blocked by the Rust language, as fallible allocations are
-gated by the nightly [`allocator_api`](https://github.com/rust-lang/rust/issues/32838)
-feature.
+The interface needs to return errors for allocation failures.
 
 ### Getting Rid of Kernel Direct-Map
 
@@ -95,19 +91,24 @@ This is a multi-step approach which requires a rewrite of the page allocator
 and the way heap allocation works. Allocation and usage of shared memory will
 also fundamentally change.
 
-### Design and Implement Firmware Configuration Interface
+### Move Stage2 Functionality into IGVM builder/loader
 
-Make the SVSM a proxy for firmware and machine configuration information
-between the host hypervisor and the guest operating system. Information
-includes, but is not limited to:
+Most of the setup done by the COCONUT stage2 loader can be done at build time
+with the IGVM format. Modify the build process and resulting IGVM file to match
+this goal and remove functionality from stage2.
 
-* Memory map
-* ACPI tables
-* Device tree
-* CPUID information
+### IGVM Memory Map
 
-COCONUT-SVSM is responsible for sanitizing the untrusted hypervisor input and
-make it accessible to the guest OS in a secure way.
+The COCONUT kernel consumes the system memory map via IGVM parameters, but the
+UEFI bios based on EDK2 loads it via QEMU FWCFG. Modify the boot flow so that
+COCONUT forwards an updated IGVM memory map to EDK2.
+
+### Dynamic Memory Sizing
+
+With the ability to forward a modified IGVM memory map to the subsequent boot
+steps, enhance COCONUT to allocate a variable amount of memory at boot as
+needed. The use-case is to allocate data structures whose size depends on the
+amount of memory and VCPUs.
 
 ### Track Validation State per 4KiB Page
 
@@ -115,6 +116,44 @@ In order to mitigate a various possible double-validation attacks for memory
 pages, the COCONUT kernel needs to track the validation state of each 4KiB page
 in the system. Implement the data structures and integrate the checks in the
 page validation backends.
+
+### Implement Generic Kernel Event Loop
+
+The current kernel event loop in the COCONUT kernel can only handle SVSM
+requests. Implement a generic loop which can handle events from multiple
+sources and dispatch them to their handlers.
+
+### Re-Work PerCPU Code
+
+The PerCPU code in COCONUT is a constant source of unsafe and unsound behavior.
+The best way to fix this is a re-implemnentation which ensures references can
+not leak to other CPUs and which enforces Rust's borrowing and memory safety
+rules.
+
+A re-implementation also needs to support dynamic allocation/deallocation of
+PerCPU memory.
+
+### Use User-Mode Heap in the COCONUT Kernel
+
+Re-work the COCONUT kernel memory allocators to use the heap implementation
+from the user-mode support library. This is required to remove the direct map.
+
+### Timer Support
+
+The COCONUT kernel will have to provide timers in the future. Implement support
+for timers based on the APIC timer hardware.
+
+### Time Keeping
+
+Related to timers the COCONUT kernel needs a (secure) way to check how much
+wall-clock time has elapsed between two events. This needs interfaces on the
+kernel and user-mode side.
+
+### Preemptive Multitasking
+
+In order to support new use-cases and prevent COCONUT-SVSM from suspending
+guest execution for too long (causing soft-lockups), implement preemptive
+multitasking in the COCONUT kernel to better share CPU resources.
 
 ### Crypto Library
 
