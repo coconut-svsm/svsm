@@ -186,11 +186,11 @@ $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 			-Duser_TpmConfiguration_Dir="$(DEPS_DIR)/TpmConfiguration" \
 			..)
 
-clean: $(OPENSSL_MAKEFILE) $(TCGTPM_MAKEFILE)
-	make -C $(LIBCRT_DIR) clean
-	make -C $(OPENSSL_DIR) clean
-	make -C $(TCGTPM_BUILD_DIR) clean
-	rm -f libtcgtpm.a
+clean:
+	$(MAKE) -C $(LIBCRT_DIR) clean
+	[ ! -f $(OPENSSL_MAKEFILE) ] || $(MAKE) -C $(OPENSSL_DIR) clean
+	[ ! -f $(TCGTPM_MAKEFILE) ] || $(MAKE) -C $(TCGTPM_BUILD_DIR) clean
+	rm -f $(OUT_DIR)/libtcgtpm.a
 
 distclean: clean
 	rm -f $(OPENSSL_MAKEFILE)
