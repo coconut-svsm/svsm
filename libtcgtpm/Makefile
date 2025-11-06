@@ -32,8 +32,13 @@ TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
+ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+OUT_DIR ?= $(ROOT_DIR)
 
-OUT_DIR ?= $(CWD)
+# Avoid running jobs of this Makefile in parallel to avoid possible conflicts
+# when building the TPM libraries, which use the same Makefile and subdirectory.
+# Parallel builds are still used inside the sub-targets (-j flag)
+.NOTPARALLEL:
 
 all: $(OUT_DIR)/libtcgtpm.a
 
@@ -45,7 +50,7 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 
 # libcrt
 $(LIBCRT):
-	$(MAKE) -C $(LIBCRT_DIR)
+	$(MAKE) -j$$(nproc) -C $(LIBCRT_DIR)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
@@ -170,7 +175,7 @@ TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
 TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
 TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
 
-$(TCGTPM_MAKEFILE):
+$(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 	mkdir -p $(TCGTPM_BUILD_DIR)
 	(cd $(TCGTPM_BUILD_DIR) && \
 		cmake \
@@ -192,3 +197,10 @@ distclean: clean
 	rm -rf $(TCGTPM_BUILD_DIR)
 
 .PHONY: all clean distclean
+
+.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto tcgtpm
+libcrt: $(LIBCRT)
+configure_openssl: $(OPENSSL_MAKEFILE)
+libcrypto: $(LIBCRYPTO)
+configure_tcgtpm: $(TCGTPM_MAKEFILE)
+tcgtpm: $(OUT_DIR)/libtcgtpm.a
