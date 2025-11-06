@@ -13,6 +13,16 @@ OUT_DIR ?= $(ROOT_DIR)
 # used by different projects
 override OUT_DIR := $(abspath $(OUT_DIR))
 
+# Include CARGO_MAKEFLAGS for jobserver coordination if available
+# Otherwise use -j with NUM_JOBS
+ifneq ($(CARGO_MAKEFLAGS),)
+MAKEFLAGS += $(CARGO_MAKEFLAGS)
+else
+# Use NUM_JOBS from Cargo build script environment, fallback to nproc
+NUM_JOBS ?= $(shell nproc)
+MAKEFLAGS += -j$(NUM_JOBS)
+endif
+
 LIBCRT_SRC_DIR = $(DEPS_DIR)/libcrt
 OPENSSL_SRC_DIR = $(DEPS_DIR)/openssl
 TCGTPM_SRC_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
@@ -57,11 +67,11 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 # libcrt
 $(LIBCRT):
 	mkdir -p $(LIBCRT_BUILD_DIR)
-	$(MAKE) -j$$(nproc) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR)
+	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
-	$(MAKE) -C $(OPENSSL_BUILD_DIR) -j$$(nproc)
+	$(MAKE) -C $(OPENSSL_BUILD_DIR)
 
 $(OPENSSL_MAKEFILE):
 	mkdir -p $(OPENSSL_BUILD_DIR)
@@ -167,16 +177,16 @@ $(OPENSSL_MAKEFILE):
 
 # tcgtpm
 $(LIBBNMATH): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBBNMATH_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBBNMATH_TARGET)
 
 $(LIBTPMBIGNUM): $(TCGTPM_MAKEFILE) $(LIBBNMATH)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPMBIGNUM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBTPMBIGNUM_TARGET)
 
 $(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBTPMBIGNUM)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBTPM_TARGET)
 
 $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
 
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
