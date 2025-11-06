@@ -6,7 +6,10 @@ else
 CFLAGS = -g -O0
 endif
 
-CFLAGS += -I./include -nostdinc -nostdlib -mno-red-zone
+SRC_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+OUT_DIR ?= $(SRC_DIR)
+
+CFLAGS += -I$(SRC_DIR)/include -nostdinc -nostdlib -mno-red-zone
 CFLAGS += -m64 -march=x86-64 -mno-sse2 -fPIE
 CFLAGS += -fno-stack-protector
 CFLAGS += -ffreestanding
@@ -14,11 +17,14 @@ CFLAGS += -Wall -Werror
 
 CC = gcc
 
+vpath %.c $(SRC_DIR)
+vpath %.s $(SRC_DIR)
+
 # Functions we stub out
-OBJS = src/stub.o
+OBJS = $(OUT_DIR)/src/stub.o
 
 # ctype
-OBJS += $(addprefix src/ctype/, \
+OBJS += $(addprefix $(OUT_DIR)/src/ctype/, \
 				isdigit.o \
 				islower.o \
 				isspace.o \
@@ -27,18 +33,18 @@ OBJS += $(addprefix src/ctype/, \
 				toupper.o \
 				)
 # exit
-OBJS += src/exit/assert.o
+OBJS += $(OUT_DIR)/src/exit/assert.o
 
 # prng
-OBJS += src/prng/rand.o
+OBJS += $(OUT_DIR)/src/prng/rand.o
 
 # setjmp
-OBJS += $(addprefix src/setjmp/x86_64/, \
+OBJS += $(addprefix $(OUT_DIR)/src/setjmp/x86_64/, \
 				longjmp.o \
 				setjmp.o \
 				)
 # stdio
-OBJS += $(addprefix src/stdio/, \
+OBJS += $(addprefix $(OUT_DIR)/src/stdio/, \
 				asprintf.o \
 				fprintf.o \
 				printf.o \
@@ -50,13 +56,13 @@ OBJS += $(addprefix src/stdio/, \
 				vsprintf.o \
 				)
 # stdlib
-OBJS += $(addprefix src/stdlib/, \
+OBJS += $(addprefix $(OUT_DIR)/src/stdlib/, \
 				atoi.o \
 				qsort.o \
 				qsort_nr.o \
 				)
 # string
-OBJS += $(addprefix src/string/, \
+OBJS += $(addprefix $(OUT_DIR)/src/string/, \
 				memchr.o \
 				memcmp.o \
 				memcpy.o \
@@ -83,23 +89,25 @@ OBJS += $(addprefix src/string/, \
 				strstr.o \
 				)
 # time
-OBJS += $(addprefix src/time/, \
+OBJS += $(addprefix $(OUT_DIR)/src/time/, \
 				__secs_to_tm.o \
 				gmtime_r.o \
 				time.o \
 				)
 
-all: libcrt.a
+all: $(OUT_DIR)/libcrt.a
 
-libcrt.a: $(OBJS)
+$(OUT_DIR)/libcrt.a: $(OBJS)
 	ar rcs $@ $(OBJS)
 
-%.o : %.c
+$(OUT_DIR)/%.o : %.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-%.o : %.s
+$(OUT_DIR)/%.o : %.s
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f libcrt.a
+	rm -f $(OUT_DIR)/libcrt.a
 	rm -f $(OBJS)
