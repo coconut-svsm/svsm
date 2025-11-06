@@ -68,19 +68,6 @@ Unless otherwise noted the whole COCONUT-SVSM code base is written in the Rust
 programming language. This includes the COCONUT kernel and all user-space
 libraries and binaries.
 
-## Build System
-
-The COCONUT-SVSM platform needs a powerful build system which is capable of
-building the kernel and user-mode components as specified by a build recipe.
-The recipe is provided in a editable and machine readable format, e.g JSON or
-YAML. The build system will package user-mode components into the RAM
-file-system image and bundle it with the kernel and firmware into the output
-IGVM file.
-
-As an enhancement (not needed in the first step) the build system also needs
-the capability to build or include user-mode components which are not part of
-the COCONUT-SVSM repository.
-
 ## Core Code
 
 This sections lists proposed work items on the COCONUT-SVSM core parts.
@@ -96,19 +83,6 @@ The interface needs to return an errors for allocation failures.
 This is currently blocked by the Rust language, as fallible allocations are
 gated by the nightly [`allocator_api`](https://github.com/rust-lang/rust/issues/32838)
 feature.
-
-### SmartAllocPointers
-
-* Owner: Carlos López ([@00xc](https://www.github.com/00xc)).
-
-Design and implement new smart pointer-like safe interfaces that make use of
-different memory pools other than the global memory allocator (e.g. per-cpu,
-per-task, page-sized & physically contiguous, etc.).
-
-### Page Table Self Map
-
-Implement a self-mapping of the page-table to simplify modifications. This
-allows to implement a fast `virt_to_phys()` mapping without a direct-map.
 
 ### Getting Rid of Kernel Direct-Map
 
@@ -172,32 +146,12 @@ Make definitions for how system call parameters are communicated between
 user-space and the COCONUT kernel. Design all data structures for user-kernel
 communication in a way that is usable with other programming languages as well.
 
-### User-mode Support Library
-
-The user-mode support library provides support to develop and build user-mode
-binaries for COCONUT-SVSM. The library contains:
-
-* Linker script.
-* Platform setup code
-* Heap allocator
-* Syscall APIs
-* All future SVSM specific user-mode interfaces
-
-While the library will be written in Rust, it should support to be used from
-other programming languages like C and C++. This has implications for the
-public data structures and function names.
-
 ### Define SYSCALL batching Mechanism
 
 In a paravisor setup it will become necessary to handle a larger number of
 system calls to fulfill requests. Issuing single system calls can become a
 performance problem, so a batching mechanism to allow sending multiple system
 calls within one request is needed.
-
-### File-System System Calls
-
-Implement user-mode APIs to interact with the filesystem. This includes
-opening, reading, writing, memory-mapping, and closing files.
 
 ### IPC and Event Delivery Framework
 
@@ -219,19 +173,6 @@ protocol requests in user-mode. Initially most of the actual handling can stay
 in kernel-mode, but this process is a starting point to move most of request
 parsing and handling to user-mode as well.
 
-### Let the Idle Task idle
-
-Currently the idle tasks in COCONUT-SVSM are the ones switching to the guest OS
-in a less privileged level. Move that code into a system call and execute it in
-the request-loop service. The idle tasks should then just idle and halt the
-execution.
-
-### Support FPU Instructions
-
-Implement support to save and restore FPU state for user-mode processes and
-switch FPU state at task-switch. Also implement an API to enable FPU usage in
-the COCONUT kernel.
-
 ### Move vTPM to User-Mode
 
 Move the vTPM emulation code into a user-mode service.
@@ -246,53 +187,10 @@ interface should be flexible enough to support the **Enlightened OS Mode** and
 This interface will also allow to run deployment specific versions of VM
 management tasks in user-mode.
 
-## IRQ Security
-
-COCONUT-SVSM can help to provide secure IRQs to guest operating systems.
-
-### Specify Platform-Agnostic Hypervisor to SVSM IRQ Signaling Interface
-
-The SVSM targets an architecture where each CVM privilege level is provided an
-independent IRQ vector space. The host hypervisor or the hardware does not or
-can not always emulate a separate LAPIC for each privilege level, which means a
-defined communication standard between the hypervisor and the CVM is needed.
-The standard needs to define data structures and algorithms for the hypervisor
-to report IRQ events for individual CVM privilege levels.
-
-### X2APIC Support for COCONUT-SVSM
-
-On the x86 architecture, the SVSM runs in the highest privilege level of the
-CVM and has its own IRQ vector space, usually provided via a hardware- or
-hypervisor-provided APIC.  Support code for the APIC is required so that the
-SVSM can send IPIs between VCPUs.
-
-### vXAPIC and vX2APIC Emulation Support
-
-Add an emulation for vXAPIC and vX2APIC to the SVSM for use by the guest OS.
-
-### [IrqDispSvsm] COCONUT-SVSM IRQ Dispatch Code
-
-COCONUT-SVSM needs infrastructure to dispatch injected IRQ events to itself.
-This includes the ability to register IRQ handlers for specific vectors. For
-the AMD platform IRQ delivery in the presence of *Restricted Injection* is also
-needed.
-
-### Guest IRQ Dispatch Code
-
-For setups where COCONUT-SVSM forwards injected IRQs to guest operating systems
-it needs support to determine when a guest OS is ready to accept the IRQ and
-inject it into the corresponding privilege level.
-
 ## Support for AMD SEV-SNP with VMPLs
 
 The AMD SEV-SNP hardware extension is the bring-up platform for COCONUT-SVSM
 and support is not yet finished.
-
-### Finish Enlightened OS Mode
-
-Finish support to run COCONUT-SVSM as a service platform for enlightened guest
-operating systems. This mostly relies on moving the existing services to
-user-mode.
 
 ### Alternate Injection Support
 
@@ -316,12 +214,6 @@ COCONUT-SVSM aims to support.
 The first step to support the TDX platform in COCONUT-SVSM is to implement boot
 support via an IGVM platform file. This needs support in the COCONUT kernel as
 well as in the QEMU IGVM loader.
-
-### Platform Abstractions
-
-The COCONUT kernel contains a lot of hard-coded SEV-SNP assumptions.  These
-need to be abstracted into a generic API which can be implemented for multiple
-platforms.
 
 ### Multi-processor Support
 
@@ -350,22 +242,6 @@ functionality to offload CVM specific handling from the OS into the SVSM.
 Define and implement system call interfaces which user-mode code can use to
 read and modify state of the guest OS. This includes CPU, memory, and IRQ
 states.
-
-### X86 Instruction Decoder
-
-The SVSM needs an instruction decoder to handle events from the guest OS which
-were triggered by specific instructions. An incomplete lists of events:
-
-* CPUID
-* RD/WRMSR
-* MMIO
-* IOIO
-
-For MMIO only a minimal subset of instructions is supposed to be supported to
-keep the instruction decoder and its attack surface small.
-
-Later, and if more instructions need to be supported, a user-mode extension to
-the SVSM in-kernel instruction decoder can be discussed.
 
 ### MMIO/IOIO Event Dispatch Framework
 
@@ -406,25 +282,12 @@ towards this goal.
 Ideally a crypto library is written in Rust, but that is not a strict
 requirement.
 
-### Design Isolation Context for Cryptographic Code
-
-Design and implement an execution context and interfaces to interact with it.
-The implementation needs to provide the isolation capabilities listed above.
-
 ## Persistence
 
 One of the main use-cases for the SVSM is to emulate devices containing
 security sensitive state in a trusted environment. In order for the security
 sensitive state to be persistent across restarts of the CVM instance, a
 persistency layer is needed.
-
-### Define and Implement Early Attestation Architecture
-
-A process for early attestation and key delivery, based on hardware attestation
-capabilities, is needed. The attestation is used as a proof to a Key Broker
-Service (KBS, the relying party) that the CVM is in an expected state. Based on
-the attestation result the KBS will provide secrets (like a key for persistent
-storage) to the SVSM.
 
 ### Block Layer
 
