@@ -95,25 +95,6 @@ This is a multi-step approach which requires a rewrite of the page allocator
 and the way heap allocation works. Allocation and usage of shared memory will
 also fundamentally change.
 
-### Bring LogBuffer Code Upstream
-
-The COCONUT kernel needs to put its log messages into a log buffer which is not
-printed to the console by default. Anything printed to the serial console is
-visible to the untrusted hypervisor and might reveal information to attack the
-SVSM.
-
-There is a pending PR to implement a log buffer. Review that PR and bring it
-upstream.
-
-### Implement Observability Interface
-
-Specify a protocol to allow to observe the state of COCONUT-SVSM from the guest
-OS. This includes information like log-files, memory usage information, and
-more.
-
-Implement a handler for the protocol in COCONUT-SVSM and a driver plus tooling
-on the guest OS side.
-
 ### Design and Implement Firmware Configuration Interface
 
 Make the SVSM a proxy for firmware and machine configuration information
@@ -127,6 +108,26 @@ includes, but is not limited to:
 
 COCONUT-SVSM is responsible for sanitizing the untrusted hypervisor input and
 make it accessible to the guest OS in a secure way.
+
+### Track Validation State per 4KiB Page
+
+In order to mitigate a various possible double-validation attacks for memory
+pages, the COCONUT kernel needs to track the validation state of each 4KiB page
+in the system. Implement the data structures and integrate the checks in the
+page validation backends.
+
+### Crypto Library
+
+Having a common crypto library is no pre-requisite to other items in this
+document.  Initially other parts of COCONUT-SVSM can use their own cryptography
+libraries and be converted to a common implementation once it is ready to use.
+
+The goal is to have a shared common library which is linked into the respective
+components. This includes the COCONUT kernel as well as user-mode binaries.
+
+The library provides a stable public interface and supports different backend
+implementations. This allows to use third-party crypto libraries (like OpenSSL
+or BoringSSL) with a common Rust-based frontend.
 
 ## User-Mode Support
 
@@ -173,10 +174,6 @@ protocol requests in user-mode. Initially most of the actual handling can stay
 in kernel-mode, but this process is a starting point to move most of request
 parsing and handling to user-mode as well.
 
-### Move vTPM to User-Mode
-
-Move the vTPM emulation code into a user-mode service.
-
 ### Define VMM Interface
 
 The COCONUT kernel needs to provide a VMM-like interface for user-mode
@@ -187,61 +184,29 @@ interface should be flexible enough to support the **Enlightened OS Mode** and
 This interface will also allow to run deployment specific versions of VM
 management tasks in user-mode.
 
-## Support for AMD SEV-SNP with VMPLs
+### COCONUT-SVSM as Rust Tier-3/Tier-2 Target
 
-The AMD SEV-SNP hardware extension is the bring-up platform for COCONUT-SVSM
-and support is not yet finished.
+To make it easier to develop new user-mode modules and bring the Rust standard
+library to the COCONUT-SVSM ecosystem, support for a COCONUT platform target in
+the upstream Rust project required.
 
-### Alternate Injection Support
+### User-mode Security Framework
 
-Support taking notifications for IRQs to lower privilege levels in the COCONUT
-kernel and use the *Alternate Injection* feature to inject the IRQs into the
-guest OS.
+Define and implement a security framework which allows to limit the
+capabilities of user-mode processes to interact with the SVSM kernel. In Linux
+terms this would be similar to SELinux.
 
-### Support Paravisor Mode
+## Services
 
-Enable support for the *ReflectVC* feature of AMD SEV-SNP to allow
-offloading VC exception handling from the guest OS into COCONUT-SVSM an run
-(mostly) un-enlightened operating systems.
+### Move vTPM to User-Mode
 
-## Support for Intel TDX-Partioning
-
-The Intel TDX with Partitioning support is the second major platform
-COCONUT-SVSM aims to support.
-
-### IGVM Boot
-
-The first step to support the TDX platform in COCONUT-SVSM is to implement boot
-support via an IGVM platform file. This needs support in the COCONUT kernel as
-well as in the QEMU IGVM loader.
-
-### Multi-processor Support
-
-Booting multiple CPUs in a TD guest needs some modifications in the COCONUT
-kernel as on Intel the TD vCPUs start from a fixed address.
-
-### TDX Boot support
-
-Implement a platform API backend to boot COCONUT-SVSM in an Intel TD with
-partitioning support.
-
-### TDX Paravisor Support
-
-Implement support for running un-enlightened guest operating systems in an
-Intel TD using TDX partitioning. It is fine to implement this alongside generic
-paravisor support.
+Move the vTPM emulation code into a user-mode service.
 
 ## Paravisor Support
 
 Besides enlightened guest operating systems COCONUT-SVSM should support
 un-enlightened operating systems as well. This requires a lot of new
 functionality to offload CVM specific handling from the OS into the SVSM.
-
-### SYSCALL Interfaces
-
-Define and implement system call interfaces which user-mode code can use to
-read and modify state of the guest OS. This includes CPU, memory, and IRQ
-states.
 
 ### MMIO/IOIO Event Dispatch Framework
 
@@ -256,31 +221,11 @@ triggered by the guest OS. The default target is user-mode, only handling
 events in kernel mode when there are very good reasons for it (e.g.
 performance).
 
-## [Crypto] Cryptography Support
+## Device Support
 
-The development items in this section are no pre-requisite to items in other
-sections which need cryptography. Initially other parts of COCONUT-SVSM can use
-their own cryptography libraries and be converted to a common implementation
-once it is ready to use.
-
-There are two major design goals for the cryptography layer:
-
-* *Isolation*: Make sure the cryptographic keys are not accessible outside of
-  the crypto layer. The keys of different users also need to be isolated from
-  each other.
-* *FIPS certification*: The crypto layer and library needs to be designed in a
-  way the can be certified by FIPS. This means the library needs to be a
-  standalone binary which can be executed separately for any given context in
-  need for cryptography.
-
-### Provide Crypto Library
-
-Implement or port a crypto library to the COCONUT-SVSM platform. FIPS
-certifiability is not initially required, but development should be targeted
-towards this goal.
-
-Ideally a crypto library is written in Rust, but that is not a strict
-requirement.
+The COCONUT kernel needs to support a small number of devices for use of its
+own. Examples are block devices for persistence or devices for communicating
+with the host.
 
 ## Persistence
 
@@ -309,41 +254,63 @@ Design and implement a permission model for data on the file system which
 allows to limit which persistent data is accessible by a given user-mode
 process.
 
-## COCONUT-SVSM as Rust Tier3/2 Target
+## X86 Platform Support
 
-To make it easier to develop new user-mode modules and bring the Rust standard
-library to the COCONUT-SVSM ecosystem, support for a COCONUT platform target in
-the upstream Rust project is desired.
+### TDX: IGVM Boot
 
-### Initial Support as a Rust Tier-3 Target
+The first step to support the TDX platform in COCONUT-SVSM is to implement boot
+support via an IGVM platform file. This needs support in the COCONUT kernel as
+well as in the QEMU IGVM loader.
 
-This will be the initial step of supporting COCONUT-SVSM as a platform target
-in Rust. Minimal support is needed from the SVSM side, like a heap allocator
-and basic file-system APIs. The interfaces to the SVSM kernel do not need to be
-stabilized yet.
+### TDX: Multi-processor Support
 
-### Towards Tier-2 Target Support
+Booting multiple CPUs in a TD guest needs some modifications in the COCONUT
+kernel as on Intel the TD vCPUs start from a fixed address.
 
-Stabilize the SVSM kernel interfaces and organize code in a way to reach status
-as a Rust Tier-2 target platform.
+### TDX: Boot support
+
+Implement a platform API backend to boot COCONUT-SVSM in an Intel TD with
+partitioning support.
+
+### TDX: Paravisor Support
+
+Implement support for running un-enlightened guest operating systems in an
+Intel TD using TDX partitioning. It is fine to implement this alongside generic
+paravisor support.
+
+### SEV-SNP: Alternate Injection Support
+
+Support taking notifications for IRQs to lower privilege levels in the COCONUT
+kernel and use the *Alternate Injection* feature to inject the IRQs into the
+guest OS.
+
+## Observability
+
+### Implement Observability Interface
+
+Specify a protocol to allow to observe the state of COCONUT-SVSM from the guest
+OS. This includes information like log-files, memory usage information, and
+more.
+
+Implement a handler for the protocol in COCONUT-SVSM and a driver plus tooling
+on the guest OS side.
+
+### Bring LogBuffer Code Upstream
+
+The COCONUT kernel needs to put its log messages into a log buffer which is not
+printed to the console by default. Anything printed to the serial console is
+visible to the untrusted hypervisor and might reveal information to attack the
+SVSM.
+
+There is a pending PR to implement a log buffer. Review that PR and bring it
+upstream.
+
+## Hypervisor Support
 
 ## Securing COCONUT-SVSM Code Base
 
 This section lists a loosely coupled list of work items to improve the security
 of the COCONUT-SVSM platform.
-
-### User-mode Security Framework
-
-Define and implement a security framework which allows to limit the
-capabilities of user-mode processes to interact with the SVSM kernel. In Linux
-terms this would be similar to SELinux.
-
-### Track Validation State per 4KiB Page
-
-In order to mitigate a various possible double-validation attacks for memory
-pages, the COCONUT kernel needs to track the validation state of each 4KiB page
-in the system. Implement the data structures and integrate the checks in the
-page validation backends.
 
 ### Fixing Unsound Code Patterns
 
@@ -365,4 +332,3 @@ This is related to fuzzing, but targeted at a fully running COCONUT-SVSM
 instead of individual parts of the code. Stress tests need to be implemented to
 find any kind of issues in the kernel and user-mode code, especially race
 conditions, lock inversions, and so on.
-
