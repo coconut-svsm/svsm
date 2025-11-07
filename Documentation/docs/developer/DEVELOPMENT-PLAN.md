@@ -126,7 +126,7 @@ sources and dispatch them to their handlers.
 ### Re-Work PerCPU Code
 
 The PerCPU code in COCONUT is a constant source of unsafe and unsound behavior.
-The best way to fix this is a re-implemnentation which ensures references can
+The best way to fix this is a re-implementation which ensures references can
 not leak to other CPUs and which enforces Rust's borrowing and memory safety
 rules.
 
@@ -281,7 +281,7 @@ with the host.
 QEMU needs to be enhanced to create a device tree blob describing the devices
 owned by COCONUT-SVSM. Those devices need to be excluded from the ACPI tables
 used by the guest OS. The device tree is part of the IGVM parameters on guest
-launch and the SVSM needs to parse it to set up its device infrastrcture.
+launch and the SVSM needs to parse it to set up its device infrastructure.
 
 ### Device Abstractions
 
@@ -307,7 +307,7 @@ work transparently with underlying transport mechanism.
 One of the main use-cases for the SVSM is to emulate devices containing
 security sensitive state in a trusted environment. In order for the security
 sensitive state to be persistent across restarts of the CVM instance, a
-persistency layer is needed.
+persistence layer is needed.
 
 ### File System for Persistent Data
 
