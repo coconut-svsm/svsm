@@ -328,6 +328,14 @@ process.
 
 ## X86 Platform Support
 
+### KVMClock Driver
+
+Add a driver for KVM Clock interface to the COCONUT kernel.
+
+### Support FRED
+
+Implement support for the Flexible Return and Event Delivery feature.
+
 ### TDX: IGVM Boot
 
 The first step to support the TDX platform in COCONUT-SVSM is to implement boot
@@ -355,6 +363,15 @@ paravisor support.
 Support taking notifications for IRQs to lower privilege levels in the COCONUT
 kernel and use the *Alternate Injection* feature to inject the IRQs into the
 guest OS.
+
+### SEV-SNP: Support for SecureTSC
+
+Make use of the SecureTSC feature on AMD SEV-SNP platforms and use it as a
+trusted time source.
+
+### SEV-SNP: Support Secure AVIC
+
+Support the SecureAVIC feature in COCONUT-SVSM for use at all VMPL levels.
 
 ## Observability
 
