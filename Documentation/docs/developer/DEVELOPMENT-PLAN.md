@@ -326,6 +326,21 @@ Design and implement a permission model for data on the file system which
 allows to limit which persistent data is accessible by a given user-mode
 process.
 
+## Multi-Platform Support
+
+### Split out X86 Specific Code
+
+Split out X86 specific code paths and put it behind architecture abstractions
+which can also be implemented for other CPU architectures.
+
+This is an umbrella task which likely needs to be split into sub-tasks once the
+required work becomes more clear.
+
+### Port COCONUT to a non-X86 Platform
+
+Prove that the architecture abstractions work by porting COCONUT to a non-X86
+platform.
+
 ## X86 Platform Support
 
 ### KVMClock Driver
