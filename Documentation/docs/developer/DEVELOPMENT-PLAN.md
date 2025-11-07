@@ -276,6 +276,32 @@ The COCONUT kernel needs to support a small number of devices for use of its
 own. Examples are block devices for persistence or devices for communicating
 with the host.
 
+### Device Tree Support
+
+QEMU needs to be enhanced to create a device tree blob describing the devices
+owned by COCONUT-SVSM. Those devices need to be excluded from the ACPI tables
+used by the guest OS. The device tree is part of the IGVM parameters on guest
+launch and the SVSM needs to parse it to set up its device infrastrcture.
+
+### Device Abstractions
+
+The COCONUT kernel needs an abstraction for devices, similar to `struct device`
+in the Linux kernel. The abstraction handles device enumeration and enablement.
+
+### Block Layer
+
+The COCONUT-SVSM will need to support different storage backends for
+persistent storage. In order to have a common interface to all supported
+hypervisors, a generic block layer is needed which is the front-end to specific
+backend implementations.
+
+### Host Communication Channel Abstraction
+
+The SVSM needs communication channels with the host for various purposes
+(console, debugging, attestation, ...). These channels are hypervisor specific
+and require a generic interface in the COCONUT kernel which allows the users to
+work transparently with underlying transport mechanism.
+
 ## Persistence
 
 One of the main use-cases for the SVSM is to emulate devices containing
@@ -283,19 +309,16 @@ security sensitive state in a trusted environment. In order for the security
 sensitive state to be persistent across restarts of the CVM instance, a
 persistency layer is needed.
 
-### Block Layer
-
-The COCONUT-SVSM will need to support different storage backends for
-persistent storage. In order to have a common interface to all supported
-hypervisors, a generic block layer is needed which is the front-end to specific
-backend implementations. Encryption and integrity protection of the storage
-will also be implemented on the block layer.
-
 ### File System for Persistent Data
 
 A simple file-system driver is needed to support persistence for multiple
 services and device emulations. Design is TBD, but there is likely no need to
 support directories.
+
+### Block Device Security
+
+Encryption and integrity protection of the storage will be implemented on the
+block layer.
 
 ### Permission Model for File System Data
 
