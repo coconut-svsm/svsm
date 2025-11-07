@@ -241,6 +241,12 @@ terms this would be similar to SELinux.
 
 Move the vTPM emulation code into a user-mode service.
 
+### Linux: Implement SVSM-Bus
+
+Implement a virtual bus for the Linux kernel which abstracts SVSM services as
+devices. Device drivers can then attach to the services and provide them to
+Linux user-mode.
+
 ### Provide UEFI Variable Store Service
 
 Implement a service to store UEFI variables in the SVSM.
