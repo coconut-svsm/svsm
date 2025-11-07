@@ -408,6 +408,34 @@ and use it to support observability.
 
 ## Hypervisor Support
 
+### KVM: Implement Planes Support
+
+Extend the Linux KVM kernel drivers to support privilege separation features
+needed for using Intel TD Partitioning or AMD SEV-SNP VMPL features. This task
+covers the base support for generic KVM and X86 architecture specific code.
+
+### QEMU: Implement Planes Support
+
+Extend QEMU to support the KVM Planes feature. Make support as independent as
+possible from the underlying hardware architecture.
+
+### KVM: Support SEV-SNP with KVM Planes
+
+Add support AMD SEV-SNP VMPLs to KVM using the generic support for Planes.
+
+### KVM: Support Intel TD Partitioning with KVM Planes
+
+Add support Intel TD Partitioning to KVM using the generic support for Planes.
+
+### Support VSM Mode with KVM Planes
+
+Add support for the Hyper-V VSM feature to KVM using the Planes infrastructure.
+
+### KVM: SEV-SNP: Support ReflectVC Feature
+
+Using the SEV-SNP support for KVM Planes, implement support for the SEV-SNP
+ReflectVC feature.
+
 ## Securing COCONUT-SVSM Code Base
 
 This section lists a loosely coupled list of work items to improve the security
