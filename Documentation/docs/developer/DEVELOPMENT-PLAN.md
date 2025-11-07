@@ -375,14 +375,11 @@ Support the SecureAVIC feature in COCONUT-SVSM for use at all VMPL levels.
 
 ## Observability
 
-### Implement Observability Interface
+### Design Observability Interface
 
 Specify a protocol to allow to observe the state of COCONUT-SVSM from the guest
 OS. This includes information like log-files, memory usage information, and
 more.
-
-Implement a handler for the protocol in COCONUT-SVSM and a driver plus tooling
-on the guest OS side.
 
 ### Bring LogBuffer Code Upstream
 
@@ -393,6 +390,21 @@ SVSM.
 
 There is a pending PR to implement a log buffer. Review that PR and bring it
 upstream.
+
+### Implement COCONUT Service Handler
+
+Implement a handler for the protocol in COCONUT-SVSM. This will be a new SVSM
+protocol handler.
+
+### Implement Linux Device Driver and Tooling
+
+Implement a device driver and user-space tooling for the SVSM observability
+protocol on the Linux side.
+
+### Extend Observability to Intel TDX platforms
+
+Define a transport mechanism between SVSM and guest OS on Intel TDX platforms
+and use it to support observability.
 
 ## Hypervisor Support
 
