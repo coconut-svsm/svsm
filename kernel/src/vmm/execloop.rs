@@ -139,6 +139,8 @@ pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
             // Clear EFER.SVME in guest VMSA.
             vmsa.disable();
 
+            cpu.ai_handle_intercepts(vmsa);
+
             if let Some(msg) = get_svsm_request_message(vmsa_ref.deref_mut()) {
                 return msg;
             }
