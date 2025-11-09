@@ -78,7 +78,7 @@ pub struct VIntrCtrl {
     pub v_intr_vector: u8,
     #[bits(23)]
     _rsvd_62_40: u32,
-    busy: bool,
+    pub busy: bool,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

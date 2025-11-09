@@ -1060,6 +1060,27 @@ impl PerCpu {
         }
     }
 
+    pub fn ai_handle_intercepts(&self, vmsa: &mut VMSA) {
+        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
+        let g_eii = vmsa.guest_exitintinfo;
+
+        if !use_alternate_injection {
+            return;
+        }
+
+        // Re-inject events when intercept happens
+        if g_eii.valid() {
+            vmsa.event_inj = g_eii;
+        }
+
+        // Clear busy bit
+        let mut vintr_ctrl = vmsa.vintr_ctrl;
+        if vintr_ctrl.busy() {
+            vintr_ctrl.set_busy(false);
+            vmsa.vintr_ctrl = vintr_ctrl;
+        }
+    }
+
     pub fn use_apic_emulation(&self) -> bool {
         self.guest_apic().is_some()
     }
