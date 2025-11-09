@@ -13,6 +13,7 @@ use crate::error::SvsmError;
 use crate::mm::GuestPtr;
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::requests::SvsmCaa;
+use crate::sev::hv_doorbell::HVDoorbellFlags;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
 
@@ -698,7 +699,7 @@ impl LocalApic {
 
     fn consume_host_interrupts(&mut self) {
         let hv_doorbell = this_cpu().hv_doorbell().unwrap();
-        let vmpl_event_mask = hv_doorbell.per_vmpl_events.swap(0, Ordering::Relaxed);
+        let vmpl_event_mask = hv_doorbell.per_vmpl_events.load(Ordering::Acquire);
         // Ignore events other than for the guest VMPL.
         if vmpl_event_mask & (1 << (GUEST_VMPL - 1)) == 0 {
             return;
@@ -709,10 +710,12 @@ impl LocalApic {
         // First consume any level-sensitive vector that is present.
         let mut flags = HVExtIntStatus::from(descriptor.status.load(Ordering::Relaxed));
         if flags.level_sensitive() {
-            let mut vector;
-            // Consume the correct vector atomically.
+            let vector = flags.pending_vector();
+            // Consume the correct vector atomically
+            if self.signal_one_host_interrupt(vector, true) {
+                Self::insert_vector_register(&mut self.host_tmr, vector);
+            }
             loop {
-                vector = flags.pending_vector();
                 let new_flags = flags.with_pending_vector(0).with_level_sensitive(false);
                 if let Err(fail_flags) = descriptor.status.compare_exchange(
                     flags.into(),
@@ -726,26 +729,11 @@ impl LocalApic {
                     break;
                 }
             }
-
-            if self.signal_one_host_interrupt(vector, true) {
-                Self::insert_vector_register(&mut self.host_tmr, vector);
-            }
         }
 
         // If a single vector is present, then signal it, otherwise
         // process the entire IRR.
         if flags.multiple_vectors() {
-            // Clear the multiple vectors flag first so that additional
-            // interrupts are presented via the 8-bit vector. This must
-            // be done before the IRR is scanned so that if additional
-            // vectors are presented later, the multiple vectors flag
-            // will be set again.
-            let multiple_vectors_mask: u32 =
-                HVExtIntStatus::new().with_multiple_vectors(true).into();
-            descriptor
-                .status
-                .fetch_and(!multiple_vectors_mask, Ordering::Relaxed);
-
             // Handle the special case of vector 31.
             if flags.vector_31() {
                 descriptor
@@ -758,25 +746,41 @@ impl LocalApic {
                 let bits = descriptor.irr[i - 1].swap(0, Ordering::Relaxed);
                 self.signal_several_interrupts(i, bits & self.allowed_irr[i]);
             }
+
+            let multiple_vectors_mask: u32 =
+                HVExtIntStatus::new().with_multiple_vectors(true).into();
+            descriptor
+                .status
+                .fetch_and(!multiple_vectors_mask, Ordering::Relaxed);
         } else if flags.pending_vector() != 0 {
             // Atomically consume this interrupt. If it cannot be consumed
             // atomically, then it must be because some other interrupt
             // has been presented, and that can be consumed in another
             // pass.
+            self.signal_one_host_interrupt(flags.pending_vector(), false);
+
             let new_flags = flags.with_pending_vector(0);
-            if descriptor
-                .status
-                .compare_exchange(
-                    flags.into(),
-                    new_flags.into(),
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                self.signal_one_host_interrupt(flags.pending_vector(), false);
-            }
+            let _ = descriptor.status.compare_exchange(
+                flags.into(),
+                new_flags.into(),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
         }
+
+        let hv_flags = &hv_doorbell.flags;
+        let level2_flag = HVDoorbellFlags::from(hv_flags.load(Ordering::Relaxed));
+        if level2_flag.no_further_signal() {
+            let new_level2_flag = level2_flag.with_no_further_signal(false);
+            let _ = hv_flags.compare_exchange(
+                level2_flag.into(),
+                new_level2_flag.into(),
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            );
+        }
+
+        hv_doorbell.per_vmpl_events.store(0, Ordering::Release);
     }
 
     fn handoff_to_host(&mut self) {
