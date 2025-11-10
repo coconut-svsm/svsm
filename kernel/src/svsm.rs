@@ -52,6 +52,8 @@ use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion};
+#[cfg(feature = "virtio-drivers")]
+use svsm::virtio::devices::virtio_mmio_init;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -367,6 +369,9 @@ fn svsm_init() {
     if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, new_kernel_region(&LAUNCH_INFO)) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
+
+    #[cfg(feature = "virtio-drivers")]
+    virtio_mmio_init();
 
     #[cfg(feature = "attest")]
     {
