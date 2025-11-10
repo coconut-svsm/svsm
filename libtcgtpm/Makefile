@@ -6,7 +6,9 @@ OPENSSL_CONFIG_TYPE = --debug
 TCGTPM_CFLAGS = -g -O0 -DDEBUG=YES
 endif
 
-DEPS_DIR = $(CURDIR)/deps
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+DEPS_DIR := $(ROOT_DIR)/deps
+OUT_DIR ?= $(ROOT_DIR)
 
 LIBCRT_DIR = $(DEPS_DIR)/libcrt
 OPENSSL_DIR = $(DEPS_DIR)/openssl
@@ -32,8 +34,6 @@ TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
-OUT_DIR ?= $(ROOT_DIR)
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
 # when building the TPM libraries, which use the same Makefile and subdirectory.
