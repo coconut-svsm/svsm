@@ -200,6 +200,7 @@ clippy:
 clean:
 	cargo clean
 	rm -rf bin
+	rm -f release/src/git_version.rs
 
 distclean: clean
 
