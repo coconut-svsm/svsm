@@ -199,10 +199,8 @@ clippy:
 
 clean:
 	cargo clean
-	rm -f stage1/*.o stage1/*.bin stage1/*.elf
 	rm -rf bin
 
 distclean: clean
-	$(MAKE) -C libtcgtpm $@
 
 .PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)
