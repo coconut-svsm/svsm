@@ -11,10 +11,10 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
-C_BIT_UTIL="$SCRIPT_DIR/../utils/cbit"
+C_BIT_UTIL="$SCRIPT_DIR/../bin/cbit"
 if [ ! -x "$C_BIT_UTIL" ]; then
   echo "C-Bit util not found. Trying to build it..."
-  make -C "$SCRIPT_DIR/.." utils/cbit || true
+  make -C "$SCRIPT_DIR/.." bin/cbit || true
 fi
 
 C_BIT_POS=$("$C_BIT_UTIL" || true)

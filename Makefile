@@ -116,7 +116,7 @@ test:
 
 test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 
-test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
+test-in-svsm: bin/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
 	./scripts/test-in-svsm.sh $(TEST_ARGS)
 
 test-in-hyperv: bin/coconut-test-hyperv.igvm
@@ -133,17 +133,17 @@ docsite:
 docsite-serve:
 	mkdocs serve -f Documentation/mkdocs.yml
 
-utils/gen_meta: utils/gen_meta.c
+bin/gen_meta: utils/gen_meta.c bin
 	cc -O3 -Wall -o $@ $<
 
-utils/print-meta: utils/print-meta.c
+bin/print-meta: utils/print-meta.c bin
 	cc -O3 -Wall -o $@ $<
 
-utils/cbit: utils/cbit.c
+bin/cbit: utils/cbit.c bin
 	cc -O3 -Wall -o $@ $<
 
-bin/meta.bin: utils/gen_meta utils/print-meta bin
-	./utils/gen_meta $@
+bin/meta.bin: bin/gen_meta bin/print-meta bin
+	./bin/gen_meta $@
 
 bin/stage2.bin: bin
 	cargo build --package svsm --bin stage2 ${CARGO_ARGS} --target=x86_64-unknown-none
@@ -205,7 +205,6 @@ clippy:
 clean:
 	cargo clean
 	rm -f stage1/*.o stage1/*.bin stage1/*.elf
-	rm -f utils/gen_meta utils/print-meta
 	rm -rf bin
 
 distclean: clean
