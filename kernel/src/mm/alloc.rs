@@ -527,6 +527,7 @@ pub struct MemInfo {
 struct HeapMemoryRegion {
     start_phys: PhysAddr,
     start_virt: VirtAddr,
+    metadata_addr: VirtAddr,
     page_count: usize,
     nr_pages: [usize; MAX_ORDER],
     next_page: [usize; MAX_ORDER],
@@ -548,6 +549,7 @@ impl HeapMemoryRegion {
         Self {
             start_phys: PhysAddr::null(),
             start_virt: VirtAddr::null(),
+            metadata_addr: VirtAddr::null(),
             page_count: 0,
             nr_pages: [0; MAX_ORDER],
             next_page: [NO_PAGE; MAX_ORDER],
@@ -622,7 +624,7 @@ impl HeapMemoryRegion {
         proof! { self.lemma_page_info_ptr(pfn);}
         {
             proof_with!(Tracked(self.perms.borrow().info_ptr_exposed));
-            self.start_virt.as_mut_ptr::<PageStorageType>()
+            self.metadata_addr.as_mut_ptr::<PageStorageType>()
         }
         .wrapping_add(pfn)
     }
@@ -646,7 +648,7 @@ impl HeapMemoryRegion {
         proof! { self.lemma_page_info_ptr(pfn);}
         {
             proof_with!(Tracked(self.perms.borrow().info_ptr_exposed));
-            self.start_virt.as_ptr::<PageStorageType>()
+            self.metadata_addr.as_ptr::<PageStorageType>()
         }
         .wrapping_add(pfn)
     }
@@ -1455,15 +1457,20 @@ impl HeapMemoryRegion {
         let size = size_of::<PageStorageType>();
         let meta_pages = align_up(self.page_count * size, PAGE_SIZE) / PAGE_SIZE;
 
-        /* Mark page storage as reserved */
-        for i in 0..meta_pages {
-            let pg = PageInfo::Reserved(ReservedInfo);
+        /* Calculate the metadata address by reserving the top of the heap for
+         * metadata */
+        let alloc_pages = self.page_count - meta_pages;
+        self.metadata_addr = self.start_virt + (alloc_pages * PAGE_SIZE);
+
+        /* Mark all non-metadata pages as allocated */
+        for i in 0..alloc_pages {
+            let pg = PageInfo::Allocated(AllocatedInfo { order: 0 });
             self.write_page_info(i, pg);
         }
 
-        /* Mark all pages as allocated */
-        for i in meta_pages..self.page_count {
-            let pg = PageInfo::Allocated(AllocatedInfo { order: 0 });
+        /* Mark page storage as reserved */
+        for i in alloc_pages..self.page_count {
+            let pg = PageInfo::Reserved(ReservedInfo);
             self.write_page_info(i, pg);
         }
 
@@ -1472,33 +1479,25 @@ impl HeapMemoryRegion {
          * pages will be freed individually so the correct orders can be
          * generated */
         let alignment = 1 << (MAX_ORDER - 1);
-        let first_aligned_page = align_up(meta_pages, alignment);
-        let last_aligned_page = align_down(self.page_count, alignment);
+        let last_aligned_page = align_down(alloc_pages, alignment);
 
-        if first_aligned_page < last_aligned_page {
-            self.nr_pages[MAX_ORDER - 1] += (last_aligned_page - first_aligned_page) / alignment;
-            for i in (first_aligned_page..last_aligned_page).step_by(alignment) {
+        if last_aligned_page > 0 {
+            self.nr_pages[MAX_ORDER - 1] += last_aligned_page / alignment;
+            for i in (0..last_aligned_page).step_by(alignment) {
                 self.mark_compound_page(i, MAX_ORDER - 1);
                 self.free_page_raw(i, MAX_ORDER - 1);
             }
 
-            if first_aligned_page < self.page_count {
-                self.nr_pages[0] += first_aligned_page - meta_pages;
-                for i in meta_pages..first_aligned_page {
-                    self.free_page_order(i, 0);
-                }
-            }
-
-            if last_aligned_page > meta_pages {
-                self.nr_pages[0] += self.page_count - last_aligned_page;
-                for i in last_aligned_page..self.page_count {
+            if last_aligned_page < alloc_pages {
+                self.nr_pages[0] += alloc_pages - last_aligned_page;
+                for i in last_aligned_page..alloc_pages {
                     self.free_page_order(i, 0);
                 }
             }
         } else {
             // Special case: Memory region size smaller than a MAX_ORDER allocation
-            self.nr_pages[0] = self.page_count - meta_pages;
-            for i in meta_pages..self.page_count {
+            self.nr_pages[0] = alloc_pages;
+            for i in 0..alloc_pages {
                 self.free_page_order(i, 0);
             }
         }
