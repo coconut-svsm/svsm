@@ -4,7 +4,8 @@
 //
 // Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 //
-// This module defines specification functions for MemoryRegion implementations
+// This module defines specification functions for HeapMemoryRegion
+// implementations
 //
 // How the proof works:
 // - Upon entry to the SVSM (Secure Virtual Machine Monitor) kernel, we ensure there exists a set of unique
@@ -58,7 +59,7 @@ include!("alloc_perms.verus.rs");
 //include!("alloc_mr.verus.rs");
 include!("alloc_types.verus.rs");
 
-impl View for MemoryRegion {
+impl View for HeapMemoryRegion {
     type V = MemoryRegionPerms;
 
     closed spec fn view(&self) -> MemoryRegionPerms {
@@ -66,7 +67,7 @@ impl View for MemoryRegion {
     }
 }
 
-impl MemoryRegion {
+impl HeapMemoryRegion {
     spec fn wf_next_pages(&self) -> bool {
         &&& self.wf_perms()
         &&& self.wf_params()
@@ -117,7 +118,7 @@ impl MemoryRegion {
     }
 }
 
-impl MemoryRegion {
+impl HeapMemoryRegion {
     spec fn map(&self) -> LinearMap {
         LinearMap {
             virt_start: self.start_virt,
@@ -131,7 +132,7 @@ impl MemoryRegion {
     }
 }
 
-impl MemoryRegion {
+impl HeapMemoryRegion {
     spec fn writable_page_info(&self, pfn: usize, perm: FracTypedPerm<PageStorageType>) -> bool {
         &&& perm.valid()
         &&& perm.writable()
@@ -753,7 +754,7 @@ macro_rules! lemma_free_page {
             let tracked AllocatedPagesPerm{mut $perm, mr_map} = $inperm;
 
             // Prove the passed pages shares the same mapping and page info,
-            // tracked inside the MemoryRegion.
+            // tracked inside the HeapMemoryRegion.
             $mr.perms.borrow().mr_map.is_same(&mr_map);
             $mr.perms.borrow().info.tracked_is_same_info(&$perm, $pfn);
 
