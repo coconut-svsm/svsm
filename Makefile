@@ -49,8 +49,6 @@ else
 BUILD_FW =
 endif
 
-C_BIT_POS ?= 51
-
 IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm bin/coconut-vanadium.igvm
 IGVMBUILDER = "target/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
