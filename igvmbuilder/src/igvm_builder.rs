@@ -373,13 +373,11 @@ impl IgvmBuilder {
             parameter_area_index: IGVM_MEMORY_MAP_PA,
             initial_data: vec![],
         });
-        if self.gpa_map.madt.get_size() != 0 {
-            self.directives.push(IgvmDirectiveHeader::ParameterArea {
-                number_of_bytes: PAGE_SIZE_4K,
-                parameter_area_index: IGVM_MADT_PA,
-                initial_data: vec![],
-            });
-        }
+        self.directives.push(IgvmDirectiveHeader::ParameterArea {
+            number_of_bytes: PAGE_SIZE_4K,
+            parameter_area_index: IGVM_MADT_PA,
+            initial_data: vec![],
+        });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: PAGE_SIZE_4K,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
@@ -395,13 +393,11 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
                 byte_offset: 4,
             }));
-        if self.gpa_map.madt.get_size() != 0 {
-            self.directives
-                .push(IgvmDirectiveHeader::Madt(IGVM_VHS_PARAMETER {
-                    parameter_area_index: IGVM_MADT_PA,
-                    byte_offset: 0,
-                }));
-        }
+        self.directives
+            .push(IgvmDirectiveHeader::Madt(IGVM_VHS_PARAMETER {
+                parameter_area_index: IGVM_MADT_PA,
+                byte_offset: 0,
+            }));
         self.directives
             .push(IgvmDirectiveHeader::MemoryMap(IGVM_VHS_PARAMETER {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
@@ -414,15 +410,13 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
             },
         ));
-        if self.gpa_map.madt.get_size() != 0 {
-            self.directives.push(IgvmDirectiveHeader::ParameterInsert(
-                IGVM_VHS_PARAMETER_INSERT {
-                    gpa: self.gpa_map.madt.get_start(),
-                    compatibility_mask: COMPATIBILITY_MASK.get(),
-                    parameter_area_index: IGVM_MADT_PA,
-                },
-            ));
-        }
+        self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+            IGVM_VHS_PARAMETER_INSERT {
+                gpa: self.gpa_map.madt.get_start(),
+                compatibility_mask: COMPATIBILITY_MASK.get(),
+                parameter_area_index: IGVM_MADT_PA,
+            },
+        ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self.gpa_map.general_params.get_start(),
