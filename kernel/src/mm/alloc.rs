@@ -1795,6 +1795,14 @@ pub fn free_page(vaddr: VirtAddr) {
     ROOT_MEM.lock().free_page(vaddr)
 }
 
+/// Free multiple pages at the given virtual address.
+pub fn free_multiple_pages(vaddr: VirtAddr, count: usize) {
+    let mut mem = ROOT_MEM.lock();
+    for offset in 0..count {
+        mem.free_page(vaddr + offset * PAGE_SIZE);
+    }
+}
+
 /// Retrieve information about the root memory
 pub fn memory_info() -> MemInfo {
     ROOT_MEM.lock().memory_info()
