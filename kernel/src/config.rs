@@ -57,11 +57,11 @@ fn check_ovmf_regions(
 #[derive(Debug)]
 pub struct SvsmConfig<'a> {
     fw_cfg: Option<FwCfg<'a>>,
-    igvm_params: IgvmParams<'a>,
+    igvm_params: &'a IgvmParams<'a>,
 }
 
 impl<'a> SvsmConfig<'a> {
-    pub fn new(platform: &dyn SvsmPlatform, igvm_params: IgvmParams<'a>) -> SvsmConfig<'a> {
+    pub fn new(platform: &dyn SvsmPlatform, igvm_params: &'a IgvmParams<'a>) -> SvsmConfig<'a> {
         // Create a firmware config object if the IGVM parameter block
         // indicates that firmwrae config services are available on this
         // system.
@@ -78,7 +78,7 @@ impl<'a> SvsmConfig<'a> {
     }
 
     pub fn get_igvm_params(&self) -> &IgvmParams<'_> {
-        &self.igvm_params
+        self.igvm_params
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {

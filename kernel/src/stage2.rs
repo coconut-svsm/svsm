@@ -290,15 +290,6 @@ fn check_launch_info(launch_info: &KernelLaunchInfo) {
     assert!(is_aligned(offset, align));
 }
 
-fn get_svsm_config(
-    launch_info: &Stage2LaunchInfo,
-    platform: &dyn SvsmPlatform,
-) -> Result<SvsmConfig<'static>, SvsmError> {
-    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))?;
-
-    Ok(SvsmConfig::new(platform, igvm_params))
-}
-
 /// Loads a single ELF segment and returns its virtual memory region.
 /// # Safety
 /// The caller is required to supply an appropriate virtual address for this
@@ -491,7 +482,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut platform_cell = SvsmPlatformCell::new(true);
     let platform = platform_cell.platform_mut();
 
-    let config = get_svsm_config(launch_info, platform).expect("Failed to get SVSM configuration");
+    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
+        .expect("Failed to get IGVM parameters");
+    let config = SvsmConfig::new(platform, &igvm_params);
 
     // Set up space for an early IDT.  This will remain in scope as long as
     // stage2 is in memory.
