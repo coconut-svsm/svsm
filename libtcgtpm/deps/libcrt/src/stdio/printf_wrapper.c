@@ -159,7 +159,7 @@ static char *format_base10(char *cur, char *end, int width, bool signed_format, 
 
 int vsnprints(char *str, size_t size, const char *format, va_list ap)
 {
-	unsigned int width;
+	unsigned int width = LEN_MOD_INVALID;
 	char *cur, *end;
 	bool convert;
 
