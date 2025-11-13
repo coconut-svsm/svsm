@@ -20,8 +20,6 @@ struct Args {
     url: String,
 
     /// Backend attestation protocol that the server implements.
-    /// Supported servers include:
-    /// kbs-test: https://github.com/tylerfanelli/kbs-test (for testing).
     #[clap(long = "protocol")]
     backend: backend::Protocol,
 
