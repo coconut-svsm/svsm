@@ -104,6 +104,7 @@ pub struct ApicIcr {
 #[expect(missing_copy_implementations)]
 #[derive(Default, Debug)]
 pub struct LocalApic {
+    icr: ApicIcr,
     irr: [u32; 8],
     allowed_irr: [u32; 8],
     isr_stack_index: usize,
@@ -120,6 +121,7 @@ pub struct LocalApic {
 impl LocalApic {
     pub const fn new() -> Self {
         Self {
+            icr: ApicIcr::new(),
             irr: [0; 8],
             allowed_irr: [0; 8],
             isr_stack_index: 0,
@@ -594,6 +596,7 @@ impl LocalApic {
         self.check_delivered_interrupts(cpu_state, caa_addr);
 
         match register {
+            APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
             APIC_REGISTER_APIC_ID => Ok(u64::from(cpu_shared.apic_id())),
             APIC_REGISTER_IRR_0..=APIC_REGISTER_IRR_7 => {
                 let offset = register - APIC_REGISTER_IRR_0;
@@ -615,8 +618,15 @@ impl LocalApic {
         }
     }
 
+    fn handle_icr_read(&self) -> u64 {
+        let icr: u64 = self.icr.into();
+        icr
+    }
+
     fn handle_icr_write(&mut self, value: u64) -> Result<(), SvsmError> {
         let icr = ApicIcr::from(value);
+
+        self.icr = icr;
 
         let valid_type = matches!(
             icr.message_type(),
