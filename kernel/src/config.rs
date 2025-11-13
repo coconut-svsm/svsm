@@ -86,11 +86,7 @@ impl<'a> SvsmConfig<'a> {
         // Attempt to collect the CPU information from the IGVM parameters.
         // This will fail if the MADT was not supplied via IGVM parameter
         // injection.
-        if let Some(cpu_info) = self.igvm_params.load_cpu_info()? {
-            Ok(cpu_info)
-        } else {
-            Err(SvsmError::Acpi)
-        }
+        self.igvm_params.load_cpu_info()
     }
 
     pub fn should_launch_fw(&self) -> bool {

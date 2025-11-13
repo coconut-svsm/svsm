@@ -270,14 +270,11 @@ impl IgvmParams<'_> {
         Ok(())
     }
 
-    pub fn load_cpu_info(&self) -> Result<Option<Vec<ACPICPUInfo>>, SvsmError> {
-        match self.igvm_madt {
-            Some(madt_data) => {
-                let madt = ACPITable::new(madt_data)?;
-                Ok(Some(load_acpi_cpu_info(&madt)?))
-            }
-            None => Ok(None),
-        }
+    pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+        self.igvm_madt
+            .ok_or(SvsmError::Acpi)
+            .and_then(ACPITable::new)
+            .and_then(|t| load_acpi_cpu_info(&t))
     }
 
     pub fn should_launch_fw(&self) -> bool {
