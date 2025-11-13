@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["make_ro","make_ro_after_init"],"static":["ro_after_init_end","ro_after_init_start"]};
