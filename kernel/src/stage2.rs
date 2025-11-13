@@ -290,12 +290,6 @@ fn check_launch_info(launch_info: &KernelLaunchInfo) {
     assert!(is_aligned(offset, align));
 }
 
-fn get_svsm_config(launch_info: &Stage2LaunchInfo) -> Result<SvsmConfig<'static>, SvsmError> {
-    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))?;
-
-    Ok(SvsmConfig::new(igvm_params))
-}
-
 /// Loads a single ELF segment and returns its virtual memory region.
 /// # Safety
 /// The caller is required to supply an appropriate virtual address for this
@@ -420,7 +414,7 @@ fn load_igvm_params(
     kernel_heap: &mut KernelHeap,
     config: &SvsmConfig<'_>,
     launch_info: &Stage2LaunchInfo,
-) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
+) -> Result<VirtAddr, SvsmError> {
     let params = config.get_igvm_params();
     let params_size = params.size();
 
@@ -438,7 +432,7 @@ fn load_igvm_params(
     let igvm_dst = unsafe { slice::from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), params_size) };
     igvm_dst.copy_from_slice(igvm_src);
 
-    Ok(MemoryRegion::new(vaddr, params_size))
+    Ok(vaddr)
 }
 
 /// Maps any remaining memory between the end of the kernel image and the end
@@ -488,7 +482,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut platform_cell = SvsmPlatformCell::new(true);
     let platform = platform_cell.platform_mut();
 
-    let config = get_svsm_config(launch_info).expect("Failed to get SVSM configuration");
+    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
+        .expect("Failed to get IGVM parameters");
+    let config = SvsmConfig::new(&igvm_params);
 
     // Set up space for an early IDT.  This will remain in scope as long as
     // stage2 is in memory.
@@ -531,7 +527,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     // Load the IGVM params, if present. Update loaded region accordingly.
     // SAFETY: The loaded kernel region was correctly calculated above and
     // is sized appropriately to include a copy of the IGVM parameters.
-    let igvm_vregion = load_igvm_params(&mut kernel_heap, &config, launch_info)
+    let igvm_vaddr = load_igvm_params(&mut kernel_heap, &config, launch_info)
         .expect("Failed to load IGVM params");
 
     // Determine whether use of interrupts on the SVSM should be suppressed.
@@ -560,8 +556,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         cpuid_page: launch_info.cpuid_page as u64,
         secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
-        stage2_igvm_params_size: igvm_vregion.len() as u64,
-        igvm_params_virt_addr: u64::from(igvm_vregion.start()),
+        stage2_igvm_params_size: igvm_params.size() as u64,
+        igvm_params_virt_addr: u64::from(igvm_vaddr),
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
