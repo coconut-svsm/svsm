@@ -482,7 +482,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut platform_cell = SvsmPlatformCell::new(true);
     let platform = platform_cell.platform_mut();
 
-    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64))
+    // SAFETY: the address in the launch info is known to be correct.
+    let igvm_params = unsafe { IgvmParams::new(VirtAddr::from(launch_info.igvm_params as u64)) }
         .expect("Failed to get IGVM parameters");
     let config = SvsmConfig::new(platform, &igvm_params);
 

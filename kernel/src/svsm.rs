@@ -36,7 +36,7 @@ use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
-use svsm::igvm_params::IgvmParams;
+use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -334,7 +334,8 @@ fn svsm_init() {
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
     let launch_info = &*LAUNCH_INFO;
-    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
+    // SAFETY: the address in the launch info is known to be correct.
+    let igvm_params = unsafe { IgvmBox::new(VirtAddr::from(launch_info.igvm_params_virt_addr)) }
         .expect("Invalid IGVM parameters");
     if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
         panic!("Launch VTOM does not match VTOM from IGVM parameters");
