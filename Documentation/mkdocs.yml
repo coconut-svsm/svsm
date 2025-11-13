@@ -16,4 +16,5 @@ nav:
     - Fuzzing: 'developer/FUZZING.md'
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
     - Formal Verification: 'developer/VERIFICATION.md'
+    - Attestation: 'developer/ATTESTATION.md'
   - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'
