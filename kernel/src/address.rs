@@ -189,7 +189,7 @@ pub trait Address: Copy + From<InnerAddr> + Into<InnerAddr> + Ord {
     }
 }
 
-#[verus_verify]
+#[verus_verify(external_derive)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, FromZeros)]
 #[repr(transparent)]
 pub struct PhysAddr(InnerAddr);
