@@ -12,6 +12,7 @@ extern crate alloc;
 use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
+use core::ptr::NonNull;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
@@ -43,7 +44,7 @@ use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page::initialize_secrets_page;
@@ -301,9 +302,16 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
     bsp_percpu.get_top_of_shadow_stack()
 }
 
+/// # Safety
+/// Thus function must only be called from the entry from stage 2, where
+/// the launch info parameter is known to have been allocated from the kernel
+/// heap.
 #[no_mangle]
-extern "C" fn svsm_entry(li: &KernelLaunchInfo, vb_addr: usize) -> ! {
-    let ssp_token = svsm_start(li, vb_addr);
+unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, vb_addr: usize) -> ! {
+    // SAFETY: the launch info pointer is known to be a pointer in the kernel
+    // heap, which can be freed once it is no longer used.
+    let launch_info = unsafe { PageBox::<KernelLaunchInfo>::from_raw(NonNull::new(li).unwrap()) };
+    let ssp_token = svsm_start(launch_info.as_ref(), vb_addr);
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.

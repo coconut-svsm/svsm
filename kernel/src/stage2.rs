@@ -15,6 +15,8 @@ use bootlib::kernel_launch::{
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
+use core::mem;
+use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::slice;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -554,9 +556,14 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         _ => false,
     };
 
+    // Allocate memory in the kernel heap to hold the kernel launch parameters.
+    let (launch_info_vaddr, _) = kernel_heap
+        .allocate(mem::size_of::<KernelLaunchInfo>())
+        .expect("Failed to allocate memory for kernel launch block");
+
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
-    let launch_info = KernelLaunchInfo {
+    let kernel_launch_info = KernelLaunchInfo {
         kernel_region_phys_start: u64::from(kernel_region.start()),
         kernel_region_phys_end: u64::from(kernel_region.end()),
         heap_area_phys_start: u64::from(kernel_heap.phys_base()),
@@ -582,7 +589,16 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         platform_type,
     };
 
-    check_launch_info(&launch_info);
+    check_launch_info(&kernel_launch_info);
+
+    // SAFETY: the virtual address of the allocated block is known to be usable
+    // and is known to be uninitialized data which can be filled with the
+    // computed launch information.
+    unsafe {
+        let kernel_launch_block =
+            &mut *launch_info_vaddr.as_mut_ptr::<MaybeUninit<KernelLaunchInfo>>();
+        kernel_launch_block.write(kernel_launch_info);
+    };
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -609,7 +625,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
-             in("rdi") &launch_info,
+             in("rdi") u64::from(launch_info_vaddr),
              in("rsi") valid_bitmap.bits(),
              options(att_syntax))
     };
