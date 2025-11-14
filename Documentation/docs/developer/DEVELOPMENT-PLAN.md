@@ -476,3 +476,8 @@ This is related to fuzzing, but targeted at a fully running COCONUT-SVSM
 instead of individual parts of the code. Stress tests need to be implemented to
 find any kind of issues in the kernel and user-mode code, especially race
 conditions, lock inversions, and so on.
+
+### Improve Formal Verification
+
+Add formal verification using the Verus checker to more parts of the code base
+to get broader coverage.
