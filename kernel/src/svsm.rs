@@ -328,7 +328,7 @@ pub fn svsm_main(cpu_index: usize) {
         panic!("Launch VTOM does not match VTOM from IGVM parameters");
     }
 
-    let config = SvsmConfig::new(*SVSM_PLATFORM, igvm_params);
+    let config = SvsmConfig::new(igvm_params);
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 

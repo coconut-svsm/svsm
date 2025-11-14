@@ -6,12 +6,11 @@
 
 extern crate alloc;
 
-use crate::acpi::tables::{load_fw_cpu_info, ACPICPUInfo};
+use crate::acpi::tables::ACPICPUInfo;
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
-use crate::fw_cfg::FwCfg;
 use crate::igvm_params::IgvmParams;
-use crate::platform::{SevFWMetaData, SvsmPlatform};
+use crate::platform::SevFWMetaData;
 use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
@@ -56,25 +55,12 @@ fn check_ovmf_regions(
 
 #[derive(Debug)]
 pub struct SvsmConfig<'a> {
-    fw_cfg: Option<FwCfg<'a>>,
     igvm_params: IgvmParams<'a>,
 }
 
 impl<'a> SvsmConfig<'a> {
-    pub fn new(platform: &dyn SvsmPlatform, igvm_params: IgvmParams<'a>) -> SvsmConfig<'a> {
-        // Create a firmware config object if the IGVM parameter block
-        // indicates that firmwrae config services are available on this
-        // system.
-        let fw_cfg = if igvm_params.has_fw_cfg_port() {
-            let io_port = platform.get_io_port();
-            Some(FwCfg::new(io_port))
-        } else {
-            None
-        };
-        Self {
-            igvm_params,
-            fw_cfg,
-        }
+    pub fn new(igvm_params: IgvmParams<'a>) -> SvsmConfig<'a> {
+        Self { igvm_params }
     }
 
     pub fn get_igvm_params(&self) -> &IgvmParams<'_> {
@@ -98,14 +84,9 @@ impl<'a> SvsmConfig<'a> {
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
         // Attempt to collect the CPU information from the IGVM parameters.
-        // This may fail if the MADT was not supplied via IGVM parameter
-        // injection.  In this case, fall back to firmware config.  This will
-        // panic if firmware config services are unavailable.
-        if let Some(cpu_info) = self.igvm_params.load_cpu_info()? {
-            Ok(cpu_info)
-        } else {
-            load_fw_cpu_info(self.fw_cfg.as_ref().unwrap())
-        }
+        // This will fail if the MADT was not supplied via IGVM parameter
+        // injection.
+        self.igvm_params.load_cpu_info()
     }
 
     pub fn should_launch_fw(&self) -> bool {
