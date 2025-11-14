@@ -20,7 +20,6 @@ pub mod address;
 pub mod attest;
 #[cfg(feature = "block")]
 pub mod block;
-pub mod config;
 pub mod console;
 pub mod cpu;
 pub mod crypto;

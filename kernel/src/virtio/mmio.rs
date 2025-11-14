@@ -10,15 +10,13 @@ use core::ptr::NonNull;
 
 use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 
-use crate::{
-    address::PhysAddr,
-    config::SvsmConfig,
-    fw_cfg::FwCfg,
-    mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags},
-    platform::SVSM_PLATFORM,
-    types::PAGE_SIZE,
-    virtio::hal::{SvsmHal, virtio_init},
-};
+use crate::address::PhysAddr;
+use crate::fw_cfg::FwCfg;
+use crate::igvm_params::IgvmParams;
+use crate::mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags};
+use crate::platform::SVSM_PLATFORM;
+use crate::types::PAGE_SIZE;
+use crate::virtio::hal::{SvsmHal, virtio_init};
 
 #[derive(Debug)]
 pub struct MmioSlot {
@@ -48,10 +46,10 @@ pub struct MmioSlots {
 /// Returns an [`MmioSlots`] collection containing all discovered virtio-MMIO devices.
 /// Returns an empty collection if no devices are found or if the fw_cfg interface
 /// is unavailable.
-pub fn probe_mmio_slots(config: &SvsmConfig<'_>) -> MmioSlots {
+pub fn probe_mmio_slots(igvm_params: &IgvmParams<'_>) -> MmioSlots {
     // Virtio MMIO addresses are discovered via fw_cfg, so skip probing
     // if it is not present.
-    if !config.has_fw_cfg_port() {
+    if !igvm_params.has_fw_cfg_port() {
         return MmioSlots::default();
     }
 
