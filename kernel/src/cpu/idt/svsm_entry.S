@@ -134,7 +134,7 @@ asm_entry_hv:
 	leaq	switch_vmpl_cancel(%rip), %rbx
 	movq	%rbx, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	// Update RIP on the shadow stack to the cancel point.
-	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+	cmpb	$0, {IS_CET_ENABLED}(%rip)
 	je	2f
 	rdsspq	%rax
 	wrssq	%rbx, 8(%rax)
@@ -181,7 +181,7 @@ hv_not_vmpl_switch:
 	movq	%rcx, %rsp
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
-	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+	cmpb	$0, {IS_CET_ENABLED}(%rip)
 	je	2f
 	movl	$3, %eax
 	incsspq	%rax
@@ -237,7 +237,7 @@ restart_hv:
 	leaq	-4*8(%rcx), %rsp
 	// Pop the current stack frame, so that the previous stack frame sits
 	// on top of the shadow stack.
-	cmpb	$0, {IS_CET_SUPPORTED}(%rip)
+	cmpb	$0, {IS_CET_ENABLED}(%rip)
 	je	2f
 	movl	$3, %eax
 	incsspq	%rax

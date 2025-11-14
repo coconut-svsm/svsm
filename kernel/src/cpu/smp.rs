@@ -12,7 +12,7 @@ use crate::cpu::ipi::ipi_start_cpu;
 use crate::cpu::percpu::{
     cpu_idle_loop, this_cpu, this_cpu_shared, PerCpu, PerCpuShared, PERCPU_AREAS,
 };
-use crate::cpu::shadow_stack::{is_cet_ss_supported, SCetFlags, MODE_64BIT, S_CET};
+use crate::cpu::shadow_stack::{is_cet_ss_enabled, SCetFlags, MODE_64BIT, S_CET};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
@@ -169,8 +169,9 @@ pub fn create_ap_start_context(
 extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
 
-    if is_cet_ss_supported() {
-        enable_shadow_stacks!(percpu);
+    if is_cet_ss_enabled() {
+        let ssp_token = percpu.get_top_of_shadow_stack().unwrap();
+        enable_shadow_stacks!(ssp_token);
     }
 
     percpu
