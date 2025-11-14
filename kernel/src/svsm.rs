@@ -17,7 +17,6 @@ use core::ptr::NonNull;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
-use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::dump_cpuid_table;
@@ -40,6 +39,8 @@ use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmBox;
+#[cfg(feature = "virtio-drivers")]
+use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
@@ -219,12 +220,12 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns Ok if initialization is successful or no virtio devices are found
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
-fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+fn initialize_virtio_mmio(_igvm_params: &IgvmParams<'_>) -> Result<(), SvsmError> {
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
 
-        let mut slots = probe_mmio_slots(_config);
+        let mut slots = probe_mmio_slots(_igvm_params);
         initialize_block(&mut slots)?;
     }
 
@@ -443,16 +444,16 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         panic!("Launch VTOM does not match VTOM from IGVM parameters");
     }
 
-    let config = SvsmConfig::new(&igvm_params);
-
-    init_memory_map(&config, launch_info).expect("Failed to init guest memory map");
+    init_memory_map(&igvm_params, launch_info).expect("Failed to init guest memory map");
 
     populate_ram_fs(launch_info.kernel_fs_start, launch_info.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
     init_capabilities();
 
-    let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
+    let cpus = igvm_params
+        .load_cpu_info()
+        .expect("Failed to load ACPI tables");
 
     // Create a transition page table for use during CPU startup.
     let transition_page_table =
@@ -466,12 +467,12 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     let kernel_region = new_kernel_region(launch_info);
-    let early_boot_regions = enumerate_early_boot_regions(&config, launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(&igvm_params, launch_info);
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, &early_boot_regions)
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &igvm_params, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");
 
-    if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, kernel_region) {
+    if let Err(e) = SVSM_PLATFORM.prepare_fw(&igvm_params, kernel_region) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
@@ -490,18 +491,18 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio(&config).expect("Failed to initialize virtio-mmio drivers");
+    initialize_virtio_mmio(&igvm_params).expect("Failed to initialize virtio-mmio drivers");
 
-    if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
+    if let Err(e) = SVSM_PLATFORM.launch_fw(&igvm_params) {
         panic!("Failed to launch FW: {e:?}");
     }
 
     #[cfg(test)]
     {
-        if config.has_qemu_testdev() {
+        if igvm_params.has_qemu_testdev() {
             crate::testutils::set_has_qemu_testdev();
         }
-        if config.has_test_iorequests() {
+        if igvm_params.has_test_iorequests() {
             crate::testutils::set_has_test_iorequests();
         }
         let _ = start_kernel_task(
