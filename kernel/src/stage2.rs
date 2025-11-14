@@ -36,9 +36,6 @@ use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
-use svsm::mm::validate::{
-    init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
-};
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
 use svsm::platform;
 use svsm::platform::{
@@ -287,7 +284,7 @@ unsafe fn map_and_validate(
     unsafe {
         platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
     }
-    valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
+
     Ok(())
 }
 
@@ -520,8 +517,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     log::info!("SVSM memory region: {kernel_region:#018x}");
 
-    init_valid_bitmap_alloc(kernel_region).expect("Failed to allocate valid-bitmap");
-
     // The physical memory region we've loaded so far
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
@@ -613,8 +608,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         loaded_kernel_vregion.start()
     );
 
-    let valid_bitmap = valid_bitmap_addr();
-
     log::info!("Starting SVSM kernel...");
 
     // SAFETY: the addreses used to invoke the kernel have been calculated
@@ -626,7 +619,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("rdi") u64::from(launch_info_vaddr),
-             in("rsi") valid_bitmap.bits(),
              options(att_syntax))
     };
 

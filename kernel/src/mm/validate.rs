@@ -10,9 +10,7 @@ use crate::locking::SpinLock;
 use crate::mm::{virt_to_phys, PageBox};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
-use core::mem::MaybeUninit;
 use core::num::NonZeroUsize;
-use core::ptr::NonNull;
 
 static VALID_BITMAP: SpinLock<Option<ValidBitmap>> = SpinLock::new(None);
 
@@ -26,34 +24,18 @@ fn bitmap_elems(region: MemoryRegion<PhysAddr>) -> NonZeroUsize {
     .unwrap()
 }
 
-/// # Safety
-///
-/// The caller must ensure that the given bitmap pointer is valid.
-pub unsafe fn init_valid_bitmap_ptr(region: MemoryRegion<PhysAddr>, raw: NonNull<u64>) {
-    let len = bitmap_elems(region);
-    let ptr = NonNull::slice_from_raw_parts(raw, len.get());
-    // SAFETY: Valid bitmap pointers are allocated via
-    // init_valid_bitmap_alloc(), which uses a PageBox for allocation. So
-    // converting the pointer back to PageBox is safe.
-    let bitmap = unsafe { PageBox::from_raw(ptr) };
-    *VALID_BITMAP.lock() = Some(ValidBitmap::new(region, bitmap));
-}
-
-pub fn init_valid_bitmap_alloc(region: MemoryRegion<PhysAddr>) -> Result<(), SvsmError> {
+pub fn init_valid_bitmap(
+    region: MemoryRegion<PhysAddr>,
+    initial_state: bool,
+) -> Result<(), SvsmError> {
     let len = bitmap_elems(region);
     let bitmap = PageBox::try_new_slice(0u64, len)?;
-    *VALID_BITMAP.lock() = Some(ValidBitmap::new(region, bitmap));
+    let mut valid_bitmap = ValidBitmap::new(region, bitmap);
+    if initial_state {
+        valid_bitmap.set_valid_range(region.start(), region.end());
+    }
+    *VALID_BITMAP.lock() = Some(valid_bitmap);
 
-    Ok(())
-}
-
-pub fn migrate_valid_bitmap() -> Result<(), SvsmError> {
-    let region = VALID_BITMAP.lock().as_ref().unwrap().region;
-    let len = bitmap_elems(region);
-    let bitmap = PageBox::try_new_uninit_slice(len)?;
-
-    // lock again here because allocator path also takes VALID_BITMAP.lock()
-    VALID_BITMAP.lock().as_mut().unwrap().migrate(bitmap);
     Ok(())
 }
 
@@ -139,17 +121,6 @@ impl ValidBitmap {
         let bit = page_offset % 64;
 
         (index, bit)
-    }
-
-    fn migrate(&mut self, mut new: PageBox<[MaybeUninit<u64>]>) {
-        for (dst, src) in new
-            .iter_mut()
-            .zip(self.bitmap.iter().copied().chain(core::iter::repeat(0)))
-        {
-            dst.write(src);
-        }
-        // SAFETY: we initialized the contents of the whole slice
-        self.bitmap = unsafe { new.assume_init_slice() };
     }
 
     fn set_valid_4k(&mut self, paddr: PhysAddr) {
