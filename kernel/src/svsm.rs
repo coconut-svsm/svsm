@@ -43,6 +43,7 @@ use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
+use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
@@ -56,8 +57,6 @@ use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion, ScopedRef};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
-
-use svsm::mm::validate::{init_valid_bitmap_ptr, migrate_valid_bitmap};
 
 use alloc::string::String;
 use release::COCONUT_VERSION;
@@ -77,7 +76,6 @@ extern "C" {
  * startup_64.
  *
  * %rdi  Pointer to the KernelLaunchInfo structure
- * %rsi  Pointer to the valid-bitmap from stage2
  */
 global_asm!(
     r#"
@@ -175,18 +173,13 @@ fn init_cpuid_table(addr: VirtAddr) {
 /// # Safety
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
-unsafe fn svsm_start(li: *const KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
+unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     // SAFETY: the caller guarantees the correctness of the launch info
     // pointer.
     let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(launch_info.platform_type);
 
-    let vb_ptr = core::ptr::NonNull::new(VirtAddr::new(vb_addr).as_mut_ptr::<u64>()).unwrap();
-
     mapping_info_init(&launch_info);
-
-    // SAFETY: we trust the previous stage to pass a valid pointer
-    unsafe { init_valid_bitmap_ptr(new_kernel_region(&launch_info), vb_ptr) };
 
     GLOBAL_GDT.load_selectors();
 
@@ -228,8 +221,12 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo, vb_addr: usize) -> Option<Virt
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
-    memory_init(&launch_info);
-    migrate_valid_bitmap().expect("Failed to migrate valid-bitmap");
+    memory_init(launch_info.as_ref());
+
+    // Initialize the valid bitmap as all valid, since stage2 guarantees that
+    // all memory in the kernel region is validated prior to kernel entry.
+    init_valid_bitmap(new_kernel_region(&launch_info), true)
+        .expect("Failed to allocate valid-bitmap");
 
     let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
         - launch_info.kernel_elf_stage2_virt_start) as usize;
@@ -311,10 +308,10 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo, vb_addr: usize) -> Option<Virt
 /// the launch info parameter is known to have been allocated from the kernel
 /// heap.
 #[no_mangle]
-unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, vb_addr: usize) -> ! {
+unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
     // SAFETY: the caller ensures that the launch info pointer is a valid
     // pointer.
-    let ssp_token = unsafe { svsm_start(li, vb_addr) };
+    let ssp_token = unsafe { svsm_start(li) };
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.
