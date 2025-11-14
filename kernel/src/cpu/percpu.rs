@@ -949,6 +949,15 @@ impl PerCpu {
         self.shared().guest_vmsa.lock()
     }
 
+    pub fn reset_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
+        // Enable alternate injection if the hypervisor supports it.
+        let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
+
+        init_guest_vmsa(vmsa, self.reset_ip.get(), use_alternate_injection);
+
+        Ok(())
+    }
+
     pub fn alloc_guest_vmsa(&self) -> Result<(), SvsmError> {
         // Enable alternate injection if the hypervisor supports it.
         let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
@@ -1366,6 +1375,20 @@ impl PerCpuVmsas {
         }
 
         Ok(guard.swap_remove(index))
+    }
+
+    pub fn empty(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
+        let mut guard = self.vmsas.lock_write();
+        let vmsas = guard.iter();
+        for vmsa in vmsas {
+            if vmsa.paddr != paddr {
+                let target_cpu = PERCPU_AREAS.get_by_cpu_index(vmsa.cpu_index);
+                target_cpu.clear_guest_vmsa_if_match(paddr);
+            }
+        }
+
+        guard.retain(|&vmsa| vmsa.paddr == paddr);
+        Ok(())
     }
 }
 

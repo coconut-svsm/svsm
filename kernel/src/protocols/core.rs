@@ -15,8 +15,10 @@ use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
+use crate::protocols::reboot::{REBOOT_PROTOCOL_VERSION_MAX, REBOOT_PROTOCOL_VERSION_MIN};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
+    SVSM_REBOOT_PROTOCOL,
 };
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
@@ -25,7 +27,7 @@ use crate::sev::utils::{
 };
 use crate::sev::vmsa::VMSAControl;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::zero_mem_region;
+use crate::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region};
 use cpuarch::vmsa::VMSA;
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
@@ -36,9 +38,10 @@ const SVSM_REQ_CORE_DEPOSIT_MEM: u32 = 4;
 const SVSM_REQ_CORE_WITHDRAW_MEM: u32 = 5;
 const SVSM_REQ_CORE_QUERY_PROTOCOL: u32 = 6;
 const SVSM_REQ_CORE_CONFIGURE_VTOM: u32 = 7;
+const SVSM_REQ_CORE_REBOOT: u32 = 8;
 
 pub const CORE_PROTOCOL_VERSION_MIN: u32 = 1;
-pub const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
+pub const CORE_PROTOCOL_VERSION_MAX: u32 = 2;
 
 // This lock prevents races around PVALIDATE and CREATE_VCPU
 //
@@ -249,6 +252,11 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             ATTEST_PROTOCOL_VERSION_MIN,
             ATTEST_PROTOCOL_VERSION_MAX,
         ),
+        SVSM_REBOOT_PROTOCOL => protocol_supported(
+            version,
+            REBOOT_PROTOCOL_VERSION_MIN,
+            REBOOT_PROTOCOL_VERSION_MAX,
+        ),
         _ => 0,
     };
 
@@ -268,6 +276,25 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
         Err(SvsmReqError::invalid_request())
     }
 }
+
+use rlebits::RleBits;
+/// Bitmap tracking which guest physical pages are validated
+///
+/// Each bit represents a 4K page. A set bit means the page is valid.
+/// The bitmap covers the entire guest physical address space.
+///
+/// The bitmap is initialized with all bits cleared, meaning all pages
+/// are invalid.
+///
+/// The bitmap is protected by a lock, so it can be safely accessed
+/// from multiple CPUs.
+static GUEST_VALID: ImmutAfterInitCell<RWLock<RleBits>> = ImmutAfterInitCell::uninit();
+
+// This lock prevents races around PVALIDATE updates to the
+// GUEST_VALID bitmap. I wish I could initialize GUEST_VALID
+// statically, but because it contains a dynamic data element,
+// we can't.
+static BITMAP_LOCK: RWLock<()> = RWLock::new(());
 
 fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
     let (page_size_bytes, valign, huge) = match entry & 3 {
@@ -295,9 +322,26 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
 
     let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
     let vaddr = guard.virt_addr();
+    let page_index = paddr.bits() >> 12; // 4K pages
 
     // Take lock to prevent races with CREATE_VCPU calls
     let lock = PVALIDATE_LOCK.lock_read();
+    // Take the map_lock to prevent races with other PVALIDATE calls
+    let map_lock = BITMAP_LOCK.lock_write();
+    match GUEST_VALID.try_get_inner() {
+        Err(_) => {
+            let lock = RWLock::new(RleBits::new(1_usize << 52, 199));
+            let _ = GUEST_VALID.init(lock);
+        }
+        Ok(_) => { /* already initialized */ }
+    };
+
+    // Update bitmap...
+    let page_state = GUEST_VALID.lock_read().get(page_index).unwrap();
+    GUEST_VALID
+        .lock_write()
+        .set(page_index, valid == PvalidateOp::Valid)
+        .map_err(|_| SvsmReqError::FatalError(SvsmError::Fault))?;
 
     if valid == PvalidateOp::Invalid {
         *flush |= true;
@@ -308,11 +352,24 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     // cannot affect memory safety.
     unsafe {
         pvalidate(vaddr, huge, valid).or_else(|err| match err {
-            SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) if ign_cf => Ok(()),
-            _ => Err(err),
+            SvsmError::SevSnp(SevSnpError::FAIL_UNCHANGED(_)) => {
+                if ign_cf {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            }
+            _ => {
+                GUEST_VALID
+                    .lock_write()
+                    .set(page_index, page_state)
+                    .expect("Failed to restore GUEST_VALID page state after PVALIDATE error");
+                Err(err)
+            }
         })?;
     }
 
+    drop(map_lock);
     drop(lock);
 
     if valid == PvalidateOp::Valid {
@@ -457,6 +514,58 @@ fn core_remap_ca(params: &RequestParams) -> Result<(), SvsmReqError> {
     Ok(())
 }
 
+pub fn invalidate_guest_pages() {
+    let _ = invalidate_pages(&mut GUEST_VALID.lock_write());
+}
+
+fn invalidate_pages(page_map: &mut RleBits) -> Result<(), SvsmReqError> {
+    let runs = page_map.sanity_check();
+    let mut start = 0;
+    for i in 0..runs {
+        let run_len = page_map.get_run_length(i);
+        if i % 2 == 1 {
+            // Valid run, invalidate pages
+            for page in start..(start + run_len) {
+                let paddr = PhysAddr::from(page << 12); // 4K pages
+                let guard =
+                    PerCPUPageMappingGuard::create(paddr, paddr + PAGE_SIZE, VIRT_ALIGN_4K)?;
+                let vaddr = guard.virt_addr();
+
+                // Take lock to prevent races with CREATE_VCPU calls
+                let lock = PVALIDATE_LOCK.lock_read();
+
+                // rmp_revoke_guest_access(vaddr, PageSize::Regular)?;
+
+                let e;
+                // SAFETY: the physical address was guaranteed to be a guest address and
+                // cannot affect memory safety.
+                unsafe {
+                    e = pvalidate(vaddr, PageSize::Regular, PvalidateOp::Invalid);
+                }
+                drop(lock);
+
+                if let Err(err) = e {
+                    log::error!("Failed to invalidate guest page {:#x}: {:#?}", paddr, err);
+                }
+            }
+        }
+        start += run_len;
+    }
+
+    // Clear page list
+    page_map.reset();
+
+    flush_tlb_global_sync();
+
+    Ok(())
+}
+
+fn core_reboot(_params: &RequestParams) -> Result<(), SvsmReqError> {
+    invalidate_guest_pages();
+    crate::platform::SVSM_PLATFORM.relaunch_fw()?;
+    Ok(())
+}
+
 pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result<(), SvsmReqError> {
     match request {
         SVSM_REQ_CORE_REMAP_CA => core_remap_ca(params),
@@ -467,6 +576,7 @@ pub fn core_protocol_request(request: u32, params: &mut RequestParams) -> Result
         SVSM_REQ_CORE_WITHDRAW_MEM => core_withdraw_mem(params),
         SVSM_REQ_CORE_QUERY_PROTOCOL => core_query_protocol(params),
         SVSM_REQ_CORE_CONFIGURE_VTOM => core_configure_vtom(params),
+        SVSM_REQ_CORE_REBOOT => core_reboot(params),
         _ => Err(SvsmReqError::unsupported_call()),
     }
 }
