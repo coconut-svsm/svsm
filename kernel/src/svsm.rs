@@ -78,6 +78,7 @@ extern "C" {
  * %rdi  Pointer to the KernelLaunchInfo structure
  * %rsi  Kernel stack pointer
  * %rdx  Kernel stack limit
+ * %rcx  Kernel page tables
  */
 global_asm!(
     r#"
@@ -104,6 +105,9 @@ global_asm!(
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
+
+        /* Switch to the kernel page tables */
+        movq %rcx, %cr3
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
