@@ -343,9 +343,8 @@ fn load_kernel_elf(
             let Some(reloc) = reloc? else {
                 continue;
             };
-            // TODO: ensure that the ELF package rejects illegal relocations
-            // the point outside the image.
-            // SAFETY: the relocation address is known to be correct.
+            // SAFETY: the relocation address is known to be correct. The ELF loader rejects
+            // relocations that point outside a PT_LOAD segment.
             let dst = unsafe { slice::from_raw_parts_mut(reloc.dst as *mut u8, reloc.value_len) };
             let src = &reloc.value[..reloc.value_len];
             dst.copy_from_slice(src)
