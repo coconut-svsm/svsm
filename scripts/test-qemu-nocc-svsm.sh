@@ -4,7 +4,7 @@
 # Copyright (c) 2025 Red Hat, Inc.
 #
 # Author: Oliver Steffen <osteffen@redhat.com>
-set -ue
+set -u
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
