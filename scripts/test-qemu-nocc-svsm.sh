@@ -21,7 +21,7 @@ exec 3>&1
 echo "================================================================================"
 timeout $TIMEOUT \
   grep -q -m 1 "$SUCCESS" \
-  <("$SCRIPT_DIR/test-in-svsm.sh" --nocc | tee /proc/self/fd/3)
+  <("$SCRIPT_DIR/test-in-svsm.sh" --nocc </dev/null 2>&1 | tee /proc/self/fd/3)
 RES=$?
 echo "================================================================================"
 
