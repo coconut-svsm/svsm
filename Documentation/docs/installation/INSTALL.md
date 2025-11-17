@@ -381,13 +381,6 @@ script from the root of the repository:
 scripts/launch_guest.sh
 ```
 
-The script makes use of the `cbit` utility to determine the correct value for
-the `cbitpos` QEMU parameter. This needs to be built with the following command:
-
-```shell
-make utils/cbit
-```
-
 The path to QEMU can also be specified either by setting the `QEMU` variable, or
 by passing the path as a parameter:
 
