@@ -6,6 +6,7 @@
 
 pub mod api;
 pub mod error;
+pub mod stream;
 #[cfg(feature = "virtio-drivers")]
 pub mod virtio_vsock;
 
