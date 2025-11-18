@@ -99,7 +99,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
 1. Clone and run the `kbs-test` server used for testing. Supply two arguments
    on the command line:
 
-   `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
+    * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
 
     ```shell
     # SVSM=<path to your Coconut SVSM directory>
@@ -109,7 +109,6 @@ SEV-SNP machine with an SVSM-enabled kernel.
     HEX_EXPECTED_MEASUREMENT="$(echo $MEASUREMENT | xxd -p)"
     cargo run -- --measurement $HEX_EXPECTED_MEASUREMENT
     ```
-
     This will run the `kbs-test` server at <http://0.0.0.0:8080>.
 
 2. Clone and build SVSM
@@ -124,38 +123,36 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
 3. Run the proxy on the host
 
-   ```shell
-   cd svsm
-   make aproxy
-   bin/aproxy --protocol kbs-test \ 
-              --url http://0.0.0.0:8080 \
-              --unix /tmp/svsm-proxy.sock \
-              --force
-   ```
+    ```shell
+    cd svsm
+    make aproxy
+    bin/aproxy --protocol kbs-test \
+               --url http://0.0.0.0:8080 \
+               --unix /tmp/svsm-proxy.sock \
+               --force
+    ```
+    This runs the proxy with the following specified in the arguments:
 
-   This runs the proxy with the following specified in the arguments:
-
-   - `--url http://0.0.0.0:8080`: The attestation server is running at
-     `http://0.0.0.0:8080`.
-   - `--protocol kbs-test`: The attestation server communicates via the KBS
-     protocol, configure the backend to use the KBS protocol.
-   - `--unix /tmp/svsm-proxy.sock`: Listen for messages from SVSM on a socket
-     created in file `/tmp/svsm-proxy-sock`.
-   - `--force`: Remove the `/tmp/svsm-proxy.sock` file (if it already exists)
-     before creating the socket.
+     * `--url http://0.0.0.0:8080`: The attestation server is running at
+       `http://0.0.0.0:8080`.
+     * `--protocol kbs-test`: The attestation server communicates via the KBS
+       protocol, configure the backend to use the KBS protocol.
+     * `--unix /tmp/svsm-proxy.sock`: Listen for messages from SVSM on a socket
+       created in file `/tmp/svsm-proxy-sock`.
+     * `--force`: Remove the `/tmp/svsm-proxy.sock` file (if it already exists)
+       before creating the socket.
 
 4. Run a guest with SVSM
 
-   Initially, SVSM communicates over the COM3 serial port. The attestation proxy
-   socket will need to be available in the correct `-serial` argument position to
-   ensure it communicates with the right socket.
+    Initially, SVSM communicates over the COM3 serial port. The attestation proxy
+    socket will need to be available in the correct `-serial` argument position to
+    ensure it communicates with the right socket.
 
-   ```shell
-   ./scripts/launch_guest.sh --qemu $QEMU \
-                             --image $QCOW2 \
-                             --aproxy /tmp/svsm-proxy.sock
+    ```shell
+    ./scripts/launch_guest.sh --qemu $QEMU \
+                              --image $QCOW2 \
+                              --aproxy /tmp/svsm-proxy.sock
     ```
-
     If successful, you should be able to find a message indicating a successful
     attestation within the SVSM boot logs.
 
