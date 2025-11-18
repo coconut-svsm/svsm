@@ -372,13 +372,15 @@ mod tests {
         current_ghcb().fill(GHCB_FILL_TEST_VALUE);
     }
 
-    fn verify_ghcb_was_altered() {
+    /// Returns `true` if the GHCB was altered since the last time it was filled
+    /// with test data.
+    fn verify_ghcb_was_altered() -> bool {
         let ghcb = current_ghcb();
         let ptr: *const GHCB = core::ptr::from_ref(ghcb);
         let ghcb_bytes =
             // SAFETY: The pointer points to a GHCB.
             unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
-        assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
+        ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE)
     }
 
     // Calls `f` with an assertion that it ended up altering the ghcb.
@@ -388,7 +390,7 @@ mod tests {
     {
         fill_ghcb_with_test_data();
         let result = f();
-        verify_ghcb_was_altered();
+        assert!(verify_ghcb_was_altered());
         result
     }
 
