@@ -113,12 +113,10 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
 2. Clone and build SVSM
 
-    ```text
-    $ git clone https://github.com/coconut-svsm/svsm.git
-    
-    ... build OVMF, qemu, SVSM IGVM, etc...
-    
-    $ FW_FILE=... make FEATURES=attest
+    ```shell
+    git clone https://github.com/coconut-svsm/svsm.git
+    # ... build OVMF, qemu, SVSM IGVM, etc...
+    FW_FILE=... make FEATURES=attest
     ```
 
 3. Run the proxy on the host
