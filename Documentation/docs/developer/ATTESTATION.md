@@ -96,8 +96,8 @@ To try for yourself, we provide a test KBS server that requires no configuration
 and simply indicates if attestation was successful or not. This requires a
 SEV-SNP machine with an SVSM-enabled kernel.
 
-1. Clone and run the `kbs-test` server used for testing. Supply two arguments
-   on the command line:
+1. Clone and run the `kbs-test` server used for testing. Supply the following
+   argument on the command line:
 
     * `--measurement`: hex-encoded expected launch measurement (64 bytes in size).
 
