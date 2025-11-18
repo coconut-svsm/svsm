@@ -132,7 +132,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
         (SVM_EXIT_IOIO, Some(ins)) => early_handle_ioio(ctx, ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -172,7 +172,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         (SVM_EXIT_IOIO, Some(_)) => handle_ioio(ctx, &insn_ctx.unwrap()),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -329,6 +329,7 @@ fn vc_decoding_needed(error_code: usize) -> bool {
 mod tests {
     use super::*;
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
+    use crate::locking::SpinLock;
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
     use bootlib::platform::SvsmPlatformType;
@@ -372,13 +373,15 @@ mod tests {
         current_ghcb().fill(GHCB_FILL_TEST_VALUE);
     }
 
-    fn verify_ghcb_was_altered() {
+    /// Returns `true` if the GHCB was altered since the last time it was filled
+    /// with test data.
+    fn verify_ghcb_was_altered() -> bool {
         let ghcb = current_ghcb();
         let ptr: *const GHCB = core::ptr::from_ref(ghcb);
         let ghcb_bytes =
             // SAFETY: The pointer points to a GHCB.
             unsafe { core::slice::from_raw_parts(ptr.cast::<u8>(), core::mem::size_of::<GHCB>()) };
-        assert!(ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE));
+        ghcb_bytes.iter().any(|v| *v != GHCB_FILL_TEST_VALUE)
     }
 
     // Calls `f` with an assertion that it ended up altering the ghcb.
@@ -388,7 +391,7 @@ mod tests {
     {
         fill_ghcb_with_test_data();
         let result = f();
-        verify_ghcb_was_altered();
+        assert!(verify_ghcb_was_altered());
         result
     }
 
@@ -661,10 +664,31 @@ mod tests {
 
     const MSR_TSC_AUX: u32 = 0xc0000103;
 
+    /// Check if TSC_AUX is intercepted and cache the result.
+    ///
+    /// This avoids checking if the GHCB is modified on MSR access if it does
+    /// not make sense. This can happen if the MSR is not intercepted by the
+    /// hypervisor (for example if TSC_AUX virtualization is enabled), since it
+    /// will not generate a #VC (and thus our handler will not fill the GHCB to
+    /// issue a VMGEXIT).
+    fn tsc_aux_intercepted() -> bool {
+        static TSC_AUX_INTERCEPTED: SpinLock<Option<bool>> = SpinLock::new(None);
+
+        // Read cached value or initialize it by probing the MSR
+        *TSC_AUX_INTERCEPTED.lock().get_or_insert_with(|| {
+            fill_ghcb_with_test_data();
+            let _ = read_msr(MSR_TSC_AUX);
+            verify_ghcb_was_altered()
+        })
+    }
+
     #[test]
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
-        if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
+        if has_qemu_testdev()
+            && is_test_platform_type(SvsmPlatformType::Snp)
+            && tsc_aux_intercepted()
+        {
             let test_val = 0x1234;
             verify_ghcb_gets_altered(||
                 // SAFETY: writing to TSC_AUX MSR doesn't break memory safety.
@@ -732,8 +756,12 @@ mod tests {
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_rdtscp() {
         if is_test_platform_type(SvsmPlatformType::Snp) {
-            let expected_pid = u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
-                .expect("pid should be 32 bits");
+            let expected_pid = if tsc_aux_intercepted() {
+                u32::try_from(verify_ghcb_gets_altered(|| read_msr(MSR_TSC_AUX)))
+            } else {
+                u32::try_from(read_msr(MSR_TSC_AUX))
+            }
+            .expect("pid should be 32 bits");
             let RdtscpOut {
                 timestamp: mut prev,
                 pid,
