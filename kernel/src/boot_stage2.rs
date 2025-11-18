@@ -356,5 +356,6 @@ global_asm!(
         bsp_stack:
         .globl bsp_stack_end
         bsp_stack_end:
+        .quad 0
         "#
 );

@@ -66,8 +66,8 @@ use release::COCONUT_VERSION;
 use kbs_types::Tee;
 
 extern "C" {
-    static bsp_stack: u8;
-    static bsp_stack_end: u8;
+    static bsp_stack: u64;
+    static bsp_stack_end: u64;
 }
 
 /*
@@ -77,6 +77,8 @@ extern "C" {
  * startup_64.
  *
  * %rdi  Pointer to the KernelLaunchInfo structure
+ * %rsi  Kernel stack pointer
+ * %rdx  Kernel stack limit
  */
 global_asm!(
     r#"
@@ -89,13 +91,17 @@ global_asm!(
         /*
          * Setup stack.
          *
-         * bsp_stack is always mapped across all page tables because it
-         * uses the shared PML4E, making it accessible after switching to
-         * the first task's page table.
+         * The initial stack is always mapped across all page tables because it
+         * uses the shared PML4E, making it accessible after switching to the
+         * first task's page table.
          *
          * See switch_to() for details.
          */
-        leaq bsp_stack_end(%rip), %rsp
+        movq %rsi, %rsp
+        leaq bsp_stack_end(%rip), %rsi
+        movq %rsp, (%rsi)
+        leaq bsp_stack(%rip), %rsi
+        movq %rdx, (%rsi)
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
@@ -112,9 +118,10 @@ global_asm!(
         .align {PAGE_SIZE}
         .globl bsp_stack
     bsp_stack:
-        .fill 8*{PAGE_SIZE}, 1, 0
+        .quad 0
         .globl bsp_stack_end
     bsp_stack_end:
+        .quad 0
         "#,
     PAGE_SIZE = const PAGE_SIZE,
     options(att_syntax)
@@ -263,10 +270,14 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
         .expect("Failed to run percpu.setup_on_cpu()");
     bsp_percpu.load();
     // Now the stack unwinder can be used
-    bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
-        VirtAddr::from(&raw const bsp_stack),
-        VirtAddr::from(&raw const bsp_stack_end),
-    ));
+    // SAFETY: the stack addresses were initialized during kernel entry and
+    // are known to be correct at this point.
+    unsafe {
+        bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
+            VirtAddr::from(bsp_stack),
+            VirtAddr::from(bsp_stack_end),
+        ));
+    }
 
     idt_init().expect("Failed to allocate IDT");
 

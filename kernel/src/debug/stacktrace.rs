@@ -17,6 +17,11 @@ use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
 use core::{arch::asm, mem};
 
+extern "C" {
+    static bsp_stack: u64;
+    static bsp_stack_end: u64;
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct StackFrame {
     rbp: VirtAddr,
@@ -42,13 +47,9 @@ struct StackUnwinder {
     stacks: StacksBounds,
 }
 
-extern "C" {
-    static bsp_stack: u8;
-    static bsp_stack_end: u8;
-}
-
 fn is_stage2() -> bool {
-    // If the default BSP stack lands under 16MB, we're in Stage2.
+    // If the storage for the default BSP stack pointers lands under 16MB,
+    // we're in Stage2.
     (&raw const bsp_stack_end as usize) < (16 << 20)
 }
 
@@ -85,10 +86,14 @@ impl StackUnwinder {
                 let no_stack = MemoryRegion::new(VirtAddr::null(), 0);
                 [bsp_init_stack, no_stack, no_stack]
             } else {
-                let bsp_init_stack = MemoryRegion::from_addresses(
-                    VirtAddr::from(&raw const bsp_stack),
-                    VirtAddr::from(&raw const bsp_stack_end),
-                );
+                // SAFETY: the stack addresses are initialied early and can
+                // safely be used here.
+                let bsp_init_stack = unsafe {
+                    MemoryRegion::from_addresses(
+                        VirtAddr::from(bsp_stack),
+                        VirtAddr::from(bsp_stack_end),
+                    )
+                };
                 let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
                 let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
                 [bsp_init_stack, cs_stack, df_stack]

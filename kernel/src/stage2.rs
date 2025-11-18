@@ -36,7 +36,10 @@ use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
+use svsm::mm::{
+    init_kernel_mapping_info, FixedAddressMappingRange, STACK_GUARD_SIZE, STACK_SIZE,
+    SVSM_PERCPU_BASE,
+};
 use svsm::platform;
 use svsm::platform::{
     init_platform_type, PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform,
@@ -446,13 +449,12 @@ fn load_igvm_params(
 fn prepare_heap(
     kernel_region: MemoryRegion<PhysAddr>,
     loaded_kernel_pregion: MemoryRegion<PhysAddr>,
-    loaded_kernel_vregion: MemoryRegion<VirtAddr>,
+    heap_base_vaddr: VirtAddr,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
     // Heap starts after kernel
     let heap_pstart = loaded_kernel_pregion.end();
-    let heap_vstart = loaded_kernel_vregion.end();
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
@@ -462,7 +464,7 @@ fn prepare_heap(
         .expect("Insufficient physical space for kernel image")
         .into();
     let heap_pregion = MemoryRegion::new(heap_pstart, heap_size);
-    let heap_vregion = MemoryRegion::new(heap_vstart, heap_size);
+    let heap_vregion = MemoryRegion::new(heap_base_vaddr, heap_size);
 
     // SAFETY: the virtual address range was computed so it is within the valid
     // region and does not collide with the kernel.
@@ -470,7 +472,7 @@ fn prepare_heap(
         map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
     }
 
-    Ok(KernelHeap::create(heap_vstart, heap_pregion))
+    Ok(KernelHeap::create(heap_base_vaddr, heap_pregion))
 }
 
 #[no_mangle]
@@ -517,15 +519,26 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
+    // Define the heap base address as the end of the kernel ELF plus a
+    // guard area for a stack.
+    let heap_base_vaddr = loaded_kernel_vregion.end() + STACK_GUARD_SIZE;
+
     // Create the page heap used in the kernel region.
     let mut kernel_heap = prepare_heap(
         kernel_region,
         loaded_kernel_pregion,
-        loaded_kernel_vregion,
+        heap_base_vaddr,
         platform,
         &config,
     )
     .expect("Could not create kernel heap");
+
+    // Allocate pages for an initial stack to be used in the kernel
+    // environment.
+    let (initial_stack_base, _) = kernel_heap
+        .allocate(STACK_SIZE)
+        .expect("Failed to allocate initial kernel stack");
+    let initial_stack = initial_stack_base + STACK_SIZE;
 
     // Load the IGVM params, if present. Update loaded region accordingly.
     // SAFETY: The loaded kernel region was correctly calculated above and
@@ -609,6 +622,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("rdi") u64::from(launch_info_vaddr),
+             in("rsi") u64::from(initial_stack),
+             in("rdx") u64::from(initial_stack_base),
              options(att_syntax))
     };
 
