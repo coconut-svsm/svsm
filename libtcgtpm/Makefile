@@ -6,14 +6,33 @@ OPENSSL_CONFIG_TYPE = --debug
 TCGTPM_CFLAGS = -g -O0 -DDEBUG=YES
 endif
 
-DEPS_DIR = $(CURDIR)/deps
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+DEPS_DIR := $(ROOT_DIR)/deps
+OUT_DIR ?= $(ROOT_DIR)
+# Ensure OUT_DIR is an absolute path because we use it to build include paths
+# used by different projects
+override OUT_DIR := $(abspath $(OUT_DIR))
 
-LIBCRT_DIR = $(DEPS_DIR)/libcrt
-OPENSSL_DIR = $(DEPS_DIR)/openssl
-TCGTPM_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
+# Include CARGO_MAKEFLAGS for jobserver coordination if available
+# Otherwise use -j with NUM_JOBS
+ifneq ($(CARGO_MAKEFLAGS),)
+MAKEFLAGS += $(CARGO_MAKEFLAGS)
+else
+# Use NUM_JOBS from Cargo build script environment, fallback to nproc
+NUM_JOBS ?= $(shell nproc)
+MAKEFLAGS += -j$(NUM_JOBS)
+endif
 
-LIBCRT = $(LIBCRT_DIR)/libcrt.a
-LIBCRYPTO = $(OPENSSL_DIR)/libcrypto.a
+LIBCRT_SRC_DIR = $(DEPS_DIR)/libcrt
+OPENSSL_SRC_DIR = $(DEPS_DIR)/openssl
+TCGTPM_SRC_DIR = $(DEPS_DIR)/tpm-20-ref/TPMCmd
+
+LIBCRT_BUILD_DIR = $(OUT_DIR)/libcrt-build
+OPENSSL_BUILD_DIR = $(OUT_DIR)/openssl-build
+TCGTPM_BUILD_DIR = $(OUT_DIR)/tcgtpm-build
+
+LIBCRT = $(LIBCRT_BUILD_DIR)/libcrt.a
+LIBCRYPTO = $(OPENSSL_BUILD_DIR)/libcrypto.a
 
 LIBTPM_TARGET = Tpm_CoreLib
 LIBTPM = $(TCGTPM_BUILD_DIR)/tpm/src/lib$(LIBTPM_TARGET).a
@@ -27,13 +46,10 @@ LIBTPMBIGNUM = $(TCGTPM_BUILD_DIR)/tpm/cryptolibs/TpmBigNum/lib$(LIBTPMBIGNUM_TA
 LIBBNMATH_TARGET = Tpm_CryptoLib_Math_Ossl
 LIBBNMATH = $(TCGTPM_BUILD_DIR)/cryptolib_Ossl/lib$(LIBBNMATH_TARGET).a
 
-OPENSSL_MAKEFILE = $(OPENSSL_DIR)/Makefile
-TCGTPM_BUILD_DIR = $(TCGTPM_DIR)/build
+OPENSSL_MAKEFILE = $(OPENSSL_BUILD_DIR)/Makefile
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
 LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-ROOT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
-OUT_DIR ?= $(ROOT_DIR)
 
 # Avoid running jobs of this Makefile in parallel to avoid possible conflicts
 # when building the TPM libraries, which use the same Makefile and subdirectory.
@@ -50,15 +66,17 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 
 # libcrt
 $(LIBCRT):
-	$(MAKE) -j$$(nproc) -C $(LIBCRT_DIR)
+	mkdir -p $(LIBCRT_BUILD_DIR)
+	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
-	$(MAKE) -C $(OPENSSL_DIR) -j$$(nproc)
+	$(MAKE) -C $(OPENSSL_BUILD_DIR)
 
 $(OPENSSL_MAKEFILE):
-	(cd $(OPENSSL_DIR) && \
-		./Configure \
+	mkdir -p $(OPENSSL_BUILD_DIR)
+	(cd $(OPENSSL_BUILD_DIR) && \
+		$(OPENSSL_SRC_DIR)/Configure \
 			--config=$(DEPS_DIR)/openssl_svsm.conf \
 			--api=1.1.1 \
 			SVSM \
@@ -154,26 +172,27 @@ $(OPENSSL_MAKEFILE):
 			no-whirlpool \
 			--with-rand-seed=getrandom \
 			$(OPENSSL_CONFIG_TYPE) \
-			-I$(LIBCRT_DIR)/include \
-			-Wl,rpath=$(LIBCRT_DIR) -lcrt)
+			-I$(LIBCRT_SRC_DIR)/include \
+			-Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt)
 
 # tcgtpm
 $(LIBBNMATH): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBBNMATH_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBBNMATH_TARGET)
 
 $(LIBTPMBIGNUM): $(TCGTPM_MAKEFILE) $(LIBBNMATH)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPMBIGNUM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBTPMBIGNUM_TARGET)
 
 $(LIBTPM): $(TCGTPM_MAKEFILE) $(LIBTPMBIGNUM)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBTPM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBTPM_TARGET)
 
 $(LIBPLATFORM): $(TCGTPM_MAKEFILE) $(LIBCRYPTO)
-	$(MAKE) -j$$(nproc) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
+	$(MAKE) -C $(TCGTPM_BUILD_DIR) $(LIBPLATFORM_TARGET)
 
 TCGTPM_CFLAGS += -static -nostdinc -fno-stack-protector -fPIE -mno-sse -mno-red-zone
 TCGTPM_CFLAGS += -DFILE_BACKED_NV=NO
-TCGTPM_CFLAGS += -I$(LIBCRT_DIR)/include
-TCGTPM_CFLAGS += -I$(OPENSSL_DIR)/include
+TCGTPM_CFLAGS += -I$(LIBCRT_SRC_DIR)/include
+TCGTPM_CFLAGS += -I$(OPENSSL_BUILD_DIR)/include
+TCGTPM_CFLAGS += -I$(OPENSSL_SRC_DIR)/include
 
 $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 	mkdir -p $(TCGTPM_BUILD_DIR)
@@ -182,18 +201,19 @@ $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 			-DCMAKE_SYSTEM_NAME=Generic	\
 			-DCMAKE_C_FLAGS="${TCGTPM_CFLAGS}" \
 			-DOPENSSL_CRYPTO_LIBRARY="$(LIBCRYPTO)" \
-			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_DIR)/include" \
+			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_BUILD_DIR)/include" \
 			-Duser_TpmConfiguration_Dir="$(DEPS_DIR)/TpmConfiguration" \
-			..)
+			$(TCGTPM_SRC_DIR))
 
-clean: $(OPENSSL_MAKEFILE) $(TCGTPM_MAKEFILE)
-	make -C $(LIBCRT_DIR) clean
-	make -C $(OPENSSL_DIR) clean
-	make -C $(TCGTPM_BUILD_DIR) clean
-	rm -f libtcgtpm.a
+clean:
+	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) clean
+	[ ! -f $(OPENSSL_MAKEFILE) ] || $(MAKE) -C $(OPENSSL_BUILD_DIR) clean
+	[ ! -f $(TCGTPM_MAKEFILE) ] || $(MAKE) -C $(TCGTPM_BUILD_DIR) clean
+	rm -f $(OUT_DIR)/libtcgtpm.a
 
 distclean: clean
-	rm -f $(OPENSSL_MAKEFILE)
+	rm -rf $(LIBCRT_BUILD_DIR)
+	rm -rf $(OPENSSL_BUILD_DIR)
 	rm -rf $(TCGTPM_BUILD_DIR)
 
 .PHONY: all clean distclean
