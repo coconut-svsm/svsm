@@ -132,7 +132,7 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
         (SVM_EXIT_IOIO, Some(ins)) => early_handle_ioio(ctx, ghcb, ins),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -172,7 +172,7 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         (SVM_EXIT_IOIO, Some(_)) => handle_ioio(ctx, &insn_ctx.unwrap()),
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
-        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtsc)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
