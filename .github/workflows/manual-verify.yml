@@ -1,0 +1,33 @@
+name: Verification
+
+# Only run this workflow when manually triggered
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Verification Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Install verus toolchains
+        run: ./scripts/vinstall.sh
+
+      - name: Format spec/proof code
+        run: |
+          verusfmt --check `find ./ -name *.verus.rs` --verus-only
+
+      - name: Verify svsm with verus
+        run: cargo verify
+        working-directory: kernel
+
+      - name: Verify extra proof libs with verus
+        run: cargo verify
+        working-directory: verify_proof
