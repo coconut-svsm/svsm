@@ -1,6 +1,8 @@
 site_name: COCONUT-SVSM
 theme:
   name: material
+  features:
+    - content.code.copy
 
 markdown_extensions:
   - pymdownx.highlight:
