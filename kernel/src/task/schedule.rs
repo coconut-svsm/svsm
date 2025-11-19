@@ -399,19 +399,23 @@ pub fn go_idle() {
 }
 
 pub fn set_affinity(cpu_index: usize) {
-    // Mark the current task as blocked so it is not scheduled again.
-    let task = this_cpu().current_task();
-    task.set_task_blocked();
+    // Affinity signaling is only required if the target CPU is not the current
+    // CPU.
+    if cpu_index != this_cpu().get_cpu_index() {
+        // Mark the current task as blocked so it is not scheduled again.
+        let task = this_cpu().current_task();
+        task.set_task_blocked();
 
-    // Mark this task as the task pending an affinity change.
-    let mut runqueue = this_cpu().runqueue().lock_write();
-    assert!(runqueue.set_affinity.is_none());
-    runqueue.set_affinity = Some((task, cpu_index));
-    drop(runqueue);
+        // Mark this task as the task pending an affinity change.
+        let mut runqueue = this_cpu().runqueue().lock_write();
+        assert!(runqueue.set_affinity.is_none());
+        runqueue.set_affinity = Some((task, cpu_index));
+        drop(runqueue);
 
-    // Find another task to run.  The scheduler will complete the affinity
-    // change once a new task has been selected on this processor.
-    schedule();
+        // Find another task to run.  The scheduler will complete the affinity
+        // change once a new task has been selected on this processor.
+        schedule();
+    }
 }
 
 // SAFETY: This function returns a raw pointer to a task. It is safe
