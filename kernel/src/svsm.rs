@@ -33,7 +33,7 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
-use svsm::fs::{initialize_fs, opendir, populate_ram_fs};
+use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
@@ -45,11 +45,10 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::request_loop_main;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::schedule_init;
-use svsm::task::{exec_user, start_kernel_task, KernelThreadStartInfo};
+use svsm::task::{start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -377,24 +376,39 @@ pub fn svsm_main(cpu_index: usize) {
         if config.has_test_iorequests() {
             crate::testutils::set_has_test_iorequests();
         }
-        crate::test_main();
+        let _ = start_kernel_task(
+            KernelThreadStartInfo::new(test_in_svsm_task, 0),
+            String::from("SVSM test task"),
+        );
     }
 
-    match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
-        Ok(_) => (),
-        Err(e) => log::info!("Failed to launch /init: {e:?}"),
-    }
+    #[cfg(not(test))]
+    {
+        use svsm::fs::opendir;
+        use svsm::requests::request_loop_main;
+        use svsm::task::exec_user;
 
-    // Start request processing on this CPU if required.
-    if SVSM_PLATFORM.start_svsm_request_loop() {
-        start_kernel_task(
-            KernelThreadStartInfo::new(request_loop_main, 0),
-            String::from("request-loop on CPU 0"),
-        )
-        .expect("Failed to launch request loop task");
+        match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
+            Ok(_) => (),
+            Err(e) => log::info!("Failed to launch /init: {e:?}"),
+        }
+
+        // Start request processing on this CPU if required.
+        if SVSM_PLATFORM.start_svsm_request_loop() {
+            start_kernel_task(
+                KernelThreadStartInfo::new(request_loop_main, 0),
+                String::from("request-loop on CPU 0"),
+            )
+            .expect("Failed to launch request loop task");
+        }
     }
 
     cpu_idle_loop(cpu_index);
+}
+
+#[cfg(test)]
+fn test_in_svsm_task(_context: usize) {
+    crate::test_main();
 }
 
 #[panic_handler]
