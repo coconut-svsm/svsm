@@ -69,9 +69,9 @@ All Verus-related annotations, specifications, and proofs are ignored.
 
 - [x] Set up verification as an experimental development.
 - [ ] Verify SVSM kernel protocol (similar to [VeriSMo](https://github.com/microsoft/verismo))
-  - [ ] Allocator
-  - [ ] Page table
-  - [ ] Protocol
+    - [ ] Allocator
+    - [ ] Page table
+    - [ ] Protocol
 - [ ] Verifying other security-critical components.
 
 ## Verification Development
