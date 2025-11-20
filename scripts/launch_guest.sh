@@ -24,6 +24,7 @@ COM3_SERIAL="-serial null"  # used by hyper-v
 COM4_SERIAL="-serial null"  # used by in-SVSM tests
 QEMU_EXIT_DEVICE=""
 QEMU_TEST_IO_DEVICE=""
+QEMU_NETDEV="-netdev user,id=vmnic -device e1000,netdev=vmnic,romfile="
 CGS=sev
 CPU=EPYC-v4
 ACCEL=kvm
@@ -75,6 +76,10 @@ while [[ $# -gt 0 ]]; do
     --aproxy)
       COM3_SERIAL="-serial unix:$2"
       shift
+      shift
+      ;;
+    --no-netdev)
+      QEMU_NETDEV=""
       shift
       ;;
     --)
@@ -178,7 +183,7 @@ $SUDO_CMD \
     $SNP_GUEST \
     -smp 4 \
     -no-reboot \
-    -netdev user,id=vmnic -device e1000,netdev=vmnic,romfile= \
+    $QEMU_NETDEV \
     $IMAGE_DISK \
     -nographic \
     -vga none \
