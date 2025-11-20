@@ -15,7 +15,7 @@ members = [
     # TPM 2.0 Reference Implementation library
     "lib/libtcgtpm",
     # syscall interface definitions
-    "syscall",
+    "lib/syscall",
     # PackIt library and command line utility
     "packit",
     # verification libraries for svsm
@@ -46,12 +46,12 @@ bootlib = { path = "lib/bootlib" }
 cpuarch = { path = "lib/cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
-elf = { path = "elf" }
+elf = { path = "lib/elf" }
 verus_stub = { path = "verus_stub" }
 verus_macro_stub = { path = "verus_macro_stub" }
 libtcgtpm = { path = "lib/libtcgtpm" }
 libaproxy = { path = "lib/libaproxy" }
-syscall = { path = "syscall" }
+syscall = { path = "lib/syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
