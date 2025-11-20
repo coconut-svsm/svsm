@@ -55,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       LAUNCH_GUEST_ARGS+="--nocc "
       shift
       ;;
+    --)
+      shift
+      break
+      ;;
     *)
       echo "Invalid parameter $1"
       exit 1
@@ -66,7 +70,7 @@ done
 $SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
     --state "$TEST_DIR/svsm_state.raw" \
     --unit-tests $TEST_DIR/pipe \
-    $LAUNCH_GUEST_ARGS || svsm_exit_code=$?
+    $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
 
 # SVSM writes 0x10 to the QEMU exit port when all tests passed.
 # This results in QEMU returning 0x21 ((0x10 << 1) | 1)
