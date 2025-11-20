@@ -11,13 +11,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
-C_BIT_UTIL="$SCRIPT_DIR/../utils/cbit"
-if [ ! -x "$C_BIT_UTIL" ]; then
-  echo "C-Bit util not found. Trying to build it..."
-  make -C "$SCRIPT_DIR/.." utils/cbit || true
-fi
-
-C_BIT_POS=$("$C_BIT_UTIL" || true)
+C_BIT_POS=$(cargo run --package cbit || true)
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v

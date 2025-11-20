@@ -116,7 +116,7 @@ test:
 
 test-igvm: bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 
-test-in-svsm: utils/cbit bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
+test-in-svsm: bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
 	./scripts/test-in-svsm.sh $(TEST_ARGS)
 
 test-in-hyperv: bin/coconut-test-hyperv.igvm
@@ -137,9 +137,6 @@ utils/gen_meta: utils/gen_meta.c
 	cc -O3 -Wall -o $@ $<
 
 utils/print-meta: utils/print-meta.c
-	cc -O3 -Wall -o $@ $<
-
-utils/cbit: utils/cbit.c
 	cc -O3 -Wall -o $@ $<
 
 bin/meta.bin: utils/gen_meta utils/print-meta bin

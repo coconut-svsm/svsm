@@ -1,0 +1,10 @@
+[package]
+name = "cbit"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bitfield-struct.workspace = true
+
+[lints]
+workspace = true
