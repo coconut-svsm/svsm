@@ -374,7 +374,7 @@ impl IgvmBuilder {
             initial_data: vec![],
         });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: PAGE_SIZE_4K,
+            number_of_bytes: self.gpa_map.madt.get_size(),
             parameter_area_index: IGVM_MADT_PA,
             initial_data: vec![],
         });
