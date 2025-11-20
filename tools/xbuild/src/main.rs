@@ -388,7 +388,7 @@ fn check_root_path() -> BuildResult<()> {
     };
 
     let xbuild = PathBuf::from(root).canonicalize()?;
-    let svsm = xbuild.parent().unwrap();
+    let svsm = xbuild.parent().and_then(Path::parent).unwrap();
     let current = std::env::current_dir()?.canonicalize()?;
     if current != svsm {
         return Err("xbuild must be run from the root of the SVSM repository".into());

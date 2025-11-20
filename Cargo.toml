@@ -4,7 +4,7 @@ members = [
     # repo tooling
     "tools/igvmbuilder",
     "tools/igvmmeasure",
-    "xbuild",
+    "tools/xbuild",
     # binary targets
     "stage1",
     "kernel",
