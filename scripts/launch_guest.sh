@@ -23,6 +23,7 @@ CGS=sev
 CPU=EPYC-v4
 ACCEL=kvm
 IGVM_OBJ=""
+SNAPSHOT="on"
 
 STATE_DEVICE=""
 STATE_ENABLE=""
@@ -74,6 +75,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-netdev)
       QEMU_NETDEV=""
+      shift
+      ;;
+    --snapshot)
+      SNAPSHOT=$2
+      shift
       shift
       ;;
     --)
@@ -134,7 +140,7 @@ fi
 
 # Setup a disk if an image has been specified
 if [ ! -z $IMAGE ]; then
-  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=on \
+  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=$SNAPSHOT \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
     -device scsi-hd,drive=disk0"
 fi
