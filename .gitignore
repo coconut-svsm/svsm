@@ -1,16 +1,21 @@
-*.swp
-*~
-*.igvm
-verus*.log
+# build artifacts
 /bin/
 /target/
-gen_meta
-stage1/stage1
-stage1/stage1-test
+
+# release files
 release/src/git_version.rs
-print-meta
-.idea/
+
+# signing test keys for IGVM
+# See `scripts/gen_igvm_signing_keys.sh` and `scripts/test_sign_qemu_igvm.sh`
 testkeys/
+
+# IDE/editors tmp files
+*.swp
+*~
+.idea/
+
+# verification logs
+verus*.log
 
 # local fuzzing artifacts
 **/fuzz/target
