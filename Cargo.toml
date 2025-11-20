@@ -28,7 +28,7 @@ members = [
     # Release version identifier
     "release",
     # Virtio Drivers (MMIO)
-    "virtio-drivers",
+    "lib/virtio-drivers",
     # crate for verification stubs
     "verus_stub",
     # Library defining common types between SVSM and attestation proxy
@@ -56,7 +56,7 @@ packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
-virtio-drivers = { path = "virtio-drivers" }
+virtio-drivers = { path = "lib/virtio-drivers" }
 
 # crates.io
 aes = "0.8.4"
