@@ -19,8 +19,8 @@ members = [
     # PackIt library and command line utility
     "packit",
     # verification libraries for svsm
-    "verify_proof",
-    "verify_external",
+    "lib/verify_proof",
+    "lib/verify_external",
     # User-space support library
     "user/lib",
     # Init user-space module
@@ -30,7 +30,7 @@ members = [
     # Virtio Drivers (MMIO)
     "lib/virtio-drivers",
     # crate for verification stubs
-    "verus_stub",
+    "lib/verus_stub",
     # Library defining common types between SVSM and attestation proxy
     "lib/libaproxy",
     # Attestation proxy
@@ -47,8 +47,8 @@ cpuarch = { path = "lib/cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
 elf = { path = "lib/elf" }
-verus_stub = { path = "verus_stub" }
-verus_macro_stub = { path = "verus_macro_stub" }
+verus_stub = { path = "lib/verus_stub" }
+verus_macro_stub = { path = "lib/verus_macro_stub" }
 libtcgtpm = { path = "lib/libtcgtpm" }
 libaproxy = { path = "lib/libaproxy" }
 syscall = { path = "lib/syscall" }
@@ -92,8 +92,8 @@ state_machines_macros = { git = "https://github.com/verus-lang/verus", rev ="42e
 vstd = { git = "https://github.com/verus-lang/verus", rev ="42e0507", features = ["alloc", "allow_panic"], default-features = false }
 
 # Verification libs
-verify_proof = { path = "verify_proof", default-features = false  }
-verify_external = { path = "verify_external", default-features = false  }
+verify_proof = { path = "lib/verify_proof", default-features = false  }
+verify_external = { path = "lib/verify_external", default-features = false  }
 
 [profile.release]
 panic = 'abort'
