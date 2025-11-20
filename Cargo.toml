@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     # repo tooling
     "tools/igvmbuilder",
-    "igvmmeasure",
+    "tools/igvmmeasure",
     "xbuild",
     # binary targets
     "stage1",
