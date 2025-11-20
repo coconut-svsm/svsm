@@ -11,7 +11,7 @@ members = [
     # fuzzing
     "fuzz",
     # ELF loader
-    "elf",
+    "lib/elf",
     # TPM 2.0 Reference Implementation library
     "lib/libtcgtpm",
     # syscall interface definitions
