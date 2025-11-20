@@ -39,7 +39,7 @@ use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
-use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
+use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
@@ -54,7 +54,7 @@ use svsm::svsm_paging::{
 };
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion, ScopedRef};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, round_to_pages, MemoryRegion, ScopedRef};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -342,6 +342,16 @@ unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
     unreachable!("SVSM entry point terminated unexpectedly");
 }
 
+fn free_init_bsp_stack() {
+    // SAFETY: the stack base and limit addresses were initialized when the
+    // kernel was first started.
+    let (stack_base, stack_end) =
+        unsafe { (VirtAddr::from(bsp_stack), VirtAddr::from(bsp_stack_end)) };
+
+    let stack_pages = round_to_pages(stack_end - stack_base);
+    free_multiple_pages(stack_base, stack_pages);
+}
+
 fn svsm_init(launch_info: &KernelLaunchInfo) {
     // If required, the GDB stub can be started earlier, just after the console
     // is initialised in svsm_start() above.
@@ -349,6 +359,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
+
+    // Free the BSP stack that was allocated for early initialization.
+    free_init_bsp_stack();
 
     SVSM_PLATFORM
         .env_setup_svsm()
