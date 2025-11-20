@@ -131,10 +131,10 @@ docsite:
 docsite-serve:
 	mkdocs serve -f Documentation/mkdocs.yml
 
-bin/gen_meta: utils/gen_meta.c bin
+bin/gen_meta: tools/gen_meta.c bin
 	cc -O3 -Wall -o $@ $<
 
-bin/print-meta: utils/print-meta.c bin
+bin/print-meta: tools/print-meta.c bin
 	cc -O3 -Wall -o $@ $<
 
 bin/meta.bin: bin/gen_meta bin/print-meta bin
