@@ -1,8 +1,8 @@
 [submodule "libtcgtpm/deps/openssl"]
-	path = libtcgtpm/deps/openssl
+	path = lib/libtcgtpm/deps/openssl
 	url = https://github.com/openssl/openssl.git
 [submodule "libtcgtpm/deps/tpm-20-ref"]
-	path = libtcgtpm/deps/tpm-20-ref
+	path = lib/libtcgtpm/deps/tpm-20-ref
 	url = https://github.com/TrustedComputingGroup/TPM.git
 [submodule "packit"]
 	path = packit

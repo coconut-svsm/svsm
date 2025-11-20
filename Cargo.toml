@@ -13,7 +13,7 @@ members = [
     # ELF loader
     "elf",
     # TPM 2.0 Reference Implementation library
-    "libtcgtpm",
+    "lib/libtcgtpm",
     # syscall interface definitions
     "syscall",
     # PackIt library and command line utility
@@ -49,7 +49,7 @@ svsm = { path = "kernel" }
 elf = { path = "elf" }
 verus_stub = { path = "verus_stub" }
 verus_macro_stub = { path = "verus_macro_stub" }
-libtcgtpm = { path = "libtcgtpm" }
+libtcgtpm = { path = "lib/libtcgtpm" }
 libaproxy = { path = "libaproxy" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
