@@ -32,7 +32,7 @@ members = [
     # crate for verification stubs
     "verus_stub",
     # Library defining common types between SVSM and attestation proxy
-    "libaproxy",
+    "lib/libaproxy",
     # Attestation proxy
     "tools/aproxy",
     # Utility to get the C-bit location in a PTE
@@ -50,7 +50,7 @@ elf = { path = "elf" }
 verus_stub = { path = "verus_stub" }
 verus_macro_stub = { path = "verus_macro_stub" }
 libtcgtpm = { path = "lib/libtcgtpm" }
-libaproxy = { path = "libaproxy" }
+libaproxy = { path = "lib/libaproxy" }
 syscall = { path = "syscall" }
 packit = { path = "packit" }
 userlib = { path = "user/lib" }
