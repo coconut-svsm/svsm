@@ -42,8 +42,8 @@ use svsm::platform::{
     init_platform_type, PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform,
     SvsmPlatformCell,
 };
-use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{is_aligned, round_to_pages, MemoryRegion};
+use svsm::types::{PageSize, PAGE_SIZE};
+use svsm::utils::{round_to_pages, MemoryRegion};
 
 use release::COCONUT_VERSION;
 
@@ -286,14 +286,6 @@ unsafe fn map_and_validate(
     }
 
     Ok(())
-}
-
-#[inline]
-fn check_launch_info(launch_info: &KernelLaunchInfo) {
-    let offset: u64 = launch_info.heap_area_virt_start - launch_info.heap_area_phys_start;
-    let align: u64 = PAGE_SIZE_2M.try_into().unwrap();
-
-    assert!(is_aligned(offset, align));
 }
 
 /// Loads a single ELF segment and returns its virtual memory region.
@@ -583,8 +575,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         suppress_svsm_interrupts,
         platform_type,
     };
-
-    check_launch_info(&kernel_launch_info);
 
     // SAFETY: the virtual address of the allocated block is known to be usable
     // and is known to be uninitialized data which can be filled with the
