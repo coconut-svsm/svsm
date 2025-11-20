@@ -34,7 +34,7 @@ members = [
     # Library defining common types between SVSM and attestation proxy
     "libaproxy",
     # Attestation proxy
-    "aproxy",
+    "tools/aproxy",
     # Utility to get the C-bit location in a PTE
     "tools/cbit",
 ]
