@@ -8,7 +8,7 @@ To execute verification, ensure you have set up the necessary tools to run
 
 Run the following commands to install Verus tools.
 
-```
+```shell
 cd svsm
 ./scripts/vinstall.sh
 ```
@@ -26,7 +26,7 @@ cd svsm
 
 ### Build svsm with verification
 
-```
+```shell
 cd svsm/kernel
 cargo verify
 ```
@@ -46,19 +46,19 @@ You can specify extra arguments using the environmental variable
 
 * Compiles a crate without verifying svsm crate using verus compilation:
 
-    ```
+    ```shell
     svsm_lib_VERUS_ARGS="--no-verify" cargo verify
     ```
 
 * Compiles a crate while only verifying address module in svsm crate:
 
-    ```
+    ```shell
     svsm_lib_VERUS_ARGS="--verify-module address --verify-function VirtAddr::new" cargo verify
     ```
 
 ### Build without verification
 
-```
+```shell
 cd svsm/kernel
 cargo build
 ```
@@ -78,7 +78,6 @@ All Verus-related annotations, specifications, and proofs are ignored.
 
 To enable verification, developers need to add annotations in executable Rust
 and to write specification and proofs in ghost mode.
-
 
 ### Development Guidelines
 
@@ -103,11 +102,12 @@ and to write specification and proofs in ghost mode.
   `#[verus_verify(rlimit=x)]`
 
 ### Annotation in Executable Rust
-* #[verus_verify]: Indicates the item is Verus-aware.
-* #[verus_verify(external_body)]: Indicates the item is Verus-aware, but marks the function body as uninterpreted by the verifier.
-* #[verus_verify(external)]: Instructs Verus to ignore the item. By default, items are treated as #[verus_verify(external)].
-* #[verus_spec($specificaton)]: Specifies pre/postconditions for executable codes.
-  $specificaton is in format of
+
+* `#[verus_verify]`: Indicates the item is Verus-aware.
+* `#[verus_verify(external_body)]`: Indicates the item is Verus-aware, but marks the function body as uninterpreted by the verifier.
+* `#[verus_verify(external)]`: Instructs Verus to ignore the item. By default, items are treated as #[verus_verify(external)].
+* `#[verus_spec($specificaton)]`: Specifies pre/postconditions for executable codes.
+  `$specificaton` is in format of:
   ```
   => $ret
   requires precondition($inputs),
@@ -115,10 +115,10 @@ and to write specification and proofs in ghost mode.
   returns ret_spec,
   decreases termination_condition
   ```
-* proof!{...}: Inserts proofs to help solver to avoid false positives or improve
+* `proof!{...}`: Inserts proofs to help solver to avoid false positives or improve
   performance. You can also add assert(..) inside proof macro to statically
   check assertions.
-* More annotations usage can be found in https://github.com/verus-lang/verus/tree/main/source/rust_verify_test/tests/syntax_attr.rs
+* More annotations usage can be found in <https://github.com/verus-lang/verus/tree/main/source/rust_verify_test/tests/syntax_attr.rs>
 
 
 For example,
@@ -152,11 +152,12 @@ impl A for u64 {
 ### Developing specification and proof (Verification developers)
 
 While Verus allows you to write specifications and proofs in Rust, it's
-beneficial to use the verus!{} macro for a more concise, mathematical syntax
+beneficial to use the `verus!{}` macro for a more concise, mathematical syntax
 similar to Dafny, F*, and Coq. To get started, be sure to read the [Verus
-Tutorial](https://verus-lang.github.io/verus/guide/overview.html). You can use [Verus playground](https://play.verus-lang.org/) to play with verus without install it. To find
-examples about recursive proof, quantifier, traits, pointers, type invariant, or
-other advanced usage, please refer to [Verus
+Tutorial](https://verus-lang.github.io/verus/guide/overview.html). You can use
+[Verus playground](https://play.verus-lang.org/) to play with verus without
+install it. To find examples about recursive proof, quantifier, traits,
+pointers, type invariant, or other advanced usage, please refer to [Verus
 Tests](https://github.com/verus-lang/verus/tree/main/source/rust_verify_test/tests)
 and [Verus
-Examples](https://github.com/verus-lang/verus/tree/main/source/rust_verify/example).
+Examples](https://github.com/verus-lang/verus/tree/main/examples).
