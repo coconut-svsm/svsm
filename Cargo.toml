@@ -42,7 +42,7 @@ members = [
 
 [workspace.dependencies]
 # internal library crates
-bootlib = { path = "bootlib" }
+bootlib = { path = "lib/bootlib" }
 cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
