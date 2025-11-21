@@ -147,11 +147,7 @@ impl GpaMap {
 
         let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
         let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
-        let madt_size = match options.hypervisor {
-            Hypervisor::HyperV | Hypervisor::Vanadium => PAGE_SIZE_4K,
-            Hypervisor::Qemu => 0,
-        };
-        let madt = GpaRange::new(general_params.get_end(), madt_size)?;
+        let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
         let guest_context = if let Some(firmware) = firmware {
             if firmware.get_guest_context().is_some() {

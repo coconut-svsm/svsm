@@ -36,7 +36,7 @@ pub struct IgvmParams<'a> {
     igvm_param_block: &'a IgvmParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
-    igvm_madt: Option<&'a [u8]>,
+    igvm_madt: &'a [u8],
     igvm_guest_context: Option<&'a IgvmGuestContext>,
 }
 
@@ -48,17 +48,10 @@ impl IgvmParams<'_> {
         let memory_map_address = addr + param_block.memory_map_offset as usize;
         let memory_map = Self::try_aligned_ref::<IgvmMemoryMap>(memory_map_address)?;
         let madt_address = addr + param_block.madt_offset as usize;
-        let madt = if param_block.madt_size != 0 {
-            // SAFETY: the parameter block correctly describes the bounds of the
-            // MADT.
-            unsafe {
-                Some(slice::from_raw_parts(
-                    madt_address.as_ptr::<u8>(),
-                    param_block.madt_size as usize,
-                ))
-            }
-        } else {
-            None
+        // SAFETY: the parameter block correctly describes the bounds of the
+        // MADT.
+        let madt = unsafe {
+            slice::from_raw_parts(madt_address.as_ptr::<u8>(), param_block.madt_size as usize)
         };
         let guest_context = if param_block.guest_context_offset != 0 {
             let offset = usize::try_from(param_block.guest_context_offset).unwrap();
@@ -270,14 +263,8 @@ impl IgvmParams<'_> {
         Ok(())
     }
 
-    pub fn load_cpu_info(&self) -> Result<Option<Vec<ACPICPUInfo>>, SvsmError> {
-        match self.igvm_madt {
-            Some(madt_data) => {
-                let madt = ACPITable::new(madt_data)?;
-                Ok(Some(load_acpi_cpu_info(&madt)?))
-            }
-            None => Ok(None),
-        }
+    pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
+        ACPITable::new(self.igvm_madt).and_then(|t| load_acpi_cpu_info(&t))
     }
 
     pub fn should_launch_fw(&self) -> bool {
