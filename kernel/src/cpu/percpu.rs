@@ -57,7 +57,7 @@ use core::ops::Deref;
 use core::ptr;
 use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use cpuarch::vmsa::VMSA;
+use cpuarch::vmsa::{VmsaEventType, VMSA};
 
 // PERCPU areas virtual addresses into shared memory
 pub static PERCPU_AREAS: PerCpuAreas = PerCpuAreas::new();
@@ -1047,8 +1047,22 @@ impl PerCpu {
     }
 
     pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa_addr: Option<VirtAddr>) {
+        let vintr_ctrl = vmsa.vintr_ctrl;
+        let g_eii = vmsa.guest_exitintinfo;
+
         if let Some(mut apic) = self.guest_apic_mut() {
-            apic.present_interrupts(self.shared(), vmsa, caa_addr);
+            if g_eii.valid() && g_eii.event_type() == VmsaEventType::Interrupt {
+                apic.reinject_interrupt(vmsa, vintr_ctrl.v_intr_vector());
+            } else {
+                apic.present_interrupts(self.shared(), vmsa, caa_addr);
+            }
+        }
+
+        // Clear busy bit
+        let mut vintr_ctrl = vmsa.vintr_ctrl;
+        if vintr_ctrl.busy() {
+            vintr_ctrl.set_busy(false);
+            vmsa.vintr_ctrl = vintr_ctrl;
         }
     }
 
