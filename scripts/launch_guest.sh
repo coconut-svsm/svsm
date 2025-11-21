@@ -22,6 +22,7 @@ CGS=sev
 CPU=EPYC-v4
 ACCEL=kvm
 IGVM_OBJ=""
+SNAPSHOT="on"
 
 STATE_DEVICE=""
 STATE_ENABLE=""
@@ -71,6 +72,22 @@ while [[ $# -gt 0 ]]; do
       shift
       shift
       ;;
+    --snapshot)
+      case $2 in
+        on)
+          SNAPSHOT="on"
+          ;;
+        off)
+          SNAPSHOT="off"
+          ;;
+        *)
+          echo "ERROR: Invalid option for --snapshot: $2" >&2
+          exit 1
+          ;;
+      esac
+      shift
+      shift
+      ;;
     --)
       shift
       break
@@ -87,11 +104,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Split the QEMU version number so we can specify the correct parameters
-QEMU_VERSION=`$QEMU --version | grep -Po '(?<=version )[^ ]+'`
+QEMU_VERSION=$($QEMU --version | grep -Po '(?<=version )[^ ]+')
 QEMU_MAJOR=${QEMU_VERSION%%.*}
 QEMU_BUILD=${QEMU_VERSION##*.}
-QEMU_MINOR=${QEMU_VERSION##$QEMU_MAJOR.}
-QEMU_MINOR=${QEMU_MINOR%%.$QEMU_BUILD}
+QEMU_MINOR=${QEMU_VERSION##"$QEMU_MAJOR".}
+QEMU_MINOR=${QEMU_MINOR%%."$QEMU_BUILD"}
 
 if (( QEMU_MAJOR < 9)) && [ "$CGS" = "nocc" ]; then
   echo "Error: --nocc requires Qemu 9 or newer (with patches)." >&2
@@ -128,8 +145,8 @@ else
 fi
 
 # Setup a disk if an image has been specified
-if [ ! -z $IMAGE ]; then
-  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=on \
+if [ ! -z "$IMAGE" ]; then
+  IMAGE_DISK="-drive file=$IMAGE,if=none,id=disk0,format=qcow2,snapshot=$SNAPSHOT \
     -device virtio-scsi-pci,id=scsi0,disable-legacy=on,iommu_platform=on \
     -device scsi-hd,drive=disk0"
 fi
@@ -164,7 +181,7 @@ fi
 
 # Temporarily use -vga none to avoid IGVM VGA init failure in QEMU 10.1
 $SUDO_CMD \
-  $QEMU \
+  "$QEMU" \
     -cpu $CPU \
     -machine $MACHINE,$STATE_ENABLE \
     -object $MEMORY \
