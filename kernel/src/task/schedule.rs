@@ -732,3 +732,32 @@ global_asm!(
 ///
 /// 0x1ff8 = Size(GuardPage) + Size(ShadowStack) - 8; where Size(GuardPage) == Size(ShadowStack) == PAGE_SIZE.
 const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.const_add(0x1ff8);
+
+#[cfg(test)]
+mod test {
+    use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
+    use crate::task::set_affinity;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_set_affinity() {
+        let cpu_index = this_cpu().get_cpu_index();
+
+        // First test the case of moving the current thread to the current
+        // CPU.
+        set_affinity(cpu_index);
+        assert_eq!(this_cpu().get_cpu_index(), cpu_index);
+
+        // Move this thread to every other CPU in the system.
+        let cpu_count = PERCPU_AREAS.len();
+        for index in 0..cpu_count {
+            if index != cpu_index {
+                set_affinity(index);
+                assert_eq!(this_cpu().get_cpu_index(), index);
+            }
+        }
+
+        // Move this thread back to its starting point.
+        set_affinity(cpu_index);
+    }
+}
