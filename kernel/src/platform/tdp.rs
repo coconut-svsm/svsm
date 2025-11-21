@@ -5,7 +5,7 @@
 // Author: Peter Fang <peter.fang@intel.com>
 
 use super::capabilities::Caps;
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
@@ -327,3 +327,14 @@ impl IOPort for GHCIIOPort {
         tdvmcall_io_read::<u32>(port)
     }
 }
+
+#[derive(Default, Debug)]
+pub struct TdpStage2Platform {}
+
+impl TdpStage2Platform {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Stage2Platform for TdpStage2Platform {}

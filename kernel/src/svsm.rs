@@ -200,7 +200,9 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
     let mut platform_cell = SvsmPlatformCell::new(li.suppress_svsm_interrupts);
     let platform = platform_cell.platform_mut();
 
-    init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
+    if launch_info.cpuid_page != 0 {
+        init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
+    }
 
     let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
 
@@ -275,7 +277,9 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    dump_cpuid_table();
+    if launch_info.cpuid_page != 0 {
+        dump_cpuid_table();
+    }
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);

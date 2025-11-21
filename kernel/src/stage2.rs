@@ -40,7 +40,8 @@ use svsm::mm::validate::{
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
 use svsm::platform;
 use svsm::platform::{
-    init_platform_type, PageStateChangeOp, PageValidateOp, SvsmPlatform, SvsmPlatformCell,
+    init_platform_type, PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform,
+    SvsmPlatformCell,
 };
 use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use svsm::utils::{is_aligned, MemoryRegion};
@@ -109,6 +110,7 @@ unsafe fn setup_env(
     config: &SvsmConfig<'_>,
     platform: &mut dyn SvsmPlatform,
     launch_info: &Stage2LaunchInfo,
+    cpuid_vaddr: Option<VirtAddr>,
     idt: &mut IDT<'_>,
 ) {
     GLOBAL_GDT.load_selectors();
@@ -129,11 +131,14 @@ unsafe fn setup_env(
         PhysAddr::from(u64::from(STAGE2_START)),
     );
 
-    // SAFETY: the CPUID page address specified in the launch info was mapped
-    // by the loader, which promises to supply a correctly formed CPUID page
-    // at that address.
-    let cpuid_page = unsafe { &*(launch_info.cpuid_page as *const SnpCpuidTable) };
-    register_cpuid_table(cpuid_page);
+    if let Some(cpuid_addr) = cpuid_vaddr {
+        // SAFETY: the CPUID page address specified in the launch info was
+        // mapped by the loader, which promises to supply a correctly formed
+        // CPUID page at that address.
+        let cpuid_page = unsafe { &*cpuid_addr.as_ptr::<SnpCpuidTable>() };
+        register_cpuid_table(cpuid_page);
+    }
+
     paging_init(platform, true).expect("Failed to initialize early paging");
 
     // Use the low 640 KB of memory as the heap.
@@ -188,7 +193,9 @@ unsafe fn setup_env(
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    dump_cpuid_table();
+    if cpuid_vaddr.is_some() {
+        dump_cpuid_table();
+    }
 }
 
 /// Map and validate the specified virtual memory region at the given physical
@@ -438,6 +445,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     init_platform_type(platform_type);
     let mut platform_cell = SvsmPlatformCell::new(true);
     let platform = platform_cell.platform_mut();
+    let stage2_platform_cell = Stage2PlatformCell::new(platform_type);
+    let stage2_platform = stage2_platform_cell.platform();
 
     let config = get_svsm_config(launch_info).expect("Failed to get SVSM configuration");
 
@@ -446,10 +455,13 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut early_idt = [IdtEntry::no_handler(); EARLY_IDT_ENTRIES];
     let mut idt = IDT::new(&mut early_idt);
 
+    // Get a reference to the CPUID page if this platform requires it.
+    let cpuid_page = stage2_platform.get_cpuid_page(launch_info);
+
     // SAFETY: the IDT here will remain in scope until the full IDT is
     // initialized later, and thus can safely be used as the early IDT.
     unsafe {
-        setup_env(&config, platform, launch_info, &mut idt);
+        setup_env(&config, platform, launch_info, cpuid_page, &mut idt);
     }
 
     // Get the available physical memory region for the kernel
@@ -520,7 +532,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
         stage2_end: launch_info.stage2_end as u64,
-        cpuid_page: launch_info.cpuid_page as u64,
+        cpuid_page: u64::from(cpuid_page.unwrap_or(VirtAddr::null())),
         secrets_page: launch_info.secrets_page as u64,
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_pregion.len() as u64,
