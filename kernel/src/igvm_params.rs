@@ -10,6 +10,7 @@ use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo, ACPITable};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
+use crate::mm::alloc::free_multiple_pages;
 use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SevFWMetaData, SVSM_PLATFORM};
 use crate::types::PageSize;
@@ -20,6 +21,7 @@ use cpuarch::vmsa::VMSA;
 use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
 use bootlib::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
+use core::ops::Deref;
 use core::slice;
 use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
 
@@ -41,7 +43,10 @@ pub struct IgvmParams<'a> {
 }
 
 impl IgvmParams<'_> {
-    pub fn new(addr: VirtAddr) -> Result<Self, SvsmError> {
+    /// # Safety
+    /// The caller is responsible for ensuring that the supplied virtual
+    /// address corresponds to an IGVM parameter block.
+    pub unsafe fn new(addr: VirtAddr) -> Result<Self, SvsmError> {
         let param_block = Self::try_aligned_ref::<IgvmParamBlock>(addr)?;
         let param_page_address = addr + param_block.param_page_offset as usize;
         let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
@@ -478,5 +483,41 @@ impl IgvmParams<'_> {
 
     pub fn has_test_iorequests(&self) -> bool {
         self.igvm_param_block.has_test_iorequests != 0
+    }
+}
+
+/// `IgvmBox` is a `Box`-type object that tracks the allocation lifetime of the
+/// IGVM parameters.  This is implemented separately from `PageBox` because
+/// unlike normal heap allocations, the IGVM parameters are allocated as a
+/// sequence of single pages, and thus cannot be freed in a single operation.
+#[derive(Debug)]
+pub struct IgvmBox<'a> {
+    vaddr: VirtAddr,
+    igvm_params: IgvmParams<'a>,
+}
+
+impl IgvmBox<'_> {
+    /// # Safety
+    /// The caller is responsible for ensuring that the supplied virtual
+    /// address corresponds to an IGVM parameter block.
+    pub unsafe fn new(vaddr: VirtAddr) -> Result<Self, SvsmError> {
+        // SAFETY: the caller guarantees the correctness of the virtual
+        // address.
+        unsafe { IgvmParams::new(vaddr) }.map(|igvm_params| Self { vaddr, igvm_params })
+    }
+}
+
+impl<'a> Deref for IgvmBox<'a> {
+    type Target = IgvmParams<'a>;
+    fn deref(&self) -> &IgvmParams<'a> {
+        &self.igvm_params
+    }
+}
+
+impl Drop for IgvmBox<'_> {
+    fn drop(&mut self) {
+        let page_count =
+            (self.igvm_params.igvm_param_block.param_area_size as usize).div_ceil(PAGE_SIZE);
+        free_multiple_pages(self.vaddr, page_count);
     }
 }

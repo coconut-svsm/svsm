@@ -7,38 +7,19 @@
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::error::SvsmError;
-use crate::igvm_params::IgvmParams;
 use crate::mm::global_memory::init_global_ranges;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::PageBox;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
+use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::{page_align_up, MemoryRegion};
 use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
-
-struct IgvmParamInfo<'a> {
-    virt_addr: VirtAddr,
-    igvm_params: Option<IgvmParams<'a>>,
-}
 
 pub fn init_page_table(
     launch_info: &KernelLaunchInfo,
     kernel_elf: &elf::Elf64File<'_>,
 ) -> Result<PageBox<PageTable>, SvsmError> {
     let mut pgtable = PageTable::allocate_new()?;
-
-    let igvm_param_info = if launch_info.igvm_params_virt_addr != 0 {
-        let addr = VirtAddr::from(launch_info.igvm_params_virt_addr);
-        IgvmParamInfo {
-            virt_addr: addr,
-            igvm_params: Some(IgvmParams::new(addr)?),
-        }
-    } else {
-        IgvmParamInfo {
-            virt_addr: VirtAddr::null(),
-            igvm_params: None,
-        }
-    };
 
     // Install mappings for the kernel's ELF segments each.
     // The memory backing the kernel ELF segments gets allocated back to back
@@ -65,22 +46,10 @@ pub fn init_page_table(
         phys = phys + segment_len;
     }
 
-    // Map the IGVM parameters if present.
-    if let Some(ref igvm_params) = igvm_param_info.igvm_params {
-        let vregion = MemoryRegion::new(igvm_param_info.virt_addr, igvm_params.size());
-        pgtable
-            .map_region(
-                vregion,
-                PhysAddr::from(launch_info.igvm_params_phys_addr),
-                PTEntryFlags::data(),
-            )
-            .expect("Failed to map IGVM parameters");
-    }
-
     // Map subsequent heap area.
     let heap_vregion = MemoryRegion::new(
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size as usize,
+        launch_info.heap_area_page_count as usize * PAGE_SIZE,
     );
     pgtable
         .map_region(
