@@ -46,7 +46,7 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
-use svsm::requests::request_loop_main;
+use svsm::requests::request_loop_start;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::schedule_init;
@@ -397,7 +397,7 @@ fn svsm_init() {
     // Start request processing on this CPU if required.
     if SVSM_PLATFORM.start_svsm_request_loop() {
         start_kernel_task(
-            KernelThreadStartInfo::new(request_loop_main, 0),
+            KernelThreadStartInfo::new(request_loop_start, 0),
             String::from("request-loop on CPU 0"),
         )
         .expect("Failed to launch request loop task");
