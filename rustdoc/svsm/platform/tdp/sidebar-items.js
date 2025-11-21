@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["wakeup_ap"],"static":["GHCI_IO_DRIVER","VTOM"],"struct":["GHCIIOPort","TdMailbox","TdpPlatform"]};
