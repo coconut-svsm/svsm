@@ -22,7 +22,7 @@ include!("address.verus.rs");
 // The backing type to represent an address;
 type InnerAddr = usize;
 
-#[verus_verify]
+#[verus_spec]
 const SIGN_BIT: usize = 47;
 
 #[inline]
@@ -316,6 +316,7 @@ impl ops::Add<InnerAddr> for PhysAddr {
     }
 }
 
+#[verus_verify]
 impl Address for PhysAddr {}
 
 #[verus_verify]

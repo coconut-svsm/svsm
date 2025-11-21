@@ -22,7 +22,7 @@ pub mod hw_spec;
 
 pub mod ptr;
 
-use builtin_macros::*;
+use verus_builtin_macros::*;
 
 verus! {
 #[cfg_attr(verus_keep_ghost, verifier::broadcast_use_by_default_when_this_crate_is_imported)]

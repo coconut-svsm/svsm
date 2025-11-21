@@ -53,7 +53,7 @@ impl From<AllocError> for SvsmError {
 }
 
 /// Maximum order of page allocations (up to 128kb)
-#[verus_verify]
+#[verus_spec]
 pub const MAX_ORDER: usize = 6;
 
 /// Calculates the order of a given size for page allocation.
@@ -407,6 +407,7 @@ struct FileInfo {
     ref_count: u64,
 }
 
+#[verus_verify]
 impl FileInfo {
     /// Creates a new [`FileInfo`] with the specified reference count.
     #[verus_verify(dual_spec(spec_new))]

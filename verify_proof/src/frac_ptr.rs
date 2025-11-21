@@ -6,7 +6,7 @@
 //
 // A fully verified ghost and non-forgeable frac-based pointer permission to
 // share tracked memory permissions.
-use state_machines_macros::*;
+use verus_state_machines_macros::*;
 
 use vstd::prelude::*;
 use vstd::raw_ptr::{MemContents, PointsTo, PointsToData, PointsToRaw};
