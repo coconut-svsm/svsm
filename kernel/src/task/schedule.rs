@@ -38,7 +38,7 @@ use crate::cpu::ipi::{send_multicast_ipi, IpiMessage, IpiTarget};
 use crate::cpu::irq_state::raw_get_tpr;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
-use crate::cpu::shadow_stack::{is_cet_ss_supported, IS_CET_SUPPORTED, PL0_SSP};
+use crate::cpu::shadow_stack::{is_cet_ss_enabled, IS_CET_ENABLED, PL0_SSP};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
 use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
@@ -512,7 +512,7 @@ pub fn schedule() {
         unsafe {
             this_cpu().set_tss_rsp0(next.stack_bounds.end());
         }
-        if is_cet_ss_supported() {
+        if is_cet_ss_enabled() {
             // SAFETY: Task::exception_shadow_stack is always initialized when
             // creating a new Task.
             unsafe {
@@ -628,7 +628,7 @@ global_asm!(
         // Switch to a stack pointer that's valid in both the old and new page tables.
         mov     %r14, %rsp
 
-        cmpb    $0, {IS_CET_SUPPORTED}(%rip)
+        cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      1f
         // Save the current shadow stack pointer
         rdssp   %rax
@@ -646,7 +646,7 @@ global_asm!(
         // Switch to the new task page tables
         mov     %r15, %cr3
 
-        cmpb    $0, {IS_CET_SUPPORTED}(%rip)
+        cmpb    $0, {IS_CET_ENABLED}(%rip)
         je      2f
         // Switch to the new task shadow stack and move the "shadow stack
         // restore token" back.
@@ -683,7 +683,7 @@ global_asm!(
     "#,
     TASK_RSP_OFFSET = const offset_of!(Task, rsp),
     TASK_SSP_OFFSET = const offset_of!(Task, ssp),
-    IS_CET_SUPPORTED = sym IS_CET_SUPPORTED,
+    IS_CET_ENABLED = sym IS_CET_ENABLED,
     CONTEXT_SWITCH_RESTORE_TOKEN = const CONTEXT_SWITCH_RESTORE_TOKEN.as_usize(),
     options(att_syntax)
 );

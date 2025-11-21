@@ -23,12 +23,17 @@ pub const MODE_64BIT: usize = 1;
 pub const BUSY: usize = 1;
 
 pub static IS_CET_SUPPORTED: AtomicBool = AtomicBool::new(false);
+pub static IS_CET_ENABLED: AtomicBool = AtomicBool::new(false);
 
 // Try to enable the CET feature in CR4 and set `IS_CET_SUPPORTED` if successful.
 pub fn determine_cet_support(platform: &dyn SvsmPlatform) {
     if platform.determine_cet_support() {
         IS_CET_SUPPORTED.store(true, Ordering::Relaxed);
     }
+}
+
+pub fn set_cet_ss_enabled() {
+    IS_CET_ENABLED.store(true, Ordering::Relaxed);
 }
 
 pub fn determine_cet_support_from_cpuid() -> bool {
@@ -44,10 +49,16 @@ pub fn is_cet_ss_supported() -> bool {
     IS_CET_SUPPORTED.load(Ordering::Relaxed)
 }
 
+/// Returns whether shadow stacks are currently enabled.
+#[inline(always)]
+pub fn is_cet_ss_enabled() -> bool {
+    IS_CET_ENABLED.load(Ordering::Relaxed)
+}
+
 pub fn shadow_stack_info() {
     log::info!(
         "Kernel shadow stacks {}",
-        match is_cet_ss_supported() {
+        match is_cet_ss_enabled() {
             true => "enabled",
             false => "not supported",
         }
@@ -60,10 +71,8 @@ pub fn shadow_stack_info() {
 /// to set up the shadow stack to return from this code.
 #[macro_export]
 macro_rules! enable_shadow_stacks {
-    ($bsp_percpu:ident) => {{
+    ($token_addr:ident) => {{
         use core::arch::asm;
-
-        let token_addr = $bsp_percpu.get_top_of_shadow_stack().unwrap();
 
         // SAFETY: This assembly enables shadow-stacks and does not impact Rust
         // memory safety.
@@ -78,8 +87,8 @@ macro_rules! enable_shadow_stacks {
                 in("ecx") S_CET,
                 in("edx") 0,
                 in("eax") SCetFlags::SH_STK_EN.bits() | SCetFlags::WR_SHSTK_EN.bits(),
-                token_addr = in(reg) token_addr.bits(),
-                token_val = in(reg) token_addr.bits() + 8 + MODE_64BIT,
+                token_addr = in(reg) $token_addr.bits(),
+                token_val = in(reg) $token_addr.bits() + 8 + MODE_64BIT,
                 options(nostack, readonly),
             );
         }
