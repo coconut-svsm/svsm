@@ -258,6 +258,28 @@ unsafe fn setup_env(
     }
 }
 
+/// # Safety
+/// The caller is required to ensure that the source virtual address maps to
+/// a valid page of data that can be copied.
+unsafe fn copy_page_to_kernel(
+    src_vaddr: VirtAddr,
+    kernel_heap: &mut KernelHeap,
+) -> Result<VirtAddr, SvsmError> {
+    let (dst_vaddr, _) = kernel_heap.allocate(PAGE_SIZE)?;
+    // SAFETY: the caller take responsibility for the correctness of the source
+    // address, and the destination address is known to be correct because it
+    // was just allocated as a full page.
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            src_vaddr.as_ptr::<u8>(),
+            dst_vaddr.as_mut_ptr::<u8>(),
+            PAGE_SIZE,
+        );
+    }
+
+    Ok(dst_vaddr)
+}
+
 /// Map and validate the specified virtual memory region at the given physical
 /// address.
 /// # Safety
@@ -546,6 +568,15 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let igvm_vaddr = load_igvm_params(&mut kernel_heap, &config, launch_info)
         .expect("Failed to load IGVM params");
 
+    // Copy the CPUID page into the kernel address space if required.
+    let kernel_cpuid_page = cpuid_page.map(|cpuid_addr| {
+        // SAFETY: the CPUID address is assumed to have been correctly
+        // retrieved from the launch info by the stage2 platform object.
+        unsafe {
+            copy_page_to_kernel(cpuid_addr, &mut kernel_heap).expect("Failed to copy CPUID page")
+        }
+    });
+
     // Determine whether this platforms uses a secrets pgae.
     let secrets_page = stage2_platform.get_secrets_page(launch_info);
 
@@ -577,7 +608,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
         stage2_end: launch_info.stage2_end as u64,
-        cpuid_page: u64::from(cpuid_page.unwrap_or(VirtAddr::null())),
+        cpuid_page: u64::from(kernel_cpuid_page.unwrap_or(VirtAddr::null())),
         secrets_page: u64::from(secrets_page.unwrap_or(VirtAddr::null())),
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_params.size() as u64,

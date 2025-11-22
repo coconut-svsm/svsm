@@ -54,7 +54,7 @@ use svsm::svsm_paging::{
 };
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{immut_after_init::ImmutAfterInitCell, round_to_pages, MemoryRegion, ScopedRef};
+use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -126,8 +126,6 @@ global_asm!(
     options(att_syntax)
 );
 
-static CPUID_PAGE: ImmutAfterInitCell<SnpCpuidTable> = ImmutAfterInitCell::uninit();
-
 pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
@@ -171,10 +169,7 @@ fn init_cpuid_table(addr: VirtAddr) {
         }
     }
 
-    CPUID_PAGE
-        .init_from_ref(table)
-        .expect("Already initialized CPUID page");
-    register_cpuid_table(&CPUID_PAGE);
+    register_cpuid_table(table);
 }
 
 /// # Safety
