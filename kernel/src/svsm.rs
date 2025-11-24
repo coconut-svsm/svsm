@@ -208,8 +208,8 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     if launch_info.secrets_page != 0 {
         let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
 
-        // SAFETY: the secrets page address directly comes from IGVM.  Its address
-        // is trusted if it is non-zero.
+        // SAFETY: the secrets page address was allocated by stage 2 in the kernel
+        // heap and the address is trusted if it is non-zero.
         unsafe {
             initialize_secrets_page(secrets_page_virt);
         }

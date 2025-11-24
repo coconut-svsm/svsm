@@ -46,7 +46,7 @@ use svsm::platform::{
     SvsmPlatformCell,
 };
 use svsm::types::{PageSize, PAGE_SIZE};
-use svsm::utils::{round_to_pages, MemoryRegion};
+use svsm::utils::{round_to_pages, zero_mem_region, MemoryRegion};
 
 use release::COCONUT_VERSION;
 
@@ -580,6 +580,18 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     // Determine whether this platforms uses a secrets pgae.
     let secrets_page = stage2_platform.get_secrets_page(launch_info);
 
+    // Copy the secrets page into the kernel address space if required.
+    let kernel_secrets_page = secrets_page.map(|secrets_addr| {
+        // SAFETY: the secrets page address is assumed to have been correctly
+        // configured in the stage2 image if it is present at all.
+        unsafe {
+            let new_vaddr = copy_page_to_kernel(secrets_addr, &mut kernel_heap)
+                .expect("Failed to copy secrets page");
+            zero_mem_region(secrets_addr, secrets_addr + PAGE_SIZE);
+            new_vaddr
+        }
+    });
+
     // Determine whether use of interrupts on the SVSM should be suppressed.
     // This is required when running SNP under KVM/QEMU.
     let suppress_svsm_interrupts = match platform_type {
@@ -609,7 +621,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         stage2_start: 0x800000u64,
         stage2_end: launch_info.stage2_end as u64,
         cpuid_page: u64::from(kernel_cpuid_page.unwrap_or(VirtAddr::null())),
-        secrets_page: u64::from(secrets_page.unwrap_or(VirtAddr::null())),
+        secrets_page: u64::from(kernel_secrets_page.unwrap_or(VirtAddr::null())),
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_params.size() as u64,
         igvm_params_virt_addr: u64::from(igvm_vaddr),

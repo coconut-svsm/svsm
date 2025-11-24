@@ -6,16 +6,14 @@
 
 use crate::address::VirtAddr;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
-use crate::mm::PAGE_SIZE;
 use crate::protocols::core::CORE_PROTOCOL_VERSION_MAX;
 use crate::sev::vmsa::VMPL_MAX;
 use crate::types::GUEST_VMPL;
-use crate::utils::zero_mem_region;
 
 extern crate alloc;
 use alloc::boxed::Box;
+use core::ops::{Deref, DerefMut};
 use core::ptr;
-use core::sync::atomic::{AtomicBool, Ordering};
 
 pub const VMPCK_SIZE: usize = 32;
 
@@ -143,37 +141,68 @@ impl Default for SecretsPage {
     }
 }
 
-static SECRETS_PAGE: RWLock<SecretsPage> = RWLock::new(SecretsPage::new());
-static SECRETS_PAGE_INITIALIZED: AtomicBool = AtomicBool::new(false);
+#[derive(Debug)]
+pub struct SecretsPageRef {
+    secrets_page: Option<&'static mut SecretsPage>,
+}
 
-pub fn secrets_page() -> Option<ReadLockGuard<'static, SecretsPage>> {
-    let guard = SECRETS_PAGE.lock_read();
-    if SECRETS_PAGE_INITIALIZED.load(Ordering::Relaxed) {
-        Some(guard)
-    } else {
-        None
+impl SecretsPageRef {
+    const fn new() -> Self {
+        Self { secrets_page: None }
     }
 }
 
-pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPage>> {
+impl Deref for SecretsPageRef {
+    type Target = SecretsPage;
+    fn deref(&self) -> &SecretsPage {
+        self.secrets_page.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for SecretsPageRef {
+    fn deref_mut(&mut self) -> &mut SecretsPage {
+        self.secrets_page.as_mut().unwrap()
+    }
+}
+
+static SECRETS_PAGE: RWLock<SecretsPageRef> = RWLock::new(SecretsPageRef::new());
+
+pub fn secrets_page() -> Option<ReadLockGuard<'static, SecretsPageRef>> {
+    let guard = SECRETS_PAGE.lock_read();
+    // Clippy wants to turn the match statement below into a map call, but
+    // doing so doesn't wokr without violating either copy or borrow rules,
+    // since the result of the match isn't the contents of the option but
+    // is the lock guard itself.
+    #[allow(clippy::manual_map)]
+    match guard.secrets_page {
+        None => None,
+        Some(_) => Some(guard),
+    }
+}
+
+pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPageRef>> {
     let guard = SECRETS_PAGE.lock_write();
-    if SECRETS_PAGE_INITIALIZED.load(Ordering::Relaxed) {
-        Some(guard)
-    } else {
-        None
+    // Clippy wants to turn the match statement below into a map call, but
+    // doing so doesn't wokr without violating either copy or borrow rules,
+    // since the result of the match isn't the contents of the option but
+    // is the lock guard itself.
+    #[allow(clippy::manual_map)]
+    match guard.secrets_page {
+        None => None,
+        Some(_) => Some(guard),
     }
 }
 
 /// # Safety
 /// The caller is required to supply a valid virtual address that points to a
-/// secrets page.
-pub unsafe fn initialize_secrets_page(secrets_page_vaddr: VirtAddr) {
-    let mut guard = SECRETS_PAGE.lock_write();
-    assert!(!SECRETS_PAGE_INITIALIZED.swap(true, Ordering::Relaxed));
+/// secrets page that will remain allocated in the static lifetime.
+pub unsafe fn initialize_secrets_page(addr: VirtAddr) {
     // SAFETY: the caller takes responsibility for the correctness of the
     // virtual address.
-    unsafe {
-        guard.copy_from(secrets_page_vaddr);
-        zero_mem_region(secrets_page_vaddr, secrets_page_vaddr + PAGE_SIZE);
-    }
+    let secrets_page = unsafe { &mut *addr.as_mut_ptr::<SecretsPage>() };
+    let mut secrets_cell = SECRETS_PAGE.lock_write();
+    assert!(secrets_cell.secrets_page.is_none());
+    *secrets_cell = SecretsPageRef {
+        secrets_page: Some(secrets_page),
+    };
 }
