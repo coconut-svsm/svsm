@@ -344,13 +344,6 @@ fn setup_kernel_page_tables<'a>(heap: &mut KernelHeap) -> Result<KernelPageTable
     };
     *current_paging_root.entry_mut(pml4e_index) = *pml4e;
 
-    // Also place a mapping to low memory in the new kernel page table so it
-    // can access stage2 pages during the early part of boot.
-    paging_root.entry_mut(0).set_unrestricted(
-        make_private_address(current_paging_root.entry_mut(0).address()),
-        pxe_flags,
-    );
-
     // Allocate a new page to use as a page directory table page.  This will
     // span 1 GB of address space, which is the maximum that will ever be
     // addressible during stage 2 execution.
@@ -949,6 +942,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
+        kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
         suppress_svsm_interrupts,
         platform_type,
     };
