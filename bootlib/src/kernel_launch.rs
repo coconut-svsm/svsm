@@ -51,6 +51,7 @@ pub struct KernelLaunchInfo {
     pub stage2_igvm_params_size: u64,
     pub igvm_params_virt_addr: u64,
     pub vtom: u64,
+    pub kernel_page_table_vaddr: u64,
     pub debug_serial_port: u16,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
