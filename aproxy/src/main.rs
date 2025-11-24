@@ -11,6 +11,7 @@ mod backend;
 use anyhow::Context;
 use clap::Parser;
 use std::{fs, os::unix::net::UnixListener};
+use vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
 
 #[derive(Parser, Debug)]
 #[clap(version, about, long_about = None)]
@@ -26,32 +27,46 @@ struct Args {
     backend: backend::Protocol,
 
     /// UNIX domain socket path to the SVSM serial port
-    #[clap(long)]
-    unix: String,
+    #[clap(
+        long,
+        conflicts_with = "vsock_port",
+        required_unless_present("vsock_port")
+    )]
+    unix: Option<String>,
+
+    /// vsock port used by SVSM for attestation
+    #[clap(long, conflicts_with_all = ["unix", "force"], required_unless_present("unix"))]
+    vsock_port: Option<u32>,
 
     /// Force Unix domain socket removal before bind
-    #[clap(long, short, default_value_t = false)]
+    #[clap(long, short, requires = "unix", default_value_t = false)]
     force: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    if args.force {
-        let _ = fs::remove_file(args.unix.clone());
-    }
+    if args.vsock_port.is_some() {
+        let listener =
+            VsockListener::bind(&VsockAddr::new(VMADDR_CID_ANY, args.vsock_port.unwrap()))
+                .context("bind and listen failed")?;
+        for stream in listener.incoming() {
+            let mut stream = stream.expect("Failed to connect to the vsock socket");
+            let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
+            attest::attest(&mut stream, &mut http_client)?;
+        }
+    } else {
+        let unix = args.unix.unwrap();
 
-    let listener = UnixListener::bind(args.unix).context("unable to bind to UNIX socket")?;
+        if args.force {
+            let _ = fs::remove_file(unix.clone());
+        }
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut stream) => {
-                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
-                attest::attest(&mut stream, &mut http_client)?;
-            }
-            Err(_) => {
-                panic!("error");
-            }
+        let listener = UnixListener::bind(unix).context("unable to bind to UNIX socket")?;
+        for stream in listener.incoming() {
+            let mut stream = stream.expect("Failed to connect to the unix socket");
+            let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
+            attest::attest(&mut stream, &mut http_client)?;
         }
     }
 

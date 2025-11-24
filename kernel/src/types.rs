@@ -99,3 +99,6 @@ pub const TPR_NORMAL: usize = 0;
 pub const TPR_LOCK: usize = 2;
 pub const TPR_SYNCH: usize = 13;
 pub const TPR_IPI: usize = 14;
+
+pub const ATTEST_DEFAULT_VSOCK_PORT: u32 = 1995;
+pub const ATTEST_DEFAULT_SERIAL_IO_ADDR: u16 = 0x3e8; // COM3

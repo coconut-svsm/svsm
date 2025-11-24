@@ -10,6 +10,7 @@
     - [Frontend](#frontend)
     - [Backend](#backend)
     - [Host Proxy Diagram](#host-proxy-diagram)
+  - [Transport Methods](#transport-methods)
   - [Try for yourself](#try-for-yourself)
 <!--toc:end-->
 
@@ -87,6 +88,15 @@ launching the proxy. The supported backend attestation protocols include:
                              protocol)
 ```
 
+## Transport Methods
+
+SVSM communicates with the attestation proxy using one of two transport methods:
+
+- **vsock**: When the `vsock` feature is enabled, SVSM will first try to use vsock for communication with the host proxy
+  using port `1995`. If it fails, SVSM will try again using the serial port.
+
+- **Serial port**: If vsock is not available, SVSM uses the COM3 serial port for communication with the attestation proxy.
+
 ## Try for yourself
 
 Please keep in mind that the attestation services in SVSM are **experimental**
@@ -121,36 +131,62 @@ SEV-SNP machine with an SVSM-enabled kernel.
 
 3. Run the proxy on the host
 
+    The proxy configuration depends on the transport mechanism:
+
+    Common parameters:
+
+    * `--url http://0.0.0.0:8080`: The attestation server is running at `http://0.0.0.0:8080`.
+    * `--protocol kbs-test`: The attestation server communicates via the KBS
+        protocol, configure the backend to use the KBS protocol.
+
+    **vsock parameters**
     ```shell
     cd svsm
     make aproxy
     bin/aproxy --protocol kbs-test \
-               --url http://0.0.0.0:8080 \
-               --unix /tmp/svsm-proxy.sock \
-               --force
+                --url http://0.0.0.0:8080 \
+                --vsock-port 1995
     ```
-    This runs the proxy with the following specified in the arguments:
 
-     * `--url http://0.0.0.0:8080`: The attestation server is running at
-       `http://0.0.0.0:8080`.
-     * `--protocol kbs-test`: The attestation server communicates via the KBS
-       protocol, configure the backend to use the KBS protocol.
-     * `--unix /tmp/svsm-proxy.sock`: Listen for messages from SVSM on a socket
-       created in file `/tmp/svsm-proxy-sock`.
-     * `--force`: Remove the `/tmp/svsm-proxy.sock` file (if it already exists)
-       before creating the socket.
+    * `--vsock-port 1995`: Listen for messages from SVSM on the vsock port `1995`, which is
+    the port used by SVSM for attestation.
+
+    **Serial Port parameters**
+    ```shell
+    cd svsm
+    make aproxy
+    bin/aproxy --protocol kbs-test \
+              --url http://0.0.0.0:8080 \
+              --unix /tmp/svsm-proxy.sock \
+              --force
+    ```
+
+    * `--unix /tmp/svsm-proxy.sock`: Listen for messages from SVSM on a socket
+      created in file `/tmp/svsm-proxy-sock`.
+    * `--force`: Remove the `/tmp/svsm-proxy.sock` file (if it already exists)
+      before creating the socket.
 
 4. Run a guest with SVSM
 
-    Initially, SVSM communicates over the COM3 serial port. The attestation proxy
-    socket will need to be available in the correct `-serial` argument position to
-    ensure it communicates with the right socket.
+    SVSM will use vsock for communication if the feature is enabled, otherwise it
+    falls back to the COM3 serial port (see [Transport Methods](#transport-methods)).
+    The attestation proxy will need to be configured correctly to ensure proper communication
+    according to the transport used.
 
-    ```shell
-    ./scripts/launch_guest.sh --qemu $QEMU \
-                              --image $QCOW2 \
-                              --aproxy /tmp/svsm-proxy.sock
-    ```
+    * **vsock**
+      ```shell
+      ./scripts/launch_guest.sh --qemu $QEMU \
+                                --image $QCOW2 \
+                                --vsock 3
+      ```
+
+    * **Serial Port**
+      ```shell
+      ./scripts/launch_guest.sh --qemu $QEMU \
+                                --image $QCOW2 \
+                                --aproxy /tmp/svsm-proxy.sock
+      ```
+
     If successful, you should be able to find a message indicating a successful
     attestation within the SVSM boot logs.
 

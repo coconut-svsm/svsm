@@ -18,10 +18,12 @@ log = { workspace = true }
 bitflags = { workspace = true }
 enumn = "0.1.14"
 zerocopy = { workspace = true, features = ["derive"] }
+embedded-io = { version = "0.6.1", optional = true }
 
 [features]
-default = ["alloc"]
+default = ["alloc", "embedded-io"]
 alloc = ["zerocopy/alloc"]
+embedded-io = ["dep:embedded-io"]
 
 [lints]
 workspace = true
