@@ -948,6 +948,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
+        kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
         suppress_svsm_interrupts,
         platform_type,
     };
