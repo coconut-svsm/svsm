@@ -46,12 +46,13 @@ use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
 use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{init_page_table, invalidate_early_boot_memory};
 use svsm::task::schedule_init;
 use svsm::task::{start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{immut_after_init::ImmutAfterInitCell, zero_mem_region, MemoryRegion};
+use svsm::utils::{immut_after_init::ImmutAfterInitCell, MemoryRegion};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -204,13 +205,14 @@ fn svsm_start(li: &KernelLaunchInfo, vb_addr: usize) -> Option<VirtAddr> {
         init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
     }
 
-    let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
+    if launch_info.secrets_page != 0 {
+        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
 
-    // SAFETY: the secrets page address directly comes from IGVM.
-    // We trust stage 2 to give the value provided by IGVM.
-    unsafe {
-        secrets_page_mut().copy_from(secrets_page_virt);
-        zero_mem_region(secrets_page_virt, secrets_page_virt + PAGE_SIZE);
+        // SAFETY: the secrets page address directly comes from IGVM.  Its address
+        // is trusted if it is non-zero.
+        unsafe {
+            initialize_secrets_page(secrets_page_virt);
+        }
     }
 
     cr0_init();
@@ -431,10 +433,12 @@ fn test_in_svsm_task(_context: usize) {
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    secrets_page_mut().clear_vmpck(0);
-    secrets_page_mut().clear_vmpck(1);
-    secrets_page_mut().clear_vmpck(2);
-    secrets_page_mut().clear_vmpck(3);
+    if let Some(mut secrets_page) = secrets_page_mut() {
+        secrets_page.clear_vmpck(0);
+        secrets_page.clear_vmpck(1);
+        secrets_page.clear_vmpck(2);
+        secrets_page.clear_vmpck(3);
+    }
 
     if let Some(cpu) = try_this_cpu() {
         log::error!(

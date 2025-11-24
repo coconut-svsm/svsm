@@ -6,13 +6,16 @@
 
 use crate::address::VirtAddr;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
+use crate::mm::PAGE_SIZE;
 use crate::protocols::core::CORE_PROTOCOL_VERSION_MAX;
 use crate::sev::vmsa::VMPL_MAX;
 use crate::types::GUEST_VMPL;
+use crate::utils::zero_mem_region;
 
 extern crate alloc;
 use alloc::boxed::Box;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub const VMPCK_SIZE: usize = 32;
 
@@ -141,11 +144,36 @@ impl Default for SecretsPage {
 }
 
 static SECRETS_PAGE: RWLock<SecretsPage> = RWLock::new(SecretsPage::new());
+static SECRETS_PAGE_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-pub fn secrets_page() -> ReadLockGuard<'static, SecretsPage> {
-    SECRETS_PAGE.lock_read()
+pub fn secrets_page() -> Option<ReadLockGuard<'static, SecretsPage>> {
+    let guard = SECRETS_PAGE.lock_read();
+    if SECRETS_PAGE_INITIALIZED.load(Ordering::Relaxed) {
+        Some(guard)
+    } else {
+        None
+    }
 }
 
-pub fn secrets_page_mut() -> WriteLockGuard<'static, SecretsPage> {
-    SECRETS_PAGE.lock_write()
+pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPage>> {
+    let guard = SECRETS_PAGE.lock_write();
+    if SECRETS_PAGE_INITIALIZED.load(Ordering::Relaxed) {
+        Some(guard)
+    } else {
+        None
+    }
+}
+
+/// # Safety
+/// The caller is required to supply a valid virtual address that points to a
+/// secrets page.
+pub unsafe fn initialize_secrets_page(secrets_page_vaddr: VirtAddr) {
+    let mut guard = SECRETS_PAGE.lock_write();
+    assert!(!SECRETS_PAGE_INITIALIZED.swap(true, Ordering::Relaxed));
+    // SAFETY: the caller takes responsibility for the correctness of the
+    // virtual address.
+    unsafe {
+        guard.copy_from(secrets_page_vaddr);
+        zero_mem_region(secrets_page_vaddr, secrets_page_vaddr + PAGE_SIZE);
+    }
 }
