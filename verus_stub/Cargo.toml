@@ -5,13 +5,13 @@ edition = "2021"
 
 [dependencies]
 
-builtin_macros = { workspace = true, optional = true }
+verus_builtin_macros = { workspace = true, optional = true }
 vstd = { workspace = true, optional = true }
 verus_macro_stub = { workspace = true, optional = true}
 
 [features]
 default = ["dep:verus_macro_stub"]
-disable = ["builtin_macros", "vstd"]
+disable = ["verus_builtin_macros", "vstd"]
 
 [lints]
 workspace = true

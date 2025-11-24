@@ -1,7 +1,7 @@
 #![no_std]
 
 #[cfg(feature = "disable")]
-pub use builtin_macros::*;
+pub use verus_builtin_macros::*;
 
 #[cfg(feature = "disable")]
 pub use vstd::prelude::*;
