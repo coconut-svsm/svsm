@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 syscall.workspace = true
 coconut-alloc.workspace = true
+once_cell = { workspace = true, features = ["race"] }
 
 [lints]
 workspace = true

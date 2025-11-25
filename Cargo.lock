@@ -2165,6 +2165,7 @@ name = "userlib"
 version = "0.1.0"
 dependencies = [
  "coconut-alloc",
+ "once_cell",
  "syscall",
 ]
 
