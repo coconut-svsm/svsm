@@ -11,6 +11,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub enum AllocError {
     AlreadyInitialized,
     NotInitialized,
+    Layout,
 }
 
 const MAX_ALLOC_SIZE: usize = 32 * 1024; // 32 KiB
@@ -99,3 +100,34 @@ unsafe impl GlobalAlloc for SvsmUserAllocator {
 
 #[global_allocator]
 static GLOBAL_ALLOC: SvsmUserAllocator = SvsmUserAllocator;
+
+/// Build a Layout suitable for requests to the coconut allocator.
+pub fn layout_from_size(size: usize) -> Result<Layout, AllocError> {
+    if size == 0 || size > MAX_ALLOC_SIZE {
+        return Err(AllocError::Layout);
+    }
+    let next = size.next_power_of_two();
+
+    Layout::from_size_align(next, next).map_err(|_| AllocError::Layout)
+}
+
+/// Try to reconstruct the Layout for a pointer previously returned by
+/// an allocation.
+/// # Safety
+/// The pointer must have been allocated from the global heap.
+pub unsafe fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
+    let Ok(heap) = get_global_heap() else {
+        return None;
+    };
+    let base = heap as *const AllocBlock as *const u8;
+
+    // SAFETY: ptr must have been allocated from this heap
+    let off = unsafe { ptr.offset_from(base) };
+
+    if off < 0 {
+        // Should I check upper bound too? Importing BLOCK_SIZE from coconut_alloc
+        return None;
+    }
+
+    heap.layout_from_offset(off as usize)
+}
