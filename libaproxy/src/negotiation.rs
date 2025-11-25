@@ -6,29 +6,37 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
+
+use super::*;
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
 /// The initial payload sent from SVSM to the attestation proxy. The version indicates the version
 /// of the SVSM attestation protocol to use.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationRequest {
-    pub version: String,
+    /// Version of the attestation protocol, represented as semver (MAJOR.MINOR.PATCH).
+    pub version: (u32, u32, u32),
     pub tee: kbs_types::Tee,
 }
 
 /// A parameter that must be hashed into the negotiation hash.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum NegotiationParam {
+    /// Hash the challenge returned from attestation server.
+    Challenge,
     /// Hash the EC public key's `Elliptic-Curve-Point-to-Octet-String` encoding.
     EcPublicKeyBytes,
-    /// A base64-encoded byte array. This could represent a nonce or any other data the
-    /// attestation server would like to embed in TEE evidence.
-    Base64StdBytes(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct NegotiationResponse {
+    /// Challenge returned from the attestation server to verify freshness of attestation evidence.
+    #[serde(
+        serialize_with = "serialize_base64",
+        deserialize_with = "deserialize_base64"
+    )]
+    pub challenge: Vec<u8>,
     /// Parameters to be hashed in the specific order defined by the array
     pub params: Vec<NegotiationParam>,
 }
