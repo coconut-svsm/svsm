@@ -87,23 +87,27 @@ fn request_loop_once(
     }
 }
 
-pub fn request_loop_main(cpu_index: usize) {
-    log::info!("Launching request-processing task on CPU {}", cpu_index);
+pub fn request_loop_start(_: usize) {
+    // This should always be started on the BSP.
+    debug_assert_eq!(this_cpu().get_cpu_index(), 0);
 
-    if cpu_index != 0 {
-        // Send this task to the correct CPU.
-        set_affinity(cpu_index);
-    } else {
-        // When starting the request loop on the BSP, start an additional
-        // request loop task for each other processor in the system.
-        let cpu_count = PERCPU_AREAS.len();
-        for task_index in 1..cpu_count {
-            start_kernel_thread(KernelThreadStartInfo::new(request_loop_main, task_index))
-                .expect("Failed to launch request loop thread");
-        }
+    // Start an additional request loop task for each other processor in the
+    // system.
+    let cpu_count = PERCPU_AREAS.len();
+    for task_index in 1..cpu_count {
+        start_kernel_thread(KernelThreadStartInfo::new(request_loop_main, task_index))
+            .expect("Failed to launch request loop thread");
     }
 
-    debug_assert_eq!(cpu_index, this_cpu().get_cpu_index());
+    // Enter the main processing loop for the BSP.
+    request_loop_main(0);
+}
+
+fn request_loop_main(cpu_index: usize) {
+    // Send this task to the correct CPU.
+    set_affinity(cpu_index);
+
+    log::info!("Launching request-processing task on CPU {}", cpu_index);
 
     // Suppress the use of IPIs before entering the guest, and ensure that all
     // other CPUs have done the same.
