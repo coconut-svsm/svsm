@@ -190,7 +190,7 @@ fn copy_secrets_page_to_fw(
     }
 
     // Copy secrets page
-    let mut fw_secrets_page = secrets_page().copy_for_vmpl(GUEST_VMPL);
+    let mut fw_secrets_page = secrets_page().unwrap().copy_for_vmpl(GUEST_VMPL);
 
     fw_secrets_page.set_svsm_data(
         kernel_region.start().into(),

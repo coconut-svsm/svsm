@@ -7,7 +7,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::capabilities::Caps;
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
@@ -353,3 +353,14 @@ unsafe fn mmio_read_type<T>(vaddr: VirtAddr, data: &mut [MaybeUninit<u8>]) {
         }
     };
 }
+
+#[derive(Default, Debug)]
+pub struct NativeStage2Platform {}
+
+impl NativeStage2Platform {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Stage2Platform for NativeStage2Platform {}

@@ -150,7 +150,7 @@ impl SnpGuestRequestDriver {
         command_len: usize,
     ) -> Result<(), SvsmReqError> {
         // VMPL0 `SNP_GUEST_REQUEST` commands are encrypted with the VMPCK0 key
-        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().get_vmpck(0);
+        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
 
         let inbuf = buffer
             .get(..command_len)
@@ -171,7 +171,7 @@ impl SnpGuestRequestDriver {
         msg_type: SnpGuestRequestMsgType,
         buffer: &mut [u8],
     ) -> Result<usize, SvsmReqError> {
-        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().get_vmpck(0);
+        let vmpck0: [u8; VMPCK_SIZE] = secrets_page().unwrap().get_vmpck(0);
 
         // For security reasons, decrypt the message in protected memory (staging)
         self.response.read_into(&mut self.staging);
@@ -184,7 +184,7 @@ impl SnpGuestRequestDriver {
                 // The buffer provided is too small to store the unwrapped response.
                 // There is no need to clear the VMPCK0, just report it as invalid parameter.
                 SvsmReqError::RequestError(SvsmResultCode::INVALID_PARAMETER) => (),
-                _ => secrets_page_mut().clear_vmpck(0),
+                _ => secrets_page_mut().unwrap().clear_vmpck(0),
             }
         }
 
@@ -216,7 +216,7 @@ impl SnpGuestRequestDriver {
         buffer: &mut [u8],
         command_len: usize,
     ) -> Result<usize, SvsmReqError> {
-        if secrets_page().is_vmpck_clear(0) {
+        if secrets_page().unwrap().is_vmpck_clear(0) {
             return Err(SvsmReqError::invalid_request());
         }
 
@@ -225,7 +225,7 @@ impl SnpGuestRequestDriver {
         // The sequence number is restored only when the guest is rebooted.
         let Some(msg_seqno) = self.seqno_last_used().checked_add(1) else {
             log::error!("SNP_GUEST_REQUEST: sequence number overflow");
-            secrets_page_mut().clear_vmpck(0);
+            secrets_page_mut().unwrap().clear_vmpck(0);
             return Err(SvsmReqError::invalid_request());
         };
 
@@ -248,14 +248,14 @@ impl SnpGuestRequestDriver {
                                 log::error!(
                                     "SNP_GUEST_REQ_INVALID_LEN. Aborting, request resend failed"
                                 );
-                                secrets_page_mut().clear_vmpck(0);
+                                secrets_page_mut().unwrap().clear_vmpck(0);
                                 return Err(e1);
                             }
                             return Err(e);
                         } else {
                             // We sent a regular SNP_GUEST_REQUEST, but the hypervisor returned
                             // an error code that is exclusive for extended SNP_GUEST_REQUEST
-                            secrets_page_mut().clear_vmpck(0);
+                            secrets_page_mut().unwrap().clear_vmpck(0);
                             return Err(SvsmReqError::invalid_request());
                         }
                     }
@@ -263,7 +263,7 @@ impl SnpGuestRequestDriver {
                     SNP_GUEST_REQ_ERR_BUSY => {
                         if let Err(e2) = self.send(req_class) {
                             log::error!("SNP_GUEST_REQ_ERR_BUSY. Aborting, request resend failed");
-                            secrets_page_mut().clear_vmpck(0);
+                            secrets_page_mut().unwrap().clear_vmpck(0);
                             return Err(e2);
                         }
                         // ... request resend worked, continue normally.
@@ -272,7 +272,7 @@ impl SnpGuestRequestDriver {
                     // the AMD SEV-SNP spec or in the linux kernel include/uapi/linux/psp-sev.h
                     _ => {
                         log::error!("SNP_GUEST_REQUEST failed, unknown error code={}\n", info2);
-                        secrets_page_mut().clear_vmpck(0);
+                        secrets_page_mut().unwrap().clear_vmpck(0);
                         return Err(e);
                     }
                 }

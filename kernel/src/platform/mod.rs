@@ -14,9 +14,9 @@ mod snp_fw;
 pub use snp_fw::SevFWMetaData;
 
 use capabilities::Caps;
-use native::NativePlatform;
-use snp::SnpPlatform;
-use tdp::TdpPlatform;
+use native::{NativePlatform, NativeStage2Platform};
+use snp::{SnpPlatform, SnpStage2Platform};
+use tdp::{TdpPlatform, TdpStage2Platform};
 
 use core::arch::asm;
 use core::fmt::Debug;
@@ -35,6 +35,7 @@ use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 
+use bootlib::kernel_launch::Stage2LaunchInfo;
 use bootlib::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
@@ -279,6 +280,46 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
+        }
+    }
+}
+
+/// This defines a platform abstraction to permit stage2 to run on different
+/// underlying architectures.  It includes only functionality that is used
+/// only in stage2.
+pub trait Stage2Platform {
+    /// Obtains the virtual address of the CPUID page, if any.
+    fn get_cpuid_page(&self, _launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
+        None
+    }
+
+    /// Obtains the virtual address of the secrets page, if any.
+    fn get_secrets_page(&self, _launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
+        None
+    }
+}
+
+#[derive(Debug)]
+pub enum Stage2PlatformCell {
+    Snp(SnpStage2Platform),
+    Tdp(TdpStage2Platform),
+    Native(NativeStage2Platform),
+}
+
+impl Stage2PlatformCell {
+    pub fn new(platform_type: SvsmPlatformType) -> Self {
+        match platform_type {
+            SvsmPlatformType::Native => Stage2PlatformCell::Native(NativeStage2Platform::new()),
+            SvsmPlatformType::Snp => Stage2PlatformCell::Snp(SnpStage2Platform::new()),
+            SvsmPlatformType::Tdp => Stage2PlatformCell::Tdp(TdpStage2Platform::new()),
+        }
+    }
+
+    pub fn platform(&self) -> &dyn Stage2Platform {
+        match self {
+            Stage2PlatformCell::Native(platform) => platform,
+            Stage2PlatformCell::Snp(platform) => platform,
+            Stage2PlatformCell::Tdp(platform) => platform,
         }
     }
 }

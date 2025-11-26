@@ -8,7 +8,7 @@ use super::capabilities::Caps;
 use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, SvsmPlatform};
+use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
@@ -41,6 +41,7 @@ use syscall::GlobalFeatureFlags;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use bootlib::kernel_launch::Stage2LaunchInfo;
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
 
@@ -460,5 +461,24 @@ impl IOPort for GHCBIOPort {
             Ok(v) => (v & 0xffffffff) as u32,
             Err(_e) => request_termination_msr(),
         }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct SnpStage2Platform {}
+
+impl SnpStage2Platform {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Stage2Platform for SnpStage2Platform {
+    fn get_cpuid_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
+        Some(VirtAddr::from(launch_info.cpuid_page as usize))
+    }
+
+    fn get_secrets_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
+        Some(VirtAddr::from(launch_info.secrets_page as usize))
     }
 }
