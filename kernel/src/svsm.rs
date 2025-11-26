@@ -36,7 +36,7 @@ use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
-use svsm::igvm_params::IgvmParams;
+use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
@@ -126,7 +126,8 @@ pub fn memory_init(launch_info: &KernelLaunchInfo) {
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_size as usize / PAGE_SIZE,
+        launch_info.heap_area_page_count as usize,
+        launch_info.heap_area_allocated as usize,
     );
 }
 
@@ -136,9 +137,11 @@ fn boot_stack_info() {
 }
 
 fn mapping_info_init(launch_info: &KernelLaunchInfo) {
+    let heap_start = VirtAddr::from(launch_info.heap_area_virt_start);
+    let heap_size = launch_info.heap_area_page_count as usize * PAGE_SIZE;
     let kernel_mapping = FixedAddressMappingRange::new(
-        VirtAddr::from(launch_info.heap_area_virt_start),
-        VirtAddr::from(launch_info.heap_area_virt_end()),
+        heap_start,
+        heap_start + heap_size,
         PhysAddr::from(launch_info.heap_area_phys_start),
     );
     init_kernel_mapping_info(kernel_mapping, None);
@@ -335,13 +338,14 @@ fn svsm_init() {
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
     let launch_info = &*LAUNCH_INFO;
-    let igvm_params = IgvmParams::new(VirtAddr::from(launch_info.igvm_params_virt_addr))
+    // SAFETY: the address in the launch info is known to be correct.
+    let igvm_params = unsafe { IgvmBox::new(VirtAddr::from(launch_info.igvm_params_virt_addr)) }
         .expect("Invalid IGVM parameters");
     if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
         panic!("Launch VTOM does not match VTOM from IGVM parameters");
     }
 
-    let config = SvsmConfig::new(igvm_params);
+    let config = SvsmConfig::new(&igvm_params);
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 

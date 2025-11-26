@@ -524,9 +524,10 @@ pub struct MemInfo {
 /// as other details.
 #[verus_verify]
 #[derive(Debug)]
-struct MemoryRegion {
+struct HeapMemoryRegion {
     start_phys: PhysAddr,
     start_virt: VirtAddr,
+    metadata_addr: VirtAddr,
     page_count: usize,
     nr_pages: [usize; MAX_ORDER],
     next_page: [usize; MAX_ORDER],
@@ -536,8 +537,8 @@ struct MemoryRegion {
 }
 
 #[verus_verify]
-impl MemoryRegion {
-    /// Creates a new [`MemoryRegion`] with default values.
+impl HeapMemoryRegion {
+    /// Creates a new [`HeapMemoryRegion`] with default values.
     #[verus_spec(ret =>
         ensures
             ret.wf_next_pages(),
@@ -548,6 +549,7 @@ impl MemoryRegion {
         Self {
             start_phys: PhysAddr::null(),
             start_virt: VirtAddr::null(),
+            metadata_addr: VirtAddr::null(),
             page_count: 0,
             nr_pages: [0; MAX_ORDER],
             next_page: [NO_PAGE; MAX_ORDER],
@@ -622,7 +624,7 @@ impl MemoryRegion {
         proof! { self.lemma_page_info_ptr(pfn);}
         {
             proof_with!(Tracked(self.perms.borrow().info_ptr_exposed));
-            self.start_virt.as_mut_ptr::<PageStorageType>()
+            self.metadata_addr.as_mut_ptr::<PageStorageType>()
         }
         .wrapping_add(pfn)
     }
@@ -646,7 +648,7 @@ impl MemoryRegion {
         proof! { self.lemma_page_info_ptr(pfn);}
         {
             proof_with!(Tracked(self.perms.borrow().info_ptr_exposed));
-            self.start_virt.as_ptr::<PageStorageType>()
+            self.metadata_addr.as_ptr::<PageStorageType>()
         }
         .wrapping_add(pfn)
     }
@@ -1451,54 +1453,59 @@ impl MemoryRegion {
     /// as allocated. It then frees all pages and organizes them into their
     /// respective order buckets.
     #[verus_verify(external_body)]
-    fn init_memory(&mut self) {
+    fn init_memory(&mut self, allocated: usize) {
         let size = size_of::<PageStorageType>();
         let meta_pages = align_up(self.page_count * size, PAGE_SIZE) / PAGE_SIZE;
 
-        /* Mark page storage as reserved */
-        for i in 0..meta_pages {
-            let pg = PageInfo::Reserved(ReservedInfo);
-            self.write_page_info(i, pg);
-        }
+        /* Calculate the metadata address by reserving the top of the heap for
+         * metadata */
+        let alloc_pages = self.page_count - meta_pages;
+        self.metadata_addr = self.start_virt + (alloc_pages * PAGE_SIZE);
 
-        /* Mark all pages as allocated */
-        for i in meta_pages..self.page_count {
+        /* Mark all non-metadata pages as allocated */
+        for i in 0..alloc_pages {
             let pg = PageInfo::Allocated(AllocatedInfo { order: 0 });
             self.write_page_info(i, pg);
         }
 
-        /* Now free all pages.  Any runs of pages aligned to the maximum order
-         * will be freed directly into the maximum order bucket, and all other
-         * pages will be freed individually so the correct orders can be
-         * generated */
-        let alignment = 1 << (MAX_ORDER - 1);
-        let first_aligned_page = align_up(meta_pages, alignment);
-        let last_aligned_page = align_down(self.page_count, alignment);
+        /* Mark page storage as reserved */
+        for i in alloc_pages..self.page_count {
+            let pg = PageInfo::Reserved(ReservedInfo);
+            self.write_page_info(i, pg);
+        }
 
-        if first_aligned_page < last_aligned_page {
+        /* Now free all pages other than the pages that must remain allocated.
+         * Any runs of pages aligned to the maximum order will be freed
+         * directly into the maximum order bucket, and all other pages will be
+         * freed individually so the correct orders can be generated */
+        let alignment = 1 << (MAX_ORDER - 1);
+        let first_aligned_page = align_up(allocated, alignment);
+        let last_aligned_page = align_down(alloc_pages, alignment);
+
+        if last_aligned_page > first_aligned_page {
             self.nr_pages[MAX_ORDER - 1] += (last_aligned_page - first_aligned_page) / alignment;
             for i in (first_aligned_page..last_aligned_page).step_by(alignment) {
                 self.mark_compound_page(i, MAX_ORDER - 1);
                 self.free_page_raw(i, MAX_ORDER - 1);
             }
 
-            if first_aligned_page < self.page_count {
-                self.nr_pages[0] += first_aligned_page - meta_pages;
-                for i in meta_pages..first_aligned_page {
+            if first_aligned_page > allocated {
+                self.nr_pages[0] += first_aligned_page - allocated;
+                for i in allocated..first_aligned_page {
                     self.free_page_order(i, 0);
                 }
             }
 
-            if last_aligned_page > meta_pages {
-                self.nr_pages[0] += self.page_count - last_aligned_page;
-                for i in last_aligned_page..self.page_count {
+            if last_aligned_page < alloc_pages {
+                self.nr_pages[0] += alloc_pages - last_aligned_page;
+                for i in last_aligned_page..alloc_pages {
                     self.free_page_order(i, 0);
                 }
             }
         } else {
             // Special case: Memory region size smaller than a MAX_ORDER allocation
-            self.nr_pages[0] = self.page_count - meta_pages;
-            for i in meta_pages..self.page_count {
+            self.nr_pages[0] = alloc_pages - allocated;
+            for i in allocated..alloc_pages {
                 self.free_page_order(i, 0);
             }
         }
@@ -1703,9 +1710,9 @@ pub fn print_memory_info(info: &MemInfo) {
     );
 }
 
-/// Static spinlock-protected instance of [`MemoryRegion`] representing the
+/// Static spinlock-protected instance of [`HeapMemoryRegion`] representing the
 /// root memory region.
-static ROOT_MEM: SpinLock<MemoryRegion> = SpinLock::new(MemoryRegion::new());
+static ROOT_MEM: SpinLock<HeapMemoryRegion> = SpinLock::new(HeapMemoryRegion::new());
 
 /// Allocates a single memory page from the root memory region.
 ///
@@ -1786,6 +1793,14 @@ fn put_file_page(vaddr: VirtAddr) -> Result<(), SvsmError> {
 /// Free the page at the given virtual address.
 pub fn free_page(vaddr: VirtAddr) {
     ROOT_MEM.lock().free_page(vaddr)
+}
+
+/// Free multiple pages at the given virtual address.
+pub fn free_multiple_pages(vaddr: VirtAddr, count: usize) {
+    let mut mem = ROOT_MEM.lock();
+    for offset in 0..count {
+        mem.free_page(vaddr + offset * PAGE_SIZE);
+    }
 }
 
 /// Retrieve information about the root memory
@@ -2367,13 +2382,13 @@ static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start
 /// address, virtual start address, and page count.
-pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize) {
+pub fn root_mem_init(pstart: PhysAddr, vstart: VirtAddr, page_count: usize, allocated: usize) {
     {
         let mut region = ROOT_MEM.lock();
         region.start_phys = pstart;
         region.start_virt = vstart;
         region.page_count = page_count;
-        region.init_memory();
+        region.init_memory(allocated);
         // drop lock here so slab initialization does not deadlock
     }
 
@@ -2476,7 +2491,7 @@ impl TestRootMem<'_> {
         let guard = Self(TEST_ROOT_MEM_LOCK.lock());
         let vaddr = VirtAddr::from(ptr);
         let paddr = PhysAddr::from(vaddr.bits()); // Identity mapping
-        root_mem_init(paddr, vaddr, page_count);
+        root_mem_init(paddr, vaddr, page_count, 0);
         guard
     }
 }
@@ -2494,7 +2509,7 @@ impl Drop for TestRootMem<'_> {
         // SAFETY: Safe because layout calculates to the same size as during
         // allocation of the memory region.
         unsafe { dealloc(root_mem.start_virt.as_mut_ptr::<u8>(), layout) };
-        *root_mem = MemoryRegion::new();
+        *root_mem = HeapMemoryRegion::new();
 
         // Reset the Slabs
         *SLAB_PAGE_SLAB.lock() = SlabPageSlab::new();

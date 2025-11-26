@@ -55,16 +55,16 @@ fn check_ovmf_regions(
 
 #[derive(Debug)]
 pub struct SvsmConfig<'a> {
-    igvm_params: IgvmParams<'a>,
+    igvm_params: &'a IgvmParams<'a>,
 }
 
 impl<'a> SvsmConfig<'a> {
-    pub fn new(igvm_params: IgvmParams<'a>) -> SvsmConfig<'a> {
+    pub fn new(igvm_params: &'a IgvmParams<'a>) -> SvsmConfig<'a> {
         Self { igvm_params }
     }
 
     pub fn get_igvm_params(&self) -> &IgvmParams<'_> {
-        &self.igvm_params
+        self.igvm_params
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
