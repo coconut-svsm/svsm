@@ -28,6 +28,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
 use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
+use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
@@ -71,7 +72,8 @@ pub trait SvsmPlatform: Sync {
     #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType;
 
-    /// Halts the system as required by the platform.
+    /// Halts the system required by the platform.  Interrupt state is under
+    /// control of the caller.
     fn halt()
     where
         Self: Sized,
@@ -79,6 +81,19 @@ pub trait SvsmPlatform: Sync {
         // SAFETY: executing HLT in assembly is always safe.
         unsafe {
             asm!("hlt");
+        }
+    }
+
+    /// Halts the system with interrupts enabled as required by the platform.
+    /// # Arguments
+    /// _irq_guard: an IRQ guard structure.  This is not actually used, but
+    /// serves as proof that interrupts have been correctly disabled so that
+    /// interrupt state can be correctly manipulated as required by the idle
+    /// halt action.
+    fn idle_halt(&self, _irq_guard: &IrqGuard) {
+        // SAFETY: executing HLT in assembly is always safe.
+        unsafe {
+            asm!("sti", "hlt", "cli");
         }
     }
 

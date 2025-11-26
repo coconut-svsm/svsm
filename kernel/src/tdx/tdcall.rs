@@ -452,18 +452,34 @@ pub fn tdvmcall_wrmsr(msr: u32, value: u64) {
     debug_assert!(tdx_result(ret).is_ok());
 }
 
-pub fn tdvmcall_halt() {
+#[derive(Clone, Copy, Debug)]
+pub enum TdpHaltInterruptState {
+    Enabled,
+    Disabled,
+}
+
+pub fn tdvmcall_halt(interrupt_state: TdpHaltInterruptState) {
     let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let interrupts_blocked = match interrupt_state {
+        TdpHaltInterruptState::Enabled => 0,
+        TdpHaltInterruptState::Disabled => 1,
+    };
     let mut ret: u64;
     let mut vmcall_ret: u64;
     // SAFETY: executing TDCALL requires the use of assembly.
     unsafe {
-        asm!("tdcall",
+        asm!("pushfq",
+             "test %r12d, %r12d",
+             "jnz 1f",
+             "sti",
+             "1:",
+             "tdcall",
+             "popfq",
              in("rax") TDG_VP_TDVMCALL,
              in("rcx") pass_regs,
              in("r10") 0,
              in("r11") TDVMCALL_HLT,
-             in("r12") 0,
+             in("r12") interrupts_blocked,
              lateout("rax") ret,
              lateout("r10") vmcall_ret,
              lateout("r11") _,
