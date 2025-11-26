@@ -5,16 +5,18 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::error::SvsmError;
-use crate::io::IOPort;
+use crate::io::{IOPort, Write};
 use crate::locking::SpinLock;
-use crate::serial::{SerialPort, Terminal};
+use crate::serial::SerialPort;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
 use release::COCONUT_VERSION;
 
+/// A console device to output data
 #[derive(Clone, Copy, Debug)]
-struct Console {
-    writer: &'static dyn Terminal,
+enum Console {
+    /// Serial port-based console
+    Serial(SerialPort<'static>),
 }
 
 impl fmt::Write for Console {
@@ -25,31 +27,29 @@ impl fmt::Write for Console {
 }
 
 impl Console {
-    pub fn write_bytes(&self, buffer: &[u8]) {
-        for b in buffer.iter() {
-            self.writer.put_byte(*b);
+    fn write_bytes(&mut self, buffer: &[u8]) {
+        match self {
+            Self::Serial(serial) => {
+                serial.write(buffer).unwrap();
+            }
         }
     }
 }
 
+/// Global console used for printing output
 static WRITER: ImmutAfterInitCell<SpinLock<Console>> = ImmutAfterInitCell::uninit();
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
 
-fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
-    WRITER.init(SpinLock::new(Console { writer }))?;
+pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
+    let serial = SerialPort::new(writer, port);
+    serial.init();
+
+    let console = SpinLock::new(Console::Serial(serial));
+    WRITER.init(console).map_err(|_| SvsmError::Console)?;
     log::info!(
         "COCONUT Secure Virtual Machine Service Module Version {}",
         COCONUT_VERSION
     );
     Ok(())
-}
-
-pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
-    CONSOLE_SERIAL
-        .init_from_ref(&SerialPort::new(writer, port))
-        .map_err(|_| SvsmError::Console)?;
-    (*CONSOLE_SERIAL).init();
-    init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
 }
 
 #[doc(hidden)]
