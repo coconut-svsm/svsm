@@ -1087,6 +1087,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_multiple_file_handles() {
         let _test_mem = TestRootMem::setup(DEFAULT_TEST_MEMORY_SIZE);
         let _test_fs = TestFileSystemGuard::setup();
