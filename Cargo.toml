@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     # repo tooling
-    "igvmbuilder",
-    "igvmmeasure",
+    "tools/igvmbuilder",
+    "tools/igvmmeasure",
     "xbuild",
     # binary targets
     "stage1",
@@ -34,7 +34,7 @@ members = [
     # Library defining common types between SVSM and attestation proxy
     "libaproxy",
     # Attestation proxy
-    "aproxy",
+    "tools/aproxy",
     # Utility to get the C-bit location in a PTE
     "tools/cbit",
 ]
