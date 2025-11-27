@@ -164,15 +164,15 @@ impl PerCpuAreas {
 
 #[derive(Debug)]
 struct IstStacks {
-    double_fault_stack: Cell<Option<VirtAddr>>,
-    double_fault_shadow_stack: Cell<Option<VirtAddr>>,
+    double_fault_stack: ImmutAfterInitCell<VirtAddr>,
+    double_fault_shadow_stack: ImmutAfterInitCell<VirtAddr>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
-            double_fault_stack: Cell::new(None),
-            double_fault_shadow_stack: Cell::new(None),
+            double_fault_stack: ImmutAfterInitCell::uninit(),
+            double_fault_shadow_stack: ImmutAfterInitCell::uninit(),
         }
     }
 }
@@ -588,11 +588,15 @@ impl PerCpu {
     }
 
     pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_stack.get()
+        self.ist.double_fault_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_df_shadow_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_shadow_stack.get()
+        self.ist
+            .double_fault_shadow_stack
+            .try_get_inner()
+            .ok()
+            .copied()
     }
 
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
@@ -673,18 +677,16 @@ impl PerCpu {
     }
 
     fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
-        let double_fault_stack = self.allocate_stack(SVSM_STACK_IST_DF_BASE)?;
-        self.ist.double_fault_stack.set(Some(double_fault_stack));
-
+        self.ist
+            .double_fault_stack
+            .try_init_from_fn(|| self.allocate_stack(SVSM_STACK_IST_DF_BASE))??;
         Ok(())
     }
 
     fn allocate_isst_shadow_stacks(&self) -> Result<(), SvsmError> {
-        let double_fault_shadow_stack =
-            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)?;
-        self.ist
-            .double_fault_shadow_stack
-            .set(Some(double_fault_shadow_stack));
+        self.ist.double_fault_shadow_stack.try_init_from_fn(|| {
+            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)
+        })??;
 
         Ok(())
     }
