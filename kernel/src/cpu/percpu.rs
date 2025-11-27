@@ -45,13 +45,14 @@ use crate::task::{schedule, schedule_task, KernelThreadStartInfo, RunQueue, Task
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
-use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr;
@@ -368,7 +369,7 @@ pub struct PerCpu {
     pgtbl: RefCell<Option<&'static mut PageTable>>,
     tss: X86Tss,
     isst: Cell<Isst>,
-    svsm_vmsa: OnceCell<VmsaPage>,
+    svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     reset_ip: Cell<u64>,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
@@ -382,13 +383,13 @@ pub struct PerCpu {
     guest_apic: RefCell<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
-    ghcb: OnceCell<GhcbPage>,
+    ghcb: ImmutAfterInitCell<GhcbPage>,
 
     /// Hypercall input/output pages for this CPU if running under Hyper-V.
     hypercall_pages: RefCell<Option<(HypercallPage, HypercallPage)>>,
 
     /// `#HV` doorbell page for this CPU.
-    hv_doorbell: OnceCell<SharedBox<HVDoorbell>>,
+    hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
     init_shadow_stack: Cell<Option<VirtAddr>>,
     context_switch_stack: Cell<Option<VirtAddr>>,
@@ -407,7 +408,7 @@ impl PerCpu {
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
             isst: Cell::new(Isst::default()),
-            svsm_vmsa: OnceCell::new(),
+            svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: Cell::new(0xffff_fff0),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
@@ -421,9 +422,9 @@ impl PerCpu {
             guest_apic: RefCell::new(None),
 
             shared,
-            ghcb: OnceCell::new(),
+            ghcb: ImmutAfterInitCell::uninit(),
             hypercall_pages: RefCell::new(None),
-            hv_doorbell: OnceCell::new(),
+            hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: Cell::new(None),
             context_switch_stack: Cell::new(None),
             ist: IstStacks::new(),
@@ -532,15 +533,14 @@ impl PerCpu {
 
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        let page = GhcbPage::new()?;
         self.ghcb
-            .set(page)
-            .expect("Attempted to reinitialize the GHCB");
+            .try_init_from_fn(GhcbPage::new)
+            .expect("Attempted to reinitialize the GHCB")?;
         Ok(())
     }
 
     fn ghcb(&self) -> Option<&GhcbPage> {
-        self.ghcb.get()
+        self.ghcb.try_get_inner().ok()
     }
 
     /// Allocates hypercall input/output pages for this CPU.
@@ -560,11 +560,11 @@ impl PerCpu {
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
-        self.hv_doorbell.get().map(Deref::deref)
+        self.hv_doorbell.try_get_inner().ok().map(Deref::deref)
     }
 
     pub fn process_hv_events_if_required(&self) {
-        if let Some(doorbell) = self.hv_doorbell.get() {
+        if let Ok(doorbell) = self.hv_doorbell.try_get_inner() {
             doorbell.process_if_required(&self.irq_state);
         }
     }
@@ -573,7 +573,8 @@ impl PerCpu {
     /// PerCpu structure.
     pub fn hv_doorbell_addr(&self) -> *const *const HVDoorbell {
         self.hv_doorbell
-            .get()
+            .try_get_inner()
+            .ok()
             .map(SharedBox::ptr_ref)
             .unwrap_or(ptr::null())
     }
@@ -705,10 +706,9 @@ impl PerCpu {
     }
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
         self.hv_doorbell
-            .set(doorbell)
-            .expect("Attempted to reinitialize HV doorbell page");
+            .try_init_from_fn(|| allocate_hv_doorbell_page(current_ghcb()))
+            .expect("Attempted to reinitialize HV doorbell page")?;
         Ok(())
     }
 
@@ -908,25 +908,17 @@ impl PerCpu {
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
     pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
-        if self.svsm_vmsa.get().is_some() {
-            // FIXME: add a more explicit error variant for this condition
-            return Err(SvsmError::Mem);
-        }
+        let vmsa = self.svsm_vmsa.try_init_from_fn(|| {
+            let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
 
-        let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
-        let paddr = vmsa.paddr();
+            // Initialize VMSA
+            let context = self.get_initial_context(start_rip);
+            init_svsm_vmsa(&mut vmsa, vtom, &context);
+            vmsa.enable();
+            Ok::<_, SvsmError>(vmsa)
+        })??;
 
-        // Initialize VMSA
-        let context = self.get_initial_context(start_rip);
-        init_svsm_vmsa(&mut vmsa, vtom, &context);
-        vmsa.enable();
-
-        let sev_features = vmsa.sev_features;
-
-        // We already checked that the VMSA is unset
-        self.svsm_vmsa.set(vmsa).unwrap();
-
-        Ok((paddr, sev_features))
+        Ok((vmsa.paddr(), vmsa.sev_features))
     }
 
     fn unmap_guest_vmsa(&self) {
