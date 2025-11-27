@@ -827,14 +827,32 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn setup_idle_task(&self, entry: fn(usize)) -> Result<(), SvsmError> {
-        let idle_task = Task::create(
-            self,
-            KernelThreadStartInfo::new(entry, self.shared.cpu_index),
-            String::from("idle"),
-        )?;
+    fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
+        let idle_task = Task::create(self, start_info, String::from("idle"))?;
         self.runqueue.lock_write().set_idle_task(idle_task);
         Ok(())
+    }
+
+    pub fn setup_idle_task(&self) -> Result<(), SvsmError> {
+        self.setup_idle_task_internal(KernelThreadStartInfo::new(
+            cpu_idle_loop,
+            self.shared.cpu_index,
+        ))
+    }
+
+    /// # Safety
+    /// The caller is required to pass a start parameter that is appropriate
+    /// for the specified entry point.
+    pub unsafe fn setup_bsp_idle_task(
+        &self,
+        entry: unsafe fn(usize),
+        start_parameter: usize,
+    ) -> Result<(), SvsmError> {
+        // SAFETY: The caller takes responsibility for the correctness of the
+        // start parameter for the entry point.
+        self.setup_idle_task_internal(unsafe {
+            KernelThreadStartInfo::new_unsafe(entry, start_parameter)
+        })
     }
 
     pub fn load_gdt_tss(&'static self, init_gdt: bool) {

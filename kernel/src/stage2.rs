@@ -15,6 +15,8 @@ use bootlib::kernel_launch::{
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
+use core::mem;
+use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
 use core::slice;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -34,17 +36,17 @@ use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
-use svsm::mm::validate::{
-    init_valid_bitmap_alloc, valid_bitmap_addr, valid_bitmap_set_valid_range,
+use svsm::mm::{
+    init_kernel_mapping_info, FixedAddressMappingRange, STACK_GUARD_SIZE, STACK_SIZE,
+    SVSM_PERCPU_BASE,
 };
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, SVSM_PERCPU_BASE};
 use svsm::platform;
 use svsm::platform::{
     init_platform_type, PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform,
     SvsmPlatformCell,
 };
-use svsm::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
-use svsm::utils::{is_aligned, round_to_pages, MemoryRegion};
+use svsm::types::{PageSize, PAGE_SIZE};
+use svsm::utils::{round_to_pages, zero_mem_region, MemoryRegion};
 
 use release::COCONUT_VERSION;
 
@@ -256,6 +258,28 @@ unsafe fn setup_env(
     }
 }
 
+/// # Safety
+/// The caller is required to ensure that the source virtual address maps to
+/// a valid page of data that can be copied.
+unsafe fn copy_page_to_kernel(
+    src_vaddr: VirtAddr,
+    kernel_heap: &mut KernelHeap,
+) -> Result<VirtAddr, SvsmError> {
+    let (dst_vaddr, _) = kernel_heap.allocate(PAGE_SIZE)?;
+    // SAFETY: the caller take responsibility for the correctness of the source
+    // address, and the destination address is known to be correct because it
+    // was just allocated as a full page.
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            src_vaddr.as_ptr::<u8>(),
+            dst_vaddr.as_mut_ptr::<u8>(),
+            PAGE_SIZE,
+        );
+    }
+
+    Ok(dst_vaddr)
+}
+
 /// Map and validate the specified virtual memory region at the given physical
 /// address.
 /// # Safety
@@ -285,16 +309,8 @@ unsafe fn map_and_validate(
     unsafe {
         platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
     }
-    valid_bitmap_set_valid_range(paddr, paddr + vregion.len());
+
     Ok(())
-}
-
-#[inline]
-fn check_launch_info(launch_info: &KernelLaunchInfo) {
-    let offset: u64 = launch_info.heap_area_virt_start - launch_info.heap_area_phys_start;
-    let align: u64 = PAGE_SIZE_2M.try_into().unwrap();
-
-    assert!(is_aligned(offset, align));
 }
 
 /// Loads a single ELF segment and returns its virtual memory region.
@@ -454,13 +470,12 @@ fn load_igvm_params(
 fn prepare_heap(
     kernel_region: MemoryRegion<PhysAddr>,
     loaded_kernel_pregion: MemoryRegion<PhysAddr>,
-    loaded_kernel_vregion: MemoryRegion<VirtAddr>,
+    heap_base_vaddr: VirtAddr,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
     // Heap starts after kernel
     let heap_pstart = loaded_kernel_pregion.end();
-    let heap_vstart = loaded_kernel_vregion.end();
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
@@ -470,7 +485,7 @@ fn prepare_heap(
         .expect("Insufficient physical space for kernel image")
         .into();
     let heap_pregion = MemoryRegion::new(heap_pstart, heap_size);
-    let heap_vregion = MemoryRegion::new(heap_vstart, heap_size);
+    let heap_vregion = MemoryRegion::new(heap_base_vaddr, heap_size);
 
     // SAFETY: the virtual address range was computed so it is within the valid
     // region and does not collide with the kernel.
@@ -478,7 +493,7 @@ fn prepare_heap(
         map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
     }
 
-    Ok(KernelHeap::create(heap_vstart, heap_pregion))
+    Ok(KernelHeap::create(heap_base_vaddr, heap_pregion))
 }
 
 #[no_mangle]
@@ -517,8 +532,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     log::info!("SVSM memory region: {kernel_region:#018x}");
 
-    init_valid_bitmap_alloc(kernel_region).expect("Failed to allocate valid-bitmap");
-
     // The physical memory region we've loaded so far
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
@@ -527,15 +540,26 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
+    // Define the heap base address as the end of the kernel ELF plus a
+    // guard area for a stack.
+    let heap_base_vaddr = loaded_kernel_vregion.end() + STACK_GUARD_SIZE;
+
     // Create the page heap used in the kernel region.
     let mut kernel_heap = prepare_heap(
         kernel_region,
         loaded_kernel_pregion,
-        loaded_kernel_vregion,
+        heap_base_vaddr,
         platform,
         &config,
     )
     .expect("Could not create kernel heap");
+
+    // Allocate pages for an initial stack to be used in the kernel
+    // environment.
+    let (initial_stack_base, _) = kernel_heap
+        .allocate(STACK_SIZE)
+        .expect("Failed to allocate initial kernel stack");
+    let initial_stack = initial_stack_base + STACK_SIZE;
 
     // Load the IGVM params, if present. Update loaded region accordingly.
     // SAFETY: The loaded kernel region was correctly calculated above and
@@ -543,8 +567,31 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let igvm_vaddr = load_igvm_params(&mut kernel_heap, &config, launch_info)
         .expect("Failed to load IGVM params");
 
+    // Copy the CPUID page into the kernel address space if required.
+    // SAFETY: the CPUID address is assumed to have been correctly retrieved
+    // from the launch info by the stage2 platform object.
+    let kernel_cpuid_page = unsafe {
+        cpuid_page.map(|cpuid_addr| {
+            copy_page_to_kernel(cpuid_addr, &mut kernel_heap).expect("Failed to copy CPUID page")
+        })
+    };
+
     // Determine whether this platforms uses a secrets pgae.
     let secrets_page = stage2_platform.get_secrets_page(launch_info);
+
+    // Copy the secrets page into the kernel address space if required.
+    let kernel_secrets_page = if let Some(secrets_page_vaddr) = secrets_page {
+        // SAFETY: the secrets page address is assumed to have been correctly
+        // configured in the stage2 image if it is present at all.
+        unsafe {
+            let new_vaddr = copy_page_to_kernel(secrets_page_vaddr, &mut kernel_heap)
+                .expect("Failed to copy secrets page");
+            zero_mem_region(secrets_page_vaddr, secrets_page_vaddr + PAGE_SIZE);
+            Some(new_vaddr)
+        }
+    } else {
+        None
+    };
 
     // Determine whether use of interrupts on the SVSM should be suppressed.
     // This is required when running SNP under KVM/QEMU.
@@ -553,9 +600,14 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         _ => false,
     };
 
+    // Allocate memory in the kernel heap to hold the kernel launch parameters.
+    let (launch_info_vaddr, _) = kernel_heap
+        .allocate(mem::size_of::<KernelLaunchInfo>())
+        .expect("Failed to allocate memory for kernel launch block");
+
     // Build the handover information describing the memory layout and hand
     // control to the SVSM kernel.
-    let launch_info = KernelLaunchInfo {
+    let kernel_launch_info = KernelLaunchInfo {
         kernel_region_phys_start: u64::from(kernel_region.start()),
         kernel_region_phys_end: u64::from(kernel_region.end()),
         heap_area_phys_start: u64::from(kernel_heap.phys_base()),
@@ -569,8 +621,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
         stage2_end: launch_info.stage2_end as u64,
-        cpuid_page: u64::from(cpuid_page.unwrap_or(VirtAddr::null())),
-        secrets_page: u64::from(secrets_page.unwrap_or(VirtAddr::null())),
+        cpuid_page: u64::from(kernel_cpuid_page.unwrap_or(VirtAddr::null())),
+        secrets_page: u64::from(kernel_secrets_page.unwrap_or(VirtAddr::null())),
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_params.size() as u64,
         igvm_params_virt_addr: u64::from(igvm_vaddr),
@@ -581,7 +633,14 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         platform_type,
     };
 
-    check_launch_info(&launch_info);
+    // SAFETY: the virtual address of the allocated block is known to be usable
+    // and is known to be uninitialized data which can be filled with the
+    // computed launch information.
+    unsafe {
+        let kernel_launch_block =
+            &mut *launch_info_vaddr.as_mut_ptr::<MaybeUninit<KernelLaunchInfo>>();
+        kernel_launch_block.write(kernel_launch_info);
+    };
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -596,8 +655,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         loaded_kernel_vregion.start()
     );
 
-    let valid_bitmap = valid_bitmap_addr();
-
     log::info!("Starting SVSM kernel...");
 
     // SAFETY: the addreses used to invoke the kernel have been calculated
@@ -608,8 +665,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
-             in("rdi") &launch_info,
-             in("rsi") valid_bitmap.bits(),
+             in("rdi") u64::from(launch_info_vaddr),
+             in("rsi") u64::from(initial_stack),
+             in("rdx") u64::from(initial_stack_base),
              options(att_syntax))
     };
 

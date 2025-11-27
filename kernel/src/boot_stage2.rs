@@ -353,8 +353,8 @@ global_asm!(
 global_asm!(
     r#"
         .globl bsp_stack
-        bsp_stack:
+        bsp_stack: .quad 0
         .globl bsp_stack_end
-        bsp_stack_end:
+        bsp_stack_end: .quad 0
         "#
 );
