@@ -391,8 +391,8 @@ pub struct PerCpu {
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
-    init_shadow_stack: Cell<Option<VirtAddr>>,
-    context_switch_stack: Cell<Option<VirtAddr>>,
+    init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
+    context_switch_stack: ImmutAfterInitCell<VirtAddr>,
     ist: IstStacks,
 
     /// Stack boundaries of the currently running task.
@@ -425,8 +425,8 @@ impl PerCpu {
             ghcb: ImmutAfterInitCell::uninit(),
             hypercall_pages: RefCell::new(None),
             hv_doorbell: ImmutAfterInitCell::uninit(),
-            init_shadow_stack: Cell::new(None),
-            context_switch_stack: Cell::new(None),
+            init_shadow_stack: ImmutAfterInitCell::uninit(),
+            context_switch_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
@@ -580,11 +580,11 @@ impl PerCpu {
     }
 
     pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
-        self.init_shadow_stack.get()
+        self.init_shadow_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
-        self.context_switch_stack.get()
+        self.context_switch_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
@@ -652,15 +652,15 @@ impl PerCpu {
     }
 
     fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
-        let init_stack =
-            Some(self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)?);
-        self.init_shadow_stack.set(init_stack);
+        self.init_shadow_stack.try_init_from_fn(|| {
+            self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)
+        })??;
         Ok(())
     }
 
     fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
-        let cs_stack = Some(self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?);
-        self.context_switch_stack.set(cs_stack);
+        self.context_switch_stack
+            .try_init_from_fn(|| self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK))??;
         Ok(())
     }
 
