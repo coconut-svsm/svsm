@@ -9,12 +9,20 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use crate::error::SvsmError;
+
 pub type ImmutAfterInitResult<T> = Result<T, ImmutAfterInitError>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImmutAfterInitError {
     AlreadyInit,
     Uninitialized,
+}
+
+impl From<ImmutAfterInitError> for SvsmError {
+    fn from(value: ImmutAfterInitError) -> Self {
+        Self::ImmutAfterInit(value)
+    }
 }
 
 /// A memory location which is effectively immutable after initalization code
@@ -94,14 +102,20 @@ impl<T> ImmutAfterInitCell<T> {
         self.init.store(IMMUT_INITIALIZED, Ordering::Release);
     }
 
+    /// # Safety
+    /// The caller must ensure that the cell has been initialized.
+    unsafe fn get_inner_unchecked(&self) -> &T {
+        // SAFETY: the caller must uphold the safety guarantees
+        unsafe { (*self.data.get()).assume_init_ref() }
+    }
+
     /// Obtains the inner value of the cell, returning `Ok(T)` if the cell is
     /// initialized or `Err(ImmutAfterInitError)` if not.
     pub fn try_get_inner(&self) -> ImmutAfterInitResult<&T> {
         self.check_init()?;
         // SAFETY: the init check above proves that the cell has been
         // initialized.
-        let r = unsafe { (*self.data.get()).assume_init_ref() };
-        Ok(r)
+        unsafe { Ok(self.get_inner_unchecked()) }
     }
 
     /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
@@ -139,6 +153,50 @@ impl<T> ImmutAfterInitCell<T> {
             self.complete_init();
         }
         Ok(())
+    }
+
+    /// Initialize an uninitialized `ImmutAfterInitCell` instance from a
+    /// function or closure.
+    ///
+    /// This method fails if the cell was already initialized, or if the provided callback
+    /// fails. In this last case, the cell is left uninitialized, so the caller may try again.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Ok(&T))` if both initialization and the callback suceeded.
+    /// * `Ok(Err(E))` if the cell could have been initialized, but the callback
+    ///   failed. The cell is left uninitialized in this case.
+    /// * `Err(ImmutAfterInitErr)`` if the cell was already initialized.
+    pub fn try_init_from_fn<F, E>(&self, f: F) -> ImmutAfterInitResult<Result<&T, E>>
+    where
+        F: FnOnce() -> Result<T, E>,
+    {
+        self.try_init()?;
+        let val = match f() {
+            Ok(val) => val,
+            Err(e) => {
+                // The function failed, so back off. The state should have
+                // remained as in-progress meanwhile.
+                assert_eq!(
+                    self.init.swap(IMMUT_UNINIT, Ordering::SeqCst),
+                    IMMUT_INIT_IN_PROGRESS
+                );
+                return Ok(Err(e));
+            }
+        };
+        // SAFETY: Successful completion of `try_init` conveys the exclusive
+        // right to populate the contents of the cell.
+        unsafe {
+            (*self.data.get()).as_mut_ptr().write(val);
+            self.complete_init();
+            Ok(Ok(self.get_inner_unchecked()))
+        }
+    }
+}
+
+impl<T> Default for ImmutAfterInitCell<T> {
+    fn default() -> Self {
+        Self::uninit()
     }
 }
 
