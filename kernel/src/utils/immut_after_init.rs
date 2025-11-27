@@ -9,12 +9,20 @@ use core::mem::MaybeUninit;
 use core::ops::Deref;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use crate::error::SvsmError;
+
 pub type ImmutAfterInitResult<T> = Result<T, ImmutAfterInitError>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ImmutAfterInitError {
     AlreadyInit,
     Uninitialized,
+}
+
+impl From<ImmutAfterInitError> for SvsmError {
+    fn from(value: ImmutAfterInitError) -> Self {
+        Self::ImmutAfterInit(value)
+    }
 }
 
 /// A memory location which is effectively immutable after initalization code
