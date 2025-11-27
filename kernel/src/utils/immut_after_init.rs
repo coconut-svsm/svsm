@@ -142,6 +142,12 @@ impl<T> ImmutAfterInitCell<T> {
     }
 }
 
+impl<T> Default for ImmutAfterInitCell<T> {
+    fn default() -> Self {
+        Self::uninit()
+    }
+}
+
 impl<T> Deref for ImmutAfterInitCell<T> {
     type Target = T;
 
