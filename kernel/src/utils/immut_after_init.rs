@@ -99,7 +99,21 @@ impl<T> ImmutAfterInitCell<T> {
     /// The caller must ensure that the cell is in the init-in-progress phase
     /// and that the contents of the cell have been populated.
     unsafe fn complete_init(&self) {
-        self.init.store(IMMUT_INITIALIZED, Ordering::Release);
+        if cfg!(debug_assertions) {
+            assert_eq!(
+                self.init.swap(IMMUT_INITIALIZED, Ordering::SeqCst),
+                IMMUT_INIT_IN_PROGRESS
+            );
+        } else {
+            self.init.store(IMMUT_INITIALIZED, Ordering::Release);
+        }
+    }
+
+    /// # Safety
+    /// The caller must ensure that the cell has been initialized.
+    unsafe fn get_inner_unchecked(&self) -> &T {
+        // SAFETY: the caller must uphold the safety guarantees
+        unsafe { (*self.data.get()).assume_init_ref() }
     }
 
     /// Obtains the inner value of the cell, returning `Ok(T)` if the cell is
@@ -108,8 +122,7 @@ impl<T> ImmutAfterInitCell<T> {
         self.check_init()?;
         // SAFETY: the init check above proves that the cell has been
         // initialized.
-        let r = unsafe { (*self.data.get()).assume_init_ref() };
-        Ok(r)
+        unsafe { Ok(self.get_inner_unchecked()) }
     }
 
     /// Initialize an uninitialized `ImmutAfterInitCell` instance from a value.
@@ -147,6 +160,51 @@ impl<T> ImmutAfterInitCell<T> {
             self.complete_init();
         }
         Ok(())
+    }
+
+    /// Initialize an uninitialized `ImmutAfterInitCell` instance from a function
+    /// or closure. On success, it returns a reference to the value stored in
+    /// the cell.
+    ///
+    /// # Errors
+    ///
+    /// This method fails if the cell was already initialized, or if
+    /// the provided callback fails. In this last case, the cell is left
+    /// uninitialized, so the caller may try again.
+    ///
+    /// The caller must inspect the error to detect which condition
+    /// caused the error. If the cell was already initialized,
+    /// [`SvsmError::ImmutAfterInit`] will be returned. If the closure fails,
+    /// the error from the closure will be returned.
+    pub fn try_init_from_fn<F>(&self, f: F) -> Result<&T, SvsmError>
+    where
+        F: FnOnce() -> Result<T, SvsmError>,
+    {
+        self.try_init()?;
+        let val = match f() {
+            Ok(val) => val,
+            Err(e) => {
+                // The function failed, so back off. The state should have
+                // remained as in-progress meanwhile.
+                if cfg!(debug_assertions) {
+                    assert_eq!(
+                        self.init.swap(IMMUT_UNINIT, Ordering::SeqCst),
+                        IMMUT_INIT_IN_PROGRESS
+                    );
+                } else {
+                    self.init.store(IMMUT_UNINIT, Ordering::Release);
+                }
+
+                return Err(e);
+            }
+        };
+        // SAFETY: Successful completion of `try_init` conveys the exclusive
+        // right to populate the contents of the cell.
+        unsafe {
+            (*self.data.get()).as_mut_ptr().write(val);
+            self.complete_init();
+            Ok(self.get_inner_unchecked())
+        }
     }
 }
 
