@@ -5,17 +5,18 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::error::SvsmError;
-use crate::io::IOPort;
+use crate::io::{IOPort, Write};
 use crate::locking::SpinLock;
-use crate::serial::{SerialPort, Terminal, DEFAULT_SERIAL_PORT};
+use crate::serial::SerialPort;
 use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use core::fmt;
-use core::sync::atomic::{AtomicBool, Ordering};
 use release::COCONUT_VERSION;
 
+/// A console device to output data
 #[derive(Clone, Copy, Debug)]
-struct Console {
-    writer: &'static dyn Terminal,
+enum Console {
+    /// Serial port-based console
+    Serial(SerialPort<'static>),
 }
 
 impl fmt::Write for Console {
@@ -26,26 +27,24 @@ impl fmt::Write for Console {
 }
 
 impl Console {
-    pub fn write_bytes(&self, buffer: &[u8]) {
-        for b in buffer.iter() {
-            self.writer.put_byte(*b);
+    fn write_bytes(&mut self, buffer: &[u8]) {
+        match self {
+            Self::Serial(serial) => {
+                serial.write(buffer).unwrap();
+            }
         }
     }
 }
 
-static WRITER: SpinLock<Console> = SpinLock::new(Console {
-    writer: &DEFAULT_SERIAL_PORT,
-});
+/// Global console used for printing output
+static WRITER: ImmutAfterInitCell<SpinLock<Console>> = ImmutAfterInitCell::uninit();
 
-// CONSOLE_INITIALIZED is only ever written during the single-proc phase of
-// boot, so it can safely be written with relaxed ordering.  FOr the same
-// reason, it can always safely be read with relaxed ordering.
-static CONSOLE_INITIALIZED: AtomicBool = AtomicBool::new(false);
-static CONSOLE_SERIAL: ImmutAfterInitCell<SerialPort<'_>> = ImmutAfterInitCell::uninit();
+pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
+    let serial = SerialPort::new(writer, port);
+    serial.init();
 
-fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
-    WRITER.lock().writer = writer;
-    CONSOLE_INITIALIZED.store(true, Ordering::Relaxed);
+    let console = SpinLock::new(Console::Serial(serial));
+    WRITER.init(console).map_err(|_| SvsmError::Console)?;
     log::info!(
         "COCONUT Secure Virtual Machine Service Module Version {}",
         COCONUT_VERSION
@@ -53,21 +52,12 @@ fn init_console(writer: &'static dyn Terminal) -> ImmutAfterInitResult<()> {
     Ok(())
 }
 
-pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), SvsmError> {
-    CONSOLE_SERIAL
-        .init_from_ref(&SerialPort::new(writer, port))
-        .map_err(|_| SvsmError::Console)?;
-    (*CONSOLE_SERIAL).init();
-    init_console(&*CONSOLE_SERIAL).map_err(|_| SvsmError::Console)
-}
-
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments<'_>) {
     use core::fmt::Write;
-    if !CONSOLE_INITIALIZED.load(Ordering::Relaxed) {
-        return;
+    if let Ok(writer) = WRITER.try_get_inner() {
+        writer.lock().write_fmt(args).unwrap();
     }
-    WRITER.lock().write_fmt(args).unwrap();
 }
 
 /// Writes all bytes from the slice to the console
@@ -76,10 +66,9 @@ pub fn _print(args: fmt::Arguments<'_>) {
 ///
 /// * `buffer`: u8 slice with bytes to write.
 pub fn console_write(buffer: &[u8]) {
-    if !CONSOLE_INITIALIZED.load(Ordering::Relaxed) {
-        return;
+    if let Ok(writer) = WRITER.try_get_inner() {
+        writer.lock().write_bytes(buffer);
     }
-    WRITER.lock().write_bytes(buffer);
 }
 
 #[derive(Clone, Copy, Debug)]
