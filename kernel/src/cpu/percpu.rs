@@ -57,7 +57,7 @@ use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr;
 use core::slice::Iter;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use cpuarch::vmsa::VMSA;
 
 // PERCPU areas virtual addresses into shared memory
@@ -370,7 +370,7 @@ pub struct PerCpu {
     tss: X86Tss,
     isst: Cell<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
-    reset_ip: Cell<u64>,
+    reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
@@ -409,7 +409,7 @@ impl PerCpu {
             tss: X86Tss::new(),
             isst: Cell::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
-            reset_ip: Cell::new(0xffff_fff0),
+            reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
                 vmr.set_per_cpu(true);
@@ -865,7 +865,7 @@ impl PerCpu {
     }
 
     pub fn set_reset_ip(&self, reset_ip: u64) {
-        self.reset_ip.set(reset_ip);
+        self.reset_ip.store(reset_ip, Ordering::Relaxed);
     }
 
     /// Fill in the initial context structure for the SVSM.
@@ -954,7 +954,11 @@ impl PerCpu {
         let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
         let paddr = vmsa.paddr();
 
-        init_guest_vmsa(&mut vmsa, self.reset_ip.get(), use_alternate_injection);
+        init_guest_vmsa(
+            &mut vmsa,
+            self.reset_ip.load(Ordering::Relaxed),
+            use_alternate_injection,
+        );
 
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
