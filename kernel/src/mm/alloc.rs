@@ -1033,9 +1033,9 @@ impl HeapMemoryRegion {
                 item_size: item_size as u64,
             }) , ret, *perm),
     )]
-    fn allocate_slab_page(&mut self, item_size: u16) -> Result<VirtAddr, AllocError> {
+    fn allocate_slab_page<const N: u16>(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Slab(SlabPageInfo {
-            item_size: u64::from(item_size),
+            item_size: u64::from(N),
         });
         proof_with!(Tracked(perm));
         self.allocate_pages_info(0, pg)
@@ -1740,20 +1740,6 @@ pub fn allocate_pages(order: usize) -> Result<VirtAddr, SvsmError> {
     Ok(ROOT_MEM.lock().allocate_pages(order)?)
 }
 
-/// Allocate a slab page.
-///
-/// # Arguments
-///
-/// `slab` - slab virtual address
-///
-/// # Returns
-///
-/// Result containing the virtual address of the allocated slab page or an
-/// `SvsmError` if allocation fails.
-pub fn allocate_slab_page(item_size: u16) -> Result<VirtAddr, SvsmError> {
-    Ok(ROOT_MEM.lock().allocate_slab_page(item_size)?)
-}
-
 /// Allocate a zeroed page.
 ///
 /// # Returns
@@ -1837,8 +1823,7 @@ impl<const N: u16> SlabPage<N> {
         if !self.vaddr.is_null() {
             return Ok(());
         }
-        let vaddr = ROOT_MEM.lock().allocate_slab_page(N)?;
-        self.vaddr = vaddr;
+        self.vaddr = ROOT_MEM.lock().allocate_slab_page::<N>()?;
         self.free = self.get_capacity();
 
         Ok(())
