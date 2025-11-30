@@ -1809,7 +1809,7 @@ struct SlabPage<const N: u16> {
 impl<const N: u16> SlabPage<N> {
     /// Creates a new [`SlabPage`] instance with default values.
     const fn new() -> Self {
-        assert!(N <= (PAGE_SIZE / 2) as u16);
+        const { assert!(N <= (PAGE_SIZE / 2) as u16) };
         Self {
             vaddr: VirtAddr::null(),
             free: 0,
