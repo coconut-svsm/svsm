@@ -35,8 +35,8 @@ members = [
     "libaproxy",
     # Attestation proxy
     "tools/aproxy",
-    # Utility to get the C-bit location in a PTE
-    "tools/cbit",
+    # Utility to get SEV/SNP capabilities from CPUID
+    "tools/sev-caps",
 ]
 
 

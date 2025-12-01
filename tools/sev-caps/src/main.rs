@@ -54,7 +54,7 @@ fn main() -> ExitCode {
     }
 
     let cap2 = EncryptMemCapEbx::from(res.ebx);
-    println!("{}", cap2.cbit());
+    println!("{} {}", cap2.cbit(), cap2.phys_addr_reduction());
 
     ExitCode::SUCCESS
 }
