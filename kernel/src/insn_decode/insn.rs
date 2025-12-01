@@ -36,6 +36,14 @@ pub enum Register {
     R14,
     R15,
     Rip,
+    Dr0,
+    Dr1,
+    Dr2,
+    Dr3,
+    Dr4,
+    Dr5,
+    Dr6,
+    Dr7,
 }
 
 /// A Segment register in instruction

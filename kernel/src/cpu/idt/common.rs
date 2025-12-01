@@ -137,6 +137,7 @@ impl InsnMachineCtx for X86ExceptionContext {
             Register::R14 => self.regs.r14,
             Register::R15 => self.regs.r15,
             Register::Rip => self.frame.rip,
+            _ => unimplemented!("{reg:?} read"),
         }
     }
 
@@ -163,6 +164,7 @@ impl InsnMachineCtx for X86ExceptionContext {
             Register::R14 => self.regs.r14 = val,
             Register::R15 => self.regs.r15 = val,
             Register::Rip => self.frame.rip = val,
+            _ => unimplemented!("{reg:?} write"),
         }
     }
 

@@ -423,6 +423,21 @@ impl Register {
             _ => Err(InsnError::InvalidRegister),
         }
     }
+
+    /// Attempt to decode a debug register.
+    const fn try_dr(val: RegCode) -> Result<Self, InsnError> {
+        match val.0 {
+            0 => Ok(Self::Dr0),
+            1 => Ok(Self::Dr1),
+            2 => Ok(Self::Dr2),
+            3 => Ok(Self::Dr3),
+            4 => Ok(Self::Dr4),
+            5 => Ok(Self::Dr5),
+            6 => Ok(Self::Dr6),
+            7 => Ok(Self::Dr7),
+            _ => Err(InsnError::InvalidRegister),
+        }
+    }
 }
 
 const PREFIX_SIZE: usize = 4;
