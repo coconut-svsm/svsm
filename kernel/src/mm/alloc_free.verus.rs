@@ -42,20 +42,13 @@ impl MRFreePerms {
         if perms.len() > 0 {
             perms.last().pfn()
         } else {
-            0
+            spec_no_page()
         }
     }
 
     /// The next free page for each order.
     spec fn next_pages(&self) -> Seq<usize> {
-        self.avail.map_values(
-            |perms: Seq<PgUnitPerm<DeallocUnit>>|
-                if perms.len() > 0 {
-                    perms.last().pfn()
-                } else {
-                    0
-                },
-        )
+        Seq::new(self.avail.len(), |i| self.next_page(i as usize))
     }
 
     spec fn mr_map(&self) -> MemRegionMapping {
@@ -69,7 +62,7 @@ impl MRFreePerms {
     #[verifier(inline)]
     spec fn valid_pfn_order(&self, pfn: usize, order: usize) -> bool {
         &&& self.pg_params().valid_pfn_order(pfn, order)
-        &&& pfn > 0
+        &&& !spec_pfn_is_oob(pfn)
     }
 
     /// Create a new MRFreePerms with an empty free list.
@@ -106,10 +99,9 @@ impl MRFreePerms {
     spec fn ens_perm_valid(&self, order: usize, i: int, perm: PgUnitPerm<DeallocUnit>) -> bool {
         let pfn = perm.info.unit_start();
         &&& perm == self.avail[order as int][i]
-        &&& self.pg_params().valid_pfn_order(pfn, order)
+        &&& self.valid_pfn_order(pfn, order)
         &&& perm.wf_pfn_order(self.mr_map, pfn, order)
         &&& perm.page_type() == PageType::Free
-        &&& pfn > 0
     }
 
     #[verifier(inline)]
@@ -117,8 +109,8 @@ impl MRFreePerms {
         let next_perm = self.avail[order as int][i - 1];
         &&& match perm.page_info() {
             Some(PageInfo::Free(FreeInfo { order, next_page })) => {
-                &&& (next_page == 0 <==> i == 0)
-                &&& next_page > 0 ==> {
+                &&& (spec_pfn_is_oob(next_page) <==> i == 0)
+                &&& !spec_pfn_is_oob(next_page) ==> {
                     &&& next_page == next_perm.pfn()
                 }
             },
@@ -442,7 +434,7 @@ impl MRFreePerms {
     proof fn tracked_pop(tracked &mut self, order: usize) -> (tracked perm: PgUnitPerm<DeallocUnit>)
         requires
             0 <= order < MAX_ORDER,
-            old(self).next_page(order) > 0,
+            !spec_pfn_is_oob(old(self).next_page(order)),
             old(self).wf_strict(),
         ensures
             self.wf_strict(),
@@ -486,13 +478,11 @@ impl MRFreePerms {
         requires
             self.wf_strict(),
         ensures
-            (order < MAX_ORDER && self.next_page(order) != 0) ==> self.pg_params().valid_pfn_order(
-                self.next_page(order),
-                order as usize,
-            ),
+            (order < MAX_ORDER && !spec_pfn_is_oob(self.next_page(order)))
+                ==> self.pg_params().valid_pfn_order(self.next_page(order), order as usize),
     {
         use_type_invariant(self);
-        if order < MAX_ORDER && self.next_page(order) != 0 {
+        if order < MAX_ORDER && !spec_pfn_is_oob(self.next_page(order)) {
             self.tracked_borrow(order, self.avail[order as int].len() - 1);
         }
     }

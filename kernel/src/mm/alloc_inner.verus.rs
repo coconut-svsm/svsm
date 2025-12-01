@@ -25,7 +25,9 @@ verus! {
 
 pub type RawPerm = PointsToRaw;
 
-pub spec const MAX_PAGE_COUNT: u64 = 1u64 << (u64::BITS - 12) as u64;
+/// Maximum number of pages that can be allocated
+/// Since NO_PAGE is defined as usize::MAX, we reserve one page for NO_PAGE.
+pub spec const MAX_PAGE_COUNT: u64 = ((1u64 << (u64::BITS - 12) as u64) as u64 - 1) as u64;
 
 pub spec const MAX_PGINFO_SHARES: nat = 2;
 
