@@ -6,6 +6,7 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::debug_regs::Dr7;
 use crate::cpu::msr::{write_msr, SEV_GHCB};
 use crate::cpu::percpu::this_cpu;
 use crate::cpu::{flush_tlb_global_sync, IrqGuard, X86GeneralRegs};
@@ -16,6 +17,7 @@ use crate::mm::validate::{
 use crate::mm::virt_to_phys;
 use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
+use crate::sev::status::{sev_flags, SEVStatusFlags};
 use crate::sev::utils::raw_vmgexit;
 use crate::types::{Bytes, PageSize, GUEST_VMPL, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
@@ -94,6 +96,7 @@ impl From<GhcbError> for SvsmError {
 #[repr(u64)]
 #[expect(non_camel_case_types, clippy::upper_case_acronyms)]
 enum GHCBExitCode {
+    WRITE_DR7 = 0x37,
     RDTSC = 0x6e,
     CPUID = 0x72,
     IOIO = 0x7b,
@@ -414,6 +417,19 @@ impl GHCB {
         let (rax, rdx) = self.rdmsr_raw(u32::try_from(regs.rcx).unwrap())?;
         regs.rdx = rdx as usize;
         regs.rax = rax as usize;
+        Ok(())
+    }
+
+    pub fn write_dr7(&self, val: u64) -> Result<(), SvsmError> {
+        self.clear();
+        assert!(!sev_flags().contains(SEVStatusFlags::DBGSWP));
+
+        // Filter out invalid values
+        let mut dr7 = Dr7::from_bits(val & Dr7::valid_mask().into_bits());
+        dr7.set_rsvd10(true);
+
+        self.set_rax_valid(dr7.into_bits());
+        self.vmgexit(GHCBExitCode::WRITE_DR7, 0, 0)?;
         Ok(())
     }
 

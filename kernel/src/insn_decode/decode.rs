@@ -1539,7 +1539,7 @@ impl DecodedInsnCtx {
             })
     }
 
-    fn emulate_mov<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
+    pub fn emulate_mov<I: InsnMachineCtx>(&self, mctx: &mut I) -> Result<(), InsnError> {
         if self.prefix.contains(PrefixFlags::REPZ_P) {
             return Err(InsnError::UnSupportedInsn);
         }
@@ -1554,6 +1554,20 @@ impl DecodedInsnCtx {
         let ea = self.cal_effective_addr(mctx)?;
 
         match self.get_opdesc()?.code {
+            0x21 => {
+                // Mov debug register to general purpose register
+                let dst = self.base_reg.ok_or(InsnError::InvalidDecode)?;
+                let src = self.get_modrm_reg()?;
+                let val = mctx.read_reg(src);
+                mctx.write_reg(dst, val);
+            }
+            0x23 => {
+                // Mov general purpose register to debug register
+                let dst = self.get_modrm_reg()?;
+                let src = self.base_reg.ok_or(InsnError::InvalidDecode)?;
+                let val = mctx.read_reg(src);
+                mctx.write_reg(dst, val);
+            }
             0x88 => {
                 // Mov byte from reg (ModRM:reg) to mem (ModRM:r/m)
                 // 88/r:	mov r/m8, r8

@@ -10,6 +10,7 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
 use crate::cpu::gdt::GLOBAL_GDT;
+use crate::cpu::percpu::this_cpu;
 use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_enabled;
 use crate::error::SvsmError;
@@ -137,6 +138,7 @@ impl InsnMachineCtx for X86ExceptionContext {
             Register::R14 => self.regs.r14,
             Register::R15 => self.regs.r15,
             Register::Rip => self.frame.rip,
+            Register::Dr7 => this_cpu().read_dr7() as usize,
             _ => unimplemented!("{reg:?} read"),
         }
     }
@@ -164,6 +166,7 @@ impl InsnMachineCtx for X86ExceptionContext {
             Register::R14 => self.regs.r14 = val,
             Register::R15 => self.regs.r15 = val,
             Register::Rip => self.frame.rip = val,
+            Register::Dr7 => this_cpu().write_dr7(val as u64).unwrap(),
             _ => unimplemented!("{reg:?} write"),
         }
     }

@@ -23,6 +23,7 @@ use core::fmt;
 #[cfg(test)]
 use crate::testutils::{has_qemu_testdev, is_test_platform_type};
 
+pub const SVM_EXIT_DR_BASE: usize = 0x20;
 pub const SVM_EXIT_EXCP_BASE: usize = 0x40;
 pub const SVM_EXIT_LAST_EXCP: usize = 0x5f;
 pub const SVM_EXIT_RDTSC: usize = 0x6e;
@@ -173,6 +174,9 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
         (SVM_EXIT_MSR, Some(ins)) => handle_msr(ctx, ghcb, ins),
         (SVM_EXIT_RDTSC, Some(DecodedInsn::Rdtsc)) => ghcb.rdtsc_regs(&mut ctx.regs),
         (SVM_EXIT_RDTSCP, Some(DecodedInsn::Rdtscp)) => ghcb.rdtscp_regs(&mut ctx.regs),
+        (_, Some(DecodedInsn::Mov)) if vc_is_dr_access(error_code) => {
+            vc_handle_dr_access(ctx, &insn_ctx.unwrap())
+        }
         _ => Err(VcError::new(ctx, VcErrorType::Unsupported).into()),
     }?;
 
@@ -264,6 +268,17 @@ fn vc_finish_insn(ctx: &mut X86ExceptionContext, insn_ctx: &Option<DecodedInsnCt
     }
 }
 
+fn vc_is_dr_access(error_code: usize) -> bool {
+    (SVM_EXIT_DR_BASE..SVM_EXIT_EXCP_BASE).contains(&error_code)
+}
+
+fn vc_handle_dr_access(
+    ctx: &mut X86ExceptionContext,
+    insn_ctx: &DecodedInsnCtx,
+) -> Result<(), SvsmError> {
+    insn_ctx.emulate_mov(ctx).map_err(SvsmError::from)
+}
+
 fn ioio_get_port(source: Operand, ctx: &X86ExceptionContext) -> u16 {
     match source {
         Operand::Reg(Register::Rdx) => ctx.regs.rdx as u16,
@@ -331,6 +346,7 @@ mod tests {
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
     use crate::locking::SpinLock;
     use crate::sev::ghcb::GHCB;
+    use crate::sev::status::{sev_flags, SEVStatusFlags};
     use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
     use bootlib::platform::SvsmPlatformType;
     use core::arch::asm;
@@ -725,10 +741,12 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn test_read_write_dr7() {
-        if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
+        if has_qemu_testdev()
+            && is_test_platform_type(SvsmPlatformType::Snp)
+            && !sev_flags().contains(SEVStatusFlags::DBGSWP)
+        {
             const DR7_DEFAULT: u64 = 0x400;
             const DR7_TEST: u64 = 0x401;
 

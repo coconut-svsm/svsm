@@ -225,6 +225,7 @@ pub mod test_utils {
                 Register::R14 => self.r14,
                 Register::R15 => self.r15,
                 Register::Rip => self.rip,
+                _ => unimplemented!(),
             }
         }
 
@@ -247,6 +248,7 @@ pub mod test_utils {
                 Register::R14 => self.r14 = val,
                 Register::R15 => self.r15 = val,
                 Register::Rip => self.rip = val,
+                _ => unimplemented!(),
             }
         }
 

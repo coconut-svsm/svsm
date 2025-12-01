@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use super::debug_regs::Dr7;
 use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
@@ -56,7 +57,7 @@ use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr;
 use core::slice::Iter;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use cpuarch::vmsa::VMSA;
 
 // PERCPU areas virtual addresses into shared memory
@@ -396,6 +397,10 @@ pub struct PerCpu {
 
     /// Stack boundaries of the currently running task.
     current_stack: Cell<MemoryRegion<VirtAddr>>,
+
+    /// Cached DR7 value. Updated when the guest attempts to write DR7,
+    /// and returned when the guest attempts to read it.
+    dr7: AtomicU64,
 }
 
 impl PerCpu {
@@ -428,6 +433,8 @@ impl PerCpu {
             context_switch_stack: Cell::new(None),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
+            // Default DR7 value on reset
+            dr7: AtomicU64::new(Dr7::default().into_bits()),
         }
     }
 
@@ -1173,6 +1180,16 @@ impl PerCpu {
         unsafe {
             self.tss.set_rsp0(addr);
         }
+    }
+
+    pub fn read_dr7(&self) -> u64 {
+        self.dr7.load(Ordering::Relaxed)
+    }
+
+    pub fn write_dr7(&self, val: u64) -> Result<(), SvsmError> {
+        self.ghcb().unwrap().write_dr7(val)?;
+        self.dr7.store(val, Ordering::Relaxed);
+        Ok(())
     }
 }
 

@@ -6,7 +6,7 @@
 
 use bitfield_struct::bitfield;
 
-#[bitfield(u64)]
+#[bitfield(u64, default = false)]
 #[derive(PartialEq, Eq)]
 pub struct Dr7 {
     /// Local breakpoint enable 0
@@ -65,4 +65,22 @@ pub struct Dr7 {
     #[bits(2)]
     pub len3: u8,
     unused: u32,
+}
+
+impl Dr7 {
+    /// Mask of values that can be written into DR7
+    pub const fn valid_mask() -> Self {
+        Self::from_bits(u64::MAX)
+            .with_rtm(false)
+            .with_rsvd12(false)
+            .with_rsvd14(0)
+            .with_unused(0)
+    }
+}
+
+impl Default for Dr7 {
+    fn default() -> Self {
+        // Default value of the register at reset
+        Self::from_bits(0).with_rsvd10(true)
+    }
 }
