@@ -935,14 +935,15 @@ impl DecodedInsnCtx {
 
         let r#mod = self.modrm.get_mod();
         let reg = self.modrm.get_reg() | ((self.prefix.contains(PrefixFlags::REX_R) as u8) << 3);
-        self.modrm_reg = Some(Register::try_gpr(RegCode(reg))?);
-
-        // As the modrm decoding is majorly for MMIO instructions which requires
-        // a memory access, a direct addressing mode makes no sense in the context.
-        // There has to be a memory access involved to trap the MMIO instruction.
-        if r#mod == Mod::Direct {
-            return Err(InsnError::DecodeModRM);
-        }
+        self.modrm_reg = if self
+            .get_opdesc()?
+            .flags
+            .contains(OpCodeFlags::MODRM_REG_DBG)
+        {
+            Some(Register::try_dr(RegCode(reg))?)
+        } else {
+            Some(Register::try_gpr(RegCode(reg))?)
+        };
 
         // SDM Vol2 Table 2-5: Special Cases of REX Encodings
         // For mod=0 r/m=5 and mod!=3 r/m=4, the 'b' bit in the REX
