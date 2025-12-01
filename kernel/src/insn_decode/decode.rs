@@ -399,10 +399,9 @@ fn get_cpu_mode<I: InsnMachineCtx>(mctx: &I) -> CpuMode {
 // Translate the decoded number from the instruction ModR/M
 // or SIB to the corresponding register
 struct RegCode(u8);
-impl TryFrom<RegCode> for Register {
-    type Error = InsnError;
 
-    fn try_from(val: RegCode) -> Result<Register, Self::Error> {
+impl Register {
+    const fn try_gpr(val: RegCode) -> Result<Self, InsnError> {
         match val.0 {
             0 => Ok(Register::Rax),
             1 => Ok(Register::Rcx),
@@ -513,7 +512,7 @@ impl ModRM {
         } else if r#mod != Mod::Direct && rm == RM_SIB {
             RM::Sib
         } else {
-            RM::Reg(Register::try_from(RegCode(rm)).unwrap())
+            RM::Reg(Register::try_gpr(RegCode(rm)).unwrap())
         }
     }
 }
@@ -921,7 +920,7 @@ impl DecodedInsnCtx {
 
         let r#mod = self.modrm.get_mod();
         let reg = self.modrm.get_reg() | ((self.prefix.contains(PrefixFlags::REX_R) as u8) << 3);
-        self.modrm_reg = Some(Register::try_from(RegCode(reg))?);
+        self.modrm_reg = Some(Register::try_gpr(RegCode(reg))?);
 
         // As the modrm decoding is majorly for MMIO instructions which requires
         // a memory access, a direct addressing mode makes no sense in the context.
@@ -939,7 +938,7 @@ impl DecodedInsnCtx {
         // RM::Reg(r) represent the other cases.
         let disp_bytes = match self.modrm.get_rm() {
             RM::Reg(r) => {
-                let ext_r = Register::try_from(RegCode(
+                let ext_r = Register::try_gpr(RegCode(
                     r as u8 | ((self.prefix.contains(PrefixFlags::REX_B) as u8) << 3),
                 ))?;
                 self.base_reg = Some(ext_r);
@@ -983,11 +982,11 @@ impl DecodedInsnCtx {
         let r#mod = self.modrm.get_mod();
         let disp_bytes = match r#mod {
             Mod::IndirectDisp8 => {
-                self.base_reg = Some(Register::try_from(RegCode(base))?);
+                self.base_reg = Some(Register::try_gpr(RegCode(base))?);
                 Bytes::One
             }
             Mod::IndirectDisp32 => {
-                self.base_reg = Some(Register::try_from(RegCode(base))?);
+                self.base_reg = Some(Register::try_gpr(RegCode(base))?);
                 Bytes::Four
             }
             Mod::Indirect => {
@@ -998,7 +997,7 @@ impl DecodedInsnCtx {
                     disp_bytes = Bytes::Four;
                     None
                 } else {
-                    Some(Register::try_from(RegCode(base))?)
+                    Some(Register::try_gpr(RegCode(base))?)
                 };
                 disp_bytes
             }
@@ -1008,7 +1007,7 @@ impl DecodedInsnCtx {
         // SMD Vol 2 Table 2-5 Special Cases of REX Encoding
         // Index register not used when index=RSP
         if index != Register::Rsp as u8 {
-            self.index_reg = Some(Register::try_from(RegCode(index))?);
+            self.index_reg = Some(Register::try_gpr(RegCode(index))?);
             // 'scale' makes sense only in the context of an index register
             self.scale = 1 << self.sib.get_scale();
         }
@@ -1181,7 +1180,7 @@ impl DecodedInsnCtx {
         // %ah, %ch, %dh and %bh respectively.
         Ok(
             if !self.prefix.contains(PrefixFlags::REX_P) && (reg as u8 & 0x4) != 0 {
-                (Register::try_from(RegCode(reg as u8 & 0x3))?, true)
+                (Register::try_gpr(RegCode(reg as u8 & 0x3))?, true)
             } else {
                 (reg, false)
             },
