@@ -750,11 +750,11 @@ mod tests {
             const DR7_DEFAULT: u64 = 0x400;
             const DR7_TEST: u64 = 0x401;
 
-            let old_dr7 = verify_ghcb_gets_altered(get_dr7);
+            let old_dr7 = get_dr7();
             assert_eq!(old_dr7, DR7_DEFAULT);
 
             verify_ghcb_gets_altered(|| set_dr7(DR7_TEST));
-            let new_dr7 = verify_ghcb_gets_altered(get_dr7);
+            let new_dr7 = get_dr7();
             assert_eq!(new_dr7, DR7_TEST);
         }
     }
