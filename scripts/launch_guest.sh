@@ -11,7 +11,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
-read C_BIT_POS REDUCED_PHYS_BITS <<< "$(cargo run --package sev-caps || true)"
+C_BIT_POS=$(cargo run --package cbit || true)
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v
@@ -119,7 +119,7 @@ if (( QEMU_MAJOR >= 9 )); then
       ACCEL=tcg
       ;;
     sev)
-      SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
+      SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=1"
       ;;
     *)
       echo "Error: Unexpected CGS value '$CGS'"
@@ -131,11 +131,11 @@ if (( QEMU_MAJOR >= 9 )); then
 elif (( (QEMU_MAJOR > 8) || ((QEMU_MAJOR == 8) && (QEMU_MINOR >= 2)) )); then
   MACHINE=q35,confidential-guest-support=sev0,memory-backend=mem0,accel=$ACCEL
   MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
-  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS,init-flags=5,igvm-file=$IGVM"
+  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=1,init-flags=5,igvm-file=$IGVM"
 else
   MACHINE=q35,confidential-guest-support=sev0,memory-backend=mem0,kvm-type=protected,accel=$ACCEL
   MEMORY=memory-backend-memfd-private,size=8G,id=mem0,share=true
-  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS,init-flags=5,igvm-file=$IGVM"
+  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=1,init-flags=5,igvm-file=$IGVM"
 fi
 
 # Setup a disk if an image has been specified
