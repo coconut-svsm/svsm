@@ -32,6 +32,7 @@ use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
+use svsm::mm::address_space::SVSM_GLOBAL_BASE;
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
@@ -358,8 +359,7 @@ fn load_kernel_elf(
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
     let elf = elf::Elf64File::read(bytes)?;
 
-    let vaddr_alloc_info = elf.image_load_vaddr_alloc_info();
-    let vaddr_alloc_base = vaddr_alloc_info.range.vaddr_begin;
+    let vaddr_alloc_base = SVSM_GLOBAL_BASE.as_usize() as u64;
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
