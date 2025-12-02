@@ -331,7 +331,7 @@ mod tests {
     use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
     use crate::locking::SpinLock;
     use crate::sev::ghcb::GHCB;
-    use crate::sev::utils::{get_dr7, raw_vmmcall, set_dr7};
+    use crate::sev::utils::raw_vmmcall;
     use bootlib::platform::SvsmPlatformType;
     use core::arch::asm;
     use core::arch::x86_64::__cpuid_count;
@@ -721,23 +721,6 @@ mod tests {
                 raw_vmmcall(VMMCALL_HC_VAPIC_POLL_IRQ, 0, 0, 0)
             });
             assert_eq!(res, 0);
-        }
-    }
-
-    #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[ignore = "Currently unhandled by #VC handler"]
-    fn test_read_write_dr7() {
-        if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
-            const DR7_DEFAULT: u64 = 0x400;
-            const DR7_TEST: u64 = 0x401;
-
-            let old_dr7 = verify_ghcb_gets_altered(get_dr7);
-            assert_eq!(old_dr7, DR7_DEFAULT);
-
-            verify_ghcb_gets_altered(|| set_dr7(DR7_TEST));
-            let new_dr7 = verify_ghcb_gets_altered(get_dr7);
-            assert_eq!(new_dr7, DR7_TEST);
         }
     }
 
