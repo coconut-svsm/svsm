@@ -1253,7 +1253,7 @@ impl HeapMemoryRegion {
             }
             proof_with!(Tracked(&current_perm));
             let current_pfn = self.next_free_pfn(old_pfn, order);
-            if current_pfn == 0 {
+            if current_pfn == NO_PAGE {
                 return Err(AllocError::OutOfMemory);
             }
 
