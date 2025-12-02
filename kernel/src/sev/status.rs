@@ -151,9 +151,11 @@ pub fn vtom_enabled() -> bool {
 }
 
 pub fn sev_status_verify() {
-    let required = SEVStatusFlags::SEV | SEVStatusFlags::SEV_ES | SEVStatusFlags::SEV_SNP;
-    let supported = SEVStatusFlags::DBGSWP
-        | SEVStatusFlags::VTOM
+    let required = SEVStatusFlags::SEV
+        | SEVStatusFlags::SEV_ES
+        | SEVStatusFlags::SEV_SNP
+        | SEVStatusFlags::DBGSWP;
+    let supported = SEVStatusFlags::VTOM
         | SEVStatusFlags::REST_INJ
         | SEVStatusFlags::PREV_HOST_IBS
         | SEVStatusFlags::BTB_ISOLATION

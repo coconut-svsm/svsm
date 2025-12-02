@@ -160,6 +160,12 @@ pub fn init_guest_vmsa(v: &mut VMSA, rip: u64, alternate_injection: bool) {
     // Ensure that guest VMSAs do not enable restricted injection.
     sev_status.remove(SEVStatusFlags::REST_INJ);
 
+    // Also ensure that guest VMSAs do not use debug register virtualization,
+    // since they may expect to make use of GHCB calls.
+    // TODO: find a way to make this optional so guests that expect debug
+    // register protection can achieve it.
+    sev_status.remove(SEVStatusFlags::DBGSWP);
+
     // Enable alternate injection if requested.
     if alternate_injection {
         sev_status.insert(SEVStatusFlags::ALT_INJ);
