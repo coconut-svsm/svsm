@@ -4,11 +4,10 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::io::{IOPort, DEFAULT_IO_DRIVER};
+use super::io::IOPort;
 use crate::{error::SvsmError, io};
 use core::fmt::Debug;
 
-pub const SERIAL_PORT: u16 = 0x3f8;
 const BAUD: u32 = 9600;
 const DLAB: u8 = 0x80;
 
@@ -116,5 +115,3 @@ impl io::Write for SerialPort<'_> {
         Ok(buf.len())
     }
 }
-
-pub static DEFAULT_SERIAL_PORT: SerialPort<'_> = SerialPort::new(&DEFAULT_IO_DRIVER, SERIAL_PORT);
