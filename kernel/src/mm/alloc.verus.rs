@@ -115,7 +115,14 @@ impl HeapMemoryRegion {
         &&& self@.info_ptr_exposed@ == self@.mr_map@.provenance
         &&& self.map() == self@.mr_map@.map
         &&& self.map().wf()
-        &&& self.metadata_addr@ == self@.base_ptr()@.addr
+        &&& self.wf_metadata_addr()
+    }
+
+    // Metadata pointer invariants
+    spec fn wf_metadata_addr(&self) -> bool {
+        &&& self.metadata_addr@ == self@.mr_map@.metadata_addr()
+        &&& self.metadata_addr@ + (self.page_count * size_of::<PageStorageType>()) as int
+            <= self.start_virt@ + (self.page_count * PAGE_SIZE)
     }
 
     proof fn lemma_page_info_ptr(&self, pfn: usize)
@@ -123,7 +130,7 @@ impl HeapMemoryRegion {
             #[trigger] self.wf_params(),
             pfn < self.page_count,
         ensures
-            self.start_virt@ + #[trigger] (pfn * size_of::<PageStorageType>()) <= usize::MAX,
+            self.metadata_addr@ + #[trigger] (pfn * size_of::<PageStorageType>()) <= usize::MAX,
     {
         let unit = size_of::<PageStorageType>() as int;
         vstd::arithmetic::mul::lemma_mul_is_commutative(pfn as int, unit);

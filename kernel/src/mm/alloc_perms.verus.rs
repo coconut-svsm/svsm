@@ -77,7 +77,7 @@ impl AllocatedPagesPerm {
         &&& order < MAX_ORDER
         &&& self.mr_map.pg_params().valid_pfn_order(pfn, order)
         &&& self.mr_map.shares() == self.size()
-        &&& self.mr_map.base_ptr() === self.perm.info.base_ptr()
+        &&& self.mr_map.metadata_ptr() === self.perm.info.base_ptr()
         &&& self.perm.wf_pfn_order(self.mr_map, pfn, order)
         &&& self.perm.page_type().spec_is_deallocatable()
     }
@@ -165,7 +165,7 @@ impl<T: UnitType> PgUnitPerm<T> {
         &&& self.mem.wf_pfn_order(map, pfn, order)
         &&& self.info.unit_start() == pfn
         &&& self.info.order() == order
-        &&& self.info.base_ptr() === map.base_ptr()
+        &&& self.info.base_ptr() === map.metadata_ptr()
         &&& !self.info@.is_empty()
     }
 
@@ -205,14 +205,18 @@ impl MemoryRegionPerms {
         self.mr_map.base_ptr()
     }
 
+    spec fn metadata_ptr(&self) -> *const PageStorageType {
+        self.mr_map.metadata_ptr()
+    }
+
     spec fn wf_base_ptr(&self) -> bool {
         &&& self.mr_map@ == self.free.mr_map()@
         &&& self.info_ptr_exposed@ == self.mr_map@.provenance
-        &&& self.info.base_ptr() == self.base_ptr()
+        &&& self.info.base_ptr() == self.metadata_ptr()
     }
 
     spec fn page_info_ptr(&self, pfn: usize) -> *const PageStorageType {
-        self.base_ptr().add(pfn)
+        self.metadata_ptr().add(pfn)
     }
 
     #[verifier(inline)]
