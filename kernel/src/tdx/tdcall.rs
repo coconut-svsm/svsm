@@ -30,6 +30,7 @@ const TDVMCALL_IO: u32 = 30;
 const TDVMCALL_RDMSR: u32 = 31;
 const TDVMCALL_WRMSR: u32 = 32;
 const TDVMCALL_MAP_GPA: u32 = 0x10001;
+const TDVMCALL_REPORT_FATAL_ERROR: u32 = 0x10003;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
 
@@ -512,6 +513,37 @@ pub fn tdvmcall_halt(interrupt_state: TdpHaltInterruptState) {
     // Make sure the result matches the expectation
     debug_assert!(tdvmcall_result(vmcall_ret).is_ok());
     debug_assert!(tdx_result(ret).is_ok());
+}
+
+/// R12 bitfield for `TDVMCALL_REPORT_FATAL_ERROR`.
+#[bitfield(u64)]
+struct FatalErrorR12 {
+    error_code: u32,
+    #[bits(31)]
+    ext_error_code: u32,
+    gpa_valid: bool,
+}
+
+pub fn tdvmcall_report_fatal_error() -> ! {
+    let pass_regs = TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12;
+    // Default error code (0)
+    let r12 = FatalErrorR12::new();
+
+    // This TDCALL is not supposed to return, but guard against
+    // a non-cooperating host with an infinite loop, ensuring
+    // execution never leaves this function.
+    loop {
+        // SAFETY: executing TDCALL requires the use of assembly.
+        unsafe {
+            asm!("tdcall",
+                 in("rax") TDG_VP_TDVMCALL,
+                 in("rcx") pass_regs.bits(),
+                 in("r10") 0,
+                 in("r11") TDVMCALL_REPORT_FATAL_ERROR,
+                 in("r12") r12.into_bits(),
+            );
+        }
+    }
 }
 
 fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
