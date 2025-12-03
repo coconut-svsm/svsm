@@ -425,6 +425,13 @@ impl SvsmPlatform for SnpPlatform {
         // SAFETY: We are trusting the caller to ensure validity of `paddr` and alignment of data.
         unsafe { crate::cpu::percpu::current_ghcb().mmio_read(paddr, data) }
     }
+
+    fn terminate() -> !
+    where
+        Self: Sized,
+    {
+        request_termination_msr();
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]

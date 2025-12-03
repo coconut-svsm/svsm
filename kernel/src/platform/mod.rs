@@ -243,6 +243,11 @@ pub trait SvsmPlatform: Sync {
         vaddr: VirtAddr,
         data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError>;
+
+    /// Terminates the guest.
+    fn terminate() -> !
+    where
+        Self: Sized;
 }
 
 //FIXME - remove Copy trait
@@ -351,5 +356,14 @@ pub fn halt() {
         SvsmPlatformType::Native => NativePlatform::halt(),
         SvsmPlatformType::Snp => SnpPlatform::halt(),
         SvsmPlatformType::Tdp => TdpPlatform::halt(),
+    }
+}
+
+/// Terminates the guest with a platform-specific mechanism
+pub fn terminate() -> ! {
+    match *SVSM_PLATFORM_TYPE {
+        SvsmPlatformType::Native => NativePlatform::terminate(),
+        SvsmPlatformType::Snp => SnpPlatform::terminate(),
+        SvsmPlatformType::Tdp => TdpPlatform::terminate(),
     }
 }
