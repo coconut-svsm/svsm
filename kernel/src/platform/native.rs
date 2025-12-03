@@ -13,6 +13,7 @@ use crate::console::init_svsm_console;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
@@ -332,6 +333,16 @@ impl SvsmPlatform for NativePlatform {
         };
 
         Ok(())
+    }
+
+    fn terminate() -> !
+    where
+        Self: Sized,
+    {
+        raw_irqs_disable();
+        loop {
+            Self::halt();
+        }
     }
 }
 
