@@ -5,6 +5,11 @@ edition = "2021"
 
 [dependencies]
 syscall.workspace = true
+test = { workspace = true, optional = true }
+
+[features]
+default = []
+test_runner = ["dep:test"]
 
 [lints]
 workspace = true

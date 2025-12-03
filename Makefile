@@ -153,6 +153,11 @@ bin/test-kernel.elf: bin
 		--target=x86_64-unknown-none \
 		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
 
+bin/test-userinit.elf: bin
+	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package userinit ${CARGO_ARGS} \
+        --target=x86_64-unknown-none \
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../../$@"]'
+
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
 	cp -f $(FS_FILE) ${FS_BIN}
@@ -192,7 +197,8 @@ clippy:
 	RUSTFLAGS="--cfg fuzzing" cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm-fuzz -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
-	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit --exclude userlib -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --package userlib --tests -- ${CLIPPY_ARGS}
 
 clean:
 	cargo clean
@@ -201,4 +207,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf bin/test-userinit.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)
