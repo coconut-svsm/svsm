@@ -156,7 +156,7 @@ bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
 
-TEST_IN_SVSM_MODULES = svsm
+TEST_IN_SVSM_MODULES = svsm userinit
 TEST_IN_SVSM_TARGETS = $(TEST_IN_SVSM_MODULES:%=bin/test-%.elf)
 # Root of SVSM
 MAKEFILE_DIR = $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
