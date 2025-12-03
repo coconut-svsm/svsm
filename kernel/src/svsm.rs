@@ -457,11 +457,10 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     debug_break();
 
-    // If we are running tests, notify qemu. Otherwise, simply halt.
+    // If we are running tests, notify qemu. Otherwise, simply
+    // terminate the guest.
     #[cfg(all(test, test_in_svsm))]
     crate::testing::exit(crate::testing::QEMUExitValue::Fail);
     #[cfg(any(not(test), not(test_in_svsm)))]
-    loop {
-        svsm::platform::halt();
-    }
+    svsm::platform::terminate();
 }
