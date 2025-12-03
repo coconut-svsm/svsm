@@ -430,14 +430,15 @@ fn load_igvm_params(
 
     // Copy the contents over
     let src_addr = VirtAddr::from(launch_info.igvm_params as u64);
-    // SAFETY: the source address specified in the launch info was mapped
-    // by the loader, which promises to supply a correctly formed IGRM
-    // parameter block
-    let igvm_src = unsafe { slice::from_raw_parts(src_addr.as_ptr::<u8>(), params_size) };
     // SAFETY: the destination address came from the heap allocation above and
-    // can be used safely.
-    let igvm_dst = unsafe { slice::from_raw_parts_mut(vaddr.as_mut_ptr::<u8>(), params_size) };
-    igvm_dst.copy_from_slice(igvm_src);
+    // can be used safely. The source address specified in the launch info was
+    // mapped by the loader, which promises to supply a correctly formed IGVM
+    // parameter block.
+    unsafe {
+        vaddr
+            .as_mut_ptr::<u8>()
+            .copy_from_nonoverlapping(src_addr.as_ptr::<u8>(), params_size)
+    };
 
     Ok(vaddr)
 }
