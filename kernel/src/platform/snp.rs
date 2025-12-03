@@ -16,6 +16,7 @@ use crate::cpu::cpuid::{cpuid_table, CpuidResult};
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
+use crate::cpu::IrqGuard;
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
@@ -24,14 +25,15 @@ use crate::io::IOPort;
 use crate::mm::memory::write_guest_memory_map;
 use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::sev::ghcb::GHCBIOSize;
+use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
     hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
 };
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
-use crate::sev::GHCB_APIC_ACCESSOR;
 use crate::sev::{
-    init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify, PvalidateOp,
+    init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify,
+    PvalidateOp, GHCB_APIC_ACCESSOR,
 };
 use crate::types::PageSize;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -39,6 +41,7 @@ use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
 use core::mem::MaybeUninit;
+use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use bootlib::kernel_launch::Stage2LaunchInfo;
@@ -98,10 +101,26 @@ impl SnpPlatform {
     }
 }
 
+extern "C" {
+    fn snp_idle_halt(hv_doorbell: *const HVDoorbell);
+}
+
 impl SvsmPlatform for SnpPlatform {
     #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType {
         SvsmPlatformType::Snp
+    }
+
+    fn idle_halt(&self, _guard: &IrqGuard) {
+        let hv_doorbell = this_cpu().hv_doorbell();
+        let ptr = match hv_doorbell {
+            Some(doorbell) => ptr::from_ref(doorbell),
+            None => ptr::null(),
+        };
+        // SAFETY: The correct #HV doorbell address was calculated above.
+        unsafe {
+            snp_idle_halt(ptr);
+        }
     }
 
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {

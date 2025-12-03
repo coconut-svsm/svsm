@@ -854,6 +854,9 @@ pub fn switch_to_vmpl(vmpl: u32) {
 
 global_asm!(
     r#"
+        .globl hv_redirect_window_start
+    hv_redirect_window_start:
+
         .globl switch_to_vmpl_unsafe
     switch_to_vmpl_unsafe:
 
@@ -898,6 +901,40 @@ global_asm!(
     switch_vmpl_cancel:
         movl $1, %eax
         ret
+
+        /* Idle halt is placed here as well, because idle halt requires
+         * detection in the #HV handler to determine whether the HLT should be
+         * skipped.  Placing this code here means that a single quick check can
+         * be made to determine whether RIP is in a host exiting window (switch
+         * VMPL or HLT) before needing to make a further determination about
+         * which window was executing. */
+        .globl snp_idle_halt
+    snp_idle_halt:
+        /* Upon entry, rdi = pointer to the HV doorbell page.
+         * Check if NoFurtherSignal is set (bit 15 of the first word of the
+         * #HV doorbell page).  If so, skip the halt. */
+        test %rdi, %rdi
+        jz idle_halt_proceed
+        testw $0x8000, (%rdi)
+
+        /* From this point until the HLT, if a #HV arrives, the #HV handler
+         * must prevent the halt. */
+        .globl idle_halt_window_start
+    idle_halt_window_start:
+        jnz idle_halt_window_end
+    idle_halt_proceed:
+        sti
+        .globl snp_idle_hlt_instruction
+    snp_idle_hlt_instruction:
+        hlt
+        .globl idle_halt_window_end
+    idle_halt_window_end:
+        cli
+        ret
+
+        .globl hv_redirect_window_end
+    hv_redirect_window_end:
+
         "#,
     SEV_GHCB = const SEV_GHCB,
     options(att_syntax)

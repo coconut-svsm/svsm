@@ -117,12 +117,20 @@ asm_entry_hv:
 	pushq	%rax
 	pushq	%rbx
 	pushq	%rcx
+	// Fetch RIP from the trap frame.
+	movq	({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp), %rax
 	// Check whether interrupts were enabled at the time of #HV.  If so,
 	// commit to processing all #HV events immediately.
 	testl	${IF}, ({EXCEP_FLAGS_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	jnz	continue_hv
-	// Fetch RIP from the trap frame.
-	movq	({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp), %rax
+	// Check whether the trap RIP is within any code that may require
+	// RIP redirection
+	leaq	hv_redirect_window_start(%rip), %rbx
+	leaq	hv_redirect_window_end(%rip), %rcx
+	cmp	%rbx, %rax
+	jb	hv_no_rip_redirect
+	cmp	%rcx, %rax
+	jae	hv_no_rip_redirect
 	// Check whether the trap RIP is within the guest VMPL return window.
 	leaq	switch_vmpl_window_start(%rip), %rbx
 	leaq	switch_vmpl_window_end(%rip), %rcx
@@ -131,17 +139,28 @@ asm_entry_hv:
 	cmp	%rcx, %rax
 	jae	hv_not_vmpl_switch
 	// RIP is in the return window, so update RIP to the cancel point.
-	leaq	switch_vmpl_cancel(%rip), %rbx
-	movq	%rbx, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
+	leaq	switch_vmpl_cancel(%rip), %rcx
+update_hv_rip:
+	movq	%rcx, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
 	// Update RIP on the shadow stack to the cancel point.
 	cmpb	$0, {IS_CET_ENABLED}(%rip)
 	je	2f
 	rdsspq	%rax
-	wrssq	%rbx, 8(%rax)
+	wrssq	%rcx, 8(%rax)
 2:
 	// Defer any further processing until interrupts can be processed.
 	jmp	postpone_hv
 hv_not_vmpl_switch:
+	// Check whether the trap RIP is within the idle halt window
+	leaq	idle_halt_window_start(%rip), %rbx
+	leaq	idle_halt_window_end(%rip), %rcx
+	cmp	%rbx, %rax
+	jb	hv_no_rip_redirect
+	cmp	%rcx, %rax
+	// If RIP is in the return window, jump back to update RIP.  Rcx
+	// already contains the correct target RIP.
+	jb	update_hv_rip
+hv_no_rip_redirect:
 	// Load the RSP value that was live at the time of the #HV.
 	movq	({EXCEP_RSP_OFF} - {EXCEP_RCX_OFF})(%rsp), %rcx
 	// Check to see whether this interrupt occurred on the IRET path
@@ -244,6 +263,21 @@ restart_hv:
 2:
 
 continue_hv:
+	// Check to see whether RIP points at the idle halt instruction.  If
+	// so, skip the HLT because the interrupt will be handled now.  This
+	// effectively emulates interrupt window behavior.  At this point,
+	// rax contains the exception RIP.
+	leaq	snp_idle_hlt_instruction(%rip), %rcx
+	cmpq	%rax, %rcx
+	jne	3f
+	incq	%rax
+	movq	%rax, ({EXCEP_RIP_OFF} - {EXCEP_RCX_OFF})(%rsp)
+	// Update RIP on the shadow stack to the cancel point.
+	cmpb	$0, {IS_CET_ENABLED}(%rip)
+	je	3f
+	rdsspq	%rcx
+	wrssq	%rax, 8(%rcx)
+3:
 	// At this point, only the dummy error code and first three registers
 	// have been pushed onto the stack.  Push the remainder to construct a
 	// full exception context.

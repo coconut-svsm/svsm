@@ -90,12 +90,7 @@ pub trait SvsmPlatform: Sync {
     /// serves as proof that interrupts have been correctly disabled so that
     /// interrupt state can be correctly manipulated as required by the idle
     /// halt action.
-    fn idle_halt(&self, _irq_guard: &IrqGuard) {
-        // SAFETY: executing HLT in assembly is always safe.
-        unsafe {
-            asm!("sti", "hlt", "cli");
-        }
-    }
+    fn idle_halt(&self, _irq_guard: &IrqGuard);
 
     /// Performs basic early initialization of the runtime environment.
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
