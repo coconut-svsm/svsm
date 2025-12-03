@@ -34,7 +34,7 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
-use svsm::fs::{initialize_fs, populate_ram_fs};
+use svsm::fs::initialize_fs;
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
@@ -348,9 +348,6 @@ fn svsm_init() {
 
     init_memory_map(&config, &LAUNCH_INFO).expect("Failed to init guest memory map");
 
-    populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
-        .expect("Failed to unpack FS archive");
-
     init_capabilities();
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
@@ -402,8 +399,12 @@ fn svsm_init() {
     #[cfg(not(test))]
     {
         use svsm::fs::opendir;
+        use svsm::fs::populate_ram_fs;
         use svsm::requests::request_loop_start;
         use svsm::task::exec_user;
+
+        populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
+            .expect("Failed to unpack FS archive");
 
         match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
             Ok(_) => (),
@@ -431,6 +432,26 @@ pub fn svsm_main(_context: usize) {
 #[cfg(test)]
 fn test_in_svsm_task(_context: usize) {
     crate::test_main();
+
+    #[cfg(all(test, test_in_svsm))]
+    {
+        use crate::testing::QEMUExitValue;
+        use svsm::fs::opendir;
+        use svsm::fs::populate_ram_fs;
+        use svsm::task::exec_user;
+
+        populate_ram_fs(LAUNCH_INFO.kernel_fs_start, LAUNCH_INFO.kernel_fs_end)
+            .expect("Failed to unpack FS archive");
+
+        match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
+            Ok(_) => (),
+            Err(e) => log::info!("Failed to launch /init: {e:?}"),
+        }
+
+        log::info!("All tests passed!");
+
+        crate::testing::exit(QEMUExitValue::Success);
+    }
 }
 
 #[panic_handler]
