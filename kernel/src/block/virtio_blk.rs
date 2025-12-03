@@ -6,11 +6,10 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 
 use super::api::BlockDriver;
-use crate::address::PhysAddr;
 use crate::block::BlockDeviceError;
 use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
-use crate::virtio::devices::VirtIOBlkDevice;
+use crate::virtio::devices::{MMIOSlotGuard, VirtIOBlkDevice};
 use virtio_drivers::device::blk::SECTOR_SIZE;
 extern crate alloc;
 use alloc::boxed::Box;
@@ -23,8 +22,8 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 }
 
 impl VirtIOBlkDriver {
-    pub fn new(mmio_base: PhysAddr) -> Result<Self, SvsmError> {
-        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(mmio_base)?))
+    pub fn new(slot: MMIOSlotGuard) -> Result<Self, SvsmError> {
+        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?))
     }
 }
 
@@ -70,25 +69,22 @@ impl BlockDriver for VirtIOBlkDriver {
 
 #[cfg(all(test, test_in_svsm))]
 mod tests {
-    use crate::{
-        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
-    };
+    use crate::{testutils::has_test_iorequests, virtio::devices::MMIO_SLOTS};
     use core::cmp::min;
     extern crate alloc;
     use super::*;
 
     /// Find the first virtio-blk device in the hardware-info list
     fn get_blk_device() -> VirtIOBlkDriver {
-        let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
-
-        let dev = cfg
-            .get_virtio_mmio_addresses()
-            .unwrap_or_default()
+        MMIO_SLOTS
+            .try_get_inner()
+            .expect("MMIO slots not initialized")
             .iter()
-            .find_map(|a| VirtIOBlkDriver::new(PhysAddr::from(*a)).ok())
-            .expect("No virtio-blk device found");
-
-        dev
+            .find_map(|slot| {
+                slot.try_acquire()
+                    .and_then(|guard| VirtIOBlkDriver::new(guard).ok())
+            })
+            .expect("No virtio-blk device found")
     }
 
     /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
