@@ -382,9 +382,9 @@ pub struct PerCpu {
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
-    pub vrange_4k: RefCell<VirtualRange>,
+    vrange_4k: RefCell<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
-    pub vrange_2m: RefCell<VirtualRange>,
+    vrange_2m: RefCell<VirtualRange>,
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLockIrqSafe<RunQueue>,
     /// Local APIC state for APIC emulation if enabled
@@ -1104,15 +1104,13 @@ impl PerCpu {
         // Initialize 4k range
         let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_4k
-            .borrow_mut()
+        self.vrange_4k_mut()
             .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
 
         // Initialize 2M range
         let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_2m
-            .borrow_mut()
+        self.vrange_2m_mut()
             .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
     }
 
@@ -1176,6 +1174,22 @@ impl PerCpu {
 
     pub fn current_task(&self) -> TaskPointer {
         self.runqueue().current_task()
+    }
+
+    pub fn vrange_4k(&self) -> Ref<'_, VirtualRange> {
+        self.vrange_4k.borrow()
+    }
+
+    pub fn vrange_4k_mut(&self) -> RefMut<'_, VirtualRange> {
+        self.vrange_4k.borrow_mut()
+    }
+
+    pub fn vrange_2m(&self) -> Ref<'_, VirtualRange> {
+        self.vrange_2m.borrow()
+    }
+
+    pub fn vrange_2m_mut(&self) -> RefMut<'_, VirtualRange> {
+        self.vrange_2m.borrow_mut()
     }
 
     /// # Safety
