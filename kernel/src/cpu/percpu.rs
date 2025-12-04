@@ -359,12 +359,23 @@ const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
 /// CPU-local data.
 ///
-/// This type is not [`Sync`], as its contents will only be accessed from the
-/// local CPU, much like thread-local data in an std environment. The only
-/// part of the struct that may be accessed from a different CPU is the
-/// `shared` field, a reference to which will be stored in [`PERCPU_AREAS`].
+/// While the contents of this struct are never accessed outside the local CPU
+/// (except for the [`PerCpuShared`] portion), reentrant access to the structure
+/// from preempted context essentially behaves as concurrent access, since
+/// the preemption may happen at any instruction boundary. If we use interior
+/// mutability types, the reentrant access may lead to undefined behavior.
+/// Thus, we require that the type is [`Sync`]. This is currently enforced by
+/// protecting mutable fields with a [`RWLock`]. To avoid deadlocks, only the
+/// non-blocking methods in the lock are used, causing an immediate panic when a
+/// reentrant access is attempted.
+///
+/// If the [`Sync`] requirement below breaks your build, it means you introduced
+/// interior mutability, which is not safe.
 #[derive(Debug)]
-pub struct PerCpu {
+pub struct PerCpu
+where
+    Self: Sync,
+{
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
     shared: &'static PerCpuShared,
