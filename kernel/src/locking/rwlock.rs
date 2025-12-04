@@ -384,6 +384,11 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
         }
     }
 
+    /// Returns a pointer into the underlying data.
+    pub const fn as_ptr(&self) -> *mut T {
+        self.data.get()
+    }
+
     /// This function is used to wait until all writers have finished their
     /// operations and retrieve the current state of the [`RWLock`].
     ///
