@@ -9,6 +9,7 @@ use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
+use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// A guard that provides read access to the data protected by [`RWLock`]
@@ -17,8 +18,11 @@ use core::sync::atomic::{AtomicU64, Ordering};
 pub struct RawReadLockGuard<'a, T, I> {
     /// Reference to the associated `AtomicU64` in the [`RWLock`]
     rwlock: &'a AtomicU64,
-    /// Reference to the protected data
-    data: &'a T,
+    /// Pointer to the protected data. This relaxes the borrow checker
+    /// when implementing `map()` and related methods, and prevents
+    /// introducing LLVM `noalias` violations, according to a comment
+    /// in the equivalent guard structure in the standard library.
+    data: NonNull<T>,
     /// IRQ state before and after critical section
     _irq_state: I,
 }
@@ -37,7 +41,9 @@ impl<T, I> Deref for RawReadLockGuard<'_, T, I> {
     type Target = T;
     /// Allow reading the protected data through deref
     fn deref(&self) -> &T {
-        self.data
+        // SAFETY: the pointer is valid by construction and never changed.
+        // The guard guarantees no external mutable access.
+        unsafe { self.data.as_ref() }
     }
 }
 
@@ -52,8 +58,14 @@ pub type ReadLockGuardAnyTpr<'a, T, const TPR: usize> =
 pub struct RawWriteLockGuard<'a, T, I> {
     /// Reference to the associated `AtomicU64` in the [`RWLock`]
     rwlock: &'a AtomicU64,
-    /// Reference to the protected data (mutable)
-    data: &'a mut T,
+    /// Pointer to the protected data. This relaxes the borrow checker
+    /// when implementing `map()` and related methods, and prevents
+    /// introducing LLVM `noalias` violations, according to a comment
+    /// in the equivalent guard structure in the standard library.
+    data: NonNull<T>,
+    /// `NonNull` is covariant over `T`, so add a `PhantomData` field to enforce
+    /// the correct invariance over `T`.
+    _variance: PhantomData<&'a mut T>,
     /// IRQ state before and after critical section
     _irq_state: I,
 }
@@ -71,7 +83,9 @@ impl<T, I> Drop for RawWriteLockGuard<'_, T, I> {
 impl<T, I> Deref for RawWriteLockGuard<'_, T, I> {
     type Target = T;
     fn deref(&self) -> &T {
-        self.data
+        // SAFETY: the pointer is valid by construction and never changed.
+        // The guard guarantees exclusive access.
+        unsafe { self.data.as_ref() }
     }
 }
 
@@ -79,7 +93,9 @@ impl<T, I> Deref for RawWriteLockGuard<'_, T, I> {
 /// access the protected data in a mutable way.
 impl<T, I> DerefMut for RawWriteLockGuard<'_, T, I> {
     fn deref_mut(&mut self) -> &mut T {
-        self.data
+        // SAFETY: the pointer is valid by construction and never changed.
+        // The guard guarantees exclusive access.
+        unsafe { self.data.as_mut() }
     }
 }
 
@@ -249,9 +265,10 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
 
         RawWriteLockGuard {
             rwlock: &self.rwlock,
-            // SAFETY: The lock is taken for write, which enforces exclusive
-            // usage of the mutable reference - no pending readers.
-            data: unsafe { &mut *self.data.get() },
+            // SAFETY: the UnsafeCell is initialized on construction, so the
+            // pointer can never be NULL
+            data: unsafe { NonNull::new_unchecked(self.data.get()) },
+            _variance: PhantomData,
             _irq_state: irq_state,
         }
     }
@@ -269,9 +286,10 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
 
         Some(RawWriteLockGuard {
             rwlock: &self.rwlock,
-            // SAFETY: The lock is taken for write, which enforces exclusive
-            // usage of the mutable reference - no pending readers.
-            data: unsafe { &mut *self.data.get() },
+            // SAFETY: the UnsafeCell is initialized on construction, so the
+            // pointer can never be NULL
+            data: unsafe { NonNull::new_unchecked(self.data.get()) },
+            _variance: PhantomData,
             _irq_state: irq_state,
         })
     }
@@ -317,9 +335,9 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
 
         RawReadLockGuard {
             rwlock: &self.rwlock,
-            // SAFETY: The lock is taken for write, which enforces exclusive
-            // usage of the mutable reference - no pending readers.
-            data: unsafe { &*self.data.get() },
+            // SAFETY: the UnsafeCell is initialized on construction, so the
+            // pointer can never be NULL
+            data: unsafe { NonNull::new_unchecked(self.data.get()) },
             _irq_state: irq_state,
         }
     }
@@ -339,9 +357,9 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
 
         Some(RawReadLockGuard {
             rwlock: &self.rwlock,
-            // SAFETY: The lock is taken for read, which enforces exclusive
-            // usage of the mutable reference - no pending readers.
-            data: unsafe { &*self.data.get() },
+            // SAFETY: the UnsafeCell is initialized on construction, so the
+            // pointer can never be NULL
+            data: unsafe { NonNull::new_unchecked(self.data.get()) },
             _irq_state: irq_state,
         })
     }
