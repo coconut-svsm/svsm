@@ -7,11 +7,12 @@
 
 mod kbs;
 
+use crate::ArgsBackend;
 use anyhow::{anyhow, Context};
 use kbs::KbsProtocol;
 use libaproxy::*;
 use reqwest::{blocking::Client, cookie::Jar};
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 /// HTTP client and protocol identifier.
 #[derive(Clone, Debug)]
@@ -52,13 +53,10 @@ pub enum Protocol {
     Kbs(KbsProtocol),
 }
 
-impl FromStr for Protocol {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match &s.to_lowercase()[..] {
-            "kbs" => Ok(Self::Kbs(KbsProtocol)),
-            _ => Err(anyhow!("invalid backend attestation protocol selected")),
+impl From<ArgsBackend> for Protocol {
+    fn from(value: ArgsBackend) -> Self {
+        match value {
+            ArgsBackend::Kbs => Self::Kbs(KbsProtocol),
         }
     }
 }
