@@ -127,6 +127,9 @@ const TPR_LIMIT: usize = 16;
 /// The original state needs to be stored to not accidentially enable IRQs in
 /// contexts which have IRQs disabled by other means, e.g. in an exception or
 /// NMI/HV context.
+///
+/// This type is not thread safe, and should not be used outside a per-CPU
+/// context.
 #[derive(Debug, Default)]
 pub struct IrqState {
     /// IRQ state when count was `0`
@@ -135,8 +138,6 @@ pub struct IrqState {
     /// IRQ disables and the remaining indices specify the nesting count
     /// for eached raised TPR level.
     counts: [AtomicI32; TPR_LIMIT],
-    /// Make the type !Send + !Sync
-    phantom: PhantomData<*const ()>,
 }
 
 impl IrqState {
@@ -145,7 +146,6 @@ impl IrqState {
         Self {
             state: AtomicBool::new(false),
             counts: Default::default(),
-            phantom: PhantomData,
         }
     }
 
