@@ -100,10 +100,16 @@ pub struct RawRWLock<T, I> {
     phantom: PhantomData<fn(I)>,
 }
 
-// SAFETY: All well-formed locks are `Send`.
-unsafe impl<T, I> Send for RawRWLock<T, I> {}
-// SAFETY: All well-formed locks are `Sync`.
-unsafe impl<T, I> Sync for RawRWLock<T, I> {}
+// SAFETY: All well-formed locks are `Send` when the inner type is Send.
+// This constraint is required because multiple readers can exist on a single
+// lock, and if the underlying type is not Send, then the multiple readers
+// do not satisfy Send semantics.
+unsafe impl<T, I> Send for RawRWLock<T, I> where T: Send {}
+// SAFETY: All well-formed locks are `Sync` when the inner type is Sync.
+// This constraint is required because multiple readers can exist on a single
+// lock, and if the underlying type is not Sync, then the multiple readers
+// do not satisfy Sync semantics.
+unsafe impl<T, I> Sync for RawRWLock<T, I> where T: Sync {}
 
 /// Splits a 64-bit value into two parts: readers (low 32 bits) and
 /// writers (high 32 bits).
