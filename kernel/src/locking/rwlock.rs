@@ -50,6 +50,34 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
         }
     }
 
+    /// Makes a new `RawReadLockGuard` for an optional component of the borrowed data. The
+    /// original guard is returned as an `Err(..)` if the closure returns `None`.
+    pub fn filter_map<U, F>(orig: Self, f: F) -> Result<RawReadLockGuard<'a, U, I>, Self>
+    where
+        F: FnOnce(&T) -> Option<&U>,
+    {
+        // Ensure the original guard is never dropped
+        let orig = ManuallyDrop::new(orig);
+
+        let Some(value) = f(&*orig) else {
+            return Err(ManuallyDrop::into_inner(orig));
+        };
+
+        // Move the original IRQ state out of drop. Do this after
+        // verifying that `f` returned `Some` to avoid accidentally
+        // dropping the guard twice.
+        // SAFETY: we are really reading from a reference, so the source is
+        // valid. The original guard will not be dropped since is is behind
+        // `ManuallyDrop`, so `drop` will only happen once.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+
+        Ok(RawReadLockGuard {
+            rwlock: orig.rwlock,
+            data: NonNull::from(value),
+            _irq_state,
+        })
+    }
+
     /// Splits a `RawReadLockGuard` for different components of the backing data.
     pub fn map_split<U, V, F>(
         orig: Self,
@@ -153,6 +181,41 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
             _variance: PhantomData,
             _irq_state,
         }
+    }
+
+    /// Makes a new `RawWriteLockGuard` for an optional component of the borrowed data. The
+    /// original guard is returned as an `Err(..)` if the closure returns `None`.
+    pub fn filter_map<U, F>(orig: Self, f: F) -> Result<RawWriteLockGuard<'a, U, I>, Self>
+    where
+        F: FnOnce(&mut T) -> Option<&mut U>,
+    {
+        // Ensure the original guard is never dropped
+        let mut orig = ManuallyDrop::new(orig);
+        let rwlock = orig.rwlock;
+
+        // Move the original IRQ state out of drop. We need to do this
+        // before calling the closure to make the borrow checker happy.
+        // SAFETY: we are really reading from a reference, so the source is
+        // valid. The original guard will not be dropped since is is behind
+        // `ManuallyDrop`, so `drop` will only happen once. If we bail from
+        // this function, we'll pass the new copy of the guard to forget()
+        // to avoid dropping it, ensuring only the original guard invokes
+        // drop.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+
+        let Some(value) = f(&mut *orig) else {
+            // Do not drop the new IRQ guard, since we keep the old one.
+            // Otherwise we'll drop the same guard twice.
+            core::mem::forget(_irq_state);
+            return Err(ManuallyDrop::into_inner(orig));
+        };
+
+        Ok(RawWriteLockGuard {
+            rwlock,
+            data: NonNull::from(value),
+            _variance: PhantomData,
+            _irq_state,
+        })
     }
 
     /// Splits a `RawWriteLockGuard` for different components of the backing data.
@@ -630,6 +693,63 @@ mod tests {
         let read = lock.try_lock_read().unwrap();
         assert_eq!(read.bar, 1);
         assert_eq!(read.baz, 2);
+    }
+
+    /// Tests the expected behavior for `RawReadLockGuard::filter_map()`.
+    #[test]
+    fn test_filter_map_read() {
+        let lock = RWLock::new(Foo::default());
+
+        // Create a guard and filter_map() it
+        let read = lock.try_lock_read().unwrap();
+        let bar = RawReadLockGuard::filter_map(read, |f| Some(&f.bar)).unwrap();
+
+        // Writes should fail, reads should still work
+        let _ = lock.try_lock_read().unwrap();
+        assert!(lock.try_lock_write().is_none());
+        assert_eq!(*bar, 0);
+
+        // If the closure returns None, we should get the original guard back
+        let bar = RawReadLockGuard::filter_map(bar, |_| None::<&u32>).unwrap_err();
+
+        // Writes should fail, reads should still work
+        let _ = lock.try_lock_read().unwrap();
+        assert!(lock.try_lock_write().is_none());
+        assert_eq!(*bar, 0);
+
+        // Reads and writes should work again
+        drop(bar);
+        let _ = lock.try_lock_read().unwrap();
+        let _ = lock.try_lock_write().unwrap();
+    }
+
+    /// Tests the expected behavior for `RawWriteLockGuard::filter_map()`.
+    #[test]
+    fn test_filter_map_write() {
+        let lock = RWLock::new(Foo::default());
+
+        // Create a guard and filter_map() it
+        let write = lock.try_lock_write().unwrap();
+        let mut bar = RawWriteLockGuard::filter_map(write, |f| Some(&mut f.bar)).unwrap();
+        *bar = 44;
+
+        // Reads and writes should fail
+        assert!(lock.try_lock_read().is_none());
+        assert!(lock.try_lock_write().is_none());
+        assert_eq!(*bar, 44);
+
+        // If the closure returns None, we should get the original guard back
+        let bar = RawWriteLockGuard::filter_map(bar, |_| None::<&mut u32>).unwrap_err();
+
+        // Reads and writes should fail
+        assert!(lock.try_lock_read().is_none());
+        assert!(lock.try_lock_write().is_none());
+        assert_eq!(*bar, 44);
+
+        // Reads and writes should work again
+        drop(bar);
+        let _ = lock.try_lock_read().unwrap();
+        let _ = lock.try_lock_write().unwrap();
     }
 
     /// Tests the expected behavior for `RawReadLockGuard::map_split()`.
