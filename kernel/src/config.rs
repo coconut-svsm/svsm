@@ -15,44 +15,6 @@ use crate::utils::MemoryRegion;
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
-fn check_ovmf_regions(
-    flash_regions: &[MemoryRegion<PhysAddr>],
-    kernel_region: &MemoryRegion<PhysAddr>,
-) {
-    let flash_range = {
-        let one_gib = 1024 * 1024 * 1024usize;
-        let start = PhysAddr::from(3 * one_gib);
-        MemoryRegion::new(start, one_gib)
-    };
-
-    // Sanity-check flash regions.
-    for region in flash_regions.iter() {
-        // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlap(&flash_range) {
-            panic!("flash region in unexpected region");
-        }
-
-        // Make sure that no regions overlap with the kernel.
-        if region.overlap(kernel_region) {
-            panic!("flash region overlaps with kernel");
-        }
-    }
-
-    // Make sure that regions don't overlap.
-    for (i, outer) in flash_regions.iter().enumerate() {
-        for inner in flash_regions[..i].iter() {
-            if outer.overlap(inner) {
-                panic!("flash regions overlap");
-            }
-        }
-        // Make sure that one regions ends at 4GiB.
-        let one_region_ends_at_4gib = flash_regions
-            .iter()
-            .any(|region| region.end() == flash_range.end());
-        assert!(one_region_ends_at_4gib);
-    }
-}
-
 #[derive(Debug)]
 pub struct SvsmConfig<'a> {
     igvm_params: &'a IgvmParams<'a>,
@@ -101,15 +63,8 @@ impl<'a> SvsmConfig<'a> {
         self.igvm_params.get_fw_metadata()
     }
 
-    pub fn get_fw_regions(
-        &self,
-        kernel_region: &MemoryRegion<PhysAddr>,
-    ) -> Vec<MemoryRegion<PhysAddr>> {
-        let flash_regions = self.igvm_params.get_fw_regions();
-        if !self.igvm_params.fw_in_low_memory() {
-            check_ovmf_regions(&flash_regions, kernel_region);
-        }
-        flash_regions
+    pub fn get_fw_regions(&self) -> Vec<MemoryRegion<PhysAddr>> {
+        self.igvm_params.get_fw_regions()
     }
 
     pub fn fw_in_low_memory(&self) -> bool {
