@@ -276,7 +276,7 @@ pub fn start_kernel_task(
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
+    cpu.runqueue_mut().handle_task(task.clone());
 
     schedule();
 
@@ -307,7 +307,7 @@ pub fn start_kernel_thread(start_info: KernelThreadStartInfo) -> Result<TaskPoin
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    cpu.runqueue().lock_write().handle_task(task.clone());
+    cpu.runqueue_mut().handle_task(task.clone());
 
     schedule();
 
@@ -344,7 +344,7 @@ pub fn finish_user_task(task: TaskPointer) {
     TASKLIST.lock().list().push_back(task.clone());
 
     // Put task on the runqueue of this CPU
-    this_cpu().runqueue().lock_write().handle_task(task);
+    this_cpu().runqueue_mut().handle_task(task);
 }
 
 pub fn current_task() -> TaskPointer {
@@ -353,7 +353,7 @@ pub fn current_task() -> TaskPointer {
 
 /// Check to see if the task scheduled on the current processor has the given id
 pub fn is_current_task(id: u32) -> bool {
-    match &this_cpu().runqueue().lock_read().current_task {
+    match &this_cpu().runqueue().current_task {
         Some(current_task) => current_task.get_task_id() == id,
         None => id == INITIAL_TASK_ID,
     }
@@ -366,7 +366,7 @@ pub fn is_current_task(id: u32) -> bool {
 /// This function must only be called after scheduling is initialized, otherwise it will panic.
 pub fn current_task_terminated() {
     let cpu = this_cpu();
-    let mut rq = cpu.runqueue().lock_write();
+    let mut rq = cpu.runqueue_mut();
     let task_node = rq
         .current_task
         .as_mut()
@@ -388,7 +388,7 @@ pub fn go_idle() {
     // one time.
     let task = this_cpu().current_task();
     task.set_task_blocked();
-    let mut runqueue = this_cpu().runqueue().lock_write();
+    let mut runqueue = this_cpu().runqueue_mut();
     assert!(runqueue.wake_from_idle.is_none());
     runqueue.wake_from_idle = Some(task);
     drop(runqueue);
@@ -407,7 +407,7 @@ pub fn set_affinity(cpu_index: usize) {
         task.set_task_blocked();
 
         // Mark this task as the task pending an affinity change.
-        let mut runqueue = this_cpu().runqueue().lock_write();
+        let mut runqueue = this_cpu().runqueue_mut();
         assert!(runqueue.set_affinity.is_none());
         runqueue.set_affinity = Some((task, cpu_index));
         drop(runqueue);
@@ -487,12 +487,7 @@ pub fn scheduler_idle() {
     // scheduler state does not change before committing to go idle.
     let guard = IrqGuard::new();
 
-    let queue_empty = this_cpu()
-        .runqueue()
-        .lock_write()
-        .run_list
-        .front()
-        .is_null();
+    let queue_empty = this_cpu().runqueue_mut().run_list.front().is_null();
 
     if queue_empty {
         SVSM_PLATFORM.idle_halt(&guard);
@@ -564,7 +559,7 @@ pub fn schedule() {
 
     // If the previous task had terminated then we can release
     // it's reference here.
-    let _ = this_cpu().runqueue().lock_write().terminated_task.take();
+    let _ = this_cpu().runqueue_mut().terminated_task.take();
 }
 
 struct SetAffinityMessage {
@@ -589,9 +584,7 @@ pub fn after_task_switch() {
     // Determine whether any task is pending an affinity change.  This must be
     // done with the run queue locked, but the actual affinity change must
     // happen without holding the run queue lock.
-    let mut runqueue = this_cpu().runqueue().lock_write();
-    let set_affinity = runqueue.set_affinity.take();
-    drop(runqueue);
+    let set_affinity = this_cpu().runqueue_mut().set_affinity.take();
 
     if let Some((task, cpu_index)) = set_affinity {
         // Send an IPI to the target processor indicating which task it should
@@ -603,7 +596,7 @@ pub fn after_task_switch() {
 
 fn enqueue_task(task: TaskPointer) {
     task.set_task_running();
-    this_cpu().runqueue().lock_write().handle_task(task);
+    this_cpu().runqueue_mut().handle_task(task);
 }
 
 pub fn schedule_task(task: TaskPointer) {
