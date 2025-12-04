@@ -11,7 +11,12 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 : "${QEMU:=qemu-system-x86_64}"
 : "${IGVM:=$SCRIPT_DIR/../bin/coconut-qemu.igvm}"
 
-read C_BIT_POS REDUCED_PHYS_BITS <<< "$(cargo run --package sev-caps || true)"
+# `reduced-phys-bits` is used to provide the number of bits we loose in
+# physical address space. On EPYC, a guest will lose a maximum of 1 bit,
+# so using a value other than 1 is only reducing physical addressing range
+# in the guest.
+REDUCED_PHYS_BITS=1
+C_BIT_POS=$(cargo run --package cbit || true)
 COM1_SERIAL="-serial stdio" # console
 COM2_SERIAL="-serial null"  # debug
 COM3_SERIAL="-serial null"  # used by hyper-v

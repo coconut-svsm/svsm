@@ -274,6 +274,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cbit"
+version = "0.1.0"
+dependencies = [
+ "bitfield-struct 0.6.2",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1727,13 +1734,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "sev-caps"
-version = "0.1.0"
-dependencies = [
- "bitfield-struct 0.6.2",
 ]
 
 [[package]]
