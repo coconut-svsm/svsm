@@ -8,6 +8,7 @@ use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
 use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -25,6 +26,29 @@ pub struct RawReadLockGuard<'a, T, I> {
     data: NonNull<T>,
     /// IRQ state before and after critical section
     _irq_state: I,
+}
+
+impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
+    /// Creates a new `RawReadLockGuard` for a component of the backing data.
+    pub fn map<U, F>(orig: Self, f: F) -> RawReadLockGuard<'a, U, I>
+    where
+        F: FnOnce(&T) -> &U,
+    {
+        // Ensure the original guard is never dropped
+        let orig = ManuallyDrop::new(orig);
+        let rwlock = orig.rwlock;
+        // Move the original IRQ state out of drop.
+        // SAFETY: we are really reading from a reference, so the source
+        // pointer is safe. The original guard is behind `ManuallyDrop`,
+        // so only the copy we just make will invoke drop.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let value = f(&*orig);
+        RawReadLockGuard {
+            rwlock,
+            data: NonNull::from(value),
+            _irq_state,
+        }
+    }
 }
 
 /// Implements the behavior of the [`ReadLockGuard`] when it is dropped
@@ -68,6 +92,31 @@ pub struct RawWriteLockGuard<'a, T, I> {
     _variance: PhantomData<&'a mut T>,
     /// IRQ state before and after critical section
     _irq_state: I,
+}
+
+impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
+    /// Creates a new `RawWriteLockGuard` for a component of the backing data.
+    pub fn map<U, F>(orig: Self, f: F) -> RawWriteLockGuard<'a, U, I>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        // Ensure the original guard is never dropped
+        let mut orig = ManuallyDrop::new(orig);
+        let rwlock = orig.rwlock;
+        // Move the original IRQ state out of drop.
+        // SAFETY: we are really reading from a reference, so the source
+        // pointer is safe. The original guard is behind `ManuallyDrop`,
+        // so only the copy we just make will invoke drop.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+
+        let value = f(&mut *orig);
+        RawWriteLockGuard {
+            rwlock,
+            data: NonNull::from(value),
+            _variance: PhantomData,
+            _irq_state,
+        }
+    }
 }
 
 /// Implements the behavior of the [`WriteLockGuard`] when it is dropped
@@ -455,6 +504,54 @@ mod tests {
         assert!(lock.try_lock_write().is_none());
         drop(_read2);
         let _ = lock.try_lock_write().unwrap();
+    }
+
+    #[derive(Clone, Copy, Debug, Default)]
+    struct Foo {
+        bar: u32,
+        baz: u32,
+    }
+
+    /// Tests the expected behavior for `RawReadLockGuard::map()`.
+    #[test]
+    fn test_read_map() {
+        let lock = RWLock::new(Foo::default());
+
+        let read = lock.try_lock_read().unwrap();
+        let baz = RawReadLockGuard::map(read, |f| &f.baz);
+
+        // Writes should fail, reads should still work
+        assert!(lock.try_lock_write().is_none());
+        let _ = lock.try_lock_read().unwrap();
+        assert_eq!(*baz, 0);
+
+        // After drop, reads and writes should work again
+        drop(baz);
+        let _ = lock.try_lock_write().unwrap();
+        let _ = lock.try_lock_read().unwrap();
+    }
+
+    /// Tests the expected behavior for `RawWriteLockGuard::map()`.
+    #[test]
+    fn test_write_map() {
+        let lock = RWLock::new(Foo::default());
+
+        let mut write = lock.try_lock_write().unwrap();
+        write.bar = 1;
+
+        let mut baz = RawWriteLockGuard::map(write, |f| &mut f.baz);
+        *baz = 2;
+
+        // Reads and writes should still fail.
+        assert!(lock.try_lock_write().is_none());
+        assert!(lock.try_lock_read().is_none());
+
+        // After drop, reads and writes should work again.
+        drop(baz);
+        let _ = lock.try_lock_write().unwrap();
+        let read = lock.try_lock_read().unwrap();
+        assert_eq!(read.bar, 1);
+        assert_eq!(read.baz, 2);
     }
 
     #[test]
