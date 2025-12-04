@@ -6,7 +6,7 @@
 
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
-use core::cell::OnceCell;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 pub trait ApicAccess: core::fmt::Debug {
     /// Updates the APIC_BASE MSR by reading the current value, applying the
@@ -92,7 +92,7 @@ fn apic_register_bit(vector: usize) -> (usize, u32) {
 
 #[derive(Debug, Default)]
 pub struct X86Apic {
-    access: OnceCell<&'static dyn ApicAccess>,
+    access: ImmutAfterInitCell<&'static dyn ApicAccess>,
 }
 
 // APIC enable masks
@@ -102,7 +102,7 @@ const APIC_X2_ENABLE_MASK: u64 = 0x400;
 impl X86Apic {
     /// Returns the ApicAccess object.
     fn regs(&self) -> &'static dyn ApicAccess {
-        *self.access.get().expect("ApicAccessor not set!")
+        *self.access
     }
 
     /// Initialize the ApicAccessor - Must be called before X86APIC can be used.
@@ -116,14 +116,14 @@ impl X86Apic {
     /// This function panics when the `ApicAccessor` has already been set.
     pub fn set_accessor(&self, accessor: &'static dyn ApicAccess) {
         self.access
-            .set(accessor)
+            .init(accessor)
             .expect("ApicAccessor already set!");
     }
 
     /// Creates a new instance of [`X86Apic`]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            access: OnceCell::new(),
+            access: ImmutAfterInitCell::uninit(),
         }
     }
 

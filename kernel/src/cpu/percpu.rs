@@ -45,18 +45,19 @@ use crate::task::{schedule, schedule_task, KernelThreadStartInfo, RunQueue, Task
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
-use core::cell::{Cell, OnceCell, Ref, RefCell, RefMut, UnsafeCell};
+use core::cell::{Cell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr;
 use core::slice::Iter;
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use cpuarch::vmsa::VMSA;
 
 // PERCPU areas virtual addresses into shared memory
@@ -163,15 +164,15 @@ impl PerCpuAreas {
 
 #[derive(Debug)]
 struct IstStacks {
-    double_fault_stack: Cell<Option<VirtAddr>>,
-    double_fault_shadow_stack: Cell<Option<VirtAddr>>,
+    double_fault_stack: ImmutAfterInitCell<VirtAddr>,
+    double_fault_shadow_stack: ImmutAfterInitCell<VirtAddr>,
 }
 
 impl IstStacks {
     const fn new() -> Self {
         IstStacks {
-            double_fault_stack: Cell::new(None),
-            double_fault_shadow_stack: Cell::new(None),
+            double_fault_stack: ImmutAfterInitCell::uninit(),
+            double_fault_shadow_stack: ImmutAfterInitCell::uninit(),
         }
     }
 }
@@ -368,8 +369,8 @@ pub struct PerCpu {
     pgtbl: RefCell<Option<&'static mut PageTable>>,
     tss: X86Tss,
     isst: Cell<Isst>,
-    svsm_vmsa: OnceCell<VmsaPage>,
-    reset_ip: Cell<u64>,
+    svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
+    reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
@@ -382,16 +383,16 @@ pub struct PerCpu {
     guest_apic: RefCell<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
-    ghcb: OnceCell<GhcbPage>,
+    ghcb: ImmutAfterInitCell<GhcbPage>,
 
     /// Hypercall input/output pages for this CPU if running under Hyper-V.
     hypercall_pages: RefCell<Option<(HypercallPage, HypercallPage)>>,
 
     /// `#HV` doorbell page for this CPU.
-    hv_doorbell: OnceCell<SharedBox<HVDoorbell>>,
+    hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
 
-    init_shadow_stack: Cell<Option<VirtAddr>>,
-    context_switch_stack: Cell<Option<VirtAddr>>,
+    init_shadow_stack: ImmutAfterInitCell<VirtAddr>,
+    context_switch_stack: ImmutAfterInitCell<VirtAddr>,
     ist: IstStacks,
 
     /// Stack boundaries of the currently running task.
@@ -407,8 +408,8 @@ impl PerCpu {
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
             isst: Cell::new(Isst::default()),
-            svsm_vmsa: OnceCell::new(),
-            reset_ip: Cell::new(0xffff_fff0),
+            svsm_vmsa: ImmutAfterInitCell::uninit(),
+            reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
                 let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
                 vmr.set_per_cpu(true);
@@ -421,11 +422,11 @@ impl PerCpu {
             guest_apic: RefCell::new(None),
 
             shared,
-            ghcb: OnceCell::new(),
+            ghcb: ImmutAfterInitCell::uninit(),
             hypercall_pages: RefCell::new(None),
-            hv_doorbell: OnceCell::new(),
-            init_shadow_stack: Cell::new(None),
-            context_switch_stack: Cell::new(None),
+            hv_doorbell: ImmutAfterInitCell::uninit(),
+            init_shadow_stack: ImmutAfterInitCell::uninit(),
+            context_switch_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
             current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
@@ -532,15 +533,12 @@ impl PerCpu {
 
     /// Sets up the CPU-local GHCB page.
     pub fn setup_ghcb(&self) -> Result<(), SvsmError> {
-        let page = GhcbPage::new()?;
-        self.ghcb
-            .set(page)
-            .expect("Attempted to reinitialize the GHCB");
+        self.ghcb.try_init_from_fn(GhcbPage::new)?;
         Ok(())
     }
 
     fn ghcb(&self) -> Option<&GhcbPage> {
-        self.ghcb.get()
+        self.ghcb.try_get_inner().ok()
     }
 
     /// Allocates hypercall input/output pages for this CPU.
@@ -560,11 +558,11 @@ impl PerCpu {
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
-        self.hv_doorbell.get().map(Deref::deref)
+        self.hv_doorbell.try_get_inner().ok().map(Deref::deref)
     }
 
     pub fn process_hv_events_if_required(&self) {
-        if let Some(doorbell) = self.hv_doorbell.get() {
+        if let Ok(doorbell) = self.hv_doorbell.try_get_inner() {
             doorbell.process_if_required(&self.irq_state);
         }
     }
@@ -573,25 +571,30 @@ impl PerCpu {
     /// PerCpu structure.
     pub fn hv_doorbell_addr(&self) -> *const *const HVDoorbell {
         self.hv_doorbell
-            .get()
+            .try_get_inner()
+            .ok()
             .map(SharedBox::ptr_ref)
             .unwrap_or(ptr::null())
     }
 
     pub fn get_top_of_shadow_stack(&self) -> Option<VirtAddr> {
-        self.init_shadow_stack.get()
+        self.init_shadow_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_context_switch_stack(&self) -> Option<VirtAddr> {
-        self.context_switch_stack.get()
+        self.context_switch_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_df_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_stack.get()
+        self.ist.double_fault_stack.try_get_inner().ok().copied()
     }
 
     pub fn get_top_of_df_shadow_stack(&self) -> Option<VirtAddr> {
-        self.ist.double_fault_shadow_stack.get()
+        self.ist
+            .double_fault_shadow_stack
+            .try_get_inner()
+            .ok()
+            .copied()
     }
 
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
@@ -651,15 +654,15 @@ impl PerCpu {
     }
 
     fn allocate_init_shadow_stack(&self) -> Result<(), SvsmError> {
-        let init_stack =
-            Some(self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)?);
-        self.init_shadow_stack.set(init_stack);
+        self.init_shadow_stack.try_init_from_fn(|| {
+            self.allocate_shadow_stack(SVSM_SHADOW_STACKS_INIT_TASK, ShadowStackInit::Init)
+        })?;
         Ok(())
     }
 
     fn allocate_context_switch_stack(&self) -> Result<(), SvsmError> {
-        let cs_stack = Some(self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK)?);
-        self.context_switch_stack.set(cs_stack);
+        self.context_switch_stack
+            .try_init_from_fn(|| self.allocate_stack(SVSM_CONTEXT_SWITCH_STACK))?;
         Ok(())
     }
 
@@ -672,18 +675,16 @@ impl PerCpu {
     }
 
     fn allocate_ist_stacks(&self) -> Result<(), SvsmError> {
-        let double_fault_stack = self.allocate_stack(SVSM_STACK_IST_DF_BASE)?;
-        self.ist.double_fault_stack.set(Some(double_fault_stack));
-
+        self.ist
+            .double_fault_stack
+            .try_init_from_fn(|| self.allocate_stack(SVSM_STACK_IST_DF_BASE))?;
         Ok(())
     }
 
     fn allocate_isst_shadow_stacks(&self) -> Result<(), SvsmError> {
-        let double_fault_shadow_stack =
-            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)?;
-        self.ist
-            .double_fault_shadow_stack
-            .set(Some(double_fault_shadow_stack));
+        self.ist.double_fault_shadow_stack.try_init_from_fn(|| {
+            self.allocate_shadow_stack(SVSM_SHADOW_STACK_ISST_DF_BASE, ShadowStackInit::Exception)
+        })?;
 
         Ok(())
     }
@@ -705,10 +706,8 @@ impl PerCpu {
     }
 
     pub fn setup_hv_doorbell(&self) -> Result<(), SvsmError> {
-        let doorbell = allocate_hv_doorbell_page(current_ghcb())?;
         self.hv_doorbell
-            .set(doorbell)
-            .expect("Attempted to reinitialize HV doorbell page");
+            .try_init_from_fn(|| allocate_hv_doorbell_page(current_ghcb()))?;
         Ok(())
     }
 
@@ -865,7 +864,7 @@ impl PerCpu {
     }
 
     pub fn set_reset_ip(&self, reset_ip: u64) {
-        self.reset_ip.set(reset_ip);
+        self.reset_ip.store(reset_ip, Ordering::Relaxed);
     }
 
     /// Fill in the initial context structure for the SVSM.
@@ -908,25 +907,17 @@ impl PerCpu {
     /// physical address and SEV features. Returns an error if allocation
     /// fails of this CPU's VMSA was already initialized.
     pub fn alloc_svsm_vmsa(&self, vtom: u64, start_rip: u64) -> Result<(PhysAddr, u64), SvsmError> {
-        if self.svsm_vmsa.get().is_some() {
-            // FIXME: add a more explicit error variant for this condition
-            return Err(SvsmError::Mem);
-        }
+        let vmsa = self.svsm_vmsa.try_init_from_fn(|| {
+            let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
 
-        let mut vmsa = VmsaPage::new(RMPFlags::VMPL1)?;
-        let paddr = vmsa.paddr();
+            // Initialize VMSA
+            let context = self.get_initial_context(start_rip);
+            init_svsm_vmsa(&mut vmsa, vtom, &context);
+            vmsa.enable();
+            Ok::<_, SvsmError>(vmsa)
+        })?;
 
-        // Initialize VMSA
-        let context = self.get_initial_context(start_rip);
-        init_svsm_vmsa(&mut vmsa, vtom, &context);
-        vmsa.enable();
-
-        let sev_features = vmsa.sev_features;
-
-        // We already checked that the VMSA is unset
-        self.svsm_vmsa.set(vmsa).unwrap();
-
-        Ok((paddr, sev_features))
+        Ok((vmsa.paddr(), vmsa.sev_features))
     }
 
     fn unmap_guest_vmsa(&self) {
@@ -962,7 +953,11 @@ impl PerCpu {
         let mut vmsa = VmsaPage::new(RMPFlags::GUEST_VMPL)?;
         let paddr = vmsa.paddr();
 
-        init_guest_vmsa(&mut vmsa, self.reset_ip.get(), use_alternate_injection);
+        init_guest_vmsa(
+            &mut vmsa,
+            self.reset_ip.load(Ordering::Relaxed),
+            use_alternate_injection,
+        );
 
         self.shared().update_guest_vmsa(paddr);
         let _ = VmsaPage::leak(vmsa);
