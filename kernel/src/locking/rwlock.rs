@@ -299,6 +299,7 @@ pub type RWLockIrqSafe<T> = RawRWLock<T, IrqGuardLocking>;
 pub type RWLockAnyTpr<T, const TPR: usize> = RawRWLock<T, TprGuardLocking<TPR>>;
 pub type RWLockTpr<T> = RWLockAnyTpr<T, { TPR_LOCK }>;
 
+#[cfg(test)]
 mod tests {
     #[test]
     fn test_lock_rw() {
