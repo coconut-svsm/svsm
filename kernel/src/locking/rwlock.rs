@@ -255,6 +255,26 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
             _irq_state: irq_state,
         }
     }
+
+    /// Attempts to acquire the lock for writing without blocking. If the access
+    /// could not be granted at this time, `None` is returned.
+    pub fn try_lock_write(&self) -> Option<RawWriteLockGuard<'_, T, I>> {
+        let irq_state = I::acquire_lock();
+
+        let val = compose_val(0, 0);
+        let new_val = compose_val(0, 1);
+        self.rwlock
+            .compare_exchange(val, new_val, Ordering::Acquire, Ordering::Relaxed)
+            .ok()?;
+
+        Some(RawWriteLockGuard {
+            rwlock: &self.rwlock,
+            // SAFETY: The lock is taken for write, which enforces exclusive
+            // usage of the mutable reference - no pending readers.
+            data: unsafe { &mut *self.data.get() },
+            _irq_state: irq_state,
+        })
+    }
 }
 
 /// A lock can only be acquired for read access if its inner type implements
@@ -291,6 +311,28 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
             data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         }
+    }
+
+    /// Attempts to acquire the lock for reading without blocking. If the access
+    /// could not be granted at this time, `None` is returned.
+    pub fn try_lock_read(&self) -> Option<RawReadLockGuard<'_, T, I>> {
+        let irq_state = I::acquire_lock();
+
+        // Attempt to update the reader count by 1. Bail if a writer is present.
+        self.rwlock
+            .fetch_update(Ordering::Acquire, Ordering::Relaxed, |val| {
+                let (readers, writers) = split_val(val);
+                (writers == 0).then(|| compose_val(readers + 1, 0))
+            })
+            .ok()?;
+
+        Some(RawReadLockGuard {
+            rwlock: &self.rwlock,
+            // SAFETY: The lock is taken for read, which enforces exclusive
+            // usage of the mutable reference - no pending readers.
+            data: unsafe { &*self.data.get() },
+            _irq_state: irq_state,
+        })
     }
 }
 
@@ -343,6 +385,36 @@ mod tests {
 
         drop(read_guard1);
         drop(read_guard2);
+    }
+
+    /// Tests the expected behavior for `RWLock::try_lock_write()`.
+    #[test]
+    fn test_try_write() {
+        let lock = RWLock::new(123);
+        let mut write = lock.try_lock_write().unwrap();
+
+        // Reads should fail unter writer is dropped
+        assert!(lock.try_lock_read().is_none());
+        *write = 321;
+        drop(write);
+
+        let read = lock.try_lock_read().unwrap();
+        assert_eq!(*read, 321);
+    }
+
+    /// Tests the expected behavior for `RWLock::try_lock_read()`.
+    #[test]
+    fn test_try_read() {
+        let lock = RWLock::new(123);
+        let _read1 = lock.try_lock_read().unwrap();
+        let _read2 = lock.try_lock_read().unwrap();
+
+        // Writes should fail until all readers drop
+        assert!(lock.try_lock_write().is_none());
+        drop(_read1);
+        assert!(lock.try_lock_write().is_none());
+        drop(_read2);
+        let _ = lock.try_lock_write().unwrap();
     }
 
     #[test]
