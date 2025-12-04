@@ -24,7 +24,9 @@ use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::{self, HypercallPage};
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
-use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
+use crate::locking::{
+    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuardIrqSafe, SpinLock, WriteLockGuardIrqSafe,
+};
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
@@ -834,7 +836,7 @@ impl PerCpu {
 
     fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, start_info, String::from("idle"))?;
-        self.runqueue.lock_write().set_idle_task(idle_task);
+        self.runqueue_mut().set_idle_task(idle_task);
         Ok(())
     }
 
@@ -1145,7 +1147,7 @@ impl PerCpu {
 
     pub fn schedule_init(&self) -> TaskPointer {
         self.irq_state.set_restore_state(true);
-        let task = self.runqueue.lock_write().schedule_init();
+        let task = self.runqueue_mut().schedule_init();
         self.set_current_stack(task.stack_bounds());
         task
     }
@@ -1157,19 +1159,23 @@ impl PerCpu {
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue.lock_write().schedule_prepare();
+        let ret = self.runqueue_mut().schedule_prepare();
         if let Some((_, ref next)) = ret {
             self.set_current_stack(next.stack_bounds());
         };
         ret
     }
 
-    pub fn runqueue(&self) -> &RWLockIrqSafe<RunQueue> {
-        &self.runqueue
+    pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_read()
+    }
+
+    pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_write()
     }
 
     pub fn current_task(&self) -> TaskPointer {
-        self.runqueue.lock_read().current_task()
+        self.runqueue().current_task()
     }
 
     /// # Safety
@@ -1377,7 +1383,7 @@ impl PerCpuVmsas {
 }
 
 pub fn current_task() -> TaskPointer {
-    this_cpu().runqueue.lock_read().current_task()
+    this_cpu().runqueue().current_task()
 }
 
 pub fn cpu_idle_loop(cpu_index: usize) {
@@ -1390,7 +1396,7 @@ pub fn cpu_idle_loop(cpu_index: usize) {
         // If idle was explicitly requested by another task, then schedule that
         // task to execute again in case it wants to perform processing as a
         // result of the wake from idle.
-        let maybe_task = this_cpu().runqueue().lock_write().wake_from_idle();
+        let maybe_task = this_cpu().runqueue_mut().wake_from_idle();
         if let Some(task) = maybe_task {
             schedule_task(task);
         }
