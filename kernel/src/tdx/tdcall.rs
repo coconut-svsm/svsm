@@ -16,6 +16,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 
 use bitfield_struct::bitfield;
+use bitflags::bitflags;
 use core::arch::asm;
 
 const TDG_VP_TDVMCALL: u32 = 0;
@@ -31,6 +32,26 @@ const TDVMCALL_WRMSR: u32 = 32;
 const TDVMCALL_MAP_GPA: u32 = 0x10001;
 
 pub const MD_TDCS_NUM_L2_VMS: u64 = 0x9010_0001_0000_0005;
+
+bitflags! {
+    /// Register bitmap to indicate which registers are passed to host
+    /// during a TDVMCALL.
+    #[derive(Copy, Clone, Debug)]
+    struct TdxRegs: u64 {
+        const RDX = 1 << 2;
+        const RBX = 1 << 3;
+        const RSI = 1 << 6;
+        const RDI = 1 << 7;
+        const R8 = 1 << 8;
+        const R9 = 1 << 9;
+        const R10 = 1 << 10;
+        const R11 = 1 << 11;
+        const R12 = 1 << 12;
+        const R13 = 1 << 13;
+        const R14 = 1 << 14;
+        const R15 = 1 << 15;
+    }
+}
 
 /// Virtualization exception information
 #[derive(Clone, Copy, Debug)]
@@ -327,7 +348,7 @@ pub fn tdcall_vm_read(field: u64) -> u64 {
 }
 
 pub fn tdvmcall_map_gpa(mut gpa: u64, size: u64) -> Result<(), TdxError> {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let pass_regs = TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12 | TdxRegs::R13;
     let end = gpa + size;
     loop {
         let mut ret: u64;
@@ -337,7 +358,7 @@ pub fn tdvmcall_map_gpa(mut gpa: u64, size: u64) -> Result<(), TdxError> {
         unsafe {
             asm!("tdcall",
                  in("rax") TDG_VP_TDVMCALL,
-                 in("rcx") pass_regs,
+                 in("rcx") pass_regs.bits(),
                  in("r10") 0,
                  in("r11") TDVMCALL_MAP_GPA,
                  in("r12") gpa,
@@ -363,7 +384,8 @@ pub fn tdvmcall_map_gpa(mut gpa: u64, size: u64) -> Result<(), TdxError> {
 }
 
 pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
+    let pass_regs =
+        TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12 | TdxRegs::R13 | TdxRegs::R14 | TdxRegs::R15;
     let mut ret: u64;
     let mut vmcall_ret: u64;
     let mut result_eax: u32;
@@ -374,7 +396,7 @@ pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") 0,
              in("r11") TDVMCALL_CPUID,
              in("r12") cpuid_fn,
@@ -402,7 +424,7 @@ pub fn tdvmcall_cpuid(cpuid_fn: u32, cpuid_subfn: u32) -> CpuidResult {
 }
 
 pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let pass_regs = TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12;
     let mut ret: u64;
     let mut vmcall_ret: u64;
     let mut result: u64;
@@ -411,7 +433,7 @@ pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") 0,
              in("r11") TDVMCALL_RDMSR,
              in("r12") msr as u64,
@@ -429,7 +451,7 @@ pub fn tdvmcall_rdmsr(msr: u32) -> u64 {
 }
 
 pub fn tdvmcall_wrmsr(msr: u32, value: u64) {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13);
+    let pass_regs = TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12 | TdxRegs::R13;
     let mut ret: u64;
     let mut vmcall_ret: u64;
 
@@ -437,7 +459,7 @@ pub fn tdvmcall_wrmsr(msr: u32, value: u64) {
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") 0,
              in("r11") TDVMCALL_WRMSR,
              in("r12") msr as u64,
@@ -459,7 +481,7 @@ pub enum TdpHaltInterruptState {
 }
 
 pub fn tdvmcall_halt(interrupt_state: TdpHaltInterruptState) {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12);
+    let pass_regs = TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12;
     let interrupts_blocked = match interrupt_state {
         TdpHaltInterruptState::Enabled => 0,
         TdpHaltInterruptState::Disabled => 1,
@@ -476,7 +498,7 @@ pub fn tdvmcall_halt(interrupt_state: TdpHaltInterruptState) {
              "tdcall",
              "popfq",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") 0,
              in("r11") TDVMCALL_HLT,
              in("r12") interrupts_blocked,
@@ -493,7 +515,8 @@ pub fn tdvmcall_halt(interrupt_state: TdpHaltInterruptState) {
 }
 
 fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
-    let pass_regs = (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 14) | (1 << 15);
+    let pass_regs =
+        TdxRegs::R10 | TdxRegs::R11 | TdxRegs::R12 | TdxRegs::R13 | TdxRegs::R14 | TdxRegs::R15;
     let mut ret: u64;
     let mut vmcall_ret: u64;
     let mut output: u32;
@@ -501,7 +524,7 @@ fn tdvmcall_io(port: u16, data: u32, size: usize, write: bool) -> u32 {
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") 0,
              in("r11") TDVMCALL_IO,
              in("r12") size,
@@ -540,7 +563,7 @@ pub fn tdvmcall_io_read<T>(port: u16) -> u32 {
 }
 
 pub fn tdvmcall_hyperv_hypercall(regs: &mut X86GeneralRegs) {
-    let pass_regs = (1 << 2) | (1 << 8) | (1 << 10) | (1 << 11);
+    let pass_regs = TdxRegs::RDX | TdxRegs::R8 | TdxRegs::R10 | TdxRegs::R11;
     let mut ret: u64;
     let mut vmcall_ret: u64;
     let mut hypercall_ret: u64;
@@ -553,7 +576,7 @@ pub fn tdvmcall_hyperv_hypercall(regs: &mut X86GeneralRegs) {
     unsafe {
         asm!("tdcall",
              in("rax") TDG_VP_TDVMCALL,
-             in("rcx") pass_regs,
+             in("rcx") pass_regs.bits(),
              in("r10") regs.rcx,
              in("rdx") regs.rdx,
              in("r8") regs.r8,
