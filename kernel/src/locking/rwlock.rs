@@ -49,13 +49,50 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
             _irq_state,
         }
     }
+
+    /// Splits a `RawReadLockGuard` for different components of the backing data.
+    pub fn map_split<U, V, F>(
+        orig: Self,
+        f: F,
+    ) -> (RawReadLockGuard<'a, U, I>, RawReadLockGuard<'a, V, I>)
+    where
+        F: FnOnce(&T) -> (&U, &V),
+    {
+        // Ensure the original guard is never dropped
+        let orig = ManuallyDrop::new(orig);
+
+        // Move the original IRQ state out of drop.
+        // SAFETY: we are really reading from a reference, so the source
+        // pointer is safe. The original guard is behind `ManuallyDrop`,
+        // so only the copy we just make will invoke drop.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+
+        // Increase the reader count by 1.
+        let rwlock = orig.rwlock;
+        rwlock.fetch_add(compose_val(1, 0), Ordering::Release);
+
+        let (a, b) = f(&*orig);
+        (
+            RawReadLockGuard {
+                rwlock,
+                data: NonNull::from(a),
+                _irq_state,
+            },
+            RawReadLockGuard {
+                rwlock,
+                data: NonNull::from(b),
+                // Acquire a second IRQ guard
+                _irq_state: I::acquire_lock(),
+            },
+        )
+    }
 }
 
 /// Implements the behavior of the [`ReadLockGuard`] when it is dropped
 impl<T, I> Drop for RawReadLockGuard<'_, T, I> {
     /// Release the read lock
     fn drop(&mut self) {
-        self.rwlock.fetch_sub(1, Ordering::Release);
+        self.rwlock.fetch_sub(compose_val(1, 0), Ordering::Release);
     }
 }
 
@@ -117,13 +154,51 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
             _irq_state,
         }
     }
+
+    /// Splits a `RawWriteLockGuard` for different components of the backing data.
+    pub fn map_split<U, V, F>(
+        orig: Self,
+        f: F,
+    ) -> (RawWriteLockGuard<'a, U, I>, RawWriteLockGuard<'a, V, I>)
+    where
+        F: FnOnce(&mut T) -> (&mut U, &mut V),
+    {
+        // Ensure the original guard is never dropped
+        let mut orig = ManuallyDrop::new(orig);
+
+        // Move the original IRQ state out of drop.
+        // SAFETY: we are really reading from a reference, so the source
+        // pointer is safe. The original guard is behind `ManuallyDrop`,
+        // so only the copy we just make will invoke drop.
+        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+
+        // Increase the writer count by 1.
+        let rwlock = orig.rwlock;
+        rwlock.fetch_add(compose_val(0, 1), Ordering::Release);
+
+        let (a, b) = f(&mut *orig);
+        (
+            RawWriteLockGuard {
+                rwlock,
+                data: NonNull::from(a),
+                _variance: PhantomData,
+                _irq_state,
+            },
+            RawWriteLockGuard {
+                rwlock,
+                data: NonNull::from(b),
+                _variance: PhantomData,
+                // Acquire a second IRQ guard
+                _irq_state: I::acquire_lock(),
+            },
+        )
+    }
 }
 
 /// Implements the behavior of the [`WriteLockGuard`] when it is dropped
 impl<T, I> Drop for RawWriteLockGuard<'_, T, I> {
     fn drop(&mut self) {
-        // There are no readers - safe to just set lock to 0
-        self.rwlock.store(0, Ordering::Release);
+        self.rwlock.fetch_sub(compose_val(0, 1), Ordering::Release);
     }
 }
 
@@ -170,6 +245,9 @@ unsafe impl<T, I> Send for RawRWLock<T, I> {}
 // SAFETY: All well-formed locks are `Sync`.
 unsafe impl<T, I> Sync for RawRWLock<T, I> {}
 
+const RW_BITS: u64 = 32;
+const RW_MASK: u64 = (1 << RW_BITS) - 1;
+
 /// Splits a 64-bit value into two parts: readers (low 32 bits) and
 /// writers (high 32 bits).
 ///
@@ -184,7 +262,7 @@ unsafe impl<T, I> Sync for RawRWLock<T, I> {}
 /// second is the upper 32 bits.
 #[inline]
 fn split_val(val: u64) -> (u64, u64) {
-    (val & 0xffff_ffffu64, val >> 32)
+    (val & RW_MASK, val >> RW_BITS)
 }
 
 /// Composes a 64-bit value by combining the number of readers (low 32
@@ -549,6 +627,54 @@ mod tests {
         // After drop, reads and writes should work again.
         drop(baz);
         let _ = lock.try_lock_write().unwrap();
+        let read = lock.try_lock_read().unwrap();
+        assert_eq!(read.bar, 1);
+        assert_eq!(read.baz, 2);
+    }
+
+    /// Tests the expected behavior for `RawReadLockGuard::map_split()`.
+    #[test]
+    fn test_map_split_read() {
+        let lock = RWLock::new(Foo::default());
+        let read = lock.try_lock_read().unwrap();
+        let (bar, baz) = RawReadLockGuard::map_split(read, |f| (&f.bar, &f.baz));
+
+        // Reads should still succeed, writes should fail
+        assert!(lock.try_lock_write().is_none());
+        let _ = lock.try_lock_read().unwrap();
+
+        // Even if one of the two guards drops, behavior should remain
+        drop(bar);
+        assert!(lock.try_lock_write().is_none());
+        let _ = lock.try_lock_read().unwrap();
+
+        // After both drops, reads and writes should work again.
+        drop(baz);
+        let _ = lock.try_lock_write().unwrap();
+        let _ = lock.try_lock_read().unwrap();
+    }
+
+    /// Tests the expected behavior for `RawWriteLockGuard::map_split()`.
+    #[test]
+    fn test_map_split_write() {
+        let lock = RWLock::new(Foo::default());
+        let write = lock.try_lock_write().unwrap();
+        let (mut bar, mut baz) = RawWriteLockGuard::map_split(write, |f| (&mut f.bar, &mut f.baz));
+
+        // Reads and writes should fail
+        assert!(lock.try_lock_read().is_none());
+        assert!(lock.try_lock_write().is_none());
+
+        // Even if one of the two guards drops, behavior should remain
+        *bar = 1;
+        drop(bar);
+        assert!(lock.try_lock_read().is_none());
+        assert!(lock.try_lock_write().is_none());
+
+        // After both drops, reads and writes should work again.
+        *baz = 2;
+        drop(baz);
+        let _ = lock.try_lock_write();
         let read = lock.try_lock_read().unwrap();
         assert_eq!(read.bar, 1);
         assert_eq!(read.baz, 2);
