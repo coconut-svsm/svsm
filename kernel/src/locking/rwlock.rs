@@ -275,6 +275,17 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
             _irq_state: irq_state,
         })
     }
+
+    /// Attempts to acquire the lock for writing in a single try, panicking
+    /// if the operation would block.
+    ///
+    /// This is useful for per-CPU structures that use locks to detect
+    /// reentrancy, ensuring that a deadlock instead produces an immediate
+    /// panic.
+    #[inline]
+    pub fn write_noblock(&self) -> RawWriteLockGuard<'_, T, I> {
+        self.try_lock_write().expect("Detected potential deadlock")
+    }
 }
 
 /// A lock can only be acquired for read access if its inner type implements
@@ -333,6 +344,17 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
             data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         })
+    }
+
+    /// Attempts to acquire the lock for reading in a single try, panicking
+    /// if the operation would block.
+    ///
+    /// This is useful for per-CPU structures that use locks to detect
+    /// reentrancy, ensuring that a deadlock instead produces an immediate
+    /// panic.
+    #[inline]
+    pub fn read_noblock(&self) -> RawReadLockGuard<'_, T, I> {
+        self.try_lock_read().expect("Detected potential deadlock")
     }
 }
 
