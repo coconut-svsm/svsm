@@ -301,10 +301,10 @@ pub type RWLockTpr<T> = RWLockAnyTpr<T, { TPR_LOCK }>;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_lock_rw() {
-        use crate::locking::*;
-
         let rwlock = RWLock::new(42);
 
         // Acquire a read lock and check the initial value
@@ -331,8 +331,6 @@ mod tests {
 
     #[test]
     fn test_concurrent_readers() {
-        use crate::locking::*;
-
         // Let's test two concurrent readers on a new RWLock instance
         let rwlock_concurrent = RWLock::new(123);
 
@@ -352,7 +350,6 @@ mod tests {
     fn rw_lock_irq_unsafe() {
         use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
         use crate::cpu::irqs_enabled;
-        use crate::locking::*;
 
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -384,7 +381,6 @@ mod tests {
     fn rw_lock_irq_safe() {
         use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
         use crate::cpu::{irqs_disabled, irqs_enabled};
-        use crate::locking::*;
 
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -417,7 +413,6 @@ mod tests {
     #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
     fn rw_lock_tpr() {
         use crate::cpu::irq_state::raw_get_tpr;
-        use crate::locking::*;
         use crate::types::TPR_LOCK;
 
         assert_eq!(raw_get_tpr(), 0);
