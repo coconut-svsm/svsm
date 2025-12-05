@@ -32,7 +32,7 @@ use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
-use svsm::mm::address_space::SVSM_GLOBAL_BASE;
+use svsm::mm::address_space::{SVSM_GLOBAL_BASE, SVSM_GLOBAL_END};
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
@@ -362,6 +362,7 @@ fn load_kernel_elf(
     loaded_phys: &mut MemoryRegion<PhysAddr>,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
+    kernel_region_len: usize,
 ) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
     // Find the bounds of the kernel ELF and load it into the ELF parser
     let elf_start = PhysAddr::from(launch_info.kernel_elf_start as u64);
@@ -372,7 +373,16 @@ fn load_kernel_elf(
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
     let elf = elf::Elf64File::read(bytes)?;
 
+    // Compute the range of addresses where the vaddr_alloc_base can be placed
+    let elf_alignment_padding = elf.max_load_segment_align as usize;
+    let heap_alignment_padding = PAGE_SIZE_2M;
+    let upper_bound = SVSM_GLOBAL_END.as_usize()
+        - kernel_region_len
+        - elf_alignment_padding
+        - heap_alignment_padding;
+
     let vaddr_alloc_base = SVSM_GLOBAL_BASE.as_usize() as u64;
+    assert!(vaddr_alloc_base < upper_bound.try_into().unwrap());
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
@@ -535,9 +545,14 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
     // Load first the kernel ELF and update the loaded physical region
-    let (kernel_entry, loaded_kernel_vregion) =
-        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
-            .expect("Failed to load kernel ELF");
+    let (kernel_entry, loaded_kernel_vregion) = load_kernel_elf(
+        launch_info,
+        &mut loaded_kernel_pregion,
+        platform,
+        &config,
+        kernel_region.len(),
+    )
+    .expect("Failed to load kernel ELF");
 
     // Create the page heap used in the kernel region right after the already
     // loaded kernel region
