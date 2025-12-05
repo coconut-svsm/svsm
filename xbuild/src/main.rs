@@ -193,12 +193,10 @@ impl ComponentConfig {
         if args.all_features {
             cmd.args(["--all-features"]);
         } else {
-            let features = self.features();
-
-            let cargo_features = cmd_feats.feature_list(pkg, features);
-
-            if !cargo_features.is_empty() {
-                cmd.args(["--features", cargo_features.join(",").as_str()]);
+            let mut features = self.features();
+            features.append(&mut cmd_feats.feature_list(pkg));
+            if !features.is_empty() {
+                cmd.args(["--features", features.join(",").as_str()]);
             }
         }
         if let Some(manifest) = self.manifest.as_ref() {
