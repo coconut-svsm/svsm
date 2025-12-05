@@ -14,7 +14,7 @@ use crate::mm::alloc::free_multiple_pages;
 use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SevFWMetaData, SVSM_PLATFORM};
 use crate::types::PageSize;
-use crate::utils::{round_to_pages, MemoryRegion};
+use crate::utils::{page_align_up, round_to_pages, MemoryRegion};
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
@@ -177,17 +177,21 @@ impl IgvmParams<'_> {
         // If the parameters do not include a guest memory map area, then no
         // work is required.
         let fw_info = &self.igvm_param_block.firmware;
-        if fw_info.memory_map_size == 0 {
+        let mem_map_size = if fw_info.memory_map_size == 0 {
             return Ok(());
-        }
+        } else {
+            fw_info.memory_map_size as usize
+        };
 
         // Map the guest memory map area into the address space.
         let mem_map_gpa = PhysAddr::from(fw_info.memory_map_address as u64);
-        let mem_map_region = MemoryRegion::new(mem_map_gpa, fw_info.memory_map_size as usize);
+        // Guest memory map may not be page-aligned or page-sized.
+        let mem_map_region =
+            MemoryRegion::new(mem_map_gpa.page_align(), page_align_up(mem_map_size));
         log::info!(
             "Filling guest IGVM memory map at {:#018x} size {:#018x}",
-            mem_map_region.start(),
-            mem_map_region.len(),
+            mem_map_gpa,
+            mem_map_size,
         );
 
         let mem_map_mapping =
@@ -217,7 +221,7 @@ impl IgvmParams<'_> {
         }
 
         // Calculate the maximum number of entries that can be inserted.
-        let max_entries = fw_info.memory_map_size as usize / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
+        let max_entries = mem_map_size / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
         // Return an error if an overflow occurs.
         if map.len() > max_entries {
             log::warn!(
@@ -229,7 +233,7 @@ impl IgvmParams<'_> {
         }
 
         // Generate a guest pointer range to hold the memory map.
-        let mem_map = GuestPtr::new(mem_map_va);
+        let mem_map = GuestPtr::new(mem_map_va + mem_map_gpa.page_offset());
 
         for (i, entry) in map.iter().enumerate() {
             // SAFETY: mem_map_va points to newly mapped memory, whose physical
