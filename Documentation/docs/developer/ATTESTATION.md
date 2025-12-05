@@ -278,7 +278,7 @@ SEV-SNP machine with an SVSM-enabled kernel.
     ```shell
     cd svsm
     make aproxy
-    bin/aproxy --protocol kbs-test \
+    bin/aproxy --protocol kbs \
                --url http://0.0.0.0:8080 \
                --unix /tmp/svsm-proxy.sock \
                --force
