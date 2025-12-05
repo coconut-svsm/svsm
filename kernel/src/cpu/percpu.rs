@@ -828,14 +828,21 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn setup_idle_task(&self, entry: fn(usize)) -> Result<(), SvsmError> {
-        let idle_task = Task::create(
-            self,
-            KernelThreadStartInfo::new(entry, self.shared.cpu_index),
-            String::from("idle"),
-        )?;
+    fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
+        let idle_task = Task::create(self, start_info, String::from("idle"))?;
         self.runqueue.lock_write().set_idle_task(idle_task);
         Ok(())
+    }
+
+    pub fn setup_idle_task(&self) -> Result<(), SvsmError> {
+        self.setup_idle_task_internal(KernelThreadStartInfo::new(
+            cpu_idle_loop,
+            self.shared.cpu_index,
+        ))
+    }
+
+    pub fn setup_bsp_idle_task(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
+        self.setup_idle_task_internal(start_info)
     }
 
     pub fn load_gdt_tss(&'static self, init_gdt: bool) {
