@@ -5,7 +5,6 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr};
-use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
 use crate::cpu::{irqs_enabled, IrqGuard};
 use crate::error::SvsmError;
@@ -216,16 +215,13 @@ pub unsafe fn invalidate_page_msr(addr: PhysAddr) -> Result<(), GhcbMsrError> {
 }
 
 pub fn request_termination_msr() -> ! {
-    let info: u64 = GHCBMsr::TERM_REQ;
-
-    // Since this processor is destined for a fatal termination, there is
-    // no reason to preserve interrupt state.  Interrupts can be disabled
-    // outright prior to shutdown.
-    raw_irqs_disable();
-    // SAFETY: Requesting termination doesn't break memory safety.
-    unsafe { write_msr(SEV_GHCB, info) };
-    raw_vmgexit();
+    // The VMGEXIT is not supposed to return, but guard against an
+    // uncooperative host with an infinite loop, ensuring execution
+    // never leaves this function.
     loop {
+        // SAFETY: Requesting termination doesn't break memory safety.
+        unsafe { write_msr(SEV_GHCB, GHCBMsr::TERM_REQ) };
+        raw_vmgexit();
         halt();
     }
 }

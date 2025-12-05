@@ -13,6 +13,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::{cpuid_table, CpuidResult};
+use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
@@ -430,6 +431,10 @@ impl SvsmPlatform for SnpPlatform {
     where
         Self: Sized,
     {
+        // Since this processor is destined for a fatal termination, there is
+        // no reason to preserve interrupt state.  Interrupts can be disabled
+        // outright prior to shutdown.
+        raw_irqs_disable();
         request_termination_msr();
     }
 }
