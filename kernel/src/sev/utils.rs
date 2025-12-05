@@ -59,14 +59,10 @@ unsafe fn pvalidate_range_4k(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    for addr in region.iter_pages(PageSize::Regular) {
+    region
+        .iter_pages(PageSize::Regular)
         // SAFETY: the caller promises that the validation operation is safe.
-        unsafe {
-            pvalidate(addr, PageSize::Regular, valid)?;
-        }
-    }
-
-    Ok(())
+        .try_for_each(|addr| unsafe { pvalidate(addr, PageSize::Regular, valid) })
 }
 
 /// # Safety
@@ -288,14 +284,10 @@ pub unsafe fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Res
 }
 
 pub fn rmp_revoke_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
-    for vmpl in RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits() {
-        let vmpl = RMPFlags::from_bits_truncate(vmpl);
+    (RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits())
+        .map(RMPFlags::from_bits_truncate)
         // SAFETY: revoking guest access can never affect memory safety.
-        unsafe {
-            rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size)?;
-        }
-    }
-    Ok(())
+        .try_for_each(|vmpl| unsafe { rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size) })
 }
 
 /// # Safety
