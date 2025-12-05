@@ -163,6 +163,13 @@ impl ComponentConfig {
         }
     }
 
+    fn features(&self) -> Vec<String> {
+        self.features
+            .clone()
+            .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
+            .unwrap_or_default()
+    }
+
     /// Build this component as a cargo binary
     fn cargo_build(
         &self,
@@ -186,11 +193,7 @@ impl ComponentConfig {
         if args.all_features {
             cmd.args(["--all-features"]);
         } else {
-            let features: Vec<String> = self
-                .features
-                .clone()
-                .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
-                .unwrap_or_default();
+            let features = self.features();
 
             let cargo_features = cmd_feats.feature_list(pkg, features);
 
