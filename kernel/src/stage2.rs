@@ -341,6 +341,19 @@ unsafe fn load_elf_segment(
     Ok(segment_region)
 }
 
+/// Adjust the virtual address so that it's aligned relative to the
+/// physical address.
+fn advance_vaddr_for_alignment(vaddr: VirtAddr, paddr: PhysAddr, align: usize) -> VirtAddr {
+    let v = vaddr.as_usize();
+    let p: usize = paddr.into();
+
+    // Amount needed to make (v_end + offset) = p_end (mod PAGE_SIZE_2M)
+    let diff = v.wrapping_sub(p);
+    let offset = diff.wrapping_neg() & (align - 1);
+
+    VirtAddr::from(vaddr + offset)
+}
+
 /// Loads the kernel ELF and returns the virtual memory region where it
 /// resides, as well as its entry point. Updates the used physical memory
 /// region accordingly.
@@ -442,9 +455,9 @@ fn load_igvm_params(
     Ok(vaddr)
 }
 
-/// Maps any remaining memory between the end of the kernel image and the end
-/// of the allocated kernel memory region as heap space. Exclude any memory
-/// reserved by the configuration.
+/// Maps any remaining memory between `first_paddr` and the end of the
+/// allocated kernel memory region as heap space. Exclude any memory reserved
+/// by the configuration.
 ///
 /// # Panics
 ///
@@ -459,7 +472,7 @@ fn prepare_heap(
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
     let heap_pstart = first_available_paddr;
-    let heap_vstart = first_available_vaddr;
+    let heap_vstart = advance_vaddr_for_alignment(first_available_vaddr, heap_pstart, PAGE_SIZE_2M);
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
