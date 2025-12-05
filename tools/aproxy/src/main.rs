@@ -9,7 +9,7 @@ mod attest;
 mod backend;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::{fs, os::unix::net::UnixListener};
 
 #[derive(Parser, Debug)]
@@ -21,7 +21,7 @@ struct Args {
 
     /// Backend attestation protocol that the server implements.
     #[clap(long = "protocol")]
-    backend: backend::Protocol,
+    backend: ArgsBackend,
 
     /// UNIX domain socket path to the SVSM serial port
     #[clap(long)]
@@ -30,6 +30,14 @@ struct Args {
     /// Force Unix domain socket removal before bind
     #[clap(long, short, default_value_t = false)]
     force: bool,
+}
+
+/// Enum to represent possible backends in the CLI.
+/// This must not have any attached data to its variants for `ValueEnum`
+/// to work.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ArgsBackend {
+    Kbs,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -44,7 +52,8 @@ fn main() -> anyhow::Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let mut http_client = backend::HttpClient::new(args.url.clone(), args.backend)?;
+                let mut http_client =
+                    backend::HttpClient::new(args.url.clone(), args.backend.into())?;
                 attest::attest(&mut stream, &mut http_client)?;
             }
             Err(_) => {
