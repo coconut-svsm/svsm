@@ -5,3 +5,8 @@
 * joerg.roedel@amd.com jlange@microsoft.com peter.fang@intel.com sgarzare@redhat.com
 
 # Subsystem Maintainers
+
+# Attestation subsystem
+/libaproxy/* tfanelli@redhat.com
+/aproxy/* tfanelli@redhat.com
+/kernel/src/attest.rs tfanelli@redhat.com
