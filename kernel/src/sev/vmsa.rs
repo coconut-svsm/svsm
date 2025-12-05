@@ -129,8 +129,8 @@ impl GuestCpuState for VMSA {
     }
 
     fn set_tpr(&mut self, tpr: u8) {
-        let mut vintr_ctrl = self.vintr_ctrl;
-        vintr_ctrl.set_v_tpr(tpr >> 4)
+        let vintr_ctrl = self.vintr_ctrl;
+        self.vintr_ctrl = vintr_ctrl.with_v_tpr(tpr >> 4);
     }
 
     fn request_nmi(&mut self) {
