@@ -50,6 +50,24 @@ broadcast group alloc_broadcast_group {
 
 broadcast use alloc_broadcast_group;
 
+/// A special pfn value indicating no page.
+spec fn spec_no_page() -> usize {
+    NO_PAGE
+}
+
+/// Returns `true` if the given page number is observable in the context of
+/// PageInfo or the allocator.
+/// This includes all valid page frame numbers and the special no-page value.
+spec fn spec_pfn_inv(pfn: usize) -> bool {
+    pfn < MAX_PAGE_COUNT || spec_pfn_is_oob(pfn)
+}
+
+/// Returns `true` if the given PFN represents "no page".
+#[verifier(inline)]
+spec fn spec_pfn_is_oob(pfn: usize) -> bool {
+    pfn == spec_no_page()
+}
+
 include!("alloc_info.verus.rs");
 
 include!("alloc_free.verus.rs");
@@ -72,7 +90,7 @@ impl HeapMemoryRegion {
         &&& self.wf_perms()
         &&& self.wf_params()
         &&& self.next_page@ =~= self@.free.next_pages()
-        &&& forall|o| 0 <= o < MAX_ORDER ==> #[trigger] self.next_page[o] < MAX_PAGE_COUNT
+        &&& forall|o| 0 <= o < MAX_ORDER ==> #[trigger] spec_pfn_inv(self.next_page[o])
         &&& self@.free.wf_strict()
     }
 
@@ -97,6 +115,14 @@ impl HeapMemoryRegion {
         &&& self@.info_ptr_exposed@ == self@.mr_map@.provenance
         &&& self.map() == self@.mr_map@.map
         &&& self.map().wf()
+        &&& self.wf_metadata_addr()
+    }
+
+    // Metadata pointer invariants
+    spec fn wf_metadata_addr(&self) -> bool {
+        &&& self.metadata_addr@ == self@.mr_map@.metadata_addr()
+        &&& self.metadata_addr@ + (self.page_count * size_of::<PageStorageType>()) as int
+            <= self.start_virt@ + (self.page_count * PAGE_SIZE)
     }
 
     proof fn lemma_page_info_ptr(&self, pfn: usize)
@@ -104,7 +130,7 @@ impl HeapMemoryRegion {
             #[trigger] self.wf_params(),
             pfn < self.page_count,
         ensures
-            self.start_virt@ + #[trigger] (pfn * size_of::<PageStorageType>()) <= usize::MAX,
+            self.metadata_addr@ + #[trigger] (pfn * size_of::<PageStorageType>()) <= usize::MAX,
     {
         let unit = size_of::<PageStorageType>() as int;
         vstd::arithmetic::mul::lemma_mul_is_commutative(pfn as int, unit);
@@ -217,7 +243,7 @@ impl HeapMemoryRegion {
         next_pfn: usize,
         perms: Map<usize, PInfoPerm>,
     ) -> bool {
-        &&& next_pfn < MAX_PAGE_COUNT
+        &&& spec_pfn_inv(next_pfn)
         &&& self.inbound_pfn_order(pfn, order)
         &&& self.writable_page_infos(pfn, 1usize << order, perms)
         &&& self.wf_params()
@@ -310,7 +336,7 @@ impl HeapMemoryRegion {
         let new_order = order - 1;
         let order = order as int;
         &&& new.wf_next_pages()
-        &&& new.next_page[order - 1] != 0
+        &&& !spec_pfn_is_oob(new.next_page[order - 1])
         &&& self.with_same_mapping(new)
     }
 
@@ -341,7 +367,7 @@ impl HeapMemoryRegion {
     ) -> bool {
         let order = order as int;
         &&& new.wf_next_pages()
-        &&& ret.is_err() == ((self.next_page[order] == 0))
+        &&& ret.is_err() == spec_pfn_is_oob(self.next_page[order])
         &&& ret.is_err() ==> self === new
         &&& ret.is_ok() ==> {
             &&& perm.wf_pfn_order(new@.mr_map, ret.unwrap(), order as usize)
@@ -367,8 +393,9 @@ impl HeapMemoryRegion {
         &&& pfn < self.page_count
     }
 
+    /// Defines when allocation fails for the given order.
     spec fn spec_alloc_fails(&self, order: int) -> bool {
-        forall|i| #![trigger self.next_page[i]] order <= i < MAX_ORDER ==> self.next_page[i] == 0
+        forall|i| order <= i < MAX_ORDER ==> spec_pfn_is_oob(#[trigger] self.next_page[i])
     }
 
     spec fn pg_params(&self) -> PageCountParam<MAX_ORDER> {
@@ -378,12 +405,13 @@ impl HeapMemoryRegion {
     spec fn inbound_pfn_order(&self, pfn: usize, order: usize) -> bool {
         &&& pfn + (1usize << order) <= self.pg_params().page_count
         &&& order < MAX_ORDER
-        &&& pfn < MAX_PAGE_COUNT
+        &&& spec_pfn_inv(pfn)
     }
 
     spec fn valid_pfn_order(&self, pfn: usize, order: usize) -> bool {
         &&& self.pg_params().valid_pfn_order(pfn, order)
-        &&& 0 < pfn < MAX_PAGE_COUNT
+        &&& spec_pfn_inv(pfn)
+        &&& !spec_pfn_is_oob(pfn)
     }
 
     spec fn ens_refill_page_list(&self, new: Self, ret: bool, order: usize) -> bool {
@@ -391,7 +419,7 @@ impl HeapMemoryRegion {
         let valid_order = (0 <= order < MAX_ORDER);
         &&& (valid_order && !self.spec_alloc_fails(order as int)) == ret
         &&& ret ==> valid_order
-        &&& ret ==> new.next_page[order as int] != 0
+        &&& ret ==> !spec_pfn_is_oob(new.next_page[order as int])
         &&& self.with_same_mapping(&new)
         &&& new.wf_next_pages()
     }

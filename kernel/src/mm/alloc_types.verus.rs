@@ -11,6 +11,13 @@ verus! {
 // prove the size of PageStorageType
 global size_of PageStorageType == 8;
 
+impl PageInfo {
+    // A possible pfn value in pginfo storage.
+    spec fn spec_pfn_inv(pfn: usize) -> bool {
+        spec_pfn_inv(pfn)
+    }
+}
+
 spec fn spec_page_storage_type(mem: MemContents<PageStorageType>) -> Option<PageStorageType> {
     if mem.is_init() {
         Some(mem.value())
@@ -136,7 +143,7 @@ impl SlabPageInfo {
 impl FreeInfo {
     #[verifier::type_invariant]
     spec fn inv(&self) -> bool {
-        &&& self.next_page < MAX_PAGE_COUNT
+        &&& PageInfo::spec_pfn_inv(self.next_page)
         &&& self.order < MAX_ORDER
     }
 }
@@ -192,6 +199,34 @@ impl PageStorageType {
             }
         }
     }
+
+    proof fn lemma_decode_next(&self)
+        ensures
+            PageInfo::spec_pfn_inv(self.decode_next()),
+    {
+        broadcast use lemma_bit_u64_shr_bound;
+
+        let value = self.0;
+        assert(Self::NO_NEXT >> Self::NEXT_SHIFT == MAX_PAGE_COUNT) by (compute);
+        let m = (value & Self::NEXT_MASK);
+        assert(m != Self::NO_NEXT ==> m >> Self::NEXT_SHIFT < MAX_PAGE_COUNT) by (bit_vector)
+            requires
+                m == value & Self::NEXT_MASK,
+        ;
+    }
+
+    // Demonstrates that `NO_PAGE` maps uniquely to `NO_NEXT` under `NEXT_SHIFT`,
+    // and no other page value satisfies this relation.
+    #[verifier(bit_vector)]
+    proof fn lemma_no_page_no_next(next_page: usize)
+        requires
+            PageInfo::spec_pfn_inv(next_page),
+        ensures
+            next_page == NO_PAGE <==> next_page << Self::NEXT_SHIFT == Self::NO_NEXT,
+            Self::NO_NEXT >> Self::NEXT_SHIFT == NO_PAGE >> Self::NEXT_SHIFT,
+            Self::NO_NEXT >> Self::NEXT_SHIFT << Self::NEXT_SHIFT == Self::NO_NEXT,
+    {
+    }
 }
 
 impl SpecDecoderProof<PageStorageType> for FreeInfo {
@@ -211,6 +246,9 @@ impl SpecDecoderProof<PageStorageType> for FreeInfo {
         ensures
             PageType::spec_decode(self.spec_encode().unwrap()) === Some(PageType::Free),
     {
+        broadcast use lemma_u64_shl_shr;
+
+        PageStorageType::lemma_no_page_no_next(self.next_page);
         let info = *self;
         let order = info.order as u64;
         let next_page = info.next_page as u64;
@@ -219,15 +257,23 @@ impl SpecDecoderProof<PageStorageType> for FreeInfo {
         let bit2 = (PageStorageType::NEXT_SHIFT - PageStorageType::TYPE_SHIFT) as u64;
         let bit3 = (u64::BITS - PageStorageType::NEXT_SHIFT) as u64;
         lemma_u64_and_bitmask_lower(order, bit2);
-        let ret = mem | (order << bit1) | (next_page << (bit1 + bit2)) as u64;
+        broadcast use lemma_bit_u64_shr_bound;
+
+        let encoded_next = if next_page != NO_PAGE as u64 {
+            next_page
+        } else {
+            (PageStorageType::NO_NEXT >> PageStorageType::NEXT_SHIFT) as u64
+        };
+        let ret = mem | (order << bit1) | (encoded_next << (bit1 + bit2)) as u64;
         lemma_bit_u64_extract_fields2(mem, order, bit1, bit2);
         lemma_bit_u64_extract_fields2(
             mem | (order << bit1),
-            next_page,
+            encoded_next,
             PageStorageType::NEXT_SHIFT,
             (u64::BITS - PageStorageType::NEXT_SHIFT) as u64,
         );
         lemma_bit_u64_extract_mid_field(ret, bit1, bit2);
+        lemma_bit_u64_shl_unchanged_by_high_mask(encoded_next, PageStorageType::NEXT_SHIFT);
     }
 }
 

@@ -25,7 +25,9 @@ verus! {
 
 pub type RawPerm = PointsToRaw;
 
-pub spec const MAX_PAGE_COUNT: u64 = 1u64 << (u64::BITS - 12) as u64;
+/// Maximum number of pages that can be allocated
+/// Since NO_PAGE is defined as usize::MAX, we reserve one page for NO_PAGE.
+pub spec const MAX_PAGE_COUNT: u64 = ((1u64 << (u64::BITS - 12) as u64) as u64 - 1) as u64;
 
 pub spec const MAX_PGINFO_SHARES: nat = 2;
 
@@ -177,7 +179,7 @@ impl<const N: usize> PageCountParam<N> {
 
     pub open spec fn valid_pfn_order(&self, pfn: usize, order: usize) -> bool {
         let n = 1usize << order;
-        &&& self.reserved_pfn_count() <= pfn < self.page_count
+        &&& 0 <= pfn < self.page_count
         &&& pfn + n <= self.page_count
         &&& n > 0
         &&& pfn % n == 0
@@ -272,6 +274,13 @@ pub ghost struct MemRegionMappingView {
     pub provenance: Provenance,
 }
 
+impl MemRegionMappingView {
+    // TODO: prove that metadata_addr is derived from start_addr and size. For
+    // now, we just treat it as an uninterpreted function without proving
+    // init_memory.
+    pub uninterp spec fn metadata_addr(&self) -> usize;
+}
+
 // Since the allocated memory will have partial ownership (defined via
 // FracTypedPerm) of MemRegionMappingView and so the allocator cannot obtain
 // full ownership to change mapping if the allocator does not free all memory.
@@ -304,6 +313,16 @@ impl MemRegionMapping {
         vstd::raw_ptr::ptr_from_data(
             vstd::raw_ptr::PtrData {
                 addr: self@.map.virt_start@,
+                provenance: self@.provenance,
+                metadata: (),
+            },
+        )
+    }
+
+    pub open spec fn metadata_ptr<T>(&self) -> *const T {
+        vstd::raw_ptr::ptr_from_data(
+            vstd::raw_ptr::PtrData {
+                addr: self@.metadata_addr(),
                 provenance: self@.provenance,
                 metadata: (),
             },

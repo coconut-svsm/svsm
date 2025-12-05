@@ -57,6 +57,7 @@ impl From<AllocError> for SvsmError {
 pub const MAX_ORDER: usize = 6;
 
 /// Special marker for no-page
+#[verus_spec]
 const NO_PAGE: usize = usize::MAX;
 
 /// Calculates the order of a given size for page allocation.
@@ -226,12 +227,12 @@ impl PageStorageType {
     #[verus_verify(dual_spec(spec_decode_next))]
     #[verus_spec(ret =>
         ensures
-            ret < (1u64 << (u64::BITS - Self::NEXT_SHIFT) as u64),
+            PageInfo::spec_pfn_inv(ret),
         returns
             self.spec_decode_next()
     )]
     fn decode_next(&self) -> usize {
-        proof! {broadcast use lemma_bit_u64_shr_bound;}
+        proof! {self.lemma_decode_next();}
         let next: usize = (self.0 & Self::NEXT_MASK) as usize;
         if next == Self::NO_NEXT {
             NO_PAGE
@@ -878,7 +879,7 @@ impl HeapMemoryRegion {
             old(self).ens_split_page_ok(&*self, pfn, order),
             ret.is_ok(),
     )]
-    #[verus_verify(spinoff_prover, rlimit(2))]
+    #[verus_verify(spinoff_prover, rlimit(3))]
     fn split_page(&mut self, pfn: usize, order: usize) -> Result<(), AllocError> {
         if !(1..MAX_ORDER).contains(&order) {
             proof! {assert(false);} // unreachable
@@ -1170,7 +1171,7 @@ impl HeapMemoryRegion {
             self.req_next_free_pfn(pfn, order, perm),
         ensures
             perm.page_info() == Some(PageInfo::Free(FreeInfo { order, next_page })),
-            next_page < MAX_PAGE_COUNT,
+            perm.page_info().unwrap().inv(),
     )]
     fn next_free_pfn(&self, pfn: usize, order: usize) -> usize {
         proof! {
@@ -1238,7 +1239,7 @@ impl HeapMemoryRegion {
                 self.req_allocate_pfn(pfn, order),
                 self.req_allocate_pfn(old_pfn, order),
                 old_pfn != pfn,
-                old_pfn != 0,
+                !spec_pfn_is_oob(old_pfn),
                 old_pfn == self@.free.avail[order as int][idx_ + 1].pfn(),
                 -1 <= idx_ < self@.free.avail[order as int].len() - 1,
             decreases (idx_ + 1),

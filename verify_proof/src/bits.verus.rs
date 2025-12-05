@@ -665,6 +665,15 @@ proof fn lemma_bit_u64_shl_bit_bound(x: u64, n: u64, m: u64)
     );
 }
 
+pub proof fn lemma_bit_u64_shl_unchanged_by_high_mask(x: u64, n: u64)
+    requires
+        n < u64::BITS,
+    ensures
+        (x << n) & !sub(1u64 << n, 1) == (x << n),
+{
+    assert((x << n) & !sub(1u64 << n, 1) == x << n) by (bit_vector);
+}
+
 /// a is the low part, b is the high part
 /// n is the number of bits in a
 /// m is the number of bits in b
@@ -681,6 +690,7 @@ pub proof fn lemma_bit_u64_extract_fields2(a: u64, b: u64, n: u64, m: u64)
     ensures
         ((a | (b << n)) >> n) & sub(1u64 << m, 1) == b,
         (a | (b << n)) & sub((1u64 << n), 1) == a,
+        (a | (b << n)) & !sub(1u64 << n, 1) == (b << n),
         (b & sub(1u64 << m, 1)) == b,
         a & sub(1u64 << n, 1) == a,
         (a | (b << n)) >> n == b,
@@ -714,6 +724,25 @@ pub proof fn lemma_bit_u64_extract_fields2(a: u64, b: u64, n: u64, m: u64)
     lemma_u64_shl_shr(b, n, n);
     lemma_bit_u64_or_mask(0, b);
     lemma_bit_u64_or_mask(a, 0);
+    lemma_or_shift_mask_cancels_or(a, b, n);
+}
+
+// Proves that the high part can be extracted from a | (b << n) using bitwise operations
+proof fn lemma_or_shift_mask_cancels_or(a: u64, b: u64, n: u64)
+    requires
+        a < (1u64 << n),
+        n < u64::BITS,
+        n > 0,
+    ensures
+        (a | (b << n)) & !sub(1u64 << n, 1) == (b << n),
+{
+    lemma_u64_and_is_distributive_or(a, b << n, !sub(1u64 << n, 1));
+    assert((b << n) & !sub(1u64 << n, 1) == b << n) by (bit_vector);
+    assert(a & !sub(1u64 << n, 1) == 0) by (bit_vector)
+        requires
+            a < (1u64 << n),
+    ;
+    assert(0 | (b << n) == b << n) by (bit_vector);
 }
 
 pub proof fn lemma_bit_u64_extract_mid_field(x: u64, bits1: u64, bits2: u64)

@@ -2214,9 +2214,9 @@ checksum = "e9d00c22a221fbf8b3398002ebdd1c89017e5381c2f05d6933a3706d87e90e14"
 
 [[package]]
 name = "verus_builtin_macros"
-version = "0.0.0-2025-11-24-2240"
+version = "0.0.0-2025-11-16-0050"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5713bf8de72210a2de75e1c40367824974fea3eaf769351698ee4eae668c7e57"
+checksum = "5b81815a92a215853f2c9dc87967eac087c3a5126f0acc4c11c6175b9f2b633d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2245,9 +2245,9 @@ dependencies = [
 
 [[package]]
 name = "verus_state_machines_macros"
-version = "0.0.0-2025-11-23-0053"
+version = "0.0.0-2025-11-16-0050"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f0d2b64ab30b4d79d55b8ba83df03dcb6a550805d0f9586f700b4bb6e82be8a"
+checksum = "e9b5f719e2d4fc80ffcff723da75c31a7ea1419220627917e152b2d7cae2fbdc"
 dependencies = [
  "indexmap",
  "proc-macro2",
@@ -2287,9 +2287,9 @@ dependencies = [
 
 [[package]]
 name = "vstd"
-version = "0.0.0-2025-11-24-2240"
+version = "0.0.0-2025-11-16-0050"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2014cfb31f9dec56e9ce777c4d931b9f45c49b9f9a54de9aedfdf7bb83421490"
+checksum = "78daf1e3f8fde46c7ccbdd80d1d95875d8be3fe9b02f5f827d798cbecad47893"
 dependencies = [
  "verus_builtin",
  "verus_builtin_macros",
