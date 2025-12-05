@@ -453,14 +453,13 @@ fn load_igvm_params(
 /// reserved for configuration.
 fn prepare_heap(
     kernel_region: MemoryRegion<PhysAddr>,
-    loaded_kernel_pregion: MemoryRegion<PhysAddr>,
-    loaded_kernel_vregion: MemoryRegion<VirtAddr>,
+    first_available_paddr: PhysAddr,
+    first_available_vaddr: VirtAddr,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
-    // Heap starts after kernel
-    let heap_pstart = loaded_kernel_pregion.end();
-    let heap_vstart = loaded_kernel_vregion.end();
+    let heap_pstart = first_available_paddr;
+    let heap_vstart = first_available_vaddr;
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
@@ -527,11 +526,12 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
-    // Create the page heap used in the kernel region.
+    // Create the page heap used in the kernel region right after the already
+    // loaded kernel region
     let mut kernel_heap = prepare_heap(
         kernel_region,
-        loaded_kernel_pregion,
-        loaded_kernel_vregion,
+        loaded_kernel_pregion.end(),
+        loaded_kernel_vregion.end(),
         platform,
         &config,
     )
