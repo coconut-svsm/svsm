@@ -481,6 +481,24 @@ pub unsafe fn schedule_init() {
     drop(guard);
 }
 
+/// Enters an idle state if there is no task that can run.
+pub fn scheduler_idle() {
+    // All decisions must be made with interrupts disabled to ensure that the
+    // scheduler state does not change before committing to go idle.
+    let guard = IrqGuard::new();
+
+    let queue_empty = this_cpu()
+        .runqueue()
+        .lock_write()
+        .run_list
+        .front()
+        .is_null();
+
+    if queue_empty {
+        SVSM_PLATFORM.idle_halt(&guard);
+    }
+}
+
 fn preemption_checks() {
     assert!(irq_nesting_count() == 0);
     assert!(raw_get_tpr() == 0 || !SVSM_PLATFORM.use_interrupts());

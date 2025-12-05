@@ -19,6 +19,7 @@ use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{
     apic_enable, apic_initialize, apic_post_irq, apic_sw_enable, X2APIC_ACCESSOR,
 };
+use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
@@ -30,6 +31,7 @@ use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use core::arch::asm;
 use core::mem;
 use core::mem::MaybeUninit;
 
@@ -61,6 +63,13 @@ impl SvsmPlatform for NativePlatform {
     #[cfg(test)]
     fn platform_type(&self) -> SvsmPlatformType {
         SvsmPlatformType::Native
+    }
+
+    fn idle_halt(&self, _guard: &IrqGuard) {
+        // SAFETY: executing HLT in assembly is always safe.
+        unsafe {
+            asm!("sti", "hlt", "cli");
+        }
     }
 
     fn env_setup(&mut self, debug_serial_port: u16, _vtom: usize) -> Result<(), SvsmError> {

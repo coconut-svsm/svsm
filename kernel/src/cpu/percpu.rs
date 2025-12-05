@@ -36,12 +36,14 @@ use crate::mm::{
     SVSM_PERCPU_VMSA_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_SHADOW_STACK_ISST_DF_BASE,
     SVSM_STACK_IST_DF_BASE,
 };
-use crate::platform::{halt, SvsmPlatform, SVSM_PLATFORM};
+use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
-use crate::task::{schedule, schedule_task, KernelThreadStartInfo, RunQueue, Task, TaskPointer};
+use crate::task::{
+    schedule, schedule_task, scheduler_idle, KernelThreadStartInfo, RunQueue, Task, TaskPointer,
+};
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
@@ -1372,7 +1374,7 @@ pub fn cpu_idle_loop(cpu_index: usize) {
 
     loop {
         // Go idle
-        halt();
+        scheduler_idle();
 
         // If idle was explicitly requested by another task, then schedule that
         // task to execute again in case it wants to perform processing as a

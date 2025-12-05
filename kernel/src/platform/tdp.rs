@@ -12,6 +12,7 @@ use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
+use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
@@ -21,7 +22,7 @@ use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
-    tdvmcall_wrmsr, MD_TDCS_NUM_L2_VMS,
+    tdvmcall_wrmsr, TdpHaltInterruptState, MD_TDCS_NUM_L2_VMS,
 };
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -71,7 +72,11 @@ impl SvsmPlatform for TdpPlatform {
     }
 
     fn halt() {
-        tdvmcall_halt();
+        tdvmcall_halt(TdpHaltInterruptState::Disabled);
+    }
+
+    fn idle_halt(&self, _irq_guard: &IrqGuard) {
+        tdvmcall_halt(TdpHaltInterruptState::Enabled);
     }
 
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
