@@ -4,7 +4,28 @@ Formal verification is done via [Verus](https://github.com/verus-lang/verus).
 To execute verification, ensure you have set up the necessary tools to run
 `cargo verify`.
 
-## Setup
+We provide two options to run verification: GitHub workflow and local build.
+
+## Verification in a Remote Branch via GitHub workflow
+
+When submitting a change related to verification, developers can verify their
+modifications by running the [Verification
+workflow](../../../.github/workflows/manual-verify.yml). This can be done by
+triggering the `Verification` workflow for a specific branch under Actions.
+
+At the moment, only admins can manually trigger this workflow within the
+coconut-svsm organization, since verification is still an experimental feature.
+
+Developers can trigger the workflow from their **fork** (e.g.,
+https://github.com/USERNAME/svsm/actions/workflows/manual-verify.yml), as long
+as both the main branch and the target branch in the fork contain the workflow
+file. Running workflow in a fork avoids consuming CI resources from the
+organization. After running the workflow on their fork, developers can include
+the verification results in their pull request.
+
+## Verification in Local Build
+
+### Setup
 
 Run the following commands to install Verus tools.
 
@@ -21,8 +42,6 @@ cd svsm
   versions, so we may occasionally upgrade the toolchain to support those
   features, which does not guarantee it is the exact version defined by
   `rust-toolchain.toml`
-
-## Build
 
 ### Build svsm with verification
 
