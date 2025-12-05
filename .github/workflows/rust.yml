@@ -31,14 +31,20 @@ jobs:
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y build-essential cmake pkg-config
 
-      - name: Build debug image
-        run: cargo xbuild ./configs/*
+      - name: Build (non-test) debug images
+        run: |
+          shopt -s extglob
+          cargo xbuild ./configs/!(*-test-*.json)
 
-      - name: Build debug image with all features
-        run: cargo xbuild --all-features ./configs/*
+      - name: Build (non-test) debug images with all features
+        run: |
+          shopt -s extglob
+          cargo xbuild --all-features ./configs/!(*-test-*.json)
 
-      - name: Build release image
-        run: cargo xbuild --release ./configs/*
+      - name: Build (non-test) release images
+        run: |
+          shopt -s extglob
+          cargo xbuild --release ./configs/!(*-test-*.json)
 
       - name: Run tests
         run: make test
