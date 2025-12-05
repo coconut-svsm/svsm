@@ -65,6 +65,7 @@ impl Elf64Hdr {
     const ELFOSABI_GNU: Elf64char = 3;
 
     const ET_EXEC: Elf64Half = 2;
+    const ET_DYN: Elf64Half = 3;
 
     const EM_X86_64: Elf64Half = 62;
 
@@ -136,7 +137,7 @@ impl Elf64Hdr {
         let e_shnum = Elf64Half::from_le_bytes(buf[60..62].try_into().unwrap()) as Elf64Word;
         let e_shstrndx = Elf64Half::from_le_bytes(buf[62..64].try_into().unwrap()) as Elf64Word;
 
-        if e_type != Self::ET_EXEC {
+        if e_type != Self::ET_EXEC && e_type != Self::ET_DYN {
             return Err(ElfError::UnsupportedType);
         }
         if e_machine != Self::EM_X86_64 {
