@@ -1,0 +1,33 @@
+{
+    "igvm": {
+        "qemu": {
+            "output": "coconut-test-qemu.igvm",
+            "platforms": [
+                "snp",
+                "tdp",
+                "native"
+            ],
+            "measure": "print"
+        }
+    },
+    "kernel": {
+        "svsm": {
+            "type": "make",
+            "output_file": "bin/test-kernel.elf"
+        },
+        "stage2": {
+            "manifest": "kernel/Cargo.toml",
+            "binary": true,
+            "objcopy": "binary"
+        },
+        "tdx-stage1": {
+            "type": "make",
+            "output_file": "bin/stage1-trampoline",
+            "objcopy": "binary"
+        }
+    },
+    "firmware": {},
+    "fs": {
+        "modules": {}
+    }
+}
