@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 syscall.workspace = true
+coconut-alloc.workspace = true
 
 [lints]
 workspace = true
