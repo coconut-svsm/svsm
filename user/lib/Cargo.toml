@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 syscall.workspace = true
+coconut-alloc.workspace = true
 test = { workspace = true, optional = true }
 
 [features]
