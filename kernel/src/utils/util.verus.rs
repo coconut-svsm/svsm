@@ -57,7 +57,6 @@ impl<T> IsAlignedSpec for T where
 
 verus! {
 
-use verify_external::convert::*;
 use verify_proof::bits::is_pow_of_2;
 
 #[verifier(inline)]
@@ -75,20 +74,19 @@ pub open spec fn spec_align_up(val: int, align: int) -> int {
 }
 
 pub open spec fn align_up_integer_ens<T>(val: T, align: T, ret: T) -> bool where
-    T: AlignUpSpec + FromIntoInteger,
+    T: AlignUpSpec + Integer,
  {
-    spec_align_up(val.into_spec(), align.into_spec()) == ret.into_spec()
+    spec_align_up(val as int, align as int) == ret as int
 }
 
 pub open spec fn spec_align_down(val: int, align: int) -> int {
     val - val % align
 }
 
-#[verifier(inline)]
 pub open spec fn align_down_integer_ens<T>(val: T, align: T, ret: T) -> bool where
-    T: AlignDownSpec + FromIntoInteger,
+    T: AlignDownSpec + Integer,
  {
-    T::from_spec(spec_align_down(val.into_spec(), align.into_spec())) == ret
+    spec_align_down(val as int, align as int) == ret as int
 }
 
 pub open spec fn align_down_requires<T>(args: (T, T)) -> bool where T: AlignDownSpec {
@@ -151,10 +149,8 @@ pub open spec fn is_aligned_ens<T>(args: (T, T), ret: bool) -> bool where T: IsA
         }
 }
 
-pub open spec fn spec_is_aligned<T>(val: T, align: T) -> bool where
-    T: IsAlignedSpec + FromIntoInteger,
- {
-    val.into_spec() % align.into_spec() == 0
+pub open spec fn spec_is_aligned<T>(val: T, align: T) -> bool where T: IsAlignedSpec + Integer {
+    (val as int) % (align as int) == 0
 }
 
 } // verus!
