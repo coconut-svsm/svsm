@@ -174,6 +174,7 @@ pub const PGTABLE_LVL3_IDX_SHARED: usize = 511;
 
 /// Base Address of shared memory region
 pub const SVSM_GLOBAL_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_SHARED);
+pub const SVSM_GLOBAL_END: VirtAddr = SVSM_GLOBAL_BASE.const_add(256 * SIZE_1G);
 
 /// Shared mappings region start
 pub const SVSM_GLOBAL_MAPPING_BASE: VirtAddr = SVSM_GLOBAL_BASE.const_add(256 * SIZE_1G);

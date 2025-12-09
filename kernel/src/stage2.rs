@@ -15,6 +15,7 @@ use bootlib::kernel_launch::{
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
+use core::arch::x86_64::_rdrand64_step;
 use core::panic::PanicInfo;
 use core::slice;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -32,6 +33,7 @@ use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
+use svsm::mm::address_space::{SVSM_GLOBAL_BASE, SVSM_GLOBAL_END};
 use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
 use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
 use svsm::mm::validate::{
@@ -340,6 +342,32 @@ unsafe fn load_elf_segment(
     Ok(segment_region)
 }
 
+fn get_kaslr_offset(max_size: u64) -> Option<u64> {
+    // TODO: Check for rdrand hardware support
+
+    for _ in 0..10 {
+        let mut rand: u64 = 0;
+
+        if unsafe { _rdrand64_step(&mut rand) } == 1 {
+            return Some(rand % max_size);
+        }
+    }
+    None
+}
+
+/// Adjust the virtual address so that it's aligned relative to the
+/// physical address.
+fn advance_vaddr_for_alignment(vaddr: VirtAddr, paddr: PhysAddr, align: usize) -> VirtAddr {
+    let v = vaddr.as_usize();
+    let p: usize = paddr.into();
+
+    // Amount needed to make (v_end + offset) = p_end (mod PAGE_SIZE_2M)
+    let diff = v.wrapping_sub(p);
+    let offset = diff.wrapping_neg() & (align - 1);
+
+    VirtAddr::from(vaddr + offset)
+}
+
 /// Loads the kernel ELF and returns the virtual memory region where it
 /// resides, as well as its entry point. Updates the used physical memory
 /// region accordingly.
@@ -348,6 +376,7 @@ fn load_kernel_elf(
     loaded_phys: &mut MemoryRegion<PhysAddr>,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
+    kernel_region_len: usize,
 ) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
     // Find the bounds of the kernel ELF and load it into the ELF parser
     let elf_start = PhysAddr::from(launch_info.kernel_elf_start as u64);
@@ -358,8 +387,26 @@ fn load_kernel_elf(
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
     let elf = elf::Elf64File::read(bytes)?;
 
-    let vaddr_alloc_info = elf.image_load_vaddr_alloc_info();
-    let vaddr_alloc_base = vaddr_alloc_info.range.vaddr_begin;
+    // Compute the range of addresses where the vaddr_alloc_base can be placed
+    let elf_alignment_padding = elf.max_load_segment_align as usize;
+    let heap_alignment_padding = PAGE_SIZE_2M;
+    let upper_bound = SVSM_GLOBAL_END.as_usize()
+        - kernel_region_len
+        - elf_alignment_padding
+        - heap_alignment_padding;
+
+    let kaslr_max_size = upper_bound - SVSM_GLOBAL_BASE.as_usize();
+    let kaslr_offset = match get_kaslr_offset(kaslr_max_size as u64) {
+        Some(kaslr_offset) => kaslr_offset,
+        None => {
+            log::warn!("Error retrieving kaslr seed: KASLR disabled.");
+            0
+        }
+    };
+
+    let vaddr_alloc_base = SVSM_GLOBAL_BASE.as_usize() as u64 + kaslr_offset;
+    assert!(vaddr_alloc_base < upper_bound.try_into().unwrap());
+    assert!(vaddr_alloc_base >= SVSM_GLOBAL_BASE.as_usize().try_into().unwrap());
 
     // Map, validate and populate the SVSM kernel ELF's PT_LOAD segments. The
     // segments' virtual address range might not necessarily be contiguous,
@@ -443,9 +490,9 @@ fn load_igvm_params(
     Ok(vaddr)
 }
 
-/// Maps any remaining memory between the end of the kernel image and the end
-/// of the allocated kernel memory region as heap space. Exclude any memory
-/// reserved by the configuration.
+/// Maps any remaining memory between `first_paddr` and the end of the
+/// allocated kernel memory region as heap space. Exclude any memory reserved
+/// by the configuration.
 ///
 /// # Panics
 ///
@@ -454,14 +501,13 @@ fn load_igvm_params(
 /// reserved for configuration.
 fn prepare_heap(
     kernel_region: MemoryRegion<PhysAddr>,
-    loaded_kernel_pregion: MemoryRegion<PhysAddr>,
-    loaded_kernel_vregion: MemoryRegion<VirtAddr>,
+    first_available_paddr: PhysAddr,
+    first_available_vaddr: VirtAddr,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
-    // Heap starts after kernel
-    let heap_pstart = loaded_kernel_pregion.end();
-    let heap_vstart = loaded_kernel_vregion.end();
+    let heap_pstart = first_available_paddr;
+    let heap_vstart = advance_vaddr_for_alignment(first_available_vaddr, heap_pstart, PAGE_SIZE_2M);
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
@@ -524,15 +570,21 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
     // Load first the kernel ELF and update the loaded physical region
-    let (kernel_entry, loaded_kernel_vregion) =
-        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
-            .expect("Failed to load kernel ELF");
+    let (kernel_entry, loaded_kernel_vregion) = load_kernel_elf(
+        launch_info,
+        &mut loaded_kernel_pregion,
+        platform,
+        &config,
+        kernel_region.len(),
+    )
+    .expect("Failed to load kernel ELF");
 
-    // Create the page heap used in the kernel region.
+    // Create the page heap used in the kernel region right after the already
+    // loaded kernel region
     let mut kernel_heap = prepare_heap(
         kernel_region,
-        loaded_kernel_pregion,
-        loaded_kernel_vregion,
+        loaded_kernel_pregion.end(),
+        loaded_kernel_vregion.end(),
         platform,
         &config,
     )
