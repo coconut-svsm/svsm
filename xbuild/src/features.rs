@@ -72,9 +72,8 @@ impl Features {
         }
     }
 
-    pub fn feature_list(&mut self, pkg: &str, mut recipe_features: Vec<String>) -> Vec<String> {
-        let mut pkg_features: Vec<String> = self
-            .list
+    pub fn feature_list(&mut self, pkg: &str) -> Vec<String> {
+        self.list
             .iter_mut()
             .filter_map(|f| {
                 if f.pkg == pkg {
@@ -84,10 +83,6 @@ impl Features {
                     None
                 }
             })
-            .collect();
-
-        pkg_features.append(&mut recipe_features);
-
-        pkg_features
+            .collect()
     }
 }
