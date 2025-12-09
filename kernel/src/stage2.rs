@@ -624,7 +624,5 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     print_stack(3);
 
-    loop {
-        platform::halt();
-    }
+    platform::terminate();
 }
