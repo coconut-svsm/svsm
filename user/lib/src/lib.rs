@@ -6,12 +6,18 @@
 
 #![cfg_attr(all(not(test), target_os = "none"), no_std)]
 
+pub mod alloc;
 pub mod console;
 pub mod locking;
-
+pub use alloc::*;
 pub use console::*;
 pub use locking::*;
 pub use syscall::*;
+
+#[cfg(feature = "test_runner")]
+pub mod testing;
+#[cfg(feature = "test_runner")]
+pub use testing::*;
 
 #[macro_export]
 macro_rules! declare_main {
@@ -19,12 +25,22 @@ macro_rules! declare_main {
         const _: () = {
             #[export_name = "_start"]
             pub extern "C" fn launch_module() -> ! {
+                init();
+
                 let main_fn: fn() -> u32 = $path;
                 let ret = main_fn();
                 exit(ret);
             }
         };
     };
+}
+
+pub fn init() {
+    #[cfg(all(not(test), target_os = "none"))]
+    {
+        // Single-threaded init process, safe to initialize global heap here
+        set_global_heap();
+    }
 }
 
 #[cfg(all(not(test), target_os = "none"))]

@@ -8,6 +8,7 @@ FEATURES_TEST ?= vtpm,virtio-drivers
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
+XBUILD_ARGS_TEST += --feature ${FEATURES_TEST}
 endif
 
 TEST_ARGS ?=
@@ -49,7 +50,7 @@ else
 BUILD_FW =
 endif
 
-IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm bin/coconut-vanadium.igvm
+IGVM_FILES = bin/coconut-qemu.igvm bin/coconut-hyperv.igvm bin/coconut-vanadium.igvm bin/coconut-test-qemu.igvm bin/coconut-test-hyperv.igvm bin/coconut-test-vanadium.igvm
 IGVMBUILDER = "target/${TARGET_PATH}/igvmbuilder"
 IGVMBIN = bin/igvmbld
 IGVMMEASURE = "target/${TARGET_PATH}/igvmmeasure"
@@ -97,17 +98,14 @@ bin/coconut-hyperv.igvm:
 bin/coconut-vanadium.igvm:
 	cargo xbuild $(XBUILD_ARGS) ./configs/vanadium-target.json
 
-bin/coconut-test-qemu.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf qemu --snp --tdp --native
-	$(IGVMMEASURE) $@ measure
+bin/coconut-test-qemu.igvm:
+	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/qemu-test-target.json
 
-bin/coconut-test-hyperv.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf --comport 3 hyper-v --snp --tdp --vsm
-	$(IGVMMEASURE) $@ measure
+bin/coconut-test-hyperv.igvm:
+	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/hyperv-test-target.json
 
-bin/coconut-test-vanadium.igvm: $(IGVMBUILDER) $(IGVMMEASURE) bin/stage1-trampoline.bin bin/test-kernel.elf bin/stage2.bin
-	$(IGVMBUILDER) --sort --output $@ --tdx-stage1 bin/stage1-trampoline.bin --stage2 bin/stage2.bin --kernel bin/test-kernel.elf vanadium --snp --tdp
-	$(IGVMMEASURE) --check-kvm --native-zero $@ measure
+bin/coconut-test-vanadium.igvm:
+	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/vanadium-test-target.json
 
 test:
 	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
@@ -153,8 +151,12 @@ bin/test-kernel.elf: bin
 # custom test runners. See https://github.com/coconut-svsm/svsm/issues/705.
 	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package svsm ${CARGO_ARGS} ${SVSM_ARGS_TEST} \
 		--target=x86_64-unknown-none \
-		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../${TEST_KERNEL_ELF}"]'
-	objcopy -O elf64-x86-64 --strip-unneeded ${TEST_KERNEL_ELF} bin/test-kernel.elf
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../$@"]'
+
+bin/test-userinit.elf: bin
+	RUSTDOC=true LINK_TEST=1 cargo +nightly test --package userinit ${CARGO_ARGS} \
+        --target=x86_64-unknown-none \
+		--config 'target.x86_64-unknown-none.runner=["sh", "-c", "cp $$0 ../../$@"]'
 
 ${FS_BIN}: bin
 ifneq ($(FS_FILE), none)
@@ -195,7 +197,8 @@ clippy:
 	RUSTFLAGS="--cfg fuzzing" cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm-fuzz -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
-	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit --exclude userlib -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --package userlib --tests -- ${CLIPPY_ARGS}
 
 clean:
 	cargo clean
@@ -204,4 +207,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)
+.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf bin/test-userinit.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES)

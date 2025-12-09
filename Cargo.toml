@@ -57,6 +57,8 @@ userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
 virtio-drivers = { path = "virtio-drivers" }
+# TODO: switch coconut-alloc to upstream when user_alloc branch is merged
+coconut-alloc = { git = "https://github.com/n-ramacciotti/coconut-alloc.git" , branch= "user_alloc" }
 
 # crates.io
 aes-gcm = { version = "0.10.3", default-features = false }
