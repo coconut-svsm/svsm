@@ -16,7 +16,7 @@ use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
 fn check_ovmf_regions(
-    flash_regions: &[MemoryRegion<PhysAddr>],
+    ovmf_regions: &[MemoryRegion<PhysAddr>],
     kernel_region: &MemoryRegion<PhysAddr>,
 ) {
     let flash_range = {
@@ -24,33 +24,32 @@ fn check_ovmf_regions(
         let start = PhysAddr::from(3 * one_gib);
         MemoryRegion::new(start, one_gib)
     };
+    let mut one_region_ends_at_4gib = false;
 
-    // Sanity-check flash regions.
-    for region in flash_regions.iter() {
-        // Make sure that the regions are between 3GiB and 4GiB.
-        if !region.overlap(&flash_range) {
-            panic!("flash region in unexpected region");
-        }
-
-        // Make sure that no regions overlap with the kernel.
-        if region.overlap(kernel_region) {
-            panic!("flash region overlaps with kernel");
-        }
-    }
-
-    // Make sure that regions don't overlap.
-    for (i, outer) in flash_regions.iter().enumerate() {
-        for inner in flash_regions[..i].iter() {
-            if outer.overlap(inner) {
-                panic!("flash regions overlap");
+    // Sanity-check OVMF regions.
+    for (i, region) in ovmf_regions.iter().enumerate() {
+        // Make sure that regions don't overlap.
+        for other in ovmf_regions[..i].iter() {
+            if other.overlap(region) {
+                panic!("OVMF regions overlap: {region:#018x} | {other:#018x}");
             }
         }
-        // Make sure that one regions ends at 4GiB.
-        let one_region_ends_at_4gib = flash_regions
-            .iter()
-            .any(|region| region.end() == flash_range.end());
-        assert!(one_region_ends_at_4gib);
+        if flash_range.overlap(region) {
+            assert!(
+                flash_range.contains_region(region),
+                "Flash region {region:#018x} in unexpected location"
+            );
+            // Make sure that one region ends at 4GiB.
+            if region.end() == flash_range.end() {
+                one_region_ends_at_4gib = true;
+            }
+        }
+        // Make sure that no regions overlap with the kernel.
+        if kernel_region.overlap(region) {
+            panic!("OVMF region {region:#018x} overlaps with kernel {kernel_region:#018x}");
+        }
     }
+    assert!(one_region_ends_at_4gib, "No OVMF region ends at 4GiB");
 }
 
 #[derive(Debug)]
@@ -105,11 +104,11 @@ impl<'a> SvsmConfig<'a> {
         &self,
         kernel_region: &MemoryRegion<PhysAddr>,
     ) -> Vec<MemoryRegion<PhysAddr>> {
-        let flash_regions = self.igvm_params.get_fw_regions();
+        let fw_regions = self.igvm_params.get_fw_regions();
         if !self.igvm_params.fw_in_low_memory() {
-            check_ovmf_regions(&flash_regions, kernel_region);
+            check_ovmf_regions(&fw_regions, kernel_region);
         }
-        flash_regions
+        fw_regions
     }
 
     pub fn fw_in_low_memory(&self) -> bool {
