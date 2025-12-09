@@ -228,10 +228,6 @@ impl fmt::LowerHex for PhysAddr {
 
 #[verus_verify]
 impl From<InnerAddr> for PhysAddr {
-    #[verus_spec(
-        returns
-            PhysAddr::from_spec(addr)
-    )]
     #[inline]
     fn from(addr: InnerAddr) -> PhysAddr {
         Self(addr)
@@ -240,10 +236,6 @@ impl From<InnerAddr> for PhysAddr {
 
 #[verus_verify]
 impl From<PhysAddr> for InnerAddr {
-    #[verus_spec(
-        returns
-            addr@
-    )]
     #[inline]
     fn from(addr: PhysAddr) -> InnerAddr {
         addr.0
@@ -269,7 +261,6 @@ impl From<u64> for PhysAddr {
 #[verus_verify]
 impl From<PhysAddr> for u64 {
     #[inline]
-    #[verus_spec(returns addr@ as u64)]
     fn from(addr: PhysAddr) -> u64 {
         addr.0 as u64
     }
@@ -482,7 +473,6 @@ impl From<InnerAddr> for VirtAddr {
     #[verus_spec(ret =>
         ensures
             ret.new_ensures(addr),
-            ret == Self::from_spec(addr),
     )]
     fn from(addr: InnerAddr) -> Self {
         Self(sign_extend(addr))
@@ -492,10 +482,6 @@ impl From<InnerAddr> for VirtAddr {
 #[verus_verify]
 impl From<VirtAddr> for InnerAddr {
     #[inline]
-    #[verus_spec(ret =>
-        ensures
-            addr@ == ret,
-    )]
     fn from(addr: VirtAddr) -> Self {
         addr.0
     }
@@ -508,7 +494,6 @@ impl From<u64> for VirtAddr {
     #[verus_spec(ret =>
         ensures
             ret.new_ensures(addr as usize),
-            ret == VirtAddr::from_spec(addr as usize),
     )]
     fn from(addr: u64) -> Self {
         let addr: usize = addr.try_into().unwrap();
@@ -519,10 +504,6 @@ impl From<u64> for VirtAddr {
 #[verus_verify]
 impl From<VirtAddr> for u64 {
     #[inline]
-    #[verus_spec(ret =>
-        ensures
-            ret == addr@
-    )]
     fn from(addr: VirtAddr) -> Self {
         addr.0 as u64
     }
@@ -531,7 +512,6 @@ impl From<VirtAddr> for u64 {
 #[verus_verify]
 impl<T> From<*const T> for VirtAddr {
     #[inline]
-    #[verus_verify]
     fn from(ptr: *const T) -> Self {
         Self::from(ptr as InnerAddr)
     }
@@ -539,7 +519,6 @@ impl<T> From<*const T> for VirtAddr {
 
 #[verus_verify]
 impl<T> From<*mut T> for VirtAddr {
-    #[verus_verify]
     fn from(ptr: *mut T) -> Self {
         Self::from(ptr as InnerAddr)
     }

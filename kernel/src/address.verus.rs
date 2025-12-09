@@ -7,11 +7,12 @@
 use crate::utils::util::{
     align_down_integer_ens, align_up_integer_ens, proof_align_down, proof_align_up,
 };
-use verify_external::convert::{exists_into, forall_into, FromSpec};
+use verify_external::convert::{exists_into, forall_into};
 use verify_external::hw_spec::SpecVAddrImpl;
 use vstd::raw_ptr::{ptr_from_data, ptr_mut_from_data, PtrData};
 use vstd::set_lib::set_int_range;
 use vstd::std_specs::cmp::PartialOrdSpec;
+use vstd::std_specs::convert::{FromSpec, IntoSpec};
 use vstd::std_specs::ops::AddSpec;
 
 verus! {
@@ -171,8 +172,7 @@ impl VirtAddr {
     }
 
     pub open spec fn new_ensures(self, addr: InnerAddr) -> bool {
-        &&& sign_extend_ensures(addr, self@)
-        &&& VirtAddr::from_spec(addr) == self
+        sign_extend_ensures(addr, self@)
     }
 
     pub open spec fn pgtbl_idx_ensures(&self, l: usize, ret: usize) -> bool {
@@ -238,31 +238,51 @@ impl vstd::std_specs::ops::SubSpecImpl<VirtAddr> for VirtAddr {
     }
 }
 
-impl<T> FromSpec<*mut T> for VirtAddr {
+impl<T> vstd::std_specs::convert::FromSpecImpl<*mut T> for VirtAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     closed spec fn from_spec(v: *mut T) -> Self {
         VirtAddr(sign_extend_spec(v as InnerAddr))
     }
 }
 
-impl<T> FromSpec<*const T> for VirtAddr {
+impl<T> vstd::std_specs::convert::FromSpecImpl<*const T> for VirtAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     closed spec fn from_spec(v: *const T) -> Self {
         VirtAddr(sign_extend_spec(v as InnerAddr))
     }
 }
 
-impl FromSpec<InnerAddr> for VirtAddr {
+impl vstd::std_specs::convert::FromSpecImpl<InnerAddr> for VirtAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     closed spec fn from_spec(v: InnerAddr) -> Self {
         VirtAddr(sign_extend_spec(v))
     }
 }
 
-impl FromSpec<VirtAddr> for InnerAddr {
+impl vstd::std_specs::convert::FromSpecImpl<VirtAddr> for InnerAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     open spec fn from_spec(v: VirtAddr) -> Self {
         v@
     }
 }
 
-impl FromSpec<VirtAddr> for u64 {
+impl vstd::std_specs::convert::FromSpecImpl<VirtAddr> for u64 {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     open spec fn from_spec(v: VirtAddr) -> Self {
         v@ as u64
     }
@@ -346,15 +366,33 @@ impl View for PhysAddr {
     }
 }
 
-impl FromSpec<InnerAddr> for PhysAddr {
+impl vstd::std_specs::convert::FromSpecImpl<InnerAddr> for PhysAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
     closed spec fn from_spec(v: InnerAddr) -> Self {
         PhysAddr(v)
     }
 }
 
-impl FromSpec<PhysAddr> for InnerAddr {
-    closed spec fn from_spec(v: PhysAddr) -> Self {
-        v.0
+impl vstd::std_specs::convert::FromSpecImpl<PhysAddr> for InnerAddr {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
+    open spec fn from_spec(v: PhysAddr) -> Self {
+        v@
+    }
+}
+
+impl vstd::std_specs::convert::FromSpecImpl<PhysAddr> for u64 {
+    open spec fn obeys_from_spec() -> bool {
+        true
+    }
+
+    open spec fn from_spec(v: PhysAddr) -> Self {
+        v@ as u64
     }
 }
 

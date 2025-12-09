@@ -11,8 +11,8 @@
 // Proofs:
 // - FixedAddressMappingRange is viewed as LinearMap
 // - LinearMap satisfies all properties in hw_spec::SpecMemMapTr
-use verify_external::convert::FromSpec;
 use verify_external::hw_spec::SpecMemMapTr;
+use vstd::std_specs::convert::FromSpec;
 
 use crate::address::VADDR_RANGE_SIZE;
 
