@@ -1033,9 +1033,9 @@ impl HeapMemoryRegion {
                 item_size: item_size as u64,
             }) , ret, *perm),
     )]
-    fn allocate_slab_page<const N: u16>(&mut self) -> Result<VirtAddr, AllocError> {
+    fn allocate_slab_page<const N: usize>(&mut self) -> Result<VirtAddr, AllocError> {
         let pg = PageInfo::Slab(SlabPageInfo {
-            item_size: u64::from(N),
+            item_size: N as u64,
         });
         proof_with!(Tracked(perm));
         self.allocate_pages_info(0, pg)
@@ -1799,17 +1799,17 @@ pub fn memory_info() -> MemInfo {
 /// fixed-size objects.
 #[verus_verify]
 #[derive(Debug, Default)]
-struct SlabPage<const N: u16> {
+struct SlabPage<const N: usize> {
     vaddr: VirtAddr,
     free: u16,
     used_bitmap: [u64; 2],
     next_page: VirtAddr,
 }
 
-impl<const N: u16> SlabPage<N> {
+impl<const N: usize> SlabPage<N> {
     /// Creates a new [`SlabPage`] instance with default values.
     const fn new() -> Self {
-        const { assert!(N <= (PAGE_SIZE / 2) as u16) };
+        const { assert!(N <= PAGE_SIZE / 2) };
         Self {
             vaddr: VirtAddr::null(),
             free: 0,
@@ -1824,7 +1824,7 @@ impl<const N: u16> SlabPage<N> {
             return Ok(());
         }
         self.vaddr = ROOT_MEM.lock().allocate_slab_page::<N>()?;
-        self.free = self.get_capacity();
+        self.free = self.get_capacity() as u16;
 
         Ok(())
     }
@@ -1840,8 +1840,8 @@ impl<const N: u16> SlabPage<N> {
     }
 
     /// Get the capacity of the [`SlabPage`]
-    const fn get_capacity(&self) -> u16 {
-        (PAGE_SIZE as u16) / N
+    const fn get_capacity(&self) -> usize {
+        PAGE_SIZE / N
     }
 
     fn get_free(&self) -> u16 {
@@ -1863,13 +1863,13 @@ impl<const N: u16> SlabPage<N> {
         }
 
         for i in 0..self.get_capacity() {
-            let idx = (i / 64) as usize;
+            let idx = i / 64;
             let mask = 1u64 << (i % 64);
 
             if self.used_bitmap[idx] & mask == 0 {
                 self.used_bitmap[idx] |= mask;
                 self.free -= 1;
-                return Ok(self.vaddr + ((N * i) as usize));
+                return Ok(self.vaddr + (N * i));
             }
         }
 
@@ -1881,9 +1881,8 @@ impl<const N: u16> SlabPage<N> {
             return Err(AllocError::InvalidHeapAddress(vaddr));
         }
 
-        let item_size = N as usize;
         let offset = vaddr - self.vaddr;
-        let i = offset / item_size;
+        let i = offset / N;
         let idx = i / 64;
         let mask = 1u64 << (i % 64);
 
@@ -1897,7 +1896,7 @@ impl<const N: u16> SlabPage<N> {
 /// Represents common information shared among multiple slab pages.
 #[derive(Debug, Default)]
 #[repr(align(16))]
-struct SlabCommon<const N: u16> {
+struct SlabCommon<const N: usize> {
     capacity: u32,
     free: u32,
     pages: u32,
@@ -1906,7 +1905,7 @@ struct SlabCommon<const N: u16> {
     page: SlabPage<N>,
 }
 
-impl<const N: u16> SlabCommon<N> {
+impl<const N: usize> SlabCommon<N> {
     const fn new() -> Self {
         Self {
             capacity: 0,
@@ -1954,7 +1953,7 @@ impl<const N: u16> SlabCommon<N> {
             let free = page.get_free();
 
             if let Ok(vaddr) = page.allocate() {
-                let capacity = page.get_capacity();
+                let capacity = page.get_capacity() as u16;
                 self.free -= 1;
 
                 if free == capacity {
@@ -1988,7 +1987,7 @@ impl<const N: u16> SlabCommon<N> {
             let free = page.get_free();
 
             if let Ok(_o) = page.free(vaddr) {
-                let capacity = page.get_capacity();
+                let capacity = page.get_capacity() as u16;
                 self.free += 1;
 
                 if free == 0 {
@@ -2025,7 +2024,7 @@ impl<const N: u16> SlabCommon<N> {
             };
             next_page_vaddr = slab_page.get_next_page();
 
-            let capacity = slab_page.get_capacity();
+            let capacity = slab_page.get_capacity() as u16;
             let free = slab_page.get_free();
             if free != capacity {
                 last_page = slab_page;
@@ -2048,7 +2047,7 @@ impl<const N: u16> SlabCommon<N> {
 }
 
 // 32 is chosen arbitrarily here, it does not affect struct layout
-const SLAB_PAGE_SIZE: u16 = size_of::<SlabPage<32>>() as u16;
+const SLAB_PAGE_SIZE: usize = size_of::<SlabPage<32>>();
 
 /// Represents a slab page for the [`SlabPageSlab`] allocator.
 #[derive(Debug)]
@@ -2147,11 +2146,11 @@ impl SlabPageSlab {
 
 /// Represents a slab allocator for fixed-size objects.
 #[derive(Debug, Default)]
-struct Slab<const N: u16> {
+struct Slab<const N: usize> {
     common: SlabCommon<N>,
 }
 
-impl<const N: u16> Slab<N> {
+impl<const N: usize> Slab<N> {
     const fn new() -> Self {
         Self {
             common: SlabCommon::new(),
@@ -2726,7 +2725,7 @@ mod test {
         const OBJECT_SIZE: usize = TEST_SLAB_SIZES[0];
         const OBJECTS_PER_PAGE: usize = PAGE_SIZE / OBJECT_SIZE;
 
-        const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE as usize;
+        const SLAB_PAGES_PER_PAGE: usize = PAGE_SIZE / SLAB_PAGE_SIZE;
 
         let layout = Layout::from_size_align(OBJECT_SIZE, OBJECT_SIZE)
             .unwrap()
