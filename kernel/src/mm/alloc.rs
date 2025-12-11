@@ -1838,13 +1838,11 @@ impl<const N: usize> SlabPage<N> {
     }
 
     /// Free the memory (destroy) the [`SlabPage`]
-    #[expect(clippy::needless_pass_by_ref_mut)]
     fn destroy(&mut self) {
-        if self.vaddr.is_null() {
-            return;
+        if !self.vaddr.is_null() {
+            free_page(self.vaddr);
+            self.vaddr = VirtAddr::null();
         }
-
-        free_page(self.vaddr);
     }
 
     /// Get the capacity of the [`SlabPage`]
