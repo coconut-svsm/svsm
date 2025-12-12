@@ -10,6 +10,7 @@ use crate::utils::{align_down, align_up, is_aligned};
 
 use core::fmt;
 use core::ops;
+use core::ptr::NonNull;
 use core::slice;
 
 use verus_stub::*;
@@ -544,6 +545,16 @@ impl<T> From<*mut T> for VirtAddr {
         Self::from(ptr as InnerAddr)
     }
 }
+
+#[verus_verify]
+impl<T> From<NonNull<T>> for VirtAddr {
+    #[verus_verify]
+    #[inline]
+    fn from(value: NonNull<T>) -> Self {
+        Self::from(value.as_ptr())
+    }
+}
+
 #[verus_verify]
 impl ops::Sub<VirtAddr> for VirtAddr {
     type Output = InnerAddr;
