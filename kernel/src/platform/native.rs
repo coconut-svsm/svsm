@@ -29,18 +29,19 @@ use crate::mm::PerCPUMapping;
 use crate::mm::TransitionPageTable;
 use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
-use syscall::GlobalFeatureFlags;
 
-use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
+use bootdefs::kernel_launch::ApStartContext;
+use bootdefs::kernel_launch::SIPI_STUB_GPA;
 use core::arch::asm;
 use core::mem;
 use core::mem::MaybeUninit;
+use syscall::GlobalFeatureFlags;
 
 #[cfg(debug_assertions)]
 use crate::mm::virt_to_phys;
 
 #[cfg(test)]
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::platform::SvsmPlatformType;
 
 #[derive(Clone, Copy, Debug)]
 pub struct NativePlatform {}

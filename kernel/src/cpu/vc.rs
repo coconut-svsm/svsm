@@ -349,7 +349,7 @@ mod tests {
     use crate::locking::SpinLock;
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::raw_vmmcall;
-    use bootlib::platform::SvsmPlatformType;
+    use bootdefs::platform::SvsmPlatformType;
     use core::arch::asm;
     use core::arch::x86_64::__cpuid_count;
 

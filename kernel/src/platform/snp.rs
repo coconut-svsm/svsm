@@ -52,13 +52,12 @@ use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use syscall::GlobalFeatureFlags;
 
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+#[cfg(test)]
+use bootdefs::platform::SvsmPlatformType;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
-
-use bootlib::kernel_launch::Stage2LaunchInfo;
-#[cfg(test)]
-use bootlib::platform::SvsmPlatformType;
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 

@@ -6,8 +6,8 @@
 
 use std::mem::size_of;
 
-use bootlib::kernel_launch::Stage2LaunchInfo;
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use zerocopy::IntoBytes;

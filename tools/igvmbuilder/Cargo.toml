@@ -6,7 +6,7 @@ edition.workspace = true
 # specify dependencies' target to avoid feature unification with SVSM
 # see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification
 [target.'cfg(all(target_os = "linux"))'.dependencies]
-bootlib.workspace = true
+bootdefs.workspace = true
 
 clap = { workspace = true, default-features = true, features = ["derive"] }
 igvm_defs.workspace = true

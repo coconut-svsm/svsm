@@ -7,9 +7,13 @@
 use std::error::Error;
 use std::fs::metadata;
 
-use bootlib::kernel_launch::{
-    CPUID_PAGE, SECRETS_PAGE, STAGE2_BASE, STAGE2_MAXLEN, STAGE2_STACK_PAGE, STAGE2_START,
-};
+use bootdefs::kernel_launch::CPUID_PAGE;
+use bootdefs::kernel_launch::SECRETS_PAGE;
+use bootdefs::kernel_launch::STAGE2_BASE;
+use bootdefs::kernel_launch::STAGE2_MAXLEN;
+use bootdefs::kernel_launch::STAGE2_STACK_PAGE;
+use bootdefs::kernel_launch::STAGE2_START;
+
 use igvm_defs::PAGE_SIZE_4K;
 
 use crate::cmd_options::{CmdOptions, Hypervisor};
