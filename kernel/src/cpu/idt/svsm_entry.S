@@ -395,20 +395,8 @@ default_entry_no_ist	name=br		handler=terminate		error_code=0	vector=5
 // #UD Invalid-Opcode Exception (Vector 6)
 default_entry_no_ist	name=ud		handler=terminate		error_code=0	vector=6
 
-// #NM Device-Not-Available Exception (Vector 7)
-default_entry_no_ist	name=nm		handler=panic			error_code=0	vector=7
-
 // #DF Double-Fault Exception (Vector 8)
 default_entry_with_ist	name=df		handler=double_fault		error_code=1	vector=8
-
-// Coprocessor-Segment-Overrun Exception (Vector 9)
-// No handler - reserved vector
-
-// #TS Invalid-TSS Exception (Vector 10)
-default_entry_no_ist	name=ts		handler=panic			error_code=1	vector=10
-
-// #NP Segment-Not-Present Exception (Vector 11)
-default_entry_no_ist	name=np		handler=panic			error_code=1	vector=11
 
 // #SS Stack Exception (Vector 12)
 default_entry_no_ist	name=ss		handler=terminate		error_code=1	vector=12
@@ -446,9 +434,6 @@ default_entry_no_ist	name=cp		handler=control_protection			error_code=1	vector=2
 
 // #VC VMM Communication Exception (Vector 29)
 default_entry_no_ist	name=vc		handler=vmm_communication	error_code=1	vector=29
-
-// #SX Security Exception (Vector 30)
-default_entry_no_ist	name=sx		handler=panic			error_code=1	vector=30
 
 // INT 0x80 system call handler
 default_entry_no_ist	name=int80	handler=system_call		error_code=0	vector=0x80
