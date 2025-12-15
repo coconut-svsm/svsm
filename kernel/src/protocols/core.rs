@@ -383,8 +383,10 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     let entries = request.entries;
     let next = request.next;
 
-    // Each entry is 8 bytes in size, 8 bytes for the request header
-    let max_entries: u16 = ((PAGE_SIZE - offset - 8) / 8).try_into().unwrap();
+    let max_entries: u16 = ((PAGE_SIZE - offset - size_of::<PValidateRequest>())
+        / size_of::<u64>())
+    .try_into()
+    .unwrap();
 
     if entries == 0 || entries > max_entries || entries <= next {
         return Err(SvsmReqError::invalid_parameter());
