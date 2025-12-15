@@ -174,6 +174,24 @@ pub fn idt_init() -> Result<(), SvsmError> {
     GLOBAL_IDT.init(idt).map_err(|_| SvsmError::PlatformInit)
 }
 
+// General task termination handler
+#[no_mangle]
+extern "C" fn ex_handler_terminate(ctx: &mut X86ExceptionContext, vector: usize) {
+    if user_mode(ctx) {
+        // Terminate the current task if it is a user-mode task.
+        log::error!(
+            "Terminating task due to unhandled user mode exception {:#02x} at {:#018x}",
+            vector,
+            { ctx.frame.rip }
+        );
+        terminate();
+    } else {
+        // Kernel-mode tasks should never cause a termination class exception,
+        // so any such exception is grounds for panic.
+        ex_handler_panic(ctx, vector);
+    }
+}
+
 // Debug handler
 #[no_mangle]
 extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
