@@ -157,7 +157,7 @@ impl SvsmPlatform for NativePlatform {
         Ok(())
     }
 
-    fn validate_physical_page_range(
+    unsafe fn validate_physical_page_range(
         &self,
         _region: MemoryRegion<PhysAddr>,
         _op: PageValidateOp,
