@@ -10,7 +10,7 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::mem::size_of;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamBlockFwInfo};
+use bootlib::boot_params::{BootParamBlock, GuestFwInfoBlock, InitialGuestContext};
 use bootlib::platform::SvsmPlatformType;
 use clap::Parser;
 use igvm::registers::X86Register;
@@ -47,8 +47,8 @@ const IGVM_MEMORY_MAP_PA: u32 = 1;
 const IGVM_MADT_PA: u32 = 2;
 const IGVM_PARAMETER_COUNT: u32 = 3;
 
-const _: () = assert!(size_of::<IgvmParamBlock>() as u64 <= PAGE_SIZE_4K);
-const _: () = assert!(size_of::<IgvmGuestContext>() as u64 <= PAGE_SIZE_4K);
+const _: () = assert!(size_of::<BootParamBlock>() as u64 <= PAGE_SIZE_4K);
+const _: () = assert!(size_of::<InitialGuestContext>() as u64 <= PAGE_SIZE_4K);
 
 pub struct IgvmBuilder {
     options: CmdOptions,
@@ -191,7 +191,7 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn create_param_block(&self) -> Result<IgvmParamBlock, Box<dyn Error>> {
+    fn create_param_block(&self) -> Result<BootParamBlock, Box<dyn Error>> {
         let param_page_offset = PAGE_SIZE_4K as u32;
         let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
         let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
@@ -211,7 +211,7 @@ impl IgvmBuilder {
         let (fw_info, vtom) = if let Some(firmware) = &self.firmware {
             (firmware.get_fw_info(), firmware.get_vtom())
         } else {
-            let fw_info = IgvmParamBlockFwInfo::default();
+            let fw_info = GuestFwInfoBlock::default();
             let vtom = match self.options.hypervisor {
                 Hypervisor::Qemu => 0,
                 Hypervisor::HyperV => {
@@ -245,7 +245,7 @@ impl IgvmBuilder {
         };
 
         // Most of the parameter block can be initialised with constants.
-        Ok(IgvmParamBlock {
+        Ok(BootParamBlock {
             param_area_size,
             param_page_offset,
             memory_map_offset,
@@ -270,7 +270,7 @@ impl IgvmBuilder {
         })
     }
 
-    fn build_platforms(&mut self, param_block: &IgvmParamBlock) {
+    fn build_platforms(&mut self, param_block: &BootParamBlock) {
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
@@ -335,7 +335,7 @@ impl IgvmBuilder {
 
     fn build_directives(
         &mut self,
-        param_block: &IgvmParamBlock,
+        param_block: &BootParamBlock,
         start_context: &[X86Register],
     ) -> Result<(), Box<dyn Error>> {
         // Populate firmware directives.
@@ -453,7 +453,7 @@ impl IgvmBuilder {
             ));
         }
 
-        // Add the IGVM parameter block
+        // Add the boot parameter block
         self.add_param_block(param_block);
 
         // Add optional filesystem image
@@ -614,12 +614,12 @@ impl IgvmBuilder {
         Ok(())
     }
 
-    fn add_param_block(&mut self, param_block: &IgvmParamBlock) {
+    fn add_param_block(&mut self, param_block: &BootParamBlock) {
         let mut data = param_block.as_bytes().to_vec();
         data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
-            gpa: self.gpa_map.igvm_param_block.get_start(),
+            gpa: self.gpa_map.boot_param_block.get_start(),
             compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,
@@ -627,7 +627,7 @@ impl IgvmBuilder {
         });
     }
 
-    fn add_guest_context(&mut self, guest_context: &IgvmGuestContext) {
+    fn add_guest_context(&mut self, guest_context: &InitialGuestContext) {
         let mut data = guest_context.as_bytes().to_vec();
         data.resize(PAGE_SIZE_4K as usize, 0);
 

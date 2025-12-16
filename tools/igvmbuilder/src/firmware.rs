@@ -6,7 +6,7 @@
 
 use std::error::Error;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
+use bootlib::boot_params::{GuestFwInfoBlock, InitialGuestContext};
 use igvm::IgvmDirectiveHeader;
 
 use crate::cmd_options::CmdOptions;
@@ -15,9 +15,9 @@ use crate::ovmf_firmware::OvmfFirmware;
 
 pub trait Firmware {
     fn directives(&self) -> &Vec<IgvmDirectiveHeader>;
-    fn get_guest_context(&self) -> Option<IgvmGuestContext>;
+    fn get_guest_context(&self) -> Option<InitialGuestContext>;
     fn get_vtom(&self) -> u64;
-    fn get_fw_info(&self) -> IgvmParamBlockFwInfo;
+    fn get_fw_info(&self) -> GuestFwInfoBlock;
 }
 
 pub fn parse_firmware(

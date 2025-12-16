@@ -47,7 +47,7 @@ pub struct KernelLaunchInfo {
     pub stage2_start: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
-    pub igvm_params_virt_addr: u64,
+    pub boot_params_virt_addr: u64,
     pub kernel_symtab_start: *const KSym,
     pub kernel_symtab_len: u64,
     pub kernel_strtab_start: *const u8,
@@ -83,7 +83,7 @@ pub struct Stage2LaunchInfo {
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
-    pub igvm_params: u32,
+    pub boot_params: u32,
     pub _reserved: u32,
 }
 

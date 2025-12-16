@@ -28,7 +28,7 @@ impl Stage2Stack {
             kernel_elf_end: (gpa_map.kernel_elf.get_start() + gpa_map.kernel_elf.get_size()) as u32,
             kernel_fs_start: gpa_map.kernel_fs.get_start() as u32,
             kernel_fs_end: (gpa_map.kernel_fs.get_start() + gpa_map.kernel_fs.get_size()) as u32,
-            igvm_params: gpa_map.igvm_param_block.get_start() as u32,
+            boot_params: gpa_map.boot_param_block.get_start() as u32,
             vtom,
             platform_type: 0,
             cpuid_page: gpa_map.cpuid_page.get_start() as u32,
