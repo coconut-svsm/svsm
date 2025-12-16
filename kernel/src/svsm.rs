@@ -17,6 +17,9 @@ use core::ptr::NonNull;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
+use svsm::boot_params::BootParamBox;
+#[cfg(feature = "virtio-drivers")]
+use svsm::boot_params::BootParams;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::dump_cpuid_table;
@@ -38,9 +41,6 @@ use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
-use svsm::igvm_params::IgvmBox;
-#[cfg(feature = "virtio-drivers")]
-use svsm::igvm_params::IgvmParams;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
@@ -220,12 +220,12 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns Ok if initialization is successful or no virtio devices are found
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
-fn initialize_virtio_mmio(_igvm_params: &IgvmParams<'_>) -> Result<(), SvsmError> {
+fn initialize_virtio_mmio(_boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
 
-        let mut slots = probe_mmio_slots(_igvm_params);
+        let mut slots = probe_mmio_slots(_boot_params);
         initialize_block(&mut slots)?;
     }
 
@@ -437,21 +437,22 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
-    // SAFETY: the address in the launch info is known to be correct.
-    let igvm_params = unsafe { IgvmBox::new(VirtAddr::from(launch_info.igvm_params_virt_addr)) }
-        .expect("Invalid IGVM parameters");
-    if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
-        panic!("Launch VTOM does not match VTOM from IGVM parameters");
+    let boot_params =
+        // SAFETY: the address in the launch info is known to be correct.
+        unsafe { BootParamBox::new(VirtAddr::from(launch_info.boot_params_virt_addr)) }
+            .expect("Invalid boot parameters");
+    if (launch_info.vtom != 0) && (launch_info.vtom != boot_params.get_vtom()) {
+        panic!("Launch VTOM does not match VTOM from boot parameters");
     }
 
-    init_memory_map(&igvm_params, launch_info).expect("Failed to init guest memory map");
+    init_memory_map(&boot_params, launch_info).expect("Failed to init guest memory map");
 
     populate_ram_fs(launch_info.kernel_fs_start, launch_info.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
     init_capabilities();
 
-    let cpus = igvm_params
+    let cpus = boot_params
         .load_cpu_info()
         .expect("Failed to load ACPI tables");
 
@@ -467,12 +468,12 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     let kernel_region = new_kernel_region(launch_info);
-    let early_boot_regions = enumerate_early_boot_regions(&igvm_params, launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(&boot_params, launch_info);
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &igvm_params, &early_boot_regions)
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &boot_params, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");
 
-    if let Err(e) = SVSM_PLATFORM.prepare_fw(&igvm_params, kernel_region) {
+    if let Err(e) = SVSM_PLATFORM.prepare_fw(&boot_params, kernel_region) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
@@ -491,18 +492,18 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio(&igvm_params).expect("Failed to initialize virtio-mmio drivers");
+    initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
-    if let Err(e) = SVSM_PLATFORM.launch_fw(&igvm_params) {
+    if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params) {
         panic!("Failed to launch FW: {e:?}");
     }
 
     #[cfg(test)]
     {
-        if igvm_params.has_qemu_testdev() {
+        if boot_params.has_qemu_testdev() {
             crate::testutils::set_has_qemu_testdev();
         }
-        if igvm_params.has_test_iorequests() {
+        if boot_params.has_test_iorequests() {
             crate::testutils::set_has_test_iorequests();
         }
         let _ = start_kernel_task(

@@ -27,7 +27,7 @@ pub struct IgvmParamPage {
 /// firmware in the IGVM file.
 #[repr(C, packed)]
 #[derive(IntoBytes, Immutable, Clone, Copy, Debug, Default)]
-pub struct IgvmParamBlockFwMem {
+pub struct GuestFwMemInfo {
     /// The base physical address of the prevalidated memory region.
     pub base: u32,
 
@@ -35,11 +35,11 @@ pub struct IgvmParamBlockFwMem {
     pub size: u32,
 }
 
-/// The portion of the IGVM parameter block that describes metadata about
+/// The portion of the boot parameter block that describes metadata about
 /// the firmware image embedded in the IGVM file.
 #[repr(C, packed)]
 #[derive(IntoBytes, Immutable, Clone, Copy, Debug, Default)]
-pub struct IgvmParamBlockFwInfo {
+pub struct GuestFwInfoBlock {
     /// The guest physical address of the start of the guest firmware. The
     /// permissions on the pages in the firmware range are adjusted to the guest
     /// VMPL. If this field is zero then no firmware is launched after
@@ -85,15 +85,16 @@ pub struct IgvmParamBlockFwInfo {
     pub prevalidated_count: u32,
 
     /// The prevalidated memory regions defined by the firmware.
-    pub prevalidated: [IgvmParamBlockFwMem; 8],
+    pub prevalidated: [GuestFwMemInfo; 8],
 }
 
-/// The IGVM parameter block is a measured page constructed by the IGVM file
-/// builder which describes where the additional IGVM parameter information
-/// has been placed into the guest address space.
+/// The boot parameter block is a measured page constructed by the IGVM file
+/// builder which describes the kernel boot parameters as well as describing
+/// where the additional IGVM parameter information has been placed into the
+/// address space.
 #[repr(C, packed)]
 #[derive(IntoBytes, Immutable, Clone, Copy, Debug, Default)]
-pub struct IgvmParamBlock {
+pub struct BootParamBlock {
     /// The total size of the parameter area, beginning with the parameter
     /// block itself and including any additional parameter pages which follow.
     pub param_area_size: u32,
@@ -141,7 +142,7 @@ pub struct IgvmParamBlock {
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
-    pub firmware: IgvmParamBlockFwInfo,
+    pub firmware: GuestFwInfoBlock,
 
     /// The number of bytes for the stage1 bootloader
     pub stage1_size: u32,
@@ -171,16 +172,16 @@ pub struct IgvmParamBlock {
 
 const _: () = {
     // Assert that the reserved fields are properly aligning the rest of the fields.
-    assert!(core::mem::offset_of!(IgvmParamBlock, firmware) % 4 == 0);
-    assert!(core::mem::offset_of!(IgvmParamBlock, stage1_base) % 8 == 0);
+    assert!(core::mem::offset_of!(BootParamBlock, firmware) % 4 == 0);
+    assert!(core::mem::offset_of!(BootParamBlock, stage1_base) % 8 == 0);
 };
 
-/// The IGVM context page is a measured page that is used to specify the start
-/// context for the guest VMPL.  If present, it overrides the processor state
-/// initialized at reset.
+/// The initial guest context page is a measured page that is used to specify
+/// the start context for the guest VMPL.  If present, it overrides the
+/// processor state initialized at reset.
 #[derive(IntoBytes, Immutable, Copy, Debug, Clone, Default)]
 #[repr(C, packed)]
-pub struct IgvmGuestContext {
+pub struct InitialGuestContext {
     pub cr0: u64,
     pub cr3: u64,
     pub cr4: u64,

@@ -18,7 +18,7 @@ use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlock, IgvmParamPage};
+use bootlib::boot_params::{BootParamBlock, IgvmParamPage, InitialGuestContext};
 use bootlib::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
 use core::ops::Deref;
@@ -34,20 +34,20 @@ pub struct IgvmMemoryMap {
 }
 
 #[derive(Clone, Debug)]
-pub struct IgvmParams<'a> {
-    igvm_param_block: &'a IgvmParamBlock,
+pub struct BootParams<'a> {
+    boot_param_block: &'a BootParamBlock,
     igvm_param_page: &'a IgvmParamPage,
     igvm_memory_map: &'a IgvmMemoryMap,
     igvm_madt: &'a [u8],
-    igvm_guest_context: Option<&'a IgvmGuestContext>,
+    guest_context: Option<&'a InitialGuestContext>,
 }
 
-impl IgvmParams<'_> {
+impl BootParams<'_> {
     /// # Safety
     /// The caller is responsible for ensuring that the supplied virtual
     /// address corresponds to an IGVM parameter block.
     pub unsafe fn new(addr: VirtAddr) -> Result<Self, SvsmError> {
-        let param_block = Self::try_aligned_ref::<IgvmParamBlock>(addr)?;
+        let param_block = Self::try_aligned_ref::<BootParamBlock>(addr)?;
         let param_page_address = addr + param_block.param_page_offset as usize;
         let param_page = Self::try_aligned_ref::<IgvmParamPage>(param_page_address)?;
         let memory_map_address = addr + param_block.memory_map_offset as usize;
@@ -60,17 +60,17 @@ impl IgvmParams<'_> {
         };
         let guest_context = if param_block.guest_context_offset != 0 {
             let offset = usize::try_from(param_block.guest_context_offset).unwrap();
-            Some(Self::try_aligned_ref::<IgvmGuestContext>(addr + offset)?)
+            Some(Self::try_aligned_ref::<InitialGuestContext>(addr + offset)?)
         } else {
             None
         };
 
         Ok(Self {
-            igvm_param_block: param_block,
+            boot_param_block: param_block,
             igvm_param_page: param_page,
             igvm_memory_map: memory_map,
             igvm_madt: madt,
-            igvm_guest_context: guest_context,
+            guest_context,
         })
     }
 
@@ -84,16 +84,16 @@ impl IgvmParams<'_> {
         // Calculate the total size of the parameter area.  The
         // parameter area always begins at the kernel base
         // address.
-        self.igvm_param_block.param_area_size.try_into().unwrap()
+        self.boot_param_block.param_area_size.try_into().unwrap()
     }
 
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
-        let kernel_base = PhysAddr::from(self.igvm_param_block.kernel_base);
-        let mut kernel_size = self.igvm_param_block.kernel_min_size;
+        let kernel_base = PhysAddr::from(self.boot_param_block.kernel_base);
+        let mut kernel_size = self.boot_param_block.kernel_min_size;
 
         // Check the untrusted hypervisor-provided memory map to see if the size of the kernel
         // should be adjusted. The base location and mimimum and maximum size specified by the
-        // measured igvm_param_block are still respected to ensure a malicious memory map cannot
+        // measured boot_param_block are still respected to ensure a malicious memory map cannot
         // cause the SVSM kernel to overlap anything important or be so small it causes weird
         // failures. But if the hypervisor gives a memory map entry of type HIDDEN that starts at
         // kernel_start, use the size of that entry as a guide. This allows the hypervisor to
@@ -109,8 +109,8 @@ impl IgvmParams<'_> {
                 .unwrap_or(u32::MAX)
                 .saturating_mul(PAGE_SIZE as u32);
             kernel_size = region_size_bytes.clamp(
-                self.igvm_param_block.kernel_min_size,
-                self.igvm_param_block.kernel_max_size,
+                self.boot_param_block.kernel_min_size,
+                self.boot_param_block.kernel_max_size,
             );
         }
         Ok(MemoryRegion::<PhysAddr>::new(
@@ -120,7 +120,7 @@ impl IgvmParams<'_> {
     }
 
     pub fn vmsa_in_kernel_range(&self) -> bool {
-        self.igvm_param_block.vmsa_in_kernel_range != 0
+        self.boot_param_block.vmsa_in_kernel_range != 0
     }
 
     pub fn page_state_change_required(&self) -> bool {
@@ -173,7 +173,7 @@ impl IgvmParams<'_> {
     pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
         // If the parameters do not include a guest memory map area, then no
         // work is required.
-        let fw_info = &self.igvm_param_block.firmware;
+        let fw_info = &self.boot_param_block.firmware;
         if fw_info.memory_map_size == 0 {
             return Ok(());
         }
@@ -194,7 +194,7 @@ impl IgvmParams<'_> {
             PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
         let mem_map_va = mem_map_mapping.virt_addr();
 
-        if self.igvm_param_block.firmware.memory_map_prevalidated == 0 {
+        if self.boot_param_block.firmware.memory_map_prevalidated == 0 {
             // The guest expects the pages in the memory map to be treated like
             // host-provided IGVM parameters, which requires the pages to be
             // validated.  Since the memory was not declared as part of the
@@ -273,11 +273,11 @@ impl IgvmParams<'_> {
     }
 
     pub fn should_launch_fw(&self) -> bool {
-        self.igvm_param_block.firmware.size != 0
+        self.boot_param_block.firmware.size != 0
     }
 
     pub fn debug_serial_port(&self) -> u16 {
-        self.igvm_param_block.debug_serial_port
+        self.boot_param_block.debug_serial_port
     }
 
     pub fn get_fw_metadata(&self) -> Option<SevFWMetaData> {
@@ -287,15 +287,15 @@ impl IgvmParams<'_> {
 
         let mut fw_meta = SevFWMetaData::new();
 
-        if self.igvm_param_block.firmware.caa_page != 0 {
+        if self.boot_param_block.firmware.caa_page != 0 {
             fw_meta.caa_page = Some(PhysAddr::new(
-                self.igvm_param_block.firmware.caa_page.try_into().unwrap(),
+                self.boot_param_block.firmware.caa_page.try_into().unwrap(),
             ));
         }
 
-        if self.igvm_param_block.firmware.secrets_page != 0 {
+        if self.boot_param_block.firmware.secrets_page != 0 {
             fw_meta.secrets_page = Some(PhysAddr::new(
-                self.igvm_param_block
+                self.boot_param_block
                     .firmware
                     .secrets_page
                     .try_into()
@@ -303,9 +303,9 @@ impl IgvmParams<'_> {
             ));
         }
 
-        if self.igvm_param_block.firmware.cpuid_page != 0 {
+        if self.boot_param_block.firmware.cpuid_page != 0 {
             fw_meta.cpuid_page = Some(PhysAddr::new(
-                self.igvm_param_block
+                self.boot_param_block
                     .firmware
                     .cpuid_page
                     .try_into()
@@ -313,9 +313,9 @@ impl IgvmParams<'_> {
             ));
         }
 
-        let preval_count = self.igvm_param_block.firmware.prevalidated_count as usize;
+        let preval_count = self.boot_param_block.firmware.prevalidated_count as usize;
         for preval in self
-            .igvm_param_block
+            .boot_param_block
             .firmware
             .prevalidated
             .iter()
@@ -332,7 +332,7 @@ impl IgvmParams<'_> {
         assert!(self.should_launch_fw());
 
         let mut regions = Vec::new();
-        let fw_info = &self.igvm_param_block.firmware;
+        let fw_info = &self.boot_param_block.firmware;
 
         if fw_info.in_low_memory != 0 {
             // Add the lowmem region to the firmware region list so
@@ -378,11 +378,11 @@ impl IgvmParams<'_> {
     }
 
     pub fn fw_in_low_memory(&self) -> bool {
-        self.igvm_param_block.firmware.in_low_memory != 0
+        self.boot_param_block.firmware.in_low_memory != 0
     }
 
     pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
-        let Some(guest_context) = self.igvm_guest_context else {
+        let Some(guest_context) = self.guest_context else {
             return Ok(());
         };
 
@@ -440,8 +440,8 @@ impl IgvmParams<'_> {
         }
 
         // Configure vTOM if requested.
-        if self.igvm_param_block.vtom != 0 {
-            vmsa.vtom = self.igvm_param_block.vtom;
+        if self.boot_param_block.vtom != 0 {
+            vmsa.vtom = self.boot_param_block.vtom;
             vmsa.sev_features |= 2; // VTOM feature
         }
 
@@ -449,27 +449,27 @@ impl IgvmParams<'_> {
     }
 
     pub fn get_vtom(&self) -> u64 {
-        self.igvm_param_block.vtom
+        self.boot_param_block.vtom
     }
 
     pub fn use_alternate_injection(&self) -> bool {
-        self.igvm_param_block.use_alternate_injection != 0
+        self.boot_param_block.use_alternate_injection != 0
     }
 
     pub fn suppress_svsm_interrupts_on_snp(&self) -> bool {
-        self.igvm_param_block.suppress_svsm_interrupts_on_snp != 0
+        self.boot_param_block.suppress_svsm_interrupts_on_snp != 0
     }
 
     pub fn has_qemu_testdev(&self) -> bool {
-        self.igvm_param_block.has_qemu_testdev != 0
+        self.boot_param_block.has_qemu_testdev != 0
     }
 
     pub fn has_fw_cfg_port(&self) -> bool {
-        self.igvm_param_block.has_fw_cfg_port != 0
+        self.boot_param_block.has_fw_cfg_port != 0
     }
 
     pub fn has_test_iorequests(&self) -> bool {
-        self.igvm_param_block.has_test_iorequests != 0
+        self.boot_param_block.has_test_iorequests != 0
     }
 }
 
@@ -478,32 +478,32 @@ impl IgvmParams<'_> {
 /// unlike normal heap allocations, the IGVM parameters are allocated as a
 /// sequence of single pages, and thus cannot be freed in a single operation.
 #[derive(Debug)]
-pub struct IgvmBox<'a> {
+pub struct BootParamBox<'a> {
     vaddr: VirtAddr,
-    igvm_params: IgvmParams<'a>,
+    boot_params: BootParams<'a>,
 }
 
-impl IgvmBox<'_> {
+impl BootParamBox<'_> {
     /// # Safety
     /// The caller is responsible for ensuring that the supplied virtual
     /// address corresponds to an IGVM parameter block.
     pub unsafe fn new(vaddr: VirtAddr) -> Result<Self, SvsmError> {
         // SAFETY: the caller guarantees the correctness of the virtual
         // address.
-        unsafe { IgvmParams::new(vaddr) }.map(|igvm_params| Self { vaddr, igvm_params })
+        unsafe { BootParams::new(vaddr) }.map(|boot_params| Self { vaddr, boot_params })
     }
 }
 
-impl<'a> Deref for IgvmBox<'a> {
-    type Target = IgvmParams<'a>;
-    fn deref(&self) -> &IgvmParams<'a> {
-        &self.igvm_params
+impl<'a> Deref for BootParamBox<'a> {
+    type Target = BootParams<'a>;
+    fn deref(&self) -> &BootParams<'a> {
+        &self.boot_params
     }
 }
 
-impl Drop for IgvmBox<'_> {
+impl Drop for BootParamBox<'_> {
     fn drop(&mut self) {
-        let page_count = round_to_pages(self.igvm_params.igvm_param_block.param_area_size as usize);
+        let page_count = round_to_pages(self.boot_params.boot_param_block.param_area_size as usize);
         free_multiple_pages(self.vaddr, page_count);
     }
 }

@@ -63,7 +63,7 @@ pub struct GpaMap {
     pub cpuid_page: GpaRange,
     pub kernel_elf: GpaRange,
     pub kernel_fs: GpaRange,
-    pub igvm_param_block: GpaRange,
+    pub boot_param_block: GpaRange,
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
     pub madt: GpaRange,
@@ -165,8 +165,8 @@ impl GpaMap {
             }
         }
 
-        let igvm_param_block = GpaRange::new_page(kernel_elf.get_end())?;
-        let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
+        let boot_param_block = GpaRange::new_page(kernel_elf.get_end())?;
+        let general_params = GpaRange::new_page(boot_param_block.get_end())?;
         let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
         let guest_context = if let Some(firmware) = firmware {
@@ -203,7 +203,7 @@ impl GpaMap {
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_elf,
             kernel_fs,
-            igvm_param_block,
+            boot_param_block,
             general_params,
             memory_map,
             madt,

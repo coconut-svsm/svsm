@@ -15,6 +15,7 @@ use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
 use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::cpuid::cpuid_table;
@@ -27,7 +28,6 @@ use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
-use crate::igvm_params::IgvmParams;
 use crate::io::IOPort;
 use crate::mm::PAGE_SIZE;
 use crate::mm::PAGE_SIZE_2M;
@@ -195,28 +195,28 @@ impl SvsmPlatform for SnpPlatform {
 
     fn prepare_fw(
         &self,
-        igvm_params: &IgvmParams<'_>,
+        boot_params: &BootParams<'_>,
         kernel_region: MemoryRegion<PhysAddr>,
     ) -> Result<(), SvsmError> {
-        if let Some(fw_meta) = &igvm_params.get_fw_metadata() {
+        if let Some(fw_meta) = &boot_params.get_fw_metadata() {
             print_fw_meta(fw_meta);
-            validate_fw_memory(igvm_params, fw_meta, &kernel_region)?;
-            write_guest_memory_map(igvm_params)?;
+            validate_fw_memory(boot_params, fw_meta, &kernel_region)?;
+            write_guest_memory_map(boot_params)?;
             // SAFETY: we've verified the firmware memory addresses above.
             // This is called from CPU 0, so the underlying physical address
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                validate_fw(igvm_params)?;
+                validate_fw(boot_params)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
         Ok(())
     }
 
-    fn launch_fw(&self, igvm_params: &IgvmParams<'_>) -> Result<(), SvsmError> {
-        if igvm_params.should_launch_fw() {
-            launch_fw(igvm_params)
+    fn launch_fw(&self, boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+        if boot_params.should_launch_fw() {
+            launch_fw(boot_params)
         } else {
             Ok(())
         }
