@@ -19,6 +19,7 @@ doctest = true
 
 [dependencies]
 bootdefs.workspace = true
+bootimg.workspace = true
 cpuarch.workspace = true
 libaproxy = { workspace = true, optional = true }
 elf.workspace = true

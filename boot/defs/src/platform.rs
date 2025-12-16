@@ -4,8 +4,10 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
+use zerocopy::{Immutable, IntoBytes};
+
 /// Defines the underlying platform type on which the SVSM will run.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Immutable, IntoBytes)]
 #[repr(C)]
 pub enum SvsmPlatformType {
     Native = 0,

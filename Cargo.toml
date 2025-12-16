@@ -45,6 +45,7 @@ edition = "2024"
 [workspace.dependencies]
 # internal library crates
 bootdefs = { path = "boot/defs" }
+bootimg = { path = "boot/bootimg" }
 cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }
