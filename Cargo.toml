@@ -6,6 +6,7 @@ members = [
     "tools/igvmmeasure",
     "xbuild",
     # internal library crates
+    "boot/bootimg",
     "boot/defs",
     # binary targets
     "stage1",
@@ -47,6 +48,7 @@ edition = "2024"
 [workspace.dependencies]
 # internal library crates
 bootdefs = { path = "boot/defs" }
+bootimg = { path = "boot/bootimg" }
 cpuarch = { path = "cpuarch" }
 test = { path = "test" }
 svsm = { path = "kernel" }

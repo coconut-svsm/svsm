@@ -90,8 +90,8 @@ static SYM_RESOLVER: ImmutAfterInitCell<SymResolver> = ImmutAfterInitCell::unini
 
 /// Initializes symbol data so that it can be used when [`resolve_symbol()`] is called.
 pub fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
-    let symtab_start = li.kernel_symtab_start;
-    let strtab_start = li.kernel_strtab_start;
+    let symtab_start = li.kernel_symtab_start as *const KSym;
+    let strtab_start = li.kernel_strtab_start as *const u8;
 
     // Data is not guaranteed to be there, so if that's the case just don't
     // initialize anything, which `resolve_symbol()` will handle gracefully.

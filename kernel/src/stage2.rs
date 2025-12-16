@@ -952,9 +952,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         cpuid_page: u64::from(kernel_cpuid_page),
         secrets_page: u64::from(kernel_secrets_page),
         boot_params_virt_addr: u64::from(params_vaddr),
-        kernel_symtab_start: symtab.start().as_ptr(),
+        kernel_symtab_start: symtab.start().into(),
         kernel_symtab_len: (symtab.len() / size_of::<bootdefs::symbols::KSym>()) as u64,
-        kernel_strtab_start: strtab.start().as_ptr(),
+        kernel_strtab_start: strtab.start().into(),
         kernel_strtab_len: strtab.len() as u64,
         vtom: launch_info.vtom,
         debug_serial_port: boot_params.debug_serial_port(),
@@ -962,6 +962,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
         vmsa_in_kernel_heap: boot_params.vmsa_in_kernel_range(),
         suppress_svsm_interrupts,
+        _reserved: Default::default(),
     };
 
     // SAFETY: the virtual address of the allocated block is known to be usable
@@ -985,6 +986,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         "  kernel_virtual_base      = {:#018x}",
         loaded_kernel_vregion.start()
     );
+
+    // Emit a reference to the boot image library just to force compilation.
+    bootimg::nop();
 
     log::info!("Starting SVSM kernel...");
 

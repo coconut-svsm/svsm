@@ -1,0 +1,13 @@
+[package]
+name = "bootimg"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+bootdefs.workspace = true
+elf.workspace = true
+igvm_defs.workspace = true
+zerocopy.workspace = true
+
+[lints]
+workspace = true

@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::symbols::KSym;
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -30,7 +29,7 @@ pub const CPUID_PAGE: u32 = 0x807000;
 pub const STAGE2_START: u32 = 0x808000;
 pub const STAGE2_MAXLEN: u32 = 0x8D0000 - STAGE2_START;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Immutable, IntoBytes)]
 #[repr(C)]
 pub struct KernelLaunchInfo {
     /// Start of the kernel in physical memory.
@@ -48,9 +47,9 @@ pub struct KernelLaunchInfo {
     pub cpuid_page: u64,
     pub secrets_page: u64,
     pub boot_params_virt_addr: u64,
-    pub kernel_symtab_start: *const KSym,
+    pub kernel_symtab_start: u64,
     pub kernel_symtab_len: u64,
-    pub kernel_strtab_start: *const u8,
+    pub kernel_strtab_start: u64,
     pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
@@ -58,6 +57,7 @@ pub struct KernelLaunchInfo {
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
+    pub _reserved: [bool; 3],
 }
 
 // Stage 2 launch info from stage1

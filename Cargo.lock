@@ -237,6 +237,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootimg"
+version = "0.1.0"
+dependencies = [
+ "bootdefs",
+ "elf",
+ "igvm_defs",
+ "zerocopy",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1880,6 +1890,7 @@ dependencies = [
  "bitfield-struct 0.6.2",
  "bitflags 2.10.0",
  "bootdefs",
+ "bootimg",
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-common",
