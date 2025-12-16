@@ -23,7 +23,7 @@ fn main() {
     println!("cargo:rustc-link-arg-bin=svsm=--build-id=none");
     println!("cargo:rustc-link-arg-bin=svsm=--no-relax");
     println!("cargo:rustc-link-arg-bin=svsm=-Tkernel/src/svsm.lds");
-    println!("cargo:rustc-link-arg-bin=svsm=-no-pie");
+    println!("cargo:rustc-link-arg-bin=svsm=-pie");
 
     // Extra linker args for tests.
     println!("cargo:rerun-if-env-changed=LINK_TEST");

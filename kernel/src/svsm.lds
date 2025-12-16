@@ -2,7 +2,7 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	. = 0xffffff8000000000;
+	. = SIZEOF_HEADERS;
 	.text : {
 		*(.startup.*)
 		*(.text)
