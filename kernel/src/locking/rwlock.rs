@@ -7,6 +7,7 @@
 use super::common::*;
 use crate::types::TPR_LOCK;
 use core::cell::UnsafeCell;
+use core::convert::From;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut};
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -255,6 +256,17 @@ impl<T: Send, I: IrqLocking> RawRWLock<T, I> {
             _irq_state: irq_state,
         }
     }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// Since this call borrows the `RawRWLock` mutably, no actual locking needs to take place --
+    /// the mutable borrow statically guarantees no new locks can be acquired while this reference
+    /// exists.
+    pub fn get_mut(&mut self) -> &mut T {
+        // SAFETY: the returned reference carries an exclusive borrow on self,
+        // thereby establishing exclusive access.
+        unsafe { &mut *self.data.get() }
+    }
 }
 
 /// A lock can only be acquired for read access if its inner type implements
@@ -291,6 +303,12 @@ impl<T: Send + Sync, I: IrqLocking> RawRWLock<T, I> {
             data: unsafe { &*self.data.get() },
             _irq_state: irq_state,
         }
+    }
+}
+
+impl<T: Send, I: IrqLocking> From<T> for RawRWLock<T, I> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 

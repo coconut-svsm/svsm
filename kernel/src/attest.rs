@@ -8,6 +8,7 @@
 extern crate alloc;
 
 use crate::{
+    crypto::get_svsm_rng,
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
     io::{Read, Write, DEFAULT_IO_DRIVER},
@@ -19,14 +20,10 @@ use aes_kw::{Kek, KekAes256};
 use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
     ecc::{curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z, EccKey},
-    rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
-    CryptoError, EmptyCryptoIoSlices,
+    CryptoError,
 };
-use cocoon_tpm_tpm2_interface::{self as tpm2_interface, TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
-use cocoon_tpm_utils_common::{
-    alloc::try_alloc_zeroizing_vec,
-    io_slices::{self, IoSlicesIterCommon as _},
-};
+use cocoon_tpm_tpm2_interface::{TpmEccCurve, TpmsEccPoint};
+use cocoon_tpm_utils_common::zeroize::Zeroizing;
 use kbs_types::Tee;
 use libaproxy::*;
 use serde::Serialize;
@@ -65,7 +62,7 @@ impl TryFrom<Tee> for AttestationDriver<'_> {
 
 impl AttestationDriver<'_> {
     /// Attest SVSM's launch state by communicating with the attestation proxy.
-    pub fn attest(&mut self) -> Result<Vec<u8>, SvsmError> {
+    pub fn attest(&mut self) -> Result<Zeroizing<Vec<u8>>, SvsmError> {
         let negotiation = self.negotiation()?;
 
         Ok(self.attestation(negotiation)?)
@@ -89,7 +86,10 @@ impl AttestationDriver<'_> {
     /// Send an attestation request to the proxy. Proxy should reply with attestation response
     /// containing the status (success/fail) and an optional secret returned from the server upon
     /// successful attestation.
-    fn attestation(&mut self, n: NegotiationResponse) -> Result<Vec<u8>, AttestationError> {
+    fn attestation(
+        &mut self,
+        n: NegotiationResponse,
+    ) -> Result<Zeroizing<Vec<u8>>, AttestationError> {
         let curve =
             Curve::new(self.ecc.pub_key().get_curve_id()).map_err(AttestationError::Crypto)?;
 
@@ -128,7 +128,7 @@ impl AttestationDriver<'_> {
 
         self.decrypt(&mut secret, decryption)?;
 
-        Ok(secret)
+        Ok(Zeroizing::new(secret))
     }
 
     /// Decrypt a secret from the attestation server with the TEE private key. Secrets are
@@ -265,27 +265,8 @@ impl From<AttestationError> for SvsmError {
 /// Generate a key used to establish a secure channel between the confidential guest and
 /// attestation server.
 fn sc_key_generate(curve: &Curve) -> Result<EccKey, CryptoError> {
-    let mut rng = {
-        let mut rdseed = X86RdSeedRng::instantiate().map_err(|_| CryptoError::RngFailure)?;
-        let mut hash_drbg_entropy =
-            try_alloc_zeroizing_vec(HashDrbg::min_seed_entropy_len(TpmiAlgHash::Sha256))?;
-
-        rdseed.generate::<_, EmptyCryptoIoSlices>(
-            io_slices::SingletonIoSliceMut::new(hash_drbg_entropy.as_mut_slice())
-                .map_infallible_err(),
-            None,
-        )?;
-
-        rng::HashDrbg::instantiate(
-            tpm2_interface::TpmiAlgHash::Sha256,
-            &hash_drbg_entropy,
-            None,
-            Some(b"SVSM attestation RNG"),
-        )
-    }?;
-
+    let mut rng = get_svsm_rng()?;
     let curve_ops = curve.curve_ops()?;
-
     EccKey::generate(&curve_ops, &mut rng, None)
 }
 

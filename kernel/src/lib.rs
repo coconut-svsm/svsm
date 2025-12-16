@@ -13,6 +13,7 @@
 
 pub mod acpi;
 pub mod address;
+pub mod r#async;
 #[cfg(feature = "attest")]
 pub mod attest;
 pub mod block;
@@ -32,6 +33,8 @@ pub mod io;
 pub mod kernel_region;
 pub mod locking;
 pub mod mm;
+#[cfg(feature = "cocoonfs")]
+pub mod persistence;
 pub mod platform;
 pub mod protocols;
 pub mod requests;

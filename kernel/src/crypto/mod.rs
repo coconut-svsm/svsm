@@ -101,3 +101,6 @@ pub mod digest {
 // Crypto implementations supported. Only one of them must be compiled-in.
 
 pub mod rustcrypto;
+
+mod rng;
+pub use rng::{get_svsm_rng, SvsmRng};
