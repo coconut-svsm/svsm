@@ -50,6 +50,7 @@ use crate::cpu::registers::{RFlags, SegDescAttrFlags};
 use crate::types::Bytes;
 use alloc::boxed::Box;
 use bitflags::bitflags;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// Represents the raw bytes of an instruction and
 /// tracks the number of bytes being processed.
@@ -180,7 +181,7 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     ///
     /// A `Result` containing a boxed trait object representing the mapped
     /// memory, or an `InsnError` if mapping fails.
-    fn map_linear_addr<T: Copy + 'static>(
+    fn map_linear_addr<T: FromBytes + IntoBytes + 'static>(
         &self,
         _la: usize,
         _write: bool,
