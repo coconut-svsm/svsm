@@ -9,6 +9,7 @@ use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platfo
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
@@ -22,7 +23,7 @@ use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
     tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
-    tdvmcall_wrmsr, TdpHaltInterruptState, MD_TDCS_NUM_L2_VMS,
+    tdvmcall_report_fatal_error, tdvmcall_wrmsr, TdpHaltInterruptState, MD_TDCS_NUM_L2_VMS,
 };
 use crate::types::{PageSize, PAGE_SIZE};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -295,6 +296,14 @@ impl SvsmPlatform for TdpPlatform {
         _data: &mut [MaybeUninit<u8>],
     ) -> Result<(), SvsmError> {
         unimplemented!()
+    }
+
+    fn terminate() -> !
+    where
+        Self: Sized,
+    {
+        raw_irqs_disable();
+        tdvmcall_report_fatal_error();
     }
 }
 

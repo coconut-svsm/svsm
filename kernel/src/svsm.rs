@@ -44,7 +44,6 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange};
-use svsm::platform;
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
@@ -456,10 +455,12 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     print_stack(3);
 
-    loop {
-        debug_break();
-        #[cfg(all(test, test_in_svsm))]
-        crate::testing::qemu_write_exit(crate::testing::QEMUExitValue::Fail);
-        platform::halt();
-    }
+    debug_break();
+
+    // If we are running tests, notify qemu. Otherwise, simply
+    // terminate the guest.
+    #[cfg(all(test, test_in_svsm))]
+    crate::testing::exit(crate::testing::QEMUExitValue::Fail);
+    #[cfg(any(not(test), not(test_in_svsm)))]
+    svsm::platform::terminate();
 }

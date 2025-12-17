@@ -1,4 +1,3 @@
-use core::arch::asm;
 use log::info;
 use test::ShouldPanic;
 
@@ -84,26 +83,25 @@ pub fn svsm_test_runner(test_cases: &[&test::TestDescAndFn]) {
 
     info!("All tests passed!");
 
-    exit();
+    exit(QEMUExitValue::Success);
 }
 
-fn exit() -> ! {
-    qemu_write_exit(QEMUExitValue::Success);
-    // SAFETY: HLT instruction does not affect memory.
-    unsafe {
-        asm!("hlt");
+/// Exits the in-SVSM test session with the given exit value.
+pub fn exit(value: QEMUExitValue) -> ! {
+    loop {
+        qemu_write_exit(value);
+        crate::platform::halt();
     }
-    unreachable!();
 }
 
 #[repr(u32)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum QEMUExitValue {
     Success = 0x10,
     Fail = 0x11,
 }
 
-pub fn qemu_write_exit(value: QEMUExitValue) {
+fn qemu_write_exit(value: QEMUExitValue) {
     if has_qemu_testdev() {
         const QEMU_EXIT_PORT: u16 = 0xf4;
         SVSM_PLATFORM
