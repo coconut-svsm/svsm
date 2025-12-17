@@ -3,9 +3,10 @@
 use crate::MMFlags;
 use crate::mmap;
 use coconut_alloc::AllocBlock;
+use core::alloc::Layout;
+#[cfg(all(not(test), target_os = "none"))]
+use core::{alloc::GlobalAlloc, ptr};
 use once_cell::race::OnceRef;
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr;
 
 #[derive(Debug)]
 pub enum AllocError {
@@ -50,8 +51,10 @@ fn get_global_heap() -> Result<&'static AllocBlock, AllocError> {
     HEAP.get().ok_or(AllocError::NotInitialized)
 }
 
+#[cfg(all(not(test), target_os = "none"))]
 struct SvsmUserAllocator;
 
+#[cfg(all(not(test), target_os = "none"))]
 // SAFETY: AllockBlock is lockless for allocations up to 32KB.
 // HEAP is write-once and only read via immutable references after initialization.
 // AllocBlock uses atomic operations internally to handle concurrent alloc/free safely.
@@ -89,6 +92,7 @@ unsafe impl GlobalAlloc for SvsmUserAllocator {
     }
 }
 
+#[cfg(all(not(test), target_os = "none"))]
 #[global_allocator]
 static GLOBAL_ALLOC: SvsmUserAllocator = SvsmUserAllocator;
 
@@ -121,4 +125,22 @@ pub unsafe fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
     }
 
     heap.layout_from_offset(off as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_layout_from_size() {
+        let layout = layout_from_size(100).unwrap();
+        assert_eq!(layout.size(), 128);
+        assert_eq!(layout.align(), 128);
+
+        let layout = layout_from_size(0);
+        assert!(layout.is_err());
+
+        let layout = layout_from_size(MAX_ALLOC_SIZE + 1);
+        assert!(layout.is_err());
+    }
 }
