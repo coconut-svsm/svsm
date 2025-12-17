@@ -283,11 +283,11 @@ unsafe fn do_movsb<T>(src: *const T, dst: *mut T) -> Result<(), SvsmError> {
 }
 
 #[derive(Debug)]
-pub struct GuestPtr<T: Copy> {
+pub struct GuestPtr<T> {
     ptr: *mut T,
 }
 
-impl<T: Copy> GuestPtr<T> {
+impl<T> GuestPtr<T> {
     #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
@@ -309,7 +309,10 @@ impl<T: Copy> GuestPtr<T> {
     ///
     /// Returns an error if the specified address is not mapped.
     #[inline]
-    pub unsafe fn read(&self) -> Result<T, SvsmError> {
+    pub unsafe fn read(&self) -> Result<T, SvsmError>
+    where
+        T: FromBytes,
+    {
         let mut buf = MaybeUninit::<T>::uninit();
 
         // SAFETY: Safe because `dst` is on the local stack. The data is
@@ -330,7 +333,10 @@ impl<T: Copy> GuestPtr<T> {
     /// Returns an error if the specified address is not mapped or is not mapped
     /// with the appropriate write permissions.
     #[inline]
-    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError> {
+    pub unsafe fn write(&self, buf: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
         unsafe { do_movsb(&buf, self.ptr) }
@@ -346,14 +352,17 @@ impl<T: Copy> GuestPtr<T> {
     /// Returns an error if the specified address is not mapped or is not mapped
     /// with the appropriate write permissions.
     #[inline]
-    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
+    pub unsafe fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
         unsafe { do_movsb(buf, self.ptr) }
     }
 
     #[inline]
-    pub const fn cast<N: Copy>(&self) -> GuestPtr<N> {
+    pub const fn cast<N>(&self) -> GuestPtr<N> {
         GuestPtr::from_ptr(self.ptr.cast())
     }
 
@@ -365,13 +374,13 @@ impl<T: Copy> GuestPtr<T> {
     }
 }
 
-impl<T: Copy> From<NonNull<T>> for GuestPtr<T> {
+impl<T> From<NonNull<T>> for GuestPtr<T> {
     fn from(value: NonNull<T>) -> Self {
         Self::from_ptr(value.as_ptr())
     }
 }
 
-impl<T: Copy> InsnMachineMem for GuestPtr<T> {
+impl<T: FromBytes + IntoBytes> InsnMachineMem for GuestPtr<T> {
     type Item = T;
 
     /// # Safety
@@ -407,11 +416,11 @@ impl Drop for UserAccessGuard {
 }
 
 #[derive(Debug)]
-pub struct UserPtr<T: Copy> {
+pub struct UserPtr<T> {
     guest_ptr: GuestPtr<T>,
 }
 
-impl<T: Copy> UserPtr<T> {
+impl<T> UserPtr<T> {
     #[inline]
     pub fn new(v: VirtAddr) -> Self {
         Self {
@@ -440,12 +449,18 @@ impl<T: Copy> UserPtr<T> {
     }
 
     #[inline]
-    pub fn write(&self, buf: T) -> Result<(), SvsmError> {
+    pub fn write(&self, buf: T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
         self.write_ref(&buf)
     }
 
     #[inline]
-    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError> {
+    pub fn write_ref(&self, buf: &T) -> Result<(), SvsmError>
+    where
+        T: IntoBytes,
+    {
         if !self.check_bounds() {
             return Err(SvsmError::InvalidAddress);
         }
@@ -455,7 +470,7 @@ impl<T: Copy> UserPtr<T> {
     }
 
     #[inline]
-    pub const fn cast<N: Copy>(&self) -> UserPtr<N> {
+    pub const fn cast<N>(&self) -> UserPtr<N> {
         UserPtr {
             guest_ptr: self.guest_ptr.cast(),
         }

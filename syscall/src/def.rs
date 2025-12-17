@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use bitflags::bitflags;
+use zerocopy::IntoBytes;
 
 // Syscall classes
 const CLASS0: u64 = 0;
@@ -38,7 +39,7 @@ pub const PATH_MAX: usize = 4096;
 pub const F_NAME_SIZE: usize = 256;
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, IntoBytes)]
 pub enum FileType {
     File,
     Directory,
@@ -108,12 +109,13 @@ impl TryFrom<usize> for SeekMode {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, IntoBytes)]
 pub struct DirEnt {
     /// Entry name
     pub file_name: [u8; F_NAME_SIZE],
     /// Entry type
     pub file_type: FileType,
+    _pad: [u8; 7],
     /// File size - 0 for directories
     pub file_size: u64,
 }
@@ -123,6 +125,7 @@ impl Default for DirEnt {
         DirEnt {
             file_name: [b'\0'; F_NAME_SIZE],
             file_type: FileType::File,
+            _pad: [0; 7],
             file_size: 0,
         }
     }

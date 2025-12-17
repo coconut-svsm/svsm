@@ -22,6 +22,7 @@ use crate::utils::{is_aligned, MemoryRegion};
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
+use zerocopy::{FromBytes, IntoBytes};
 
 pub const DE_VECTOR: usize = 0;
 pub const DB_VECTOR: usize = 1;
@@ -170,7 +171,7 @@ impl InsnMachineCtx for X86ExceptionContext {
         self.frame.cs & 3
     }
 
-    fn map_linear_addr<T: Copy + 'static>(
+    fn map_linear_addr<T: FromBytes + IntoBytes + 'static>(
         &self,
         la: usize,
         _write: bool,

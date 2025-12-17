@@ -22,10 +22,11 @@ use crate::protocols::{
 };
 
 use alloc::vec::Vec;
+use zerocopy::{FromBytes, IntoBytes};
 
 /// The SVSM Calling Area (CAA)
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes)]
 pub struct SvsmCaa {
     call_pending: u8,
     mem_available: u8,

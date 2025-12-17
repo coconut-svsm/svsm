@@ -27,6 +27,7 @@ use crate::sev::vmsa::VMSAControl;
 use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::zero_mem_region;
 use cpuarch::vmsa::VMSA;
+use zerocopy::{FromBytes, IntoBytes};
 
 const SVSM_REQ_CORE_REMAP_CA: u32 = 0;
 const SVSM_REQ_CORE_PVALIDATE: u32 = 1;
@@ -50,7 +51,7 @@ pub const CORE_PROTOCOL_VERSION_MAX: u32 = 1;
 static PVALIDATE_LOCK: RWLock<()> = RWLock::new(());
 
 #[repr(C, packed)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, FromBytes, IntoBytes)]
 struct PValidateRequest {
     entries: u16,
     next: u16,
