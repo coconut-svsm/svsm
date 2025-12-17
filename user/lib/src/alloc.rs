@@ -2,10 +2,11 @@
 
 use crate::{console_print, print, println};
 use coconut_alloc::AllocBlock;
-use core::alloc::{GlobalAlloc, Layout};
-use core::ptr;
+use core::alloc::Layout;
 use core::ptr::{addr_of, addr_of_mut};
 use core::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(any(test, all(not(test), target_os = "none")))]
+use core::{alloc::GlobalAlloc, ptr};
 
 #[derive(Debug)]
 pub enum AllocError {
@@ -59,8 +60,10 @@ fn get_global_heap() -> Result<&'static AllocBlock, AllocError> {
     unsafe { Ok(&*addr_of!(HEAP)) }
 }
 
+#[cfg(any(test, all(not(test), target_os = "none")))]
 struct SvsmUserAllocator;
 
+#[cfg(any(test, all(not(test), target_os = "none")))]
 // SAFETY: AllockBlock is lockless for allocations up to 32KB.
 // HEAP is write-once and only read via immutable references after initialization.
 // AllocBlock uses atomic operations internally to handle concurrent alloc/free safely.
@@ -98,6 +101,7 @@ unsafe impl GlobalAlloc for SvsmUserAllocator {
     }
 }
 
+#[cfg(all(not(test), target_os = "none"))]
 #[global_allocator]
 static GLOBAL_ALLOC: SvsmUserAllocator = SvsmUserAllocator;
 
@@ -130,4 +134,39 @@ pub unsafe fn layout_from_ptr(ptr: *mut u8) -> Option<Layout> {
     }
 
     heap.layout_from_offset(off as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_ALLOCATOR: SvsmUserAllocator = SvsmUserAllocator;
+
+    #[test]
+    fn test_layout_from_size() {
+        let layout = layout_from_size(100).unwrap();
+        assert_eq!(layout.size(), 128);
+        assert_eq!(layout.align(), 128);
+
+        let layout = layout_from_size(0);
+        assert!(layout.is_err());
+
+        let layout = layout_from_size(MAX_ALLOC_SIZE + 1);
+        assert!(layout.is_err());
+    }
+
+    #[test]
+    fn test_allocation_and_deallocation() {
+        set_global_heap().unwrap();
+        let layout = layout_from_size(200).unwrap();
+        // SAFETY: Using the global allocator
+        unsafe {
+            let ptr = TEST_ALLOCATOR.alloc(layout);
+            assert!(!ptr.is_null());
+            let layout_reconstructed = layout_from_ptr(ptr).unwrap();
+            assert_eq!(layout_reconstructed.size(), 256);
+            assert_eq!(layout_reconstructed.align(), 256);
+            TEST_ALLOCATOR.dealloc(ptr, layout);
+        }
+    }
 }
