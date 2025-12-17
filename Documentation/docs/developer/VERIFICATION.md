@@ -112,13 +112,13 @@ and to write specification and proofs in ghost mode.
   [vstd](https://verus-lang.github.io/verus/verusdoc/vstd/) when possible.
 * Specifications for dependencies (external crates): If functions, structs, or
   traits from external crates lack specifications from vstd, define their
-  specifications in `verify_external/`.
-* Performance: Store expensive and reusable proofs in `verify_proof/` if not
-  provided by `vstd`. The `svsm/kernel/build.rs` sets `rlimit=1`, while
-  `verify_proof/build.rs` sets `rlimit=4`, helping developers decide when they
-  need more proof engineering to run verification within minutes. For some proofs that
-  are tightly related to the project code, we may still put them under svsm/kernel with
-  `#[verus_verify(rlimit=x)]`
+  specifications in `verification/verify_external/`.
+* Performance: Store expensive and reusable proofs in `verification/verify_proof/`
+  if not provided by `vstd`. The `svsm/kernel/build.rs` sets `rlimit=1`, while
+  `verification/verify_proof/build.rs` sets `rlimit=4`, helping developers
+  decide when they need more proof engineering to run verification within
+  minutes. For some proofs that are tightly related to the project code, we may
+  still put them under svsm/kernel with `#[verus_verify(rlimit=x)]`.
 
 ### Annotation in Executable Rust
 
