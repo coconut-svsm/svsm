@@ -613,7 +613,34 @@ pub unsafe fn svsm_main(li: usize) {
 
 #[cfg(test)]
 fn test_in_svsm_task(_context: usize) {
+    use crate::testing::{QEMUExitValue, exit};
+    use svsm::fs::{list_dir, opendir};
+    use svsm::task::exec_user;
+
     crate::test_main();
+
+    // What is a good way of identifying all
+    // userspace binaries? What about
+    // a file which lists all the modules that
+    // should be tested
+    let files = list_dir("").unwrap();
+    log::info!("Files: {:?}", files);
+    // Should I move this logic in a userspace
+    // binary (`test-runner`)?
+    for file in files {
+        // TODO: A waiting mechanism should be added
+        match exec_user(file.as_ref(), opendir("/").unwrap()) {
+            Ok(_) => (),
+            Err(e) => {
+                log::info!("Failed to launch {file}: {e:?}");
+                exit(QEMUExitValue::Fail)
+            }
+        }
+    }
+
+    log::info!("All tests passed!");
+
+    exit(QEMUExitValue::Success);
 }
 
 #[panic_handler]
