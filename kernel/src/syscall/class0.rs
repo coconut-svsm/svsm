@@ -14,6 +14,13 @@ use core::ffi::c_char;
 use syscall::SysCallError;
 
 pub fn sys_exit(exit_code: u32) -> ! {
+    #[cfg(all(test, test_in_svsm))]
+    {
+        if exit_code != 0 {
+            use crate::testing::QEMUExitValue;
+            crate::testing::exit(QEMUExitValue::Fail);
+        }
+    }
     log::info!(
         "Terminating task {}, exit_code {exit_code}",
         current_task().get_task_name()
