@@ -20,13 +20,13 @@ use crate::address::group_addr_proofs;
 use crate::mm::address_space::LinearMap;
 use crate::types::lemma_page_size;
 use crate::utils::tcb_ptr::*;
-use verify_external::convert::FromSpec;
 use verify_external::hw_spec::SpecMemMapTr;
 use verify_proof::bits::*;
 use verify_proof::frac_ptr::FracTypedPerm;
 use vstd::arithmetic::mul::*;
 use vstd::modes::tracked_swap;
 use vstd::raw_ptr::IsExposed;
+use vstd::std_specs::convert::FromSpec;
 
 verus! {
 

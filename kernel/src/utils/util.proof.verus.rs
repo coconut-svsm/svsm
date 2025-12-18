@@ -11,8 +11,8 @@ verus! {
 /// align_down_ens ==> align_down_integer_ens
 pub broadcast proof fn proof_align_down<T: IntegerAligned>(val: T, align: T, ret: T) where
     requires
-        0 < align.into_spec() <= u64::MAX,
-        is_pow_of_2(align.into_spec() as u64),
+        0 < align as int <= u64::MAX,
+        is_pow_of_2(align as int as u64),
         align_down_requires((val, align)),
         #[trigger] align_down_ens((val, align), ret),
     ensures
@@ -25,8 +25,8 @@ pub broadcast proof fn proof_align_down<T: IntegerAligned>(val: T, align: T, ret
 /// align_up_ens ==> align_up_integer_ens
 pub broadcast proof fn proof_align_up<T: IntegerAligned>(val: T, align: T, ret: T) where
     requires
-        0 < align.into_spec() <= u64::MAX,
-        is_pow_of_2(align.into_spec() as u64),
+        0 < align as int <= u64::MAX,
+        is_pow_of_2(align as int as u64),
         align_up_requires((val, align)),
         #[trigger] align_up_ens((val, align), ret),
     ensures
@@ -122,11 +122,11 @@ mod util_align_down {
 
 pub use util_align_down::*;
 
-pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + FromIntoInteger where  {
+pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + Integer where  {
     proof fn lemma_is_aligned(val: Self, align: Self, ret: bool)
         requires
-            0 < align.into_spec() <= u64::MAX,
-            is_pow_of_2(align.into_spec() as u64),
+            0 < align as int <= u64::MAX,
+            is_pow_of_2(align as int as u64),
             is_aligned_requires((val, align)),
             is_aligned_ens((val, align), ret),
         ensures
@@ -135,8 +135,8 @@ pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + FromInto
 
     proof fn lemma_align_down(val: Self, align: Self, ret: Self)
         requires
-            0 < align.into_spec() <= u64::MAX,
-            is_pow_of_2(align.into_spec() as u64),
+            0 < align as int <= u64::MAX,
+            is_pow_of_2(align as int as u64),
             align_down_requires((val, align)),
             align_down_ens((val, align), ret),
         ensures
@@ -145,8 +145,8 @@ pub trait IntegerAligned: AlignDownSpec + AlignUpSpec + IsAlignedSpec + FromInto
 
     proof fn lemma_align_up(val: Self, align: Self, ret: Self)
         requires
-            0 < align.into_spec() <= u64::MAX,
-            is_pow_of_2(align.into_spec() as u64),
+            0 < align as int <= u64::MAX,
+            is_pow_of_2(align as int as u64),
             align_up_ens((val, align), ret),
             align_up_requires((val, align)),
         ensures
@@ -160,6 +160,7 @@ mod util_integer_align {
     broadcast use {vstd::group_vstd_default, verify_external::external_axiom};
 
     impl IntegerAligned for u64 {
+        #[verifier::rlimit(2)]
         proof fn lemma_is_aligned(val: u64, align: u64, ret: bool) {
             broadcast use group_align_proofs;
 
@@ -175,11 +176,13 @@ mod util_integer_align {
     }
 
     impl IntegerAligned for usize {
+        #[verifier::rlimit(2)]
         proof fn lemma_is_aligned(val: usize, align: usize, ret: bool) {
             broadcast use group_align_proofs;
 
         }
 
+        #[verifier::spinoff_prover]
         proof fn lemma_align_down(val: Self, align: Self, ret: Self) {
             broadcast use verify_proof::bits::lemma_bit_u64_shl_values;
 
