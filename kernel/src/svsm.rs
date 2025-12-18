@@ -623,11 +623,16 @@ pub unsafe fn svsm_main(li: usize) {
 
 #[cfg(test)]
 fn test_in_svsm_task(_context: usize) {
+    use crate::testing::user_tests_in_svsm;
     use crate::testing::{QEMUExitValue, exit};
 
     // This function calls `svsm_kernel_test_runner` to sequentially run all
     // tests in the kernel crate collected during compilation.
     crate::kernel_tests_in_svsm();
+
+    user_tests_in_svsm();
+
+    log::info!("All tests passed!");
 
     exit(QEMUExitValue::Success);
 }

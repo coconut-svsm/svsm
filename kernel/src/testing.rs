@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //
 
+extern crate alloc;
+
 use log::info;
 use test::ShouldPanic;
 
+use crate::fs::{list_dir, opendir};
+use crate::task::{TaskExitStatus, exec_user, wait_for_termination};
 use crate::{
     locking::{LockGuard, SpinLock},
     platform::SVSM_PLATFORM,
     serial::SerialPort,
     testutils::has_qemu_testdev,
 };
+use alloc::format;
 
 #[macro_export]
 macro_rules! assert_eq_warn {
@@ -87,6 +92,28 @@ pub fn svsm_kernel_test_runner(test_cases: &[&test::TestDescAndFn]) {
     }
 
     info!("Kernel tests in svsm passed!");
+}
+
+/// Executes the user binaries listed in `/test` dir sequentially, checks their exit
+/// value and panics if the binary exits with a code different from zero.
+/// If the directory is not present, it is assumed that there are no tests to run.
+pub fn user_tests_in_svsm() {
+    let Ok(files) = list_dir("/test") else {
+        log::info!("/test dir not found, skipping user tests in svsm");
+        return;
+    };
+
+    for file in files {
+        log::info!("Running tests in svsm for {file}");
+        let task = exec_user(&format!("test/{file}"), opendir("/").unwrap()).unwrap();
+        wait_for_termination(task.clone());
+        let exit_status = task.get_exit_status().unwrap();
+        assert_eq!(
+            exit_status,
+            TaskExitStatus::Exited(0),
+            "{file} tests failed with exit status {exit_status:?}"
+        );
+    }
 }
 
 /// Exits the in-SVSM test session with the given exit value.
