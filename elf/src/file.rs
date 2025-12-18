@@ -115,9 +115,7 @@ impl<'a> Elf64File<'a> {
 
         let mut sh_strtab = None;
         for i in 0..elf_hdr.e_shnum {
-            let shdr = Self::read_shdr_from_file(elf_file_buf, &elf_hdr, i);
-            Self::verify_shdr(&shdr, elf_file_buf.len(), elf_hdr.e_shnum)?;
-
+            let shdr = Self::read_verified_shdr(elf_file_buf, &elf_hdr, i)?;
             if elf_hdr.e_shstrndx != Elf64Shdr::SHN_UNDEF && i == elf_hdr.e_shstrndx {
                 if shdr.sh_type != Elf64Shdr::SHT_STRTAB {
                     return Err(ElfError::IncompatibleSectionType);
@@ -329,6 +327,19 @@ impl<'a> Elf64File<'a> {
         }
 
         Ok(())
+    }
+
+    /// Reads an ELF section header (Shdr) from the ELF file buffer and verifies it.
+    /// This essentially calls [`Self::read_shdr_from_file()`] and [`Self::verify_shdr()`]
+    /// in sequence.
+    fn read_verified_shdr(
+        elf_file_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        i: Elf64Word,
+    ) -> Result<Elf64Shdr, ElfError> {
+        let shdr = Self::read_shdr_from_file(elf_file_buf, elf_hdr, i);
+        Self::verify_shdr(&shdr, elf_file_buf.len(), elf_hdr.e_shnum)?;
+        Ok(shdr)
     }
 
     /// Reads an ELF Section Header (Shdr) from the ELF file.
