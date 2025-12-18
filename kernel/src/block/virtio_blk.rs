@@ -6,12 +6,14 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 
 use super::api::BlockDriver;
-use crate::address::PhysAddr;
-use crate::block::BlockDeviceError;
+use crate::block::{BlockDeviceError, BLOCK_DEVICE};
 use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
 use crate::virtio::devices::VirtIOBlkDevice;
+use crate::virtio::mmio::{MmioSlot, MmioSlots};
 use virtio_drivers::device::blk::SECTOR_SIZE;
+use virtio_drivers::transport::DeviceType::Block;
+
 extern crate alloc;
 use alloc::boxed::Box;
 pub struct VirtIOBlkDriver(Box<VirtIOBlkDevice>);
@@ -23,8 +25,8 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 }
 
 impl VirtIOBlkDriver {
-    pub fn new(mmio_base: PhysAddr) -> Result<Self, SvsmError> {
-        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(mmio_base)?))
+    pub fn new(slot: MmioSlot) -> Result<Self, SvsmError> {
+        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?))
     }
 }
 
@@ -68,28 +70,43 @@ impl BlockDriver for VirtIOBlkDriver {
     }
 }
 
+/// Initializes the global block device subsystem with a VirtIO block driver.
+///
+/// This function searches for a virtio-blk device in the MMIO slots list.
+/// If discovered, the first virtio-blk device will be initialized and
+/// registered as the global block device.
+/// **Only one block device is supported**
+///
+/// # Arguments
+///
+/// * `slots` - The virtio MMIO slots list
+///
+/// # Returns
+///
+/// * Returns Ok() if:
+///     * The driver is correctly initialized
+///     * No virtio-block devices are found
+/// * Returns an error if:
+///     * The driver initialization fails
+///     * The global block device has already been initialized
+pub fn initialize_block(slots: &mut MmioSlots) -> Result<(), SvsmError> {
+    let Some(slot) = slots.pop_slot(Block) else {
+        return Ok(());
+    };
+
+    let driver = VirtIOBlkDriver::new(slot)?;
+
+    BLOCK_DEVICE.init(Box::new(driver))?;
+
+    Ok(())
+}
+
 #[cfg(all(test, test_in_svsm))]
 mod tests {
-    use crate::{
-        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
-    };
+    use crate::testutils::has_test_iorequests;
     use core::cmp::min;
     extern crate alloc;
     use super::*;
-
-    /// Find the first virtio-blk device in the hardware-info list
-    fn get_blk_device() -> VirtIOBlkDriver {
-        let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
-
-        let dev = cfg
-            .get_virtio_mmio_addresses()
-            .unwrap_or_default()
-            .iter()
-            .find_map(|a| VirtIOBlkDriver::new(PhysAddr::from(*a)).ok())
-            .expect("No virtio-blk device found");
-
-        dev
-    }
 
     /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
     fn get_image_hash_from_host() -> Option<[u8; 32]> {
@@ -147,7 +164,10 @@ mod tests {
         use alloc::vec;
         use sha2::{Digest, Sha256};
         assert!(sectors_at_once > 0);
-        let blk = get_blk_device();
+
+        let blk = BLOCK_DEVICE
+            .try_get_inner()
+            .expect("Block driver not found");
 
         let expected_hash = get_image_hash_from_host().unwrap();
 
@@ -211,7 +231,9 @@ mod tests {
 
         assert!(sectors_at_once > 0);
 
-        let blk = get_blk_device();
+        let blk = BLOCK_DEVICE
+            .try_get_inner()
+            .expect("Block driver not found");
 
         let n_sectors = blk.size() / SECTOR_SIZE;
         let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
