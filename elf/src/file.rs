@@ -82,8 +82,7 @@ impl<'a> Elf64File<'a> {
         let mut max_load_segment_align = 0;
         let mut dynamic_file_range: Option<Elf64FileRange> = None;
         for i in 0..elf_hdr.e_phnum {
-            let phdr = Self::read_phdr_from_file(elf_file_buf, &elf_hdr, i);
-            Self::verify_phdr(&phdr, elf_file_buf.len())?;
+            let phdr = Self::read_verified_phdr(elf_file_buf, &elf_hdr, i)?;
             if phdr.p_type == Elf64Phdr::PT_LOAD {
                 let vaddr_range = phdr.vaddr_range();
                 if vaddr_range.vaddr_begin == vaddr_range.vaddr_end {
@@ -203,6 +202,19 @@ impl<'a> Elf64File<'a> {
         }
 
         Ok(())
+    }
+
+    /// Reads an ELF program header (Phdr) from the ELF file buffer and verifies it.
+    /// This essentially calls [`Self::read_phdr_from_file()`] and [`Self::verify_phdr()`]
+    /// in sequence.
+    fn read_verified_phdr(
+        buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        i: Elf64Half,
+    ) -> Result<Elf64Phdr, ElfError> {
+        let phdr = Self::read_phdr_from_file(buf, elf_hdr, i);
+        Self::verify_phdr(&phdr, buf.len())?;
+        Ok(phdr)
     }
 
     /// Reads an ELF Program Header (Phdr) from the ELF file.
