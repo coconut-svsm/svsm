@@ -198,7 +198,8 @@ clippy:
 	RUSTFLAGS="--cfg fuzzing" cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm-fuzz -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	cargo clippy ${CLIPPY_OPTIONS} --all-features --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
-	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --all-features --workspace --tests --exclude packit --exclude userlib -- ${CLIPPY_ARGS}
+	cargo clippy ${CLIPPY_OPTIONS} --package userlib --tests -- ${CLIPPY_ARGS}
 
 clean:
 	cargo clean
