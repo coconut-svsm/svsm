@@ -146,6 +146,7 @@ struct ComponentConfig {
     #[serde(default)]
     objcopy: Objcopy,
     path: Option<PathBuf>,
+    toolchain: Option<String>,
 }
 
 impl ComponentConfig {
@@ -174,6 +175,11 @@ impl ComponentConfig {
         let mut bin = PathBuf::from("target");
 
         let mut cmd = Command::new("cargo");
+
+        if let Some(toolchain) = self.toolchain.as_ref() {
+            cmd.arg(format!("+{}", toolchain));
+        }
+
         cmd.args([
             "build",
             if self.binary { "--bin" } else { "--package" },
