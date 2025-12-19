@@ -40,7 +40,7 @@ use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
 use svsm::mm::memory::init_memory_map;
-use svsm::mm::pagetable::{PageTable, paging_init};
+use svsm::mm::pagetable::{paging_init, PageTable};
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
@@ -48,9 +48,7 @@ use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
-use svsm::svsm_paging::{
-    enumerate_early_boot_regions, invalidate_early_boot_memory,
-};
+use svsm::svsm_paging::{enumerate_early_boot_regions, invalidate_early_boot_memory};
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
