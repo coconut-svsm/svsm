@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="API documentation for the Rust `VirtualMapping` trait in crate `svsm`."><title>VirtualMapping in svsm::mm::vm - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="svsm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0 (ded5c06cf 2025-12-08)" data-channel="1.92.0" data-search-js="search-d69d8955.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">VirtualMapping</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../svsm/index.html">svsm</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Virtual<wbr>Mapping</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.map" title="map">map</a></li><li><a href="#tymethod.mapping_size" title="mapping_size">mapping_size</a></li><li><a href="#tymethod.pt_flags" title="pt_flags">pt_flags</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.handle_page_fault" title="handle_page_fault">handle_page_fault</a></li><li><a href="#method.has_data" title="has_data">has_data</a></li><li><a href="#method.page_size" title="page_size">page_size</a></li><li><a href="#method.shared" title="shared">shared</a></li><li><a href="#method.unmap" title="unmap">unmap</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In svsm::<wbr>mm::<wbr>vm</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">svsm</a>::<wbr><a href="../index.html">mm</a>::<wbr><a href="index.html">vm</a></div><h1>Trait <span class="trait">Virtual<wbr>Mapping</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/svsm/mm/vm/mapping/api.rs.html#34-137">Source</a> </span></div><pre class="rust item-decl"><code>pub trait VirtualMapping:
+    <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/fmt/trait.Debug.html" title="trait core::fmt::Debug">Debug</a>
+    + <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a>
+    + <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a> {
+    // Required methods
+    fn <a href="#tymethod.mapping_size" class="fn">mapping_size</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.map" class="fn">map</a>(&amp;self, offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="../../address/struct.PhysAddr.html" title="struct svsm::address::PhysAddr">PhysAddr</a>&gt;;
+<span class="item-spacer"></span>    fn <a href="#tymethod.pt_flags" class="fn">pt_flags</a>(&amp;self, offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) -&gt; <a class="struct" href="../pagetable/struct.PTEntryFlags.html" title="struct svsm::mm::pagetable::PTEntryFlags">PTEntryFlags</a>;
+
+    // Provided methods
+    fn <a href="#method.has_data" class="fn">has_data</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.unmap" class="fn">unmap</a>(&amp;self, _offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) { ... }
+<span class="item-spacer"></span>    fn <a href="#method.page_size" class="fn">page_size</a>(&amp;self) -&gt; <a class="enum" href="../../types/enum.PageSize.html" title="enum svsm::types::PageSize">PageSize</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.shared" class="fn">shared</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.handle_page_fault" class="fn">handle_page_fault</a>(
+        &amp;mut self,
+        _vmr: &amp;<a class="struct" href="struct.VMR.html" title="struct svsm::mm::vm::VMR">VMR</a>,
+        _offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+        _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="mapping/api/struct.VMPageFaultResolution.html" title="struct svsm::mm::vm::mapping::api::VMPageFaultResolution">VMPageFaultResolution</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt; { ... }
+}</code></pre><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.mapping_size" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#40">Source</a><h4 class="code-header">fn <a href="#tymethod.mapping_size" class="fn">mapping_size</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Request the size of the virtual memory mapping</p>
+<h5 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h5>
+<p>Mapping size. Will always be a multiple of <code>VirtualMapping::page_size()</code></p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.map" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#63">Source</a><h4 class="code-header">fn <a href="#tymethod.map" class="fn">map</a>(&amp;self, offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/option/enum.Option.html" title="enum core::option::Option">Option</a>&lt;<a class="struct" href="../../address/struct.PhysAddr.html" title="struct svsm::address::PhysAddr">PhysAddr</a>&gt;</h4></section></summary><div class="docblock"><p>Request physical address to map for a given offset</p>
+<h5 id="arguments"><a class="doc-anchor" href="#arguments">§</a>Arguments</h5>
+<ul>
+<li><code>offset</code> - Offset into the virtual memory mapping</li>
+</ul>
+<h5 id="returns-1"><a class="doc-anchor" href="#returns-1">§</a>Returns</h5>
+<p>Physical address to map for the given offset, if any. None is also a
+valid return value and does not indicate an error.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.pt_flags" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#91">Source</a><h4 class="code-header">fn <a href="#tymethod.pt_flags" class="fn">pt_flags</a>(&amp;self, offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) -&gt; <a class="struct" href="../pagetable/struct.PTEntryFlags.html" title="struct svsm::mm::pagetable::PTEntryFlags">PTEntryFlags</a></h4></section></summary><div class="docblock"><p>Request the PTEntryFlags used for this virtual memory mapping.</p>
+<h5 id="arguments-1"><a class="doc-anchor" href="#arguments-1">§</a>Arguments</h5>
+<ul>
+<li>‘offset’ -&gt; The offset in bytes into the <code>VirtualMapping</code>. The flags
+returned from this function relate to the page at the
+given offset</li>
+</ul>
+<h5 id="returns-2"><a class="doc-anchor" href="#returns-2">§</a>Returns</h5>
+<p>A combination of:</p>
+<ul>
+<li>PTEntryFlags::WRITABLE</li>
+<li>PTEntryFlags::NX,</li>
+<li>PTEntryFlags::ACCESSED</li>
+<li>PTEntryFlags::DIRTY</li>
+</ul>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.has_data" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#48-51">Source</a><h4 class="code-header">fn <a href="#method.has_data" class="fn">has_data</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Indicates whether the mapping has any associated data.</p>
+<h5 id="returns-3"><a class="doc-anchor" href="#returns-3">§</a>Returns</h5>
+<p><code>true' if there is associated physical data, or </code>false’ if there is
+none.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.unmap" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#71-73">Source</a><h4 class="code-header">fn <a href="#method.unmap" class="fn">unmap</a>(&amp;self, _offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>)</h4></section></summary><div class="docblock"><p>Inform the virtual memory mapping about an offset being unmapped.
+Implementing <code>unmap()</code> is optional.</p>
+<h5 id="arguments-2"><a class="doc-anchor" href="#arguments-2">§</a>Arguments</h5>
+<ul>
+<li><code>_offset</code></li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.page_size" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#98-101">Source</a><h4 class="code-header">fn <a href="#method.page_size" class="fn">page_size</a>(&amp;self) -&gt; <a class="enum" href="../../types/enum.PageSize.html" title="enum svsm::types::PageSize">PageSize</a></h4></section></summary><div class="docblock"><p>Request the page size used for mappings</p>
+<h5 id="returns-4"><a class="doc-anchor" href="#returns-4">§</a>Returns</h5>
+<p>Either PAGE_SIZE or PAGE_SIZE_2M</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.shared" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#110-113">Source</a><h4 class="code-header">fn <a href="#method.shared" class="fn">shared</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Request whether the mapping is shared or private. Defaults to private
+unless overwritten by the specific type.</p>
+<h5 id="returns-5"><a class="doc-anchor" href="#returns-5">§</a>Returns</h5>
+<ul>
+<li><code>True</code> - When mapping is shared</li>
+<li><code>False</code> - When mapping is private</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.handle_page_fault" class="method"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/api.rs.html#129-136">Source</a><h4 class="code-header">fn <a href="#method.handle_page_fault" class="fn">handle_page_fault</a>(
+    &amp;mut self,
+    _vmr: &amp;<a class="struct" href="struct.VMR.html" title="struct svsm::mm::vm::VMR">VMR</a>,
+    _offset: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+    _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="mapping/api/struct.VMPageFaultResolution.html" title="struct svsm::mm::vm::mapping::api::VMPageFaultResolution">VMPageFaultResolution</a>, <a class="enum" href="../../error/enum.SvsmError.html" title="enum svsm::error::SvsmError">SvsmError</a>&gt;</h4></section></summary><div class="docblock"><p>Handle a page fault that occurred on a virtual memory address within
+this mapping.</p>
+<h5 id="arguments-3"><a class="doc-anchor" href="#arguments-3">§</a>Arguments</h5>
+<ul>
+<li>
+<p>‘vmr’ - Virtual memory range that contains the mapping. This
+<a href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping"><code>VirtualMapping</code></a> can use this to insert/remove regions
+as necessary to handle the page fault.</p>
+</li>
+<li>
+<p><code>offset</code> - Offset into the virtual mapping that was the subject of
+the page fault.</p>
+</li>
+<li>
+<p>‘write’ - <code>true</code> if the fault was due to a write to the memory
+location, or ‘false’ if the fault was due to a read.</p>
+</li>
+</ul>
+</div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-VirtualMapping-for-VMFileMapping" class="impl"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/file_mapping.rs.html#138-173">Source</a><a href="#impl-VirtualMapping-for-VMFileMapping" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping">VirtualMapping</a> for <a class="struct" href="struct.VMFileMapping.html" title="struct svsm::mm::vm::VMFileMapping">VMFileMapping</a></h3></section><section id="impl-VirtualMapping-for-VMKernelStack" class="impl"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/kernel_stack.rs.html#145-177">Source</a><a href="#impl-VirtualMapping-for-VMKernelStack" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping">VirtualMapping</a> for <a class="struct" href="struct.VMKernelStack.html" title="struct svsm::mm::vm::VMKernelStack">VMKernelStack</a></h3></section><section id="impl-VirtualMapping-for-VMPhysMem" class="impl"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/phys_mem.rs.html#59-81">Source</a><a href="#impl-VirtualMapping-for-VMPhysMem" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping">VirtualMapping</a> for <a class="struct" href="struct.VMPhysMem.html" title="struct svsm::mm::vm::VMPhysMem">VMPhysMem</a></h3></section><section id="impl-VirtualMapping-for-VMReserved" class="impl"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/reserved.rs.html#49-65">Source</a><a href="#impl-VirtualMapping-for-VMReserved" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping">VirtualMapping</a> for <a class="struct" href="struct.VMReserved.html" title="struct svsm::mm::vm::VMReserved">VMReserved</a></h3></section><section id="impl-VirtualMapping-for-VMalloc" class="impl"><a class="src rightside" href="../../../src/svsm/mm/vm/mapping/vmalloc.rs.html#72-88">Source</a><a href="#impl-VirtualMapping-for-VMalloc" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.VirtualMapping.html" title="trait svsm::mm::vm::VirtualMapping">VirtualMapping</a> for <a class="struct" href="struct.VMalloc.html" title="struct svsm::mm::vm::VMalloc">VMalloc</a></h3></section></div><script src="../../../trait.impl/svsm/mm/vm/mapping/api/trait.VirtualMapping.js" async></script></section></div></main></body></html>

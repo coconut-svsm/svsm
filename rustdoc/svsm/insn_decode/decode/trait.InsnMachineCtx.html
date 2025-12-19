@@ -1,0 +1,160 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="This trait provides the necessary context for an instruction decoder to decode instructions based on the current state of the machine that executed them. It abstracts the interfaces through which an instruction decoder can access specific registers and state that may influence the decoding from the machine (such as a CPU or VMM)."><title>InsnMachineCtx in svsm::insn_decode::decode - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="svsm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0 (ded5c06cf 2025-12-08)" data-channel="1.92.0" data-search-js="search-d69d8955.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">InsnMachineCtx</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../svsm/index.html">svsm</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Insn<wbr>Machine<wbr>Ctx</a></h2><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.read_cr0" title="read_cr0">read_cr0</a></li><li><a href="#tymethod.read_cr4" title="read_cr4">read_cr4</a></li><li><a href="#tymethod.read_efer" title="read_efer">read_efer</a></li><li><a href="#tymethod.read_seg" title="read_seg">read_seg</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.handle_mmio_read" title="handle_mmio_read">handle_mmio_read</a></li><li><a href="#method.handle_mmio_write" title="handle_mmio_write">handle_mmio_write</a></li><li><a href="#method.ioio_in" title="ioio_in">ioio_in</a></li><li><a href="#method.ioio_out" title="ioio_out">ioio_out</a></li><li><a href="#method.ioio_perm" title="ioio_perm">ioio_perm</a></li><li><a href="#method.map_linear_addr" title="map_linear_addr">map_linear_addr</a></li><li><a href="#method.read_cpl" title="read_cpl">read_cpl</a></li><li><a href="#method.read_flags" title="read_flags">read_flags</a></li><li><a href="#method.read_reg" title="read_reg">read_reg</a></li><li><a href="#method.translate_linear_addr" title="translate_linear_addr">translate_linear_addr</a></li><li><a href="#method.write_reg" title="write_reg">write_reg</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In svsm::<wbr>insn_<wbr>decode::<wbr>decode</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">svsm</a>::<wbr><a href="../index.html">insn_decode</a>::<wbr><a href="index.html">decode</a></div><h1>Trait <span class="trait">Insn<wbr>Machine<wbr>Ctx</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/svsm/insn_decode/decode.rs.html#140-311">Source</a> </span></div><pre class="rust item-decl"><code>pub trait InsnMachineCtx: <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/fmt/trait.Debug.html" title="trait core::fmt::Debug">Debug</a> {
+<details class="toggle type-contents-toggle"><summary class="hideme"><span>Show 15 methods</span></summary>    // Required methods
+    fn <a href="#tymethod.read_efer" class="fn">read_efer</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.read_seg" class="fn">read_seg</a>(&amp;self, seg: <a class="enum" href="../enum.SegRegister.html" title="enum svsm::insn_decode::SegRegister">SegRegister</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.read_cr0" class="fn">read_cr0</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>;
+<span class="item-spacer"></span>    fn <a href="#tymethod.read_cr4" class="fn">read_cr4</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>;
+
+    // Provided methods
+    fn <a href="#method.read_reg" class="fn">read_reg</a>(&amp;self, _reg: <a class="enum" href="../enum.Register.html" title="enum svsm::insn_decode::Register">Register</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.read_flags" class="fn">read_flags</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.write_reg" class="fn">write_reg</a>(&amp;mut self, _reg: <a class="enum" href="../enum.Register.html" title="enum svsm::insn_decode::Register">Register</a>, _val: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>) { ... }
+<span class="item-spacer"></span>    fn <a href="#method.read_cpl" class="fn">read_cpl</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.map_linear_addr" class="fn">map_linear_addr</a>&lt;T: <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/marker/trait.Copy.html" title="trait core::marker::Copy">Copy</a> + 'static&gt;(
+        &amp;self,
+        _la: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+        _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+        _fetch: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.92.0/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="../trait.InsnMachineMem.html" title="trait svsm::insn_decode::InsnMachineMem">InsnMachineMem</a>&lt;Item = T&gt;&gt;, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.ioio_perm" class="fn">ioio_perm</a>(&amp;self, _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>, _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>, _io_read: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a> { ... }
+<span class="item-spacer"></span>    fn <a href="#method.ioio_in" class="fn">ioio_in</a>(&amp;self, _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>, _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.ioio_out" class="fn">ioio_out</a>(
+        &amp;mut self,
+        _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>,
+        _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+        _data: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.unit.html">()</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.translate_linear_addr" class="fn">translate_linear_addr</a>(
+        &amp;self,
+        _la: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+        _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+        _fetch: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>, <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>), <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+<span class="item-spacer"></span>    unsafe fn <a href="#method.handle_mmio_read" class="fn">handle_mmio_read</a>(
+        &amp;self,
+        _pa: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+        _shared: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+        _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+<span class="item-spacer"></span>    unsafe fn <a href="#method.handle_mmio_write" class="fn">handle_mmio_write</a>(
+        &amp;mut self,
+        _pa: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+        _shared: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+        _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+        _data: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>,
+    ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.unit.html">()</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt; { ... }
+</details>}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>This trait provides the necessary context for an instruction decoder
+to decode instructions based on the current state of the machine
+that executed them. It abstracts the interfaces through which an
+instruction decoder can access specific registers and state that may
+influence the decoding from the machine (such as a CPU or VMM).</p>
+</div></details><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.read_efer" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#142">Source</a><h4 class="code-header">fn <a href="#tymethod.read_efer" class="fn">read_efer</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a></h4></section></summary><div class="docblock"><p>Read EFER register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.read_seg" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#144">Source</a><h4 class="code-header">fn <a href="#tymethod.read_seg" class="fn">read_seg</a>(&amp;self, seg: <a class="enum" href="../enum.SegRegister.html" title="enum svsm::insn_decode::SegRegister">SegRegister</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a></h4></section></summary><div class="docblock"><p>Read a code segment register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.read_cr0" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#146">Source</a><h4 class="code-header">fn <a href="#tymethod.read_cr0" class="fn">read_cr0</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a></h4></section></summary><div class="docblock"><p>Read CR0 register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.read_cr4" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#148">Source</a><h4 class="code-header">fn <a href="#tymethod.read_cr4" class="fn">read_cr4</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a></h4></section></summary><div class="docblock"><p>Read CR4 register</p>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.read_reg" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#151-153">Source</a><h4 class="code-header">fn <a href="#method.read_reg" class="fn">read_reg</a>(&amp;self, _reg: <a class="enum" href="../enum.Register.html" title="enum svsm::insn_decode::Register">Register</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Read a register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.read_flags" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#156-158">Source</a><h4 class="code-header">fn <a href="#method.read_flags" class="fn">read_flags</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Read rflags register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.write_reg" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#161-163">Source</a><h4 class="code-header">fn <a href="#method.write_reg" class="fn">write_reg</a>(&amp;mut self, _reg: <a class="enum" href="../enum.Register.html" title="enum svsm::insn_decode::Register">Register</a>, _val: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>)</h4></section></summary><div class="docblock"><p>Write a register</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.read_cpl" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#166-168">Source</a><h4 class="code-header">fn <a href="#method.read_cpl" class="fn">read_cpl</a>(&amp;self) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a></h4></section></summary><div class="docblock"><p>Read the current privilege level</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.map_linear_addr" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#183-190">Source</a><h4 class="code-header">fn <a href="#method.map_linear_addr" class="fn">map_linear_addr</a>&lt;T: <a class="trait" href="https://doc.rust-lang.org/1.92.0/core/marker/trait.Copy.html" title="trait core::marker::Copy">Copy</a> + 'static&gt;(
+    &amp;self,
+    _la: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+    _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    _fetch: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.92.0/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="../trait.InsnMachineMem.html" title="trait svsm::insn_decode::InsnMachineMem">InsnMachineMem</a>&lt;Item = T&gt;&gt;, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Map the given linear address region to a machine memory object
+which provides access to the memory of this linear address region.</p>
+<h5 id="arguments"><a class="doc-anchor" href="#arguments">§</a>Arguments</h5>
+<ul>
+<li><code>la</code> - The linear address of the region to map.</li>
+<li><code>write</code> - Whether write access is allowed to the mapped region.</li>
+<li><code>fetch</code> - Whether fetch access is allowed to the mapped region.</li>
+</ul>
+<h5 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h5>
+<p>A <code>Result</code> containing a boxed trait object representing the mapped
+memory, or an <code>InsnError</code> if mapping fails.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.ioio_perm" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#203-205">Source</a><h4 class="code-header">fn <a href="#method.ioio_perm" class="fn">ioio_perm</a>(&amp;self, _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>, _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>, _io_read: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>) -&gt; <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a></h4></section></summary><div class="docblock"><p>Check IO permission bitmap.</p>
+<h5 id="arguments-1"><a class="doc-anchor" href="#arguments-1">§</a>Arguments</h5>
+<ul>
+<li><code>port</code> - The I/O port to check.</li>
+<li><code>size</code> - The size of the I/O operation.</li>
+<li><code>io_read</code> - Whether the I/O operation is a read operation.</li>
+</ul>
+<h5 id="returns-1"><a class="doc-anchor" href="#returns-1">§</a>Returns</h5>
+<p>A <code>Result</code> containing true if the port is permitted otherwise false.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.ioio_in" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#218-220">Source</a><h4 class="code-header">fn <a href="#method.ioio_in" class="fn">ioio_in</a>(&amp;self, _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>, _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Handle an I/O in operation.</p>
+<h5 id="arguments-2"><a class="doc-anchor" href="#arguments-2">§</a>Arguments</h5>
+<ul>
+<li><code>port</code> - The I/O port to read from.</li>
+<li><code>size</code> - The size of the data to read.</li>
+</ul>
+<h5 id="returns-2"><a class="doc-anchor" href="#returns-2">§</a>Returns</h5>
+<p>A <code>Result</code> containing the read data if success or an <code>InsnError</code> if
+the operation fails.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.ioio_out" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#233-235">Source</a><h4 class="code-header">fn <a href="#method.ioio_out" class="fn">ioio_out</a>(
+    &amp;mut self,
+    _port: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u16.html">u16</a>,
+    _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+    _data: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.unit.html">()</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Handle an I/O out operation.</p>
+<h5 id="arguments-3"><a class="doc-anchor" href="#arguments-3">§</a>Arguments</h5>
+<ul>
+<li><code>port</code> - The I/O port to write to.</li>
+<li><code>size</code> - The size of the data to write.</li>
+<li><code>data</code> - The data to write to the I/O port.</li>
+</ul>
+<h5 id="returns-3"><a class="doc-anchor" href="#returns-3">§</a>Returns</h5>
+<p>A <code>Result</code> indicating success or an <code>InsnError</code> if the operation fails.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.translate_linear_addr" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#250-257">Source</a><h4 class="code-header">fn <a href="#method.translate_linear_addr" class="fn">translate_linear_addr</a>(
+    &amp;self,
+    _la: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+    _write: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    _fetch: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>, <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>), <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Translate the given linear address to a physical address.</p>
+<h5 id="arguments-4"><a class="doc-anchor" href="#arguments-4">§</a>Arguments</h5>
+<ul>
+<li><code>la</code> - The linear address to translate.</li>
+<li><code>write</code> - Whether the translation is for a write operation.</li>
+<li><code>fetch</code> - Whether the translation is for a fetch operation.</li>
+</ul>
+<h5 id="returns-4"><a class="doc-anchor" href="#returns-4">§</a>Returns</h5>
+<p>A <code>Result</code> containing the translated physical address and a boolean
+indicating whether the physical address is shared or an <code>InsnError</code> if
+the translation fails.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.handle_mmio_read" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#276-283">Source</a><h4 class="code-header">unsafe fn <a href="#method.handle_mmio_read" class="fn">handle_mmio_read</a>(
+    &amp;self,
+    _pa: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+    _shared: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Handle a memory-mapped I/O read operation.</p>
+<h5 id="arguments-5"><a class="doc-anchor" href="#arguments-5">§</a>Arguments</h5>
+<ul>
+<li><code>pa</code> - The MMIO physical address to read from.</li>
+<li><code>shared</code> - Whether the MMIO address is shared.</li>
+<li><code>size</code> - The size of the data to read.</li>
+</ul>
+<h5 id="returns-5"><a class="doc-anchor" href="#returns-5">§</a>Returns</h5>
+<p>A <code>Result</code> containing the read data if success or an <code>InsnError</code> if
+the operation fails.</p>
+<h5 id="safety"><a class="doc-anchor" href="#safety">§</a>Safety</h5>
+<p>Caller must ensure that, when memory safety may be impacted, this
+operation does not cause Undefined Behavior.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.handle_mmio_write" class="method"><a class="src rightside" href="../../../src/svsm/insn_decode/decode.rs.html#302-310">Source</a><h4 class="code-header">unsafe fn <a href="#method.handle_mmio_write" class="fn">handle_mmio_write</a>(
+    &amp;mut self,
+    _pa: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.usize.html">usize</a>,
+    _shared: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.bool.html">bool</a>,
+    _size: <a class="enum" href="../../types/enum.Bytes.html" title="enum svsm::types::Bytes">Bytes</a>,
+    _data: <a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.u64.html">u64</a>,
+) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.92.0/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.92.0/core/primitive.unit.html">()</a>, <a class="enum" href="../enum.InsnError.html" title="enum svsm::insn_decode::InsnError">InsnError</a>&gt;</h4></section></summary><div class="docblock"><p>Handle a memory-mapped I/O write operation.</p>
+<h5 id="arguments-6"><a class="doc-anchor" href="#arguments-6">§</a>Arguments</h5>
+<ul>
+<li><code>pa</code> - The MMIO physical address to write to.</li>
+<li><code>shared</code> - Whether the MMIO address is shared.</li>
+<li><code>size</code> - The size of the data to write.</li>
+<li><code>data</code> - The data to write to the MMIO.</li>
+</ul>
+<h5 id="returns-6"><a class="doc-anchor" href="#returns-6">§</a>Returns</h5>
+<p>A <code>Result</code> indicating success or an <code>InsnError</code> if the operation fails.</p>
+<h5 id="safety-1"><a class="doc-anchor" href="#safety-1">§</a>Safety</h5>
+<p>Caller must ensure that, when memory safety may be impacted, this
+operation does not cause Undefined Behavior.</p>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/1.92.0/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><section id="impl-InsnMachineCtx-for-X86ExceptionContext" class="impl"><a class="src rightside" href="../../../src/svsm/cpu/idt/common.rs.html#101-212">Source</a><a href="#impl-InsnMachineCtx-for-X86ExceptionContext" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="../trait.InsnMachineCtx.html" title="trait svsm::insn_decode::InsnMachineCtx">InsnMachineCtx</a> for <a class="struct" href="../../cpu/idt/common/struct.X86ExceptionContext.html" title="struct svsm::cpu::idt::common::X86ExceptionContext">X86ExceptionContext</a></h3></section></div><script src="../../../trait.impl/svsm/insn_decode/decode/trait.InsnMachineCtx.js" async></script></section></div></main></body></html>
