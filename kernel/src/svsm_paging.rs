@@ -60,31 +60,14 @@ pub fn enumerate_early_boot_regions(
         ));
     }
 
-    let stage2_base = PhysAddr::from(launch_info.stage2_start);
-    let stage2_end = PhysAddr::from(launch_info.stage2_end);
-    regions.push(MemoryRegion::from_addresses(stage2_base, stage2_end));
-
-    let kernel_elf_size =
-        launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
-    regions.push(MemoryRegion::new(
-        PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
-        kernel_elf_size.try_into().unwrap(),
+    // All stage2 memory is contiguous, and is bounded by the stage2 image
+    // at the base and the filesystem at the end.
+    let stage2_area_base = PhysAddr::from(launch_info.stage2_start);
+    let stage2_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
+    regions.push(MemoryRegion::from_addresses(
+        stage2_area_base,
+        stage2_area_end,
     ));
-
-    let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
-    if kernel_fs_size > 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
-            kernel_fs_size.try_into().unwrap(),
-        ));
-    }
-
-    if launch_info.stage2_igvm_params_size > 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
-            launch_info.stage2_igvm_params_size as usize,
-        ));
-    }
 
     regions
 }
