@@ -14,8 +14,8 @@ use super::super::x86::apic_eoi;
 use super::common::{
     user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR,
     DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR,
-    MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR,
-    SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR, XF_VECTOR,
+    MCE_VECTOR, MF_VECTOR, NMI_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR, UD_VECTOR, VC_VECTOR,
+    VE_VECTOR, XF_VECTOR,
 };
 use crate::address::VirtAddr;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
@@ -57,10 +57,7 @@ extern "C" {
     fn asm_entry_of();
     fn asm_entry_br();
     fn asm_entry_ud();
-    fn asm_entry_nm();
     fn asm_entry_df();
-    fn asm_entry_ts();
-    fn asm_entry_np();
     fn asm_entry_ss();
     fn asm_entry_gp();
     fn asm_entry_pf_early();
@@ -73,7 +70,6 @@ extern "C" {
     fn asm_entry_cp();
     fn asm_entry_hv();
     fn asm_entry_vc();
-    fn asm_entry_sx();
     fn asm_entry_int80();
     fn asm_entry_irq_int_inj();
     fn asm_entry_irq_ipi();
@@ -93,10 +89,7 @@ fn init_idt_exceptions(idt: &mut IDT<'_>) {
     idt.set_entry(OF_VECTOR, IdtEntry::entry(asm_entry_of));
     idt.set_entry(BR_VECTOR, IdtEntry::entry(asm_entry_br));
     idt.set_entry(UD_VECTOR, IdtEntry::entry(asm_entry_ud));
-    idt.set_entry(NM_VECTOR, IdtEntry::entry(asm_entry_nm));
     idt.set_entry(DF_VECTOR, IdtEntry::entry(asm_entry_df));
-    idt.set_entry(TS_VECTOR, IdtEntry::entry(asm_entry_ts));
-    idt.set_entry(NP_VECTOR, IdtEntry::entry(asm_entry_np));
     idt.set_entry(SS_VECTOR, IdtEntry::entry(asm_entry_ss));
     idt.set_entry(GP_VECTOR, IdtEntry::entry(asm_entry_gp));
     idt.set_entry(PF_VECTOR, IdtEntry::entry(asm_entry_pf_early));
@@ -108,7 +101,6 @@ fn init_idt_exceptions(idt: &mut IDT<'_>) {
     idt.set_entry(CP_VECTOR, IdtEntry::entry(asm_entry_cp));
     idt.set_entry(HV_VECTOR, IdtEntry::entry(asm_entry_hv));
     idt.set_entry(VC_VECTOR, IdtEntry::entry(asm_entry_vc));
-    idt.set_entry(SX_VECTOR, IdtEntry::entry(asm_entry_sx));
 }
 
 /// # Safety
@@ -172,6 +164,24 @@ pub fn idt_init() -> Result<(), SvsmError> {
     }
 
     GLOBAL_IDT.init(idt).map_err(|_| SvsmError::PlatformInit)
+}
+
+// General task termination handler
+#[no_mangle]
+extern "C" fn ex_handler_terminate(ctx: &mut X86ExceptionContext, vector: usize) {
+    if user_mode(ctx) {
+        // Terminate the current task if it is a user-mode task.
+        log::error!(
+            "Terminating task due to unhandled user mode exception {:#02x} at {:#018x}",
+            vector,
+            { ctx.frame.rip }
+        );
+        terminate();
+    } else {
+        // Kernel-mode tasks should never cause a termination class exception,
+        // so any such exception is grounds for panic.
+        ex_handler_panic(ctx, vector);
+    }
 }
 
 // Debug handler
