@@ -39,16 +39,11 @@ pub struct KernelLaunchInfo {
     pub heap_area_allocated: u64,
     pub kernel_region_virt_start: u64,
     pub heap_area_virt_start: u64, // Start of virtual heap area mapping.
-    pub kernel_elf_stage2_virt_start: u64, // Virtual address of kernel ELF in Stage2 mapping.
-    pub kernel_elf_stage2_virt_end: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
     pub stage2_start: u64,
-    pub stage2_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
-    pub stage2_igvm_params_phys_addr: u64,
-    pub stage2_igvm_params_size: u64,
     pub igvm_params_virt_addr: u64,
     pub kernel_symtab_start: *const KSym,
     pub kernel_symtab_len: u64,

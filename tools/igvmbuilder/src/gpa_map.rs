@@ -90,9 +90,9 @@ impl GpaMap {
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: stage 2 image
         //   0x8nnnnn-0x8nnnnn: kernel
-        //   0x8nnnnn-0x8nnnnn: filesystem
         //   0x8nnnnn-0x8nnnnn: IGVM parameter block
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
+        //   0x8nnnnn-0x8nnnnn: filesystem
         //   0xFFnn0000-0xFFFFFFFF: [TDX stage 1 +] OVMF firmware (QEMU only, if specified)
 
         let stage1_image = if let Some(stage1) = &options.tdx_stage1 {
@@ -130,7 +130,6 @@ impl GpaMap {
         // rounded up to a 4 KB boundary.
         let kernel_address = stage2_image.get_end().next_multiple_of(0x1000);
         let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
-        let kernel_fs = GpaRange::new(kernel_elf.get_end(), kernel_fs_len as u64)?;
 
         // Choose the kernel base and maximum size.
         let kernel = match options.hypervisor {
@@ -162,7 +161,7 @@ impl GpaMap {
             }
         }
 
-        let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
+        let igvm_param_block = GpaRange::new_page(kernel_elf.get_end())?;
         let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
         let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
@@ -176,6 +175,12 @@ impl GpaMap {
         } else {
             GpaRange::new(0, 0)?
         };
+
+        let next_addr = memory_map.get_end() + guest_context.get_size();
+
+        // The kernel filesystem is placed after all other images so it can
+        // mark the end of the valid stage2 memory area.
+        let kernel_fs = GpaRange::new(next_addr, kernel_fs_len as u64)?;
 
         let vmsa = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
