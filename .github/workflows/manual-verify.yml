@@ -30,4 +30,4 @@ jobs:
 
       - name: Verify extra proof libs with verus
         run: cargo verify
-        working-directory: verify_proof
+        working-directory: verification/verify_proof
