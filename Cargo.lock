@@ -388,6 +388,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "coconut-alloc"
+version = "0.1.0"
+source = "git+https://github.com/n-ramacciotti/coconut-alloc.git?branch=feature%2Flayout_from_offset#7a54cb17aa44d44b94a4b7704087e4df53ec4560"
+
+[[package]]
 name = "cocoon-tpm-crypto"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2159,6 +2164,7 @@ dependencies = [
 name = "userlib"
 version = "0.1.0"
 dependencies = [
+ "coconut-alloc",
  "syscall",
 ]
 
