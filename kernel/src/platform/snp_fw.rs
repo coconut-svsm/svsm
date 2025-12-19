@@ -241,15 +241,10 @@ pub fn validate_fw(
     config: &SvsmConfig<'_>,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
-    let flash_regions = config.get_fw_regions(kernel_region);
+    let fw_regions = config.get_fw_regions(kernel_region);
 
-    for (i, region) in flash_regions.into_iter().enumerate() {
-        log::info!(
-            "Flash region {} at {:#018x} size {:018x}",
-            i,
-            region.start(),
-            region.len(),
-        );
+    for (i, region) in fw_regions.into_iter().enumerate() {
+        log::info!("Firmware region {i} at {region:#018x}");
 
         for paddr in region.iter_pages(PageSize::Regular) {
             let guard = PerCPUPageMappingGuard::create_4k(paddr)?;
@@ -262,7 +257,7 @@ pub fn validate_fw(
                     PageSize::Regular,
                 )
             } {
-                log::info!("rmpadjust failed for addr {:#018x}", vaddr);
+                log::info!("rmpadjust failed for addr {vaddr:#018x}");
                 return Err(e);
             }
         }
