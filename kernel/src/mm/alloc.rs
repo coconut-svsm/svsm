@@ -2377,8 +2377,8 @@ unsafe impl GlobalAlloc for SvsmAllocator {
     }
 }
 
-#[cfg_attr(any(target_os = "none"), global_allocator)]
-#[allow(dead_code)]
+#[cfg(any(target_os = "none", test, fuzzing))]
+#[cfg_attr(target_os = "none", global_allocator)]
 static ALLOCATOR: SvsmAllocator = SvsmAllocator::new();
 
 /// Initializes the root memory region with the specified physical start
