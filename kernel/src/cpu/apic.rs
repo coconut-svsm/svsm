@@ -4,7 +4,6 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use crate::address::VirtAddr;
 use crate::cpu::idt::common::INT_INJ_VECTOR;
 use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
 use crate::cpu::x86::apic_post_irq;
@@ -17,6 +16,7 @@ use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
 
 use bitfield_struct::bitfield;
+use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
 
 const APIC_REGISTER_APIC_ID: u64 = 0x802;
@@ -171,7 +171,7 @@ impl LocalApic {
     pub fn check_delivered_interrupts<T: GuestCpuState>(
         &mut self,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<NonNull<SvsmCaa>>,
     ) {
         // Check to see if a previously delivered interrupt is still pending.
         // If so, move it back to the IRR.
@@ -202,8 +202,8 @@ impl LocalApic {
         // interrupt state prior to guest reentry, and that reprocessing will
         // reset the guest lazy EOI flag.
         if self.lazy_eoi_pending {
-            if let Some(virt_addr) = caa_addr {
-                let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
+            if let Some(caa_ptr) = caa {
+                let calling_area = GuestPtr::<SvsmCaa>::from(caa_ptr);
                 // SAFETY: guest vmsa and ca are always validated before being
                 // updated (core_remap_ca(), core_create_vcpu() or
                 // prepare_fw_launch()) so they're safe to use.
@@ -238,9 +238,9 @@ impl LocalApic {
         self.get_ppr_with_tpr(cpu_state.get_tpr())
     }
 
-    fn clear_guest_eoi_pending(caa_addr: Option<VirtAddr>) -> Option<GuestPtr<SvsmCaa>> {
-        let virt_addr = caa_addr?;
-        let calling_area = GuestPtr::<SvsmCaa>::new(virt_addr);
+    fn clear_guest_eoi_pending(caa: Option<NonNull<SvsmCaa>>) -> Option<GuestPtr<SvsmCaa>> {
+        let ptr = caa?;
+        let calling_area = GuestPtr::<SvsmCaa>::from(ptr);
         // Ignore errors here, since nothing can be done if an error occurs.
         // SAFETY: guest vmsa and ca are always validated before being updated
         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
@@ -288,7 +288,7 @@ impl LocalApic {
         &mut self,
         cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<NonNull<SvsmCaa>>,
     ) {
         // Make sure any interrupts being presented by the host have been
         // consumed.
@@ -302,7 +302,7 @@ impl LocalApic {
         if self.update_required {
             // Make sure that all previously delivered interrupts have been
             // processed before attempting to process any more.
-            self.check_delivered_interrupts(cpu_state, caa_addr);
+            self.check_delivered_interrupts(cpu_state, caa);
             self.update_required = false;
 
             // If an NMI is pending, then present it first.
@@ -321,7 +321,7 @@ impl LocalApic {
             // Assume no lazy EOI can be attempted unless it is recalculated
             // below.
             self.lazy_eoi_pending = false;
-            let guest_caa = Self::clear_guest_eoi_pending(caa_addr);
+            let guest_caa = Self::clear_guest_eoi_pending(caa);
 
             // This interrupt is a candidate for delivery only if its priority
             // exceeds the priority of the highest priority interrupt currently
@@ -588,12 +588,12 @@ impl LocalApic {
         &mut self,
         cpu_shared: &PerCpuShared,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<NonNull<SvsmCaa>>,
         register: u64,
     ) -> Result<u64, SvsmError> {
         // Rewind any undelivered interrupt so it is reflected in any register
         // read.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa);
 
         match register {
             APIC_REGISTER_ICR => Ok(self.handle_icr_read()),
@@ -646,13 +646,13 @@ impl LocalApic {
     pub fn write_register<T: GuestCpuState>(
         &mut self,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<NonNull<SvsmCaa>>,
         register: u64,
         value: u64,
     ) -> Result<(), SvsmError> {
         // Rewind any undelivered interrupt so it is correctly processed by
         // any register write.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa);
 
         match register {
             APIC_REGISTER_TPR => {
@@ -844,10 +844,10 @@ impl LocalApic {
     pub fn disable_apic_emulation<T: GuestCpuState>(
         &mut self,
         cpu_state: &mut T,
-        caa_addr: Option<VirtAddr>,
+        caa: Option<NonNull<SvsmCaa>>,
     ) {
         // Ensure that any previous interrupt delivery is complete.
-        self.check_delivered_interrupts(cpu_state, caa_addr);
+        self.check_delivered_interrupts(cpu_state, caa);
 
         // Rewind any pending NMI.
         if cpu_state.check_and_clear_pending_nmi() {
@@ -857,7 +857,7 @@ impl LocalApic {
         // Hand the current APIC state off to the host.
         self.handoff_to_host();
 
-        let _ = Self::clear_guest_eoi_pending(caa_addr);
+        let _ = Self::clear_guest_eoi_pending(caa);
 
         // Disable alternate injection altogether.
         cpu_state.disable_alternate_injection();

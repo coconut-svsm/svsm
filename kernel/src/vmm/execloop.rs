@@ -19,8 +19,8 @@ use core::ops::DerefMut;
 use cpuarch::vmsa::GuestVMExit;
 
 fn get_and_clear_caa_request_flag(vmsa_ref: &GuestVmsaRef) -> Result<bool, SvsmReqError> {
-    if let Some(caa_addr) = vmsa_ref.caa_addr() {
-        let calling_area = GuestPtr::<SvsmCaa>::new(caa_addr);
+    if let Some(caa) = vmsa_ref.caa() {
+        let calling_area = GuestPtr::<SvsmCaa>::from(caa);
         // SAFETY: guest vmsa and ca are always validated before beeing updated
         // (core_remap_ca(), core_create_vcpu() or prepare_fw_launch()) so
         // they're safe to use.
@@ -88,7 +88,7 @@ pub fn enter_guest(mut regs: &[GuestRegister]) -> GuestExitMessage {
     loop {
         // Modify guest registers before disabling interrupts.
         let mut vmsa_ref = cpu.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa_addr();
+        let caa_addr = vmsa_ref.caa();
         let vmsa = vmsa_ref.vmsa();
 
         for reg in regs {

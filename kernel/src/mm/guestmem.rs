@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 use core::arch::asm;
 use core::ffi::c_char;
 use core::mem::{size_of, MaybeUninit};
-use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
+use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut, NonNull};
 use syscall::PATH_MAX;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -362,6 +362,12 @@ impl<T: Copy> GuestPtr<T> {
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
         GuestPtr::from_ptr(self.ptr.wrapping_offset(count))
+    }
+}
+
+impl<T: Copy> From<NonNull<T>> for GuestPtr<T> {
+    fn from(value: NonNull<T>) -> Self {
+        Self::from_ptr(value.as_ptr())
     }
 }
 

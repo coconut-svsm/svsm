@@ -37,6 +37,7 @@ use crate::mm::{
     SVSM_STACK_IST_DF_BASE,
 };
 use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
+use crate::requests::SvsmCaa;
 use crate::sev::ghcb::{GhcbPage, GHCB};
 use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
 use crate::sev::utils::RMPFlags;
@@ -57,7 +58,7 @@ use core::arch::asm;
 use core::cell::{Cell, Ref, RefCell, RefMut, UnsafeCell};
 use core::mem::size_of;
 use core::ops::Deref;
-use core::ptr;
+use core::ptr::{self, NonNull};
 use core::slice::Iter;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use cpuarch::vmsa::VMSA;
@@ -236,11 +237,14 @@ impl GuestVmsaRef {
         unsafe { SVSM_PERCPU_VMSA_BASE.as_mut_ptr::<VMSA>().as_mut().unwrap() }
     }
 
-    pub fn caa_addr(&self) -> Option<VirtAddr> {
+    pub fn caa(&self) -> Option<NonNull<SvsmCaa>> {
         let caa_phys = self.caa_phys()?;
         let offset = caa_phys.page_offset();
-
-        Some(SVSM_PERCPU_CAA_BASE + offset)
+        let ptr = (SVSM_PERCPU_CAA_BASE + offset).as_mut_ptr();
+        // SAFETY: `SVSM_PERCPU_CAA_BASE` is defined at compile time to
+        // page-aligned and non-zero. Adding a page offset to a page-aligned
+        // address can never overflow.
+        unsafe { Some(NonNull::new_unchecked(ptr)) }
     }
 }
 
@@ -1035,24 +1039,24 @@ impl PerCpu {
     pub fn disable_apic_emulation(&self) {
         if let Some(mut apic) = self.guest_apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa_addr = vmsa_ref.caa_addr();
+            let caa = vmsa_ref.caa();
             let vmsa = vmsa_ref.vmsa();
-            apic.disable_apic_emulation(vmsa, caa_addr);
+            apic.disable_apic_emulation(vmsa, caa);
         }
     }
 
     pub fn clear_pending_interrupts(&self) {
         if let Some(mut apic) = self.guest_apic_mut() {
             let mut vmsa_ref = self.guest_vmsa_ref();
-            let caa_addr = vmsa_ref.caa_addr();
+            let caa = vmsa_ref.caa();
             let vmsa = vmsa_ref.vmsa();
-            apic.check_delivered_interrupts(vmsa, caa_addr);
+            apic.check_delivered_interrupts(vmsa, caa);
         }
     }
 
-    pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa_addr: Option<VirtAddr>) {
+    pub fn update_apic_emulation(&self, vmsa: &mut VMSA, caa: Option<NonNull<SvsmCaa>>) {
         if let Some(mut apic) = self.guest_apic_mut() {
-            apic.present_interrupts(self.shared(), vmsa, caa_addr);
+            apic.present_interrupts(self.shared(), vmsa, caa);
         }
     }
 
@@ -1062,16 +1066,16 @@ impl PerCpu {
 
     pub fn read_apic_register(&self, register: u64) -> Result<u64, SvsmError> {
         let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa_addr();
+        let caa = vmsa_ref.caa();
         let vmsa = vmsa_ref.vmsa();
         self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
-            .read_register(self.shared(), vmsa, caa_addr, register)
+            .read_register(self.shared(), vmsa, caa, register)
     }
 
     pub fn write_apic_register(&self, register: u64, value: u64) -> Result<(), SvsmError> {
         let mut vmsa_ref = self.guest_vmsa_ref();
-        let caa_addr = vmsa_ref.caa_addr();
+        let caa_addr = vmsa_ref.caa();
         let vmsa = vmsa_ref.vmsa();
         self.guest_apic_mut()
             .ok_or(SvsmError::Apic(ApicError::Disabled))?
