@@ -11,8 +11,8 @@ use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeSet;
 use svsm::address::VirtAddr;
 use svsm::mm::alloc::{
-    allocate_file_page, allocate_page, allocate_pages, allocate_slab_page, allocate_zeroed_page,
-    free_page, get_order, TestRootMem,
+    allocate_file_page, allocate_page, allocate_pages, allocate_zeroed_page, free_page, get_order,
+    TestRootMem,
 };
 use svsm::mm::PageRef;
 use svsm::types::PAGE_SIZE;
@@ -33,8 +33,6 @@ struct FuzzInput {
 enum Action {
     /// Allocate a regular page
     Allocate,
-    /// Allocate a slab page
-    AllocateSlab(u16),
     /// Allocate pages of higher order
     AllocatePages(usize),
     /// Allocate a zeroed page
@@ -96,11 +94,6 @@ fuzz_target!(|inp: FuzzInput| {
         match action {
             Action::Allocate => {
                 if let Ok(page) = allocate_page() {
-                    pages.push(page);
-                }
-            }
-            Action::AllocateSlab(size) => {
-                if let Ok(page) = allocate_slab_page(size) {
                     pages.push(page);
                 }
             }
