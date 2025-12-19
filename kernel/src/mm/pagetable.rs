@@ -27,7 +27,7 @@ use core::ptr::NonNull;
 use zerocopy::FromZeros;
 
 /// Number of entries in a page table (4KB/8B).
-const ENTRY_COUNT: usize = 512;
+pub const ENTRY_COUNT: usize = 512;
 
 /// Mask for private page table entry.
 static PRIVATE_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
@@ -113,7 +113,7 @@ fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
 }
 
 /// Set address as private via mask.
-fn make_private_address(paddr: PhysAddr) -> PhysAddr {
+pub fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     (strip_shared_address_bits(paddr).bits() | private_pte_mask()).into()
 }
 
@@ -356,10 +356,16 @@ impl PTEntry {
     }
 
     /// Set the page table entry with the specified address and flags.
-    pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+    pub fn set_unrestricted(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
         let addr = addr.bits() as u64;
         assert_eq!(addr & !0x000f_ffff_ffff_f000, 0);
-        self.0 = PhysAddr::from(addr | supported_flags(flags).bits());
+        self.0 = PhysAddr::from(addr | flags.bits());
+    }
+
+    /// Set the page table entry with the specified address, with flags
+    /// constrained to the supported feature flags.
+    pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+        self.set_unrestricted(addr, supported_flags(flags));
     }
 
     /// Get the address from the page table entry, including the shared bit.
