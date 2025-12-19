@@ -159,8 +159,15 @@ impl ComponentConfig {
     ) -> BuildResult<PathBuf> {
         match self.build_type {
             BuildType::Cargo => self.cargo_build(args, pkg, target, cmd_feats),
-            BuildType::Make => self.makefile_build(args),
+            BuildType::Make => self.makefile_build(args, pkg, cmd_feats),
         }
+    }
+
+    fn features(&self) -> Vec<String> {
+        self.features
+            .clone()
+            .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
+            .unwrap_or_default()
     }
 
     /// Build this component as a cargo binary
@@ -186,16 +193,10 @@ impl ComponentConfig {
         if args.all_features {
             cmd.args(["--all-features"]);
         } else {
-            let features: Vec<String> = self
-                .features
-                .clone()
-                .map(|feat| feat.split(',').map(|f| f.trim().to_string()).collect())
-                .unwrap_or_default();
-
-            let cargo_features = cmd_feats.feature_list(pkg, features);
-
-            if !cargo_features.is_empty() {
-                cmd.args(["--features", cargo_features.join(",").as_str()]);
+            let mut features = self.features();
+            features.append(&mut cmd_feats.feature_list(pkg));
+            if !features.is_empty() {
+                cmd.args(["--features", features.join(",").as_str()]);
             }
         }
         if let Some(manifest) = self.manifest.as_ref() {
@@ -220,7 +221,12 @@ impl ComponentConfig {
     }
 
     /// Build this component as a Makefile binary.
-    fn makefile_build(&self, args: &Args) -> BuildResult<PathBuf> {
+    fn makefile_build(
+        &self,
+        args: &Args,
+        pkg: &str,
+        cmd_feats: &mut Features,
+    ) -> BuildResult<PathBuf> {
         let Some(file) = self.output_file.as_ref() else {
             return Err("Cannot build makefile target without output_file".into());
         };
@@ -232,6 +238,18 @@ impl ComponentConfig {
         if args.verbose {
             cmd.arg("V=2");
         }
+
+        // Get feature list
+        let mut features = self.features();
+        features.append(&mut cmd_feats.feature_list(pkg));
+        let env_features = features.join(",");
+
+        // Pass features to Makefile. We don't know if this is a test
+        // target, so fill in both environment variables, and let the
+        // Makefile use the right one.
+        cmd.env("FEATURES", &env_features);
+        cmd.env("FEATURES_TEST", &env_features);
+
         run_cmd_checked(cmd, args)?;
         Ok(PathBuf::from(file))
     }
