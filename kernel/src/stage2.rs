@@ -16,6 +16,7 @@ use bootlib::kernel_launch::{
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
+use core::fmt::Debug;
 use core::mem;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
@@ -49,6 +50,7 @@ use svsm::mm::pagetable::PTEntryFlags;
 use svsm::mm::pagetable::PageTable;
 use svsm::mm::pagetable::make_private_address;
 use svsm::mm::pagetable::paging_init;
+use svsm::mm::validate::validate_mapped_region;
 use svsm::platform;
 use svsm::platform::{
     PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform, SvsmPlatformCell,
@@ -64,17 +66,31 @@ unsafe extern "C" {
     static mut pgtable: PageTable;
 }
 
-#[derive(Debug)]
-pub struct KernelHeap {
+pub struct KernelHeap<'a> {
     local_virt_base: VirtAddr,
     virt_base: Option<VirtAddr>,
     phys_base: PhysAddr,
     page_count: usize,
     next_free: usize,
+    platform: &'a dyn SvsmPlatform,
+    config: &'a SvsmConfig<'a>,
 }
 
-impl KernelHeap {
-    pub fn create(prange: MemoryRegion<PhysAddr>) -> Self {
+// The Debug trait is never actually needed for the kernel heap, but not
+// including it generates a compile error.  Implement Debug with skeletal
+// methods just to silence the errors.
+impl Debug for KernelHeap<'_> {
+    fn fmt(&self, _: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        todo!()
+    }
+}
+
+impl<'a> KernelHeap<'a> {
+    pub fn create(
+        prange: MemoryRegion<PhysAddr>,
+        platform: &'a dyn SvsmPlatform,
+        config: &'a SvsmConfig<'_>,
+    ) -> Self {
         Self {
             // The kernel heap is always mapped in the stage2 address space
             // at the base of the per-task address region, since this cannot
@@ -84,6 +100,8 @@ impl KernelHeap {
             phys_base: prange.start(),
             page_count: prange.len() / PAGE_SIZE,
             next_free: 0,
+            platform,
+            config,
         }
     }
 
@@ -168,6 +186,18 @@ impl KernelHeap {
         let virt_addr = virt_base + offset;
         let phys_addr = self.phys_base + offset;
 
+        // Heap pages are not validated until they are first allocated, so
+        // validate them now.
+        // SAFETY: the pages are being allocated for the first time here so
+        // they cannot have been validated earlier.
+        unsafe {
+            validate_mapped_region(
+                self.platform,
+                self.config,
+                MemoryRegion::new(virt_addr, page_count * PAGE_SIZE),
+            )?;
+        }
+
         // Move the allocation cursor beyond this allocation.
         self.next_free = next_free;
         Ok((virt_addr, phys_addr))
@@ -217,7 +247,7 @@ impl KernelPageTables<'_> {
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: PTEntryFlags,
-        kernel_heap: &mut KernelHeap,
+        kernel_heap: &mut KernelHeap<'_>,
     ) -> Result<(), SvsmError> {
         // The virtual address must fall within the first 1 GB of the kernel
         // address range.
@@ -281,7 +311,7 @@ impl KernelPageTables<'_> {
         vregion: MemoryRegion<VirtAddr>,
         phys_addr: PhysAddr,
         flags: PTEntryFlags,
-        kernel_heap: &mut KernelHeap,
+        kernel_heap: &mut KernelHeap<'_>,
         platform: &dyn SvsmPlatform,
         config: &SvsmConfig<'_>,
     ) -> Result<(), SvsmError> {
@@ -311,7 +341,9 @@ impl KernelPageTables<'_> {
     }
 }
 
-fn setup_kernel_page_tables<'a>(heap: &mut KernelHeap) -> Result<KernelPageTables<'a>, SvsmError> {
+fn setup_kernel_page_tables<'a>(
+    heap: &mut KernelHeap<'_>,
+) -> Result<KernelPageTables<'a>, SvsmError> {
     // Allocate a new page from the kernel heap to use as the paging root for
     // the kernel.
     let (paging_root_vaddr, paging_root_paddr) = heap.allocate_zeroed(PAGE_SIZE)?;
@@ -319,7 +351,6 @@ fn setup_kernel_page_tables<'a>(heap: &mut KernelHeap) -> Result<KernelPageTable
     // SAFETY: the allocated virtual address is known to be usable as a page
     // table page.
     let mut paging_root = unsafe { KernelPageTablePage::new(paging_root_vaddr) };
-
     // Set the PML4E for the self-map entry in the kernel paging root.
     let pxe_flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE | PTEntryFlags::ACCESSED;
     paging_root
@@ -513,7 +544,7 @@ unsafe fn setup_env(
 /// a valid page of data that can be copied.
 unsafe fn copy_page_to_kernel(
     src_vaddr: VirtAddr,
-    kernel_heap: &mut KernelHeap,
+    kernel_heap: &mut KernelHeap<'_>,
 ) -> Result<VirtAddr, SvsmError> {
     let (dst_vaddr, _) = kernel_heap.allocate(PAGE_SIZE)?;
     // SAFETY: the caller take responsibility for the correctness of the source
@@ -530,16 +561,10 @@ unsafe fn copy_page_to_kernel(
     Ok(dst_vaddr)
 }
 
-/// Map and validate the specified virtual memory region at the given physical
-/// address.
-/// # Safety
-/// The caller is required to ensure the safety of the virtual address range.
-unsafe fn map_and_validate(
-    platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
-    vregion: MemoryRegion<VirtAddr>,
-    paddr: PhysAddr,
-) -> Result<(), SvsmError> {
+/// Map the specified virtual memory region at the given physical address.
+/// This will fail if the caller specifies a virtual address region that is
+/// already mapped.
+fn map_page_range(vregion: MemoryRegion<VirtAddr>, paddr: PhysAddr) -> Result<(), SvsmError> {
     let flags = PTEntryFlags::PRESENT
         | PTEntryFlags::WRITABLE
         | PTEntryFlags::ACCESSED
@@ -547,18 +572,6 @@ unsafe fn map_and_validate(
 
     let mut pgtbl = this_cpu().get_pgtable();
     pgtbl.map_region(vregion, paddr, flags)?;
-
-    if config.page_state_change_required() {
-        platform.page_state_change(
-            MemoryRegion::new(paddr, vregion.len()),
-            PageSize::Huge,
-            PageStateChangeOp::Private,
-        )?;
-    }
-    // SAFETY: the caller has ensured the safety of the virtual address range.
-    unsafe {
-        platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
-    }
 
     Ok(())
 }
@@ -571,7 +584,7 @@ fn load_elf_segment(
     segment: elf::Elf64ImageLoadSegment<'_>,
     paddr: PhysAddr,
     page_tables: &mut KernelPageTables<'_>,
-    kernel_heap: &mut KernelHeap,
+    kernel_heap: &mut KernelHeap<'_>,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
@@ -649,7 +662,7 @@ fn load_kernel_elf(
     paddr_base: PhysAddr,
     expected_page_count: usize,
     page_tables: &mut KernelPageTables<'_>,
-    kernel_heap: &mut KernelHeap,
+    kernel_heap: &mut KernelHeap<'_>,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
@@ -722,7 +735,7 @@ fn load_kernel_elf(
 /// Ther caller is required to specify the correct virtual address for the
 /// kernel virtual region.
 fn load_igvm_params(
-    kernel_heap: &mut KernelHeap,
+    kernel_heap: &mut KernelHeap<'_>,
     config: &SvsmConfig<'_>,
     launch_info: &Stage2LaunchInfo,
 ) -> Result<VirtAddr, SvsmError> {
@@ -756,12 +769,12 @@ fn load_igvm_params(
 /// Panics if the allocated kernel region (`kernel_region`) is not sufficient
 /// to host the memory required by the loaded kernel (`kernel_page_count`)
 /// plus memory reserved for configuration.
-fn prepare_heap(
+fn prepare_heap<'a>(
     kernel_region: MemoryRegion<PhysAddr>,
     kernel_page_count: usize,
-    platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
-) -> Result<KernelHeap, SvsmError> {
+    platform: &'a dyn SvsmPlatform,
+    config: &'a SvsmConfig<'a>,
+) -> Result<KernelHeap<'a>, SvsmError> {
     let kernel_size = kernel_page_count * PAGE_SIZE;
     let heap_pstart = kernel_region.start() + kernel_size;
 
@@ -774,14 +787,13 @@ fn prepare_heap(
         .into();
 
     let heap_pregion = MemoryRegion::new(heap_pstart, heap_size);
-    let heap = KernelHeap::create(heap_pregion);
+    let heap = KernelHeap::create(heap_pregion, platform, config);
     let heap_vregion = MemoryRegion::new(heap.local_virt_base, heap_size);
 
-    // SAFETY: the virtual address range was computed so it is within the valid
-    // region and does not collide with the kernel.
-    unsafe {
-        map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
-    }
+    // Map the heap region into the page tables but do not validate it.
+    // Validation will be performed later, either as the pages are allocated or
+    // when the kernel starts.
+    map_page_range(heap_vregion, heap_pregion.start())?;
 
     Ok(heap)
 }

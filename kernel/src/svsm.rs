@@ -53,7 +53,10 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::platform::{SVSM_PLATFORM, SvsmPlatformCell, init_capabilities, init_platform_type};
+use svsm::platform::{
+    PageValidateOp, SVSM_PLATFORM, SvsmPlatform, SvsmPlatformCell, init_capabilities,
+    init_platform_type,
+};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
@@ -138,10 +141,33 @@ global_asm!(
     options(att_syntax)
 );
 
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
+/// # Safety
+/// The launch info block must correctly specify the initial state of the
+/// heap.
+unsafe fn memory_init(launch_info: &KernelLaunchInfo, platform: &dyn SvsmPlatform) {
+    // Unallocated heap memory has not already been accepted so it must be
+    // accepted here.
+    let heap_vaddr = VirtAddr::from(launch_info.heap_area_virt_start);
+    let heap_allocated = launch_info.heap_area_allocated as usize;
+    let heap_length = launch_info.heap_area_page_count as usize;
+    if launch_info.heap_area_allocated < launch_info.heap_area_page_count {
+        // SAFETY: the launch info is assumed to correctly reflect the set of
+        // pages that were accepted in stage2.
+        unsafe {
+            platform
+                .validate_virtual_page_range(
+                    MemoryRegion::new(
+                        heap_vaddr + heap_allocated * PAGE_SIZE,
+                        (heap_length - heap_allocated) * PAGE_SIZE,
+                    ),
+                    PageValidateOp::Validate,
+                )
+                .expect("Failed to validate heap memory");
+        }
+    }
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
-        VirtAddr::from(launch_info.heap_area_virt_start),
+        heap_vaddr,
         launch_info.heap_area_page_count as usize,
         launch_info.heap_area_allocated as usize,
     );
@@ -257,14 +283,18 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     // Load symbol info now that there is a console
     init_symbols(&launch_info).expect("Could not initialize kernel symbols");
 
-    memory_init(launch_info.as_ref());
+    paging_init(platform, false).expect("Failed to initialize paging");
+
+    // SAFETY: THe launch info is assumed to correctly specify the initial
+    // state of memory.
+    unsafe {
+        memory_init(launch_info.as_ref(), platform);
+    }
 
     // Initialize the valid bitmap as all valid, since stage2 guarantees that
     // all memory in the kernel region is validated prior to kernel entry.
     init_valid_bitmap(new_kernel_region(&launch_info), true)
         .expect("Failed to allocate valid-bitmap");
-
-    paging_init(platform, false).expect("Failed to initialize paging");
 
     // SAFETY: the current page table was allocated by stage2 from the kernel
     // heap and therefore it can be built into a PageBox.
