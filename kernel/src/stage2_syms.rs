@@ -22,7 +22,7 @@ use super::KernelHeap;
 /// `.strtab` respectively.
 pub fn load_kernel_symbols(
     elf: &elf::Elf64File<'_>,
-    heap: &mut KernelHeap,
+    heap: &mut KernelHeap<'_>,
 ) -> (MemoryRegion<VirtAddr>, MemoryRegion<VirtAddr>) {
     let empty = MemoryRegion::new(VirtAddr::null(), 0);
 
@@ -40,7 +40,7 @@ pub fn load_kernel_symbols(
 fn allocate_kernel_symbols(
     symtab: &Elf64Symtab<'_>,
     strtab: &Elf64Strtab<'_>,
-    heap: &mut KernelHeap,
+    heap: &mut KernelHeap<'_>,
 ) -> Result<(MemoryRegion<VirtAddr>, MemoryRegion<VirtAddr>), SvsmError> {
     let mut dst1 = PageCursor::new(heap);
     for i in 0..symtab.syms_num() {
@@ -71,15 +71,15 @@ fn allocate_kernel_symbols(
 
 /// A type that allows progressively reserving a dynamically-sized portion of
 /// memory.
-struct PageCursor<'a> {
+struct PageCursor<'a, 'b> {
     region: MemoryRegion<VirtAddr>,
     pos: usize,
-    heap: &'a mut KernelHeap,
+    heap: &'a mut KernelHeap<'b>,
 }
 
-impl<'a> PageCursor<'a> {
+impl<'a, 'b> PageCursor<'a, 'b> {
     /// Create an empty `PageCursor`. This does not allocate.
-    fn new(heap: &'a mut KernelHeap) -> Self {
+    fn new(heap: &'a mut KernelHeap<'b>) -> Self {
         Self {
             region: MemoryRegion::new(VirtAddr::null(), 0),
             pos: 0,
