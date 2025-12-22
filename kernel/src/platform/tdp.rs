@@ -173,7 +173,7 @@ impl SvsmPlatform for TdpPlatform {
         Ok(())
     }
 
-    fn validate_physical_page_range(
+    unsafe fn validate_physical_page_range(
         &self,
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
@@ -182,7 +182,7 @@ impl SvsmPlatform for TdpPlatform {
             return Err(SvsmError::InvalidAddress);
         }
         match op {
-            // SAFETY: safety work on the address is yet to be completed.
+            // SAFETY: the caller must uphold the safety requirements
             PageValidateOp::Validate => unsafe {
                 // TODO - verify safety of the physical address range.
                 td_accept_physical_memory(region)

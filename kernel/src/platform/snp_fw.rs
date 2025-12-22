@@ -41,7 +41,11 @@ impl SevFWMetaData {
     }
 }
 
-fn validate_fw_mem_region(
+/// # Safety
+///
+/// The caller must have verified that the given physical memory region is
+/// private to the CVM and that it does not alias SVSM memory.
+unsafe fn validate_fw_mem_region(
     config: &SvsmConfig<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -79,7 +83,11 @@ fn validate_fw_mem_region(
     Ok(())
 }
 
-fn validate_fw_memory_vec(
+/// # Safety
+///
+/// The caller must have verified that the given physical memory regions are
+/// private to the CVM and that they do not alias SVSM memory.
+unsafe fn validate_fw_memory_vec(
     config: &SvsmConfig<'_>,
     regions: Vec<MemoryRegion<PhysAddr>>,
 ) -> Result<(), SvsmError> {
@@ -97,9 +105,11 @@ fn validate_fw_memory_vec(
             next_vec.push(next);
         }
     }
-
-    validate_fw_mem_region(config, region)?;
-    validate_fw_memory_vec(config, next_vec)
+    // SAFETY: the caller must uphold the safety requirements
+    unsafe {
+        validate_fw_mem_region(config, region)?;
+        validate_fw_memory_vec(config, next_vec)
+    }
 }
 
 pub fn validate_fw_memory(
@@ -135,7 +145,9 @@ pub fn validate_fw_memory(
         }
     }
 
-    validate_fw_memory_vec(config, regions)
+    // SAFETY: we've just checked that the firmware regions do not overlap with
+    // the SVSM kernel
+    unsafe { validate_fw_memory_vec(config, regions) }
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
@@ -161,12 +173,14 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     }
 }
 
-fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+/// # Safety
+///
+/// The caller must ensure that the given physical address is valid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
 
-    // SAFETY: this is called from CPU 0, so the underlying physical address
-    // is not being aliased. We are mapping a full page, which is 4K-aligned,
-    // and is enough for SnpCpuidTable.
+    // SAFETY: the caller must uphold the safety requirements.
     unsafe {
         copy_cpuid_table_to(guard.virt_addr());
     }
@@ -174,7 +188,11 @@ fn copy_cpuid_table_to_fw(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
-fn copy_secrets_page_to_fw(
+/// # Safety
+///
+/// The caller must ensure that the given physical address is valid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn copy_secrets_page_to_fw(
     fw_addr: PhysAddr,
     caa_addr: PhysAddr,
     kernel_region: &MemoryRegion<PhysAddr>,
@@ -206,7 +224,11 @@ fn copy_secrets_page_to_fw(
     Ok(())
 }
 
-fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
+/// # Safety
+///
+/// The caller must ensure that the given physical address is valid and writing
+/// to it does not violate Rust's memory model.
+unsafe fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     let guard = PerCPUPageMappingGuard::create_4k(fw_addr)?;
     let vaddr = guard.virt_addr();
 
@@ -219,25 +241,36 @@ fn zero_caa_page(fw_addr: PhysAddr) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn copy_tables_to_fw(
+/// # Safety
+///
+/// The caller must make sure that the physical addresses in `fw_meta` are safe to
+/// write to without breaking Rust's memory model.
+pub unsafe fn copy_tables_to_fw(
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     if let Some(addr) = fw_meta.cpuid_page {
-        copy_cpuid_table_to_fw(addr)?;
+        // SAFETY: caller must uphold the safety requirements
+        unsafe { copy_cpuid_table_to_fw(addr) }?;
     }
 
     let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
     let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
 
-    copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
-
-    zero_caa_page(caa_page)?;
+    // SAFETY: caller must uphold the safety requirements.
+    unsafe {
+        copy_secrets_page_to_fw(secrets_page, caa_page, kernel_region)?;
+        zero_caa_page(caa_page)?;
+    }
 
     Ok(())
 }
 
-pub fn validate_fw(
+/// # Safety
+///
+/// The caller must have verified that the firmware physical memory regions in
+/// `config` are private to the CVM and that they do not alias SVSM memory.
+pub unsafe fn validate_fw(
     config: &SvsmConfig<'_>,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {

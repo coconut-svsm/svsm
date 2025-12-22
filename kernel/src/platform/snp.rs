@@ -55,7 +55,13 @@ static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
 static APIC_EMULATION_REG_COUNT: AtomicU32 = AtomicU32::new(0);
 
-fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Result<(), SvsmError> {
+/// # Safety
+///
+/// See the safety considerations for [`pvalidate_range()`].
+unsafe fn pvalidate_page_range(
+    range: MemoryRegion<PhysAddr>,
+    op: PvalidateOp,
+) -> Result<(), SvsmError> {
     // In the future, it is likely that this function will need to be prepared
     // to execute both PVALIDATE and RMPADJUST over the same set of addresses,
     // so the loop is structured to anticipate that possibility.
@@ -155,8 +161,13 @@ impl SvsmPlatform for SnpPlatform {
             print_fw_meta(fw_meta);
             validate_fw_memory(config, fw_meta, &kernel_region)?;
             write_guest_memory_map(config)?;
-            copy_tables_to_fw(fw_meta, &kernel_region)?;
-            validate_fw(config, &kernel_region)?;
+            // SAFETY: we've verified the firmware memory addresses above.
+            // This is called from CPU 0, so the underlying physical address
+            // is not being aliased.
+            unsafe {
+                copy_tables_to_fw(fw_meta, &kernel_region)?;
+                validate_fw(config, &kernel_region)?;
+            }
             prepare_fw_launch(fw_meta)?;
         }
         Ok(())
@@ -294,12 +305,13 @@ impl SvsmPlatform for SnpPlatform {
         current_ghcb().page_state_change(region, size, op)
     }
 
-    fn validate_physical_page_range(
+    unsafe fn validate_physical_page_range(
         &self,
         region: MemoryRegion<PhysAddr>,
         op: PageValidateOp,
     ) -> Result<(), SvsmError> {
-        pvalidate_page_range(region, PvalidateOp::from(op))
+        // SAFETY: caller must uphold safety requirements
+        unsafe { pvalidate_page_range(region, PvalidateOp::from(op)) }
     }
 
     /// # Safety
