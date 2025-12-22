@@ -7,7 +7,7 @@
 
 use crate::error::SvsmError;
 
-pub trait BlockDriver {
+pub trait BlockDriver: Sync + Send {
     fn read_blocks(&self, block_id: usize, buf: &mut [u8]) -> Result<(), SvsmError>;
     fn write_blocks(&self, block_id: usize, buf: &[u8]) -> Result<(), SvsmError>;
     fn block_size_log2(&self) -> u8;

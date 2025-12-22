@@ -55,6 +55,8 @@ use svsm::svsm_paging::{
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
+#[cfg(feature = "virtio-drivers")]
+use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -149,6 +151,24 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
         PhysAddr::from(launch_info.heap_area_phys_start),
     );
     init_kernel_mapping_info(kernel_mapping, None);
+}
+
+#[cfg(feature = "virtio-drivers")]
+fn initialize_virtio_mmio() {
+    use svsm::block::virtio_blk::initialize_block;
+
+    // SAFETY: Called during svsm_init() that runs on the BSP
+    let Some(mut slots) = (unsafe { probe_mmio_slots() }) else {
+        log::warn!("MmioSlots: No slots found");
+        return;
+    };
+
+    let Some(block_slot) = slots.pop_slot(virtio_drivers::transport::DeviceType::Block) else {
+        log::warn!("MmioSlots: no virtio-blk device found");
+        return;
+    };
+
+    initialize_block(block_slot);
 }
 
 /// # Panics
@@ -410,6 +430,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();
+
+    #[cfg(feature = "virtio-drivers")]
+    initialize_virtio_mmio();
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:?}");

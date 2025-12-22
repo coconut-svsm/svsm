@@ -6,11 +6,11 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 
 use super::api::BlockDriver;
-use crate::address::PhysAddr;
-use crate::block::BlockDeviceError;
+use crate::block::{BlockDeviceError, BLOCK_DEVICE};
 use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
 use crate::virtio::devices::VirtIOBlkDevice;
+use crate::virtio::slot::MmioSlot;
 use virtio_drivers::device::blk::SECTOR_SIZE;
 extern crate alloc;
 use alloc::boxed::Box;
@@ -23,8 +23,8 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 }
 
 impl VirtIOBlkDriver {
-    pub fn new(mmio_base: PhysAddr) -> Result<Self, SvsmError> {
-        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(mmio_base)?))
+    pub fn new(slot: MmioSlot) -> Result<Self, SvsmError> {
+        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?))
     }
 }
 
@@ -68,28 +68,23 @@ impl BlockDriver for VirtIOBlkDriver {
     }
 }
 
+pub fn initialize_block(slot: MmioSlot) {
+    let Ok(driver) = VirtIOBlkDriver::new(slot) else {
+        log::error!("Failed to initialize virtio-blk driver");
+        return;
+    };
+
+    BLOCK_DEVICE
+        .init(Box::new(driver))
+        .expect("virtio-block driver already initialized");
+}
+
 #[cfg(all(test, test_in_svsm))]
 mod tests {
-    use crate::{
-        address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
-    };
+    use crate::testutils::has_test_iorequests;
     use core::cmp::min;
     extern crate alloc;
     use super::*;
-
-    /// Find the first virtio-blk device in the hardware-info list
-    fn get_blk_device() -> VirtIOBlkDriver {
-        let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
-
-        let dev = cfg
-            .get_virtio_mmio_addresses()
-            .unwrap_or_default()
-            .iter()
-            .find_map(|a| VirtIOBlkDriver::new(PhysAddr::from(*a)).ok())
-            .expect("No virtio-blk device found");
-
-        dev
-    }
 
     /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
     fn get_image_hash_from_host() -> Option<[u8; 32]> {
@@ -147,11 +142,14 @@ mod tests {
         use alloc::vec;
         use sha2::{Digest, Sha256};
         assert!(sectors_at_once > 0);
-        let blk = get_blk_device();
+
+        let blk_driver = BLOCK_DEVICE
+            .try_get_inner()
+            .expect("Block driver not found");
 
         let expected_hash = get_image_hash_from_host().unwrap();
 
-        let n_sectors = blk.size() / SECTOR_SIZE;
+        let n_sectors = blk_driver.size() / SECTOR_SIZE;
         let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
 
         let mut hasher = Sha256::new();
@@ -161,7 +159,7 @@ mod tests {
         {
             buffer.truncate(sectors * SECTOR_SIZE);
 
-            blk.read_blocks(pos, &mut buffer).unwrap();
+            blk_driver.read_blocks(pos, &mut buffer).unwrap();
             hasher.update(&buffer);
         }
 
@@ -211,9 +209,11 @@ mod tests {
 
         assert!(sectors_at_once > 0);
 
-        let blk = get_blk_device();
+        let blk_driver = BLOCK_DEVICE
+            .try_get_inner()
+            .expect("Block driver not found");
 
-        let n_sectors = blk.size() / SECTOR_SIZE;
+        let n_sectors = blk_driver.size() / SECTOR_SIZE;
         let mut buffer = vec![0u8; sectors_at_once * SECTOR_SIZE];
 
         let mut hasher = Sha256::new();
@@ -228,8 +228,8 @@ mod tests {
 
             buffer.fill_with(|| gen.next().unwrap());
 
-            blk.write_blocks(pos, &buffer).unwrap();
-            blk.flush().unwrap();
+            blk_driver.write_blocks(pos, &buffer).unwrap();
+            blk_driver.flush().unwrap();
             hasher.update(&buffer);
         }
 

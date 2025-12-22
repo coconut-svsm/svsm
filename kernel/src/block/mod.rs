@@ -10,3 +10,11 @@ pub mod error;
 pub mod virtio_blk;
 
 pub use error::BlockDeviceError;
+
+extern crate alloc;
+use crate::{block::api::BlockDriver, utils::immut_after_init::ImmutAfterInitCell};
+use alloc::boxed::Box;
+
+// This variable is only used by tests for now.
+#[allow(dead_code)]
+static BLOCK_DEVICE: ImmutAfterInitCell<Box<dyn BlockDriver>> = ImmutAfterInitCell::uninit();

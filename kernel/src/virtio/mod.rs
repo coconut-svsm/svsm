@@ -9,3 +9,6 @@ pub mod error;
 mod hal;
 
 pub use error::VirtioError;
+
+pub mod slot;
+pub use slot::probe_mmio_slots;
