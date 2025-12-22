@@ -28,6 +28,7 @@ pub struct Elf64File<'a> {
     pub max_load_segment_align: Elf64Xword,
     /// THe section header string table may not be present
     pub sh_strtab: Option<Elf64Strtab<'a>>,
+    pub symtab: Option<Elf64Symtab<'a>>,
     pub dynamic: Option<Elf64Dynamic>,
 }
 
@@ -128,6 +129,8 @@ impl<'a> Elf64File<'a> {
             }
         }
 
+        let symtab = Self::find_symtab(elf_file_buf, &elf_hdr)?;
+
         let dynamic = if let Some(dynamic_file_range) = dynamic_file_range {
             let dynamic_buf =
                 &elf_file_buf[dynamic_file_range.offset_begin..dynamic_file_range.offset_end];
@@ -144,8 +147,26 @@ impl<'a> Elf64File<'a> {
             load_segments,
             max_load_segment_align,
             sh_strtab,
+            symtab,
             dynamic,
         })
+    }
+
+    /// Locates and parses the `.symtab` section in the ELF file.
+    fn find_symtab(
+        elf_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+    ) -> Result<Option<Elf64Symtab<'a>>, ElfError> {
+        for i in 0..elf_hdr.e_shnum {
+            let shdr = Self::read_verified_shdr(elf_buf, elf_hdr, i)?;
+            if shdr.sh_type != Elf64Shdr::SHT_SYMTAB {
+                continue;
+            }
+            let range = shdr.file_range();
+            let buf = &elf_buf[range.offset_begin..range.offset_end];
+            return Ok(Some(Elf64Symtab::new(buf, shdr.sh_entsize)?));
+        }
+        Ok(None)
     }
 
     /// Reads an ELF Program Header (Phdr) from the ELF file buffer.

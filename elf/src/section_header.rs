@@ -65,6 +65,9 @@ impl Elf64Shdr {
     /// Represents a null section type
     pub const SHT_NULL: Elf64Word = 0;
 
+    // Represents a symbol table
+    pub const SHT_SYMTAB: Elf64Word = 2;
+
     /// Represents a string table section type
     pub const SHT_STRTAB: Elf64Word = 3;
 
