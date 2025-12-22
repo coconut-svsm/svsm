@@ -104,22 +104,23 @@ impl StackUnwinder {
     }
 
     fn new(rbp: VirtAddr, stacks: StacksBounds) -> Self {
-        let first_frame = Self::unwind_framepointer_frame(rbp, &stacks);
-        Self {
-            next_frame: Some(first_frame),
+        let mut unwind = Self {
             stacks,
-        }
+            next_frame: None,
+        };
+        unwind.next_frame = Some(unwind.unwind_framepointer_frame(rbp));
+        unwind
     }
 
     fn check_unwound_frame(
+        &self,
         rbp: VirtAddr,
         rsp: VirtAddr,
         rip: VirtAddr,
-        stacks: &StacksBounds,
     ) -> UnwoundStackFrame {
         // The next frame's rsp or rbp should live on some valid stack,
         // otherwise mark the unwound frame as invalid.
-        let Some(stack) = stacks.iter().find(|stack| {
+        let Some(stack) = self.stacks.iter().find(|stack| {
             !stack.is_empty() && (stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
         }) else {
             log::info!("check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack");
@@ -151,7 +152,7 @@ impl StackUnwinder {
         })
     }
 
-    fn unwind_framepointer_frame(rbp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
+    fn unwind_framepointer_frame(&self, rbp: VirtAddr) -> UnwoundStackFrame {
         let rsp = rbp;
 
         // Storage for return address + saved %rbp
@@ -159,7 +160,11 @@ impl StackUnwinder {
             return UnwoundStackFrame::Invalid;
         };
 
-        if !stacks.iter().any(|stack| stack.contains_region(&range)) {
+        if !self
+            .stacks
+            .iter()
+            .any(|stack| stack.contains_region(&range))
+        {
             return UnwoundStackFrame::Invalid;
         }
 
@@ -178,16 +183,20 @@ impl StackUnwinder {
         let rip = unsafe { rsp.as_ptr::<VirtAddr>().read_unaligned() };
         let rsp = rsp + mem::size_of::<VirtAddr>();
 
-        Self::check_unwound_frame(rbp, rsp, rip, stacks)
+        self.check_unwound_frame(rbp, rsp, rip)
     }
 
-    fn unwind_exception_frame(rsp: VirtAddr, stacks: &StacksBounds) -> UnwoundStackFrame {
+    fn unwind_exception_frame(&self, rsp: VirtAddr) -> UnwoundStackFrame {
         let Some(range) = MemoryRegion::checked_new(rsp, mem::size_of::<X86ExceptionContext>())
         else {
             return UnwoundStackFrame::Invalid;
         };
 
-        if !stacks.iter().any(|stack| stack.contains_region(&range)) {
+        if !self
+            .stacks
+            .iter()
+            .any(|stack| stack.contains_region(&range))
+        {
             return UnwoundStackFrame::Invalid;
         }
 
@@ -202,7 +211,7 @@ impl StackUnwinder {
         let rip = VirtAddr::from(ctx.frame.rip);
         let rsp = VirtAddr::from(ctx.frame.rsp);
 
-        Self::check_unwound_frame(rbp, rsp, rip, stacks)
+        self.check_unwound_frame(rbp, rsp, rip)
     }
 
     fn frame_is_last(rbp: VirtAddr) -> bool {
@@ -217,30 +226,23 @@ impl Iterator for StackUnwinder {
     type Item = UnwoundStackFrame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let cur = self.next_frame;
-        match cur {
-            Some(cur) => {
-                match &cur {
-                    UnwoundStackFrame::Invalid => {
-                        self.next_frame = None;
-                    }
-                    UnwoundStackFrame::Valid(cur_frame) => {
-                        if cur_frame.is_last {
-                            self.next_frame = None
-                        } else if cur_frame.is_exception_frame {
-                            self.next_frame =
-                                Some(Self::unwind_exception_frame(cur_frame.rsp, &self.stacks));
-                        } else {
-                            self.next_frame =
-                                Some(Self::unwind_framepointer_frame(cur_frame.rbp, &self.stacks));
-                        }
-                    }
-                };
-
-                Some(cur)
+        let cur = self.next_frame?;
+        match &cur {
+            UnwoundStackFrame::Invalid => {
+                self.next_frame = None;
             }
-            None => None,
-        }
+            UnwoundStackFrame::Valid(cur_frame) => {
+                if cur_frame.is_last {
+                    self.next_frame = None
+                } else if cur_frame.is_exception_frame {
+                    self.next_frame = Some(self.unwind_exception_frame(cur_frame.rsp));
+                } else {
+                    self.next_frame = Some(self.unwind_framepointer_frame(cur_frame.rbp));
+                }
+            }
+        };
+
+        Some(cur)
     }
 }
 
