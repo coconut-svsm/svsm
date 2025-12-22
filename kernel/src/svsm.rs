@@ -34,6 +34,7 @@ use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
+use svsm::debug::symbols::init_symbols;
 use svsm::enable_shadow_stacks;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
@@ -222,6 +223,9 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     platform
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
+
+    // Load symbol info now that there is a console
+    init_symbols(&launch_info).expect("Could not initialize kernel symbols");
 
     memory_init(launch_info.as_ref());
 
