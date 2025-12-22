@@ -8,6 +8,7 @@
 #![no_main]
 
 pub mod boot_stage2;
+pub mod stage2_syms;
 
 use bootlib::kernel_launch::{
     KernelLaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START, STAGE2_STACK,
@@ -550,6 +551,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         .expect("Failed to allocate initial kernel stack");
     let initial_stack = initial_stack_base + STACK_SIZE;
 
+    let (symtab, strtab) = stage2_syms::load_kernel_symbols(&elf, &mut kernel_heap);
+
     // Load the IGVM params, if present. Update loaded region accordingly.
     // SAFETY: The loaded kernel region was correctly calculated above and
     // is sized appropriately to include a copy of the IGVM parameters.
@@ -613,10 +616,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_params.size() as u64,
         igvm_params_virt_addr: u64::from(igvm_vaddr),
-        kernel_symtab_start: core::ptr::null(),
-        kernel_symtab_len: 0,
-        kernel_strtab_start: core::ptr::null(),
-        kernel_strtab_len: 0,
+        kernel_symtab_start: symtab.start().as_ptr(),
+        kernel_symtab_len: (symtab.len() / size_of::<bootlib::symbols::KSym>()) as u64,
+        kernel_strtab_start: strtab.start().as_ptr(),
+        kernel_strtab_len: strtab.len() as u64,
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
