@@ -30,6 +30,7 @@ pub const SVM_EXIT_CPUID: usize = 0x72;
 pub const SVM_EXIT_IOIO: usize = 0x7b;
 pub const SVM_EXIT_MSR: usize = 0x7c;
 pub const SVM_EXIT_RDTSCP: usize = 0x87;
+pub const SVM_EXIT_PAGE_NOT_VALIDATED: usize = 0x404;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
 
@@ -118,6 +119,14 @@ pub fn stage2_handle_vc_exception_no_ghcb(ctx: &mut X86ExceptionContext) -> Resu
 pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
     let err = ctx.error_code;
 
+    // Panic if the #VC is due to an access to a non-validated page.  The SVSM
+    // kernel will always validate pages prior to any attempt to access
+    // them with C=1, so any such exception indicates either a security failure
+    // or a memory access bug, both of which are fatal.  If the validation
+    // behavior changes in the future, this exit code must be handled specially
+    // rather than attempting to interpret the instruction.
+    assert!(err != SVM_EXIT_PAGE_NOT_VALIDATED);
+
     // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
     // the GHCB. This is currently only relevant for IOIO, RDTSC and RDTSCP
     // handling. This field is currently reset in the relevant GHCB methods
@@ -150,6 +159,14 @@ pub fn stage2_handle_vc_exception(ctx: &mut X86ExceptionContext) -> Result<(), S
 /// - a `SvsmError` if the handling went wrong.
 pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Result<(), SvsmError> {
     let error_code = ctx.error_code;
+
+    // Panic if the #VC is due to an access to a non-validated page.  The SVSM
+    // kernel will always validate pages prior to any attempt to access
+    // them with C=1, so any such exception indicates either a security failure
+    // or a memory access bug, both of which are fatal.  If the validation
+    // behavior changes in the future, this exit code must be handled specially
+    // rather than attempting to interpret the instruction.
+    assert!(error_code != SVM_EXIT_PAGE_NOT_VALIDATED);
 
     // To handle NAE events, we're supposed to reset the VALID_BITMAP field of
     // the GHCB. This is currently only relevant for IOIO, RDTSC and RDTSCP
