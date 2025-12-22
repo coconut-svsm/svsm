@@ -486,6 +486,21 @@ impl<T> UserPtr<T> {
         unsafe { self.guest_ptr.read() }
     }
 
+    /// Attempts to read the `T` behind the pointer, verifying it has a valid
+    /// representation in the process (see [`GuestPtr::try_read`]).
+    #[inline]
+    pub fn try_read(&self) -> Result<T, SvsmError>
+    where
+        T: TryFromBytes,
+    {
+        if !self.check_bounds() {
+            return Err(SvsmError::InvalidAddress);
+        }
+        let _guard = UserAccessGuard::new();
+        // SAFETY: Target pointer is guaranteed to point to user memory.
+        unsafe { self.guest_ptr.try_read() }
+    }
+
     #[inline]
     pub fn write(&self, buf: T) -> Result<(), SvsmError>
     where
