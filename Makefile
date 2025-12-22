@@ -20,8 +20,10 @@ ifdef RELEASE
 TARGET_PATH=release
 CARGO_ARGS += --release
 XBUILD_ARGS += --release
+OBJCOPY_ELF_ARGS := --strip-unneeded
 else
 TARGET_PATH=debug
+OBJCOPY_ELF_ARGS := --strip-debug
 endif
 
 ifdef OFFLINE
@@ -145,7 +147,7 @@ bin/stage2.bin: bin
 
 bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
-	objcopy -O elf64-x86-64 --strip-unneeded ${SVSM_KERNEL_ELF} $@
+	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
 
 bin/test-kernel.elf: bin
 # RUSTDOC=true removes doctests, which is necessary as they do not work with
