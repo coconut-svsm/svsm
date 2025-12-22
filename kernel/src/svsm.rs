@@ -45,7 +45,7 @@ use svsm::mm::pagetable::{paging_init, PageTable};
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
+use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox, TransitionPageTable};
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
@@ -374,7 +374,15 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
 
-    start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
+    // Create a transition page table for use during CPU startup.
+    // SAFETY: the address of the initial kernel page tables supplied in the
+    // launch info is trusted to be correct.
+    let transition_page_table = unsafe { TransitionPageTable::new(&config) }
+        .expect("Failed to create transition page table");
+
+    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, &transition_page_table);
+
+    drop(transition_page_table);
 
     // Make ro_after_init section read-only
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
