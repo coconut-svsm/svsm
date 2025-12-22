@@ -23,8 +23,11 @@ use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::PAGE_SIZE;
+use crate::mm::PAGE_SIZE_2M;
+use crate::mm::PerCPUPageMappingGuard;
+use crate::mm::TransitionPageTable;
 use crate::mm::memory::write_guest_memory_map;
-use crate::mm::{PAGE_SIZE, PAGE_SIZE_2M, PerCPUPageMappingGuard};
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
@@ -400,7 +403,12 @@ impl SvsmPlatform for SnpPlatform {
         false
     }
 
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        start_rip: u64,
+        _transition_page_table: &TransitionPageTable,
+    ) -> Result<(), SvsmError> {
         let (vmsa_pa, sev_features) = cpu.alloc_svsm_vmsa(*VTOM as u64, start_rip)?;
 
         current_ghcb().ap_create(vmsa_pa, cpu.get_apic_id().into(), 0, sev_features)

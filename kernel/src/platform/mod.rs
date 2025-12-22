@@ -32,6 +32,7 @@ use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
+use crate::mm::TransitionPageTable;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -238,7 +239,12 @@ pub trait SvsmPlatform: Sync {
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
     /// Start an additional processor.
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError>;
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        start_rip: u64,
+        transition_page_table: &TransitionPageTable,
+    ) -> Result<(), SvsmError>;
 
     /// Indicates whether this platform should invoke the SVSM request loop.
     fn start_svsm_request_loop(&self) -> bool {

@@ -24,6 +24,7 @@ use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
+use zerocopy::FromBytes;
 use zerocopy::FromZeros;
 
 /// Number of entries in a page table (4KB/8B).
@@ -209,7 +210,7 @@ impl PagingMode {
 
 /// Represents a page table entry.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromZeros)]
+#[derive(Copy, Clone, Debug, FromBytes)]
 pub struct PTEntry(PhysAddr);
 
 impl PTEntry {
@@ -395,12 +396,22 @@ impl PTEntry {
 
 /// A pagetable page with multiple entries.
 #[repr(C)]
-#[derive(Debug, FromZeros)]
+#[derive(Debug, FromBytes)]
 pub struct PTPage {
     entries: [PTEntry; ENTRY_COUNT],
 }
 
 impl PTPage {
+    /// Allocates a zeroed pagetable page and returns a `PageBox` containing
+    /// the allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError`] if the page cannot be allocated.
+    pub fn alloc_box() -> Result<PageBox<Self>, SvsmError> {
+        PageBox::try_new_zeroed()
+    }
+
     /// Allocates a zeroed pagetable page and returns a mutable reference to
     /// it, plus its physical address.
     ///
@@ -408,7 +419,7 @@ impl PTPage {
     ///
     /// Returns [`SvsmError`] if the page cannot be allocated.
     fn alloc() -> Result<(&'static mut Self, PhysAddr), SvsmError> {
-        let page: PageBox<Self> = PageBox::try_new_zeroed()?;
+        let page = Self::alloc_box()?;
         let paddr = virt_to_phys(page.vaddr());
         Ok((PageBox::leak(page), paddr))
     }

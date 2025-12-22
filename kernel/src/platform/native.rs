@@ -12,7 +12,6 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
-use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
@@ -27,6 +26,7 @@ use crate::hyperv::IS_HYPERV;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::{DEFAULT_IO_DRIVER, IOPort};
 use crate::mm::PerCPUMapping;
+use crate::mm::TransitionPageTable;
 use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
@@ -43,9 +43,7 @@ use crate::mm::virt_to_phys;
 use bootlib::platform::SvsmPlatformType;
 
 #[derive(Clone, Copy, Debug)]
-pub struct NativePlatform {
-    transition_cr3: u32,
-}
+pub struct NativePlatform {}
 
 impl NativePlatform {
     pub fn new(_suppress_svsm_interrupts: bool) -> Self {
@@ -54,9 +52,7 @@ impl NativePlatform {
         if (features.ecx & 0x200000) == 0 {
             panic!("X2APIC is not supported");
         }
-        Self {
-            transition_cr3: u64::from(read_cr3()).try_into().unwrap(),
-        }
+        Self {}
     }
 }
 
@@ -211,7 +207,12 @@ impl SvsmPlatform for NativePlatform {
         false
     }
 
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        start_rip: u64,
+        transition_page_table: &TransitionPageTable,
+    ) -> Result<(), SvsmError> {
         let context = cpu.get_initial_context(start_rip);
         if *IS_HYPERV {
             return hyperv_start_cpu(cpu, &context);
@@ -226,7 +227,7 @@ impl SvsmPlatform for NativePlatform {
         let mut context_mapping = unsafe {
             PerCPUMapping::<MaybeUninit<ApStartContext>>::create(PhysAddr::new(context_pa))?
         };
-        context_mapping.write(create_ap_start_context(&context, self.transition_cr3));
+        context_mapping.write(create_ap_start_context(&context, transition_page_table));
 
         // Now that the AP startup transition page has been configured, send
         // INIT-SIPI to start the processor.  No second SIPI is required when
