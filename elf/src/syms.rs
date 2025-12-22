@@ -43,6 +43,10 @@ impl<'a> Elf64Strtab<'a> {
         ffi::CStr::from_bytes_until_nul(&self.strtab_buf[index..])
             .map_err(|_| ElfError::InvalidStrtabString)
     }
+
+    pub const fn buf(&self) -> &[u8] {
+        self.strtab_buf
+    }
 }
 
 /// Represents an ELF64 symbol ([`Elf64Sym`]) within the symbol table.
@@ -149,5 +153,9 @@ impl<'a> Elf64Symtab<'a> {
         let sym_off = i * self.entsize;
         let sym_buf = &self.syms_buf[sym_off..(sym_off + self.entsize)];
         Ok(Elf64Sym::read(sym_buf))
+    }
+
+    pub const fn syms_num(&self) -> Elf64Word {
+        self.syms_num
     }
 }
