@@ -20,8 +20,9 @@ use core::arch::asm;
 use core::ffi::c_char;
 use core::mem::{size_of, MaybeUninit};
 use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut, NonNull};
+use core::slice;
 use syscall::PATH_MAX;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 /// Read one byte from a virtual address.
 ///
@@ -298,6 +299,43 @@ impl<T> GuestPtr<T> {
     #[inline]
     pub const fn from_ptr(p: *mut T) -> Self {
         Self { ptr: p }
+    }
+
+    /// Attempts to read the `T` behind the pointer, verifying that it has
+    /// a valid representation in the process. This may be used for types
+    /// for which [not all bit patterns are valid][valid-instance].
+    ///
+    /// [valid-instance]: <https://docs.rs/zerocopy/latest/zerocopy/trait.TryFromBytes.html#what-is-a-valid-instance>
+    ///
+    /// # Safety
+    ///
+    /// See safety considerations for [`GuestPtr::read()`].
+    ///
+    /// # Errors
+    ///
+    /// * If the access caused a fault, this returns `Err(SvsmError::Fault)`.
+    /// * If the read data did not have a valid format for `T`, this returns
+    ///   `Err(SvsmError::Mem)`.
+    pub unsafe fn try_read(&self) -> Result<T, SvsmError>
+    where
+        T: TryFromBytes,
+    {
+        let mut buf = MaybeUninit::<T>::uninit();
+        let dst = buf.as_mut_ptr();
+        // SAFETY: Safe because `dst` is on the local stack. The data is
+        // explicitly uninitialized and no one else has access to it.
+        // Creating the slice is safe because:
+        // * `do_movsb()` fills the buffer completely or fails, so memory
+        //   is initialized.
+        // * The slice has the same size as `T`.
+        // * The slice has no invalid reprensentations nor alignment
+        //   requirements.
+        let bytes = unsafe {
+            do_movsb(self.ptr, dst)?;
+            slice::from_raw_parts(dst.cast::<u8>(), size_of::<T>())
+        };
+
+        T::try_read_from_bytes(bytes).map_err(|_| SvsmError::Mem)
     }
 
     /// # Safety
@@ -765,5 +803,28 @@ mod tests {
         // unmapped). ptr.read() will return an error but this is expected.
         let err = unsafe { ptr.read() };
         assert!(err.is_err());
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore = "inline assembly")]
+    fn test_read_valid_bit_pattern() {
+        // Valid bit pattern for `bool`
+        let mut buffer = [1u8];
+        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        // SAFETY: the pointer points to a buffer on the stack with a size of 1
+        // which is also the size of a bool, so we cannot read, out of bounds.
+        let val = unsafe { ptr.try_read() };
+        assert!(val.unwrap());
+    }
+
+    #[test]
+    fn test_read_invalid_bit_pattern() {
+        // Invalid bit pattern for `bool`
+        let mut buffer = [2u8];
+        let ptr = GuestPtr::<bool>::from_ptr(buffer.as_mut_ptr().cast());
+        // SAFETY: the pointer points to a buffer on the stack with a size of 1
+        // which is also the size of a bool, so we cannot read, out of bounds.
+        let val = unsafe { ptr.try_read() };
+        assert!(matches!(val.unwrap_err(), SvsmError::Mem));
     }
 }
