@@ -92,7 +92,7 @@ impl Elf64Sym {
 
 /// Represents an ELF64 symbol table ([`Elf64Symtab`]) containing
 /// symbols used within the ELF file.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Elf64Symtab<'a> {
     /// The underlying buffer containing the symbol table data
     syms_buf: &'a [u8],
