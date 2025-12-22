@@ -11,6 +11,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 // The SIPI stub is placed immediately below the stage 2 heap.
 pub const SIPI_STUB_GPA: u32 = 0xF000;
 
+// Two pages below the SIPI stub are used for low memory page tables.
+pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
+
 // The first 640 KB of RAM (low memory)
 pub const LOWMEM_END: u32 = 0xA0000;
 
