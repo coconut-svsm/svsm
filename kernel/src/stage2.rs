@@ -341,15 +341,7 @@ unsafe fn load_elf_segment(
     Ok(segment_region)
 }
 
-/// Loads the kernel ELF and returns the virtual memory region where it
-/// resides, as well as its entry point. Updates the used physical memory
-/// region accordingly.
-fn load_kernel_elf(
-    launch_info: &Stage2LaunchInfo,
-    loaded_phys: &mut MemoryRegion<PhysAddr>,
-    platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
-) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
+fn read_kernel_elf(launch_info: &Stage2LaunchInfo) -> Result<elf::Elf64File<'static>, ElfError> {
     // Find the bounds of the kernel ELF and load it into the ELF parser
     let elf_start = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let elf_end = PhysAddr::from(launch_info.kernel_elf_end as u64);
@@ -357,8 +349,18 @@ fn load_kernel_elf(
     // SAFETY: the base address of the ELF image was selected by the loader and
     // is known not to conflict with any other virtual address mappings.
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
-    let elf = elf::Elf64File::read(bytes)?;
+    elf::Elf64File::read(bytes)
+}
 
+/// Loads the kernel ELF and returns the virtual memory region where it
+/// resides, as well as its entry point. Updates the used physical memory
+/// region accordingly.
+fn load_kernel_elf(
+    elf: &elf::Elf64File<'_>,
+    loaded_phys: &mut MemoryRegion<PhysAddr>,
+    platform: &dyn SvsmPlatform,
+    config: &SvsmConfig<'_>,
+) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
     let vaddr_alloc_info = elf.image_load_vaddr_alloc_info();
     let vaddr_alloc_base = vaddr_alloc_info.range.vaddr_begin;
 
@@ -522,8 +524,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
     // Load first the kernel ELF and update the loaded physical region
+    let elf = read_kernel_elf(launch_info).expect("Failed to read kernel ELF");
     let (kernel_entry, loaded_kernel_vregion) =
-        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
+        load_kernel_elf(&elf, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
     // Define the heap base address as the end of the kernel ELF plus a
