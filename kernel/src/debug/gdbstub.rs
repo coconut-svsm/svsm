@@ -96,7 +96,7 @@ pub mod svsm_gdbstub {
 
     pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let exception_type = ExceptionType::from(exception);
-        let id = this_cpu().runqueue().lock_read().current_task_id();
+        let id = this_cpu().runqueue().current_task_id();
         let mut task_ctx = TaskContext {
             regs: X86GeneralRegs {
                 r15: ctx.regs.r15,
@@ -289,7 +289,7 @@ pub mod svsm_gdbstub {
             ctx.ret_addr -= 1;
         }
 
-        let tid = Tid::new(this_cpu().runqueue().lock_read().current_task_id() as usize)
+        let tid = Tid::new(this_cpu().runqueue().current_task_id() as usize)
             .expect("Current task has invalid ID");
         let mut new_gdb = match gdb {
             GdbStubStateMachine::Running(gdb_inner) => {
@@ -616,7 +616,7 @@ pub mod svsm_gdbstub {
             // Get the current task. If this is the first request after the remote
             // GDB has connected then we need to report the current task first.
             // There is no harm in doing this every time the thread list is requested.
-            let current_task = this_cpu().runqueue().lock_read().current_task_id();
+            let current_task = this_cpu().runqueue().current_task_id();
             if current_task == INITIAL_TASK_ID {
                 thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
             } else {
