@@ -29,6 +29,7 @@ pub struct Elf64File<'a> {
     /// THe section header string table may not be present
     pub sh_strtab: Option<Elf64Strtab<'a>>,
     pub symtab: Option<Elf64Symtab<'a>>,
+    pub strtab: Option<Elf64Strtab<'a>>,
     pub dynamic: Option<Elf64Dynamic>,
 }
 
@@ -130,6 +131,7 @@ impl<'a> Elf64File<'a> {
         }
 
         let symtab = Self::find_symtab(elf_file_buf, &elf_hdr)?;
+        let strtab = Self::find_strtab(elf_file_buf, &elf_hdr, sh_strtab.as_ref())?;
 
         let dynamic = if let Some(dynamic_file_range) = dynamic_file_range {
             let dynamic_buf =
@@ -148,6 +150,7 @@ impl<'a> Elf64File<'a> {
             max_load_segment_align,
             sh_strtab,
             symtab,
+            strtab,
             dynamic,
         })
     }
@@ -165,6 +168,35 @@ impl<'a> Elf64File<'a> {
             let range = shdr.file_range();
             let buf = &elf_buf[range.offset_begin..range.offset_end];
             return Ok(Some(Elf64Symtab::new(buf, shdr.sh_entsize)?));
+        }
+        Ok(None)
+    }
+
+    /// Locates and parses the `.strtab` section in the ELF file.
+    fn find_strtab(
+        elf_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        sh_strtab: Option<&Elf64Strtab<'a>>,
+    ) -> Result<Option<Elf64Strtab<'a>>, ElfError> {
+        let Some(shstr) = sh_strtab else {
+            return Ok(None);
+        };
+
+        for i in 0..elf_hdr.e_shnum {
+            let shdr = Self::read_verified_shdr(elf_buf, elf_hdr, i)?;
+            if shdr.sh_type != Elf64Shdr::SHT_STRTAB {
+                continue;
+            }
+
+            // `.sh_strtab` has the same `sh_type`, so look at the name as well
+            let name = shstr.get_str(shdr.sh_name)?;
+            if name != c".strtab" {
+                continue;
+            }
+
+            let range = shdr.file_range();
+            let buf = &elf_buf[range.offset_begin..range.offset_end];
+            return Ok(Some(Elf64Strtab::new(buf)));
         }
         Ok(None)
     }
