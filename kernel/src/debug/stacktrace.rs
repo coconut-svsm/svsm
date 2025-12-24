@@ -4,18 +4,20 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-extern crate alloc;
-
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::try_this_cpu,
+    locking::SpinLock,
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
-use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
-use core::{arch::asm, mem};
+use core::{
+    arch::asm,
+    fmt::{self, Write},
+    mem,
+};
 
 extern "C" {
     static bsp_stack: u64;
@@ -244,26 +246,75 @@ impl Iterator for StackUnwinder {
     }
 }
 
-fn print_stack_frame(frame: StackFrame) {
+/// A scratch buffer to prepare a formatted string when printing a stacktrace.
+#[derive(Debug)]
+struct StacktraceBuf<const N: usize> {
+    buf: [u8; N],
+    pos: usize,
+}
+
+impl<const N: usize> StacktraceBuf<N> {
+    const fn new() -> Self {
+        Self {
+            buf: [0; N],
+            pos: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.buf[..self.pos]).unwrap_or_default()
+    }
+
+    const fn clear(&mut self) {
+        self.pos = 0;
+    }
+}
+
+impl<const N: usize> fmt::Write for StacktraceBuf<N> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        // This should never overflow, but this is not a performance-critical
+        // path, and we really want to avoid panicking (if we got here we are
+        // already panicking in the first place), so check just in case.
+        let new_pos = self.pos.checked_add(s.len()).ok_or(fmt::Error)?;
+        self.buf
+            .get_mut(self.pos..new_pos)
+            .ok_or(fmt::Error)?
+            .copy_from_slice(s.as_bytes());
+        self.pos = new_pos;
+        Ok(())
+    }
+}
+
+static STACKTRACE_BUF: SpinLock<StacktraceBuf<512>> = SpinLock::new(StacktraceBuf::new());
+
+fn print_stack_frame<const N: usize>(frame: StackFrame, buf: &mut StacktraceBuf<N>) -> fmt::Result {
     let mut annotated = false;
-    let mut msg = format!("  [{:016x}]", frame.rip);
+
+    buf.clear();
+    write!(buf, "  [{:016x}]", frame.rip)?;
 
     if frame.is_exception_frame {
-        msg.push_str(" @");
+        buf.write_str(" @")?;
         annotated = true;
     }
     if !frame.is_aligned {
-        msg.push_str(if annotated { "#" } else { " #" });
+        buf.write_str(if annotated { "#" } else { " #" })?;
     }
-    log::info!("{}", msg);
+    log::info!("{}", buf.as_str());
+    Ok(())
 }
 
 pub fn print_stack(skip: usize) {
     let unwinder = StackUnwinder::unwind_this_cpu();
+    let mut buf = STACKTRACE_BUF.lock();
     log::info!("---BACKTRACE---:");
     for frame in unwinder.skip(skip) {
         match frame {
-            UnwoundStackFrame::Valid(item) => print_stack_frame(item),
+            UnwoundStackFrame::Valid(item) => {
+                if print_stack_frame(item, &mut buf).is_err() {
+                    log::info!("  Truncated frame info");
+                }
+            }
             UnwoundStackFrame::Invalid => log::info!("  Invalid frame"),
         }
     }
