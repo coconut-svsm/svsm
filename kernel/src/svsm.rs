@@ -472,6 +472,22 @@ pub unsafe fn svsm_main(li: usize) {
 #[cfg(test)]
 fn test_in_svsm_task(_context: usize) {
     crate::test_main();
+
+    #[cfg(test_in_svsm)]
+    {
+        use crate::testing::QEMUExitValue;
+        use svsm::fs::opendir;
+        use svsm::task::exec_user;
+
+        match exec_user("/init", opendir("/").expect("Failed to find FS root")) {
+            Ok(_) => (),
+            Err(e) => log::info!("Failed to launch /init: {e:?}"),
+        }
+
+        log::info!("All tests passed!");
+
+        crate::testing::exit(QEMUExitValue::Success);
+    }
 }
 
 #[panic_handler]
