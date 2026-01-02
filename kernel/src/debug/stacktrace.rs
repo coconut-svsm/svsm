@@ -4,8 +4,6 @@
 //
 // Author: Nicolai Stange <nstange@suse.de>
 
-extern crate alloc;
-
 use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
@@ -13,9 +11,12 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
-use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
-use core::{arch::asm, mem};
+use core::{
+    arch::asm,
+    fmt::{self, Write},
+    mem,
+};
 
 extern "C" {
     static bsp_stack: u64;
@@ -246,18 +247,64 @@ impl Iterator for StackUnwinder {
     }
 }
 
+/// A scratch buffer to prepare a formatted string when printing a stacktrace.
+#[derive(Debug)]
+struct StacktraceBuf<const N: usize> {
+    buf: [u8; N],
+    pos: usize,
+}
+
+impl<const N: usize> StacktraceBuf<N> {
+    const fn new() -> Self {
+        Self {
+            buf: [0; N],
+            pos: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.buf[..self.pos]).unwrap_or_default()
+    }
+
+    const fn len(&self) -> usize {
+        self.pos
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<const N: usize> fmt::Write for StacktraceBuf<N> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        // This should never overflow, but this is not a performance-critical
+        // path, and we really want to avoid panicking (if we got here we are
+        // already panicking in the first place), so check just in case.
+        let new_pos = self.pos.checked_add(s.len()).ok_or(fmt::Error)?;
+        self.buf
+            .get_mut(self.pos..new_pos)
+            .ok_or(fmt::Error)?
+            .copy_from_slice(s.as_bytes());
+        self.pos = new_pos;
+        Ok(())
+    }
+}
+
 fn print_stack_frame(frame: StackFrame) {
-    let mut annotated = false;
-    let mut msg = format!("  [{:016x}]", frame.rip);
+    // NOTE: update the size of this buffer when adding more annotations below!
+    // Note that the size is specified in bytes, which might not correspond 1:1
+    // to the number of characters due to UTF-8 encoding.
+    let mut annotations = StacktraceBuf::<2>::new();
 
     if frame.is_exception_frame {
-        msg.push_str(" @");
-        annotated = true;
+        let _ = annotations.write_char('@');
     }
     if !frame.is_aligned {
-        msg.push_str(if annotated { "#" } else { " #" });
+        let _ = annotations.write_char('#');
     }
-    log::info!("{}", msg);
+    let space = if annotations.is_empty() { "" } else { " " };
+
+    log::info!("  [{:016x}]{}{}", frame.rip, space, annotations.as_str());
 }
 
 pub fn print_stack(skip: usize) {
