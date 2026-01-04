@@ -68,7 +68,7 @@ fn pvalidate_page_range(range: MemoryRegion<PhysAddr>, op: PvalidateOp) -> Resul
         } else {
             PAGE_SIZE
         };
-        let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0)?;
+        let mapping = PerCPUPageMappingGuard::create(paddr, paddr + len, 0, false)?;
         // SAFETY: The mapping correctly represents the physical address range
         // and therefore is safe with respect to other memory operations.
         unsafe {

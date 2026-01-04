@@ -140,8 +140,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
                         // SAFETY: the caller takes responsibility for the
                         // correct usage of the physical address.
                         unsafe {
-                            let mapping =
-                                PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE_2M, 0)?;
+                            let mapping = PerCPUPageMappingGuard::create_4k(addr)?;
                             mapping
                                 .virt_addr()
                                 .as_mut_ptr::<u8>()
@@ -170,7 +169,7 @@ pub unsafe fn td_accept_physical_memory(region: MemoryRegion<PhysAddr>) -> Resul
                     // SAFETY: the caller takes responsibility for the correct
                     // usage of the physical address.
                     unsafe {
-                        let mapping = PerCPUPageMappingGuard::create(addr, addr + PAGE_SIZE, 0)?;
+                        let mapping = PerCPUPageMappingGuard::create_4k(addr)?;
                         mapping
                             .virt_addr()
                             .as_mut_ptr::<u8>()

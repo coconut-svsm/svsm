@@ -191,7 +191,7 @@ impl IgvmParams<'_> {
         );
 
         let mem_map_mapping =
-            PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0)?;
+            PerCPUPageMappingGuard::create(mem_map_region.start(), mem_map_region.end(), 0, false)?;
         let mem_map_va = mem_map_mapping.virt_addr();
 
         if self.igvm_param_block.firmware.memory_map_prevalidated == 0 {
