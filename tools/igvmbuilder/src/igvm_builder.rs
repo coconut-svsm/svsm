@@ -309,7 +309,7 @@ impl IgvmBuilder {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
                     compatibility_mask: NATIVE_COMPATIBILITY_MASK,
-                    highest_vtl: 2,
+                    highest_vtl: 0,
                     platform_type: IgvmPlatformType::NATIVE,
                     platform_version: 1,
                     shared_gpa_boundary: 0,
