@@ -564,7 +564,7 @@ pub unsafe fn copy_from_guest(src: PhysAddr, dst: *mut u8, size: usize) -> Resul
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
+        let guard = PerCPUPageMappingGuard::create(start, end, 0, false)?;
         let source = with_exposed_provenance::<u8>(guard.virt_addr().bits()).offset(offset);
         copy_bytes(source, dst, size)
     }
@@ -615,7 +615,7 @@ pub fn copy_slice_to_guest(src: &[u8], dst: PhysAddr) -> Result<(), SvsmError> {
 
     // SAFETY: Only reads data from a region outside the SVSM.
     unsafe {
-        let guard = PerCPUPageMappingGuard::create(start, end, 0)?;
+        let guard = PerCPUPageMappingGuard::create(start, end, 0, false)?;
         let destination =
             with_exposed_provenance_mut::<u8>(guard.virt_addr().bits()).offset(offset);
         copy_bytes(src.as_ptr(), destination, size)

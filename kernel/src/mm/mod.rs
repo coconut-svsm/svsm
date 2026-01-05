@@ -15,6 +15,7 @@ mod pagebox;
 pub mod pagetable;
 pub mod ptguards;
 pub mod ro_after_init;
+pub mod transition_pgtable;
 pub mod validate;
 pub mod virtualrange;
 pub mod vm;
@@ -34,3 +35,4 @@ pub use global_memory::{
     map_global_range_4k_private, map_global_range_4k_shared, GlobalRangeGuard,
 };
 pub use mappings::{mmap_kernel, mmap_user, munmap_kernel, munmap_user, VMMappingGuard};
+pub use transition_pgtable::TransitionPageTable;

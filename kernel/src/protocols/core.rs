@@ -293,7 +293,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         return Err(SvsmReqError::invalid_address());
     }
 
-    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign)?;
+    let guard = PerCPUPageMappingGuard::create(paddr, paddr + page_size_bytes, valign, false)?;
     let vaddr = guard.virt_addr();
 
     // Take lock to prevent races with CREATE_VCPU calls

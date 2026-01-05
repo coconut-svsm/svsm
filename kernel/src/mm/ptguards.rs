@@ -33,6 +33,8 @@ impl PerCPUPageMappingGuard {
     /// * `paddr_start` - The starting physical address of the range.
     /// * `paddr_end` - The ending physical address of the range.
     /// * `alignment` - The desired alignment for the mapping.
+    /// * `shared` - Indicates whether the address describes a shared page or a
+    ///   private page.
     ///
     /// # Returns
     ///
@@ -47,6 +49,7 @@ impl PerCPUPageMappingGuard {
         paddr_start: PhysAddr,
         paddr_end: PhysAddr,
         alignment: usize,
+        shared: bool,
     ) -> Result<Self, SvsmError> {
         let align_mask = (PAGE_SIZE << alignment) - 1;
         let size = paddr_end - paddr_start;
@@ -62,13 +65,13 @@ impl PerCPUPageMappingGuard {
             let range = VRangeAlloc::new_2m(size, 0)?;
             this_cpu()
                 .get_pgtable()
-                .map_region_2m(range.region(), paddr_start, flags, false)?;
+                .map_region_2m(range.region(), paddr_start, flags, shared)?;
             range
         } else {
             let range = VRangeAlloc::new_4k(size, 0)?;
             this_cpu()
                 .get_pgtable()
-                .map_region_4k(range.region(), paddr_start, flags, false)?;
+                .map_region_4k(range.region(), paddr_start, flags, shared)?;
             range
         };
 
@@ -78,7 +81,7 @@ impl PerCPUPageMappingGuard {
     /// Creates a new [`PerCPUPageMappingGuard`] for a 4KB page at the
     /// specified physical address, or an `SvsmError` if an error occurs.
     pub fn create_4k(paddr: PhysAddr) -> Result<Self, SvsmError> {
-        Self::create(paddr, paddr + PAGE_SIZE, 0)
+        Self::create(paddr, paddr + PAGE_SIZE, 0, false)
     }
 
     /// Returns the virtual address associated with the guard.
@@ -154,17 +157,37 @@ impl<T> PerCPUMapping<T> {
     /// using 4 KB page mappings.
     /// # Safety
     /// The caller must guarantee that the physical address is valid.
-    pub unsafe fn create(paddr: PhysAddr) -> Result<Self, SvsmError> {
+    unsafe fn create_core(paddr: PhysAddr, shared: bool) -> Result<Self, SvsmError> {
         let offset = paddr.bits() & (PAGE_SIZE - 1);
         assert_eq!(offset & (mem::align_of::<T>() - 1), 0);
         let base = paddr - offset;
         let size = align_up(offset + mem::size_of::<T>(), PAGE_SIZE);
-        let mapping = PerCPUPageMappingGuard::create(base, base + size, 0)?;
+        let mapping = PerCPUPageMappingGuard::create(base, base + size, 0, shared)?;
         Ok(Self {
             mapping,
             offset,
             phantom: PhantomData,
         })
+    }
+
+    /// Creates a new mapping of type `T` to the specified physical address
+    /// using 4 KB page mappings.
+    /// # Safety
+    /// The caller must guarantee that the physical address is valid.
+    pub unsafe fn create(paddr: PhysAddr) -> Result<Self, SvsmError> {
+        // SAFETY: the caller takes responsibility for the correctness of the
+        // physical address.
+        unsafe { Self::create_core(paddr, false) }
+    }
+
+    /// Creates a new mapping of type `T` to the specified physical address
+    /// using 4 KB page mappings.
+    /// # Safety
+    /// The caller must guarantee that the physical address is valid.
+    pub unsafe fn create_shared(paddr: PhysAddr) -> Result<Self, SvsmError> {
+        // SAFETY: the caller takes responsibility for the correctness of the
+        // physical address.
+        unsafe { Self::create_core(paddr, true) }
     }
 
     pub fn virt_addr(&self) -> VirtAddr {

@@ -18,7 +18,7 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
 use crate::io::IOPort;
-use crate::mm::PerCPUMapping;
+use crate::mm::{PerCPUMapping, TransitionPageTable};
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
     td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
@@ -237,7 +237,12 @@ impl SvsmPlatform for TdpPlatform {
         apic_in_service(vector)
     }
 
-    fn start_cpu(&self, cpu: &PerCpu, start_rip: u64) -> Result<(), SvsmError> {
+    fn start_cpu(
+        &self,
+        cpu: &PerCpu,
+        start_rip: u64,
+        transition_page_table: &TransitionPageTable,
+    ) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
         let mut context = cpu.get_initial_context(start_rip);
@@ -258,7 +263,7 @@ impl SvsmPlatform for TdpPlatform {
 
         // transition_cr3 is not needed since all TD APs are using the stage2
         // page table set up by the BSP.
-        context_mapping.write(create_ap_start_context(&context, 0));
+        context_mapping.write(create_ap_start_context(&context, transition_page_table));
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.
