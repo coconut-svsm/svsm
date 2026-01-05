@@ -8,8 +8,8 @@ use crate::address::VirtAddr;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use crate::utils::MemoryRegion;
+use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 use core::fmt::Debug;
 
 use super::{

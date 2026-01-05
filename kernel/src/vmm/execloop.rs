@@ -4,12 +4,12 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
-use super::{set_guest_register, GuestExitMessage, GuestRegister};
-use crate::cpu::percpu::{this_cpu, GuestVmsaRef};
-use crate::cpu::{flush_tlb_global_sync, IrqGuard};
+use super::{GuestExitMessage, GuestRegister, set_guest_register};
+use crate::cpu::percpu::{GuestVmsaRef, this_cpu};
+use crate::cpu::{IrqGuard, flush_tlb_global_sync};
 use crate::mm::GuestPtr;
-use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
+use crate::protocols::errors::SvsmReqError;
 use crate::requests::SvsmCaa;
 use crate::sev::ghcb::switch_to_vmpl;
 use crate::sev::vmsa::VMSAControl;

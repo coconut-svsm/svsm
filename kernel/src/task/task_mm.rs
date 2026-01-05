@@ -13,9 +13,9 @@ use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::{Mapping, VMR};
-use crate::mm::{alloc::AllocError, SIZE_LEVEL3, SVSM_PERTASK_BASE};
-use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
+use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, alloc::AllocError};
 use crate::utils::MemoryRegion;
+use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
 static KTASK_VADDR_BITMAP: SpinLock<BitmapAllocator1024> =
     SpinLock::new(BitmapAllocator1024::new_empty());

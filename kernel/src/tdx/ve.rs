@@ -4,8 +4,8 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use super::tdcall::{tdcall_get_ve_info, tdvmcall_cpuid};
 use super::TdxError;
+use super::tdcall::{tdcall_get_ve_info, tdvmcall_cpuid};
 use crate::cpu::idt::common::X86ExceptionContext;
 use crate::error::SvsmError;
 

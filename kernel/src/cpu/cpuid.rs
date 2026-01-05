@@ -145,7 +145,16 @@ pub fn dump_cpuid_table() {
         let ebx_out = CPUID_PAGE.func[i].ebx_out;
         let ecx_out = CPUID_PAGE.func[i].ecx_out;
         let edx_out = CPUID_PAGE.func[i].edx_out;
-        log::trace!("EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
-                    eax_in, ecx_in, xcr0_in, xss_in, eax_out, ebx_out, ecx_out, edx_out);
+        log::trace!(
+            "EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
+            eax_in,
+            ecx_in,
+            xcr0_in,
+            xss_in,
+            eax_out,
+            ebx_out,
+            ecx_out,
+            edx_out
+        );
     }
 }

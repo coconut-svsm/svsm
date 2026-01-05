@@ -9,16 +9,16 @@ use super::hal::*;
 extern crate alloc;
 use alloc::boxed::Box;
 use core::ptr::NonNull;
+use virtio_drivers::PAGE_SIZE;
 use virtio_drivers::device::blk::VirtIOBlk;
 use virtio_drivers::transport::mmio::{MmioError, MmioTransport};
 use virtio_drivers::transport::{DeviceType, Transport};
-use virtio_drivers::PAGE_SIZE;
 
 use super::error::*;
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::mm::global_memory::{map_global_range_4k_shared, GlobalRangeGuard};
+use crate::mm::global_memory::{GlobalRangeGuard, map_global_range_4k_shared};
 use crate::mm::pagetable::PTEntryFlags;
 
 pub struct VirtIOBlkDevice {

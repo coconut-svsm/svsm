@@ -17,14 +17,14 @@ use zerocopy::FromZeros;
 use crate::mm::alloc::AllocError;
 use crate::mm::page_visibility::SharedBox;
 use crate::{
+    BIT,
     cpu::percpu::current_ghcb,
     error::SvsmError,
     greq::msg::{SnpGuestRequestExtData, SnpGuestRequestMsg, SnpGuestRequestMsgType},
     locking::SpinLock,
     protocols::errors::{SvsmReqError, SvsmResultCode},
-    sev::{ghcb::GhcbError, secrets_page, secrets_page_mut, VMPCK_SIZE},
+    sev::{VMPCK_SIZE, ghcb::GhcbError, secrets_page, secrets_page_mut},
     types::PAGE_SHIFT,
-    BIT,
 };
 
 /// Global `SNP_GUEST_REQUEST` driver instance

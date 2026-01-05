@@ -8,7 +8,7 @@ extern crate alloc;
 
 use crate::{
     address::{Address, VirtAddr},
-    cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
+    cpu::idt::common::{X86ExceptionContext, is_exception_handler_return_site},
     cpu::percpu::try_this_cpu,
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
@@ -17,7 +17,7 @@ use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
 use core::{arch::asm, mem};
 
-extern "C" {
+unsafe extern "C" {
     static bsp_stack: u64;
     static bsp_stack_end: u64;
 }
@@ -122,7 +122,9 @@ impl StackUnwinder {
         let Some(stack) = stacks.iter().find(|stack| {
             !stack.is_empty() && (stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
         }) else {
-            log::info!("check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack");
+            log::info!(
+                "check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack"
+            );
             return UnwoundStackFrame::Invalid;
         };
 

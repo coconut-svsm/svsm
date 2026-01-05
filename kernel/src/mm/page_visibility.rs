@@ -16,10 +16,10 @@ use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
 };
-use crate::mm::{virt_to_phys, PageBox};
+use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::protocols::errors::SvsmReqError;
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
 
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};

@@ -7,7 +7,7 @@ pub mod owning;
 
 use crate::hal::{BufferDirection, Dma, Hal, PhysAddr};
 use crate::transport::Transport;
-use crate::{align_up, nonnull_slice_from_raw_parts, pages, Error, Result, PAGE_SIZE};
+use crate::{Error, PAGE_SIZE, Result, align_up, nonnull_slice_from_raw_parts, pages};
 #[cfg(feature = "alloc")]
 use alloc::boxed::Box;
 use bitflags::bitflags;
@@ -19,7 +19,7 @@ use core::mem::{size_of, take};
 #[cfg(test)]
 use core::ptr;
 use core::ptr::NonNull;
-use core::sync::atomic::{fence, AtomicU16, Ordering};
+use core::sync::atomic::{AtomicU16, Ordering, fence};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
 /// The mechanism for bulk data transport on virtio devices.
@@ -989,9 +989,9 @@ mod tests {
         device::common::Feature,
         hal::fake::FakeHal,
         transport::{
-            fake::{FakeTransport, QueueStatus, State},
-            mmio::{MmioTransport, VirtIOHeader, MODERN_VERSION},
             DeviceType,
+            fake::{FakeTransport, QueueStatus, State},
+            mmio::{MODERN_VERSION, MmioTransport, VirtIOHeader},
         },
     };
     use core::ptr::NonNull;

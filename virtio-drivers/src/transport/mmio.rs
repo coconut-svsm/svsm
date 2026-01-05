@@ -4,10 +4,9 @@
 
 use super::{DeviceStatus, DeviceType, Transport};
 use crate::{
-    align_up,
+    Error, Hal, PAGE_SIZE, PhysAddr, align_up,
     queue::Descriptor,
-    volatile::{volread, volwrite, ReadOnly, Volatile, WriteOnly},
-    Error, Hal, PhysAddr, PAGE_SIZE,
+    volatile::{ReadOnly, Volatile, WriteOnly, volread, volwrite},
 };
 use core::{
     convert::{TryFrom, TryInto},

@@ -7,7 +7,7 @@
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
 use crate::mm::virt_to_frame;
-use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{GUEST_VMPL, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
 use core::arch::asm;
 use core::fmt;

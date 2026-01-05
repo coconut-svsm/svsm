@@ -9,7 +9,7 @@ use std::fs;
 
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{
-    IgvmPlatformType, IGVM_VHS_SNP_ID_BLOCK_PUBLIC_KEY, IGVM_VHS_SNP_ID_BLOCK_SIGNATURE,
+    IGVM_VHS_SNP_ID_BLOCK_PUBLIC_KEY, IGVM_VHS_SNP_ID_BLOCK_SIGNATURE, IgvmPlatformType,
 };
 use p384::ecdsa::signature::Signer;
 use p384::ecdsa::{Signature, SigningKey};

@@ -7,7 +7,7 @@
 use crate::address::{Address, PhysAddr};
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
-use crate::mm::{virt_to_phys, PageBox};
+use crate::mm::{PageBox, virt_to_phys};
 use crate::types::{PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 use core::num::NonZeroUsize;

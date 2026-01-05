@@ -17,7 +17,7 @@ macro_rules! ro_after_init_section {
     };
 }
 
-extern "C" {
+unsafe extern "C" {
     pub static ro_after_init_start: u8;
     pub static ro_after_init_end: u8;
 }

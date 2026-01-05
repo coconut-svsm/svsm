@@ -16,13 +16,13 @@ use crate::greq::{
     services::get_regular_report,
 };
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
-use crate::protocols::{errors::SvsmReqError, RequestParams};
+use crate::protocols::{RequestParams, errors::SvsmReqError};
 use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
 use crate::vtpm::vtpm_get_manifest;
 
 use alloc::{boxed::Box, vec::Vec};
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 
 pub const ATTEST_PROTOCOL_VERSION_MIN: u32 = 1;

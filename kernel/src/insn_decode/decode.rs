@@ -41,7 +41,7 @@
 
 extern crate alloc;
 
-use super::insn::{DecodedInsn, Immediate, Operand, MAX_INSN_SIZE};
+use super::insn::{DecodedInsn, Immediate, MAX_INSN_SIZE, Operand};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
 use crate::cpu::control_regs::{CR0Flags, CR4Flags};
@@ -704,11 +704,7 @@ impl DecodedInsnCtx {
     /// skip this instruction. If the repeat count is less than 1, then
     /// return instruction len to indicate this instruction can be skipped.
     pub fn size(&self) -> usize {
-        if self.repeat > 1 {
-            0
-        } else {
-            self.insn_len
-        }
+        if self.repeat > 1 { 0 } else { self.insn_len }
     }
 
     /// Emulates the decoded instruction using the provided machine context.

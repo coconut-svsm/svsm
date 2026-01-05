@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
 pub const OVMF_RESET_VECTOR_GUID: Uuid = uuid!("813d7b2c-9558-4d88-8b31-1427a85abe69");
 pub const OVMF_SEV_METADATA_GUID: Uuid = uuid!("dc886566-984a-4798-a75e-5585a7bf67cc");
