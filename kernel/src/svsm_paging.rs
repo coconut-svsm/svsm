@@ -68,6 +68,11 @@ pub fn init_page_table(
     Ok(pgtable)
 }
 
+/// Invalidates the given memory region using a platform-specific method.
+///
+/// While this cannot generate undefined behavior, the caller must be careful
+/// not to invalidate memory that will be used later, as accesing it will lead
+/// to an immediate panic.
 fn invalidate_boot_memory_region(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
@@ -78,7 +83,10 @@ fn invalidate_boot_memory_region(
     log::info!("Invalidating boot region {aligned_region:#018x}");
 
     if !aligned_region.is_empty() {
-        platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)?;
+        // SAFETY: invalidating memory cannot cause UB.
+        unsafe {
+            platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)
+        }?;
 
         if config.page_state_change_required() {
             platform.page_state_change(
