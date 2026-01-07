@@ -107,6 +107,7 @@ pub mod test_utils {
     use crate::insn_decode::*;
     use crate::types::Bytes;
     use alloc::boxed::Box;
+    use zerocopy::{FromBytes, IntoBytes};
 
     pub const TEST_PORT: u16 = 0xE0;
 
@@ -174,7 +175,7 @@ pub mod test_utils {
     }
 
     #[cfg_attr(not(test), expect(dead_code))]
-    struct TestMem<T: Copy> {
+    struct TestMem<T> {
         ptr: *mut T,
     }
 
@@ -250,7 +251,7 @@ pub mod test_utils {
             self.flags
         }
 
-        fn map_linear_addr<T: Copy + 'static>(
+        fn map_linear_addr<T: FromBytes + IntoBytes + 'static>(
             &self,
             la: usize,
             _write: bool,
@@ -344,7 +345,7 @@ pub mod test_utils {
     }
 
     #[cfg(test)]
-    impl<T: Copy> InsnMachineMem for TestMem<T> {
+    impl<T: FromBytes + IntoBytes> InsnMachineMem for TestMem<T> {
         type Item = T;
 
         /// # Safety
@@ -353,7 +354,7 @@ pub mod test_utils {
         unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
             // SAFETY: caller must ensure `ptr` was initialized with a valid
             // address.
-            Ok(unsafe { *(self.ptr) })
+            Ok(unsafe { self.ptr.read() })
         }
 
         /// # Safety
@@ -370,7 +371,7 @@ pub mod test_utils {
     }
 
     #[cfg(fuzzing)]
-    impl<T: Copy> InsnMachineMem for TestMem<T> {
+    impl<T: FromBytes + IntoBytes> InsnMachineMem for TestMem<T> {
         type Item = T;
 
         /// # Safety
