@@ -47,6 +47,7 @@ impl GpaRange {
     pub fn get_end(&self) -> u64 {
         self.end
     }
+
     pub fn get_size(&self) -> u64 {
         self.size
     }
@@ -71,6 +72,8 @@ pub struct GpaMap {
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
     // overlap any other regions.
     pub kernel: GpaRange,
+    pub kernel_min_size: u32,
+    pub kernel_max_size: u32,
     pub vmsa: GpaRange,
     pub init_page_tables: GpaRange,
 }
@@ -144,6 +147,20 @@ impl GpaMap {
                 GpaRange::new(0x7ff80000000, 0x80000000)?
             }
         };
+        // Give the kernel at least 16 MiB
+        let kernel_min_size = 0x1000000;
+        // Make sure that kernel max size is page-aligned
+        let kernel_max_size = u32::try_from(kernel.get_end() - kernel.get_start())?;
+        if let Some(firmware) = firmware {
+            let fw_info = firmware.get_fw_info();
+            let fw_start = fw_info.start as u64;
+            let fw_end = fw_start + fw_info.size as u64;
+            let kernel_start = kernel.get_start();
+            let kernel_max_end = kernel_start + kernel_max_size as u64;
+            if fw_start < kernel_max_end && fw_end > kernel_start {
+                return Err("Firmware region overlaps kernel region".into());
+            }
+        }
 
         let igvm_param_block = GpaRange::new_page(kernel_fs.get_end())?;
         let general_params = GpaRange::new_page(igvm_param_block.get_end())?;
@@ -183,6 +200,8 @@ impl GpaMap {
             madt,
             guest_context,
             kernel,
+            kernel_min_size,
+            kernel_max_size,
             vmsa,
             init_page_tables: GpaRange::new(0x10000, 2 * PAGE_SIZE_4K)?,
         };

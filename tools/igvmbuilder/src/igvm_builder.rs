@@ -195,7 +195,6 @@ impl IgvmBuilder {
         let param_page_offset = PAGE_SIZE_4K as u32;
         let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
         let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
-        let kernel_min_size = 0x1000000; // 16 MiB
         let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
         {
             (0, memory_map_offset + PAGE_SIZE_4K as u32)
@@ -259,8 +258,8 @@ impl IgvmBuilder {
             stage1_base: self.gpa_map.stage1_image.get_start(),
             kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
             kernel_base: self.gpa_map.kernel.get_start(),
-            kernel_min_size,
-            kernel_max_size: self.gpa_map.kernel.get_size() as u32,
+            kernel_min_size: self.gpa_map.kernel_min_size,
+            kernel_max_size: self.gpa_map.kernel_max_size,
             vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
             suppress_svsm_interrupts_on_snp,
