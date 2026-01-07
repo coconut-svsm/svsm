@@ -186,7 +186,7 @@ pub trait InsnMachineCtx: core::fmt::Debug {
         _la: usize,
         _write: bool,
         _fetch: bool,
-    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+    ) -> Result<Box<dyn InsnMachineMem<T>>, InsnError> {
         Err(InsnError::MapLinearAddr)
     }
 
@@ -312,9 +312,7 @@ pub trait InsnMachineCtx: core::fmt::Debug {
 }
 
 /// Trait representing a machine memory for instruction decoding.
-pub trait InsnMachineMem {
-    type Item;
-
+pub trait InsnMachineMem<T: FromBytes + IntoBytes> {
     /// Read data from the memory at the specified offset.
     ///
     /// # Safety
@@ -326,7 +324,7 @@ pub trait InsnMachineMem {
     ///
     /// Returns the read data on success, or an `InsnError` if the read
     /// operation fails.
-    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+    unsafe fn mem_read(&self) -> Result<T, InsnError> {
         Err(InsnError::MemRead)
     }
 
@@ -344,7 +342,7 @@ pub trait InsnMachineMem {
     /// # Returns
     ///
     /// Returns `Ok`on success, or an `InsnError` if the write operation fails.
-    unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
+    unsafe fn mem_write(&mut self, _data: T) -> Result<(), InsnError> {
         Err(InsnError::MemWrite)
     }
 }

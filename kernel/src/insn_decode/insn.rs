@@ -256,7 +256,7 @@ pub mod test_utils {
             la: usize,
             _write: bool,
             _fetch: bool,
-        ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+        ) -> Result<Box<dyn InsnMachineMem<T>>, InsnError> {
             Ok(Box::new(TestMem { ptr: la as *mut T }))
         }
 
@@ -345,13 +345,11 @@ pub mod test_utils {
     }
 
     #[cfg(test)]
-    impl<T: FromBytes + IntoBytes> InsnMachineMem for TestMem<T> {
-        type Item = T;
-
+    impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for TestMem<T> {
         /// # Safety
         /// The caller is required to ensure the validity of the address
         /// this object was initialized with.
-        unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+        unsafe fn mem_read(&self) -> Result<T, InsnError> {
             // SAFETY: caller must ensure `ptr` was initialized with a valid
             // address.
             Ok(unsafe { self.ptr.read() })
@@ -360,7 +358,7 @@ pub mod test_utils {
         /// # Safety
         /// The caller is required to ensure the validity of the address
         /// this object was initialized with.
-        unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+        unsafe fn mem_write(&mut self, data: T) -> Result<(), InsnError> {
             // SAFETY: caller must ensure `ptr` was initialized with a valid
             // address.
             unsafe {
@@ -371,12 +369,10 @@ pub mod test_utils {
     }
 
     #[cfg(fuzzing)]
-    impl<T: FromBytes + IntoBytes> InsnMachineMem for TestMem<T> {
-        type Item = T;
-
+    impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for TestMem<T> {
         /// # Safety
         /// No safety concerns under fuzzing.
-        unsafe fn mem_write(&mut self, _data: Self::Item) -> Result<(), InsnError> {
+        unsafe fn mem_write(&mut self, _data: T) -> Result<(), InsnError> {
             Ok(())
         }
     }

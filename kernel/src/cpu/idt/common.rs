@@ -176,7 +176,7 @@ impl InsnMachineCtx for X86ExceptionContext {
         la: usize,
         _write: bool,
         _fetch: bool,
-    ) -> Result<Box<dyn InsnMachineMem<Item = T>>, InsnError> {
+    ) -> Result<Box<dyn InsnMachineMem<T>>, InsnError> {
         if user_mode(self) {
             todo!();
         } else {
