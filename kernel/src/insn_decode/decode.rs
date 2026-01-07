@@ -39,8 +39,6 @@
 // https://github.com/projectacrn/acrn-hypervisor/blob/master/hypervisor/
 // arch/x86/guest/instr_emul.c
 
-extern crate alloc;
-
 use super::insn::{DecodedInsn, Immediate, MAX_INSN_SIZE, Operand};
 use super::opcode::{OpCodeClass, OpCodeDesc, OpCodeFlags};
 use super::{InsnError, Register, SegRegister};
@@ -48,7 +46,6 @@ use crate::cpu::control_regs::{CR0Flags, CR4Flags};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::registers::{RFlags, SegDescAttrFlags};
 use crate::types::Bytes;
-use alloc::boxed::Box;
 use bitflags::bitflags;
 use zerocopy::{FromBytes, IntoBytes};
 
@@ -139,6 +136,8 @@ struct DecodedBytes(InsnBytes);
 /// instruction decoder can access specific registers and state that may
 /// influence the decoding from the machine (such as a CPU or VMM).
 pub trait InsnMachineCtx: core::fmt::Debug {
+    type Ptr<T: FromBytes + IntoBytes>: InsnMachineMem<T>;
+
     /// Read EFER register
     fn read_efer(&self) -> u64;
     /// Read a code segment register
@@ -179,14 +178,14 @@ pub trait InsnMachineCtx: core::fmt::Debug {
     ///
     /// # Returns
     ///
-    /// A `Result` containing a boxed trait object representing the mapped
-    /// memory, or an `InsnError` if mapping fails.
-    fn map_linear_addr<T: FromBytes + IntoBytes + 'static>(
+    /// A pointer-like type that allows reading and writing via [`InsnMachineMem`],
+    /// or an `InsnError` if mapping fails.
+    fn map_linear_addr<T: FromBytes + IntoBytes>(
         &self,
         _la: usize,
         _write: bool,
         _fetch: bool,
-    ) -> Result<Box<dyn InsnMachineMem<T>>, InsnError> {
+    ) -> Result<Self::Ptr<T>, InsnError> {
         Err(InsnError::MapLinearAddr)
     }
 

@@ -100,13 +100,10 @@ impl Instruction {
 
 #[cfg(any(test, fuzzing))]
 pub mod test_utils {
-    extern crate alloc;
-
     use crate::cpu::control_regs::{CR0Flags, CR4Flags};
     use crate::cpu::efer::EFERFlags;
     use crate::insn_decode::*;
     use crate::types::Bytes;
-    use alloc::boxed::Box;
     use zerocopy::{FromBytes, IntoBytes};
 
     pub const TEST_PORT: u16 = 0xE0;
@@ -174,12 +171,15 @@ pub mod test_utils {
         }
     }
 
+    #[derive(Debug, Clone, Copy)]
     #[cfg_attr(not(test), expect(dead_code))]
-    struct TestMem<T> {
+    pub struct TestMem<T> {
         ptr: *mut T,
     }
 
     impl InsnMachineCtx for TestCtx {
+        type Ptr<T: FromBytes + IntoBytes> = TestMem<T>;
+
         fn read_efer(&self) -> u64 {
             self.efer
         }
@@ -251,13 +251,13 @@ pub mod test_utils {
             self.flags
         }
 
-        fn map_linear_addr<T: FromBytes + IntoBytes + 'static>(
+        fn map_linear_addr<T: FromBytes + IntoBytes>(
             &self,
             la: usize,
             _write: bool,
             _fetch: bool,
-        ) -> Result<Box<dyn InsnMachineMem<T>>, InsnError> {
-            Ok(Box::new(TestMem { ptr: la as *mut T }))
+        ) -> Result<Self::Ptr<T>, InsnError> {
+            Ok(TestMem { ptr: la as *mut T })
         }
 
         fn ioio_in(&self, _port: u16, size: Bytes) -> Result<u64, InsnError> {
