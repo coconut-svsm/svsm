@@ -60,7 +60,7 @@ fn vtpm_platform_commands_supported_bitmap() -> u64 {
 
 fn is_vtpm_platform_command_supported(cmd: TpmPlatformCommand) -> bool {
     let vtpm = vtpm_get_locked();
-    vtpm.get_supported_commands().iter().any(|x| *x == cmd)
+    vtpm.get_supported_commands().contains(&cmd)
 }
 
 const SEND_COMMAND_REQ_INBUF_SIZE: usize = PAGE_SIZE - 9;
