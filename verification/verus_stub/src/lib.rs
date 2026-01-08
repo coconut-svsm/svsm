@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// Copyright (c) 2025 Red Hat, Inc.
+//
+// Author: Luigi Leonardi <leonardi@redhat.com>
+
 #![no_std]
 
 #[cfg(feature = "disable")]
