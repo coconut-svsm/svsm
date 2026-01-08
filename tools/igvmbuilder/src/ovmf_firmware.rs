@@ -189,6 +189,12 @@ struct MetadataDesc {
     num_desc: u32,
 }
 
+fn region_overlaps(this: (u32, u32), that: (u32, u32)) -> bool {
+    let (this_start, this_end) = (this.0 as u64, this.0 as u64 + this.1 as u64);
+    let (that_start, that_end) = (that.0 as u64, that.0 as u64 + that.1 as u64);
+    this_start < that_end && this_end > that_start
+}
+
 fn region_contains(this: (u32, u32), that: (u32, u32)) -> bool {
     let (this_start, this_end) = (this.0 as u64, this.0 as u64 + this.1 as u64);
     let (that_start, that_end) = (that.0 as u64, that.0 as u64 + that.1 as u64);
@@ -332,6 +338,37 @@ fn parse_inner_table<'a>(
     Ok(remainder)
 }
 
+fn check_regions(fw_info: &IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
+    let flash_range = {
+        let one_gib = 1u32 << 30;
+        (3 * one_gib, one_gib) // (start, size)
+    };
+    if !region_contains(flash_range, (fw_info.start, fw_info.size)) {
+        return Err("OVMF firmware not located in expected flash range".into());
+    }
+
+    let preval_count = fw_info.prevalidated_count as usize;
+    let regions = &fw_info.prevalidated[..preval_count];
+    // Make sure that regions don't overlap.
+    for (i, region) in regions.iter().enumerate() {
+        for other in regions[..i].iter() {
+            if region_overlaps((region.base, region.size), (other.base, other.size)) {
+                let (rbase, rsize) = (region.base, region.size);
+                let (obase, osize) = (other.base, other.size);
+                return Err(format!(
+                    "OVMF pre-validated regions overlap: [{:#x}-{:#x}] | [{:#x}-{:#x}]",
+                    rbase,
+                    rbase as u64 + rsize as u64,
+                    obase,
+                    obase as u64 + osize as u64
+                )
+                .into());
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_ovmf(
     data: &[u8],
     fw_info: &mut IgvmParamBlockFwInfo,
@@ -349,7 +386,7 @@ pub fn parse_ovmf(
     while !body.is_empty() {
         body = parse_inner_table(body, data, fw_info, compat_mask)?;
     }
-    Ok(())
+    check_regions(fw_info)
 }
 
 pub struct OvmfFirmware {
