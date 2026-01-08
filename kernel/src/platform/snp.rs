@@ -166,7 +166,7 @@ impl SvsmPlatform for SnpPlatform {
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                validate_fw(config, &kernel_region)?;
+                validate_fw(config)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
