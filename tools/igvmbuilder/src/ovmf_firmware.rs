@@ -10,7 +10,7 @@ use std::io::Read;
 use std::mem::size_of;
 
 use bootlib::firmware::*;
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
+use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo, IgvmParamBlockFwMem};
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;
@@ -126,7 +126,7 @@ struct IgvmMetadataEntry {
 }
 
 struct IgvmMetadata {
-    param_area: Option<(u32, u32)>, // (start, end)
+    param_area: Option<(u32, u32)>, // (start, size)
 }
 
 impl IgvmMetadata {
@@ -153,7 +153,7 @@ impl Metadata for IgvmMetadata {
                     return Err("Found multiple IGVM param areas".into());
                 }
                 add_preval_region(fw_info, entry.start, entry.len)?;
-                self.param_area = Some((entry.start, entry.start + entry.len));
+                self.param_area = Some((entry.start, entry.len));
             }
             IGVM_META_DESC_TYPE_MEMORY_MAP => {
                 // IGVM_META_DESC_TYPE_PARAM_AREA must precede it.
@@ -165,11 +165,10 @@ impl Metadata for IgvmMetadata {
                     .ok_or("IGVM memory map area exceeds 32 bits")?;
                 fw_info.memory_map_size = entry.len;
 
-                let memory_map_end = fw_info
-                    .memory_map_address
-                    .checked_add(fw_info.memory_map_size)
-                    .ok_or("IGVM memory map area exceeds 32 bits")?;
-                if !region_contains(param_area, (fw_info.memory_map_address, memory_map_end)) {
+                if !region_contains(
+                    param_area,
+                    (fw_info.memory_map_address, fw_info.memory_map_size),
+                ) {
                     return Err("IGVM memory map not included in IGVM param area".into());
                 }
                 fw_info.memory_map_prevalidated = 1;
@@ -191,23 +190,24 @@ struct MetadataDesc {
 }
 
 fn region_contains(this: (u32, u32), that: (u32, u32)) -> bool {
-    let (this_start, this_end) = this;
-    let (that_start, that_end) = that;
+    let (this_start, this_end) = (this.0 as u64, this.0 as u64 + this.1 as u64);
+    let (that_start, that_end) = (that.0 as u64, that.0 as u64 + that.1 as u64);
     this_start <= that_start && that_end <= this_end
 }
 
 fn region_contiguous(this: (u32, u32), that: (u32, u32)) -> bool {
-    let (this_start, this_end) = this;
-    let (that_start, that_end) = that;
+    let (this_start, this_end) = (this.0 as u64, this.0 as u64 + this.1 as u64);
+    let (that_start, that_end) = (that.0 as u64, that.0 as u64 + that.1 as u64);
     this_start <= that_end && this_end >= that_start
 }
 
-fn region_merge(this: (u32, u32), that: (u32, u32)) -> (u32, u32) {
-    let (this_start, this_end) = this;
-    let (that_start, that_end) = that;
+fn region_merge(this: (u32, u32), that: (u32, u32)) -> Option<(u32, u32)> {
+    let (this_start, this_end) = (this.0 as u64, this.0 as u64 + this.1 as u64);
+    let (that_start, that_end) = (that.0 as u64, that.0 as u64 + that.1 as u64);
     let start = this_start.min(that_start);
     let end = this_end.max(that_end);
-    (start, end)
+    let len = u32::try_from(end - start).ok()?;
+    Some((start as u32, len))
 }
 
 fn add_preval_region(
@@ -216,30 +216,30 @@ fn add_preval_region(
     size: u32,
 ) -> Result<(), Box<dyn Error>> {
     let preval_count = fw_info.prevalidated_count as usize;
-    let end = base.checked_add(size).ok_or(format!(
-        "OVMF pre-validated area [{base:#x}-{base:#x}+{size:#x}] exceeds 32 bits"
-    ))?;
-    if let Some(pos) = fw_info
-        .prevalidated
-        .iter()
-        .take(preval_count)
-        .position(|preval| region_contiguous((preval.base, preval.base + preval.size), (base, end)))
+    let preval_regions = &mut fw_info.prevalidated[..preval_count];
+    if let Some(preval) = preval_regions
+        .iter_mut()
+        .find(|preval| region_contiguous((preval.base, preval.size), (base, size)))
     {
-        let pstart = fw_info.prevalidated[pos].base;
-        let pend = pstart + fw_info.prevalidated[pos].size;
-        let merged = region_merge((pstart, pend), (base, end));
+        let (pstart, psize) = (preval.base, preval.size);
+        let merged = region_merge((pstart, psize), (base, size)).ok_or(format!(
+            "OVMF pre-validated area [{:#x}-{:#x}] merge overflow",
+            base,
+            base as u64 + size as u64
+        ))?;
         println!(
-            "Region [{:#x}-{:#x}] merged with existing pre-validated area {} [{:#x}-{:#x}] -> [{:#x}-{:#x}]",
-            base, end, pos, pstart, pend, merged.0, merged.1
+            "Region [{:#x}-{:#x}] merged with existing pre-validated area [{:#x}-{:#x}] -> [{:#x}-{:#x}]",
+            base, base as u64 + size as u64, pstart, pstart as u64 + psize as u64, merged.0, merged.0 as u64 + merged.1 as u64
         );
-        fw_info.prevalidated[pos].base = merged.0;
-        fw_info.prevalidated[pos].size = merged.1 - merged.0;
+        *preval = IgvmParamBlockFwMem {
+            base: merged.0,
+            size: merged.1,
+        };
     } else {
         if preval_count >= fw_info.prevalidated.len() {
             return Err("OVMF metadata defines too many memory regions".into());
         }
-        fw_info.prevalidated[preval_count].base = base;
-        fw_info.prevalidated[preval_count].size = size;
+        fw_info.prevalidated[preval_count] = IgvmParamBlockFwMem { base, size };
         fw_info.prevalidated_count += 1;
     }
     Ok(())
