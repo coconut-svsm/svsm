@@ -9,8 +9,16 @@ path = "src/main.rs"
 test = false
 doctest = false
 
+[lib]
+test = true
+doctest = true
+
 [dependencies]
 userlib.workspace = true
+
+[target."x86_64-unknown-none".dev-dependencies]
+test.workspace = true
+userlib = { workspace = true, features = ["test_runner"] }
 
 [lints]
 workspace = true
