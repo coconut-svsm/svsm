@@ -19,7 +19,6 @@ pub enum IgvmMeasureError {
     InvalidVmsaCount,
     InvalidVmsaGpa,
     InvalidVmsaCr0,
-    InvalidDebugSwap,
     InvalidVmsaOrder,
     IDBlockMismatch([u8; 48]),
 }
@@ -51,16 +50,6 @@ impl std::fmt::Display for IgvmMeasureError {
                     not set to 0x31. The value of CR0 is overridden by KVM \
                     during initial measurement. Therefore the IGVM file must \
                     be configured to match the value set by KVM."
-                )
-            }
-            IgvmMeasureError::InvalidDebugSwap => {
-                write!(
-                    f,
-                    "KVM check failure: DEBUG_SWAP(0x20) is not set in \
-                    sev_features in the VMSA file. This feature is \
-                    automatically applied by KVM during the initial \
-                    measurement so it must be specified in the VMSA in \
-                    the IGVM file in order to match."
                 )
             }
             IgvmMeasureError::InvalidVmsaOrder => {
@@ -376,9 +365,6 @@ impl IgvmMeasure {
             }
             if vmsa.cr0 != 0x31 {
                 return Err(IgvmMeasureError::InvalidVmsaCr0);
-            }
-            if vmsa.sev_features.debug_swap() {
-                return Err(IgvmMeasureError::InvalidDebugSwap);
             }
         }
         Ok(())
