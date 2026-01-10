@@ -11,15 +11,15 @@ use crate::cpu::x86::smap::{clac, stac};
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineMem};
 use crate::mm::{
-    memory::valid_phys_region, ptguards::PerCPUPageMappingGuard, USER_MEM_END, USER_MEM_START,
+    USER_MEM_END, USER_MEM_START, memory::valid_phys_region, ptguards::PerCPUPageMappingGuard,
 };
 use crate::utils::MemoryRegion;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::arch::asm;
 use core::ffi::c_char;
-use core::mem::{size_of, MaybeUninit};
-use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut, NonNull};
+use core::mem::{MaybeUninit, size_of};
+use core::ptr::{NonNull, with_exposed_provenance, with_exposed_provenance_mut};
 use syscall::PATH_MAX;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

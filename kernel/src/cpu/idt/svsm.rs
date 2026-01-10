@@ -12,19 +12,19 @@ use super::super::tss::IST_DF;
 use super::super::vc::handle_vc_exception;
 use super::super::x86::apic_eoi;
 use super::common::{
-    user_mode, IdtEntry, IdtEventType, PageFaultError, AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR,
-    DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR, HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR,
-    MCE_VECTOR, MF_VECTOR, NMI_VECTOR, NM_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, SS_VECTOR,
-    SX_VECTOR, TS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR, XF_VECTOR,
+    AC_VECTOR, BP_VECTOR, BR_VECTOR, CP_VECTOR, DB_VECTOR, DE_VECTOR, DF_VECTOR, GP_VECTOR,
+    HV_VECTOR, IDT, INT_INJ_VECTOR, IPI_VECTOR, IdtEntry, IdtEventType, MCE_VECTOR, MF_VECTOR,
+    NM_VECTOR, NMI_VECTOR, NP_VECTOR, OF_VECTOR, PF_VECTOR, PageFaultError, SS_VECTOR, SX_VECTOR,
+    TS_VECTOR, UD_VECTOR, VC_VECTOR, VE_VECTOR, XF_VECTOR, user_mode,
 };
 use crate::address::VirtAddr;
+use crate::cpu::X86ExceptionContext;
 use crate::cpu::irq_state::{raw_get_tpr, raw_set_tpr, tpr_from_vector};
 use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_ENABLED;
-use crate::cpu::X86ExceptionContext;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
-use crate::mm::{GuestPtr, PageBox, PAGE_SIZE};
+use crate::mm::{GuestPtr, PAGE_SIZE, PageBox};
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -47,7 +47,7 @@ pub fn load_static_idt() {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn return_new_task();
     pub fn default_return();
     fn asm_entry_de();
@@ -175,19 +175,19 @@ pub fn idt_init() -> Result<(), SvsmError> {
 }
 
 // Debug handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_debug(ctx: &mut X86ExceptionContext) {
     handle_debug_exception(ctx, DB_VECTOR);
 }
 
 // Breakpoint handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_breakpoint(ctx: &mut X86ExceptionContext) {
     handle_debug_exception(ctx, BP_VECTOR);
 }
 
 // Doube-Fault handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
     let cr2 = read_cr2();
     let rip = ctxt.frame.rip;
@@ -210,7 +210,7 @@ extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
 }
 
 // General-Protection handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
     let rip = ctxt.frame.rip;
     let err = ctxt.error_code;
@@ -219,7 +219,10 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
     if user_mode(ctxt) {
         log::error!(
             "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x} - Terminating task",
-            rip, err, rsp);
+            rip,
+            err,
+            rsp
+        );
         terminate();
     } else if !handle_exception_table(ctxt) {
         panic!(
@@ -230,7 +233,7 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
 }
 
 // Early Page-Fault handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_page_fault_early(ctxt: &mut X86ExceptionContext, _vector: usize) {
     let cr2 = read_cr2();
     let rip = ctxt.frame.rip;
@@ -245,7 +248,7 @@ extern "C" fn ex_handler_page_fault_early(ctxt: &mut X86ExceptionContext, _vecto
 }
 
 // Page-Fault handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usize) {
     let cr2 = read_cr2();
     let rip = ctxt.frame.rip;
@@ -262,8 +265,12 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
         };
 
         if kill_task {
-            log::error!("Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
-                    rip, cr2, err);
+            log::error!(
+                "Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
+                rip,
+                cr2,
+                err
+            );
             terminate();
         }
     } else if this_cpu()
@@ -283,7 +290,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
 }
 
 // Control-Protection handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vector: usize) {
     // From AMD64 Architecture Programmer's Manual, Volume 2, 8.4.3
     // Control-Protection Error Code:
@@ -321,20 +328,26 @@ extern "C" fn ex_handler_control_protection(ctxt: &mut X86ExceptionContext, _vec
                 // X86ExceptionContext
                 unsafe { ret_ptr.read() }.expect("Failed to read return address on shadow stack");
 
-            panic!("thread at {rip:#018x} tried to return to {ret:#x}, but return address on shadow stack was {ret_on_ssp:#x}!");
+            panic!(
+                "thread at {rip:#018x} tried to return to {ret:#x}, but return address on shadow stack was {ret_on_ssp:#x}!"
+            );
         }
         RSTORSSP => {
-            panic!("rstorssp instruction encountered an unexpected shadow stack restore token at RIP {rip:#018x}");
+            panic!(
+                "rstorssp instruction encountered an unexpected shadow stack restore token at RIP {rip:#018x}"
+            );
         }
         SETSSBSY => {
-            panic!("setssbsy instruction encountered an unexpected supervisor shadow stack token at RIP {rip:#018x}");
+            panic!(
+                "setssbsy instruction encountered an unexpected supervisor shadow stack token at RIP {rip:#018x}"
+            );
         }
         code => unreachable!("unexpected code for #CP exception: {code}"),
     }
 }
 
 // Virtualization Exception handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
     let rip = ctxt.frame.rip;
     let code = ctxt.error_code;
@@ -342,7 +355,11 @@ extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
     if let Err(err) = handle_virtualization_exception(ctxt) {
         log::error!("#VE handling error: {:?}", err);
         if user_mode(ctxt) {
-            log::error!("Failed to handle #VE from user-mode at RIP {:#018x} code: {:#018x} - Terminating task", rip, code);
+            log::error!(
+                "Failed to handle #VE from user-mode at RIP {:#018x} code: {:#018x} - Terminating task",
+                rip,
+                code
+            );
             terminate();
         } else {
             panic!(
@@ -354,7 +371,7 @@ extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
 }
 
 // VMM Communication handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vector: usize) {
     let rip = ctxt.frame.rip;
     let code = ctxt.error_code;
@@ -362,7 +379,11 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
     if let Err(err) = handle_vc_exception(ctxt, vector) {
         log::error!("#VC handling error: {:?}", err);
         if user_mode(ctxt) {
-            log::error!("Failed to handle #VC from user-mode at RIP {:#018x} code: {:#018x} - Terminating task", rip, code);
+            log::error!(
+                "Failed to handle #VC from user-mode at RIP {:#018x} code: {:#018x} - Terminating task",
+                rip,
+                code
+            );
             terminate();
         } else {
             panic!(
@@ -374,7 +395,7 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
 }
 
 // System Call SoftIRQ handler
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn ex_handler_system_call(
     ctxt: &mut X86ExceptionContext,
     vector: usize,
@@ -417,7 +438,7 @@ extern "C" fn ex_handler_system_call(
     .map_or_else(|e| e as usize, |v| v as usize);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize) {
     let rip = ctx.frame.rip;
     let err = ctx.error_code;
@@ -429,7 +450,7 @@ pub extern "C" fn ex_handler_panic(ctx: &mut X86ExceptionContext, vector: usize)
     );
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn common_isr_handler_entry(vector: usize) {
     // Since interrupt handlers execute with interrupts disabled, it is
     // necessary to increment the per-CPU interrupt disable nesting state

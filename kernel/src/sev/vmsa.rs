@@ -4,18 +4,18 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::utils::{rmp_adjust, RMPFlags};
+use super::utils::{RMPFlags, rmp_adjust};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::error::SvsmError;
-use crate::mm::{virt_to_phys, PageBox};
+use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::guest_cpu::GuestCpuState;
 use crate::sev::status::SEVStatusFlags;
-use crate::types::{PageSize, PAGE_SIZE_2M};
-use core::mem::{size_of, ManuallyDrop};
+use crate::types::{PAGE_SIZE_2M, PageSize};
+use core::mem::{ManuallyDrop, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 
-use cpuarch::vmsa::{VmsaEventInject, VmsaEventType, VMSA};
+use cpuarch::vmsa::{VMSA, VmsaEventInject, VmsaEventType};
 
 pub const VMPL_MAX: usize = 4;
 

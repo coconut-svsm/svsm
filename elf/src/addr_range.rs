@@ -6,8 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::types::*;
 use super::ElfError;
+use super::types::*;
 use core::cmp;
 
 /// Represents a 64-bit ELF virtual address range.

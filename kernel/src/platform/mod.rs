@@ -24,17 +24,17 @@ use core::mem::MaybeUninit;
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
+use crate::cpu::IrqGuard;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::shadow_stack::determine_cet_support_from_cpuid;
-use crate::cpu::tlb::{flush_tlb, TlbFlushScope};
-use crate::cpu::IrqGuard;
+use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::types::PageSize;
-use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use bootlib::kernel_launch::Stage2LaunchInfo;
 use bootlib::platform::SvsmPlatformType;

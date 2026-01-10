@@ -5,7 +5,7 @@
 use crate::hal::Hal;
 use crate::queue::VirtQueue;
 use crate::transport::Transport;
-use crate::volatile::{volread, Volatile};
+use crate::volatile::{Volatile, volread};
 use crate::{Error, Result};
 use bitflags::bitflags;
 use log::info;
@@ -31,7 +31,7 @@ const SUPPORTED_FEATURES: BlkFeature = BlkFeature::RO
 /// ```
 /// # use virtio_drivers::{Error, Hal};
 /// # use virtio_drivers::transport::Transport;
-/// use virtio_drivers::device::blk::{VirtIOBlk, SECTOR_SIZE};
+/// use virtio_drivers::device::blk::{SECTOR_SIZE, VirtIOBlk};
 ///
 /// # fn example<HalImpl: Hal, T: Transport>(transport: T) -> Result<(), Error> {
 /// let mut disk = VirtIOBlk::<HalImpl, _>::new(transport)?;
@@ -578,8 +578,8 @@ mod tests {
     use crate::{
         hal::fake::FakeHal,
         transport::{
-            fake::{FakeTransport, QueueStatus, State},
             DeviceType,
+            fake::{FakeTransport, QueueStatus, State},
         },
     };
     use alloc::{sync::Arc, vec};
@@ -654,31 +654,33 @@ mod tests {
             State::wait_until_queue_notified(&state, QUEUE);
             println!("Transmit queue was notified.");
 
-            assert!(state
-                .lock()
-                .unwrap()
-                .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
-                    assert_eq!(
-                        request,
-                        BlkReq {
-                            type_: ReqType::In,
-                            reserved: 0,
-                            sector: 42
-                        }
-                        .as_bytes()
-                    );
+            assert!(
+                state
+                    .lock()
+                    .unwrap()
+                    .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
+                        assert_eq!(
+                            request,
+                            BlkReq {
+                                type_: ReqType::In,
+                                reserved: 0,
+                                sector: 42
+                            }
+                            .as_bytes()
+                        );
 
-                    let mut response = vec![0; SECTOR_SIZE];
-                    response[0..9].copy_from_slice(b"Test data");
-                    response.extend_from_slice(
-                        BlkResp {
-                            status: RespStatus::OK,
-                        }
-                        .as_bytes(),
-                    );
+                        let mut response = vec![0; SECTOR_SIZE];
+                        response[0..9].copy_from_slice(b"Test data");
+                        response.extend_from_slice(
+                            BlkResp {
+                                status: RespStatus::OK,
+                            }
+                            .as_bytes(),
+                        );
 
-                    response
-                }));
+                        response
+                    })
+            );
         });
 
         // Read a block from the device.
@@ -724,33 +726,35 @@ mod tests {
             State::wait_until_queue_notified(&state, QUEUE);
             println!("Transmit queue was notified.");
 
-            assert!(state
-                .lock()
-                .unwrap()
-                .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
-                    assert_eq!(
-                        &request[0..size_of::<BlkReq>()],
-                        BlkReq {
-                            type_: ReqType::Out,
-                            reserved: 0,
-                            sector: 42
-                        }
-                        .as_bytes()
-                    );
-                    let data = &request[size_of::<BlkReq>()..];
-                    assert_eq!(data.len(), SECTOR_SIZE);
-                    assert_eq!(&data[0..9], b"Test data");
+            assert!(
+                state
+                    .lock()
+                    .unwrap()
+                    .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
+                        assert_eq!(
+                            &request[0..size_of::<BlkReq>()],
+                            BlkReq {
+                                type_: ReqType::Out,
+                                reserved: 0,
+                                sector: 42
+                            }
+                            .as_bytes()
+                        );
+                        let data = &request[size_of::<BlkReq>()..];
+                        assert_eq!(data.len(), SECTOR_SIZE);
+                        assert_eq!(&data[0..9], b"Test data");
 
-                    let mut response = Vec::new();
-                    response.extend_from_slice(
-                        BlkResp {
-                            status: RespStatus::OK,
-                        }
-                        .as_bytes(),
-                    );
+                        let mut response = Vec::new();
+                        response.extend_from_slice(
+                            BlkResp {
+                                status: RespStatus::OK,
+                            }
+                            .as_bytes(),
+                        );
 
-                    response
-                }));
+                        response
+                    })
+            );
         });
 
         // Write a block to the device.
@@ -799,30 +803,32 @@ mod tests {
             State::wait_until_queue_notified(&state, QUEUE);
             println!("Transmit queue was notified.");
 
-            assert!(state
-                .lock()
-                .unwrap()
-                .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
-                    assert_eq!(
-                        request,
-                        BlkReq {
-                            type_: ReqType::Flush,
-                            reserved: 0,
-                            sector: 0,
-                        }
-                        .as_bytes()
-                    );
+            assert!(
+                state
+                    .lock()
+                    .unwrap()
+                    .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
+                        assert_eq!(
+                            request,
+                            BlkReq {
+                                type_: ReqType::Flush,
+                                reserved: 0,
+                                sector: 0,
+                            }
+                            .as_bytes()
+                        );
 
-                    let mut response = Vec::new();
-                    response.extend_from_slice(
-                        BlkResp {
-                            status: RespStatus::OK,
-                        }
-                        .as_bytes(),
-                    );
+                        let mut response = Vec::new();
+                        response.extend_from_slice(
+                            BlkResp {
+                                status: RespStatus::OK,
+                            }
+                            .as_bytes(),
+                        );
 
-                    response
-                }));
+                        response
+                    })
+            );
         });
 
         // Request to flush.
@@ -866,31 +872,33 @@ mod tests {
             State::wait_until_queue_notified(&state, QUEUE);
             println!("Transmit queue was notified.");
 
-            assert!(state
-                .lock()
-                .unwrap()
-                .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
-                    assert_eq!(
-                        request,
-                        BlkReq {
-                            type_: ReqType::GetId,
-                            reserved: 0,
-                            sector: 0,
-                        }
-                        .as_bytes()
-                    );
+            assert!(
+                state
+                    .lock()
+                    .unwrap()
+                    .read_write_queue::<{ QUEUE_SIZE as usize }>(QUEUE, |request| {
+                        assert_eq!(
+                            request,
+                            BlkReq {
+                                type_: ReqType::GetId,
+                                reserved: 0,
+                                sector: 0,
+                            }
+                            .as_bytes()
+                        );
 
-                    let mut response = Vec::new();
-                    response.extend_from_slice(b"device_id\0\0\0\0\0\0\0\0\0\0\0");
-                    response.extend_from_slice(
-                        BlkResp {
-                            status: RespStatus::OK,
-                        }
-                        .as_bytes(),
-                    );
+                        let mut response = Vec::new();
+                        response.extend_from_slice(b"device_id\0\0\0\0\0\0\0\0\0\0\0");
+                        response.extend_from_slice(
+                            BlkResp {
+                                status: RespStatus::OK,
+                            }
+                            .as_bytes(),
+                        );
 
-                    response
-                }));
+                        response
+                    })
+            );
         });
 
         let mut id = [0; 20];

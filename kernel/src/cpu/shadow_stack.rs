@@ -7,7 +7,7 @@
 use crate::address::{Address, VirtAddr};
 use crate::platform::SvsmPlatform;
 
-use crate::mm::{PageRef, PAGE_SIZE};
+use crate::mm::{PAGE_SIZE, PageRef};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use bitflags::bitflags;

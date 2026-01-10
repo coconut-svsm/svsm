@@ -9,7 +9,7 @@ use crate::address::{Address, VirtAddr};
 use crate::utils::MemoryRegion;
 use core::mem;
 
-extern "C" {
+unsafe extern "C" {
     static exception_table_start: u8;
     static exception_table_end: u8;
     static early_exception_table_start: u8;

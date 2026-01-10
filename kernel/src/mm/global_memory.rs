@@ -13,7 +13,7 @@ use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::{SIZE_LEVEL1, SVSM_GLOBAL_MAPPING_BASE, SVSM_GLOBAL_MAPPING_END};
 use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
-use crate::utils::{align_up, MemoryRegion};
+use crate::utils::{MemoryRegion, align_up};
 
 struct GlobalRanges {
     range_4k: VirtualRange,

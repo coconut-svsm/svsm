@@ -12,33 +12,33 @@ use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platfo
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
-use crate::cpu::cpuid::{cpuid_table, CpuidResult};
+use crate::cpu::IrqGuard;
+use crate::cpu::cpuid::{CpuidResult, cpuid_table};
 use crate::cpu::irq_state::raw_irqs_disable;
-use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpu};
+use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
 use crate::cpu::tlb::TlbFlushScope;
 use crate::cpu::x86::{apic_enable, apic_initialize, apic_sw_enable};
-use crate::cpu::IrqGuard;
 use crate::error::ApicError::Registration;
 use crate::error::SvsmError;
 use crate::greq::driver::guest_request_driver_init;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::memory::write_guest_memory_map;
-use crate::mm::{PerCPUPageMappingGuard, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::mm::{PAGE_SIZE, PAGE_SIZE_2M, PerCPUPageMappingGuard};
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
-    hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version, GHCBHvFeatures,
+    GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
 };
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
 use crate::sev::{
-    init_hypervisor_ghcb_features, pvalidate_range, sev_status_init, sev_status_verify,
-    PvalidateOp, GHCB_APIC_ACCESSOR,
+    GHCB_APIC_ACCESSOR, PvalidateOp, init_hypervisor_ghcb_features, pvalidate_range,
+    sev_status_init, sev_status_verify,
 };
 use crate::types::PageSize;
-use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use syscall::GlobalFeatureFlags;
 
 use core::mem::MaybeUninit;
@@ -108,7 +108,7 @@ impl SnpPlatform {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn snp_idle_halt(hv_doorbell: *const HVDoorbell);
 }
 

@@ -4,8 +4,8 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use crate::platform::capabilities::Cap;
 use crate::platform::CAPS;
+use crate::platform::capabilities::Cap;
 use syscall::SysCallError;
 
 pub fn sys_capabilities(index: u32) -> Result<u64, SysCallError> {

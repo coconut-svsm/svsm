@@ -5,13 +5,13 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use super::error::TdVmcallError::Retry;
-use super::error::{tdvmcall_result, tdx_recoverable_error, tdx_result, TdxError, TdxSuccess};
+use super::error::{TdxError, TdxSuccess, tdvmcall_result, tdx_recoverable_error, tdx_result};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::X86GeneralRegs;
+use crate::cpu::cpuid::CpuidResult;
 use crate::error::SvsmError;
 use crate::mm::pagetable::PageFrame;
-use crate::mm::{virt_to_frame, PerCPUPageMappingGuard};
+use crate::mm::{PerCPUPageMappingGuard, virt_to_frame};
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PAGE_SIZE_2M};
 use crate::utils::MemoryRegion;
 

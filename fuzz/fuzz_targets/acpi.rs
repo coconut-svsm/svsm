@@ -8,7 +8,7 @@
 
 use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use libfuzzer_sys::{fuzz_target, Corpus};
+use libfuzzer_sys::{Corpus, fuzz_target};
 use std::hint::black_box;
 use svsm::acpi::tables::load_fw_cpu_info;
 use svsm::fw_cfg::FwCfg;

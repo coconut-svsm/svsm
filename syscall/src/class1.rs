@@ -4,10 +4,10 @@
 //
 // Author: Peter Fang <peter.fang@intel.com>
 
-use super::call::{syscall1, syscall2, syscall3, SysCallError};
+use super::call::{SysCallError, syscall1, syscall2, syscall3};
 use super::def::{
-    FileFlags, FileModes, SeekMode, SYS_MKDIR, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR,
-    SYS_RMDIR, SYS_SEEK, SYS_TRUNCATE, SYS_UNLINK, SYS_WRITE,
+    FileFlags, FileModes, SYS_MKDIR, SYS_OPEN, SYS_OPENDIR, SYS_READ, SYS_READDIR, SYS_RMDIR,
+    SYS_SEEK, SYS_TRUNCATE, SYS_UNLINK, SYS_WRITE, SeekMode,
 };
 use super::{DirEnt, Obj, ObjHandle};
 use core::ffi::CStr;

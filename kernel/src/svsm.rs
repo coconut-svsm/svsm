@@ -24,11 +24,11 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
+use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
+use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_cpu};
 use svsm::cpu::shadow_stack::{
-    determine_cet_support, is_cet_ss_supported, set_cet_ss_enabled, shadow_stack_info, SCetFlags,
-    MODE_64BIT, S_CET,
+    MODE_64BIT, S_CET, SCetFlags, determine_cet_support, is_cet_ss_supported, set_cet_ss_enabled,
+    shadow_stack_info,
 };
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
@@ -45,16 +45,16 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
-use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::mm::{FixedAddressMappingRange, PageBox, init_kernel_mapping_info};
+use svsm::platform::{SVSM_PLATFORM, SvsmPlatformCell, init_capabilities, init_platform_type};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{
     enumerate_early_boot_regions, init_page_table, invalidate_early_boot_memory,
 };
-use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
+use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
+use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -64,7 +64,7 @@ use release::COCONUT_VERSION;
 #[cfg(feature = "attest")]
 use kbs_types::Tee;
 
-extern "C" {
+unsafe extern "C" {
     static bsp_stack: u64;
     static bsp_stack_end: u64;
 }
@@ -313,7 +313,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
 /// Thus function must only be called from the entry from stage 2, where
 /// the launch info parameter is known to have been allocated from the kernel
 /// heap.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
     // SAFETY: the caller ensures that the launch info pointer is a valid
     // pointer.
