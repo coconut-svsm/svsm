@@ -30,8 +30,19 @@ td_mode:
 	and	$~((1 << 30) | (1 << 29)), %eax
 	mov	%eax, %cr0
 
+	testl	%esi, %esi // Check VP index
+	jnz	to_stub // if NZ, jump to SIPI stub
+
 	lgdtl	%cs:gdt32_descr // flat 32-bit code segment
 	ljmpl	$8, $protected_mode
+
+to_stub:
+	cmpl	%esi, [0xFFFFF800] // wait for specified VP to be requested
+	pause
+	jnz	to_stub
+
+	lgdtl	[0xF01A] // GDT descriptor from the SIPI stub
+	ljmpl	$8, $0xF040 // Address of SIPI stub entry point
 
 protected_mode:
 	mov	$16, %ax

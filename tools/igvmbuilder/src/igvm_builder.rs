@@ -571,9 +571,11 @@ impl IgvmBuilder {
         }
 
         // If the target includes a non-isolated platform, then insert the
-        // SIPI startup stub.
-        if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
-            add_sipi_stub(ANY_NATIVE_COMPATIBILITY_MASK, &mut self.directives);
+        // SIPI startup stub.  Also include the SIPI stub with TDX since it is
+        // used for AP startup.
+        let sipi_compat_mask = ANY_NATIVE_COMPATIBILITY_MASK | TDP_COMPATIBILITY_MASK;
+        if COMPATIBILITY_MASK.contains(sipi_compat_mask) {
+            add_sipi_stub(sipi_compat_mask, &mut self.directives);
         }
 
         Ok(())
