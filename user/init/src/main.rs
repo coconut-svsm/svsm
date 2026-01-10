@@ -2,6 +2,8 @@
 #![no_main]
 
 use userlib::*;
+extern crate alloc;
+use alloc::vec::Vec;
 
 use core::ptr::{addr_of, addr_of_mut};
 
@@ -37,5 +39,13 @@ fn main() -> u32 {
         check(&*addr_of!(SOME_RO_DATA), 0xeeu64);
         check(&*addr_of!(SOME_BSS_DATA), 0xaa);
     }
+
+    let mut v: Vec<u64> = Vec::new();
+    for i in 0..256 {
+        v.push(i);
+    }
+
+    println!("Vector length: {}", v.len());
+
     0
 }
