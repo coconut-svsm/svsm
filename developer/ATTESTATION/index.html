@@ -1,0 +1,1340 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../VERIFICATION/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Attestation - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#attestation" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Attestation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building and launching
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Building and launching
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/INSTALL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Recipe Documentation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build Recipe Documentation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/BUILD_RECIPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT Build Recipes Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Information
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Information
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../DEVELOPMENT-PLAN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Plan Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rustdoc Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../FUZZING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fuzzing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing to COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../VERIFICATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formal Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attestation-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attestation Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#negotiation-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Negotiation Phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#attestation-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attestation-host-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Host Proxy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attestation Host Proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host-proxy-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host Proxy Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#try-for-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Try for yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT-SVSM Rustdoc
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#background" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attestation-phases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Phases
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attestation Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#negotiation-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Negotiation Phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#attestation-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attestation-host-proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Attestation Host Proxy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attestation Host Proxy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#frontend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host-proxy-diagram" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host Proxy Diagram
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#try-for-yourself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Try for yourself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="attestation">Attestation</h1>
+<!--toc:start-->
+<ul>
+<li><a href="#attestation">Attestation</a></li>
+<li><a href="#background">Background</a></li>
+<li><a href="#attestation-phases">Attestation Phases</a><ul>
+<li><a href="#negotiation-phase">Negotiation Phase</a></li>
+<li><a href="#attestation-phase">Attestation Phase</a></li>
+</ul>
+</li>
+<li><a href="#attestation-host-proxy">Attestation Host Proxy</a><ul>
+<li><a href="#frontend">Frontend</a></li>
+<li><a href="#backend">Backend</a></li>
+<li><a href="#host-proxy-diagram">Host Proxy Diagram</a></li>
+</ul>
+</li>
+<li><a href="#try-for-yourself">Try for yourself</a></li>
+</ul>
+<!--toc:end-->
+
+<h2 id="background">Background</h2>
+<p>To unlock early persistent state in SVSM (for example, persistent vTPM data), an
+attestation of the launch environment must take place to ensure that SVSM is
+running on trusted hardware and launched correctly. As SVSM does not have a
+network stack available, a proxy runs on the host that facilitates attestation
+between SVSM and a remote verification server such as KBS.</p>
+<h2 id="attestation-phases">Attestation Phases</h2>
+<p>There exists two consecutive phases of attestation:</p>
+<h3 id="negotiation-phase">Negotiation Phase</h3>
+<p>Attestation servers usually require that a client embed metadata into its
+attestation evidence. The negotiation phase (initiated by SVSM) defines what
+exactly should be included in TEE attestation evidence. For instance, a server
+may require that a client embed a nonce hash and public components of the TEE
+public key (used to encrypt secrets) into the attestation evidence to ensure it
+is fresh and legitimate. The negotiation phase returns the parameters that SVSM
+should include in its attestation evidence based on the underlying attestation
+server and protocol.</p>
+<p>In the negotiation phase, a <code>NegotiationRequest</code> is sent from SVSM to the proxy.
+An example <code>NegotiationRequest</code> is shown below.
+<div class="language-json highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="mi">0</span><span class="p">],</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">&quot;tee&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;snp&quot;</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">}</span>
+</span></code></pre></div></p>
+<ul>
+<li><code>version</code>: The SVSM attestation protocol version to use. In place to ensure
+backwards compatibility with updated protocol versions should modifications
+occur. The API follows <a href="https://semver.org/">SemVer</a> and is represented as a
+tuple [MAJOR, MINOR, PATCH]. The current version is 0.1.0.</li>
+<li><code>tee</code>: The TEE hardware architecture that SVSM is running on.</li>
+</ul>
+<p>The proxy will then complete the negotiation phase with the remote attestation
+server and reply with a list of negotiation parameters that must be included in
+the attestation evidence.</p>
+<p>A <code>NegotiationResponse</code> is sent from the proxy to SVSM.
+An example <code>NegotiationResponse</code> is shown below.
+<div class="language-json highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nt">&quot;challenge&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;oFlY92ZdS3ymzxokYuDzxw==\&quot;,</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="s2">    &quot;</span><span class="err">params</span><span class="s2">&quot;: [</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="s2">                &quot;</span><span class="err">EcPublicKeyBy</span><span class="kc">tes</span><span class="s2">&quot;,</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="s2">                &quot;</span><span class="err">Challe</span><span class="kc">n</span><span class="err">ge&quot;</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="err">              ]</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="err">}</span>
+</span></code></pre></div>
+- <code>challenge</code>: The challenge nonce returned by the remote attestation server
+that will likely need to be hashed into the attestation evidence to ensure
+freshness. Represented as variably-sized array of bytes.
+- <code>params</code>: The negotiation parameters. Each <code>NegotiationParam</code> represents some
+form of data that must be hashed into the attestation evidence. This hash will
+be reconstructed by the remote attestation server when the evidence is presented
+from SVSM.</p>
+<p>The valid negotiation parameters are as follows:
+- <code>Challenge</code>: The bytes represented in the <code>challenge</code>.
+- <code>EcPublicKeyBytes</code>: The byte buffers of the public key's x and y coordinates
+(in that order).</p>
+<p>SVSM can then collect the attestation evidence (with the negotiation parameters
+embedded within the report data) and continue to the attestation phase.</p>
+<h3 id="attestation-phase">Attestation Phase</h3>
+<p>With all relevant data embedded in the TEE evidence, SVSM sends the evidence to
+the remote server for evaluation. Upon successful attestation, the proxy will
+obtain an encrypted secret (only decryptable by SVSM's attestation private key)
+for SVSM to use. For example, SVSM could use this secret to unlock encrypted
+storage.</p>
+<p>In the attestation phase, an <code>AttestationRequest</code> is sent from SVSM to the proxy.
+An example <code>AttestationRequest</code> is shown below.
+<div class="language-json highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="nt">&quot;tee&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;snp&quot;</span><span class="p">,</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">&quot;evidence&quot;</span><span class="p">:{</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">        </span><span class="nt">&quot;Snp&quot;</span><span class="p">:{</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">            </span><span class="nt">&quot;report&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AwAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s2">                       AAAAAAAAAAAAAEAAAADAAAAAAAY0QUAAAAAAAAAAAAAAAAAAAAHZTCHj6</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="s2">                       luB8MACrYnlqNmLuBgdclkh4UqGAMdZfMHZ+uVHytFLnvJXLkPx3xMf8p</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="s2">                       B7faGTY+Mlwi96geujAbfPKa1C+9Kt7Hts/t0Vp+TKQachyjYCZLBhTV2</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="s2">                       f7zI05r0HlwonTiV/mva7ZwxvdGaAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAACcdt0ZPBJrpXFX6RTFjSItibRTVsXM</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="s2">                       Rn/pL/wbViPO6///////////////////////////////////////////A</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="s2">                       wAAAAAAF9EZAQEAAAAAAAAAAAAAAAAAAAAAAAAAAACd3vUWsdS5AAdRkM</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="s2">                       51mXGLWEdB7w3CkS2L4/AmeQQPCKQFLcC81HJoD2st3/01IHaqOwGz3Xd</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="s2">                       Lb57uqDPWYLxpAwAAAAAAGNEdNwEAHTcBAAMAAAAAABjRAAAAAAAAAAAA</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+InMMSLac18ai1bi</span>
+</span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="s2">                       1kJZISAv0MXt7fBB9do732UwrcjUaxCNxZun8fsAWKXU1LPcAAAAAAAAA</span>
+</span><span id="__span-2-22"><a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAz+KTpyaINiKXdTAYhGTMl+g05It+QVEsrZ</span>
+</span><span id="__span-2-23"><a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="s2">                       5Vc1LHpng+KO4uFLFw0PLiXbNTwGU8AAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-24"><a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-25"><a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-26"><a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-27"><a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-28"><a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-29"><a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-30"><a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-31"><a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</span>
+</span><span id="__span-2-32"><a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a><span class="s2">                       AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\&quot;,</span>
+</span><span id="__span-2-33"><a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a><span class="s2">            &quot;</span><span class="err">cer</span><span class="kc">ts</span><span class="err">_bu</span><span class="kc">f</span><span class="s2">&quot;: null</span>
+</span><span id="__span-2-34"><a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a><span class="s2">        }</span>
+</span><span id="__span-2-35"><a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a><span class="s2">    },</span>
+</span><span id="__span-2-36"><a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a><span class="s2">    &quot;</span><span class="err">challe</span><span class="kc">n</span><span class="err">ge</span><span class="s2">&quot;: &quot;</span><span class="err">oFlY</span><span class="mi">92</span><span class="err">ZdS</span><span class="mi">3</span><span class="err">ymzxokYuDzxw==\</span><span class="s2">&quot;,</span>
+</span><span id="__span-2-37"><a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a><span class="s2">    &quot;</span><span class="err">key</span><span class="s2">&quot;:{</span>
+</span><span id="__span-2-38"><a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a><span class="s2">        &quot;</span><span class="err">x</span><span class="s2">&quot;: &quot;</span><span class="err">AeFSAOU</span><span class="mi">2</span><span class="err">/r</span><span class="kc">t</span><span class="err">NV</span><span class="mi">4</span><span class="err">VS</span><span class="mi">0</span><span class="err">uTr</span><span class="mi">5</span><span class="err">M</span><span class="mi">729</span><span class="err">jAU</span><span class="mi">1</span><span class="err">RIZ+p</span><span class="mi">90</span><span class="err">kRRbIac</span><span class="mi">6</span><span class="err">x</span><span class="mi">56</span><span class="err">y</span><span class="mi">40</span><span class="err">bG</span><span class="mi">39</span><span class="err">gc+oxykTITDL</span>
+</span><span id="__span-2-39"><a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a><span class="w">              </span><span class="err">gQER</span><span class="mf">79+</span><span class="err">kVluCC+L</span><span class="kc">t</span><span class="mi">6</span><span class="err">QS</span><span class="kc">fa</span><span class="err">U\</span><span class="s2">&quot;,</span>
+</span><span id="__span-2-40"><a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a><span class="s2">        &quot;</span><span class="err">y</span><span class="s2">&quot;: &quot;</span><span class="err">AcBKVeKrw</span><span class="mi">0</span><span class="err">p+</span><span class="mi">7</span><span class="err">Nv/JuZM</span><span class="kc">n</span><span class="err">+zuuQAhpSawoRq</span><span class="mi">3</span><span class="err">g</span><span class="mi">6</span><span class="err">Rhc</span><span class="mi">9</span><span class="err">soXzsPlVLblIEw</span><span class="mi">9</span><span class="err">muXSNUWbv</span>
+</span><span id="__span-2-41"><a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a><span class="w">              </span><span class="kc">f</span><span class="err">NrLHrmw+qy</span><span class="mi">8</span><span class="err">lR</span><span class="mi">1</span><span class="err">o/Kvkys\&quot;</span>
+</span><span id="__span-2-42"><a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a><span class="err">    }</span>
+</span><span id="__span-2-43"><a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a><span class="err">}</span>
+</span></code></pre></div></p>
+<ul>
+<li><code>tee</code>: The TEE architecture that the evidence should be interpreted as.</li>
+<li><code>evidence</code>: The attestation evidence (i.e. report) from the TEE processor.
+Based on the underlying TEE architecture (SEV-SNP being represented in the
+example).</li>
+</ul>
+<p>Valid evidence formats are the following:
+- <code>Snp</code>: SEV-SNP
+    - <code>report</code>: Attestation report bytes.
+    - <code>certs_buf</code>: Optional byte buffer representing SEV-SNP certificate chain
+                   (ARK, ASK, VEK) set by the host hypervisor.</p>
+<ul>
+<li><code>challenge</code>: The original challenge nonce given in the <code>NegotiationResponse</code>.</li>
+<li><code>key</code>: The EC public key that will be used to encrypt secret payloads received
+from the remote server upon a successful attestation. Public key x and y
+coordinates supplied.</li>
+</ul>
+<p>The proxy will forward the evidence and metadata to the remote attestation
+server for evaluation. Upon successful attestation, the proxy should be able to
+retrieve some secret payload from the remote server. The proxy will retrieve
+this secret and reply to SVSM with an <code>AttestationResponse</code>.
+An example <code>AttestationResponse</code> is shown below.
+<div class="language-json highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="nt">&quot;success&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">&quot;secret&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;aQ8Kt1EqRlj54Me3\&quot;,</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">    &quot;</span><span class="err">decryp</span><span class="kc">t</span><span class="err">io</span><span class="kc">n</span><span class="s2">&quot;:{</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">        &quot;</span><span class="err">epk</span><span class="s2">&quot;:{</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="s2">            &quot;</span><span class="err">x</span><span class="s2">&quot;: &quot;</span><span class="err">AeFSAOU</span><span class="mi">2</span><span class="err">/r</span><span class="kc">t</span><span class="err">NV</span><span class="mi">4</span><span class="err">VS</span><span class="mi">0</span><span class="err">uTr</span><span class="mi">5</span><span class="err">M</span><span class="mi">729</span><span class="err">jAU</span><span class="mi">1</span><span class="err">RIZ+p</span><span class="mi">90</span><span class="err">kRRbIac</span><span class="mi">6</span><span class="err">x</span><span class="mi">56</span><span class="err">y</span><span class="mi">40</span><span class="err">bG</span><span class="mi">39</span><span class="err">gc+oxykT</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">                  </span><span class="err">ITDLgQER</span><span class="mf">79+</span><span class="err">kVluCC+L</span><span class="kc">t</span><span class="mi">6</span><span class="err">QS</span><span class="kc">fa</span><span class="err">U\</span><span class="s2">&quot;,</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="s2">            &quot;</span><span class="err">y</span><span class="s2">&quot;: &quot;</span><span class="err">ASrjxo</span><span class="mi">2</span><span class="err">X</span><span class="kc">f</span><span class="err">kkkNTiq</span><span class="mi">174</span><span class="err">Uhj++eNgwz</span><span class="kc">t</span><span class="mi">1</span><span class="err">iA/hRrYA/</span><span class="mi">6</span><span class="kc">tn</span><span class="mi">8</span><span class="err">i</span><span class="mi">4</span><span class="err">ZgPjIiBT</span><span class="mf">0E</span><span class="err">ybAv</span><span class="kc">n</span><span class="mi">8</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">                  </span><span class="err">p</span><span class="mi">3</span><span class="err">JQQmw</span><span class="mi">6</span><span class="err">QKM</span><span class="mi">38</span><span class="err">Ck</span><span class="mi">5</span><span class="err">saMZcWF/</span><span class="mi">4</span><span class="err">/\</span><span class="s2">&quot;</span>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="s2">        },</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="s2">        &quot;</span><span class="err">wrapped_cek</span><span class="s2">&quot;: &quot;</span><span class="err">wucVMB</span><span class="mi">63</span><span class="err">/N</span><span class="mi">1</span><span class="err">jXT</span><span class="kc">t</span><span class="err">IwF</span><span class="mi">8</span><span class="err">WIbMU</span><span class="mi">88</span><span class="err">X</span><span class="mi">2</span><span class="err">NicJKwkyTX</span><span class="mf">6eE4</span><span class="err">M</span><span class="mi">4</span><span class="err">Fu</span><span class="mi">1</span><span class="err">ZLcLIyA==\</span><span class="s2">&quot;,</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="s2">        &quot;</span><span class="err">aad</span><span class="s2">&quot;: &quot;</span><span class="err">ZXlKaGJHY</span><span class="mi">2</span><span class="err">lPaUpGUTBSSUxVVlRLMEV</span><span class="mi">5</span><span class="err">TlRaTFZ</span><span class="mi">5</span><span class="err">SXNJbVZ</span><span class="mi">1</span><span class="err">WXlJNklrRXlOVFpI</span>
+</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">                </span><span class="err">UTAwaUxDSmxjR</span><span class="mi">3</span><span class="err">NpT</span><span class="mi">25</span><span class="err">zaVkzSjJJam</span><span class="mi">9</span><span class="err">pVUMwMU</span><span class="mi">1</span><span class="err">qRWlMQ</span><span class="mi">0</span><span class="err">pyZEhraU</span><span class="mi">9</span><span class="err">pSkZReUlz</span>
+</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">                </span><span class="err">SW</span><span class="mi">5</span><span class="kc">na</span><span class="err">U</span><span class="mi">9</span><span class="err">pSkJaVVpUUVU</span><span class="mi">5</span><span class="err">Vk</span><span class="mi">1</span><span class="err">sOXlkRTVXTkZaVE</span><span class="mi">1</span><span class="err">IVlVjalZOT</span><span class="kc">n</span><span class="err">pJNWFrRlZNVkpK</span>
+</span><span id="__span-3-15"><a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="w">                </span><span class="err">V</span><span class="mi">2</span><span class="err">kxd</span><span class="mi">09</span><span class="err">UQ</span><span class="kc">n</span><span class="err">JVbEppU</span><span class="mi">1</span><span class="err">dGak</span><span class="mi">5</span><span class="err">uZzFObmswTUdKSE</span><span class="mi">16</span><span class="err">bG</span><span class="mi">5</span><span class="err">ZeTF</span><span class="mi">2</span><span class="err">ZUhsclZFbFVSRXhu</span>
+</span><span id="__span-3-16"><a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="w">                </span><span class="err">VVVWU</span><span class="mi">056</span><span class="err">a</span><span class="mi">3</span><span class="err">RhMVpzZFVORExVeDBObEZUWm</span><span class="mi">1</span><span class="err">GVklpd</span><span class="mi">2</span><span class="err">llU</span><span class="mi">0</span><span class="err">k</span><span class="mi">2</span><span class="err">SW</span><span class="kc">t</span><span class="err">GVGN</span><span class="kc">t</span><span class="err">cDRiekpZ</span>
+</span><span id="__span-3-17"><a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="w">                </span><span class="err">Wm</span><span class="mi">10</span><span class="err">cmEwNVVhWEV</span><span class="mi">4</span><span class="err">T</span><span class="kc">n</span><span class="err">pSVmFHb</span><span class="mi">3</span><span class="err">RMV</span><span class="mi">1</span><span class="err">ZPWjNkNmRER</span><span class="kc">n</span><span class="err">BRVjlvVW</span><span class="mi">5</span><span class="err">KWlFWODJkRzQ</span><span class="mi">0</span>
+</span><span id="__span-3-18"><a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="w">                </span><span class="err">YVRSYVoxQ</span><span class="kc">n</span><span class="err">FTV</span><span class="mi">2</span><span class="err">xDVkRCRmVXSkJkbTQ</span><span class="mi">0</span><span class="err">Y</span><span class="mi">0</span><span class="err">ROS</span><span class="mi">1</span><span class="err">VWR</span><span class="kc">n</span><span class="err">RkelpSUzAwek</span><span class="mi">9</span><span class="err">FT</span><span class="kc">n</span><span class="err">JOWE</span><span class="mi">5</span><span class="err">o</span>
+</span><span id="__span-3-19"><a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a><span class="w">                </span><span class="err">VFZwalYwWmZORjhpZlgw\</span><span class="s2">&quot;,</span>
+</span><span id="__span-3-20"><a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a><span class="s2">        &quot;</span><span class="err">iv</span><span class="s2">&quot;: &quot;</span><span class="err">Aqy</span><span class="mi">5</span><span class="err">VLobeoLXAdiq\</span><span class="s2">&quot;,</span>
+</span><span id="__span-3-21"><a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a><span class="s2">        &quot;</span><span class="kc">ta</span><span class="err">g</span><span class="s2">&quot;: &quot;</span><span class="err">FKsIBoV</span><span class="kc">n</span><span class="mi">03</span><span class="err">SsONl</span><span class="kc">n</span><span class="mi">0</span><span class="err">y</span><span class="mi">66</span><span class="err">sw==\</span><span class="s2">&quot;</span>
+</span><span id="__span-3-22"><a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="s2">    },</span>
+</span><span id="__span-3-23"><a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a><span class="s2">    &quot;</span><span class="kc">t</span><span class="err">oke</span><span class="kc">n</span><span class="s2">&quot;:{</span>
+</span><span id="__span-3-24"><a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a><span class="s2">        &quot;</span><span class="err">Jw</span><span class="kc">t</span><span class="s2">&quot;:&quot;</span><span class="kc">test</span><span class="mi">-</span><span class="kc">t</span><span class="err">oke</span><span class="kc">n</span><span class="err">&quot;</span>
+</span><span id="__span-3-25"><a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="err">    }</span>
+</span><span id="__span-3-26"><a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a><span class="err">}</span>
+</span></code></pre></div>
+- <code>success</code>: Indicates if attestation was ultimately successful.
+- <code>secret</code>: The encrypted secret payload.
+- <code>decryption</code>: ECDH-ES-A256KW data needed to perform the handshake and derive
+the AES key for the encrypted payload. Data is formatted for decryption with
+ECDH-ES+A256KW, described in RFC 7518, section 4.6.2.
+- <code>token</code>: Token returned from server that contains the claims validated in the
+attestation. Could be serialized in JSON (JWT) or CBOR (CWT).</p>
+<p>With a successful attestation, SVSM can now use the secret payload for some
+purpose (for example, to unlock some persistent state required for booting the
+OS) and continue with execution.</p>
+<h2 id="attestation-host-proxy">Attestation Host Proxy</h2>
+<p>As there exists multiple protocols for TEE attestation, the host proxy is built
+to be configurable to different protocols. As such, SVSM can be completely
+agnostic of the attestation protocol used. This is done by separating the proxy
+into two main components:</p>
+<h3 id="frontend">Frontend</h3>
+<p>To keep SVSM agnostic to the underlying attestation protocol, a front-end
+interface between SVSM and the proxy is defined. The types of this interface for
+both negotiation and attestation are defined in the <code>libaproxy</code> crate. In the
+negotiation phase, SVSM will write a <code>NegotiationRequest</code> and receive a
+<code>NegotiationResponse</code> from the proxy. In the attestation phase, SVSM will write
+an <code>AttestationRequest</code> and receive an <code>AttestationResponse</code> from the proxy.
+This allows SVSM to not be exclusive to one specific attestation protocol,
+leaving the possibility for new protocols to be enabled in the future (for
+example, aTLS).</p>
+<h3 id="backend">Backend</h3>
+<p>The back-end implements the specific attestation protocol that the communicating
+server implements. It is configurable with the <code>--backend</code> argument within
+launching the proxy. The supported backend attestation protocols include:</p>
+<ul>
+<li>Key Broker Server (KBS)</li>
+</ul>
+<h3 id="host-proxy-diagram">Host Proxy Diagram</h3>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>                                          ┌───────────┐
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>┌────┐               ┌─────┐              │Attestation│
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>│SVSM│◄─────────────►│Proxy│◄────────────►│Server     │
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>└────┘               └─────┘              └───────────┘
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>      │             │       │            │
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>      └─────────────┘       └────────────┘
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>         FRONT-END             BACK-END
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>       (independent          (dependent
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>       of attestation        on attestation
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>       server)               server and
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>                             protocol)
+</span></code></pre></div>
+<h2 id="try-for-yourself">Try for yourself</h2>
+<p>Please keep in mind that the attestation services in SVSM are <strong>experimental</strong>
+at present.</p>
+<p>To try for yourself, we provide a test KBS server that requires no configuration
+and simply indicates if attestation was successful or not. This requires a
+SEV-SNP machine with an SVSM-enabled kernel.</p>
+<ol>
+<li>
+<p>Clone and run the <code>kbs-test</code> server used for testing. Supply the following
+   argument on the command line:</p>
+<ul>
+<li><code>--measurement</code>: hex-encoded expected launch measurement (64 bytes in size).</li>
+</ul>
+<p><div class="language-shell highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># SVSM=&lt;path to your Coconut SVSM directory&gt;</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/kbs-test.git
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nb">cd</span><span class="w"> </span>kbs-test
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="nv">MEASUREMENT</span><span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span><span class="si">${</span><span class="nv">SVSM</span><span class="si">}</span>/bin/igvmmeasure<span class="w"> </span>--check-kvm<span class="w"> </span><span class="si">${</span><span class="nv">SVSM</span><span class="si">}</span>/bin/coconut-qemu.igvm<span class="w"> </span>measure<span class="w"> </span>-b<span class="k">)</span><span class="s2">&quot;</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>cargo<span class="w"> </span>run<span class="w"> </span>--<span class="w"> </span>--measurement<span class="w"> </span><span class="nv">$MEASUREMENT</span><span class="w"> </span>--secret<span class="w"> </span><span class="nv">$HEX_SECRET</span>
+</span></code></pre></div>
+This will run the <code>kbs-test</code> server at <a href="http://0.0.0.0:8080">http://0.0.0.0:8080</a>.</p>
+</li>
+<li>
+<p>Clone and build SVSM</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/svsm.git
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># ... build OVMF, qemu, SVSM IGVM, etc...</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="nv">FW_FILE</span><span class="o">=</span>...<span class="w"> </span>make<span class="w"> </span><span class="nv">FEATURES</span><span class="o">=</span>attest
+</span></code></pre></div>
+</li>
+<li>
+<p>Run the proxy on the host</p>
+<p><div class="language-shell highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">cd</span><span class="w"> </span>svsm
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>make<span class="w"> </span>aproxy
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>bin/aproxy<span class="w"> </span>--protocol<span class="w"> </span>kbs<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">           </span>--url<span class="w"> </span>http://0.0.0.0:8080<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">           </span>--unix<span class="w"> </span>/tmp/svsm-proxy.sock<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">           </span>--force
+</span></code></pre></div>
+This runs the proxy with the following specified in the arguments:</p>
+<ul>
+<li><code>--url http://0.0.0.0:8080</code>: The attestation server is running at
+   <code>http://0.0.0.0:8080</code>.</li>
+<li><code>--protocol kbs-test</code>: The attestation server communicates via the KBS
+   protocol, configure the backend to use the KBS protocol.</li>
+<li><code>--unix /tmp/svsm-proxy.sock</code>: Listen for messages from SVSM on a socket
+   created in file <code>/tmp/svsm-proxy-sock</code>.</li>
+<li><code>--force</code>: Remove the <code>/tmp/svsm-proxy.sock</code> file (if it already exists)
+   before creating the socket.</li>
+</ul>
+</li>
+<li>
+<p>Run a guest with SVSM</p>
+<p>Initially, SVSM communicates over the COM3 serial port. The attestation proxy
+socket will need to be available in the correct <code>-serial</code> argument position to
+ensure it communicates with the right socket.</p>
+<p><div class="language-shell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>./scripts/launch_guest.sh<span class="w"> </span>--qemu<span class="w"> </span><span class="nv">$QEMU</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">                          </span>--image<span class="w"> </span><span class="nv">$QCOW2</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">                          </span>--aproxy<span class="w"> </span>/tmp/svsm-proxy.sock
+</span></code></pre></div>
+If successful, you should be able to find a message indicating a successful
+attestation within the SVSM boot logs.</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>[SVSM] attestation successful
+</span></code></pre></div>
+<p>If unsuccessful, you should see a failure message within the SVSM boot logs:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>[SVSM] ERROR: Panic on CPU[0]! COCONUT-SVSM Version: e48a1c14
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>[SVSM] ERROR: Info: panicked at kernel/src/svsm.rs:349:36:
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>called `Result::unwrap()` on an `Err` value: TeeAttestation(Failed)
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>[SVSM] ---BACKTRACE---:
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>[SVSM]   [ffffff80001c7976]
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>[SVSM]   [ffffff800000497e]
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>[SVSM]   [ffffff80000c3ad6]
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>[SVSM]   [ffffff80000c3ae0]
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>[SVSM] ---END---
+</span></code></pre></div>
+<p>This likely is a result of the expected launch measurement not matching the
+actual launch measurement provided in the attestation report. In this case,
+attestation <strong>should</strong> fail.</p>
+<p>If so, the following message will be printed by the server (example):</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>launch measurement not as expected
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>expected:&quot;ef638e43239d319025e23c766c440c6f3e51660c2960bfc7045d30aee840f3981b15e4db8c6c7395dcdda91d005c6fe9&quot;
+</span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>found:&quot;9ef6c500d19addcd5937c6c8bd4e51b1893f048eea03d5407cfb0692c06615e3f6c044c667c32e520913d93234e836fe&quot;
+</span></code></pre></div>
+<p>Restart the server process giving the <code>found</code> launch measurement in the
+<code>--measurement</code> argument (indicating that this is now the <strong>expected</strong> launch
+measurement), then re-run qemu. In the previous example:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">cd</span><span class="w"> </span>kbs-test
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>cargo<span class="w"> </span>run<span class="w"> </span>--<span class="w"> </span>--measurement<span class="w"> </span>9ef6c500d19addcd5937c6c8bd4e51b1893f048eea03d5407cfb0692c06615e3f6c044c667c32e520913d93234e836fe
+</span></code></pre></div>
+</li>
+</ol>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

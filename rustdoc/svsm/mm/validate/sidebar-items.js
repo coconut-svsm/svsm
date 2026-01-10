@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bitmap_elems","init_valid_bitmap","valid_bitmap_addr","valid_bitmap_clear_valid_2m","valid_bitmap_clear_valid_4k","valid_bitmap_clear_valid_range","valid_bitmap_set_valid_2m","valid_bitmap_set_valid_4k","valid_bitmap_set_valid_range","valid_bitmap_valid_addr","validated_phys_addr"],"static":["VALID_BITMAP"],"struct":["ValidBitmap"]};

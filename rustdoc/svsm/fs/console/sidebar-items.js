@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONSOLE_LINE_BUFFER_SIZE"],"fn":["stdout_open"],"struct":["ConsoleBuffer","ConsoleFile"]};
