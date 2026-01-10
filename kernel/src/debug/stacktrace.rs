@@ -10,12 +10,13 @@ use crate::{
     address::{Address, VirtAddr},
     cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
     cpu::percpu::try_this_cpu,
+    debug::symbols::resolve_symbol,
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
 use alloc::format;
 use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
-use core::{arch::asm, mem};
+use core::{arch::asm, fmt::Write, mem};
 
 extern "C" {
     static bsp_stack: u64;
@@ -254,6 +255,11 @@ fn print_stack_frame(frame: StackFrame) {
     }
     if !frame.is_aligned {
         msg.push_str(if annotated { "#" } else { " #" });
+    }
+    if let Some(sym) = resolve_symbol(frame.rip) {
+        let _ = write!(&mut msg, " {sym}");
+    } else {
+        msg.push_str(" ??");
     }
     log::info!("{}", msg);
 }
