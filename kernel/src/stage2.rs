@@ -540,22 +540,24 @@ unsafe fn setup_env(
 }
 
 /// # Safety
-/// The caller is required to ensure that the source virtual address maps to
-/// a valid page of data that can be copied.
+/// The caller is required to ensure that the source virtual address, if
+/// present, maps to a valid page of data that can be copied.
 unsafe fn copy_page_to_kernel(
-    src_vaddr: VirtAddr,
+    src_vaddr: Option<VirtAddr>,
     kernel_heap: &mut KernelHeap<'_>,
 ) -> Result<VirtAddr, SvsmError> {
     let (dst_vaddr, _) = kernel_heap.allocate(PAGE_SIZE)?;
-    // SAFETY: the caller take responsibility for the correctness of the source
-    // address, and the destination address is known to be correct because it
-    // was just allocated as a full page.
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            src_vaddr.as_ptr::<u8>(),
-            dst_vaddr.as_mut_ptr::<u8>(),
-            PAGE_SIZE,
-        );
+    if let Some(vaddr) = src_vaddr {
+        // SAFETY: the caller takes responsibility for the correctness of the
+        // source address, and the destination address is known to be correct
+        // because it was just allocated as a full page.
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                vaddr.as_ptr::<u8>(),
+                dst_vaddr.as_mut_ptr::<u8>(),
+                PAGE_SIZE,
+            );
+        }
     }
 
     Ok(dst_vaddr)
@@ -889,29 +891,27 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let igvm_vaddr = load_igvm_params(&mut kernel_heap, &config, launch_info)
         .expect("Failed to load IGVM params");
 
-    // Copy the CPUID page into the kernel address space if required.
-    let kernel_cpuid_page = cpuid_page.map(|cpuid_addr| {
-        // SAFETY: the CPUID address is assumed to have been correctly
-        // retrieved from the launch info by the stage2 platform object.
-        unsafe {
-            copy_page_to_kernel(cpuid_addr, &mut kernel_heap).expect("Failed to copy CPUID page")
-        }
-    });
+    // Copy the CPUID page into the kernel address space as required.
+    // SAFETY: the CPUID address is assumed to have been correctly retrieved
+    // from the launch info by the stage2 platform object.
+    let kernel_cpuid_page = unsafe {
+        copy_page_to_kernel(cpuid_page, &mut kernel_heap).expect("Failed to copy CPUID page")
+    };
 
     // Determine whether this platforms uses a secrets pgae.
     let secrets_page = stage2_platform.get_secrets_page(launch_info);
 
-    // Copy the secrets page into the kernel address space if required.
-    let kernel_secrets_page = secrets_page.map(|secrets_addr| {
-        // SAFETY: the secrets page address is assumed to have been correctly
-        // configured in the stage2 image if it is present at all.
-        unsafe {
-            let new_vaddr = copy_page_to_kernel(secrets_addr, &mut kernel_heap)
-                .expect("Failed to copy secrets page");
+    // Copy the secrets page into the kernel address space as required.
+    // SAFETY: the secrets page address is assumed to have been correctly
+    // configured in the stage2 image if it is present at all.
+    let kernel_secrets_page = unsafe {
+        let new_vaddr = copy_page_to_kernel(secrets_page, &mut kernel_heap)
+            .expect("Failed to copy secrets page");
+        if let Some(secrets_addr) = secrets_page {
             zero_mem_region(secrets_addr, secrets_addr + PAGE_SIZE);
-            new_vaddr
         }
-    });
+        new_vaddr
+    };
 
     // Determine whether use of interrupts on the SVSM should be suppressed.
     // This is required when running SNP under KVM/QEMU.
@@ -938,8 +938,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
-        cpuid_page: u64::from(kernel_cpuid_page.unwrap_or(VirtAddr::null())),
-        secrets_page: u64::from(kernel_secrets_page.unwrap_or(VirtAddr::null())),
+        cpuid_page: u64::from(kernel_cpuid_page),
+        secrets_page: u64::from(kernel_secrets_page),
         igvm_params_virt_addr: u64::from(igvm_vaddr),
         kernel_symtab_start: symtab.start().as_ptr(),
         kernel_symtab_len: (symtab.len() / size_of::<bootlib::symbols::KSym>()) as u64,
