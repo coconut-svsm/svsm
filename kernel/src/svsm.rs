@@ -13,14 +13,13 @@ use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
-use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
+use svsm::cpu::cpuid::dump_cpuid_table;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
@@ -53,11 +52,13 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::platform::{
-    PageValidateOp, SVSM_PLATFORM, SvsmPlatform, SvsmPlatformCell, init_capabilities,
-    init_platform_type,
-};
-use svsm::sev::secrets_page::initialize_secrets_page;
+use svsm::platform::PageValidateOp;
+use svsm::platform::PlatformPageType;
+use svsm::platform::SVSM_PLATFORM;
+use svsm::platform::SvsmPlatform;
+use svsm::platform::SvsmPlatformCell;
+use svsm::platform::init_capabilities;
+use svsm::platform::init_platform_type;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
@@ -208,27 +209,6 @@ fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     Ok(())
 }
 
-/// # Panics
-///
-/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
-fn init_cpuid_table(addr: VirtAddr) {
-    // SAFETY: this is called from the main function for the SVSM and no other
-    // CPUs have been brought up, so the pointer cannot be aliased.
-    // `aligned_mut()` will check alignment for us.
-    let table = unsafe {
-        addr.aligned_mut::<SnpCpuidTable>()
-            .expect("Misaligned SNP CPUID table address")
-    };
-
-    for func in table.func.iter_mut().take(table.count as usize) {
-        if func.eax_in == 0x8000001f {
-            func.eax_out |= 1 << 28;
-        }
-    }
-
-    register_cpuid_table(table);
-}
-
 /// # Safety
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
@@ -257,18 +237,17 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     let mut platform_cell = SvsmPlatformCell::new(launch_info.suppress_svsm_interrupts);
     let platform = platform_cell.platform_mut();
 
-    if launch_info.cpuid_page != 0 {
-        init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
-    }
-
-    if launch_info.secrets_page != 0 {
-        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
-
-        // SAFETY: the secrets page address was allocated by stage 2 in the kernel
-        // heap and the address is trusted if it is non-zero.
-        unsafe {
-            initialize_secrets_page(secrets_page_virt);
-        }
+    // SAFETY: the CPUID and secrets page addresses were allocated in the
+    // kernel heap and the addresses in the loader block are trusted.
+    unsafe {
+        platform.initialize_platform_page(
+            PlatformPageType::Cpuid,
+            VirtAddr::from(launch_info.cpuid_page),
+        );
+        platform.initialize_platform_page(
+            PlatformPageType::Secrets,
+            VirtAddr::from(launch_info.secrets_page),
+        );
     }
 
     cr0_init();
@@ -343,9 +322,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    if launch_info.cpuid_page != 0 {
-        dump_cpuid_table();
-    }
+    dump_cpuid_table();
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -411,6 +388,22 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     // Free the BSP stack that was allocated for early initialization.
     free_init_bsp_stack();
+
+    // Free platform pages that were allocated but are not needed by the
+    // current platform.
+    // SAFETY: the virtual addresses of these pages are guaranteed to be
+    // correct in the loader block, and the platform guarantees that freeing
+    // the page is safe if the underlying page is not needed.
+    unsafe {
+        SVSM_PLATFORM.free_unused_platform_page(
+            PlatformPageType::Cpuid,
+            VirtAddr::from(launch_info.cpuid_page),
+        );
+        SVSM_PLATFORM.free_unused_platform_page(
+            PlatformPageType::Secrets,
+            VirtAddr::from(launch_info.secrets_page),
+        );
+    }
 
     SVSM_PLATFORM
         .env_setup_svsm()
