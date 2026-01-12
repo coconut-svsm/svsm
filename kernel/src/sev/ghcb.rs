@@ -260,9 +260,6 @@ impl GHCB {
     ghcb_getter!(get_xss_valid, xss, u64);
     ghcb_setter!(set_xss_valid, xss, u64);
 
-    ghcb_getter!(get_dr7_valid, dr7, u64);
-    ghcb_setter!(set_dr7_valid, dr7, u64);
-
     ghcb_getter!(get_rax_valid, rax, u64);
     ghcb_setter!(set_rax_valid, rax, u64);
 
