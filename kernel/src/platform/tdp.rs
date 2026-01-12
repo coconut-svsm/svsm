@@ -8,6 +8,7 @@ use super::capabilities::Caps;
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
+use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
@@ -33,7 +34,6 @@ use core::mem;
 use core::mem::MaybeUninit;
 use core::sync::atomic::{AtomicU32, Ordering};
 use syscall::GlobalFeatureFlags;
-use zerocopy::FromBytes;
 
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
@@ -41,28 +41,16 @@ use bootlib::platform::SvsmPlatformType;
 static GHCI_IO_DRIVER: GHCIIOPort = GHCIIOPort::new();
 static VTOM: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
 
-#[derive(Debug, FromBytes)]
-#[repr(C)]
-pub struct TdMailbox {
-    pub vcpu_index: AtomicU32,
-}
-
-// Both structures must fit in a page
-const _: () = assert!(mem::size_of::<TdMailbox>() + mem::size_of::<ApStartContext>() <= PAGE_SIZE);
-
-fn wakeup_ap(mailbox: &TdMailbox, cpu_index: usize) {
-    // PerCpu's CPU index has a direct mapping to TD vCPU index
-    mailbox
-        .vcpu_index
-        .store(cpu_index.try_into().unwrap(), Ordering::Release);
-}
-
 #[derive(Clone, Copy, Debug)]
-pub struct TdpPlatform {}
+pub struct TdpPlatform {
+    transition_cr3: u32,
+}
 
 impl TdpPlatform {
     pub fn new(_suppress_svsm_interrupts: bool) -> Self {
-        Self {}
+        Self {
+            transition_cr3: u64::from(read_cr3()).try_into().unwrap(),
+        }
     }
 }
 
@@ -151,6 +139,38 @@ impl SvsmPlatform for TdpPlatform {
 
     fn get_io_port(&self) -> &'static dyn IOPort {
         &GHCI_IO_DRIVER
+    }
+
+    /// # Safety
+    /// The caller is required to ensure that it is safe to validate low
+    /// memory.
+    unsafe fn validate_low_memory(&self, addr: u64) -> Result<(), SvsmError> {
+        // The page at the SIPI stub address was validated because it contains
+        // valid data.  Make sure it is not validated again.
+        // SAFETY: the caller taks responsibility for the safety of the
+        // validation operations here.
+        unsafe {
+            if addr <= SIPI_STUB_GPA as u64 {
+                self.validate_physical_page_range(
+                    MemoryRegion::new(PhysAddr::from(0u64), addr as usize),
+                    PageValidateOp::Validate,
+                )
+            } else {
+                self.validate_physical_page_range(
+                    MemoryRegion::new(PhysAddr::from(0u64), SIPI_STUB_GPA as usize),
+                    PageValidateOp::Validate,
+                )?;
+                if addr as usize > SIPI_STUB_GPA as usize + PAGE_SIZE {
+                    let paddr_start = PhysAddr::from(SIPI_STUB_GPA as usize + PAGE_SIZE);
+                    let paddr_end = PhysAddr::from(addr);
+                    self.validate_physical_page_range(
+                        MemoryRegion::from_addresses(paddr_start, paddr_end),
+                        PageValidateOp::Validate,
+                    )?;
+                }
+                Ok(())
+            }
+        }
     }
 
     fn page_state_change(
@@ -247,8 +267,8 @@ impl SvsmPlatform for TdpPlatform {
         // when running in the L1.
         context.efer = 0;
 
-        // The mailbox page was already accepted by the BSP in stage2 and
-        // therefore it's been initialized as a zero page.
+        // The context page was pre-accepted by the IGVM file and therefore it
+        // is available for use.
         let context_pa = SIPI_STUB_GPA as usize + PAGE_SIZE - mem::size_of::<ApStartContext>();
         // SAFETY: the physical address is known to point to the location where
         // the start context is to be created.
@@ -256,9 +276,22 @@ impl SvsmPlatform for TdpPlatform {
             PerCPUMapping::<MaybeUninit<ApStartContext>>::create(PhysAddr::new(context_pa))?
         };
 
-        // transition_cr3 is not needed since all TD APs are using the stage2
-        // page table set up by the BSP.
-        context_mapping.write(create_ap_start_context(&context, 0));
+        context_mapping.write(create_ap_start_context(&context, self.transition_cr3));
+
+        // Map the reset page to write the VP index of the CPU being started.
+        // This will release the target CPU from its initial spin loop and
+        // permit it to jump into the SIPI stub.  The VP index gate is at an
+        // offset of 0x800 bytes into the reset page located at 0xFFFFF000.
+        let vp_index_pa = PhysAddr::new(0xFFFFF800);
+        // SAFETY: The physical address of the VP Index gate is known to
+        // be correct.
+        let vp_index_mapping = unsafe { PerCPUMapping::<AtomicU32>::create(vp_index_pa)? };
+
+        // Once the VP index has been written, the target processor will be
+        // free to begin execution.  The context must be fully established by
+        // this point.
+        vp_index_mapping.store(cpu.get_cpu_index() as u32, Ordering::Release);
+        drop(vp_index_mapping);
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.
@@ -270,18 +303,6 @@ impl SvsmPlatform for TdpPlatform {
         }
 
         drop(context_mapping);
-
-        // The wakeup mailbox lives at the base of the context page.  While it
-        // would be possible to borrow the same per-CPU page mapping as the
-        // context page, this involves unsafe operations, and creating a
-        // separate mapping is entirely safe.  The optimization of reusing
-        // the existing mapping is not significant enough to be worth the use
-        // of unsafe code.
-        // SAFETY: the physical address is known to point to a mailbox
-        // structure.
-        let mailbox =
-            unsafe { PerCPUMapping::<TdMailbox>::create(PhysAddr::from(SIPI_STUB_GPA as usize))? };
-        wakeup_ap(mailbox.as_ref(), cpu.get_cpu_index());
 
         Ok(())
     }

@@ -166,6 +166,23 @@ pub trait SvsmPlatform: Sync {
     /// platform.
     fn get_io_port(&self) -> &'static dyn IOPort;
 
+    /// Validates low memory below the specified physical address, with the
+    /// exception of addresses reserved for use by the platform object which
+    /// may pre-validated.  Intended only for use during early boot.
+    /// # Safety
+    /// The caller is required to ensure that it is safe to validate low
+    /// memory.
+    unsafe fn validate_low_memory(&self, addr: u64) -> Result<(), SvsmError> {
+        // SAFETY: the caller takes responsibility for the safety of the
+        // validation operation.
+        unsafe {
+            self.validate_virtual_page_range(
+                MemoryRegion::new(VirtAddr::from(0u64), addr as usize),
+                PageValidateOp::Validate,
+            )
+        }
+    }
+
     /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
