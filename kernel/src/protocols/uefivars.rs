@@ -98,6 +98,15 @@ pub fn uefi_mm_protocol_init() -> Result<(), SvsmReqError> {
     let mut store = STORE.lock();
     store.reset();
 
+    #[cfg(all(feature = "secureboot", not(test)))]
+    {
+        // hard coded configuration for now.
+        store.enroll_pk_mgmt();
+        store.enroll_kek_microsoft();
+        store.enroll_db_microsoft_uefi();
+        store.enroll_dbx_native();
+    }
+
     // In case a TPM is present, shim's fallback.efi will setup efi
     // boot variables then reboot.  This is not going to work until we
     // have persistence support for the UEFI variable store.  So turn

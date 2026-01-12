@@ -82,6 +82,7 @@ virtio-drivers = ["dep:virtio-drivers"]
 block = []
 vsock = []
 uefivars = ["dep:virtfw-varstore"]
+secureboot = ["uefivars"]
 
 [dev-dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
