@@ -17,7 +17,7 @@ pub use syscall::*;
 macro_rules! declare_main {
     ($path:path) => {
         const _: () = {
-            #[export_name = "_start"]
+            #[unsafe(export_name = "_start")]
             pub extern "C" fn launch_module() -> ! {
                 let main_fn: fn() -> u32 = $path;
                 let ret = main_fn();
