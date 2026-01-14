@@ -4,7 +4,7 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use super::call::{syscall1, syscall3, SysCallError};
+use super::call::{SysCallError, syscall1, syscall3};
 use super::{SYS_EXEC, SYS_EXIT};
 use core::ffi::CStr;
 

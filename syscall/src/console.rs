@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::{write, FsObjHandle, ObjHandle, SysCallError};
+use crate::{FsObjHandle, ObjHandle, SysCallError, write};
 
 static CONSOLE_HANDLE: FsObjHandle = FsObjHandle::new(ObjHandle::new(0));
 
