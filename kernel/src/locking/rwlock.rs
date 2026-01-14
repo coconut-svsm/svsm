@@ -806,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn rw_lock_irq_unsafe() {
         use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
         use crate::cpu::irqs_enabled;
@@ -837,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn rw_lock_irq_safe() {
         use crate::cpu::irq_state::{raw_irqs_disable, raw_irqs_enable};
         use crate::cpu::{irqs_disabled, irqs_enabled};
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn rw_lock_tpr() {
         use crate::cpu::irq_state::raw_get_tpr;
         use crate::types::TPR_LOCK;

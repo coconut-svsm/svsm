@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    #[cfg_attr(target_os = "none", ignore = "Offline testing")]
     fn test_init_kernel_mapping_info() {
         init_km_testing();
 

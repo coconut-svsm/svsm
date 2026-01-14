@@ -68,7 +68,7 @@ impl BlockDriver for VirtIOBlkDriver {
     }
 }
 
-#[cfg(all(test, test_in_svsm))]
+#[cfg(all(test, target_os = "none"))]
 mod tests {
     use crate::{
         address::PhysAddr, fw_cfg::FwCfg, platform::SVSM_PLATFORM, testutils::has_test_iorequests,
@@ -109,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_read_4sectors() {
         if has_test_iorequests() {
             virtio_read(4);
@@ -117,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_read_8sectors() {
         if has_test_iorequests() {
             virtio_read(8);
@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_read_9sectors() {
         if has_test_iorequests() {
             virtio_read(9);
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_read_17sectors() {
         if has_test_iorequests() {
             virtio_read(17);
@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_write_4sectors() {
         if has_test_iorequests() {
             virtio_write(4);
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_write_8sectors() {
         if has_test_iorequests() {
             virtio_write(8);
@@ -186,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_write_9sectors() {
         if has_test_iorequests() {
             virtio_write(9);
@@ -194,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_virtio_write_17sectors() {
         if has_test_iorequests() {
             virtio_write(17);

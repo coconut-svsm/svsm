@@ -337,7 +337,7 @@ mod tests {
     use core::arch::x86_64::__cpuid_count;
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_has_memory_encryption_info_cpuid() {
         if is_test_platform_type(SvsmPlatformType::Native) {
             return;
@@ -351,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_has_amd_cpuid() {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             const CPUID_VENDOR_INFO: u32 = 0;
@@ -523,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_8() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u8 = 0x12;
@@ -539,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_16() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u16 = 0x4321;
@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_32() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u32 = 0xabcd1234;
@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_8_hardcoded() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u8 = 0x12;
@@ -581,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_16_hardcoded() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u16 = 0x4321;
@@ -591,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_32_hardcoded() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_VAL: u32 = 0xabcd1234;
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_port_io_string_16_get_last() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             const TEST_DATA: &[u16] = &[0x1234, 0x5678, 0x9abc, 0xdef0];
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_sev_snp_enablement_msr() {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             const MSR_SEV_STATUS: u32 = 0xc0010131;
@@ -643,7 +643,7 @@ mod tests {
     const APIC_BASE_PHYS_ADDR_MASK: u64 = 0xffffff000; // bit 12-35
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_rdmsr_apic() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
             let apic_base = verify_ghcb_gets_altered(|| read_msr(MSR_APIC_BASE));
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    //#[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    //#[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     #[ignore = "DBG_CTL access no longer intercepted"]
     fn test_rdmsr_debug_ctl() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
@@ -683,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_wrmsr_tsc_aux() {
         if has_qemu_testdev()
             && is_test_platform_type(SvsmPlatformType::Snp)
@@ -699,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    // #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_error() {
         // SAFETY: Calls into the VC handler and issues a vmmcall there. VMM
@@ -709,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    // #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_vmmcall_vapic_poll_irq() {
         if has_qemu_testdev() && is_test_platform_type(SvsmPlatformType::Snp) {
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_rdtsc() {
         let mut prev: u64 = rdtsc();
         for _ in 0..50 {
@@ -736,7 +736,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_rdtscp() {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             let expected_pid = if tsc_aux_intercepted() {
@@ -763,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    // #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     #[ignore = "Currently unhandled by #VC handler"]
     fn test_wbinvd() {
         // SAFETY: wbinvd does not harm memory safety.
@@ -776,7 +776,7 @@ mod tests {
     const EXPECTED_APIC_VERSION_NUMBER: u32 = 0x50014;
 
     #[test]
-    // #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    // #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     #[ignore = "apic mmio is not supported"]
     fn test_mmio_apic_version() {
         let mut version: u32 = 0;

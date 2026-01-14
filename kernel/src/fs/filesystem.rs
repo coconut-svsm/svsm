@@ -294,7 +294,7 @@ impl SvsmFs {
         self.root = Some(root.clone());
     }
 
-    #[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+    #[cfg(all(any(test, fuzzing), not(all(test, target_os = "none"))))]
     fn uninitialize(&mut self) {
         self.root = None;
     }
@@ -329,7 +329,7 @@ pub fn initialize_fs() {
 }
 
 #[cfg(any(test, fuzzing))]
-#[cfg_attr(test_in_svsm, derive(Clone, Copy))]
+#[cfg_attr(all(test, target_os = "none"), derive(Clone, Copy))]
 #[derive(Debug)]
 pub struct TestFileSystemGuard;
 
@@ -348,13 +348,13 @@ impl TestFileSystemGuard {
     /// is a no-op, as the filesystem is managed by the SVSM kernel.
     #[must_use = "filesystem guard must be held for the whole test"]
     pub fn setup() -> Self {
-        #[cfg(not(test_in_svsm))]
+        #[cfg(not(all(test, target_os = "none")))]
         initialize_fs();
         Self
     }
 }
 
-#[cfg(all(any(test, fuzzing), not(test_in_svsm)))]
+#[cfg(all(any(test, fuzzing), not(all(test, target_os = "none"))))]
 impl Drop for TestFileSystemGuard {
     fn drop(&mut self) {
         // Uninitialize the filesystem only if running in userspace.

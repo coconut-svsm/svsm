@@ -379,7 +379,7 @@ mod tests {
     use crate::platform::SVSM_PLATFORM;
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn irq_enable_disable() {
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -392,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn irq_state() {
         let state = IrqState::new();
         let was_enabled = irqs_enabled();
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn irq_guard_test() {
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn tpr_test() {
         if SVSM_PLATFORM.use_interrupts() || ipi_available() {
             assert_eq!(raw_get_tpr(), 0);
@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn tpr_guard_test() {
         if SVSM_PLATFORM.use_interrupts() || ipi_available() {
             assert_eq!(raw_get_tpr(), 0);

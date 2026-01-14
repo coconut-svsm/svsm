@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_ipi() {
         // IPI testing is only possible on platforms that support SVSM
         // interrupts.
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_mut_ipi() {
         // IPI testing is only possible on platforms that support SVSM
         // interrupts.
@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_atomic_ipi() {
         // IPI testing is only possible on platforms that support SVSM
         // interrupts.
