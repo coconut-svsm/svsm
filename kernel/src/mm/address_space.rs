@@ -273,8 +273,6 @@ mod tests {
         ImmutAfterInitCell::uninit();
     static INITIALIZED: SpinLock<bool> = SpinLock::new(false);
 
-    #[test]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn init_km_testing() {
         let mut initialized = INITIALIZED.lock();
         if *initialized {
@@ -307,17 +305,17 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "none")]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn test_virt_to_phys() {
-        let vaddr = VirtAddr::new(0x1500);
-        let paddr = virt_to_phys(vaddr);
+        let virt_start = FIXED_MAPPING.kernel_mapping.virt_start;
+        let phys_start = FIXED_MAPPING.kernel_mapping.phys_start;
 
-        assert_eq!(paddr, PhysAddr::new(0x4500));
+        let paddr = virt_to_phys(virt_start);
+
+        assert_eq!(paddr, phys_start);
     }
 
     #[test]
     #[cfg(not(target_os = "none"))]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn test_virt_to_phys() {
         let vaddr = VirtAddr::new(0x1500);
         let paddr = virt_to_phys(vaddr);
@@ -327,17 +325,17 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "none")]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn test_phys_to_virt() {
-        let paddr = PhysAddr::new(0x4500);
-        let vaddr = phys_to_virt(paddr);
+        let virt_start = FIXED_MAPPING.kernel_mapping.virt_start;
+        let phys_start = FIXED_MAPPING.kernel_mapping.phys_start;
 
-        assert_eq!(vaddr, VirtAddr::new(0x1500));
+        let vaddr = phys_to_virt(phys_start);
+
+        assert_eq!(vaddr, virt_start);
     }
 
     #[test]
     #[cfg(not(target_os = "none"))]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
     fn test_phys_to_virt() {
         let paddr = PhysAddr::new(0x4500);
         let vaddr = phys_to_virt(paddr);
