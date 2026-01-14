@@ -6,10 +6,10 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::types::*;
 use super::Elf64AddrRange;
 use super::Elf64FileRange;
 use super::ElfError;
+use super::types::*;
 use bitflags::bitflags;
 
 bitflags! {
