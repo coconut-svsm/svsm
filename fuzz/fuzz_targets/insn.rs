@@ -1,7 +1,7 @@
 #![no_main]
 
-use libfuzzer_sys::{fuzz_target, Corpus};
-use svsm::insn_decode::{Instruction, TestCtx, MAX_INSN_SIZE};
+use libfuzzer_sys::{Corpus, fuzz_target};
+use svsm::insn_decode::{Instruction, MAX_INSN_SIZE, TestCtx};
 
 fuzz_target!(|input: &[u8]| -> Corpus {
     let Some(input) = input.get(..MAX_INSN_SIZE) else {

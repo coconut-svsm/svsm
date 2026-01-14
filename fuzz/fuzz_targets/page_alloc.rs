@@ -10,11 +10,11 @@ use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use std::collections::BTreeSet;
 use svsm::address::VirtAddr;
-use svsm::mm::alloc::{
-    allocate_file_page, allocate_page, allocate_pages, allocate_zeroed_page, free_page, get_order,
-    TestRootMem,
-};
 use svsm::mm::PageRef;
+use svsm::mm::alloc::{
+    TestRootMem, allocate_file_page, allocate_page, allocate_pages, allocate_zeroed_page,
+    free_page, get_order,
+};
 use svsm::types::PAGE_SIZE;
 
 const WRITE_BYTE: u8 = 0x66;
