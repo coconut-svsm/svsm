@@ -11,7 +11,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use cocoon_tpm_tpm2_interface::{Tpm2bEccParameter, TpmBuffer, TpmEccCurve, TpmsEccPoint};
 use core::convert::TryFrom;
 use kbs_types::{Tee, TeePubKey};
