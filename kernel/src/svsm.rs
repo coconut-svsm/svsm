@@ -47,6 +47,8 @@ use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
 use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+#[cfg(all(feature = "uefivars", not(test)))]
+use svsm::protocols::uefivars::uefi_mm_protocol_init;
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{
@@ -408,6 +410,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
+
+    #[cfg(all(feature = "uefivars", not(test)))]
+    uefi_mm_protocol_init().expect("uefi mm protocol failed to initialize");
 
     virt_log_usage();
 

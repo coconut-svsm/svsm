@@ -15,6 +15,10 @@ use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
 use crate::protocols::errors::SvsmReqError;
+#[cfg(all(feature = "uefivars", not(test)))]
+use crate::protocols::uefivars::{UEFI_MM_PROTOCOL_VERSION_MAX, UEFI_MM_PROTOCOL_VERSION_MIN};
+#[cfg(all(feature = "uefivars", not(test)))]
+use crate::protocols::SVSM_UEFI_MM_PROTOCOL;
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
@@ -248,6 +252,12 @@ fn core_query_protocol(params: &mut RequestParams) -> Result<(), SvsmReqError> {
             version,
             ATTEST_PROTOCOL_VERSION_MIN,
             ATTEST_PROTOCOL_VERSION_MAX,
+        ),
+        #[cfg(all(feature = "uefivars", not(test)))]
+        SVSM_UEFI_MM_PROTOCOL => protocol_supported(
+            version,
+            UEFI_MM_PROTOCOL_VERSION_MIN,
+            UEFI_MM_PROTOCOL_VERSION_MAX,
         ),
         _ => 0,
     };

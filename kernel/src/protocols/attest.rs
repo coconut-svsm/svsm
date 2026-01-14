@@ -16,6 +16,8 @@ use crate::greq::{
     services::get_regular_report,
 };
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
+#[cfg(all(feature = "uefivars", not(test)))]
+use crate::protocols::uefivars::uefi_mm_get_manifest;
 use crate::protocols::{errors::SvsmReqError, RequestParams};
 use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -35,6 +37,8 @@ const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 
 #[cfg(all(feature = "vtpm", not(test)))]
 const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+#[cfg(all(feature = "uefivars", not(test)))]
+const SVSM_ATTEST_UEFI_MM_GUID: Uuid = uuid!("a4453a59-9e1b-4787-a033-1986d6adbe55");
 
 // Attest services operation structure, as defined in Table 11 of Secure VM Service Module for
 // SEV-SNP Guests 58019 Rev, 1.00 July 2023
@@ -354,6 +358,9 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
 
     #[cfg(all(feature = "vtpm", not(test)))]
     services.push(SVSM_ATTEST_VTPM_GUID, vtpm_get_manifest()?);
+
+    #[cfg(all(feature = "uefivars", not(test)))]
+    services.push(SVSM_ATTEST_UEFI_MM_GUID, uefi_mm_get_manifest()?);
 
     let manifest = services.to_vec()?;
     let mut nonce_and_manifest = attest_op.get_nonce()?;
