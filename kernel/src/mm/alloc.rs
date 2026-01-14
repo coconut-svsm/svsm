@@ -15,7 +15,7 @@ use crate::types::{PAGE_SHIFT, PAGE_SIZE};
 use crate::utils::tcb_ptr::{ptr_read, ptr_write};
 use crate::utils::{align_down, align_up, zero_mem_region};
 use core::alloc::{GlobalAlloc, Layout};
-use core::mem::{size_of, MaybeUninit};
+use core::mem::{MaybeUninit, size_of};
 use core::ptr::NonNull;
 use core::{cmp, ptr, slice};
 

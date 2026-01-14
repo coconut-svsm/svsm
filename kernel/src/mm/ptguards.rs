@@ -10,7 +10,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::cpu::tlb::flush_address_percpu;
 use crate::error::SvsmError;
 use crate::mm::virtualrange::VRangeAlloc;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::align_up;
 use core::marker::PhantomData;
 use core::mem;

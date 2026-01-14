@@ -10,15 +10,15 @@ use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
 use crate::mm::virt_from_idx;
-use crate::types::{PageSize, PAGE_SHIFT, PAGE_SIZE};
+use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{align_down, align_up};
 
 use core::cmp::max;
 
-use intrusive_collections::rbtree::{CursorMut, RBTree};
 use intrusive_collections::Bound;
+use intrusive_collections::rbtree::{CursorMut, RBTree};
 
-use super::{Mapping, VMMAdapter, VMM};
+use super::{Mapping, VMM, VMMAdapter};
 
 extern crate alloc;
 use alloc::boxed::Box;

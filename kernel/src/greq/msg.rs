@@ -9,7 +9,7 @@
 use core::mem::{offset_of, size_of};
 
 use crate::{
-    crypto::aead::{Aes256Gcm, Aes256GcmTrait, AUTHTAG_SIZE, IV_SIZE},
+    crypto::aead::{AUTHTAG_SIZE, Aes256Gcm, Aes256GcmTrait, IV_SIZE},
     protocols::errors::SvsmReqError,
     sev::secrets_page::VMPCK_SIZE,
     types::PAGE_SIZE,

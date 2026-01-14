@@ -16,9 +16,9 @@ pub mod vmsa;
 pub mod utils;
 
 pub use msr_protocol::init_hypervisor_ghcb_features;
-pub use secrets_page::{secrets_page, secrets_page_mut, SecretsPage, VMPCK_SIZE};
-pub use snp_apic::{GHCBApicAccessor, GHCB_APIC_ACCESSOR};
+pub use secrets_page::{SecretsPage, VMPCK_SIZE, secrets_page, secrets_page_mut};
+pub use snp_apic::{GHCB_APIC_ACCESSOR, GHCBApicAccessor};
 pub use status::sev_status_init;
 pub use status::sev_status_verify;
-pub use utils::{pvalidate, pvalidate_range, PvalidateOp, SevSnpError};
-pub use utils::{rmp_adjust, RMPFlags};
+pub use utils::{PvalidateOp, SevSnpError, pvalidate, pvalidate_range};
+pub use utils::{RMPFlags, rmp_adjust};

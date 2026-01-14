@@ -4,12 +4,12 @@
 //
 // Author: Jon Lange (jlange@microsoft.com)
 
+use super::TprGuard;
 use super::apic::{ApicIcr, IcrDestFmt};
 use super::cpuset::{AtomicCpuSet, CpuSet};
 use super::idt::common::IPI_VECTOR;
-use super::percpu::{this_cpu, PerCpuShared, PERCPU_AREAS};
+use super::percpu::{PERCPU_AREAS, PerCpuShared, this_cpu};
 use super::x86::apic_post_irq;
-use super::TprGuard;
 use crate::error::SvsmError;
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{TPR_IPI, TPR_SYNCH};

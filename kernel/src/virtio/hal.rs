@@ -9,8 +9,8 @@ use crate::{locking::SpinLock, platform::SVSM_PLATFORM};
 use alloc::vec::Vec;
 use core::{
     cell::OnceCell,
-    mem::{size_of, MaybeUninit},
-    ptr::{addr_of, NonNull},
+    mem::{MaybeUninit, size_of},
+    ptr::{NonNull, addr_of},
 };
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -164,25 +164,28 @@ unsafe impl virtio_drivers::Hal for SvsmHal {
     ) {
         assert!(buffer.len() <= PAGE_SIZE);
 
-        if let Some(shared_page) = SHARED_MEM.lock().get_mut().unwrap().pop(paddr.into()) {
-            let vaddr = phys_to_virt(paddr.into());
-            let va_from_shared = shared_page.addr();
-            assert!(vaddr == va_from_shared);
+        match SHARED_MEM.lock().get_mut().unwrap().pop(paddr.into()) {
+            Some(shared_page) => {
+                let vaddr = phys_to_virt(paddr.into());
+                let va_from_shared = shared_page.addr();
+                assert!(vaddr == va_from_shared);
 
-            if direction == virtio_drivers::BufferDirection::DeviceToDriver {
-                let dst = buffer.as_ptr().cast::<u8>();
-                let src = vaddr.as_mut_ptr::<u8>();
+                if direction == virtio_drivers::BufferDirection::DeviceToDriver {
+                    let dst = buffer.as_ptr().cast::<u8>();
+                    let src = vaddr.as_mut_ptr::<u8>();
 
-                // SAFETY: `src` is valid, since it is returned by `phys_to_virt ()`
-                //         We rely on the caller (=virtio driver) to supply a valid `buffer` and
-                //         a matchting `paddr`, which was returned by a prevous call to `share ()`.
-                //         Thus we can assume that `dst` is valid and that `src` holds `buffer.len()` bytes.
-                unsafe {
-                    core::ptr::copy_nonoverlapping(src, dst, buffer.len());
+                    // SAFETY: `src` is valid, since it is returned by `phys_to_virt ()`
+                    //         We rely on the caller (=virtio driver) to supply a valid `buffer` and
+                    //         a matchting `paddr`, which was returned by a prevous call to `share ()`.
+                    //         Thus we can assume that `dst` is valid and that `src` holds `buffer.len()` bytes.
+                    unsafe {
+                        core::ptr::copy_nonoverlapping(src, dst, buffer.len());
+                    }
                 }
             }
-        } else {
-            panic!("unshare: No shared page found at given pa");
+            _ => {
+                panic!("unshare: No shared page found at given pa");
+            }
         }
         // implicit drop of share_page here.
     }

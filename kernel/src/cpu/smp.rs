@@ -9,15 +9,15 @@ use crate::acpi::tables::ACPICPUInfo;
 use crate::address::{Address, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::ipi::ipi_start_cpu;
-use crate::cpu::percpu::{this_cpu, this_cpu_shared, PerCpu, PerCpuShared, PERCPU_AREAS};
-use crate::cpu::shadow_stack::{is_cet_ss_enabled, SCetFlags, MODE_64BIT, S_CET};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpu, PerCpuShared, this_cpu, this_cpu_shared};
+use crate::cpu::shadow_stack::{MODE_64BIT, S_CET, SCetFlags, is_cet_ss_enabled};
 use crate::cpu::sse::sse_init;
 use crate::cpu::tlb::set_tlb_flush_smp;
 use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::STACK_SIZE;
-use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
+use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
 
@@ -75,7 +75,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn start_ap_setup(top_of_stack: u64) {
     // Initialize the GDT, TSS, and IDT.
     this_cpu().load_gdt_tss(true);
@@ -89,7 +89,7 @@ extern "C" fn start_ap_setup(top_of_stack: u64) {
     ));
 }
 
-extern "C" {
+unsafe extern "C" {
     fn start_ap_indirect();
 }
 
@@ -163,7 +163,7 @@ pub fn create_ap_start_context(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn start_ap() -> ! {
     let percpu = this_cpu();
 

@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use super::msr::{read_msr, write_msr, EFER};
+use super::msr::{EFER, read_msr, write_msr};
 use bitflags::bitflags;
 
 bitflags! {

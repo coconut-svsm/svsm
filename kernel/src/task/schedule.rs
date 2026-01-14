@@ -31,16 +31,16 @@
 extern crate alloc;
 
 use super::{
-    KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter, INITIAL_TASK_ID,
+    INITIAL_TASK_ID, KernelThreadStartInfo, Task, TaskListAdapter, TaskPointer, TaskRunListAdapter,
 };
 use crate::address::{Address, VirtAddr};
-use crate::cpu::ipi::{send_multicast_ipi, IpiMessage, IpiTarget};
+use crate::cpu::IrqGuard;
+use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::cpu::irq_state::raw_get_tpr;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::{irq_nesting_count, this_cpu};
-use crate::cpu::shadow_stack::{is_cet_ss_enabled, IS_CET_ENABLED, PL0_SSP};
+use crate::cpu::shadow_stack::{IS_CET_ENABLED, PL0_SSP, is_cet_ss_enabled};
 use crate::cpu::sse::{sse_restore_context, sse_save_context};
-use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::fs::Directory;
 use crate::locking::SpinLock;
@@ -753,7 +753,7 @@ const CONTEXT_SWITCH_RESTORE_TOKEN: VirtAddr = SVSM_CONTEXT_SWITCH_SHADOW_STACK.
 
 #[cfg(test)]
 mod test {
-    use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
+    use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
     use crate::task::set_affinity;
 
     #[test]

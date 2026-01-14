@@ -10,6 +10,7 @@ use super::capabilities::Caps;
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
+use crate::cpu::IrqGuard;
 use crate::cpu::apic::{ApicIcr, IcrMessageType};
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
@@ -18,16 +19,15 @@ use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{
-    apic_enable, apic_initialize, apic_post_irq, apic_sw_enable, X2APIC_ACCESSOR,
+    X2APIC_ACCESSOR, apic_enable, apic_initialize, apic_post_irq, apic_sw_enable,
 };
-use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::hyperv::hyperv_start_cpu;
 use crate::hyperv::IS_HYPERV;
-use crate::io::{IOPort, DEFAULT_IO_DRIVER};
+use crate::hyperv::hyperv_start_cpu;
+use crate::io::{DEFAULT_IO_DRIVER, IOPort};
 use crate::mm::PerCPUMapping;
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
 use syscall::GlobalFeatureFlags;
 

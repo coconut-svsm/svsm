@@ -12,7 +12,7 @@ pub mod rawalloc;
 pub mod reserved;
 pub mod vmalloc;
 
-pub use api::{Mapping, VMMAdapter, VMPageFaultResolution, VirtualMapping, VMM};
+pub use api::{Mapping, VMM, VMMAdapter, VMPageFaultResolution, VirtualMapping};
 pub use file_mapping::{VMFileMapping, VMFileMappingFlags};
 pub use kernel_stack::VMKernelStack;
 pub use phys_mem::VMPhysMem;

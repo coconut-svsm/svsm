@@ -9,12 +9,12 @@ extern crate alloc;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::error::SvsmError;
+use crate::mm::PageBox;
 use crate::mm::global_memory::init_global_ranges;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
-use crate::mm::PageBox;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::{PageSize, PAGE_SIZE};
-use crate::utils::{page_align_up, MemoryRegion};
+use crate::types::{PAGE_SIZE, PageSize};
+use crate::utils::{MemoryRegion, page_align_up};
 use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 
 use alloc::vec::Vec;

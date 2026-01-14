@@ -10,8 +10,8 @@ use super::gdt::GDT;
 use super::ipi::IpiState;
 use super::isst::Isst;
 use super::msr::write_msr;
-use super::shadow_stack::{init_shadow_stack, is_cet_ss_enabled, is_cet_ss_supported, ISST_ADDR};
-use super::tss::{X86Tss, IST_DF};
+use super::shadow_stack::{ISST_ADDR, init_shadow_stack, is_cet_ss_enabled, is_cet_ss_supported};
+use super::tss::{IST_DF, X86Tss};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::control_regs::{read_cr0, read_cr4};
 use crate::cpu::efer::read_efer;
@@ -28,28 +28,28 @@ use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
-use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMRMapping, VMReserved, VMR};
+use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserved};
 use crate::mm::{
-    virt_to_phys, PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK,
-    SVSM_PERCPU_BASE, SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M,
-    SVSM_PERCPU_TEMP_BASE_4K, SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K,
-    SVSM_PERCPU_VMSA_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_SHADOW_STACK_ISST_DF_BASE,
-    SVSM_STACK_IST_DF_BASE,
+    PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
+    SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K,
+    SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE,
+    SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
+    virt_to_phys,
 };
-use crate::platform::{SvsmPlatform, SVSM_PLATFORM};
+use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::requests::SvsmCaa;
-use crate::sev::ghcb::{GhcbPage, GHCB};
-use crate::sev::hv_doorbell::{allocate_hv_doorbell_page, HVDoorbell};
+use crate::sev::ghcb::{GHCB, GhcbPage};
+use crate::sev::hv_doorbell::{HVDoorbell, allocate_hv_doorbell_page};
 use crate::sev::utils::RMPFlags;
 use crate::sev::vmsa::{VMSAControl, VmsaPage};
 use crate::task::{
-    schedule, schedule_task, scheduler_idle, KernelThreadStartInfo, RunQueue, Task, TaskPointer,
+    KernelThreadStartInfo, RunQueue, Task, TaskPointer, schedule, schedule_task, scheduler_idle,
 };
 use crate::types::{
     PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, SVSM_TR_ATTRIBUTES, SVSM_TSS,
 };
-use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::MemoryRegion;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -1212,11 +1212,7 @@ pub fn try_this_cpu() -> Option<&'static PerCpu> {
                 out("rcx") rcx,
                 options(att_syntax, nostack));
     }
-    if rcx == 0 {
-        Some(this_cpu())
-    } else {
-        None
-    }
+    if rcx == 0 { Some(this_cpu()) } else { None }
 }
 
 pub fn this_cpu_shared() -> &'static PerCpuShared {

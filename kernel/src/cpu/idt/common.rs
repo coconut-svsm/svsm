@@ -15,10 +15,10 @@ use crate::cpu::shadow_stack::is_cet_ss_enabled;
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineCtx, InsnMachineMem, Register, SegRegister};
 use crate::mm::ro_after_init::make_ro;
-use crate::mm::{GuestPtr, PageBox, PAGE_SIZE};
+use crate::mm::{GuestPtr, PAGE_SIZE, PageBox};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
-use crate::utils::{is_aligned, MemoryRegion};
+use crate::utils::{MemoryRegion, is_aligned};
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::mem;
@@ -414,7 +414,7 @@ pub fn triple_fault() {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     static entry_code_start: u8;
     static entry_code_end: u8;
 }

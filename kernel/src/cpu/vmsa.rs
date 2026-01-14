@@ -5,9 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::hyperv;
-use crate::sev::status::{sev_flags, SEVStatusFlags};
+use crate::sev::status::{SEVStatusFlags, sev_flags};
 use crate::types::{GUEST_VMPL, SVSM_CS, SVSM_CS_ATTRIBUTES, SVSM_DS, SVSM_DS_ATTRIBUTES};
-use cpuarch::vmsa::{VMSASegment, VMSA};
+use cpuarch::vmsa::{VMSA, VMSASegment};
 
 use super::gdt::GLOBAL_GDT;
 use super::idt::GLOBAL_IDT;

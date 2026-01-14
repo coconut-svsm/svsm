@@ -5,8 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr};
-use crate::cpu::msr::{read_msr, write_msr, SEV_GHCB};
-use crate::cpu::{irqs_enabled, IrqGuard};
+use crate::cpu::msr::{SEV_GHCB, read_msr, write_msr};
+use crate::cpu::{IrqGuard, irqs_enabled};
 use crate::error::SvsmError;
 use crate::platform::halt;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -123,7 +123,9 @@ pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
         if !missing.is_empty() {
             log::error!(
                 "Required hypervisor GHCB features not available: present={:#x}, required={:#x}, missing={:#x}",
-                features, required, missing
+                features,
+                required,
+                missing
             );
             // FIXME - enforce this panic once KVM advertises the required
             // features.

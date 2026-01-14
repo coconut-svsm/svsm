@@ -12,17 +12,17 @@
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
-    use crate::cpu::control_regs::read_cr3;
-    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, DB_VECTOR, VC_VECTOR};
-    use crate::cpu::percpu::this_cpu;
     use crate::cpu::X86GeneralRegs;
+    use crate::cpu::control_regs::read_cr3;
+    use crate::cpu::idt::common::{BP_VECTOR, DB_VECTOR, VC_VECTOR, X86ExceptionContext};
+    use crate::cpu::percpu::this_cpu;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
-    use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
+    use crate::mm::guestmem::{read_u8, write_u8};
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
-    use crate::task::{is_current_task, TaskContext, TaskPointer, INITIAL_TASK_ID, TASKLIST};
+    use crate::task::{INITIAL_TASK_ID, TASKLIST, TaskContext, TaskPointer, is_current_task};
     use core::arch::asm;
     use core::fmt;
     use core::sync::atomic::{AtomicU32, Ordering};
@@ -30,16 +30,16 @@ pub mod svsm_gdbstub {
     use gdbstub::conn::Connection;
     use gdbstub::stub::state_machine::GdbStubStateMachine;
     use gdbstub::stub::{GdbStubBuilder, MultiThreadStopReason};
+    use gdbstub::target::ext::base::BaseOps;
     use gdbstub::target::ext::base::multithread::{
         MultiThreadBase, MultiThreadResume, MultiThreadResumeOps, MultiThreadSingleStep,
         MultiThreadSingleStepOps,
     };
-    use gdbstub::target::ext::base::BaseOps;
     use gdbstub::target::ext::breakpoints::{Breakpoints, SwBreakpoint};
     use gdbstub::target::ext::thread_extra_info::ThreadExtraInfo;
     use gdbstub::target::{Target, TargetError};
-    use gdbstub_arch::x86::reg::X86_64CoreRegs;
     use gdbstub_arch::x86::X86_64_SSE;
+    use gdbstub_arch::x86::reg::X86_64CoreRegs;
 
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
@@ -48,14 +48,16 @@ pub mod svsm_gdbstub {
     #[allow(static_mut_refs)]
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         // Debugger initialization must only be attempted once.
-        assert!(GDB_INIT_STATE
-            .compare_exchange(
-                GdbInitState::Uninitialized as u32,
-                GdbInitState::Initializing as u32,
-                Ordering::SeqCst,
-                Ordering::Relaxed
-            )
-            .is_ok());
+        assert!(
+            GDB_INIT_STATE
+                .compare_exchange(
+                    GdbInitState::Uninitialized as u32,
+                    GdbInitState::Initializing as u32,
+                    Ordering::SeqCst,
+                    Ordering::Relaxed
+                )
+                .is_ok()
+        );
         // SAFETY: the use of mutable statics is acceptable because their use
         // is limited to the debugger package, which uses them only during
         // interactive debugging, at which time the runtime environment is
@@ -268,7 +270,7 @@ pub mod svsm_gdbstub {
         }
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn handle_stop(
         ctx: &mut TaskContext,
         exception_type: ExceptionType,

@@ -14,9 +14,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use crate::{
     address::{Address, PhysAddr},
     mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest},
-    protocols::{errors::SvsmReqError, RequestParams},
+    protocols::{RequestParams, errors::SvsmReqError},
     types::PAGE_SIZE,
-    vtpm::{vtpm_get_locked, TcgTpmSimulatorInterface, VtpmProtocolInterface},
+    vtpm::{TcgTpmSimulatorInterface, VtpmProtocolInterface, vtpm_get_locked},
 };
 
 /// vTPM platform commands (SVSM spec, section 8.1 - SVSM_VTPM_QUERY)

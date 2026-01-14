@@ -10,17 +10,17 @@ extern crate alloc;
 use crate::{
     error::SvsmError,
     greq::{pld_report::*, services::get_regular_report},
-    io::{Read, Write, DEFAULT_IO_DRIVER},
+    io::{DEFAULT_IO_DRIVER, Read, Write},
     serial::SerialPort,
     utils::vec::{try_to_vec, vec_sized},
 };
-use aes_gcm::{aead::generic_array::GenericArray, AeadInPlace, Aes256Gcm, KeyInit, Nonce};
+use aes_gcm::{AeadInPlace, Aes256Gcm, KeyInit, Nonce, aead::generic_array::GenericArray};
 use aes_kw::{Kek, KekAes256};
 use alloc::{string::ToString, vec::Vec};
 use cocoon_tpm_crypto::{
-    ecc::{curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z, EccKey},
-    rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
     CryptoError, EmptyCryptoIoSlices,
+    ecc::{EccKey, curve::Curve, ecdh::ecdh_c_1_1_cdh_compute_z},
+    rng::{self, HashDrbg, RngCore as _, X86RdSeedRng},
 };
 use cocoon_tpm_tpm2_interface::{self as tpm2_interface, TpmEccCurve, TpmiAlgHash, TpmsEccPoint};
 use cocoon_tpm_utils_common::{
