@@ -6,8 +6,8 @@
 pub mod fake;
 pub mod mmio;
 
-use crate::{PhysAddr, Result, PAGE_SIZE};
-use bitflags::{bitflags, Flags};
+use crate::{PAGE_SIZE, PhysAddr, Result};
+use bitflags::{Flags, bitflags};
 use core::{fmt::Debug, ops::BitAnd, ptr::NonNull};
 use log::debug;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
