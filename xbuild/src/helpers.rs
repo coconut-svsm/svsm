@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{features::Features, Args, BuildTarget, Component, ComponentConfig};
+use crate::{Args, BuildTarget, Component, ComponentConfig, features::Features};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 

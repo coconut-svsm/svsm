@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{features::Features, Args, BuildResult, BuildTarget, Component, ComponentConfig};
+use crate::{Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
