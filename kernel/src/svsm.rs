@@ -153,13 +153,27 @@ global_asm!(
 /// # Safety
 /// The launch info block must correctly specify the initial state of the
 /// heap.
-unsafe fn memory_init(launch_info: &KernelLaunchInfo, platform: &dyn SvsmPlatform) {
+unsafe fn memory_init(
+    launch_info: &KernelLaunchInfo,
+    platform: &dyn SvsmPlatform,
+    platform_type: SvsmPlatformType,
+) {
     // Unallocated heap memory has not already been accepted so it must be
     // accepted here.
     let heap_vaddr = VirtAddr::from(launch_info.heap_area_virt_start);
     let heap_allocated = launch_info.heap_area_allocated as usize;
-    let heap_length = launch_info.heap_area_page_count as usize;
-    if launch_info.heap_area_allocated < launch_info.heap_area_page_count {
+    let mut heap_length = launch_info.heap_area_page_count as usize;
+
+    // On an SNP system, the VMSA might be located within the kernel heap area.
+    // If so, it is at the last page within the heap range, so the heap range
+    // must be reduced so there is no attempt to validate the VMSA page and so
+    // that the VMSA page is not reallocated
+    if launch_info.vmsa_in_kernel_heap && (platform_type == SvsmPlatformType::Snp) {
+        heap_length -= 1;
+        assert!(heap_length >= heap_allocated);
+    }
+
+    if heap_allocated < heap_length {
         // SAFETY: the launch info is assumed to correctly reflect the set of
         // pages that were accepted in stage2.
         unsafe {
@@ -177,8 +191,8 @@ unsafe fn memory_init(launch_info: &KernelLaunchInfo, platform: &dyn SvsmPlatfor
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
         heap_vaddr,
-        launch_info.heap_area_page_count as usize,
-        launch_info.heap_area_allocated as usize,
+        heap_length,
+        heap_allocated,
     );
 }
 
@@ -278,7 +292,7 @@ unsafe fn svsm_start(
     // SAFETY: THe launch info is assumed to correctly specify the initial
     // state of memory.
     unsafe {
-        memory_init(launch_info.as_ref(), platform);
+        memory_init(launch_info.as_ref(), platform, platform_type);
     }
 
     // Initialize the valid bitmap as all valid, since stage2 guarantees that

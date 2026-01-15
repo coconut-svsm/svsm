@@ -135,8 +135,9 @@ pub struct IgvmParamBlock {
     /// Indicates whether SVSM can use "IORequest"s to assist with testing.
     pub has_test_iorequests: u8,
 
-    #[doc(hidden)]
-    pub _reserved: [u8; 1],
+    /// Indicates whether the VMSA is placed at the top of the kernel GPA
+    /// range.
+    pub vmsa_in_kernel_range: u8,
 
     /// Metadata containing information about the firmware image embedded in the
     /// IGVM file.
@@ -150,10 +151,6 @@ pub struct IgvmParamBlock {
 
     /// The guest physical address of the base of the stage1 bootloader
     pub stage1_base: u64,
-
-    /// The amount of space that must be reserved at the base of the kernel
-    /// memory region (e.g. for VMSA contents).
-    pub kernel_reserved_size: u32,
 
     /// The guest physical address of the base of the kernel memory region.
     pub kernel_base: u64,

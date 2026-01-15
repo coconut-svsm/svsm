@@ -119,11 +119,8 @@ impl IgvmParams<'_> {
         ))
     }
 
-    pub fn reserved_kernel_area_size(&self) -> usize {
-        self.igvm_param_block
-            .kernel_reserved_size
-            .try_into()
-            .unwrap()
+    pub fn vmsa_in_kernel_range(&self) -> bool {
+        self.igvm_param_block.vmsa_in_kernel_range != 0
     }
 
     pub fn page_state_change_required(&self) -> bool {

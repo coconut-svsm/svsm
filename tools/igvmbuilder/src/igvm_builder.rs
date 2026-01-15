@@ -256,7 +256,7 @@ impl IgvmBuilder {
             firmware: fw_info,
             stage1_size: self.gpa_map.stage1_image.get_size() as u32,
             stage1_base: self.gpa_map.stage1_image.get_start(),
-            kernel_reserved_size: PAGE_SIZE_4K as u32, // Reserved for VMSA
+            vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,
             kernel_max_size: self.gpa_map.kernel_max_size,

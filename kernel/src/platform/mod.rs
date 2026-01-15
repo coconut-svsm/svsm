@@ -348,6 +348,14 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Tdp(platform) => platform,
         }
     }
+
+    pub fn platform_type(&self) -> SvsmPlatformType {
+        match self {
+            SvsmPlatformCell::Native(_) => SvsmPlatformType::Native,
+            SvsmPlatformCell::Snp(_) => SvsmPlatformType::Snp,
+            SvsmPlatformCell::Tdp(_) => SvsmPlatformType::Tdp,
+        }
+    }
 }
 
 /// This defines a platform abstraction to permit stage2 to run on different

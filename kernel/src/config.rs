@@ -41,8 +41,8 @@ impl<'a> SvsmConfig<'a> {
     pub fn write_guest_memory_map(&self, map: &[MemoryRegion<PhysAddr>]) -> Result<(), SvsmError> {
         self.igvm_params.write_guest_memory_map(map)
     }
-    pub fn reserved_kernel_area_size(&self) -> usize {
-        self.igvm_params.reserved_kernel_area_size()
+    pub fn vmsa_in_kernel_range(&self) -> bool {
+        self.igvm_params.vmsa_in_kernel_range()
     }
     pub fn load_cpu_info(&self) -> Result<Vec<ACPICPUInfo>, SvsmError> {
         // Attempt to collect the CPU information from the IGVM parameters.

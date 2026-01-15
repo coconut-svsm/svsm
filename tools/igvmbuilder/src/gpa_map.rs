@@ -75,6 +75,7 @@ pub struct GpaMap {
     pub kernel_min_size: u32,
     pub kernel_max_size: u32,
     pub vmsa: GpaRange,
+    pub vmsa_in_kernel_range: bool,
     pub init_page_tables: GpaRange,
 }
 
@@ -185,12 +186,12 @@ impl GpaMap {
         // mark the end of the valid stage2 memory area.
         let kernel_fs = GpaRange::new(next_addr, kernel_fs_len as u64)?;
 
-        let vmsa = match options.hypervisor {
+        let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
                 // VMSA address is currently hardcoded in kvm
-                GpaRange::new_page(0xFFFFFFFFF000)?
+                (GpaRange::new_page(0xFFFFFFFFF000)?, false)
             }
-            Hypervisor::HyperV => GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?,
+            Hypervisor::HyperV => (GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?, true),
         };
 
         let gpa_map = Self {
@@ -211,6 +212,7 @@ impl GpaMap {
             kernel_min_size,
             kernel_max_size,
             vmsa,
+            vmsa_in_kernel_range,
             init_page_tables: GpaRange::new(0x10000, 2 * PAGE_SIZE_4K)?,
         };
         if options.verbose {
