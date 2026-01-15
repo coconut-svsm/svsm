@@ -70,6 +70,7 @@ pub struct KernelHeap<'a> {
     local_virt_base: VirtAddr,
     virt_base: Option<VirtAddr>,
     phys_base: PhysAddr,
+    usable_pages: usize,
     page_count: usize,
     next_free: usize,
     platform: &'a dyn SvsmPlatform,
@@ -91,6 +92,8 @@ impl<'a> KernelHeap<'a> {
         platform: &'a dyn SvsmPlatform,
         config: &'a SvsmConfig<'_>,
     ) -> Self {
+        let reserve_pages = config.vmsa_in_kernel_range() as usize;
+        let page_count = prange.len() / PAGE_SIZE;
         Self {
             // The kernel heap is always mapped in the stage2 address space
             // at the base of the per-task address region, since this cannot
@@ -98,7 +101,8 @@ impl<'a> KernelHeap<'a> {
             local_virt_base: SVSM_PERTASK_BASE,
             virt_base: None,
             phys_base: prange.start(),
-            page_count: prange.len() / PAGE_SIZE,
+            page_count,
+            usable_pages: page_count - reserve_pages,
             next_free: 0,
             platform,
             config,
@@ -174,7 +178,7 @@ impl<'a> KernelHeap<'a> {
     pub fn allocate_pages(&mut self, page_count: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
         // Verify that this allocation will not overflow the heap.
         let next_free = self.next_free + page_count;
-        if next_free > self.page_count {
+        if next_free > self.usable_pages {
             return Err(AllocError::OutOfMemory.into());
         }
 
@@ -780,11 +784,10 @@ fn prepare_heap<'a>(
     let kernel_size = kernel_page_count * PAGE_SIZE;
     let heap_pstart = kernel_region.start() + kernel_size;
 
-    // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
         .end()
         .checked_sub(heap_pstart.into())
-        .and_then(|r| r.checked_sub(config.reserved_kernel_area_size()))
+        .and_then(|r| r.checked_sub(kernel_size))
         .expect("Insufficient physical space for kernel image")
         .into();
 
@@ -949,6 +952,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
         kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
+        vmsa_in_kernel_heap: config.vmsa_in_kernel_range(),
         suppress_svsm_interrupts,
     };
 
