@@ -31,6 +31,8 @@ impl From<SevSnpError> for SvsmError {
 
 impl SevSnpError {
     // This should get optimized away by the compiler to a single instruction
+    // The return value is operation-specific, for PVALIDATE errors it is the
+    // virtual address that falied.
     pub fn ret(&self) -> u64 {
         match self {
             Self::FAIL_INPUT(ret)
@@ -154,9 +156,9 @@ pub unsafe fn pvalidate(
 
     match ret {
         0 if changed => Ok(()),
-        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(0x10).into()),
-        1 => Err(SevSnpError::FAIL_INPUT(ret).into()),
-        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
+        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(vaddr.bits() as u64).into()),
+        1 => Err(SevSnpError::FAIL_INPUT(vaddr.bits() as u64).into()),
+        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(vaddr.bits() as u64).into()),
         _ => {
             log::error!("PVALIDATE: unexpected return value: {}", ret);
             unreachable!();
