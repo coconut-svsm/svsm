@@ -26,7 +26,7 @@ use core::{
 extern crate alloc;
 use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc as _realloc};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
     if size == 0 {
         return ptr::null_mut();
@@ -41,7 +41,7 @@ pub extern "C" fn malloc(size: c_ulong) -> *mut c_void {
     unsafe { alloc(layout).cast() }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
     let Some(new_size) = items.checked_mul(size) else {
         return ptr::null_mut();
@@ -59,7 +59,7 @@ pub extern "C" fn calloc(items: c_ulong, size: c_ulong) -> *mut c_void {
     unsafe { alloc_zeroed(layout).cast() }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
     let ptr = p as *mut u8;
     let new_size = size as usize;
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn realloc(p: *mut c_void, size: c_ulong) -> *mut c_void {
     unsafe { _realloc(ptr, layout, new_size).cast() }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free(p: *mut c_void) {
     if p.is_null() {
         return;
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn free(p: *mut c_void) {
     unsafe { dealloc(ptr, layout) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
     // SAFETY: caller must provide safety requirements for
     // [`core::slice::from_raw_parts`]
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn abort() -> ! {
     request_termination_msr();
 }

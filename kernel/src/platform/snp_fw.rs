@@ -13,9 +13,9 @@ use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::platform::PageStateChangeOp;
-use crate::sev::{pvalidate, rmp_adjust, secrets_page, PvalidateOp, RMPFlags};
-use crate::types::{PageSize, GUEST_VMPL, PAGE_SIZE};
-use crate::utils::{zero_mem_region, MemoryRegion};
+use crate::sev::{PvalidateOp, RMPFlags, pvalidate, rmp_adjust, secrets_page};
+use crate::types::{GUEST_VMPL, PAGE_SIZE, PageSize};
+use crate::utils::{MemoryRegion, zero_mem_region};
 use alloc::vec::Vec;
 
 #[derive(Clone, Debug, Default)]

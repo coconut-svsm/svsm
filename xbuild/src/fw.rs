@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{run_cmd_checked, Args, BuildResult};
+use crate::{Args, BuildResult, run_cmd_checked};
 use serde::Deserialize;
 use std::env::{self, VarError};
 use std::path::PathBuf;

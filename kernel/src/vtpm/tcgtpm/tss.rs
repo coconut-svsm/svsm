@@ -11,8 +11,8 @@ extern crate alloc;
 
 use crate::protocols::errors::SvsmReqError;
 use crate::vtpm::{
-    tcgtpm::{TcgTpmSimulatorInterface, TPM_BUFFER_MAX_SIZE},
     SvsmVTpmError,
+    tcgtpm::{TPM_BUFFER_MAX_SIZE, TcgTpmSimulatorInterface},
 };
 use alloc::vec::Vec;
 

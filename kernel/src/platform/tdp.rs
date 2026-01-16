@@ -8,27 +8,27 @@ use super::capabilities::Caps;
 use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::console::init_svsm_console;
+use crate::cpu::IrqGuard;
 use crate::cpu::control_regs::read_cr3;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
 use crate::cpu::smp::create_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
-use crate::cpu::IrqGuard;
 use crate::error::SvsmError;
 use crate::hyperv;
-use crate::hyperv::{hyperv_start_cpu, IS_HYPERV};
+use crate::hyperv::{IS_HYPERV, hyperv_start_cpu};
 use crate::io::IOPort;
 use crate::mm::PerCPUMapping;
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
-    td_accept_physical_memory, td_accept_virtual_memory, tdcall_vm_read, tdvmcall_halt,
-    tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write, tdvmcall_map_gpa,
-    tdvmcall_report_fatal_error, tdvmcall_wrmsr, TdpHaltInterruptState, MD_TDCS_NUM_L2_VMS,
+    MD_TDCS_NUM_L2_VMS, TdpHaltInterruptState, td_accept_physical_memory, td_accept_virtual_memory,
+    tdcall_vm_read, tdvmcall_halt, tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write,
+    tdvmcall_map_gpa, tdvmcall_report_fatal_error, tdvmcall_wrmsr,
 };
-use crate::types::{PageSize, PAGE_SIZE};
+use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
-use crate::utils::{is_aligned, MemoryRegion};
+use crate::utils::{MemoryRegion, is_aligned};
 use bootlib::kernel_launch::{ApStartContext, SIPI_STUB_GPA};
 use core::mem;
 use core::mem::MaybeUninit;

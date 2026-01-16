@@ -7,7 +7,7 @@
 use crate::address::{PhysAddr, VirtAddr};
 use crate::cpu::mem::unsafe_copy_bytes;
 use crate::cpu::msr::write_msr;
-use crate::cpu::percpu::{this_cpu, PerCpu};
+use crate::cpu::percpu::{PerCpu, this_cpu};
 use crate::cpu::{IrqGuard, X86GeneralRegs};
 use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
@@ -16,7 +16,7 @@ use crate::hyperv::{HvInitialVpContext, HyperVMsr};
 use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::{virt_to_page_frame, SVSM_HYPERCALL_CODE_PAGE};
+use crate::mm::{SVSM_HYPERCALL_CODE_PAGE, virt_to_page_frame};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;

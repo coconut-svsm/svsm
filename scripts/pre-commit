@@ -30,7 +30,7 @@ RET=0
 for file in `git diff --diff-filter=d --name-only --staged`; do
     ext=${file##*.}
     if [ "$ext" == "rs" ]; then
-        rustfmt --check --edition 2021 $file > /dev/null 2>&1
+        rustfmt --check $file > /dev/null 2>&1
         if [ "$?" == "1" ]; then
             echo "$file needs rustfmt checking"
             RET=1

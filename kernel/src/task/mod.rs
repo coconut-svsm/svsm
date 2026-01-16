@@ -11,14 +11,14 @@ mod tasks;
 mod waiting;
 
 pub use schedule::{
-    create_user_task, current_task, current_task_terminated, finish_user_task, go_idle,
-    is_current_task, schedule, schedule_init, schedule_task, scheduler_idle, set_affinity,
-    start_kernel_task, start_kernel_thread, terminate, RunQueue, TASKLIST,
+    RunQueue, TASKLIST, create_user_task, current_task, current_task_terminated, finish_user_task,
+    go_idle, is_current_task, schedule, schedule_init, schedule_task, scheduler_idle, set_affinity,
+    start_kernel_task, start_kernel_thread, terminate,
 };
 
 pub use tasks::{
-    is_task_fault, KernelThreadStartInfo, Task, TaskContext, TaskError, TaskListAdapter,
-    TaskPointer, TaskRunListAdapter, TaskState, INITIAL_TASK_ID, TASK_FLAG_SHARE_PT,
+    INITIAL_TASK_ID, KernelThreadStartInfo, TASK_FLAG_SHARE_PT, Task, TaskContext, TaskError,
+    TaskListAdapter, TaskPointer, TaskRunListAdapter, TaskState, is_task_fault,
 };
 
 pub use exec::exec_user;

@@ -7,14 +7,14 @@
 use super::VirtualMapping;
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
+use crate::mm::PageRef;
 use crate::mm::address_space::STACK_SIZE;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::PageRef;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE};
-use crate::utils::{page_align_up, MemoryRegion};
+use crate::utils::{MemoryRegion, page_align_up};
 
-use super::rawalloc::RawAllocMapping;
 use super::Mapping;
+use super::rawalloc::RawAllocMapping;
 
 /// Mapping to be used as a kernel stack. This maps a stack including guard
 /// pages at the top and bottom.

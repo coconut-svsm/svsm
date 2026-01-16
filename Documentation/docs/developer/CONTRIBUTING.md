@@ -39,7 +39,7 @@ Coding Style
 Submitted changes must be checked with ```rustfmt``` before submitting
 and submitted code must not introduce new warnings in the build process.
 
-Make sure to format the code according to Rust edition 2021. There is a
+Make sure to format the code according to Rust edition 2024. There is a
 git-hook in the scripts directory which checks any changes with rustfmt
 before allowing them to be committed. It can be installed by running
 

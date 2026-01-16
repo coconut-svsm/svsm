@@ -4,22 +4,22 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use crate::BIT_MASK;
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::control_regs::{write_cr3, CR0Flags, CR4Flags};
+use crate::cpu::control_regs::{CR0Flags, CR4Flags, write_cr3};
 use crate::cpu::efer::EFERFlags;
 use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::idt::common::PageFaultError;
 use crate::cpu::registers::RFlags;
 use crate::error::SvsmError;
 use crate::mm::{
-    phys_to_virt, virt_to_phys, PageBox, PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED,
-    SVSM_PTE_BASE,
+    PGTABLE_LVL3_IDX_PTE_SELFMAP, PGTABLE_LVL3_IDX_SHARED, PageBox, SVSM_PTE_BASE, phys_to_virt,
+    virt_to_phys,
 };
 use crate::platform::SvsmPlatform;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M};
-use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_1G, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
-use crate::BIT_MASK;
+use crate::utils::immut_after_init::{ImmutAfterInitCell, ImmutAfterInitResult};
 use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};

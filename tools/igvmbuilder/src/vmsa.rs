@@ -4,9 +4,9 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
+use igvm::IgvmDirectiveHeader;
 use igvm::registers::{SegmentRegister, X86Register};
 use igvm::snp_defs::{SevFeatures, SevSelector, SevVmsa};
-use igvm::IgvmDirectiveHeader;
 use igvm_defs::IgvmNativeVpContextX64;
 use zerocopy::FromZeros;
 

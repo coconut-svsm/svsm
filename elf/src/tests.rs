@@ -164,12 +164,16 @@ fn test_elf64_load_segments() {
     let segment_index2 = 1;
 
     // Insert load segments
-    assert!(load_segments
-        .try_insert(vaddr_range1, segment_index1)
-        .is_ok());
-    assert!(load_segments
-        .try_insert(vaddr_range2, segment_index2)
-        .is_ok());
+    assert!(
+        load_segments
+            .try_insert(vaddr_range1, segment_index1)
+            .is_ok()
+    );
+    assert!(
+        load_segments
+            .try_insert(vaddr_range2, segment_index2)
+            .is_ok()
+    );
 
     // Lookup load segments by virtual address
     let (index1, offset1) = load_segments

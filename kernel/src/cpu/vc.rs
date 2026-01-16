@@ -7,14 +7,14 @@
 use super::idt::common::X86ExceptionContext;
 use crate::address::Address;
 use crate::address::VirtAddr;
-use crate::cpu::cpuid::{cpuid_table_raw, CpuidLeaf};
+use crate::cpu::X86GeneralRegs;
+use crate::cpu::cpuid::{CpuidLeaf, cpuid_table_raw};
 use crate::cpu::percpu::current_ghcb;
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::X86GeneralRegs;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::insn_decode::{
-    DecodedInsn, DecodedInsnCtx, Immediate, Instruction, Operand, Register, MAX_INSN_SIZE,
+    DecodedInsn, DecodedInsnCtx, Immediate, Instruction, MAX_INSN_SIZE, Operand, Register,
 };
 use crate::mm::GuestPtr;
 use crate::sev::ghcb::GHCB;
@@ -345,7 +345,7 @@ fn vc_decoding_needed(error_code: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu::msr::{rdtsc, rdtscp, read_msr, write_msr, RdtscpOut};
+    use crate::cpu::msr::{RdtscpOut, rdtsc, rdtscp, read_msr, write_msr};
     use crate::locking::SpinLock;
     use crate::sev::ghcb::GHCB;
     use crate::sev::utils::raw_vmmcall;

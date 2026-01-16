@@ -7,19 +7,19 @@
 extern crate alloc;
 
 use crate::cpu::ipi::wait_for_ipi_block;
-use crate::cpu::percpu::{this_cpu, PERCPU_AREAS};
+use crate::cpu::percpu::{PERCPU_AREAS, this_cpu};
 use crate::protocols::apic::apic_protocol_request;
 use crate::protocols::core::core_protocol_request;
 use crate::protocols::errors::{SvsmReqError, SvsmResultCode};
-use crate::task::{go_idle, set_affinity, start_kernel_thread, KernelThreadStartInfo};
-use crate::vmm::{enter_guest, GuestExitMessage, GuestRegister};
+use crate::task::{KernelThreadStartInfo, go_idle, set_affinity, start_kernel_thread};
+use crate::vmm::{GuestExitMessage, GuestRegister, enter_guest};
 
 use crate::protocols::attest::attest_protocol_request;
-#[cfg(all(feature = "vtpm", not(test)))]
-use crate::protocols::{vtpm::vtpm_protocol_request, SVSM_VTPM_PROTOCOL};
 use crate::protocols::{
     RequestParams, SVSM_APIC_PROTOCOL, SVSM_ATTEST_PROTOCOL, SVSM_CORE_PROTOCOL,
 };
+#[cfg(all(feature = "vtpm", not(test)))]
+use crate::protocols::{SVSM_VTPM_PROTOCOL, vtpm::vtpm_protocol_request};
 
 use alloc::vec::Vec;
 

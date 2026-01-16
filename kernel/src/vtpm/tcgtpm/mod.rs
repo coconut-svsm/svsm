@@ -20,8 +20,8 @@ use alloc::vec::Vec;
 
 use core::ffi::c_void;
 use libtcgtpm::bindings::{
-    TPM_Manufacture, TPM_TearDown, _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable,
-    _plat__RunCommand, _plat__SetNvAvail, _plat__Signal_PowerOn, _plat__Signal_Reset,
+    _plat__LocalitySet, _plat__NVDisable, _plat__NVEnable, _plat__RunCommand, _plat__SetNvAvail,
+    _plat__Signal_PowerOn, _plat__Signal_Reset, TPM_Manufacture, TPM_TearDown,
 };
 
 use crate::{
@@ -29,8 +29,8 @@ use crate::{
     protocols::{errors::SvsmReqError, vtpm::TpmPlatformCommand},
     types::PAGE_SIZE,
     vtpm::{
-        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA, TcgTpmSimulatorInterface, VtpmInterface,
-        VtpmProtocolInterface,
+        TcgTpmSimulatorInterface, VtpmInterface, VtpmProtocolInterface,
+        tcgtpm::ek_templates::DEFAULT_PUBLIC_AREA,
     },
 };
 

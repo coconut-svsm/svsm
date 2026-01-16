@@ -6,11 +6,11 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::flush_tlb_global_sync;
-use crate::cpu::percpu::{this_cpu, this_cpu_shared, PERCPU_AREAS, PERCPU_VMSAS};
+use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
-use crate::mm::{valid_phys_address, writable_phys_addr, GuestPtr};
+use crate::mm::{GuestPtr, valid_phys_address, writable_phys_addr};
 use crate::mm::{PerCPUMapping, PerCPUPageMappingGuard};
 use crate::protocols::apic::{APIC_PROTOCOL_VERSION_MAX, APIC_PROTOCOL_VERSION_MIN};
 use crate::protocols::attest::{ATTEST_PROTOCOL_VERSION_MAX, ATTEST_PROTOCOL_VERSION_MIN};
@@ -20,11 +20,11 @@ use crate::protocols::{
 };
 use crate::requests::SvsmCaa;
 use crate::sev::utils::{
-    pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access, rmp_revoke_guest_access,
-    rmp_set_guest_vmsa, PvalidateOp, RMPFlags, SevSnpError,
+    PvalidateOp, RMPFlags, SevSnpError, pvalidate, rmp_clear_guest_vmsa, rmp_grant_guest_access,
+    rmp_revoke_guest_access, rmp_set_guest_vmsa,
 };
 use crate::sev::vmsa::VMSAControl;
-use crate::types::{PageSize, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::zero_mem_region;
 use cpuarch::vmsa::VMSA;
 

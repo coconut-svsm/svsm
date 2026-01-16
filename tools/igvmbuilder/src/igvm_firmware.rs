@@ -13,7 +13,7 @@ use bootlib::kernel_launch::{LOWMEM_END, STAGE2_HEAP_END};
 use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{
-    IgvmPageDataType, IgvmVariableHeaderType, IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT,
+    IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT, IgvmPageDataType, IgvmVariableHeaderType,
     PAGE_SIZE_4K,
 };
 use zerocopy::IntoBytes;
@@ -170,19 +170,19 @@ impl IgvmFirmware {
             } => {
                 // When establishing a parameter area, the initial data is
                 // ignored, since it is not used for IGVM-based firmware.
-                if let Err(e) = parameters.parameter_area(number_of_bytes, parameter_area_index) {
-                    Some(Err(e))
-                } else {
-                    None
+                match parameters.parameter_area(number_of_bytes, parameter_area_index) {
+                    Err(e) => Some(Err(e)),
+                    _ => None,
                 }
             }
             IgvmDirectiveHeader::ParameterInsert(param) => {
                 if (param.compatibility_mask & compatibility_mask) == 0 {
                     None
-                } else if let Err(e) = parameters.parameter_insert(param) {
-                    Some(Err(e))
                 } else {
-                    None
+                    match parameters.parameter_insert(param) {
+                        Err(e) => Some(Err(e)),
+                        _ => None,
+                    }
                 }
             }
             IgvmDirectiveHeader::VpCount(p) => {
@@ -190,10 +190,9 @@ impl IgvmFirmware {
             }
             IgvmDirectiveHeader::MemoryMap(p) => {
                 // Identify the memory map as a special parameter type.
-                if let Err(e) = parameters.memory_map_parameter(p) {
-                    Some(Err(e))
-                } else {
-                    None
+                match parameters.memory_map_parameter(p) {
+                    Err(e) => Some(Err(e)),
+                    _ => None,
                 }
             }
             IgvmDirectiveHeader::EnvironmentInfo(p) => parameters.parameter_type(

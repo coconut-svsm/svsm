@@ -6,15 +6,15 @@
 
 extern crate alloc;
 
-use crate::acpi::tables::{load_acpi_cpu_info, ACPICPUInfo, ACPITable};
+use crate::acpi::tables::{ACPICPUInfo, ACPITable, load_acpi_cpu_info};
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
-use crate::mm::{GuestPtr, PerCPUPageMappingGuard, PAGE_SIZE};
-use crate::platform::{PageStateChangeOp, PageValidateOp, SevFWMetaData, SVSM_PLATFORM};
+use crate::mm::{GuestPtr, PAGE_SIZE, PerCPUPageMappingGuard};
+use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM, SevFWMetaData};
 use crate::types::PageSize;
-use crate::utils::{page_align_up, round_to_pages, MemoryRegion};
+use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
 use cpuarch::vmsa::VMSA;
 
@@ -23,7 +23,7 @@ use bootlib::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
 use core::ops::Deref;
 use core::slice;
-use igvm_defs::{IgvmEnvironmentInfo, MemoryMapEntryType, IGVM_VHS_MEMORY_MAP_ENTRY};
+use igvm_defs::{IGVM_VHS_MEMORY_MAP_ENTRY, IgvmEnvironmentInfo, MemoryMapEntryType};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();
 
