@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::{platform::SvsmPlatformType, symbols::KSym};
+use crate::symbols::KSym;
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -57,7 +57,6 @@ pub struct KernelLaunchInfo {
     pub debug_serial_port: u16,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
-    pub platform_type: SvsmPlatformType,
 }
 
 // Stage 2 launch info from stage1

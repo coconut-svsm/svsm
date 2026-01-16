@@ -950,7 +950,6 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         use_alternate_injection: config.use_alternate_injection(),
         kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
         suppress_svsm_interrupts,
-        platform_type,
     };
 
     // SAFETY: the virtual address of the allocated block is known to be usable
@@ -986,9 +985,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         asm!("jmp *%rax",
              in("rax") u64::from(kernel_entry),
              in("rdi") u64::from(launch_info_vaddr),
-             in("rsi") u64::from(initial_stack),
-             in("rdx") u64::from(initial_stack_base),
-             in("rcx") u64::from(kernel_page_tables.root()),
+             in("rsi") platform_type as u64,
+             in("rdx") u64::from(initial_stack),
+             in("rcx") u64::from(initial_stack_base),
+             in("r8") u64::from(kernel_page_tables.root()),
              options(att_syntax))
     };
 
