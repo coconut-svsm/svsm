@@ -2325,7 +2325,7 @@ impl SvsmAllocator {
 
     /// Resets the internal state. This is equivalent to reassigning `self`
     /// with a newly created [`SvsmAllocator`] with `Self::new()`.
-    #[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
+    #[cfg(all(not(all(test, target_os = "none")), any(test, fuzzing)))]
     fn reset(&self) {
         *self.slab32.lock() = Slab::new();
         *self.slab64.lock() = Slab::new();
@@ -2457,7 +2457,7 @@ pub struct TestRootMem<'a>(LockGuard<'a, ()>);
 
 #[cfg(any(test, fuzzing))]
 impl TestRootMem<'_> {
-    #[cfg(test_in_svsm)]
+    #[cfg(target_os = "none")]
     /// Sets up a test environment, returning a guard to ensure memory is
     /// held for the test's duration. This test function is intended to
     /// called inside a running SVSM.
@@ -2478,7 +2478,7 @@ impl TestRootMem<'_> {
     /// # Returns
     ///
     /// A guard that ensures the memory lock is held during the test.
-    #[cfg(not(test_in_svsm))]
+    #[cfg(not(target_os = "none"))]
     #[must_use = "memory guard must be held for the whole test"]
     pub fn setup(size: usize) -> Self {
         extern crate alloc;
@@ -2504,8 +2504,7 @@ impl TestRootMem<'_> {
         guard
     }
 }
-
-#[cfg(all(not(test_in_svsm), any(test, fuzzing)))]
+#[cfg(all(not(all(test, target_os = "none")), any(test, fuzzing)))]
 impl Drop for TestRootMem<'_> {
     /// If running tests in userspace, destroy root memory before
     /// dropping the lock over it.
@@ -2557,7 +2556,7 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(target_os = "none", ignore = "FIXME")]
     /// Allocate and free all available compound pages, verify that memory_info()
     /// reflects it.
     fn test_page_alloc_all_compound() {
@@ -2590,7 +2589,7 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(target_os = "none", ignore = "FIXME")]
     /// Allocate and free all available 4k pages, verify that memory_info()
     /// reflects it.
     fn test_page_alloc_all_single() {
@@ -2623,7 +2622,7 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(target_os = "none", ignore = "FIXME")]
     /// Allocate and free all available compound pages, verify that any subsequent
     /// allocation fails.
     fn test_page_alloc_oom() {
@@ -2737,7 +2736,7 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(target_os = "none", ignore = "FIXME")]
     /// Allocate enough objects so that the SlabPageSlab will need a SlabPage for
     /// itself twice.
     fn test_slab_page_slab_for_self() {
@@ -2777,7 +2776,7 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "FIXME")]
+    #[cfg_attr(target_os = "none", ignore = "FIXME")]
     /// Allocate enough objects to hit an OOM situation and verify null gets
     /// returned at some point.
     fn test_slab_oom() {

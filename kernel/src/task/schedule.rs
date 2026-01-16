@@ -757,7 +757,7 @@ mod test {
     use crate::task::set_affinity;
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_set_affinity() {
         let cpu_index = this_cpu().get_cpu_index();
 

@@ -7,7 +7,6 @@
 fn main() {
     // Extra cfgs
     println!("cargo::rustc-check-cfg=cfg(fuzzing)");
-    println!("cargo::rustc-check-cfg=cfg(test_in_svsm)");
     println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost)");
     println!("cargo::rustc-check-cfg=cfg(verus_keep_ghost_body)");
     println!("cargo::rustc-check-cfg=cfg(verus_verify_core)");
@@ -28,7 +27,6 @@ fn main() {
     // Extra linker args for tests.
     println!("cargo:rerun-if-env-changed=LINK_TEST");
     if std::env::var("LINK_TEST").is_ok() {
-        println!("cargo:rustc-cfg=test_in_svsm");
         println!("cargo:rustc-link-arg=-nostdlib");
         println!("cargo:rustc-link-arg=--build-id=none");
         println!("cargo:rustc-link-arg=--no-relax");

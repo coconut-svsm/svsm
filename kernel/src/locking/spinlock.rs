@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_unsafe() {
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn spin_lock_irq_safe() {
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn spin_trylock_irq_safe() {
         let was_enabled = irqs_enabled();
         raw_irqs_enable();
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn spin_trylock_tpr() {
         assert_eq!(raw_get_tpr(), 0);
 

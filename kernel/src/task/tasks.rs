@@ -952,7 +952,7 @@ fn task_exit() {
     schedule();
 }
 
-#[cfg(all(test, test_in_svsm))]
+#[cfg(all(test, target_os = "none"))]
 mod tests {
     extern crate alloc;
     use crate::task::{start_kernel_task, KernelThreadStartInfo};
@@ -961,7 +961,7 @@ mod tests {
     use core::arch::global_asm;
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_media_and_x87_instructions() {
         let ret: u64;
         unsafe {
@@ -1045,7 +1045,7 @@ mod tests {
     );
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_fpu_context_switch() {
         start_kernel_task(KernelThreadStartInfo::new(task1, 1), String::from("task1"))
             .expect("Failed to launch request processing task");

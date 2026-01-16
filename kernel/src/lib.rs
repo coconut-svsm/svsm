@@ -5,10 +5,16 @@
 // Author: Nicolai Stange <nstange@suse.de>
 
 #![no_std]
-#![cfg_attr(all(test, test_in_svsm), no_main)]
-#![cfg_attr(all(test, test_in_svsm), feature(custom_test_frameworks))]
-#![cfg_attr(all(test, test_in_svsm), test_runner(crate::testing::svsm_test_runner))]
-#![cfg_attr(all(test, test_in_svsm), reexport_test_harness_main = "test_main")]
+#![cfg_attr(all(test, target_os = "none"), no_main)]
+#![cfg_attr(all(test, target_os = "none"), feature(custom_test_frameworks))]
+#![cfg_attr(
+    all(test, target_os = "none"),
+    test_runner(crate::testing::svsm_test_runner)
+)]
+#![cfg_attr(
+    all(test, target_os = "none"),
+    reexport_test_harness_main = "test_main"
+)]
 #![cfg_attr(verus_keep_ghost, feature(proc_macro_hygiene))]
 
 pub mod acpi;
@@ -54,14 +60,14 @@ fn test_nop() {}
 
 // When running tests inside the SVSM:
 // Build the kernel entrypoint.
-#[cfg(all(test, test_in_svsm))]
+#[cfg(all(test, target_os = "none"))]
 #[path = "svsm.rs"]
 pub mod svsm_bin;
 // The kernel expects to access this crate as svsm, so reexport.
-#[cfg(all(test, test_in_svsm))]
+#[cfg(all(test, target_os = "none"))]
 extern crate self as svsm;
 // Include a module containing the test runner.
-#[cfg(all(test, test_in_svsm))]
+#[cfg(all(test, target_os = "none"))]
 pub mod testing;
 // Utilities for test configurations.
 #[cfg(test)]

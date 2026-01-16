@@ -57,8 +57,8 @@ pub fn make_ro_after_init() -> Result<(), SvsmError> {
 mod tests {
 
     #[test]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
-    #[cfg(test_in_svsm)]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
+    #[cfg(target_os = "none")]
     fn test_make_ro_after_init() {
         use super::*;
         use crate::mm::GuestPtr;

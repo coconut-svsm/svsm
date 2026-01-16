@@ -155,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[cfg_attr(test_in_svsm, ignore = "Offline testing")]
+    #[cfg_attr(target_os = "none", ignore = "Offline testing")]
     fn test_valid_phys_address() {
         let start = PhysAddr::new(0x1000);
         let end = PhysAddr::new(0x2000);

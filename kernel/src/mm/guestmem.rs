@@ -743,7 +743,7 @@ mod tests {
 
     #[test]
     #[cfg_attr(miri, ignore = "inline assembly")]
-    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    #[cfg_attr(not(target_os = "none"), ignore = "Can only be run inside guest")]
     fn test_read_invalid_address() {
         let ptr: GuestPtr<u8> = GuestPtr::new(VirtAddr::new(0xDEAD_BEEF));
         // SAFETY: ptr points to an invalid virtual address (0xDEADBEEF is
