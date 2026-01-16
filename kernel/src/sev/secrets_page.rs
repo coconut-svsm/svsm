@@ -13,7 +13,6 @@ use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 extern crate alloc;
 use alloc::boxed::Box;
-use core::ops::{Deref, DerefMut};
 use core::ptr;
 
 pub const VMPCK_SIZE: usize = 32;
@@ -142,34 +141,17 @@ impl Default for SecretsPage {
     }
 }
 
-#[derive(Debug)]
-pub struct SecretsPageRef {
-    secrets_page: &'static mut SecretsPage,
+static SECRETS_PAGE: ImmutAfterInitCell<RWLock<&'static mut SecretsPage>> =
+    ImmutAfterInitCell::uninit();
+
+pub fn secrets_page() -> Option<ReadLockGuard<'static, SecretsPage>> {
+    let guard = SECRETS_PAGE.try_get_inner().ok()?.lock_read();
+    Some(ReadLockGuard::map(guard, |e| &**e))
 }
 
-// TODO - eliminate the use of Deref/DerefMut and perform this work during
-// lock acquisition by using the map() methods on the lock guards.
-impl Deref for SecretsPageRef {
-    type Target = SecretsPage;
-    fn deref(&self) -> &SecretsPage {
-        self.secrets_page
-    }
-}
-
-impl DerefMut for SecretsPageRef {
-    fn deref_mut(&mut self) -> &mut SecretsPage {
-        self.secrets_page
-    }
-}
-
-static SECRETS_PAGE: ImmutAfterInitCell<RWLock<SecretsPageRef>> = ImmutAfterInitCell::uninit();
-
-pub fn secrets_page() -> Option<ReadLockGuard<'static, SecretsPageRef>> {
-    SECRETS_PAGE.try_get_inner().ok().map(RWLock::lock_read)
-}
-
-pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPageRef>> {
-    SECRETS_PAGE.try_get_inner().ok().map(RWLock::lock_write)
+pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPage>> {
+    let guard = SECRETS_PAGE.try_get_inner().ok()?.lock_write();
+    Some(WriteLockGuard::map(guard, |e| &mut **e))
 }
 
 /// # Safety
@@ -181,7 +163,7 @@ pub unsafe fn initialize_secrets_page(addr: VirtAddr) {
     unsafe {
         let secrets_page = addr.aligned_mut::<SecretsPage>().unwrap();
         SECRETS_PAGE
-            .init(RWLock::new(SecretsPageRef { secrets_page }))
+            .init(RWLock::new(secrets_page))
             .expect("Failed to initialize secrets page");
     }
 }
