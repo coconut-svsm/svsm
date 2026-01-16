@@ -8,7 +8,7 @@ use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-pub trait ApicAccess: core::fmt::Debug {
+pub trait ApicAccess: core::fmt::Debug + Sync {
     /// Updates the APIC_BASE MSR by reading the current value, applying the
     /// `and_mask`, then the `or_mask`, and writing back the new value.
     ///
