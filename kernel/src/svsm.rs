@@ -10,6 +10,7 @@
 extern crate alloc;
 
 use bootlib::kernel_launch::KernelLaunchInfo;
+use bootlib::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
@@ -101,6 +102,13 @@ global_asm!(
         .globl startup_64
     startup_64:
         /*
+         * Register conventions upon entry:
+         * RDI = launch info block
+         * RSI = platform type
+         * RDX = initial stack
+         * RCX = limit of initial stack
+         * R8 = kernel page table root
+         *
          * Setup stack.
          *
          * The initial stack is always mapped across all page tables because it
@@ -109,17 +117,17 @@ global_asm!(
          *
          * See switch_to() for details.
          */
-        movq %rsi, %rsp
-        leaq bsp_stack_end(%rip), %rsi
-        movq %rsp, (%rsi)
-        leaq bsp_stack(%rip), %rsi
-        movq %rdx, (%rsi)
+        movq %rdx, %rsp
+        leaq bsp_stack_end(%rip), %rdx
+        movq %rsp, (%rdx)
+        leaq bsp_stack(%rip), %rdx
+        movq %rcx, (%rdx)
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
 
         /* Switch to the kernel page tables */
-        movq %rcx, %cr3
+        movq %r8, %cr3
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
@@ -212,11 +220,14 @@ fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
 /// # Safety
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
-unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
+unsafe fn svsm_start(
+    li: *const KernelLaunchInfo,
+    platform_type: SvsmPlatformType,
+) -> Option<VirtAddr> {
     // SAFETY: the caller guarantees the correctness of the launch info
     // pointer.
     let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
-    init_platform_type(launch_info.platform_type);
+    init_platform_type(platform_type);
 
     mapping_info_init(&launch_info);
 
@@ -345,10 +356,10 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
 /// the launch info parameter is known to have been allocated from the kernel
 /// heap.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
+unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, platform_type: SvsmPlatformType) -> ! {
     // SAFETY: the caller ensures that the launch info pointer is a valid
     // pointer.
-    let ssp_token = unsafe { svsm_start(li) };
+    let ssp_token = unsafe { svsm_start(li, platform_type) };
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.
