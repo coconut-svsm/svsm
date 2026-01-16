@@ -1,0 +1,40 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The location of a cpu-local shadow stack restore token that’s mapped into every set of page tables for use during context switches."><title>CONTEXT_SWITCH_RESTORE_TOKEN in svsm::task::schedule - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-ca0dd0c4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="svsm" data-themes="" data-resource-suffix="" data-rustdoc-version="1.92.0 (ded5c06cf 2025-12-08)" data-channel="1.92.0" data-search-js="search-d69d8955.js" data-stringdex-js="stringdex-c3e638e9.js" data-settings-js="settings-c38705f0.js" ><script src="../../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-ce535bd0.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-263c88ec.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc constant"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">CONTEXT_SWITCH_RESTORE_TOKEN</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../svsm/index.html">svsm</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><div id="rustdoc-modnav"><h2><a href="index.html">In svsm::<wbr>task::<wbr>schedule</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">svsm</a>::<wbr><a href="../index.html">task</a>::<wbr><a href="index.html">schedule</a></div><h1>Constant <span class="constant">CONTEXT_<wbr>SWITCH_<wbr>RESTORE_<wbr>TOKEN</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/svsm/task/schedule.rs.html#752">Source</a> </span></div><pre class="rust item-decl"><code>const CONTEXT_SWITCH_RESTORE_TOKEN: <a class="struct" href="../../address/struct.VirtAddr.html" title="struct svsm::address::VirtAddr">VirtAddr</a>;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The location of a cpu-local shadow stack restore token that’s mapped into
+every set of page tables for use during context switches.</p>
+<p>One interesting difference between the normal stack pointer and the shadow
+stack pointer is how they can be switched: For the normal stack pointer we
+can just move a new value into the RSP register. This doesn’t work for the
+SSP register (the shadow stack pointer) because there’s no way to directly
+move a value into it. Instead we have to use the <code>rstorssp</code> instruction.
+The key difference between this instruction and a regular <code>mov</code> is that
+<code>rstorssp</code> expects a “shadow stack restore token” to be at the top of the
+new shadow stack (this is just a special value that marks the top of a
+inactive shadow stack). After switching to a new shadow stack, the previous
+shadow stack is now inactive, and so the <code>saveprevssp</code> instruction can be
+used to transfer the shadow stack restore token from the new shadow stack
+to the previous one: <code>saveprevssp</code> atomically pops the stack token of the
+new shadow stack and pushes it on the previous shadow stack. This means
+that we have to execute both <code>rstorssp</code> and <code>saveprevssp</code> every time we
+want to switch the shadow stacks.</p>
+<p>There’s one major problem though: <code>saveprevssp</code> needs to access both the
+previous and the new shadow stack, but we only map each shadow stack into a
+single task’s page tables. If each set of page tables only has access to
+either the previous or the new shadow stack, but not both, we can’t execute
+<code>saveprevssp</code> and so we we can’t move the shadow stack restore token to the
+previous shadow stack. If there’s no shadow stack restore token on the
+previous shadow stack that means we can’t restore this shadow stack at a
+later point. To work around this, we map another shadow stack into each
+CPU’s set of pagetables. This allows us to do the following:</p>
+<ol>
+<li>Switch to the context-switch shadow stack using <code>rstorssp</code>.</li>
+<li>Transfer the shadow stack restore token from the context switch shadow
+stack to the previous shadow stack by executing <code>saveprevssp</code>.</li>
+<li>Switch the page tables. This doesn’t lead to problems with the context
+switch shadow stack because it’s mapped into both page tables.</li>
+<li>Switch to the new shadow stack using <code>rstorssp</code>.</li>
+<li>Transfer the shadow stack restore token from the new shadow stack back
+to the context switch shadow stacks by executing <code>saveprevssp</code>.</li>
+</ol>
+<p>We just switched between two shadow stack tables in different page tables :)</p>
+<p>Stack offset calculation:</p>
+<p>0x1ff8 = Size(GuardPage) + Size(ShadowStack) - 8; where Size(GuardPage) == Size(ShadowStack) == PAGE_SIZE.</p>
+</div></details></section></div></main></body></html>

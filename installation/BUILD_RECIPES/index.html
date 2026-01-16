@@ -1,0 +1,1530 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../INSTALL/">
+      
+      
+        <link rel="next" href="../../developer/DOC-GUIDELINES/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>COCONUT Build Recipes Format - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#coconut-build-recipes-format" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              COCONUT Build Recipes Format
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building and launching
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Building and launching
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../INSTALL/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Recipe Documentation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build Recipe Documentation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT Build Recipes Format
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT Build Recipes Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#general-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="General Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coconut-build-item-cobi-object-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COCONUT Build Item (COBI) Object Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="COCONUT Build Item (COBI) Object Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-the-build-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        type: The Build Type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output_file-expected-build-output-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        output_file: Expected Build Output File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manifest-build-manifest-to-use-for-cargo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        manifest: Build Manifest to use for Cargo.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features-cargo-features-to-use-for-kernel-component" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        features: Cargo Features to use for Kernel Component
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-whether-to-build-a-package-or-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        binary: Whether to Build a Package or Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#objcopy-output-target-for-objcopy-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        objcopy: Output Target for Objcopy run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-user-space-module-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        path: User-Space Module Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#igvm-parameter-for-igvm-file-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        igvm: Parameter for IGVM File Creation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="igvm: Parameter for IGVM File Creation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#output-output-file-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        output: Output File Name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platforms-host-platforms-the-igvm-file-supports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        platforms: Host Platforms the IGVM File Supports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policy-value-of-the-policy-field-on-the-sev-snp-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        policy: Value of the Policy Field on the SEV-SNP Platform
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comport-serial-port-number-to-use-for-the-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        comport: Serial Port Number to use for the Console
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#measure-expected-launch-measurement-calculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        measure: Expected Launch Measurement Calculation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-kvm-calculate-launch-measurement-for-kvm-based-hypervisors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        check-kvm: Calculate Launch Measurement for KVM-based Hypervisors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#measure-native-zeroes-how-to-measure-zero-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        measure-native-zeroes: How to Measure Zero-Pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kernel-definitions-for-building-coconut-kernel-parts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kernel: Definitions for Building COCONUT Kernel Parts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-retrieval-information-for-guest-firmware-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        firmware: Retrieval Information for Guest Firmware Image
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="firmware: Retrieval Information for Guest Firmware Image">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#env-environment-variable-with-firmware-image-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        env: Environment Variable with Firmware Image Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-direct-file-path-of-firmware-image-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        file: Direct File Path of Firmware Image Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#command-execute-command-before-firmware-retrieval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        command: Execute Command before Firmware Retrieval
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fs-file-system-image-build-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fs: File-system Image Build Information
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Information
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Information
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DEVELOPMENT-PLAN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Plan Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rustdoc Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/FUZZING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fuzzing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing to COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/VERIFICATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formal Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/ATTESTATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT-SVSM Rustdoc
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#general-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        General Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="General Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coconut-build-item-cobi-object-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COCONUT Build Item (COBI) Object Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="COCONUT Build Item (COBI) Object Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#type-the-build-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        type: The Build Type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#output_file-expected-build-output-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        output_file: Expected Build Output File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manifest-build-manifest-to-use-for-cargo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        manifest: Build Manifest to use for Cargo.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#features-cargo-features-to-use-for-kernel-component" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        features: Cargo Features to use for Kernel Component
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#binary-whether-to-build-a-package-or-binary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        binary: Whether to Build a Package or Binary
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#objcopy-output-target-for-objcopy-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        objcopy: Output Target for Objcopy run
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-user-space-module-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        path: User-Space Module Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#igvm-parameter-for-igvm-file-creation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        igvm: Parameter for IGVM File Creation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="igvm: Parameter for IGVM File Creation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#output-output-file-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        output: Output File Name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#platforms-host-platforms-the-igvm-file-supports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        platforms: Host Platforms the IGVM File Supports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policy-value-of-the-policy-field-on-the-sev-snp-platform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        policy: Value of the Policy Field on the SEV-SNP Platform
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#comport-serial-port-number-to-use-for-the-console" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        comport: Serial Port Number to use for the Console
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#measure-expected-launch-measurement-calculation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        measure: Expected Launch Measurement Calculation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-kvm-calculate-launch-measurement-for-kvm-based-hypervisors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        check-kvm: Calculate Launch Measurement for KVM-based Hypervisors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#measure-native-zeroes-how-to-measure-zero-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        measure-native-zeroes: How to Measure Zero-Pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kernel-definitions-for-building-coconut-kernel-parts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kernel: Definitions for Building COCONUT Kernel Parts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-retrieval-information-for-guest-firmware-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        firmware: Retrieval Information for Guest Firmware Image
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="firmware: Retrieval Information for Guest Firmware Image">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#env-environment-variable-with-firmware-image-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        env: Environment Variable with Firmware Image Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-direct-file-path-of-firmware-image-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        file: Direct File Path of Firmware Image Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#command-execute-command-before-firmware-retrieval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        command: Execute Command before Firmware Retrieval
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fs-file-system-image-build-information" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fs: File-system Image Build Information
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="coconut-build-recipes-format">COCONUT Build Recipes Format</h1>
+<p>This document describes the format of COCONUT build recipes as consumed by the
+<code>xbuild</code> program. The program takes a build recipe as input and builds all
+tooling and component to generate one or more IGVM output files.</p>
+<p>IGVM files are hypervisor specific. The COCONUT source repository ships with
+ready-to-use recipes for all supported hypervisors. IGVM files for multiple
+hypervisors can be built with on recipe.</p>
+<h2 id="general-format">General Format</h2>
+<p>A build recipe is a text file containing a JSON object. The top-level object
+has attributes which point to sub-objects describing different parts of the
+build process.</p>
+<p>The currently recognized attributes are:</p>
+<ul>
+<li><code>igvm</code>: Parameters for creating IGVM files.</li>
+<li><code>kernel</code>: Configuration for compiling the COCONUT kernel and its boot stages.</li>
+<li><code>firmware</code>: Information on how to retrieve the guest firmware to put into the
+   IGVM output file (optional).</li>
+<li><code>fs</code>: Specification of the file-system layout for running user-space modules.</li>
+</ul>
+<p>The next section describes a common JSON object format for specifying how to
+build a single part of COCONUT-SVSM. The format is called COBI and is used for
+the <code>kernel</code> and <code>fs</code> parts of the build recipe.</p>
+<h3 id="coconut-build-item-cobi-object-format">COCONUT Build Item (COBI) Object Format</h3>
+<p>Build recipe files contain a JSON object for each component to be built. All
+the objects have a common set of attributes recognized, which are described
+below. This object format is used for building the COCONUT kernel parts and the
+user-space modules.</p>
+<h4 id="type-the-build-type"><code>type</code>: The Build Type</h4>
+<p>This attribute currently has two supported values:</p>
+<ul>
+<li><code>cargo</code>: Build the component with cargo.</li>
+<li><code>make</code>: Run GNU make to build the component.</li>
+</ul>
+<p>The default is <code>cargo</code>. Some of the other attributes are specific to either
+build type.</p>
+<h4 id="output_file-expected-build-output-file"><code>output_file</code>: Expected Build Output File</h4>
+<p>This is the expected output filename of the build run. It is only recognized
+for <code>make</code> builds and used as the make target.</p>
+<h4 id="manifest-build-manifest-to-use-for-cargo"><code>manifest</code>: Build Manifest to use for Cargo.</h4>
+<p>Path to the <code>Cargo.toml</code> file to pass as the build manifest when running cargo.
+Default is <code>None</code>.</p>
+<h4 id="features-cargo-features-to-use-for-kernel-component"><code>features</code>: Cargo Features to use for Kernel Component</h4>
+<p>This attribute points to a comma-separated list of cargo features to enable
+when building the specified component. Default is empty.</p>
+<h4 id="binary-whether-to-build-a-package-or-binary"><code>binary</code>: Whether to Build a Package or Binary</h4>
+<p>This is a boolean value and defines the way cargo is invoked:</p>
+<ul>
+<li>If <code>true</code>, the component is build with the <code>--bin</code> parameter to cargo.</li>
+<li>If <code>false</code>, the component is build from the cargo workspace with the
+  <code>--package</code> parameter.</li>
+</ul>
+<h4 id="objcopy-output-target-for-objcopy-run"><code>objcopy</code>: Output Target for Objcopy run</h4>
+<p>Each binary built using cargo or make will be processed and copied to the
+<code>bin/</code> directory using <code>objcopy</code>. This attribute specifies the output target
+used for the processing. Default is <code>elf64-x86-64</code>.</p>
+<h4 id="path-user-space-module-location"><code>path</code>: User-Space Module Location</h4>
+<p>This attribute is only recognized for user-space modules. It points to a string
+specifying the relative path of the module in the COCONUT file-system image.</p>
+<h2 id="igvm-parameter-for-igvm-file-creation"><code>igvm</code>: Parameter for IGVM File Creation</h2>
+<p>The <code>igvm</code> attribute points to an object where each attribute describes IGVM
+parameters for a supported hypervisor target. The following targets are
+currently supported:</p>
+<ul>
+<li><code>qemu</code>: The QEMU/KVM hypervisor.</li>
+<li><code>hyper-v</code>: Microsoft Hyper-V.</li>
+<li><code>vanadium</code>: Google Vanadium hypervisor based on KVM.</li>
+</ul>
+<p>Each target description is an object supporting a common set of attributes for
+invoking the <code>igvmbuilder</code> and <code>igvmmeasure</code> tools.</p>
+<p>The supported attributes are described below.</p>
+<h3 id="output-output-file-name"><code>output</code>: Output File Name</h3>
+<p>The name of the output file to generate. The file will be placed in the <code>bin/</code>
+directory.</p>
+<h3 id="platforms-host-platforms-the-igvm-file-supports"><code>platforms</code>: Host Platforms the IGVM File Supports</h3>
+<p>This attribute takes an array with a list of platforms to support in the output
+IGVM file. The supported platforms are:</p>
+<ul>
+<li><code>native</code>: Non-confidential guest environment.</li>
+<li><code>snp</code>: AMD SEV-SNP guest environment.</li>
+<li><code>tdp</code>: Intel TDX guest environment with support for TD-Partitioning.</li>
+<li><code>vsm</code>: Hyper-V Virtual Secure Mode.</li>
+</ul>
+<h3 id="policy-value-of-the-policy-field-on-the-sev-snp-platform"><code>policy</code>: Value of the Policy Field on the SEV-SNP Platform</h3>
+<p>This is a hex value with the <code>policy</code> field used when creating an AMD SEV-SNP
+virtual machine with the IGVM file (default: <code>0x30000</code>).</p>
+<h3 id="comport-serial-port-number-to-use-for-the-console"><code>comport</code>: Serial Port Number to use for the Console</h3>
+<p>This attribute specifies the number of the serial port COCONUT uses for console
+output.</p>
+<h3 id="measure-expected-launch-measurement-calculation"><code>measure</code>: Expected Launch Measurement Calculation</h3>
+<p>This has only one supported value for now: <code>print</code>. The build script will
+invoke the <code>igvmmeasure</code> tool on the IGVM file to print the expected SEV-SNP
+launch measurement for the specified target hypervisor.</p>
+<h3 id="check-kvm-calculate-launch-measurement-for-kvm-based-hypervisors"><code>check-kvm</code>: Calculate Launch Measurement for KVM-based Hypervisors</h3>
+<p>This attribute takes a boolean value which must be set to <code>true</code> if the target
+hypervisor is based on the Linux Kernel Virtual Machine (KVM). It is used to
+calculate the correct expected launch measurement for KVM-based hypervisors.
+Default value is <code>false</code>.</p>
+<h3 id="measure-native-zeroes-how-to-measure-zero-pages"><code>measure-native-zeroes</code>: How to Measure Zero-Pages</h3>
+<p>This is a boolean flag which defines how zero-pages are treated when
+calculating the expected launch measurement. The behavior is:</p>
+<ul>
+<li>If <code>true</code>: Use native SEV-SNP zero-page type for measurement.</li>
+<li>If <code>false</code>: Measure pages as data-pages containing all zeroes.</li>
+</ul>
+<p>The default value is <code>false</code>. Whether this setting is needed depends on how the
+hypervisor loads the IGVM file.</p>
+<h2 id="kernel-definitions-for-building-coconut-kernel-parts"><code>kernel</code>: Definitions for Building COCONUT Kernel Parts</h2>
+<p>The <code>kernel</code> attribute points to a JSON object whose attributes describe how to
+build the individual parts of the COCONUT kernel. The recognized attributes are:</p>
+<ul>
+<li><code>tdx-stage1</code>: Stage1 needed for TD-Partitioning platforms</li>
+<li><code>stage2</code>: The stage2 loader of the COCONUT kernel</li>
+<li><code>svsm</code>: The COCONUT kernel itself.</li>
+</ul>
+<p>Each attribute points to a COBI object, describing the individual build
+parameters for each component.</p>
+<h2 id="firmware-retrieval-information-for-guest-firmware-image"><code>firmware</code>: Retrieval Information for Guest Firmware Image</h2>
+<p>This attribute is optional and points to a JSON object which allows to specify
+where the build script finds the guest firmware image to put into the IGVM file.
+It supports the following attributes.</p>
+<h3 id="env-environment-variable-with-firmware-image-location"><code>env</code>: Environment Variable with Firmware Image Location</h3>
+<p>This attribute points to an environment variable name from which the path to
+the firmware image file is read.</p>
+<h3 id="file-direct-file-path-of-firmware-image-location"><code>file</code>: Direct File Path of Firmware Image Location</h3>
+<p>This attribute points directly to the path of the firmware image location. If
+present, it takes precedence over <code>env</code>.</p>
+<h3 id="command-execute-command-before-firmware-retrieval"><code>command</code>: Execute Command before Firmware Retrieval</h3>
+<p>This optional attribute points to a JSON array describing a command to execute
+before the firmware is retrieved either via <code>env</code> or <code>file</code>. The command can be
+used to build a firmware image and place it at the expected location.</p>
+<h2 id="fs-file-system-image-build-information"><code>fs</code>: File-system Image Build Information</h2>
+<p>The <code>fs</code> attribute is optional and used to describe the build process and
+layout of the file-system image to place into the IGVM file.</p>
+<p>There is one recognized attribute: <code>modules</code>. It points to a JSON object where
+each attribute names a module to build and include into the file-system image.</p>
+<p>The attribute name is by default treated as a cargo workspace package name and
+points to a JSON object in COBI format. The COBI object can override how the
+attribute name is treated during build, e.g. it can be treated as a binary
+to build with cargo.</p>
+<p>The script will build all user-space components and package them into a
+file-system image using the <code>packit</code> utility. The image file is then added to
+the IGVM file.</p>
+<h2 id="examples">Examples</h2>
+<p>For examples of working build recipe files please have a look into the
+<code>config/</code> directory of the COCONUT-SVSM source repository. It contains a number
+of build recipes to generate IGVM files for all supported hypervisors.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
