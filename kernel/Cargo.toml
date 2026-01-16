@@ -50,6 +50,7 @@ kbs-types = { workspace = true, optional = true, features = ["alloc"] }
 log = { workspace = true, features = ["max_level_info", "release_max_level_info"] }
 packit.workspace = true
 libtcgtpm = { workspace = true, optional = true }
+rustc-demangle = { workspace = true }
 serde = { workspace = true, optional = true, features = ["alloc", "derive"] }
 serde_json = { workspace = true, optional = true, features = ["alloc"] }
 zerocopy = { workspace = true, features = ["alloc", "derive"] }
