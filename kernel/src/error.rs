@@ -19,6 +19,7 @@
 
 #[cfg(feature = "attest")]
 use crate::attest::AttestationError;
+#[cfg(feature = "block")]
 use crate::block::BlockDeviceError;
 use crate::cpu::vc::VcError;
 use crate::fs::FsError;
@@ -133,6 +134,7 @@ pub enum SvsmError {
     #[cfg(feature = "virtio-drivers")]
     Virtio(VirtioError),
     /// Errors related to block devices.
+    #[cfg(feature = "block")]
     Block(BlockDeviceError),
     /// Errors related to attesting SVSM's launch evidence.
     #[cfg(feature = "attest")]
@@ -172,6 +174,7 @@ impl From<VirtioError> for SvsmError {
     }
 }
 
+#[cfg(feature = "block")]
 impl From<BlockDeviceError> for SvsmError {
     fn from(err: BlockDeviceError) -> Self {
         Self::Block(err)
