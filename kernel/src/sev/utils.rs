@@ -31,6 +31,8 @@ impl From<SevSnpError> for SvsmError {
 
 impl SevSnpError {
     // This should get optimized away by the compiler to a single instruction
+    // The return value is operation-specific, for PVALIDATE errors it is the
+    // virtual address that falied.
     pub fn ret(&self) -> u64 {
         match self {
             Self::FAIL_INPUT(ret)
@@ -59,14 +61,10 @@ unsafe fn pvalidate_range_4k(
     region: MemoryRegion<VirtAddr>,
     valid: PvalidateOp,
 ) -> Result<(), SvsmError> {
-    for addr in region.iter_pages(PageSize::Regular) {
+    region
+        .iter_pages(PageSize::Regular)
         // SAFETY: the caller promises that the validation operation is safe.
-        unsafe {
-            pvalidate(addr, PageSize::Regular, valid)?;
-        }
-    }
-
-    Ok(())
+        .try_for_each(|addr| unsafe { pvalidate(addr, PageSize::Regular, valid) })
 }
 
 /// # Safety
@@ -154,9 +152,9 @@ pub unsafe fn pvalidate(
 
     match ret {
         0 if changed => Ok(()),
-        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(0x10).into()),
-        1 => Err(SevSnpError::FAIL_INPUT(ret).into()),
-        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
+        0 if !changed => Err(SevSnpError::FAIL_UNCHANGED(vaddr.bits() as u64).into()),
+        1 => Err(SevSnpError::FAIL_INPUT(vaddr.bits() as u64).into()),
+        6 => Err(SevSnpError::FAIL_SIZEMISMATCH(vaddr.bits() as u64).into()),
         _ => {
             log::error!("PVALIDATE: unexpected return value: {}", ret);
             unreachable!();
@@ -288,14 +286,10 @@ pub unsafe fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Res
 }
 
 pub fn rmp_revoke_guest_access(vaddr: VirtAddr, size: PageSize) -> Result<(), SvsmError> {
-    for vmpl in RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits() {
-        let vmpl = RMPFlags::from_bits_truncate(vmpl);
+    (RMPFlags::GUEST_VMPL.bits()..=RMPFlags::VMPL3.bits())
+        .map(RMPFlags::from_bits_truncate)
         // SAFETY: revoking guest access can never affect memory safety.
-        unsafe {
-            rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size)?;
-        }
-    }
-    Ok(())
+        .try_for_each(|vmpl| unsafe { rmp_adjust(vaddr, vmpl | RMPFlags::NONE, size) })
 }
 
 /// # Safety
