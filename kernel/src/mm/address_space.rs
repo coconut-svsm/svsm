@@ -251,6 +251,7 @@ pub const SVSM_PERTASK_END: VirtAddr = SVSM_PERTASK_BASE.const_add(SIZE_LEVEL3);
 
 /// Page table self-map level 3 index
 pub const PGTABLE_LVL3_IDX_PTE_SELFMAP: usize = 493;
+const _: () = assert!(PGTABLE_LVL3_IDX_PTE_SELFMAP == bootimg::PGTABLE_LVL3_IDX_PTE_SELFMAP);
 
 pub const SVSM_PTE_BASE: VirtAddr = virt_from_idx(PGTABLE_LVL3_IDX_PTE_SELFMAP);
 
