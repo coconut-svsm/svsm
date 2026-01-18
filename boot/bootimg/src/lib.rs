@@ -160,5 +160,3 @@ where
 
     Ok(info)
 }
-
-pub fn nop() {}

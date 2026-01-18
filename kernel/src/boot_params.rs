@@ -22,6 +22,7 @@ use bootdefs::boot_params::InitialGuestContext;
 use bootdefs::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
 use core::ops::Deref;
+use core::ptr;
 use core::slice;
 use cpuarch::vmsa::VMSA;
 use igvm_defs::{IGVM_VHS_MEMORY_MAP_ENTRY, IgvmEnvironmentInfo, MemoryMapEntryType};
@@ -73,6 +74,20 @@ impl BootParams<'_> {
             igvm_madt: madt,
             guest_context,
         })
+    }
+
+    pub fn param_block(&self) -> &BootParamBlock {
+        self.boot_param_block
+    }
+
+    pub fn as_byte_slice(&self) -> &[u8] {
+        // SAFETY: the boot parameters are contiguous and the size is
+        // correctly captured in the parameter block, so the underlying
+        // memory can safely be interpreted as a byte stream.
+        unsafe {
+            let boot_params_addr = ptr::from_ref(self.boot_param_block) as usize;
+            slice::from_raw_parts(boot_params_addr as *const u8, self.size())
+        }
     }
 
     fn try_aligned_ref<'a, T>(addr: VirtAddr) -> Result<&'a T, SvsmError> {
