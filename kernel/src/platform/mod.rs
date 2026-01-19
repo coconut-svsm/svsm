@@ -101,7 +101,9 @@ pub trait SvsmPlatform: Sync {
 
     /// Performs initialiation of the environment specfic to the SVSM kernel
     /// (for services not used by stage2).
-    fn env_setup_svsm(&self) -> Result<(), SvsmError>;
+    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+        Ok(())
+    }
 
     /// Performs the necessary preparations for launching guest boot firmware.
     fn prepare_fw(
