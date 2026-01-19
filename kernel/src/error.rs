@@ -94,8 +94,6 @@ pub enum SvsmError {
     MissingVMSA,
     /// Error reported when there is no CAA (Calling Area Address) set up.
     MissingCAA,
-    /// Error reported when there is no secrets page set up.
-    MissingSecrets,
     /// Instruction decode related errors
     Insn(InsnError),
     /// Invalid address, usually provided by the guest
@@ -105,6 +103,9 @@ pub enum SvsmError {
     /// Error reported when the CPUID page is not present or improperly
     /// aligned.
     InvalidCpuidPage,
+    /// Error reported when there is no secrets page set up, or its
+    /// address is not properly aligned
+    InvalidSecrets,
     /// Error reported when converting to UTF-8
     InvalidUtf8,
     /// A fault occurred

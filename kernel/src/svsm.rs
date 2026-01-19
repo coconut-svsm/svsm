@@ -212,7 +212,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
         // SAFETY: the secrets page address was allocated by stage 2 in the kernel
         // heap and the address is trusted if it is non-zero.
         unsafe {
-            initialize_secrets_page(secrets_page_virt);
+            initialize_secrets_page(secrets_page_virt).expect("Could not initialize secrets page");
         }
     }
 
