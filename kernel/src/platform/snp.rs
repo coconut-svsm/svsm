@@ -143,7 +143,7 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
-    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
+    fn env_setup_svsm_late(&self) -> Result<(), SvsmError> {
         if hypervisor_ghcb_features().contains(GHCBHvFeatures::SEV_SNP_RESTR_INJ) {
             GHCB_APIC_ACCESSOR.set_use_restr_inj(true);
             this_cpu().setup_hv_doorbell()?;

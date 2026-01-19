@@ -361,7 +361,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     free_init_bsp_stack();
 
     SVSM_PLATFORM
-        .env_setup_svsm()
+        .env_setup_svsm_late()
         .expect("SVSM platform environment setup failed");
 
     hyperv_setup().expect("failed to complete Hyper-V setup");
