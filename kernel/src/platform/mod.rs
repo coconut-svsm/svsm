@@ -36,7 +36,7 @@ use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-use bootlib::kernel_launch::Stage2LaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
 use bootlib::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
@@ -94,6 +94,12 @@ pub trait SvsmPlatform: Sync {
 
     /// Performs basic early initialization of the runtime environment.
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
+
+    /// Performs early initialiation of the environment specfic to the SVSM kernel
+    /// (for services not used by stage2).
+    fn env_setup_svsm(&mut self, _li: &KernelLaunchInfo) -> Result<(), SvsmError> {
+        Ok(())
+    }
 
     /// Performs initialization of the platform runtime environment after
     /// the core system environment has been initialized.

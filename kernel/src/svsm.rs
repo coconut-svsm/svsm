@@ -20,7 +20,7 @@ use svsm::attest::AttestationDriver;
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{dump_cpuid_table, init_svsm_cpuid_table};
+use svsm::cpu::cpuid::dump_cpuid_table;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
@@ -48,7 +48,6 @@ use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
 use svsm::mm::{FixedAddressMappingRange, PageBox, init_kernel_mapping_info};
 use svsm::platform::{SVSM_PLATFORM, SvsmPlatformCell, init_capabilities, init_platform_type};
-use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::{
     enumerate_early_boot_regions, init_page_table, invalidate_early_boot_memory,
@@ -201,20 +200,9 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     let mut platform_cell = SvsmPlatformCell::new(launch_info.suppress_svsm_interrupts);
     let platform = platform_cell.platform_mut();
 
-    if launch_info.cpuid_page != 0 {
-        init_svsm_cpuid_table(VirtAddr::from(launch_info.cpuid_page))
-            .expect("Could not initialize CPUID page");
-    }
-
-    if launch_info.secrets_page != 0 {
-        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
-
-        // SAFETY: the secrets page address was allocated by stage 2 in the kernel
-        // heap and the address is trusted if it is non-zero.
-        unsafe {
-            initialize_secrets_page(secrets_page_virt).expect("Could not initialize secrets page");
-        }
-    }
+    platform
+        .env_setup_svsm(&launch_info)
+        .expect("Early SVSM environment setup failed");
 
     cr0_init();
     determine_cet_support(platform);

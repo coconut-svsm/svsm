@@ -13,7 +13,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::config::SvsmConfig;
 use crate::console::init_svsm_console;
 use crate::cpu::IrqGuard;
-use crate::cpu::cpuid::{CpuidResult, cpuid_table};
+use crate::cpu::cpuid::{CpuidResult, cpuid_table, init_svsm_cpuid_table};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
 use crate::cpu::tlb::TlbFlushScope;
@@ -30,6 +30,7 @@ use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
     GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
 };
+use crate::sev::secrets_page::initialize_secrets_page;
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
 use crate::sev::{
@@ -45,7 +46,7 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use bootlib::kernel_launch::Stage2LaunchInfo;
+use bootlib::kernel_launch::{KernelLaunchInfo, Stage2LaunchInfo};
 #[cfg(test)]
 use bootlib::platform::SvsmPlatformType;
 
@@ -133,6 +134,14 @@ impl SvsmPlatform for SnpPlatform {
     fn env_setup(&mut self, _debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError> {
         sev_status_init();
         VTOM.init(vtom).map_err(|_| SvsmError::PlatformInit)?;
+        Ok(())
+    }
+
+    fn env_setup_svsm(&mut self, li: &KernelLaunchInfo) -> Result<(), SvsmError> {
+        init_svsm_cpuid_table(VirtAddr::from(li.cpuid_page))?;
+        // SAFETY: the secrets page address was allocated by stage 2 in the kernel
+        // heap. The callee checks that the address is not NULL nor misaligned.
+        unsafe { initialize_secrets_page(VirtAddr::from(li.secrets_page)) }?;
         Ok(())
     }
 
