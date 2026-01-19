@@ -102,6 +102,9 @@ pub enum SvsmError {
     InvalidAddress,
     /// Error reported when convert a usize to Bytes
     InvalidBytes,
+    /// Error reported when the CPUID page is not present or improperly
+    /// aligned.
+    InvalidCpuidPage,
     /// Error reported when converting to UTF-8
     InvalidUtf8,
     /// A fault occurred

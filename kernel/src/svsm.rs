@@ -202,7 +202,8 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     let platform = platform_cell.platform_mut();
 
     if launch_info.cpuid_page != 0 {
-        init_svsm_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
+        init_svsm_cpuid_table(VirtAddr::from(launch_info.cpuid_page))
+            .expect("Could not initialize CPUID page");
     }
 
     if launch_info.secrets_page != 0 {

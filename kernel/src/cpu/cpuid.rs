@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::VirtAddr;
+use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use cpuarch::snp_cpuid::SnpCpuidTable;
@@ -16,18 +17,14 @@ static CPUID_PAGE: ImmutAfterInitCell<&SnpCpuidTable> = ImmutAfterInitCell::unin
 const _: () = assert!(size_of::<SnpCpuidTable>() <= PAGE_SIZE);
 
 /// Initialize the CPUID table page for the main SVSM kernel.
-///
-/// # Panics
-///
-/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
-pub fn init_svsm_cpuid_table(addr: VirtAddr) {
+pub fn init_svsm_cpuid_table(addr: VirtAddr) -> Result<(), SvsmError> {
     // SAFETY: this is called from the main function for the SVSM and no other
     // CPUs have been brought up, so the pointer cannot be aliased.
     // `aligned_mut()` will check alignment for us.
     let table = unsafe {
         addr.aligned_mut::<SnpCpuidTable>()
-            .expect("Misaligned SNP CPUID table address")
-    };
+            .ok_or(SvsmError::InvalidCpuidPage)
+    }?;
 
     for func in table.func.iter_mut().take(table.count as usize) {
         if func.eax_in == 0x8000001f {
@@ -36,6 +33,7 @@ pub fn init_svsm_cpuid_table(addr: VirtAddr) {
     }
 
     register_cpuid_table(table);
+    Ok(())
 }
 
 pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
