@@ -14,14 +14,13 @@ use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
 use core::slice;
-use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
 use svsm::config::SvsmConfig;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
+use svsm::cpu::cpuid::{dump_cpuid_table, init_svsm_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
@@ -174,27 +173,6 @@ fn initialize_virtio_mmio() -> Result<(), SvsmError> {
     Ok(())
 }
 
-/// # Panics
-///
-/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
-fn init_cpuid_table(addr: VirtAddr) {
-    // SAFETY: this is called from the main function for the SVSM and no other
-    // CPUs have been brought up, so the pointer cannot be aliased.
-    // `aligned_mut()` will check alignment for us.
-    let table = unsafe {
-        addr.aligned_mut::<SnpCpuidTable>()
-            .expect("Misaligned SNP CPUID table address")
-    };
-
-    for func in table.func.iter_mut().take(table.count as usize) {
-        if func.eax_in == 0x8000001f {
-            func.eax_out |= 1 << 28;
-        }
-    }
-
-    register_cpuid_table(table);
-}
-
 /// # Safety
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
@@ -224,7 +202,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     let platform = platform_cell.platform_mut();
 
     if launch_info.cpuid_page != 0 {
-        init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
+        init_svsm_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
     }
 
     if launch_info.secrets_page != 0 {
