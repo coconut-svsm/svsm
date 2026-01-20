@@ -32,14 +32,12 @@ pub fn init_svsm_cpuid_table(addr: VirtAddr) -> Result<(), SvsmError> {
         }
     }
 
-    register_cpuid_table(table);
-    Ok(())
+    register_cpuid_table(table)
 }
 
-pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
-    CPUID_PAGE
-        .init(table)
-        .expect("Could not initialize CPUID page");
+pub fn register_cpuid_table(table: &'static SnpCpuidTable) -> Result<(), SvsmError> {
+    CPUID_PAGE.init(table)?;
+    Ok(())
 }
 
 /// Copy a CPUID page's content to memory pointed to by a [`VirtAddr`]

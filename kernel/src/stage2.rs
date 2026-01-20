@@ -194,7 +194,7 @@ unsafe fn setup_env(
         // mapped by the loader, which promises to supply a correctly formed
         // CPUID page at that address.
         let cpuid_page = unsafe { &*cpuid_addr.as_ptr::<SnpCpuidTable>() };
-        register_cpuid_table(cpuid_page);
+        register_cpuid_table(cpuid_page).expect("Could not initialize CPUID page");
     }
 
     paging_init(platform, true).expect("Failed to initialize early paging");
