@@ -35,6 +35,8 @@ use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
 use svsm::enable_shadow_stacks;
+#[cfg(feature = "virtio-drivers")]
+use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmBox;
@@ -55,6 +57,8 @@ use svsm::svsm_paging::{
 use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
+#[cfg(feature = "virtio-drivers")]
+use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
 
@@ -149,6 +153,25 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
         PhysAddr::from(launch_info.heap_area_phys_start),
     );
     init_kernel_mapping_info(kernel_mapping, None);
+}
+
+/// Probes for VirtIO MMIO devices and initializes them.
+///
+/// # Returns
+///
+/// Returns Ok if initialization is successful or no virtio devices are found
+/// Returns an error when a virtio device is found but its driver initialization fails.
+#[cfg(feature = "virtio-drivers")]
+fn initialize_virtio_mmio() -> Result<(), SvsmError> {
+    let mut slots = probe_mmio_slots();
+
+    #[cfg(feature = "block")]
+    {
+        use svsm::block::virtio_blk::initialize_block;
+        initialize_block(&mut slots)?;
+    }
+
+    Ok(())
 }
 
 /// # Panics
@@ -410,6 +433,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     vtpm_init().expect("vTPM failed to initialize");
 
     virt_log_usage();
+
+    #[cfg(feature = "virtio-drivers")]
+    initialize_virtio_mmio().expect("Failed to initialize virtio-mmio drivers");
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:?}");
