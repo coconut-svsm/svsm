@@ -39,6 +39,26 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     /// Mapping size. Will always be a multiple of `VirtualMapping::page_size()`
     fn mapping_size(&self) -> usize;
 
+    /// Request to resize the mapping
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - The requested new size of the mapping
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok() with the new size of the mapping on success, Err() with
+    /// SvsmError value on failure.
+    fn resize(&mut self, _size: usize) -> Result<usize, SvsmError> {
+        Err(SvsmError::Mem)
+    }
+
+    /// Perform cleanup work after resizing the mapping
+    ///
+    /// This is a call-back to release any memory that can only be freed after
+    /// a TLB flush.
+    fn flush(&mut self) {}
+
     /// Indicates whether the mapping has any associated data.
     ///
     /// # Returns
