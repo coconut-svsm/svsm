@@ -93,7 +93,7 @@ impl KernelThreadStartInfo {
         Self {
             entry: entry as usize,
             start_parameter: T::to_usize(start_parameter),
-            start_routine: run_kernel_task::<T> as usize,
+            start_routine: run_kernel_task::<T> as *const () as usize,
         }
     }
 
@@ -105,7 +105,7 @@ impl KernelThreadStartInfo {
         Self {
             entry: entry as usize,
             start_parameter,
-            start_routine: run_kernel_task::<usize> as usize,
+            start_routine: run_kernel_task::<usize> as *const () as usize,
         }
     }
 }
@@ -311,8 +311,10 @@ impl Task {
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
         let (entry_return, exit_return) = match args.start_info {
-            ThreadStartInfo::User(_) => (return_new_task as usize, None),
-            ThreadStartInfo::Kernel(ref info) => (info.start_routine, Some(task_exit as usize)),
+            ThreadStartInfo::User(_) => (return_new_task as *const () as usize, None),
+            ThreadStartInfo::Kernel(ref info) => {
+                (info.start_routine, Some(task_exit as *const () as usize))
+            }
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
