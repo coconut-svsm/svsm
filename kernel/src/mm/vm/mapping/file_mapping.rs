@@ -20,6 +20,8 @@ use crate::mm::{PAGE_SIZE, pagetable::PTEntryFlags};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
 
+use syscall::MMFlags;
+
 bitflags! {
     #[derive(Debug, PartialEq, Copy, Clone)]
     pub struct VMFileMappingFlags : u32 {
@@ -33,6 +35,34 @@ bitflags! {
         const Private = 1 << 3;
         // Map at a fixed address
         const Fixed = 1 << 4;
+    }
+}
+
+impl From<MMFlags> for VMFileMappingFlags {
+    fn from(value: MMFlags) -> Self {
+        let mut vm_val = Self::empty();
+
+        if value.contains(MMFlags::MAP_READ) {
+            vm_val |= VMFileMappingFlags::Read;
+        }
+
+        if value.contains(MMFlags::MAP_WRITE) {
+            vm_val |= VMFileMappingFlags::Write;
+        }
+
+        if value.contains(MMFlags::MAP_EXEC) {
+            vm_val |= VMFileMappingFlags::Execute;
+        }
+
+        if value.contains(MMFlags::MAP_PRIVATE) {
+            vm_val |= VMFileMappingFlags::Private;
+        }
+
+        if value.contains(MMFlags::MAP_FIXED) {
+            vm_val |= VMFileMappingFlags::Fixed;
+        }
+
+        vm_val
     }
 }
 
