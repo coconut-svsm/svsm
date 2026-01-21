@@ -21,6 +21,10 @@ impl ObjHandle {
     pub(crate) const fn new(id: u32) -> Self {
         Self(id)
     }
+
+    pub(crate) fn id(&self) -> u32 {
+        self.0
+    }
 }
 
 impl From<&ObjHandle> for u32 {
