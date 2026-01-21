@@ -14,7 +14,7 @@ pub struct CmdOptions {
 
     /// Stage 2 binary file
     #[arg(short, long)]
-    pub stage2: String,
+    pub stage2: Option<String>,
 
     /// Kernel elf file
     #[arg(short, long)]

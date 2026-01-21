@@ -111,23 +111,6 @@ impl GpaMap {
             GpaRange::new(0, 0)?
         };
 
-        // Obtain the lengths of the binary files
-        let stage2_len = Self::get_metadata(&options.stage2)?.len() as usize;
-        if stage2_len > STAGE2_MAXLEN as usize {
-            return Err(format!(
-                "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
-            )
-            .into());
-        }
-
-        let kernel_fs_len = if let Some(fs) = &options.filesystem {
-            metadata(fs)?.len() as usize
-        } else {
-            0
-        };
-
-        let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
-
         // Choose the kernel base and maximum size.
         let kernel = match options.hypervisor {
             Hypervisor::Qemu => {
@@ -158,14 +141,52 @@ impl GpaMap {
             }
         }
 
+        // Determine the layout of the boot parameters.
         let boot_param_layout = BootParamLayout::new(firmware.is_some());
-        let boot_param_block = GpaRange::new(
-            stage2_image.get_end(),
-            boot_param_layout.total_size() as u64,
-        )?;
+
+        // If stage2 is present, then get its size and configure the data it
+        // requires.
+        let (stage2_image, stage2_stack, boot_param_block, kernel_fs_start) =
+            if let Some(ref stage2) = options.stage2 {
+                let stage2_len = Self::get_metadata(stage2)?.len() as usize;
+                if stage2_len > STAGE2_MAXLEN as usize {
+                    return Err(format!(
+                        "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+                    )
+                    .into());
+                }
+
+                let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
+                let boot_param_block = GpaRange::new(
+                    stage2_image.get_end(),
+                    boot_param_layout.total_size() as u64,
+                )?;
+                (
+                    stage2_image,
+                    GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                    boot_param_block,
+                    boot_param_block.get_end(),
+                )
+            } else {
+                let stage2_image = GpaRange::new(STAGE2_BASE.into(), 0)?;
+                (
+                    stage2_image,
+                    stage2_image,
+                    GpaRange::new(0, 0)?,
+                    stage2_image.get_start(),
+                )
+            };
+
+        // Obtain the length of the kernel filesystem.
+        let kernel_fs_len = if let Some(fs) = &options.filesystem {
+            metadata(fs)?.len() as usize
+        } else {
+            0
+        };
+
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid stage2 memory area.
-        let kernel_fs = GpaRange::new(boot_param_block.get_end(), kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(kernel_fs_start, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
@@ -178,7 +199,7 @@ impl GpaMap {
         let gpa_map = Self {
             base_addr: STAGE2_BASE.into(),
             stage1_image,
-            stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+            stage2_stack,
             stage2_image,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
