@@ -74,6 +74,14 @@ impl VirtualMapping for VMalloc {
         self.alloc.mapping_size()
     }
 
+    fn resize(&mut self, size: usize) -> Result<usize, SvsmError> {
+        self.alloc.resize(size)
+    }
+
+    fn flush(&mut self) {
+        self.alloc.flush();
+    }
+
     fn map(&self, offset: usize) -> Option<PhysAddr> {
         self.alloc.map(offset)
     }
