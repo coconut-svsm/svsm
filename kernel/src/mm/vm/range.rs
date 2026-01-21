@@ -217,18 +217,26 @@ impl VMR {
         )
     }
 
-    /// Map a [`VMM`] into the [`PageTablePart`]s of this region
+    /// Map a range of the [`VMM`] into the [`PageTablePart`]s of this region.
     ///
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to map into the page-table
+    /// - `vmm_offset` - Offset into the [`VMM`] to start mapping from
+    /// - `range` - Tuple of `(VirtAddr, VirtAddr)` describing the start and
+    ///   end virtual addresses to map the [`VMM`] to.
     ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
+    fn map_range(
+        &self,
+        vmm: &VMM,
+        vmm_offset: usize,
+        range: (VirtAddr, VirtAddr),
+    ) -> Result<(), SvsmError> {
         let (rstart, _) = self.virt_range();
-        let (vmm_start, vmm_end) = vmm.range();
+        let (vmm_start, vmm_end) = range;
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let mut offset: usize = 0;
@@ -242,7 +250,7 @@ impl VMR {
 
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
-            if let Some(paddr) = mapping.map(offset) {
+            if let Some(paddr) = mapping.map(offset + vmm_offset) {
                 let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
                 match page_size {
                     PageSize::Regular => {
@@ -259,14 +267,30 @@ impl VMR {
         Ok(())
     }
 
-    /// Unmap a [`VMM`] from the [`PageTablePart`]s of this region
+    /// Map a [`VMM`] into the [`PageTablePart`]s of this region
+    ///
+    /// # Arguments
+    ///
+    /// - `vmm` - Reference to a [`VMM`] instance to map into the page-table
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
+        self.map_range(vmm, 0, vmm.range())
+    }
+
+    /// Unmap part of a  [`VMM`] from the [`PageTablePart`]s of this region.
     ///
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
-    fn unmap_vmm(&self, vmm: &VMM) {
+    /// - `vmm_offset` - Offset into the [`VMM`] to start unmapping from
+    /// - `range` - Tuple of `(VirtAddr, VirtAddr)` describing the start and
+    ///   end virtual addresses to unmap.
+    fn unmap_range(&self, vmm: &VMM, vmm_offset: usize, range: (VirtAddr, VirtAddr)) {
         let (rstart, _) = self.virt_range();
-        let (vmm_start, vmm_end) = vmm.range();
+        let (vmm_start, vmm_end) = range;
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let page_size = mapping.page_size();
@@ -280,11 +304,20 @@ impl VMR {
             };
 
             if result.is_some() {
-                mapping.unmap(offset);
+                mapping.unmap(offset + vmm_offset);
             }
 
             offset += usize::from(page_size);
         }
+    }
+
+    /// Unmap a [`VMM`] from the [`PageTablePart`]s of this region
+    ///
+    /// # Arguments
+    ///
+    /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
+    fn unmap_vmm(&self, vmm: &VMM) {
+        self.unmap_range(vmm, 0, vmm.range())
     }
 
     fn do_insert(
