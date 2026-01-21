@@ -62,6 +62,14 @@ pub fn sys_mmap(
     Ok(mmap_addr.into())
 }
 
+pub fn sys_munmap(vaddr: usize, _length: usize) -> Result<u64, SysCallError> {
+    let virt_addr = VirtAddr::from(vaddr);
+    current_task()
+        .munmap_user(virt_addr)
+        .map_err(|_| SysCallError::EINVAL)?;
+    Ok(0)
+}
+
 pub fn sys_close(obj_id: u32) -> Result<u64, SysCallError> {
     // According to syscall ABI/API spec, close always returns 0 even
     // if called with an invalid handle
