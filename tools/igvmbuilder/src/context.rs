@@ -5,6 +5,7 @@
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
 use crate::cmd_options::{Hypervisor, SevExtraFeatures};
+use bootdefs::platform::SvsmPlatformType;
 use bootdefs::tdp_start::TdpStartContextLayout;
 use igvm::IgvmDirectiveHeader;
 use igvm::registers::{SegmentRegister, X86Register};
@@ -22,12 +23,15 @@ pub fn construct_start_context(
     start_rip: u64,
     start_rsp: u64,
     initial_cr3: u64,
+    long_mode: bool,
 ) -> Vec<X86Register> {
     let mut vec: Vec<X86Register> = Vec::new();
 
-    // Establish CS as a 32-bit code selector.
+    // Determine the code segment attributes as 32-bit or 64-bit depending on
+    // whether long mode was requested.
+    let cs_attributes = if long_mode { 0xa09b } else { 0xc09b };
     let cs = SegmentRegister {
-        attributes: 0xc09b,
+        attributes: cs_attributes,
         base: 0,
         limit: 0xffffffff,
         selector: 0x08,
@@ -57,9 +61,9 @@ pub fn construct_start_context(
     // CR4.MCE | CR4.PAE.
     vec.push(X86Register::Cr4(0x60));
 
-    // EFER.LME | EFER.LMA are always included but will be stripped on
-    // platforms that need to start with paging disabled.
-    vec.push(X86Register::Efer(0x500));
+    // Set EFER_NXE.  Also, EFER.LME | EFER.LMA are always included but will
+    // be stripped on platforms that need to start with paging disabled.
+    vec.push(X86Register::Efer(0xD00));
 
     vec.push(X86Register::Rflags(2));
     vec.push(X86Register::Rip(start_rip));
@@ -259,8 +263,7 @@ pub fn construct_vmsa(
                 vmsa.tr = convert_vmsa_segment(segment);
             }
             X86Register::Cr0(r) => {
-                // Remove CR0.PG.
-                vmsa.cr0 = *r & !0x8000_0000;
+                vmsa.cr0 = *r;
             }
             X86Register::Cr3(r) => {
                 vmsa.cr3 = *r;
@@ -269,8 +272,7 @@ pub fn construct_vmsa(
                 vmsa.cr4 = *r;
             }
             X86Register::Efer(r) => {
-                // Remove EFER.LMA and EFER.LME.
-                vmsa.efer = *r & !0x500;
+                vmsa.efer = *r;
             }
             X86Register::Pat(r) => {
                 vmsa.pat = *r;
@@ -297,6 +299,18 @@ pub fn construct_vmsa(
 
     // RSI holds the high 32 bits of VTOM.
     vmsa.rsi = vtom >> 32;
+
+    // Always set RAX to the SNP platform type in case the entry point requires
+    // this.
+    vmsa.rax = SvsmPlatformType::Snp as u64;
+
+    // Modify the execution context if 32-bit mode is requested.
+    if (vmsa.cs.attrib & 0x200) == 0 {
+        // Remove EFER.LMA and EFER.LME when running in 32-bit mode.
+        vmsa.efer &= !0x500;
+        // Remove CR0.PG when running in 32-bit mode.
+        vmsa.cr0 &= !0x8000_0000;
+    }
 
     // Include EFER.SVME on SNP platforms.
     vmsa.efer |= 0x1000;
