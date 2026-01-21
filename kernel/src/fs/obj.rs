@@ -14,7 +14,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug)]
-struct DirectoryHandle {
+pub struct DirectoryHandle {
     dir: Arc<dyn Directory>,
     list: Vec<FileName>,
     next: AtomicUsize,
@@ -42,6 +42,22 @@ pub struct FsObj {
 }
 
 impl FsObj {
+    pub fn file_handle(&self) -> Option<&FileHandle> {
+        if let FsObjEntry::File(fh) = &self.entry {
+            Some(fh)
+        } else {
+            None
+        }
+    }
+
+    pub fn directory_handle(&self) -> Option<&DirectoryHandle> {
+        if let FsObjEntry::Directory(dh) = &self.entry {
+            Some(dh)
+        } else {
+            None
+        }
+    }
+
     pub fn new_dir(dir: &Arc<dyn Directory>) -> Self {
         FsObj {
             entry: FsObjEntry::Directory(DirectoryHandle::new(dir)),
