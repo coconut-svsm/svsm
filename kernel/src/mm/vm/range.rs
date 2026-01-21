@@ -13,7 +13,7 @@ use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{align_down, align_up};
 
-use core::cmp::max;
+use core::cmp::{Ordering, max};
 
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
@@ -509,6 +509,51 @@ impl VMR {
             self.flush_tlb();
         }
         cursor.remove().ok_or(SvsmError::Mem)
+    }
+
+    pub fn resize_vmm(&self, base: VirtAddr, new_size: usize) -> Result<usize, SvsmError> {
+        let tree = self.tree.lock_write();
+        let addr = base.pfn();
+        let cursor = tree.find(&addr);
+        let vmm = cursor.get().ok_or(SvsmError::Mem)?;
+        let mut mapping = vmm.get_mapping_mut();
+        let old_size = mapping.mapping_size();
+
+        match new_size.cmp(&old_size) {
+            Ordering::Greater => {
+                // Check if mapping can be made bigger
+                let next_cursor = cursor.peek_next();
+                let limit = if next_cursor.is_null() {
+                    let (_, max_end) = self.virt_range();
+                    max_end - base
+                } else {
+                    let next_vmm = cursor.get().unwrap();
+                    let (next_start, _) = next_vmm.range();
+                    next_start - base
+                };
+                if new_size > limit {
+                    return Err(SvsmError::Mem);
+                }
+                mapping.resize(new_size)?;
+                let map_range = (base + old_size, base + new_size);
+                // FIXME: Undo resize operation when map_range fails.
+                self.map_range(vmm, old_size, map_range)?;
+
+                Ok(new_size)
+            }
+            Ordering::Less => {
+                let unmap_range = (base + new_size, base + old_size);
+                mapping.resize(new_size)?;
+                self.unmap_range(vmm, new_size, unmap_range);
+                // Flush TLB after memory has been unmapped
+                self.flush_tlb();
+                // Tell VMM to free unmapped memory
+                mapping.flush();
+
+                Ok(new_size)
+            }
+            _ => Ok(new_size),
+        }
     }
 
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for
