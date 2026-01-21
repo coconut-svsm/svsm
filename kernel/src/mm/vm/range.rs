@@ -481,6 +481,15 @@ impl VMR {
         self.insert_hint(VirtAddr::new(0), mapping)
     }
 
+    /// Flush the TLB after unmapping operations
+    fn flush_tlb(&self) {
+        if self.per_cpu {
+            flush_tlb_global_percpu();
+        } else {
+            flush_tlb_global_sync();
+        }
+    }
+
     /// Removes the mapping from a given base address from the RBTree
     ///
     /// # Arguments
@@ -497,11 +506,7 @@ impl VMR {
         let mut cursor = tree.find_mut(&addr);
         if let Some(node) = cursor.get() {
             self.unmap_vmm(node);
-            if self.per_cpu {
-                flush_tlb_global_percpu();
-            } else {
-                flush_tlb_global_sync();
-            }
+            self.flush_tlb();
         }
         cursor.remove().ok_or(SvsmError::Mem)
     }
