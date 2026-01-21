@@ -362,6 +362,9 @@ mod tests {
 
         const CPUID_EXTENDED_FUNCTION_INFO: u32 = 0x8000_0000;
         const CPUID_MEMORY_ENCRYPTION_INFO: u32 = 0x8000_001F;
+        // Stable clippy and the nightly rust compiler disagree on the safety
+        // of __cpuid_count(). Silence both until this is resolved.
+        #[allow(unused_unsafe)]
         // SAFETY: CPUID does never affect safety.
         let extended_info = unsafe { __cpuid_count(CPUID_EXTENDED_FUNCTION_INFO, 0) };
         assert!(extended_info.eax >= CPUID_MEMORY_ENCRYPTION_INFO);
@@ -373,6 +376,9 @@ mod tests {
         if is_test_platform_type(SvsmPlatformType::Snp) {
             const CPUID_VENDOR_INFO: u32 = 0;
 
+            // Stable clippy and the nightly rust compiler disagree on the safety
+            // of __cpuid_count(). Silence both until this is resolved.
+            #[allow(unused_unsafe)]
             // SAFETY: CPUID does never affect safety.
             let vendor_info = unsafe { __cpuid_count(CPUID_VENDOR_INFO, 0) };
 
