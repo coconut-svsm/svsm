@@ -13,6 +13,7 @@ const INVLPGB_VALID_VA: u64 = 1u64 << 0;
 const _INVLPGB_VALID_PCID: u64 = 1u64 << 1;
 const _INVLPGB_VALID_ASID: u64 = 1u64 << 2;
 const INVLPGB_VALID_GLOBAL: u64 = 1u64 << 3;
+const INVLPGB_VALID_NESTED: u64 = 1u64 << 5;
 
 #[inline]
 fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
@@ -47,7 +48,7 @@ pub fn flush_tlb_sync() {
 }
 
 pub fn flush_tlb_global() {
-    let rax: u64 = INVLPGB_VALID_GLOBAL;
+    let rax: u64 = INVLPGB_VALID_GLOBAL | INVLPGB_VALID_NESTED;
     do_invlpgb(rax, 0, 0);
 }
 
