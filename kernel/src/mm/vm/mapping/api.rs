@@ -9,10 +9,10 @@ use crate::error::SvsmError;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
-use crate::types::{PageSize, PAGE_SHIFT};
+use crate::types::{PAGE_SHIFT, PageSize};
 
 use intrusive_collections::rbtree::AtomicLink;
-use intrusive_collections::{intrusive_adapter, KeyAdapter};
+use intrusive_collections::{KeyAdapter, intrusive_adapter};
 
 use core::ops::Range;
 

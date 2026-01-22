@@ -6,10 +6,10 @@
 // Author: Tyler Fanelli <tfanelli@redhat.com>
 
 use super::*;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use base64::{
-    prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
     Engine,
+    prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
 };
 use kbs_types::*;
 use reqwest::StatusCode;

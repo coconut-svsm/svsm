@@ -8,9 +8,9 @@ extern crate alloc;
 
 use crate::address::{Address, VirtAddr};
 use crate::error::SvsmError;
-use crate::fs::{open_read, Directory};
-use crate::mm::vm::VMFileMappingFlags;
+use crate::fs::{Directory, open_read};
 use crate::mm::USER_MEM_END;
+use crate::mm::vm::VMFileMappingFlags;
 use crate::task::{create_user_task, current_task, finish_user_task, schedule};
 use crate::types::PAGE_SIZE;
 use crate::utils::align_up;

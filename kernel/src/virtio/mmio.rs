@@ -8,15 +8,15 @@ extern crate alloc;
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 
-use virtio_drivers::transport::{mmio::MmioTransport, DeviceType, Transport};
+use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 
 use crate::{
     address::PhysAddr,
     fw_cfg::FwCfg,
-    mm::{map_global_range_4k_shared, pagetable::PTEntryFlags, GlobalRangeGuard},
+    mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags},
     platform::SVSM_PLATFORM,
     types::PAGE_SIZE,
-    virtio::hal::{virtio_init, SvsmHal},
+    virtio::hal::{SvsmHal, virtio_init},
 };
 
 #[derive(Debug)]

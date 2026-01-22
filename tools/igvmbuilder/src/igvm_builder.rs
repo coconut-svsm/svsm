@@ -18,20 +18,20 @@ use igvm::{
     Arch, IgvmDirectiveHeader, IgvmFile, IgvmInitializationHeader, IgvmPlatformHeader, IgvmRevision,
 };
 use igvm_defs::{
-    IgvmPageDataFlags, IgvmPageDataType, IgvmPlatformType, IGVM_VHS_PARAMETER,
-    IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, PAGE_SIZE_4K,
+    IGVM_VHS_PARAMETER, IGVM_VHS_PARAMETER_INSERT, IGVM_VHS_SUPPORTED_PLATFORM, IgvmPageDataFlags,
+    IgvmPageDataType, IgvmPlatformType, PAGE_SIZE_4K,
 };
 use zerocopy::IntoBytes;
 
+use crate::GpaMap;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::cpuid::SnpCpuidPage;
-use crate::firmware::{parse_firmware, Firmware};
+use crate::firmware::{Firmware, parse_firmware};
 use crate::paging::construct_init_page_tables;
 use crate::platform::PlatformMask;
 use crate::sipi::add_sipi_stub;
 use crate::stage2_stack::Stage2Stack;
 use crate::vmsa::{construct_native_start_context, construct_start_context, construct_vmsa};
-use crate::GpaMap;
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;

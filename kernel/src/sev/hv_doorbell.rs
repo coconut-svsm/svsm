@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0 Copyright (c) Microsoft Corporation
 // Author: Jon Lange (jlange@microsoft.com)
 
+use crate::cpu::IrqState;
 use crate::cpu::idt::svsm::common_isr_handler;
 use crate::cpu::irq_state::{raw_get_tpr, tpr_from_vector};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::IrqState;
 use crate::error::SvsmError;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::virt_to_phys;
@@ -12,7 +12,7 @@ use crate::sev::ghcb::GHCB;
 
 use bitfield_struct::bitfield;
 use core::arch::asm;
-use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use zerocopy::FromBytes;
 
 #[bitfield(u8)]
@@ -196,7 +196,7 @@ pub fn current_hv_doorbell() -> &'static HVDoorbell {
 /// This function takes a raw pointer to the #HV doorbell page because it is
 /// called directly from assembly, and should not be invoked directly from
 /// Rust code.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_hv_events(hv_doorbell: *const HVDoorbell) {
     // Update the IRQ nesting state of the current CPU so calls to common
     // code recognize that interrupts have been disabled.  Proceed as if

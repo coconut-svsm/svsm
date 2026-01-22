@@ -913,7 +913,7 @@ pub fn seek_end(fh: &FileHandle, offset: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
+    use crate::mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem};
 
     #[test]
     fn create_dir() {

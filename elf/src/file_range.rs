@@ -6,8 +6,8 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::types::*;
 use super::ElfError;
+use super::types::*;
 
 /// This struct represents a parsed 64-bit ELF file. It contains information
 /// about the ELF file's header, load segments, dynamic section, and more.

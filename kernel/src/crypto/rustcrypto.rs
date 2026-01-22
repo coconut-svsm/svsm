@@ -9,8 +9,8 @@
 extern crate alloc;
 
 use aes_gcm::{
-    aead::{Aead, Payload},
     Aes256Gcm, Key, KeyInit, Nonce,
+    aead::{Aead, Payload},
 };
 use alloc::vec::Vec;
 use sha2::{Digest, Sha512};

@@ -31,7 +31,7 @@ pub mod x86;
 
 pub use apic::LocalApic;
 pub use idt::common::X86ExceptionContext;
-pub use irq_state::{irqs_disabled, irqs_enabled, IrqGuard, IrqState, TprGuard};
+pub use irq_state::{IrqGuard, IrqState, TprGuard, irqs_disabled, irqs_enabled};
 pub use percpu::{irq_nesting_count, irqs_disable, irqs_enable, lower_tpr, raise_tpr};
 pub use registers::{X86GeneralRegs, X86InterruptFrame, X86SegmentRegs};
 pub use shadow_stack::ShadowStackInit;

@@ -6,7 +6,7 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 
 use super::api::BlockDriver;
-use crate::block::{BlockDeviceError, BLOCK_DEVICE};
+use crate::block::{BLOCK_DEVICE, BlockDeviceError};
 use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
 use crate::virtio::devices::VirtIOBlkDevice;
@@ -111,7 +111,7 @@ mod tests {
     /// Get the sha256 sum of the disk image from the host (see `scripts/test-in-svsm.sh`)
     fn get_image_hash_from_host() -> Option<[u8; 32]> {
         use crate::serial::Terminal;
-        use crate::testing::{svsm_test_io, IORequest};
+        use crate::testing::{IORequest, svsm_test_io};
 
         let sp = svsm_test_io().unwrap();
 
@@ -240,7 +240,7 @@ mod tests {
 
         let mut hasher = Sha256::new();
 
-        let mut gen = (0u64..).flat_map(|x| x.to_le_bytes());
+        let mut generator = (0u64..).flat_map(|x| x.to_le_bytes());
 
         for (pos, sectors) in (0..n_sectors)
             .step_by(sectors_at_once)
@@ -248,7 +248,7 @@ mod tests {
         {
             buffer.truncate(sectors * SECTOR_SIZE);
 
-            buffer.fill_with(|| gen.next().unwrap());
+            buffer.fill_with(|| generator.next().unwrap());
 
             blk.write_blocks(pos, &buffer).unwrap();
             blk.flush().unwrap();

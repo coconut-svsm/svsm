@@ -14,7 +14,7 @@ mod ramfs;
 
 pub use api::*;
 pub use buffer::*;
-pub use console::{stdout_open, ConsoleFile};
+pub use console::{ConsoleFile, stdout_open};
 pub use filesystem::*;
 pub use init::populate_ram_fs;
 pub use obj::FsObj;

@@ -5,8 +5,8 @@ use zerocopy::FromZeros;
 // Copyright (C) 2024 SUSE
 //
 // Author: Carlos López <carlos.lopez@suse.com>
-use super::alloc::{allocate_pages, free_page, get_order, AllocError, MAX_ORDER};
 use super::PAGE_SIZE;
+use super::alloc::{AllocError, MAX_ORDER, allocate_pages, free_page, get_order};
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use core::borrow;

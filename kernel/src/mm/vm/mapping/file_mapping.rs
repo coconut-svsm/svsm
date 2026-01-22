@@ -14,9 +14,9 @@ use super::{VMPageFaultResolution, VirtualMapping};
 use crate::address::PhysAddr;
 use crate::error::SvsmError;
 use crate::fs::{FileHandle, FsError};
-use crate::mm::vm::VMR;
 use crate::mm::PageRef;
-use crate::mm::{pagetable::PTEntryFlags, PAGE_SIZE};
+use crate::mm::vm::VMR;
+use crate::mm::{PAGE_SIZE, pagetable::PTEntryFlags};
 use crate::types::PAGE_SHIFT;
 use crate::utils::align_up;
 
@@ -176,8 +176,8 @@ impl VirtualMapping for VMFileMapping {
 mod tests {
     use super::*;
     use crate::{
-        fs::{create, open_rw, unlink, TestFileSystemGuard},
-        mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE},
+        fs::{TestFileSystemGuard, create, open_rw, unlink},
+        mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem},
         types::PAGE_SIZE,
     };
 

@@ -10,8 +10,8 @@
 pub mod boot_stage2;
 
 use bootlib::kernel_launch::{
-    KernelLaunchInfo, Stage2LaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START,
-    STAGE2_STACK, STAGE2_STACK_END, STAGE2_START,
+    KernelLaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START, STAGE2_STACK,
+    STAGE2_STACK_END, STAGE2_START, Stage2LaunchInfo,
 };
 use bootlib::platform::SvsmPlatformType;
 use core::arch::asm;
@@ -28,28 +28,28 @@ use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::flush_tlb_percpu;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::stage2::{early_idt_init, early_idt_init_no_ghcb};
-use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
-use svsm::cpu::percpu::{this_cpu, PerCpu, PERCPU_AREAS};
+use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
+use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, this_cpu};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
-use svsm::mm::alloc::{memory_info, print_memory_info, root_mem_init, AllocError};
-use svsm::mm::pagetable::{paging_init, PTEntryFlags, PageTable};
+use svsm::mm::alloc::{AllocError, memory_info, print_memory_info, root_mem_init};
+use svsm::mm::pagetable::{PTEntryFlags, PageTable, paging_init};
 use svsm::mm::{
-    init_kernel_mapping_info, FixedAddressMappingRange, STACK_GUARD_SIZE, STACK_SIZE,
-    SVSM_PERCPU_BASE,
+    FixedAddressMappingRange, STACK_GUARD_SIZE, STACK_SIZE, SVSM_PERCPU_BASE,
+    init_kernel_mapping_info,
 };
 use svsm::platform;
 use svsm::platform::{
-    init_platform_type, PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform,
-    SvsmPlatformCell,
+    PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform, SvsmPlatformCell,
+    init_platform_type,
 };
-use svsm::types::{PageSize, PAGE_SIZE};
-use svsm::utils::{round_to_pages, zero_mem_region, MemoryRegion};
+use svsm::types::{PAGE_SIZE, PageSize};
+use svsm::utils::{MemoryRegion, round_to_pages, zero_mem_region};
 
 use release::COCONUT_VERSION;
 
-extern "C" {
+unsafe extern "C" {
     static mut pgtable: PageTable;
 }
 
@@ -482,7 +482,7 @@ fn prepare_heap(
     Ok(KernelHeap::create(heap_base_vaddr, heap_pregion))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 

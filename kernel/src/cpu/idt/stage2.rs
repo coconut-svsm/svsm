@@ -6,9 +6,9 @@
 
 use super::super::extable::handle_exception_table_early;
 use super::common::{DF_VECTOR, HV_VECTOR, IDT, PF_VECTOR, VC_VECTOR};
+use crate::cpu::X86ExceptionContext;
 use crate::cpu::control_regs::read_cr2;
 use crate::cpu::vc::{stage2_handle_vc_exception, stage2_handle_vc_exception_no_ghcb};
-use crate::cpu::X86ExceptionContext;
 use core::arch::global_asm;
 
 /// # Safety
@@ -37,7 +37,7 @@ pub unsafe fn early_idt_init(idt: &mut IDT<'_>) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext, vector: usize) {
     match vector {
         DF_VECTOR => {
@@ -66,7 +66,7 @@ pub extern "C" fn stage2_generic_idt_handler(ctx: &mut X86ExceptionContext, vect
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionContext, vector: usize) {
     let rip = ctx.frame.rip;
     let rsp = ctx.frame.rsp;
@@ -100,7 +100,7 @@ pub extern "C" fn stage2_generic_idt_handler_no_ghcb(ctx: &mut X86ExceptionConte
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     static stage2_idt_handler_array: u8;
     static stage2_idt_handler_array_no_ghcb: u8;
 }

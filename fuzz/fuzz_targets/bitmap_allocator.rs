@@ -7,7 +7,7 @@
 #![no_main]
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use svsm::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024, BitmapAllocator64};
+use svsm::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator64, BitmapAllocator1024};
 
 #[derive(Arbitrary, Debug)]
 enum BmaAction {

@@ -39,6 +39,8 @@ members = [
     "tools/cbit",
 ]
 
+[workspace.package]
+edition = "2024"
 
 [workspace.dependencies]
 # internal library crates

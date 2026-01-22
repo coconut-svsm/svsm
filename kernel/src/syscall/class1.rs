@@ -10,8 +10,8 @@ use super::obj::{obj_add, obj_get};
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::{
-    create_root, find_dir, mkdir_root, open_root, rmdir_root, truncate, unlink_root, DirEntry,
-    FsError, FsObj, UserBuffer,
+    DirEntry, FsError, FsObj, UserBuffer, create_root, find_dir, mkdir_root, open_root, rmdir_root,
+    truncate, unlink_root,
 };
 use crate::mm::guestmem::UserPtr;
 use crate::task::current_task;

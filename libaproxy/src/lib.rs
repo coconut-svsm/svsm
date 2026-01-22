@@ -16,7 +16,7 @@ pub use attestation::*;
 pub use negotiation::*;
 
 use alloc::{string::String, vec::Vec};
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 
 #[derive(Debug)]

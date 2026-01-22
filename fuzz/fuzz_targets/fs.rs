@@ -11,7 +11,7 @@ use core::hint::black_box;
 use libfuzzer_sys::fuzz_target;
 use std::sync::OnceLock;
 use svsm::fs::FileHandle;
-use svsm::fs::{create, create_all, list_dir, mkdir, open_rw, unlink, TestFileSystemGuard};
+use svsm::fs::{TestFileSystemGuard, create, create_all, list_dir, mkdir, open_rw, unlink};
 use svsm::mm::alloc::TestRootMem;
 
 const ROOT_MEM_SIZE: usize = 0x10000;
