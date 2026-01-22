@@ -10,8 +10,8 @@ use crate::cpu::tlb::TlbFlushScope;
 use core::arch::asm;
 
 const INVLPGB_VALID_VA: u64 = 1u64 << 0;
-//const INVLPGB_VALID_PCID: u64 = 1u64 << 1;
-const INVLPGB_VALID_ASID: u64 = 1u64 << 2;
+const _INVLPGB_VALID_PCID: u64 = 1u64 << 1;
+const _INVLPGB_VALID_ASID: u64 = 1u64 << 2;
 const INVLPGB_VALID_GLOBAL: u64 = 1u64 << 3;
 
 #[inline]
@@ -37,7 +37,7 @@ fn do_tlbsync() {
 }
 
 pub fn flush_tlb() {
-    let rax: u64 = INVLPGB_VALID_ASID;
+    let rax: u64 = 0;
     do_invlpgb(rax, 0, 0);
 }
 
@@ -47,7 +47,7 @@ pub fn flush_tlb_sync() {
 }
 
 pub fn flush_tlb_global() {
-    let rax: u64 = INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
+    let rax: u64 = INVLPGB_VALID_GLOBAL;
     do_invlpgb(rax, 0, 0);
 }
 
@@ -57,10 +57,7 @@ pub fn flush_tlb_global_sync() {
 }
 
 pub fn flush_address(va: VirtAddr) {
-    let rax: u64 = (va.page_align().bits() as u64)
-        | INVLPGB_VALID_VA
-        | INVLPGB_VALID_ASID
-        | INVLPGB_VALID_GLOBAL;
+    let rax: u64 = (va.page_align().bits() as u64) | INVLPGB_VALID_VA | INVLPGB_VALID_GLOBAL;
     do_invlpgb(rax, 0, 0);
 }
 
