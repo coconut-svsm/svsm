@@ -158,7 +158,7 @@ pub fn create_ap_start_context(
         start_rip: initial_context.rip.try_into().unwrap(),
         rsp: initial_context.rsp.try_into().unwrap(),
         transition_cr3,
-        initial_rip: start_ap_indirect as usize,
+        initial_rip: start_ap_indirect as *const () as usize,
         context_size: mem::size_of::<ApStartContext>() as u32,
     }
 }
