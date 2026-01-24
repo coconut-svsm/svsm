@@ -22,6 +22,8 @@ use crate::symbols::load_kernel_symbols;
 pub use crate::defs::*;
 
 use ::elf::Elf64File;
+use bootdefs::kernel_launch::INITIAL_KERNEL_STACK_WORDS;
+use bootdefs::kernel_launch::InitialKernelStack;
 use bootdefs::kernel_launch::KernelLaunchInfo;
 use igvm_defs::PAGE_SIZE_4K;
 use zerocopy::IntoBytes;
@@ -60,13 +62,11 @@ where
         vmsa_in_kernel_heap,
     )?;
 
-    // Allocate 32 KB for the initial stack.  This must come at the base of
-    // the kernel heap so it is preceded by a guard page.  These pages must
-    // be added as empty pages so they are validated for immediate use.
+    // Alloacte 32 KB for the intiial stack.  This must come at the base of
+    // the kernel heap so it is preceded by a guard page.
     let stack_page_count = 8;
     let stack_size = stack_page_count * PAGE_SIZE_4K;
     let (initial_stack_paddr, initial_stack_base) = kernel_heap.allocate_pages(stack_page_count)?;
-    add_page_data(initial_stack_paddr, None, stack_size)?;
 
     // Initialize the page tables that will be used for mapping kernel data.
     let mut kernel_page_tables =
@@ -142,6 +142,23 @@ where
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;
 
+    // Now add the contents of the initial stack.  All of the stack pages will
+    // be added as zero-filled pages except the final page, which holds the
+    // launch state.
+    let stack_zeroed_size = stack_size - PAGE_SIZE_4K;
+    add_page_data(initial_stack_paddr, None, stack_zeroed_size)?;
+    let initial_stack_data = InitialKernelStack {
+        _reserved: [0; 512 - INITIAL_KERNEL_STACK_WORDS],
+        paging_root,
+        launch_info_vaddr,
+        stack_limit: initial_stack_base,
+    };
+    add_page_data(
+        initial_stack_paddr + stack_zeroed_size,
+        Some(initial_stack_data.as_bytes()),
+        PAGE_SIZE_4K,
+    )?;
+
     let info = BootImageInfo {
         boot_params_paddr,
         cpuid_paddr,
@@ -149,12 +166,12 @@ where
         kernel_pdpt_paddr: kernel_page_tables.kernel_pdpt_paddr(),
         kernel_pml4e_index: kernel_page_tables.kernel_pml4e_index(),
         total_pt_pages,
+        kernel_page_tables_base: paging_root,
         context: BootImageContext {
             entry_point: kernel_entry,
-            initial_stack: initial_stack_base + (stack_page_count * PAGE_SIZE_4K),
-            initial_stack_base,
             paging_root,
-            launch_info_vaddr,
+            initial_stack: initial_stack_base + (stack_page_count * PAGE_SIZE_4K)
+                - (INITIAL_KERNEL_STACK_WORDS * 8) as u64,
         },
     };
 

@@ -60,6 +60,19 @@ pub struct KernelLaunchInfo {
     pub _reserved: [bool; 3],
 }
 
+pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Immutable, IntoBytes)]
+pub struct InitialKernelStack {
+    // These fields are referenced by assembly and must remain in this order
+    // unless the kernel start function is updated to match.
+    pub _reserved: [u64; 512 - INITIAL_KERNEL_STACK_WORDS],
+    pub paging_root: u64,
+    pub launch_info_vaddr: u64,
+    pub stack_limit: u64,
+}
+
 // Stage 2 launch info from stage1
 // The layout has to match the order in which the parts are pushed to the stack
 // in stage1.rs

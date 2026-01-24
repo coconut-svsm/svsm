@@ -22,7 +22,7 @@ use bootimg::BootImageError;
 use bootimg::BootImageInfo;
 use bootimg::BootImageParams;
 use bootimg::prepare_boot_image;
-use core::arch::asm;
+use core::arch::global_asm;
 use core::mem;
 use core::panic::PanicInfo;
 use core::slice;
@@ -67,6 +67,7 @@ use release::COCONUT_VERSION;
 
 unsafe extern "C" {
     static mut pgtable: PageTable;
+    fn switch_to_kernel(entry: u64, initial_stack: u64, platform_type: u64) -> !;
 }
 
 #[derive(Debug)]
@@ -359,7 +360,7 @@ fn prepare_kernel_image(
     // is only necessary if there is a non-zero confidentiailty mask.
     if private_pte_mask() != 0 {
         for pt_index in 0..boot_image_info.total_pt_pages {
-            let paddr = boot_image_info.context.paging_root + (pt_index * PAGE_SIZE as u64);
+            let paddr = boot_image_info.kernel_page_tables_base + (pt_index * PAGE_SIZE as u64);
             // SAFETY: the boot image has been fully mapped and the address
             // translation from physical to virtual is known to be correct by
             // construction.
@@ -517,18 +518,31 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         // Shut down the PerCpu instance
         shutdown_percpu();
 
-        asm!("jmp *%rax",
-             in("rax") boot_image_info.context.entry_point,
-             in("rdi") boot_image_info.context.launch_info_vaddr,
-             in("rsi") platform_type as u64,
-             in("rdx") boot_image_info.context.initial_stack,
-             in("rcx") boot_image_info.context.initial_stack_base,
-             in("r8") boot_image_info.context.paging_root,
-             options(att_syntax))
+        switch_to_kernel(
+            boot_image_info.context.entry_point,
+            boot_image_info.context.initial_stack,
+            platform_type as u64,
+        );
     };
-
-    unreachable!("Road ends here!");
 }
+
+global_asm!(
+    r#"
+        .globl switch_to_kernel
+        switch_to_kernel:
+
+        /* Switch to the kernel stack. */
+        movq %rsi, %rsp
+
+        /* Load the platform type into rax as expected by the kernel */
+        movq %rdx, %rax
+
+        /* Enter the kernel. */
+        push %rdi
+        ret
+        "#,
+    options(att_syntax)
+);
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
