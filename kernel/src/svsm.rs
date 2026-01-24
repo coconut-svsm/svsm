@@ -102,33 +102,29 @@ global_asm!(
 
         .globl startup_64
     startup_64:
-        /*
-         * Register conventions upon entry:
-         * RDI = launch info block
-         * RSI = platform type
-         * RDX = initial stack
-         * RCX = limit of initial stack
-         * R8 = kernel page table root
-         *
-         * Setup stack.
-         *
-         * The initial stack is always mapped across all page tables because it
-         * uses the shared PML4E, making it accessible after switching to the
-         * first task's page table.
-         *
-         * See switch_to() for details.
-         */
-        movq %rdx, %rsp
-        leaq bsp_stack_end(%rip), %rdx
-        movq %rsp, (%rdx)
-        leaq bsp_stack(%rip), %rdx
-        movq %rcx, (%rdx)
+        /* Upon entry, the stack pointer is correctly set but the initial page
+         * tables are not guaranteed to be set correctly.  Switch to the
+         * correct page tables */
+        popq %r15
+        movq %r15, %cr3
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
 
-        /* Switch to the kernel page tables */
-        movq %r8, %cr3
+        /* Capture the start parameter registers from the stack.  The platform
+         * type is in rax and not the stack. */
+        popq %rdi
+        movq %rax, %rsi
+
+        /* Capture the stack bounds into global variables.  The stack limit
+         * (the low address) is the last value popped off the stack, and once
+         * it has been popped, the stack pointer will represent the stack base
+         * (the high address) */
+        leaq bsp_stack(%rip), %r15
+        popq %r14
+        movq %r14, (%r15)
+        leaq bsp_stack_end(%rip), %r15
+        movq %rsp, (%r15)
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred

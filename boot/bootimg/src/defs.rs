@@ -45,9 +45,7 @@ impl BootImageSpan {
 #[derive(Debug)]
 pub struct BootImageContext {
     pub entry_point: u64,
-    pub launch_info_vaddr: u64,
     pub initial_stack: u64,
-    pub initial_stack_base: u64,
     pub paging_root: u64,
 }
 
@@ -57,6 +55,7 @@ pub struct BootImageContext {
 #[derive(Debug)]
 pub struct BootImageInfo {
     pub context: BootImageContext,
+    pub kernel_page_tables_base: u64,
     pub total_pt_pages: u64,
     pub boot_params_paddr: u64,
     pub cpuid_paddr: u64,
