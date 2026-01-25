@@ -435,7 +435,11 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio().expect("Failed to initialize virtio-mmio drivers");
+    if config.has_fw_cfg_port() {
+        // Virtio cannot exist if there is no fw_cfg, so do not bother to
+        // attempt initialization if it is not present.
+        initialize_virtio_mmio().expect("Failed to initialize virtio-mmio drivers");
+    }
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:?}");

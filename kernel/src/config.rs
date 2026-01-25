@@ -87,6 +87,10 @@ impl<'a> SvsmConfig<'a> {
         self.igvm_params.has_qemu_testdev()
     }
 
+    pub fn has_fw_cfg_port(&self) -> bool {
+        self.igvm_params.has_fw_cfg_port()
+    }
+
     pub fn has_test_iorequests(&self) -> bool {
         self.igvm_params.has_test_iorequests()
     }
