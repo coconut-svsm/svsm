@@ -57,7 +57,7 @@ use svsm::svsm_paging::{
 use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
-#[cfg(feature = "virtio-drivers")]
+#[cfg(all(feature = "virtio-drivers", feature = "block"))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
@@ -163,11 +163,12 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
 fn initialize_virtio_mmio() -> Result<(), SvsmError> {
-    let mut slots = probe_mmio_slots();
 
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
+
+        let mut slots = probe_mmio_slots();
         initialize_block(&mut slots)?;
     }
 
