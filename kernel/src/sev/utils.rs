@@ -39,6 +39,16 @@ impl SevSnpError {
             | Self::FAIL_SIZEMISMATCH(ret) => *ret,
         }
     }
+
+    fn with_addr(self, addr: VirtAddr) -> Self {
+        let vaddr = addr.bits() as u64;
+        match self {
+            Self::FAIL_INPUT(_) => Self::FAIL_INPUT(vaddr),
+            Self::FAIL_PERMISSION(_) => Self::FAIL_PERMISSION(vaddr),
+            Self::FAIL_SIZEMISMATCH(_) => Self::FAIL_SIZEMISMATCH(vaddr),
+            Self::FAIL_UNCHANGED(_) => Self::FAIL_UNCHANGED(vaddr),
+        }
+    }
 }
 
 impl fmt::Display for SevSnpError {
@@ -62,7 +72,12 @@ unsafe fn pvalidate_range_4k(
     region
         .iter_pages(PageSize::Regular)
         // SAFETY: the caller promises that the validation operation is safe.
-        .try_for_each(|addr| unsafe { pvalidate(addr, PageSize::Regular, valid) })
+        .try_for_each(|addr| unsafe {
+            pvalidate(addr, PageSize::Regular, valid).map_err(|e| match e {
+                SvsmError::SevSnp(err) => err.with_addr(addr).into(),
+                other => other,
+            })
+        })
 }
 
 /// # Safety
@@ -91,7 +106,8 @@ pub unsafe fn pvalidate_range(
                     SvsmError::SevSnp(SevSnpError::FAIL_SIZEMISMATCH(_)) => {
                         pvalidate_range_4k(MemoryRegion::new(addr, PAGE_SIZE_2M), valid)
                     }
-                    _ => Err(err),
+                    SvsmError::SevSnp(e) => Err(e.with_addr(addr).into()),
+                    other => Err(other),
                 })?;
             }
             addr = addr + PAGE_SIZE_2M;
@@ -99,7 +115,10 @@ pub unsafe fn pvalidate_range(
             // SAFETY: the caller promises that the validation operation is
             // safe.
             unsafe {
-                pvalidate(addr, PageSize::Regular, valid)?;
+                pvalidate(addr, PageSize::Regular, valid).map_err(|e| match e {
+                    SvsmError::SevSnp(err) => err.with_addr(addr).into(),
+                    other => other,
+                })?;
             }
             addr = addr + PAGE_SIZE;
         }
