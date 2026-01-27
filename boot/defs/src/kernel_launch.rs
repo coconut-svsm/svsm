@@ -82,13 +82,23 @@ pub struct Stage2LaunchInfo {
     pub platform_type: u32,
     pub cpuid_page: u32,
     pub secrets_page: u32,
+    pub kernel_pml4e_index: u32,
+
+    pub kernel_page_tables_base: u64,
+    pub kernel_pt_pages: u64,
+    pub kernel_boot_params_addr: u64,
+    pub kernel_cpuid_addr: u64,
+    pub kernel_secrets_addr: u64,
+
+    pub kernel_entry: u64,
+    pub kernel_stack: u64,
+    pub kernel_pdpt_paddr: u64,
+    pub kernel_launch_info: u64,
+
     pub stage2_end: u32,
-    pub kernel_elf_start: u32,
-    pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
     pub boot_params: u32,
-    pub _reserved: u32,
 }
 
 #[repr(C)]

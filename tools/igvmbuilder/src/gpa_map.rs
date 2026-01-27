@@ -65,7 +65,6 @@ pub struct GpaMap {
     pub stage2_image: GpaRange,
     pub secrets_page: GpaRange,
     pub cpuid_page: GpaRange,
-    pub kernel_elf: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
     pub general_params: GpaRange,
@@ -94,7 +93,6 @@ impl GpaMap {
         //   0x806000-0x806FFF: Secrets page
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: stage 2 image
-        //   0x8nnnnn-0x8nnnnn: kernel
         //   0x8nnnnn-0x8nnnnn: IGVM parameter block
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
@@ -125,7 +123,6 @@ impl GpaMap {
             .into());
         }
 
-        let kernel_elf_len = Self::get_metadata(&options.kernel)?.len() as usize;
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
         } else {
@@ -133,11 +130,6 @@ impl GpaMap {
         };
 
         let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
-
-        // The kernel image is loaded beyond the end of the stage2 image,
-        // rounded up to a 4 KB boundary.
-        let kernel_address = stage2_image.get_end().next_multiple_of(0x1000);
-        let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
 
         // Choose the kernel base and maximum size.
         let kernel = match options.hypervisor {
@@ -169,7 +161,7 @@ impl GpaMap {
             }
         }
 
-        let boot_param_block = GpaRange::new_page(kernel_elf.get_end())?;
+        let boot_param_block = GpaRange::new_page(stage2_image.get_end())?;
         let general_params = GpaRange::new_page(boot_param_block.get_end())?;
         let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
@@ -205,7 +197,6 @@ impl GpaMap {
             stage2_image,
             secrets_page: GpaRange::new_page(SECRETS_PAGE.into())?,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
-            kernel_elf,
             kernel_fs,
             boot_param_block,
             general_params,

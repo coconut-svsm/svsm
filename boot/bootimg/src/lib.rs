@@ -163,6 +163,7 @@ where
 
     let info = BootImageInfo {
         boot_params_paddr,
+        kernel_launch_info: launch_info_vaddr,
         cpuid_paddr,
         secrets_paddr,
         kernel_pdpt_paddr: kernel_page_tables.kernel_pdpt_paddr(),

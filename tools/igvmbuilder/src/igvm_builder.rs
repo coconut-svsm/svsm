@@ -6,14 +6,19 @@
 
 use std::cmp::Ordering;
 use std::error::Error;
+use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
+use std::io::Write;
 use std::mem::size_of;
 
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
 use bootdefs::platform::SvsmPlatformType;
+use bootimg::BootImageError;
+use bootimg::BootImageParams;
+use bootimg::prepare_boot_image;
 use clap::Parser;
 use igvm::registers::X86Register;
 use igvm::{
@@ -372,6 +377,35 @@ impl IgvmBuilder {
             });
         }
 
+        // Read the kernel image into a byte vector to be used by the boot
+        // image builder.
+        let kernel_image = fs::read(self.options.kernel.clone()).inspect_err(|_| {
+            eprintln!("Failed to read kernel image {}", self.options.kernel);
+        })?;
+
+        // Invoke the boot image builder to construct the boot image.
+        let boot_image_params = BootImageParams {
+            boot_params: param_block,
+            kernel_fs_start: self.gpa_map.kernel_fs.get_start(),
+            kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
+            kernel_region_start: self.gpa_map.kernel.get_start(),
+            kernel_region_page_count: self.gpa_map.kernel.get_size() / PAGE_SIZE_4K,
+            stage2_start: self.gpa_map.stage2_image.get_start(),
+            vtom: self.vtom,
+        };
+        let boot_image_info = prepare_boot_image(
+            &boot_image_params,
+            kernel_image.as_slice(),
+            &mut |gpa, data, length| {
+                self.add_data_pages(gpa, data, length, COMPATIBILITY_MASK.get())
+                    .map_err(|e| {
+                        eprintln!("{e}");
+                        BootImageError::Host
+                    })
+            },
+        )
+        .map_err(|e| e.dyn_error())?;
+
         // Create the parameter areas for all host-supplied parameters.
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: PAGE_SIZE_4K,
@@ -482,13 +516,6 @@ impl IgvmBuilder {
             )?;
         }
 
-        // Add the kernel elf binary
-        self.add_data_pages_from_file(
-            &self.options.kernel.clone(),
-            self.gpa_map.kernel_elf.get_start(),
-            COMPATIBILITY_MASK.get(),
-        )?;
-
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             // CPUID page
             let cpuid_page = SnpCpuidPage::new()?;
@@ -542,7 +569,7 @@ impl IgvmBuilder {
 
         // Populate the stage 2 stack.  This has different contents on each
         // platform.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map);
+        let stage2_stack = Stage2Stack::new(&self.gpa_map, &boot_image_info);
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
@@ -646,6 +673,34 @@ impl IgvmBuilder {
             data_type: IgvmPageDataType::NORMAL,
             data,
         });
+    }
+
+    fn add_data_pages(
+        &mut self,
+        mut gpa: u64,
+        data: Option<&[u8]>,
+        mut length: u64,
+        compatibility_mask: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        if let Some(data_slice) = data {
+            assert!(length >= data_slice.len() as u64);
+            for chunk in data_slice.chunks(PAGE_SIZE_4K as usize) {
+                self.directives.push(IgvmDirectiveHeader::PageData {
+                    gpa,
+                    compatibility_mask,
+                    flags: IgvmPageDataFlags::new(),
+                    data_type: IgvmPageDataType::NORMAL,
+                    data: chunk.to_vec(),
+                });
+                gpa += PAGE_SIZE_4K;
+                length -= PAGE_SIZE_4K;
+            }
+        }
+        if length != 0 {
+            self.add_empty_pages(gpa, length, compatibility_mask, IgvmPageDataType::NORMAL)?;
+        }
+
+        Ok(())
     }
 
     fn add_empty_pages(

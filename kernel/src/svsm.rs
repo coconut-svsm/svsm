@@ -172,7 +172,7 @@ unsafe fn memory_init(
 
     if heap_allocated < heap_length {
         // SAFETY: the launch info is assumed to correctly reflect the set of
-        // pages that were accepted in stage2.
+        // pages that were accepted as part of the boot image.
         unsafe {
             platform
                 .validate_virtual_page_range(

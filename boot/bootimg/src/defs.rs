@@ -42,6 +42,7 @@ pub struct BootImageInfo {
     pub context: BootImageContext,
     pub kernel_page_tables_base: u64,
     pub total_pt_pages: u64,
+    pub kernel_launch_info: u64,
     pub boot_params_paddr: u64,
     pub cpuid_paddr: u64,
     pub secrets_paddr: u64,
