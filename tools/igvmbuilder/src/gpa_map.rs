@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fs::metadata;
 
 use bootdefs::kernel_launch::CPUID_PAGE;
-use bootdefs::kernel_launch::SECRETS_PAGE;
 use bootdefs::kernel_launch::STAGE2_BASE;
 use bootdefs::kernel_launch::STAGE2_MAXLEN;
 use bootdefs::kernel_launch::STAGE2_STACK_PAGE;
@@ -63,7 +62,6 @@ pub struct GpaMap {
     pub stage1_image: GpaRange,
     pub stage2_stack: GpaRange,
     pub stage2_image: GpaRange,
-    pub secrets_page: GpaRange,
     pub cpuid_page: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
@@ -87,9 +85,10 @@ impl GpaMap {
         options: &CmdOptions,
         firmware: &Option<Box<dyn Firmware>>,
     ) -> Result<Self, Box<dyn Error>> {
-        //   0x010000-0x010FFF: initial page tables for VSM platforms
-        //   0x800000-0x804FFF: zero-filled (must be pre-validated)
-        //   0x805000-0x805FFF: initial stage 2 stack page
+        //   0x00D000-0x00EFFF: initial page tables for SIPI stub
+        //   0x00F000-0x00FFFF: SIPI stub
+        //   0x800000-0x805FFF: zero-filled (must be pre-validated)
+        //   0x806000-0x806FFF: initial stage 2 stack page
         //   0x806000-0x806FFF: Secrets page
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: stage 2 image
@@ -195,7 +194,6 @@ impl GpaMap {
             stage1_image,
             stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
             stage2_image,
-            secrets_page: GpaRange::new_page(SECRETS_PAGE.into())?,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
             boot_param_block,

@@ -563,8 +563,4 @@ impl Stage2Platform for SnpStage2Platform {
     fn get_cpuid_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
         Some(VirtAddr::from(launch_info.cpuid_page as usize))
     }
-
-    fn get_secrets_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
-        Some(VirtAddr::from(launch_info.secrets_page as usize))
-    }
 }

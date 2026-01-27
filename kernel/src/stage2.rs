@@ -370,30 +370,17 @@ fn prepare_kernel_image(
         boot_params_unmeasured_size as u64,
     )?;
 
-    // Copy the CPUID and secrets pages into the kernel image as if they had
-    // been prepared as part of the boot image.
-    // SAFETY: the platform guarantees the correctness of the CPUID and secrets
-    // page virtual addresses from the stage2 launch info.
-    let (cpuid_slice, secrets_slice) = unsafe {
-        (
-            stage2_platform
-                .get_cpuid_page(launch_info)
-                .map(|vaddr| slice::from_raw_parts(vaddr.as_ptr::<u8>(), PAGE_SIZE)),
-            stage2_platform
-                .get_secrets_page(launch_info)
-                .map(|vaddr| slice::from_raw_parts(vaddr.as_ptr::<u8>(), PAGE_SIZE)),
-        )
+    // Copy the CPUID page into the kernel image as if it had been prepared as
+    // part of the boot image.
+    // SAFETY: the platform guarantees the correctness of the CPUID page
+    // virtual addresse from the stage2 launch info.
+    let cpuid_slice = unsafe {
+        stage2_platform
+            .get_cpuid_page(launch_info)
+            .map(|vaddr| slice::from_raw_parts(vaddr.as_ptr::<u8>(), PAGE_SIZE))
     };
 
-    boot_loader
-        .add_page_data(launch_info.kernel_cpuid_addr, cpuid_slice, PAGE_SIZE as u64)
-        .and_then(|_| {
-            boot_loader.add_page_data(
-                launch_info.kernel_secrets_addr,
-                secrets_slice,
-                PAGE_SIZE as u64,
-            )
-        })?;
+    boot_loader.add_page_data(launch_info.kernel_cpuid_addr, cpuid_slice, PAGE_SIZE as u64)?;
 
     Ok(())
 }
