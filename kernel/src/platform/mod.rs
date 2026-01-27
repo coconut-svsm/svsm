@@ -364,11 +364,6 @@ pub trait Stage2Platform {
     fn get_cpuid_page(&self, _launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
         None
     }
-
-    /// Obtains the virtual address of the secrets page, if any.
-    fn get_secrets_page(&self, _launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
-        None
-    }
 }
 
 #[derive(Debug)]

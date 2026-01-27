@@ -30,7 +30,6 @@ impl Stage2Stack {
             boot_params: gpa_map.boot_param_block.get_start() as u32,
             platform_type: 0,
             cpuid_page: gpa_map.cpuid_page.get_start() as u32,
-            secrets_page: gpa_map.secrets_page.get_start() as u32,
             kernel_entry: boot_image_info.context.entry_point,
             kernel_stack: boot_image_info.context.initial_stack,
             kernel_launch_info: boot_image_info.kernel_launch_info,
@@ -39,8 +38,8 @@ impl Stage2Stack {
             kernel_boot_params_addr: boot_image_info.boot_params_paddr,
             kernel_page_tables_base: boot_image_info.kernel_page_tables_base,
             kernel_cpuid_addr: boot_image_info.cpuid_paddr,
-            kernel_secrets_addr: boot_image_info.secrets_paddr,
             kernel_pt_pages: boot_image_info.total_pt_pages,
+            _reserved: 0,
         };
         Self { stage2_stack }
     }
