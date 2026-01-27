@@ -12,6 +12,7 @@ use virtio_drivers::transport::{DeviceType, Transport, mmio::MmioTransport};
 
 use crate::{
     address::PhysAddr,
+    config::SvsmConfig,
     fw_cfg::FwCfg,
     mm::{GlobalRangeGuard, map_global_range_4k_shared, pagetable::PTEntryFlags},
     platform::SVSM_PLATFORM,
@@ -25,7 +26,7 @@ pub struct MmioSlot {
     pub transport: MmioTransport<SvsmHal>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct MmioSlots {
     slots: Vec<MmioSlot>,
 }
@@ -47,14 +48,18 @@ pub struct MmioSlots {
 /// Returns an [`MmioSlots`] collection containing all discovered virtio-MMIO devices.
 /// Returns an empty collection if no devices are found or if the fw_cfg interface
 /// is unavailable.
-pub fn probe_mmio_slots() -> MmioSlots {
+pub fn probe_mmio_slots(config: &SvsmConfig<'_>) -> MmioSlots {
+    // Virtio MMIO addresses are discovered via fw_cfg, so skip probing
+    // if it is not present.
+    if !config.has_fw_cfg_port() {
+        return MmioSlots::default();
+    }
+
     virtio_init();
 
     let cfg = FwCfg::new(SVSM_PLATFORM.get_io_port());
     let Ok(dev) = cfg.get_virtio_mmio_addresses() else {
-        return MmioSlots {
-            slots: Vec::<MmioSlot>::new(),
-        };
+        return MmioSlots::default();
     };
 
     let mut slots = Vec::with_capacity(dev.len());

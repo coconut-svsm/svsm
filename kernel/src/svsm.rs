@@ -57,7 +57,7 @@ use svsm::svsm_paging::{
 use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
 use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
-#[cfg(feature = "virtio-drivers")]
+#[cfg(all(feature = "virtio-drivers", feature = "block"))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
@@ -162,12 +162,12 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns Ok if initialization is successful or no virtio devices are found
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
-fn initialize_virtio_mmio() -> Result<(), SvsmError> {
-    let mut slots = probe_mmio_slots();
-
+fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
+
+        let mut slots = probe_mmio_slots(_config);
         initialize_block(&mut slots)?;
     }
 
@@ -435,11 +435,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    if config.has_fw_cfg_port() {
-        // Virtio cannot exist if there is no fw_cfg, so do not bother to
-        // attempt initialization if it is not present.
-        initialize_virtio_mmio().expect("Failed to initialize virtio-mmio drivers");
-    }
+    initialize_virtio_mmio(&config).expect("Failed to initialize virtio-mmio drivers");
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:?}");
