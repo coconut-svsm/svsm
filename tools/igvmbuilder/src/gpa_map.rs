@@ -65,7 +65,6 @@ pub struct GpaMap {
     pub stage2_image: GpaRange,
     pub secrets_page: GpaRange,
     pub cpuid_page: GpaRange,
-    pub kernel_elf: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
     pub general_params: GpaRange,
@@ -94,7 +93,6 @@ impl GpaMap {
         //   0x806000-0x806FFF: Secrets page
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: stage 2 image
-        //   0x8nnnnn-0x8nnnnn: kernel
         //   0x8nnnnn-0x8nnnnn: IGVM parameter block
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
@@ -125,7 +123,6 @@ impl GpaMap {
             .into());
         }
 
-        let kernel_elf_len = Self::get_metadata(&options.kernel)?.len() as usize;
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
         } else {
@@ -134,42 +131,34 @@ impl GpaMap {
 
         let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
 
-        // The kernel image is loaded beyond the end of the stage2 image,
-        // rounded up to a 4 KB boundary.
-        let kernel_address = stage2_image.get_end().next_multiple_of(0x1000);
-        let kernel_elf = GpaRange::new(kernel_address, kernel_elf_len as u64)?;
-
         // Choose the kernel base and maximum size.
-        let kernel = match options.hypervisor {
+        let (kernel_base, kernel_max_size) = match options.hypervisor {
             Hypervisor::Qemu => {
                 // Place the kernel area at 512 GB with a maximum size of 16 MB.
-                GpaRange::new(0x0000008000000000, 0x01000000)?
+                (0x0000008000000000, 0x01000000)
             }
             Hypervisor::HyperV => {
                 // Place the kernel area at 64 MB with a maximum size of 16 MB.
-                GpaRange::new(0x04000000, 0x01000000)?
+                (0x04000000, 0x01000000)
             }
             Hypervisor::Vanadium => {
                 // Place the kernel area at 8TiB-2GiB with a maximum size of 2 GiB.
-                GpaRange::new(0x7ff80000000, 0x80000000)?
+                (0x7ff80000000, 0x80000000)
             }
         };
         // Give the kernel at least 16 MiB
         let kernel_min_size = 0x1000000;
-        // Make sure that kernel max size is page-aligned
-        let kernel_max_size = u32::try_from(kernel.get_end() - kernel.get_start())?;
         if let Some(firmware) = firmware {
             let fw_info = firmware.get_fw_info();
             let fw_start = fw_info.start as u64;
             let fw_end = fw_start + fw_info.size as u64;
-            let kernel_start = kernel.get_start();
-            let kernel_max_end = kernel_start + kernel_max_size as u64;
-            if fw_start < kernel_max_end && fw_end > kernel_start {
+            let kernel_max_end = kernel_base + kernel_max_size as u64;
+            if fw_start < kernel_max_end && fw_end > kernel_base {
                 return Err("Firmware region overlaps kernel region".into());
             }
         }
 
-        let boot_param_block = GpaRange::new_page(kernel_elf.get_end())?;
+        let boot_param_block = GpaRange::new_page(stage2_image.get_end())?;
         let general_params = GpaRange::new_page(boot_param_block.get_end())?;
         let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
@@ -195,7 +184,10 @@ impl GpaMap {
                 // VMSA address is currently hardcoded in kvm
                 (GpaRange::new_page(0xFFFFFFFFF000)?, false)
             }
-            Hypervisor::HyperV => (GpaRange::new_page(kernel.end - PAGE_SIZE_4K)?, true),
+            Hypervisor::HyperV => (
+                GpaRange::new_page(kernel_base + kernel_min_size - PAGE_SIZE_4K)?,
+                true,
+            ),
         };
 
         let gpa_map = Self {
@@ -205,15 +197,14 @@ impl GpaMap {
             stage2_image,
             secrets_page: GpaRange::new_page(SECRETS_PAGE.into())?,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
-            kernel_elf,
             kernel_fs,
             boot_param_block,
             general_params,
             memory_map,
             madt,
             guest_context,
-            kernel,
-            kernel_min_size,
+            kernel: GpaRange::new(kernel_base, kernel_min_size)?,
+            kernel_min_size: kernel_min_size.try_into().unwrap(),
             kernel_max_size,
             vmsa,
             vmsa_in_kernel_range,
