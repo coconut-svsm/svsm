@@ -8,6 +8,7 @@
 #![no_main]
 
 pub mod boot_stage2;
+pub mod stage2_syms;
 
 use bootlib::kernel_launch::{
     KernelLaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START, STAGE2_STACK,
@@ -341,15 +342,7 @@ unsafe fn load_elf_segment(
     Ok(segment_region)
 }
 
-/// Loads the kernel ELF and returns the virtual memory region where it
-/// resides, as well as its entry point. Updates the used physical memory
-/// region accordingly.
-fn load_kernel_elf(
-    launch_info: &Stage2LaunchInfo,
-    loaded_phys: &mut MemoryRegion<PhysAddr>,
-    platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
-) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
+fn read_kernel_elf(launch_info: &Stage2LaunchInfo) -> Result<elf::Elf64File<'static>, ElfError> {
     // Find the bounds of the kernel ELF and load it into the ELF parser
     let elf_start = PhysAddr::from(launch_info.kernel_elf_start as u64);
     let elf_end = PhysAddr::from(launch_info.kernel_elf_end as u64);
@@ -357,8 +350,18 @@ fn load_kernel_elf(
     // SAFETY: the base address of the ELF image was selected by the loader and
     // is known not to conflict with any other virtual address mappings.
     let bytes = unsafe { slice::from_raw_parts(elf_start.bits() as *const u8, elf_len) };
-    let elf = elf::Elf64File::read(bytes)?;
+    elf::Elf64File::read(bytes)
+}
 
+/// Loads the kernel ELF and returns the virtual memory region where it
+/// resides, as well as its entry point. Updates the used physical memory
+/// region accordingly.
+fn load_kernel_elf(
+    elf: &elf::Elf64File<'_>,
+    loaded_phys: &mut MemoryRegion<PhysAddr>,
+    platform: &dyn SvsmPlatform,
+    config: &SvsmConfig<'_>,
+) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
     let vaddr_alloc_info = elf.image_load_vaddr_alloc_info();
     let vaddr_alloc_base = vaddr_alloc_info.range.vaddr_begin;
 
@@ -522,8 +525,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
 
     // Load first the kernel ELF and update the loaded physical region
+    let elf = read_kernel_elf(launch_info).expect("Failed to read kernel ELF");
     let (kernel_entry, loaded_kernel_vregion) =
-        load_kernel_elf(launch_info, &mut loaded_kernel_pregion, platform, &config)
+        load_kernel_elf(&elf, &mut loaded_kernel_pregion, platform, &config)
             .expect("Failed to load kernel ELF");
 
     // Define the heap base address as the end of the kernel ELF plus a
@@ -546,6 +550,8 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         .allocate(STACK_SIZE)
         .expect("Failed to allocate initial kernel stack");
     let initial_stack = initial_stack_base + STACK_SIZE;
+
+    let (symtab, strtab) = stage2_syms::load_kernel_symbols(&elf, &mut kernel_heap);
 
     // Load the IGVM params, if present. Update loaded region accordingly.
     // SAFETY: The loaded kernel region was correctly calculated above and
@@ -610,6 +616,10 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
         stage2_igvm_params_size: igvm_params.size() as u64,
         igvm_params_virt_addr: u64::from(igvm_vaddr),
+        kernel_symtab_start: symtab.start().as_ptr(),
+        kernel_symtab_len: (symtab.len() / size_of::<bootlib::symbols::KSym>()) as u64,
+        kernel_strtab_start: strtab.start().as_ptr(),
+        kernel_strtab_len: strtab.len() as u64,
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),

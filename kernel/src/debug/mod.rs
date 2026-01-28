@@ -6,3 +6,4 @@
 
 pub mod gdbstub;
 pub mod stacktrace;
+pub mod symbols;

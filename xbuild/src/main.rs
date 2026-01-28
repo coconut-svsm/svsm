@@ -121,12 +121,13 @@ impl Default for Objcopy {
 impl Objcopy {
     /// Call `objcopy` with the given input and output files
     fn copy(&self, src: &Path, dst: &Path, args: &Args) -> BuildResult<()> {
+        let flags = if args.release {
+            "--strip-unneeded"
+        } else {
+            "--strip-debug"
+        };
         let mut cmd = Command::new("objcopy");
-        cmd.arg("-O")
-            .arg(&self.0)
-            .arg("--strip-unneeded")
-            .arg(src)
-            .arg(dst);
+        cmd.arg("-O").arg(&self.0).arg(flags).arg(src).arg(dst);
         run_cmd_checked(cmd, args)
     }
 }

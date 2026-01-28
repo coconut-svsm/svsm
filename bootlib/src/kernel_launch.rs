@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::platform::SvsmPlatformType;
+use crate::{platform::SvsmPlatformType, symbols::KSym};
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -50,6 +50,10 @@ pub struct KernelLaunchInfo {
     pub stage2_igvm_params_phys_addr: u64,
     pub stage2_igvm_params_size: u64,
     pub igvm_params_virt_addr: u64,
+    pub kernel_symtab_start: *const KSym,
+    pub kernel_symtab_len: u64,
+    pub kernel_strtab_start: *const u8,
+    pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub debug_serial_port: u16,
     pub use_alternate_injection: bool,
