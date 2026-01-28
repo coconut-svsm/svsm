@@ -50,8 +50,8 @@ impl fmt::Display for SvsmVersion {
     }
 }
 
-const VERSION_YEAR: u32 = 2025;
-const VERSION_MONTH: u32 = 12;
+const VERSION_YEAR: u32 = 2026;
+const VERSION_MONTH: u32 = 1;
 #[allow(dead_code)]
 const VERSION_COUNTER: u32 = 0;
 
