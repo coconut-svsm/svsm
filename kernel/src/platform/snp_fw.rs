@@ -254,7 +254,7 @@ pub unsafe fn copy_tables_to_fw(
         unsafe { copy_cpuid_table_to_fw(addr) }?;
     }
 
-    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::MissingSecrets)?;
+    let secrets_page = fw_meta.secrets_page.ok_or(SvsmError::InvalidSecrets)?;
     let caa_page = fw_meta.caa_page.ok_or(SvsmError::MissingCAA)?;
 
     // SAFETY: caller must uphold the safety requirements.

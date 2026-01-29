@@ -5,6 +5,7 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::VirtAddr;
+use crate::error::SvsmError;
 use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::protocols::core::CORE_PROTOCOL_VERSION_MAX;
 use crate::sev::vmsa::VMPL_MAX;
@@ -157,13 +158,14 @@ pub fn secrets_page_mut() -> Option<WriteLockGuard<'static, SecretsPage>> {
 /// # Safety
 /// The caller is required to supply a valid virtual address that points to a
 /// secrets page that will remain allocated in the static lifetime.
-pub unsafe fn initialize_secrets_page(addr: VirtAddr) {
+pub unsafe fn initialize_secrets_page(addr: VirtAddr) -> Result<(), SvsmError> {
     // SAFETY: the caller takes responsibility for the correctness of the
     // virtual address.
     unsafe {
-        let secrets_page = addr.aligned_mut::<SecretsPage>().unwrap();
-        SECRETS_PAGE
-            .init(RWLock::new(secrets_page))
-            .expect("Failed to initialize secrets page");
-    }
+        let secrets_page = addr
+            .aligned_mut::<SecretsPage>()
+            .ok_or(SvsmError::InvalidSecrets)?;
+        SECRETS_PAGE.init(RWLock::new(secrets_page))?;
+    };
+    Ok(())
 }

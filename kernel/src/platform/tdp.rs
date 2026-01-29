@@ -79,10 +79,6 @@ impl SvsmPlatform for TdpPlatform {
         Ok(())
     }
 
-    fn env_setup_svsm(&self) -> Result<(), SvsmError> {
-        Ok(())
-    }
-
     fn setup_percpu(&self, _cpu: &PerCpu) -> Result<(), SvsmError> {
         Ok(())
     }
