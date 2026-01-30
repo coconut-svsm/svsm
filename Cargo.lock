@@ -233,7 +233,7 @@ name = "bootlib"
 version = "0.1.0"
 dependencies = [
  "uuid",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -483,7 +483,7 @@ name = "cpuarch"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct 0.6.2",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1064,7 +1064,7 @@ dependencies = [
  "static_assertions",
  "thiserror",
  "tracing",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1076,7 +1076,7 @@ dependencies = [
  "bitfield-struct 0.10.1",
  "open-enum",
  "static_assertions",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1088,7 +1088,7 @@ dependencies = [
  "igvm",
  "igvm_defs",
  "uuid",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1100,7 +1100,7 @@ dependencies = [
  "igvm_defs",
  "p384",
  "sha2",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1402,7 +1402,7 @@ version = "0.1.1"
 dependencies = [
  "clap",
  "memmap2",
- "zerocopy 0.7.35",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1911,7 +1911,7 @@ dependencies = [
  "verus_stub",
  "virtio-drivers",
  "vstd",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2289,7 +2289,7 @@ dependencies = [
  "bitflags 2.10.0",
  "enumn",
  "log",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
@@ -2530,32 +2530,11 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.7.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b9b4fd18abc82b8136838da5d50bae7bdea537c574d8dc1a34ed098d6c166f0"
-dependencies = [
- "byteorder",
- "zerocopy-derive 0.7.35",
-]
-
-[[package]]
-name = "zerocopy"
 version = "0.8.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ea879c944afe8a2b25fef16bb4ba234f47c694565e97383b36f3a878219065c"
 dependencies = [
- "zerocopy-derive 0.8.30",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.7.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "zerocopy-derive",
 ]
 
 [[package]]
