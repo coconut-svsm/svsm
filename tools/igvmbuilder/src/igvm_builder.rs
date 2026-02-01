@@ -31,6 +31,7 @@ use igvm_defs::{
 use zerocopy::IntoBytes;
 
 use crate::GpaMap;
+use crate::boot_params::BootParamType;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::context::construct_native_start_context;
 use crate::context::construct_stage1_image;
@@ -217,21 +218,6 @@ impl IgvmBuilder {
     }
 
     fn create_param_block(&self) -> Result<BootParamBlock, Box<dyn Error>> {
-        let param_page_offset = PAGE_SIZE_4K as u32;
-        let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
-        let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
-        let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
-        {
-            (0, memory_map_offset + PAGE_SIZE_4K as u32)
-        } else {
-            (
-                memory_map_offset + PAGE_SIZE_4K as u32,
-                memory_map_offset
-                    + PAGE_SIZE_4K as u32
-                    + self.gpa_map.guest_context.get_size() as u32,
-            )
-        };
-
         // Populate the firmware metadata.
         let fw_info = if let Some(firmware) = &self.firmware {
             firmware.get_fw_info()
@@ -261,12 +247,27 @@ impl IgvmBuilder {
 
         // Most of the parameter block can be initialised with constants.
         Ok(BootParamBlock {
-            param_area_size,
-            param_page_offset,
-            memory_map_offset,
-            madt_offset,
-            madt_size: self.gpa_map.madt.get_size().try_into().unwrap(),
-            guest_context_offset,
+            param_area_size: self.gpa_map.boot_param_layout.total_size(),
+            param_page_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::General),
+            memory_map_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::MemoryMap),
+            madt_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_offset(BootParamType::Madt),
+            madt_size: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::Madt),
+            guest_context_offset: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::GuestContext),
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
@@ -408,17 +409,26 @@ impl IgvmBuilder {
 
         // Create the parameter areas for all host-supplied parameters.
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: PAGE_SIZE_4K,
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::MemoryMap) as u64,
             parameter_area_index: IGVM_MEMORY_MAP_PA,
             initial_data: vec![],
         });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: self.gpa_map.madt.get_size(),
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::Madt) as u64,
             parameter_area_index: IGVM_MADT_PA,
             initial_data: vec![],
         });
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
-            number_of_bytes: PAGE_SIZE_4K,
+            number_of_bytes: self
+                .gpa_map
+                .boot_param_layout
+                .get_param_size(BootParamType::General) as u64,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             initial_data: vec![],
         });
@@ -442,23 +452,33 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
                 byte_offset: 0,
             }));
+        let param_base_gpa = self.gpa_map.boot_param_block.get_start();
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.memory_map.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(param_base_gpa, BootParamType::MemoryMap),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.madt.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(param_base_gpa, BootParamType::Madt),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_MADT_PA,
             },
         ));
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
-                gpa: self.gpa_map.general_params.get_start(),
+                gpa: self
+                    .gpa_map
+                    .boot_param_layout
+                    .get_param_gpa(param_base_gpa, BootParamType::General),
                 compatibility_mask: COMPATIBILITY_MASK.get(),
                 parameter_area_index: IGVM_GENERAL_PARAMS_PA,
             },
@@ -667,7 +687,10 @@ impl IgvmBuilder {
         data.resize(PAGE_SIZE_4K as usize, 0);
 
         self.directives.push(IgvmDirectiveHeader::PageData {
-            gpa: self.gpa_map.guest_context.get_start(),
+            gpa: self.gpa_map.boot_param_layout.get_param_gpa(
+                self.gpa_map.boot_param_block.get_start(),
+                BootParamType::GuestContext,
+            ),
             compatibility_mask: COMPATIBILITY_MASK.get(),
             flags: IgvmPageDataFlags::new(),
             data_type: IgvmPageDataType::NORMAL,

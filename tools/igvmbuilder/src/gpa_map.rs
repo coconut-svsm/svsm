@@ -15,6 +15,7 @@ use bootdefs::kernel_launch::STAGE2_START;
 
 use igvm_defs::PAGE_SIZE_4K;
 
+use crate::boot_params::BootParamLayout;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::firmware::Firmware;
 use crate::igvm_builder::{COMPATIBILITY_MASK, TDP_COMPATIBILITY_MASK};
@@ -65,10 +66,7 @@ pub struct GpaMap {
     pub cpuid_page: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
-    pub general_params: GpaRange,
-    pub memory_map: GpaRange,
-    pub madt: GpaRange,
-    pub guest_context: GpaRange,
+    pub boot_param_layout: BootParamLayout,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
     // overlap any other regions.
@@ -160,26 +158,14 @@ impl GpaMap {
             }
         }
 
-        let boot_param_block = GpaRange::new_page(stage2_image.get_end())?;
-        let general_params = GpaRange::new_page(boot_param_block.get_end())?;
-        let madt = GpaRange::new_page(general_params.get_end())?;
-        let memory_map = GpaRange::new_page(madt.get_end())?;
-        let guest_context = if let Some(firmware) = firmware {
-            if firmware.get_guest_context().is_some() {
-                // Locate the guest context after the memory map parameter page
-                GpaRange::new_page(memory_map.get_end())?
-            } else {
-                GpaRange::new(0, 0)?
-            }
-        } else {
-            GpaRange::new(0, 0)?
-        };
-
-        let next_addr = memory_map.get_end() + guest_context.get_size();
-
+        let boot_param_layout = BootParamLayout::new(firmware.is_some());
+        let boot_param_block = GpaRange::new(
+            stage2_image.get_end(),
+            boot_param_layout.total_size() as u64,
+        )?;
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid stage2 memory area.
-        let kernel_fs = GpaRange::new(next_addr, kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(boot_param_block.get_end(), kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
@@ -197,10 +183,7 @@ impl GpaMap {
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
             boot_param_block,
-            general_params,
-            memory_map,
-            madt,
-            guest_context,
+            boot_param_layout,
             kernel,
             kernel_min_size,
             kernel_max_size,
