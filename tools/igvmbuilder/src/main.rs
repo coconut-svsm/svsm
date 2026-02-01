@@ -8,6 +8,7 @@ use gpa_map::GpaMap;
 use igvm_builder::IgvmBuilder;
 use std::error::Error;
 
+mod boot_params;
 mod cmd_options;
 mod context;
 mod cpuid;
