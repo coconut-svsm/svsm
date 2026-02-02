@@ -273,7 +273,7 @@ unsafe fn setup_env(
     // SAFETY: the low memory region is known not to overlap any memory in use.
     unsafe {
         platform
-            .validate_low_memory(lowmem_region.end().into())
+            .validate_low_memory(lowmem_region.end().into(), true)
             .expect("failed to validate low 640 KB");
     }
 
@@ -474,6 +474,9 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo, vtom: usize) -> ! 
     // Adjust the value of VTOM found in the boot parameters based on the
     // value that was determined during boot.
     kernel_launch_info.vtom = vtom.try_into().unwrap();
+
+    // Note that stage2 has already validated low memory.
+    kernel_launch_info.lowmem_validated = true;
 
     log::info!("Starting SVSM kernel...");
 

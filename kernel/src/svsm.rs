@@ -10,6 +10,7 @@
 extern crate alloc;
 
 use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::kernel_launch::LOWMEM_END;
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -407,6 +408,18 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     // Uncomment the line below if you want to wait for
     // a remote GDB connection
     //debug_break();
+
+    // Validate low memory if it was not validated in stage2.
+    if !launch_info.lowmem_validated {
+        // SAFETY: the launch information is trusted to represent the
+        // validation state of memory, thus memory can safely be validated if
+        // the launch info declares that it is necessary.
+        unsafe {
+            SVSM_PLATFORM
+                .validate_low_memory(LOWMEM_END.into(), false)
+                .expect("failed to validate low 640 KB");
+        }
+    }
 
     // Free the BSP stack that was allocated for early initialization.
     free_init_bsp_stack();

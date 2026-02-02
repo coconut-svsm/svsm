@@ -140,6 +140,7 @@ where
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         suppress_svsm_interrupts: false,
         vmsa_in_kernel_heap,
+        lowmem_validated: false,
         _reserved: Default::default(),
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;

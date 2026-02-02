@@ -56,7 +56,8 @@ pub struct KernelLaunchInfo {
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
-    pub _reserved: [bool; 3],
+    pub lowmem_validated: bool,
+    pub _reserved: [bool; 2],
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
