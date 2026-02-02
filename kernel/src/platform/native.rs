@@ -147,6 +147,10 @@ impl SvsmPlatform for NativePlatform {
         &DEFAULT_IO_DRIVER
     }
 
+    unsafe fn validate_low_memory(&self, _addr: u64, _vaddr_valid: bool) -> Result<(), SvsmError> {
+        Ok(())
+    }
+
     fn page_state_change(
         &self,
         _region: MemoryRegion<PhysAddr>,

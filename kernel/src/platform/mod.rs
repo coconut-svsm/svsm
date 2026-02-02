@@ -196,16 +196,7 @@ pub trait SvsmPlatform: Sync {
     /// # Safety
     /// The caller is required to ensure that it is safe to validate low
     /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64) -> Result<(), SvsmError> {
-        // SAFETY: the caller takes responsibility for the safety of the
-        // validation operation.
-        unsafe {
-            self.validate_virtual_page_range(
-                MemoryRegion::new(VirtAddr::from(0u64), addr as usize),
-                PageValidateOp::Validate,
-            )
-        }
-    }
+    unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError>;
 
     /// Performs a page state change between private and shared states.
     fn page_state_change(
