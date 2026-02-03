@@ -15,7 +15,7 @@ use core::slice;
 
 use verus_stub::*;
 
-use zerocopy::FromZeros;
+use zerocopy::FromBytes;
 
 #[cfg(verus_keep_ghost)]
 include!("address.verus.rs");
@@ -191,7 +191,7 @@ pub trait Address: Copy + From<InnerAddr> + Into<InnerAddr> + Ord {
 }
 
 #[verus_verify(external_derive)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, FromZeros)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, FromBytes)]
 #[repr(transparent)]
 pub struct PhysAddr(InnerAddr);
 

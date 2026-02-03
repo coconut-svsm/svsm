@@ -11,6 +11,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes};
 // The SIPI stub is placed immediately below the stage 2 heap.
 pub const SIPI_STUB_GPA: u32 = 0xF000;
 
+// Two pages below the SIPI stub are used for low memory page tables.
+pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
+
 // The first 640 KB of RAM (low memory)
 pub const LOWMEM_END: u32 = 0xA0000;
 
@@ -39,22 +42,18 @@ pub struct KernelLaunchInfo {
     pub heap_area_allocated: u64,
     pub kernel_region_virt_start: u64,
     pub heap_area_virt_start: u64, // Start of virtual heap area mapping.
-    pub kernel_elf_stage2_virt_start: u64, // Virtual address of kernel ELF in Stage2 mapping.
-    pub kernel_elf_stage2_virt_end: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
     pub stage2_start: u64,
-    pub stage2_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
-    pub stage2_igvm_params_phys_addr: u64,
-    pub stage2_igvm_params_size: u64,
     pub igvm_params_virt_addr: u64,
     pub kernel_symtab_start: *const KSym,
     pub kernel_symtab_len: u64,
     pub kernel_strtab_start: *const u8,
     pub kernel_strtab_len: u64,
     pub vtom: u64,
+    pub kernel_page_table_vaddr: u64,
     pub debug_serial_port: u16,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,

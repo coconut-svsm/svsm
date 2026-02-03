@@ -24,10 +24,11 @@ use bitflags::bitflags;
 use core::cmp;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
+use zerocopy::FromBytes;
 use zerocopy::FromZeros;
 
 /// Number of entries in a page table (4KB/8B).
-const ENTRY_COUNT: usize = 512;
+pub const ENTRY_COUNT: usize = 512;
 
 /// Mask for private page table entry.
 static PRIVATE_PTE_MASK: ImmutAfterInitCell<usize> = ImmutAfterInitCell::uninit();
@@ -113,7 +114,7 @@ fn make_shared_address(paddr: PhysAddr) -> PhysAddr {
 }
 
 /// Set address as private via mask.
-fn make_private_address(paddr: PhysAddr) -> PhysAddr {
+pub fn make_private_address(paddr: PhysAddr) -> PhysAddr {
     (strip_shared_address_bits(paddr).bits() | private_pte_mask()).into()
 }
 
@@ -209,7 +210,7 @@ impl PagingMode {
 
 /// Represents a page table entry.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, FromZeros)]
+#[derive(Copy, Clone, Debug, FromBytes)]
 pub struct PTEntry(PhysAddr);
 
 impl PTEntry {
@@ -356,10 +357,16 @@ impl PTEntry {
     }
 
     /// Set the page table entry with the specified address and flags.
-    pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+    pub fn set_unrestricted(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
         let addr = addr.bits() as u64;
         assert_eq!(addr & !0x000f_ffff_ffff_f000, 0);
-        self.0 = PhysAddr::from(addr | supported_flags(flags).bits());
+        self.0 = PhysAddr::from(addr | flags.bits());
+    }
+
+    /// Set the page table entry with the specified address, with flags
+    /// constrained to the supported feature flags.
+    pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
+        self.set_unrestricted(addr, supported_flags(flags));
     }
 
     /// Get the address from the page table entry, including the shared bit.
@@ -389,12 +396,22 @@ impl PTEntry {
 
 /// A pagetable page with multiple entries.
 #[repr(C)]
-#[derive(Debug, FromZeros)]
+#[derive(Debug, FromBytes)]
 pub struct PTPage {
     entries: [PTEntry; ENTRY_COUNT],
 }
 
 impl PTPage {
+    /// Allocates a zeroed pagetable page and returns a `PageBox` containing
+    /// the allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SvsmError`] if the page cannot be allocated.
+    pub fn alloc_box() -> Result<PageBox<Self>, SvsmError> {
+        PageBox::try_new_zeroed()
+    }
+
     /// Allocates a zeroed pagetable page and returns a mutable reference to
     /// it, plus its physical address.
     ///
@@ -402,7 +419,7 @@ impl PTPage {
     ///
     /// Returns [`SvsmError`] if the page cannot be allocated.
     fn alloc() -> Result<(&'static mut Self, PhysAddr), SvsmError> {
-        let page: PageBox<Self> = PageBox::try_new_zeroed()?;
+        let page = Self::alloc_box()?;
         let paddr = virt_to_phys(page.vaddr());
         Ok((PageBox::leak(page), paddr))
     }

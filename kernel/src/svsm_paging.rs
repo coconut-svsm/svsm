@@ -6,73 +6,16 @@
 
 extern crate alloc;
 
-use crate::address::{Address, PhysAddr, VirtAddr};
+use crate::address::PhysAddr;
 use crate::config::SvsmConfig;
 use crate::error::SvsmError;
-use crate::mm::PageBox;
-use crate::mm::global_memory::init_global_ranges;
-use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::{PAGE_SIZE, PageSize};
+use crate::types::PageSize;
 use crate::utils::{MemoryRegion, page_align_up};
 use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 
 use alloc::vec::Vec;
 
-pub fn init_page_table(
-    launch_info: &KernelLaunchInfo,
-    kernel_elf: &elf::Elf64File<'_>,
-) -> Result<PageBox<PageTable>, SvsmError> {
-    let mut pgtable = PageTable::allocate_new()?;
-
-    // Install mappings for the kernel's ELF segments each.
-    // The memory backing the kernel ELF segments gets allocated back to back
-    // from the physical memory region by the Stage2 loader.
-    let mut phys = PhysAddr::from(launch_info.kernel_region_phys_start);
-    for segment in kernel_elf.image_load_segment_iter(launch_info.kernel_region_virt_start) {
-        let vaddr_start = VirtAddr::from(segment.vaddr_range.vaddr_begin);
-        let vaddr_end = VirtAddr::from(segment.vaddr_range.vaddr_end);
-        let aligned_vaddr_end = vaddr_end.page_align_up();
-        let segment_len = aligned_vaddr_end - vaddr_start;
-        let flags = if segment.flags.contains(elf::Elf64PhdrFlags::EXECUTE) {
-            PTEntryFlags::exec()
-        } else if segment.flags.contains(elf::Elf64PhdrFlags::WRITE) {
-            PTEntryFlags::data()
-        } else {
-            PTEntryFlags::data_ro()
-        };
-
-        let vregion = MemoryRegion::new(vaddr_start, segment_len);
-        pgtable
-            .map_region(vregion, phys, flags)
-            .expect("Failed to map kernel ELF segment");
-
-        phys = phys + segment_len;
-    }
-
-    // Map subsequent heap area.
-    let heap_vregion = MemoryRegion::new(
-        VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_page_count as usize * PAGE_SIZE,
-    );
-    pgtable
-        .map_region(
-            heap_vregion,
-            PhysAddr::from(launch_info.heap_area_phys_start),
-            PTEntryFlags::data(),
-        )
-        .expect("Failed to map heap");
-
-    init_global_ranges();
-
-    Ok(pgtable)
-}
-
-/// Invalidates the given memory region using a platform-specific method.
-///
-/// While this cannot generate undefined behavior, the caller must be careful
-/// not to invalidate memory that will be used later, as accesing it will lead
-/// to an immediate panic.
 fn invalidate_boot_memory_region(
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
@@ -117,31 +60,14 @@ pub fn enumerate_early_boot_regions(
         ));
     }
 
-    let stage2_base = PhysAddr::from(launch_info.stage2_start);
-    let stage2_end = PhysAddr::from(launch_info.stage2_end);
-    regions.push(MemoryRegion::from_addresses(stage2_base, stage2_end));
-
-    let kernel_elf_size =
-        launch_info.kernel_elf_stage2_virt_end - launch_info.kernel_elf_stage2_virt_start;
-    regions.push(MemoryRegion::new(
-        PhysAddr::new(launch_info.kernel_elf_stage2_virt_start.try_into().unwrap()),
-        kernel_elf_size.try_into().unwrap(),
+    // All stage2 memory is contiguous, and is bounded by the stage2 image
+    // at the base and the filesystem at the end.
+    let stage2_area_base = PhysAddr::from(launch_info.stage2_start);
+    let stage2_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
+    regions.push(MemoryRegion::from_addresses(
+        stage2_area_base,
+        stage2_area_end,
     ));
-
-    let kernel_fs_size = launch_info.kernel_fs_end - launch_info.kernel_fs_start;
-    if kernel_fs_size > 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::new(launch_info.kernel_fs_start.try_into().unwrap()),
-            kernel_fs_size.try_into().unwrap(),
-        ));
-    }
-
-    if launch_info.stage2_igvm_params_size > 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::new(launch_info.stage2_igvm_params_phys_addr.try_into().unwrap()),
-            launch_info.stage2_igvm_params_size as usize,
-        ));
-    }
 
     regions
 }

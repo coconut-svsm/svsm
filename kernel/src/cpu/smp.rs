@@ -17,6 +17,7 @@ use crate::enable_shadow_stacks;
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::mm::STACK_SIZE;
+use crate::mm::TransitionPageTable;
 use crate::platform::{SVSM_PLATFORM, SvsmPlatform};
 use crate::task::schedule_init;
 use crate::utils::MemoryRegion;
@@ -28,20 +29,25 @@ use core::mem;
 fn start_cpu(
     platform: &dyn SvsmPlatform,
     percpu_shared: &'static PerCpuShared,
+    transition_page_table: &TransitionPageTable,
 ) -> Result<(), SvsmError> {
     let start_rip: u64 = (start_ap as *const u8) as u64;
     let percpu = PerCpu::alloc(percpu_shared)?;
     let pgtable = this_cpu().get_pgtable().clone_shared()?;
     percpu.setup(platform, pgtable)?;
 
-    platform.start_cpu(percpu, start_rip)?;
+    platform.start_cpu(percpu, start_rip, transition_page_table)?;
 
     let percpu_shared = percpu.shared();
     while !percpu_shared.is_online() {}
     Ok(())
 }
 
-pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
+pub fn start_secondary_cpus(
+    platform: &dyn SvsmPlatform,
+    cpus: &[ACPICPUInfo],
+    transition_page_table: &TransitionPageTable,
+) {
     // Create the shared CPU structures for each application processor
     // while still running single processor.  This ensures that the
     // PERCPU_AREAS array is completely initialized before any additional
@@ -70,7 +76,7 @@ pub fn start_secondary_cpus(platform: &dyn SvsmPlatform, cpus: &[ACPICPUInfo]) {
                 cpu_index,
                 percpu_shared.apic_id()
             );
-            start_cpu(platform, percpu_shared).expect("failed");
+            start_cpu(platform, percpu_shared, transition_page_table).expect("failed");
         }
     }
 }
@@ -148,7 +154,7 @@ global_asm!(
 
 pub fn create_ap_start_context(
     initial_context: &hyperv::HvInitialVpContext,
-    transition_cr3: u32,
+    transition_page_table: &TransitionPageTable,
 ) -> ApStartContext {
     ApStartContext {
         cr0: initial_context.cr0.try_into().unwrap(),
@@ -157,7 +163,7 @@ pub fn create_ap_start_context(
         efer: initial_context.efer.try_into().unwrap(),
         start_rip: initial_context.rip.try_into().unwrap(),
         rsp: initial_context.rsp.try_into().unwrap(),
-        transition_cr3,
+        transition_cr3: transition_page_table.cr3_value(),
         initial_rip: start_ap_indirect as *const () as usize,
         context_size: mem::size_of::<ApStartContext>() as u32,
     }

@@ -19,6 +19,7 @@ use core::arch::asm;
 use core::mem;
 use core::mem::MaybeUninit;
 use core::panic::PanicInfo;
+use core::ptr;
 use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use elf::ElfError;
@@ -34,12 +35,20 @@ use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, this_cpu};
 use svsm::debug::stacktrace::print_stack;
 use svsm::error::SvsmError;
 use svsm::igvm_params::IgvmParams;
+use svsm::mm::FixedAddressMappingRange;
+use svsm::mm::PGTABLE_LVL3_IDX_PTE_SELFMAP;
+use svsm::mm::STACK_GUARD_SIZE;
+use svsm::mm::STACK_SIZE;
+use svsm::mm::SVSM_GLOBAL_BASE;
+use svsm::mm::SVSM_PERCPU_BASE;
+use svsm::mm::SVSM_PERTASK_BASE;
 use svsm::mm::alloc::{AllocError, memory_info, print_memory_info, root_mem_init};
-use svsm::mm::pagetable::{PTEntryFlags, PageTable, paging_init};
-use svsm::mm::{
-    FixedAddressMappingRange, STACK_GUARD_SIZE, STACK_SIZE, SVSM_PERCPU_BASE,
-    init_kernel_mapping_info,
-};
+use svsm::mm::init_kernel_mapping_info;
+use svsm::mm::pagetable::PTEntry;
+use svsm::mm::pagetable::PTEntryFlags;
+use svsm::mm::pagetable::PageTable;
+use svsm::mm::pagetable::make_private_address;
+use svsm::mm::pagetable::paging_init;
 use svsm::platform;
 use svsm::platform::{
     PageStateChangeOp, PageValidateOp, Stage2PlatformCell, SvsmPlatform, SvsmPlatformCell,
@@ -48,6 +57,7 @@ use svsm::platform::{
 use svsm::types::{PAGE_SIZE, PageSize};
 use svsm::utils::{MemoryRegion, round_to_pages, zero_mem_region};
 
+use elf::Elf64File;
 use release::COCONUT_VERSION;
 
 unsafe extern "C" {
@@ -56,23 +66,28 @@ unsafe extern "C" {
 
 #[derive(Debug)]
 pub struct KernelHeap {
-    virt_base: VirtAddr,
+    local_virt_base: VirtAddr,
+    virt_base: Option<VirtAddr>,
     phys_base: PhysAddr,
     page_count: usize,
     next_free: usize,
 }
 
 impl KernelHeap {
-    pub fn create(virt_base: VirtAddr, prange: MemoryRegion<PhysAddr>) -> Self {
+    pub fn create(prange: MemoryRegion<PhysAddr>) -> Self {
         Self {
-            virt_base,
+            // The kernel heap is always mapped in the stage2 address space
+            // at the base of the per-task address region, since this cannot
+            // conflict with the global kernel region.
+            local_virt_base: SVSM_PERTASK_BASE,
+            virt_base: None,
             phys_base: prange.start(),
             page_count: prange.len() / PAGE_SIZE,
             next_free: 0,
         }
     }
 
-    pub fn virt_base(&self) -> VirtAddr {
+    pub fn virt_base(&self) -> Option<VirtAddr> {
         self.virt_base
     }
 
@@ -88,9 +103,54 @@ impl KernelHeap {
         self.next_free
     }
 
+    pub fn phys_to_virt(&self, paddr: PhysAddr) -> VirtAddr {
+        let offset = paddr - self.phys_base;
+        assert!(offset < (self.page_count * PAGE_SIZE));
+
+        // If the base virtual address has been set, then use it; otherwise
+        // use the virtual address of the local mapping.
+        self.virt_base.unwrap_or(self.local_virt_base) + offset
+    }
+
+    pub fn remap_memory(
+        &mut self,
+        vaddr: VirtAddr,
+        page_tables: &mut KernelPageTables<'_>,
+    ) -> Result<(), SvsmError> {
+        // Map the heap physical memory span at the requested address in the
+        // kernel page tables.  All memory has already been validated, so only
+        // page table mapping is required.
+        let flags = PTEntryFlags::data();
+        for index in 0..self.page_count {
+            let offset = index * PAGE_SIZE;
+            page_tables.map_page(
+                vaddr + offset,
+                make_private_address(self.phys_base + offset),
+                flags,
+                self,
+            )?;
+        }
+
+        // Record the new base virtual address of the heap.
+        self.virt_base = Some(vaddr);
+
+        Ok(())
+    }
+
     pub fn allocate(&mut self, size: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
         let page_count = round_to_pages(size);
         self.allocate_pages(page_count)
+    }
+
+    pub fn allocate_zeroed(&mut self, size: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
+        let (vaddr, paddr) = self.allocate(size)?;
+        // SAFETY: the virtual address just allocated is known to map a new
+        // allocation of the specified size, so it can be accessed for
+        // zeroing.
+        unsafe {
+            ptr::write_bytes(vaddr.as_mut_ptr::<u8>(), 0, size);
+        }
+        Ok((vaddr, paddr))
     }
 
     pub fn allocate_pages(&mut self, page_count: usize) -> Result<(VirtAddr, PhysAddr), SvsmError> {
@@ -101,15 +161,219 @@ impl KernelHeap {
         }
 
         // Calculate the allocation base based on the current position within
-        // the heap.
+        // the heap.  If no heap virtual address has been configured yet,
+        // then report a virtual address based on the local mapping.
         let offset = self.next_free * PAGE_SIZE;
-        let virt_addr = self.virt_base + offset;
+        let virt_base = self.virt_base.unwrap_or(self.local_virt_base);
+        let virt_addr = virt_base + offset;
         let phys_addr = self.phys_base + offset;
 
         // Move the allocation cursor beyond this allocation.
         self.next_free = next_free;
         Ok((virt_addr, phys_addr))
     }
+}
+
+#[derive(Debug)]
+pub struct KernelPageTablePage<'a> {
+    entries: &'a mut [PTEntry],
+}
+
+impl KernelPageTablePage<'_> {
+    /// # Safety
+    /// The caller is required to supply a virtual address that is known to map
+    /// a full page of page table or page directory entries.
+    unsafe fn new(vaddr: VirtAddr) -> Self {
+        // SAFETY: the caller ensures the correctness of the virtual address.
+        let entries = unsafe {
+            let pte_ptr = vaddr.as_mut_ptr::<PTEntry>();
+            slice::from_raw_parts_mut(pte_ptr, svsm::mm::pagetable::ENTRY_COUNT)
+        };
+        Self { entries }
+    }
+
+    fn entry_mut(&mut self, index: usize) -> &mut PTEntry {
+        &mut self.entries[index]
+    }
+}
+
+#[derive(Debug)]
+pub struct KernelPageTables<'a> {
+    root_paddr: PhysAddr,
+    lvl3_idx: usize,
+    lvl2_idx: usize,
+    pd_page: KernelPageTablePage<'a>,
+    pt_page: Option<KernelPageTablePage<'a>>,
+    pde_index: Option<usize>,
+}
+
+impl KernelPageTables<'_> {
+    fn root(&self) -> PhysAddr {
+        self.root_paddr
+    }
+
+    fn map_page(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: PhysAddr,
+        flags: PTEntryFlags,
+        kernel_heap: &mut KernelHeap,
+    ) -> Result<(), SvsmError> {
+        // The virtual address must fall within the first 1 GB of the kernel
+        // address range.
+        assert_eq!(vaddr.to_pgtbl_idx::<3>(), self.lvl3_idx);
+        assert_eq!(vaddr.to_pgtbl_idx::<2>(), self.lvl2_idx);
+
+        // Release the reference to the currently mapped page table page if
+        // this address falls within a different page table page.
+        let pde_index = vaddr.to_pgtbl_idx::<1>();
+        if let Some(mapped_pde_index) = self.pde_index {
+            if pde_index != mapped_pde_index {
+                self.pde_index = None;
+                self.pt_page = None;
+            }
+        }
+
+        // Map the correct page table page if it is not already mapped.
+        if self.pt_page.is_none() {
+            // If this page table page has not yet been allocated, then
+            // allocate it now.  Otherwise, obtain a mapping to the
+            // page that was previously allocated.
+            let entry = self.pd_page.entry_mut(pde_index);
+            let pt_page = if entry.present() {
+                let pt_addr = kernel_heap.phys_to_virt(entry.address());
+                // SAFETY: the virtual address here is calculated using a
+                // physical address that was allocated earlier as a page table
+                // page (and is therefore correct) and is translated to a
+                // virtual address using an offset that was captured when the
+                // heap was initialized, making it an accurate translation.
+                unsafe { KernelPageTablePage::new(pt_addr) }
+            } else {
+                // If the entry is not present, it must be empty.
+                assert_eq!(entry.raw(), 0);
+                let (pt_vaddr, pt_paddr) = kernel_heap.allocate_zeroed(PAGE_SIZE)?;
+                let pxe_flags =
+                    PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE | PTEntryFlags::ACCESSED;
+                entry.set_unrestricted(make_private_address(pt_paddr), pxe_flags);
+
+                // SAFETY: the virtual address corresponds to a newly allocated
+                // page table page so it can safely be used here.
+                unsafe { KernelPageTablePage::new(pt_vaddr) }
+            };
+
+            self.pde_index = Some(pde_index);
+            self.pt_page = Some(pt_page);
+        }
+
+        let pt_page = self.pt_page.as_mut().unwrap();
+
+        // Find the page table entry that will be populated.  It must already
+        // be empty.
+        let entry = pt_page.entry_mut(vaddr.to_pgtbl_idx::<0>());
+        assert_eq!(entry.raw(), 0);
+        entry.set_unrestricted(make_private_address(paddr), flags);
+
+        Ok(())
+    }
+
+    fn map_and_validate(
+        &mut self,
+        vregion: MemoryRegion<VirtAddr>,
+        phys_addr: PhysAddr,
+        flags: PTEntryFlags,
+        kernel_heap: &mut KernelHeap,
+        platform: &dyn SvsmPlatform,
+        config: &SvsmConfig<'_>,
+    ) -> Result<(), SvsmError> {
+        // Loop over each page in the region and map it into the page tables.
+        for addr in vregion.iter_pages(PageSize::Regular) {
+            let offset = addr - vregion.start();
+            self.map_page(addr, phys_addr + offset, flags, kernel_heap)?;
+        }
+
+        if config.page_state_change_required() {
+            platform.page_state_change(
+                MemoryRegion::new(phys_addr, vregion.len()),
+                PageSize::Huge,
+                PageStateChangeOp::Private,
+            )?;
+        }
+
+        // SAFETY: the page table mapping operation above can only succeed if
+        // each address is in the kernel address space and has been mapped for
+        // the first time.  This guarantees that the virtual address region is
+        // not already in use and thus can safely be validated here
+        unsafe {
+            platform.validate_virtual_page_range(vregion, PageValidateOp::Validate)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn setup_kernel_page_tables<'a>(heap: &mut KernelHeap) -> Result<KernelPageTables<'a>, SvsmError> {
+    // Allocate a new page from the kernel heap to use as the paging root for
+    // the kernel.
+    let (paging_root_vaddr, paging_root_paddr) = heap.allocate_zeroed(PAGE_SIZE)?;
+
+    // SAFETY: the allocated virtual address is known to be usable as a page
+    // table page.
+    let mut paging_root = unsafe { KernelPageTablePage::new(paging_root_vaddr) };
+
+    // Set the PML4E for the self-map entry in the kernel paging root.
+    let pxe_flags = PTEntryFlags::PRESENT | PTEntryFlags::WRITABLE | PTEntryFlags::ACCESSED;
+    paging_root
+        .entry_mut(PGTABLE_LVL3_IDX_PTE_SELFMAP)
+        .set_unrestricted(
+            make_private_address(paging_root_paddr),
+            PTEntryFlags::task_data(),
+        );
+
+    // Allocate a new page to use as the page directory table page for the
+    // kernel address space.
+    let (pdpt_vaddr, pdpt_paddr) = heap.allocate_zeroed(PAGE_SIZE)?;
+    // SAFETY: the allocated virtual address is known to be usable as a page
+    // table page.
+    let mut pdpt = unsafe { KernelPageTablePage::new(pdpt_vaddr) };
+
+    // Set the correct PML4E in the kernel paging root to point to the page
+    // directory page.
+    let pml4e_index = SVSM_GLOBAL_BASE.to_pgtbl_idx::<3>();
+    let pml4e = paging_root.entry_mut(pml4e_index);
+    pml4e.set_unrestricted(make_private_address(pdpt_paddr), pxe_flags);
+
+    // Set the PML4E in the current page table as well so the
+    // kernel address space is also visible in the current address space.
+    // SAFETY: the physical address of the current paging root is known to be
+    // identity-mapped in the current address space and therefore that address
+    // can be used to obtain a page table view.
+    let mut current_paging_root = unsafe {
+        let vaddr = VirtAddr::new(this_cpu().get_pgtable().cr3_value().bits());
+        KernelPageTablePage::new(vaddr)
+    };
+    *current_paging_root.entry_mut(pml4e_index) = *pml4e;
+
+    // Allocate a new page to use as a page directory table page.  This will
+    // span 1 GB of address space, which is the maximum that will ever be
+    // addressible during stage 2 execution.
+    let (pdt_vaddr, pdt_paddr) = heap.allocate_zeroed(PAGE_SIZE)?;
+    // SAFETY: the allocated virtual address is known to be usable as a page
+    // table page.
+    let pdt = unsafe { KernelPageTablePage::new(pdt_vaddr) };
+
+    // Set the correct PDPE in the parent page.
+    let pdt_index = SVSM_GLOBAL_BASE.to_pgtbl_idx::<2>();
+    pdpt.entry_mut(pdt_index)
+        .set_unrestricted(make_private_address(pdt_paddr), pxe_flags);
+
+    Ok(KernelPageTables::<'a> {
+        lvl3_idx: pml4e_index,
+        lvl2_idx: pdt_index,
+        root_paddr: paging_root_paddr,
+        pd_page: pdt,
+        pt_page: None,
+        pde_index: None,
+    })
 }
 
 fn setup_stage2_allocator(heap_start: u64, heap_end: u64) {
@@ -303,9 +567,11 @@ unsafe fn map_and_validate(
 /// # Safety
 /// The caller is required to supply an appropriate virtual address for this
 /// ELF segment.
-unsafe fn load_elf_segment(
+fn load_elf_segment(
     segment: elf::Elf64ImageLoadSegment<'_>,
     paddr: PhysAddr,
+    page_tables: &mut KernelPageTables<'_>,
+    kernel_heap: &mut KernelHeap,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<MemoryRegion<VirtAddr>, SvsmError> {
@@ -323,16 +589,22 @@ unsafe fn load_elf_segment(
         return Err(SvsmError::Elf(ElfError::UnalignedSegmentAddress));
     }
 
+    // Calculate the correct page table flags based on this segment's
+    // characteristics.
+    let flags = if segment.flags.contains(elf::Elf64PhdrFlags::EXECUTE) {
+        PTEntryFlags::exec()
+    } else if segment.flags.contains(elf::Elf64PhdrFlags::WRITE) {
+        PTEntryFlags::data()
+    } else {
+        PTEntryFlags::data_ro()
+    };
+
     // Map and validate the segment at the next contiguous physical address
-    // SAFETY: the caller has verified the safety of this virtual address
-    // region.
-    unsafe {
-        map_and_validate(platform, config, segment_region, paddr)?;
-    }
+    page_tables.map_and_validate(segment_region, paddr, flags, kernel_heap, platform, config)?;
 
     // Copy the segment contents and pad with zeroes
-    // SAFETY: the caller guarantees the correctness of the ELF segment's
-    // virtual address range.
+    // SAFETY: the call to map_and_validate above will prove the correctness of
+    // the kernel address range.
     let segment_buf =
         unsafe { slice::from_raw_parts_mut(segment_start.as_mut_ptr::<u8>(), segment_len) };
     let contents_len = segment.file_contents.len();
@@ -340,6 +612,22 @@ unsafe fn load_elf_segment(
     segment_buf[contents_len..].fill(0);
 
     Ok(segment_region)
+}
+
+/// Calculates the number of physical pages required to load an ELF file.
+fn count_elf_pages(elf: &Elf64File<'_>) -> usize {
+    // Enumerate the segments of this ELF file to count the total amount of
+    // physical memory required.
+    let mut page_count: usize = 0;
+    let vaddr_alloc_info = elf.image_load_vaddr_alloc_info();
+    let vaddr_alloc_base = vaddr_alloc_info.range.vaddr_begin;
+    for segment in elf.image_load_segment_iter(vaddr_alloc_base) {
+        let segment_size =
+            (segment.vaddr_range.vaddr_end - segment.vaddr_range.vaddr_begin) as usize;
+        page_count += round_to_pages(segment_size);
+    }
+
+    page_count
 }
 
 fn read_kernel_elf(launch_info: &Stage2LaunchInfo) -> Result<elf::Elf64File<'static>, ElfError> {
@@ -357,8 +645,11 @@ fn read_kernel_elf(launch_info: &Stage2LaunchInfo) -> Result<elf::Elf64File<'sta
 /// resides, as well as its entry point. Updates the used physical memory
 /// region accordingly.
 fn load_kernel_elf(
-    elf: &elf::Elf64File<'_>,
-    loaded_phys: &mut MemoryRegion<PhysAddr>,
+    elf: &Elf64File<'_>,
+    paddr_base: PhysAddr,
+    expected_page_count: usize,
+    page_tables: &mut KernelPageTables<'_>,
+    kernel_heap: &mut KernelHeap,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<(VirtAddr, MemoryRegion<VirtAddr>), SvsmError> {
@@ -373,11 +664,16 @@ fn load_kernel_elf(
     // physical memory occupied by the loaded ELF image.
     let mut load_virt_start = None;
     let mut load_virt_end = VirtAddr::null();
+    let mut phys_addr = paddr_base;
     for segment in elf.image_load_segment_iter(vaddr_alloc_base) {
-        // SAFETY: the virtual address is calculated based on the base address
-        // of the image and the previously loaded segments, so it is correct
-        // for use.
-        let region = unsafe { load_elf_segment(segment, loaded_phys.end(), platform, config)? };
+        let region = load_elf_segment(
+            segment,
+            phys_addr,
+            page_tables,
+            kernel_heap,
+            platform,
+            config,
+        )?;
         // Remember the mapping range's lower and upper bounds to pass it on
         // the kernel later. Note that the segments are being iterated over
         // here in increasing load order.
@@ -387,8 +683,12 @@ fn load_kernel_elf(
         load_virt_end = region.end();
 
         // Update to the next contiguous physical address
-        *loaded_phys = loaded_phys.expand(region.len());
+        phys_addr = phys_addr + region.len();
     }
+
+    // The amount of physical memory actually consumed must match the amount
+    // of memory that was set aside.
+    assert_eq!(phys_addr - paddr_base, expected_page_count * PAGE_SIZE);
 
     let Some(load_virt_start) = load_virt_start else {
         log::error!("No loadable segment found in kernel ELF");
@@ -454,17 +754,16 @@ fn load_igvm_params(
 /// # Panics
 ///
 /// Panics if the allocated kernel region (`kernel_region`) is not sufficient
-/// to host the loaded kernel region (`loaded_kernel_pregion`) plus memory
-/// reserved for configuration.
+/// to host the memory required by the loaded kernel (`kernel_page_count`)
+/// plus memory reserved for configuration.
 fn prepare_heap(
     kernel_region: MemoryRegion<PhysAddr>,
-    loaded_kernel_pregion: MemoryRegion<PhysAddr>,
-    heap_base_vaddr: VirtAddr,
+    kernel_page_count: usize,
     platform: &dyn SvsmPlatform,
     config: &SvsmConfig<'_>,
 ) -> Result<KernelHeap, SvsmError> {
-    // Heap starts after kernel
-    let heap_pstart = loaded_kernel_pregion.end();
+    let kernel_size = kernel_page_count * PAGE_SIZE;
+    let heap_pstart = kernel_region.start() + kernel_size;
 
     // Compute size, excluding any memory reserved by the configuration.
     let heap_size = kernel_region
@@ -473,8 +772,10 @@ fn prepare_heap(
         .and_then(|r| r.checked_sub(config.reserved_kernel_area_size()))
         .expect("Insufficient physical space for kernel image")
         .into();
+
     let heap_pregion = MemoryRegion::new(heap_pstart, heap_size);
-    let heap_vregion = MemoryRegion::new(heap_base_vaddr, heap_size);
+    let heap = KernelHeap::create(heap_pregion);
+    let heap_vregion = MemoryRegion::new(heap.local_virt_base, heap_size);
 
     // SAFETY: the virtual address range was computed so it is within the valid
     // region and does not collide with the kernel.
@@ -482,7 +783,7 @@ fn prepare_heap(
         map_and_validate(platform, config, heap_vregion, heap_pregion.start())?;
     }
 
-    Ok(KernelHeap::create(heap_base_vaddr, heap_pregion))
+    Ok(heap)
 }
 
 #[unsafe(no_mangle)]
@@ -521,28 +822,45 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
     log::info!("SVSM memory region: {kernel_region:#018x}");
 
-    // The physical memory region we've loaded so far
-    let mut loaded_kernel_pregion = MemoryRegion::new(kernel_region.start(), 0);
-
     // Load first the kernel ELF and update the loaded physical region
     let elf = read_kernel_elf(launch_info).expect("Failed to read kernel ELF");
-    let (kernel_entry, loaded_kernel_vregion) =
-        load_kernel_elf(&elf, &mut loaded_kernel_pregion, platform, &config)
-            .expect("Failed to load kernel ELF");
+
+    // Calculate the number of physical pages that will be consumed when the
+    // ELF is loaded.
+    let elf_page_count = count_elf_pages(&elf);
+
+    // Create the page heap that will be used in the kernel region.  This is
+    // the size of the kernel region minus the space used to hold the loaded
+    // ELF image.
+    let mut kernel_heap = prepare_heap(kernel_region, elf_page_count, platform, &config)
+        .expect("Could not create kernel heap");
+
+    // Set up the paging root for the kernel page tables, which will be
+    // allocated from the kernel heap.
+    let mut kernel_page_tables =
+        setup_kernel_page_tables(&mut kernel_heap).expect("Failed to configure kernel page tables");
+
+    // Load the kernel ELF into the address space.
+    let (kernel_entry, loaded_kernel_vregion) = load_kernel_elf(
+        &elf,
+        kernel_region.start(),
+        elf_page_count,
+        &mut kernel_page_tables,
+        &mut kernel_heap,
+        platform,
+        &config,
+    )
+    .expect("Failed to load kernel ELF");
 
     // Define the heap base address as the end of the kernel ELF plus a
     // guard area for a stack.
     let heap_base_vaddr = loaded_kernel_vregion.end() + STACK_GUARD_SIZE;
 
-    // Create the page heap used in the kernel region.
-    let mut kernel_heap = prepare_heap(
-        kernel_region,
-        loaded_kernel_pregion,
-        heap_base_vaddr,
-        platform,
-        &config,
-    )
-    .expect("Could not create kernel heap");
+    // Map the heap into the kernel address space immediately following the
+    // kernel image.
+    kernel_heap
+        .remap_memory(heap_base_vaddr, &mut kernel_page_tables)
+        .expect("Failed to map kernel heap");
 
     // Allocate pages for an initial stack to be used in the kernel
     // environment.
@@ -601,20 +919,15 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_region_phys_start: u64::from(kernel_region.start()),
         kernel_region_phys_end: u64::from(kernel_region.end()),
         heap_area_phys_start: u64::from(kernel_heap.phys_base()),
-        heap_area_virt_start: u64::from(kernel_heap.virt_base()),
+        heap_area_virt_start: u64::from(kernel_heap.virt_base().unwrap()),
         heap_area_page_count: kernel_heap.page_count().try_into().unwrap(),
         heap_area_allocated: kernel_heap.next_free().try_into().unwrap(),
         kernel_region_virt_start: u64::from(loaded_kernel_vregion.start()),
-        kernel_elf_stage2_virt_start: u64::from(launch_info.kernel_elf_start),
-        kernel_elf_stage2_virt_end: u64::from(launch_info.kernel_elf_end),
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
-        stage2_end: launch_info.stage2_end as u64,
         cpuid_page: u64::from(kernel_cpuid_page.unwrap_or(VirtAddr::null())),
         secrets_page: u64::from(kernel_secrets_page.unwrap_or(VirtAddr::null())),
-        stage2_igvm_params_phys_addr: u64::from(launch_info.igvm_params),
-        stage2_igvm_params_size: igvm_params.size() as u64,
         igvm_params_virt_addr: u64::from(igvm_vaddr),
         kernel_symtab_start: symtab.start().as_ptr(),
         kernel_symtab_len: (symtab.len() / size_of::<bootlib::symbols::KSym>()) as u64,
@@ -623,6 +936,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         vtom: launch_info.vtom,
         debug_serial_port: config.debug_serial_port(),
         use_alternate_injection: config.use_alternate_injection(),
+        kernel_page_table_vaddr: u64::from(kernel_heap.phys_to_virt(kernel_page_tables.root())),
         suppress_svsm_interrupts,
         platform_type,
     };
@@ -662,6 +976,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
              in("rdi") u64::from(launch_info_vaddr),
              in("rsi") u64::from(initial_stack),
              in("rdx") u64::from(initial_stack_base),
+             in("rcx") u64::from(kernel_page_tables.root()),
              options(att_syntax))
     };
 
