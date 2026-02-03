@@ -16,6 +16,10 @@ pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
 // The first 640 KB of RAM (low memory)
 pub const LOWMEM_END: u32 = 0xA0000;
 
+// Page tables used in the initial boot image.
+pub const LOWMEM_PT_START: u32 = 0x10000;
+pub const LOWMEM_PT_COUNT: usize = 2;
+
 pub const STAGE2_HEAP_START: u32 = 0x10000; // 64 KB
 pub const STAGE2_HEAP_END: u32 = LOWMEM_END; // 640 KB
 pub const STAGE2_BASE: u32 = 0x800000; // Start of stage2 area excluding heap
@@ -57,7 +61,8 @@ pub struct KernelLaunchInfo {
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
     pub lowmem_validated: bool,
-    pub _reserved: [bool; 2],
+    pub lowmem_page_tables: bool,
+    pub _reserved: bool,
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
@@ -96,6 +101,26 @@ pub struct Stage2LaunchInfo {
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
     pub boot_params: u32,
+    pub kernel_pml4e_index: u32,
+    pub _reserved: u32,
+}
+
+// This structure describes the parameters passed to the boot loader.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, FromBytes, IntoBytes, Immutable)]
+pub struct BldrLaunchInfo {
+    pub kernel_pdpt_paddr: u64,
+    pub kernel_launch_info: u64,
+    pub kernel_entry: u64,
+    pub kernel_stack: u64,
+    pub kernel_pt_vaddr: u64,
+    pub kernel_pt_count: u64,
+    pub page_table_start: u32,
+    pub page_table_end: u32,
+    pub page_table_root: u32,
+    pub cpuid_addr: u32,
+    pub platform_type: u32,
+    pub c_bit_position: u32,
     pub kernel_pml4e_index: u32,
     pub _reserved: u32,
 }

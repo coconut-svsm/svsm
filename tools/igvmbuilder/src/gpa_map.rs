@@ -8,6 +8,8 @@ use std::error::Error;
 use std::fs::metadata;
 
 use bootdefs::kernel_launch::CPUID_PAGE;
+use bootdefs::kernel_launch::LOWMEM_PT_COUNT;
+use bootdefs::kernel_launch::LOWMEM_PT_START;
 use bootdefs::kernel_launch::STAGE2_BASE;
 use bootdefs::kernel_launch::STAGE2_MAXLEN;
 use bootdefs::kernel_launch::STAGE2_STACK_PAGE;
@@ -219,7 +221,10 @@ impl GpaMap {
             kernel_max_size,
             vmsa,
             vmsa_in_kernel_range,
-            init_page_tables: GpaRange::new(0x10000, 2 * PAGE_SIZE_4K)?,
+            init_page_tables: GpaRange::new(
+                LOWMEM_PT_START as u64,
+                LOWMEM_PT_COUNT as u64 * PAGE_SIZE_4K,
+            )?,
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");

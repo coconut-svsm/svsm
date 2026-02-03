@@ -1,20 +1,17 @@
 [package]
-name = "stage1"
+name = "bldr"
 version = "0.1.0"
 edition.workspace = true
 
 [[bin]]
-name = "stage1"
-path = "src/stage1.rs"
+name = "bldr"
+path = "src/main.rs"
 test = false
-
-[features]
-default = []
-load-stage2 = []
+doc = false
 
 [dependencies]
-bootdefs.workspace = true
 cpuarch.workspace = true
+bootdefs.workspace = true
 
 [lints]
 workspace = true
