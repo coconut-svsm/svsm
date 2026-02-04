@@ -66,6 +66,14 @@ impl GpaRange {
 }
 
 #[derive(Debug)]
+struct GpaLayoutInfo {
+    stage2_image: GpaRange,
+    stage2_stack: GpaRange,
+    boot_param_block: GpaRange,
+    kernel_fs_start: u64,
+}
+
+#[derive(Debug)]
 pub struct GpaMap {
     pub base_addr: u64,
     pub stage1_image: GpaRange,
@@ -101,6 +109,11 @@ impl GpaMap {
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
         //   0xFFnn0000-0xFFFFFFFF: [TDX stage 1 +] OVMF firmware (QEMU only, if specified)
+
+        // Only one of stage 2 and the boot loader can be specified.
+        if options.stage2.is_some() && options.bldr.is_some() {
+            return Err("Cannot specify both --bldr and --stage2".into());
+        }
 
         let stage1_image = if let Some(stage1) = &options.tdx_stage1 {
             if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
@@ -154,36 +167,54 @@ impl GpaMap {
 
         // If stage2 is present, then get its size and configure the data it
         // requires.
-        let (stage2_image, stage2_stack, boot_param_block, kernel_fs_start) =
-            if let Some(stage2) = options.stage2.as_ref() {
-                let stage2_len = Self::get_metadata(stage2)?.len() as usize;
-                if stage2_len > STAGE2_MAXLEN as usize {
-                    return Err(format!(
-                        "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
-                    )
-                    .into());
-                }
+        let gpa_layout_info = if let Some(stage2) = options.stage2.as_ref() {
+            let stage2_len = Self::get_metadata(stage2)?.len() as usize;
+            if stage2_len > STAGE2_MAXLEN as usize {
+                return Err(format!(
+                    "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+                )
+                .into());
+            }
 
-                let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
-                let boot_param_block = GpaRange::new(
-                    stage2_image.get_end(),
-                    boot_param_layout.total_size() as u64,
-                )?;
-                (
-                    stage2_image,
-                    GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
-                    boot_param_block,
-                    boot_param_block.get_end(),
+            let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
+            let boot_param_block = GpaRange::new(
+                stage2_image.get_end(),
+                boot_param_layout.total_size() as u64,
+            )?;
+            GpaLayoutInfo {
+                stage2_image,
+                stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                boot_param_block,
+                kernel_fs_start: boot_param_block.get_end(),
+            }
+        } else if let Some(ref bldr) = options.bldr {
+            // For simplicity, the boot loader ranges are encoded as stage2
+            // ranges.  Since the two are mutually exclusive, there is no
+            // conflict.
+            let bldr_len = Self::get_metadata(bldr)?.len() as usize;
+            if bldr_len > STAGE2_MAXLEN as usize {
+                return Err(format!(
+                    "Boot loader binary size ({bldr_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
                 )
-            } else {
-                let stage2_image = GpaRange::new(STAGE2_BASE.into(), 0)?;
-                (
-                    stage2_image,
-                    stage2_image,
-                    GpaRange::new(0, 0)?,
-                    stage2_image.get_start(),
-                )
-            };
+                .into());
+            }
+
+            let bldr_image = GpaRange::new(STAGE2_START.into(), bldr_len as u64)?;
+            GpaLayoutInfo {
+                stage2_image: bldr_image,
+                stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                boot_param_block: GpaRange::new(0, 0)?,
+                kernel_fs_start: bldr_image.get_end(),
+            }
+        } else {
+            let stage2_image = GpaRange::new(STAGE2_BASE.into(), 0)?;
+            GpaLayoutInfo {
+                stage2_image,
+                stage2_stack: stage2_image,
+                boot_param_block: GpaRange::new(0, 0)?,
+                kernel_fs_start: stage2_image.get_end(),
+            }
+        };
 
         // Obtain the length of the kernel filesystem.
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
@@ -194,7 +225,7 @@ impl GpaMap {
 
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid stage2 memory area.
-        let kernel_fs = GpaRange::new(kernel_fs_start, kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(gpa_layout_info.kernel_fs_start, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
@@ -210,11 +241,11 @@ impl GpaMap {
         let gpa_map = Self {
             base_addr: STAGE2_BASE.into(),
             stage1_image,
-            stage2_stack,
-            stage2_image,
+            stage2_stack: gpa_layout_info.stage2_stack,
+            stage2_image: gpa_layout_info.stage2_image,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
-            boot_param_block,
+            boot_param_block: gpa_layout_info.boot_param_block,
             boot_param_layout,
             kernel: GpaRange::new(kernel_base, kernel_min_size)?,
             kernel_min_size: kernel_min_size.try_into().unwrap(),
