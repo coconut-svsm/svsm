@@ -6,12 +6,8 @@
 #![allow(missing_docs)]
 
 use crate::{BufferDirection, Hal, PAGE_SIZE, PhysAddr};
-use alloc::alloc::{alloc_zeroed, dealloc, handle_alloc_error};
-use core::{
-    alloc::Layout,
-    ptr::{self, NonNull},
-};
-use zerocopy::FromZeros;
+use std::alloc::{Layout, alloc_zeroed, dealloc, handle_alloc_error};
+use std::ptr::{self, NonNull};
 
 #[derive(Debug)]
 pub struct FakeHal;
@@ -62,7 +58,7 @@ unsafe impl Hal for FakeHal {
         assert_ne!(buffer.len(), 0);
         // To ensure that the driver is handling and unsharing buffers properly, allocate a new
         // buffer and copy to it if appropriate.
-        let mut shared_buffer = <[u8]>::new_box_zeroed_with_elems(buffer.len()).unwrap();
+        let mut shared_buffer = vec![0u8; buffer.len()].into_boxed_slice();
         if let BufferDirection::DriverToDevice | BufferDirection::Both = direction {
             // SAFETY: Safe because shared_buffer was allocated just above with the correct size
             unsafe {
