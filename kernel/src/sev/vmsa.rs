@@ -35,7 +35,7 @@ impl VmsaPage {
         // Make sure the VMSA page is not 2M-aligned, as some hardware
         // generations can't handle this properly. To ensure this property, we
         // allocate 2 VMSAs and choose whichever is not 2M-aligned.
-        let idx = if page.vaddr().is_aligned(PAGE_SIZE_2M) {
+        let idx = if virt_to_phys(page.vaddr()).is_aligned(PAGE_SIZE_2M) {
             1
         } else {
             0
