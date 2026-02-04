@@ -24,7 +24,10 @@ use crate::cpu::{IrqGuard, IrqState, LocalApic, ShadowStackInit};
 use crate::error::{ApicError, SvsmError};
 use crate::hyperv::{self, HypercallPage};
 use crate::hyperv::{HypercallPagesGuard, IS_HYPERV};
-use crate::locking::{LockGuard, RWLock, RWLockIrqSafe, SpinLock};
+use crate::locking::{
+    LockGuard, RWLock, RWLockIrqSafe, ReadLockGuard, ReadLockGuardIrqSafe, SpinLock,
+    WriteLockGuard, WriteLockGuardIrqSafe,
+};
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::virtualrange::VirtualRange;
@@ -55,7 +58,7 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
-use core::cell::{Cell, Ref, RefCell, RefMut, UnsafeCell};
+use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr::{self, NonNull};
@@ -356,12 +359,23 @@ const _: () = assert!(size_of::<PerCpu>() <= PAGE_SIZE);
 
 /// CPU-local data.
 ///
-/// This type is not [`Sync`], as its contents will only be accessed from the
-/// local CPU, much like thread-local data in an std environment. The only
-/// part of the struct that may be accessed from a different CPU is the
-/// `shared` field, a reference to which will be stored in [`PERCPU_AREAS`].
+/// While the contents of this struct are never accessed outside the local CPU
+/// (except for the [`PerCpuShared`] portion), reentrant access to the structure
+/// from preempted context essentially behaves as concurrent access, since
+/// the preemption may happen at any instruction boundary. If we use interior
+/// mutability types, the reentrant access may lead to undefined behavior.
+/// Thus, we require that the type is [`Sync`]. This is currently enforced by
+/// protecting mutable fields with a [`RWLock`]. To avoid deadlocks, only the
+/// non-blocking methods in the lock are used, causing an immediate panic when a
+/// reentrant access is attempted.
+///
+/// If the [`Sync`] requirement below breaks your build, it means you introduced
+/// interior mutability, which is not safe.
 #[derive(Debug)]
-pub struct PerCpu {
+pub struct PerCpu
+where
+    Self: Sync,
+{
     /// Reference to the `PerCpuShared` that is valid in the global, shared
     /// address space.
     shared: &'static PerCpuShared,
@@ -372,27 +386,27 @@ pub struct PerCpu {
     /// PerCpu IRQ state tracking
     irq_state: IrqState,
 
-    pgtbl: RefCell<Option<&'static mut PageTable>>,
+    pgtbl: RWLock<Option<&'static mut PageTable>>,
     tss: X86Tss,
-    isst: Cell<Isst>,
+    isst: RWLock<Isst>,
     svsm_vmsa: ImmutAfterInitCell<VmsaPage>,
     reset_ip: AtomicU64,
     /// PerCpu Virtual Memory Range
     vm_range: VMR,
     /// Address allocator for per-cpu 4k temporary mappings
-    pub vrange_4k: RefCell<VirtualRange>,
+    vrange_4k: RWLock<VirtualRange>,
     /// Address allocator for per-cpu 2m temporary mappings
-    pub vrange_2m: RefCell<VirtualRange>,
+    vrange_2m: RWLock<VirtualRange>,
     /// Task list that has been assigned for scheduling on this CPU
     runqueue: RWLockIrqSafe<RunQueue>,
     /// Local APIC state for APIC emulation if enabled
-    guest_apic: RefCell<Option<LocalApic>>,
+    guest_apic: RWLock<Option<LocalApic>>,
 
     /// GHCB page for this CPU.
     ghcb: ImmutAfterInitCell<GhcbPage>,
 
     /// Hypercall input/output pages for this CPU if running under Hyper-V.
-    hypercall_pages: RefCell<Option<(HypercallPage, HypercallPage)>>,
+    hypercall_pages: RWLock<Option<(HypercallPage, HypercallPage)>>,
 
     /// `#HV` doorbell page for this CPU.
     hv_doorbell: ImmutAfterInitCell<SharedBox<HVDoorbell>>,
@@ -402,18 +416,18 @@ pub struct PerCpu {
     ist: IstStacks,
 
     /// Stack boundaries of the currently running task.
-    current_stack: Cell<MemoryRegion<VirtAddr>>,
+    current_stack: RWLock<MemoryRegion<VirtAddr>>,
 }
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
     fn new(shared: &'static PerCpuShared) -> Self {
         Self {
-            pgtbl: RefCell::new(None),
+            pgtbl: RWLock::new(None),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
             tss: X86Tss::new(),
-            isst: Cell::new(Isst::default()),
+            isst: RWLock::new(Isst::default()),
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
@@ -422,19 +436,19 @@ impl PerCpu {
                 vmr
             },
 
-            vrange_4k: RefCell::new(VirtualRange::new()),
-            vrange_2m: RefCell::new(VirtualRange::new()),
+            vrange_4k: RWLock::new(VirtualRange::new()),
+            vrange_2m: RWLock::new(VirtualRange::new()),
             runqueue: RWLockIrqSafe::new(RunQueue::new()),
-            guest_apic: RefCell::new(None),
+            guest_apic: RWLock::new(None),
 
             shared,
             ghcb: ImmutAfterInitCell::uninit(),
-            hypercall_pages: RefCell::new(None),
+            hypercall_pages: RWLock::new(None),
             hv_doorbell: ImmutAfterInitCell::uninit(),
             init_shadow_stack: ImmutAfterInitCell::uninit(),
             context_switch_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
-            current_stack: Cell::new(MemoryRegion::new(VirtAddr::null(), 0)),
+            current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
         }
     }
 
@@ -551,16 +565,15 @@ impl PerCpu {
     pub fn allocate_hypercall_pages(&self) -> Result<(), SvsmError> {
         let p1 = HypercallPage::try_new()?;
         let p2 = HypercallPage::try_new()?;
-        *self.hypercall_pages.borrow_mut() = Some((p1, p2));
+        *self.hypercall_pages.write_noblock() = Some((p1, p2));
         Ok(())
     }
 
     pub fn get_hypercall_pages(&self) -> HypercallPagesGuard<'_> {
         // The hypercall page cell is never mutated, but is borrowed mutably
         // to ensure that only a single reference can ever be taken at a time.
-        let page_ref: RefMut<'_, Option<(HypercallPage, HypercallPage)>> =
-            self.hypercall_pages.borrow_mut();
-        HypercallPagesGuard::new(RefMut::map(page_ref, |o| o.as_mut().unwrap()))
+        let page_ref = self.hypercall_pages.write_noblock();
+        HypercallPagesGuard::new(WriteLockGuard::map(page_ref, |o| o.as_mut().unwrap()))
     }
 
     pub fn hv_doorbell(&self) -> Option<&HVDoorbell> {
@@ -604,11 +617,11 @@ impl PerCpu {
     }
 
     pub fn get_current_stack(&self) -> MemoryRegion<VirtAddr> {
-        self.current_stack.get()
+        *self.current_stack.read_noblock()
     }
 
     pub fn set_current_stack(&self, stack: MemoryRegion<VirtAddr>) {
-        self.current_stack.set(stack);
+        *self.current_stack.write_noblock() = stack;
     }
 
     pub fn get_cpu_index(&self) -> usize {
@@ -631,7 +644,7 @@ impl PerCpu {
     }
 
     pub fn set_pgtable(&self, pgtable: &'static mut PageTable) {
-        *self.pgtbl.borrow_mut() = Some(pgtable);
+        *self.pgtbl.write_noblock() = Some(pgtable);
     }
 
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
@@ -695,8 +708,8 @@ impl PerCpu {
         Ok(())
     }
 
-    pub fn get_pgtable(&self) -> RefMut<'_, PageTable> {
-        RefMut::map(self.pgtbl.borrow_mut(), |pgtbl| {
+    pub fn get_pgtable(&self) -> WriteLockGuard<'_, PageTable> {
+        WriteLockGuard::map(self.pgtbl.write_noblock(), |pgtbl| {
             &mut **pgtbl.as_mut().unwrap()
         })
     }
@@ -727,9 +740,9 @@ impl PerCpu {
 
     fn setup_isst(&self) {
         let double_fault_shadow_stack = self.get_top_of_df_shadow_stack().unwrap();
-        let mut isst = self.isst.get();
-        isst.set(IST_DF, double_fault_shadow_stack);
-        self.isst.set(isst);
+        self.isst
+            .write_noblock()
+            .set(IST_DF, double_fault_shadow_stack);
     }
 
     pub fn map_self_stage2(&self) -> Result<(), SvsmError> {
@@ -834,7 +847,7 @@ impl PerCpu {
 
     fn setup_idle_task_internal(&self, start_info: KernelThreadStartInfo) -> Result<(), SvsmError> {
         let idle_task = Task::create(self, start_info, String::from("idle"))?;
-        self.runqueue.lock_write().set_idle_task(idle_task);
+        self.runqueue_mut().set_idle_task(idle_task);
         Ok(())
     }
 
@@ -956,7 +969,7 @@ impl PerCpu {
         // Enable alternate injection if the hypervisor supports it.
         let use_alternate_injection = SVSM_PLATFORM.query_apic_registration_state();
         if use_alternate_injection {
-            self.guest_apic.replace(Some(LocalApic::new()));
+            *self.guest_apic.write_noblock() = Some(LocalApic::new());
 
             // Configure the interrupt injection vector.
             let ghcb = self.ghcb().unwrap();
@@ -980,16 +993,16 @@ impl PerCpu {
 
     /// Returns a shared reference to the local APIC, or `None` if APIC
     /// emulation is not enabled.
-    fn guest_apic(&self) -> Option<Ref<'_, LocalApic>> {
-        let apic = self.guest_apic.borrow();
-        Ref::filter_map(apic, Option::as_ref).ok()
+    fn guest_apic(&self) -> Option<ReadLockGuard<'_, LocalApic>> {
+        let apic = self.guest_apic.read_noblock();
+        ReadLockGuard::filter_map(apic, Option::as_ref).ok()
     }
 
     /// Returns a mutable reference to the local APIC, or `None` if APIC
     /// emulation is not enabled.
-    fn guest_apic_mut(&self) -> Option<RefMut<'_, LocalApic>> {
-        let apic = self.guest_apic.borrow_mut();
-        RefMut::filter_map(apic, Option::as_mut).ok()
+    fn guest_apic_mut(&self) -> Option<WriteLockGuard<'_, LocalApic>> {
+        let apic = self.guest_apic.write_noblock();
+        WriteLockGuard::filter_map(apic, Option::as_mut).ok()
     }
 
     fn unmap_caa(&self) {
@@ -1102,15 +1115,13 @@ impl PerCpu {
         // Initialize 4k range
         let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_4k
-            .borrow_mut()
+        self.vrange_4k_mut()
             .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
 
         // Initialize 2M range
         let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
         assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_2m
-            .borrow_mut()
+        self.vrange_2m_mut()
             .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
     }
 
@@ -1145,7 +1156,7 @@ impl PerCpu {
 
     pub fn schedule_init(&self) -> TaskPointer {
         self.irq_state.set_restore_state(true);
-        let task = self.runqueue.lock_write().schedule_init();
+        let task = self.runqueue_mut().schedule_init();
         self.set_current_stack(task.stack_bounds());
         task
     }
@@ -1157,19 +1168,39 @@ impl PerCpu {
     }
 
     pub fn schedule_prepare(&self) -> Option<(TaskPointer, TaskPointer)> {
-        let ret = self.runqueue.lock_write().schedule_prepare();
+        let ret = self.runqueue_mut().schedule_prepare();
         if let Some((_, ref next)) = ret {
             self.set_current_stack(next.stack_bounds());
         };
         ret
     }
 
-    pub fn runqueue(&self) -> &RWLockIrqSafe<RunQueue> {
-        &self.runqueue
+    pub fn runqueue(&self) -> ReadLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_read()
+    }
+
+    pub fn runqueue_mut(&self) -> WriteLockGuardIrqSafe<'_, RunQueue> {
+        self.runqueue.lock_write()
     }
 
     pub fn current_task(&self) -> TaskPointer {
-        self.runqueue.lock_read().current_task()
+        self.runqueue().current_task()
+    }
+
+    pub fn vrange_4k(&self) -> ReadLockGuard<'_, VirtualRange> {
+        self.vrange_4k.read_noblock()
+    }
+
+    pub fn vrange_4k_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+        self.vrange_4k.write_noblock()
+    }
+
+    pub fn vrange_2m(&self) -> ReadLockGuard<'_, VirtualRange> {
+        self.vrange_2m.read_noblock()
+    }
+
+    pub fn vrange_2m_mut(&self) -> WriteLockGuard<'_, VirtualRange> {
+        self.vrange_2m.write_noblock()
     }
 
     /// # Safety
@@ -1373,7 +1404,7 @@ impl PerCpuVmsas {
 }
 
 pub fn current_task() -> TaskPointer {
-    this_cpu().runqueue.lock_read().current_task()
+    this_cpu().runqueue().current_task()
 }
 
 pub fn cpu_idle_loop(cpu_index: usize) {
@@ -1386,7 +1417,7 @@ pub fn cpu_idle_loop(cpu_index: usize) {
         // If idle was explicitly requested by another task, then schedule that
         // task to execute again in case it wants to perform processing as a
         // result of the wake from idle.
-        let maybe_task = this_cpu().runqueue().lock_write().wake_from_idle();
+        let maybe_task = this_cpu().runqueue_mut().wake_from_idle();
         if let Some(task) = maybe_task {
             schedule_task(task);
         }

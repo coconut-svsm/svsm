@@ -75,8 +75,8 @@ pub fn virt_log_usage() {
     log::info!(
         "[CPU {}] Virtual memory pages used: {} * 4K, {} * 2M",
         this_cpu().get_cpu_index(),
-        this_cpu().vrange_4k.borrow().used_pages() - unused_cap_4k,
-        this_cpu().vrange_2m.borrow().used_pages() - unused_cap_2m
+        this_cpu().vrange_4k().used_pages() - unused_cap_4k,
+        this_cpu().vrange_2m().used_pages() - unused_cap_2m
     );
 }
 
@@ -94,7 +94,7 @@ impl VRangeAlloc {
             return Err(SvsmError::Mem);
         }
         let page_count = size >> PAGE_SHIFT;
-        let addr = this_cpu().vrange_4k.borrow_mut().alloc(page_count, align)?;
+        let addr = this_cpu().vrange_4k_mut().alloc(page_count, align)?;
         let region = MemoryRegion::new(addr, size);
         Ok(Self {
             region,
@@ -109,7 +109,7 @@ impl VRangeAlloc {
             return Err(SvsmError::Mem);
         }
         let page_count = size >> PAGE_SHIFT_2M;
-        let addr = this_cpu().vrange_2m.borrow_mut().alloc(page_count, align)?;
+        let addr = this_cpu().vrange_2m_mut().alloc(page_count, align)?;
         let region = MemoryRegion::new(addr, size);
         Ok(Self { region, huge: true })
     }
@@ -130,13 +130,11 @@ impl Drop for VRangeAlloc {
         let region = self.region();
         if self.huge {
             this_cpu()
-                .vrange_2m
-                .borrow_mut()
+                .vrange_2m_mut()
                 .free(region.start(), region.len() >> PAGE_SHIFT_2M);
         } else {
             this_cpu()
-                .vrange_4k
-                .borrow_mut()
+                .vrange_4k_mut()
                 .free(region.start(), region.len() >> PAGE_SHIFT);
         }
     }

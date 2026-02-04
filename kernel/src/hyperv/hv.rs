@@ -13,6 +13,7 @@ use crate::error::SvsmError;
 use crate::error::SvsmError::HyperV;
 use crate::hyperv;
 use crate::hyperv::{HvInitialVpContext, HyperVMsr};
+use crate::locking::WriteLockGuard;
 use crate::mm::alloc::allocate_pages;
 use crate::mm::page_visibility::SharedBox;
 use crate::mm::pagetable::PTEntryFlags;
@@ -22,7 +23,6 @@ use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use core::arch::asm;
-use core::cell::RefMut;
 use core::marker::PhantomData;
 use core::mem;
 use core::mem::MaybeUninit;
@@ -61,14 +61,14 @@ impl HypercallPage {
 /// the borrow of the pages into the [`PerCpu`].
 #[derive(Debug)]
 struct HypercallInput<'a, 'b, H, T> {
-    page: &'a mut RefMut<'b, HypercallPage>,
+    page: &'a mut WriteLockGuard<'b, HypercallPage>,
     rep_count: usize,
     _phantom1: PhantomData<H>,
     _phantom2: PhantomData<T>,
 }
 
 impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
-    fn new(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+    fn new(page: &'a mut WriteLockGuard<'b, HypercallPage>) -> Self {
         const { assert!(size_of::<H>() <= PAGE_SIZE) };
         Self {
             page,
@@ -94,7 +94,7 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
         }
     }
 
-    fn new_rep(page: &'a mut RefMut<'b, HypercallPage>) -> Self {
+    fn new_rep(page: &'a mut WriteLockGuard<'b, HypercallPage>) -> Self {
         const { assert!(size_of::<H>() <= PAGE_SIZE) };
         const { assert!(size_of::<T>() != 0) };
         let rep_count = (PAGE_SIZE - mem::size_of::<H>()) / mem::size_of::<T>();
@@ -129,7 +129,7 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
 /// of the `'a` and `'b` lifetimes.
 #[derive(Debug)]
 struct HypercallOutput<'a, 'b, T> {
-    page: &'a RefMut<'b, HypercallPage>,
+    page: &'a WriteLockGuard<'b, HypercallPage>,
     rep_count: usize,
     _phantom: PhantomData<T>,
 }
@@ -139,7 +139,7 @@ impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
     ///
     /// The caller must guarantee that `rep_count` instances of `T` fit
     /// within a single page.
-    unsafe fn new(page: &'a RefMut<'b, HypercallPage>, rep_count: usize) -> Self {
+    unsafe fn new(page: &'a WriteLockGuard<'b, HypercallPage>, rep_count: usize) -> Self {
         Self {
             page,
             rep_count,
@@ -184,8 +184,8 @@ impl<'a, 'b, T> HypercallOutput<'a, 'b, T> {
 /// pages as structured data, in order to read and write their contents.
 #[derive(Debug)]
 pub struct HypercallPagesGuard<'a> {
-    pub input: RefMut<'a, HypercallPage>,
-    pub output: RefMut<'a, HypercallPage>,
+    pub input: WriteLockGuard<'a, HypercallPage>,
+    pub output: WriteLockGuard<'a, HypercallPage>,
     _irq_guard: IrqGuard,
 }
 
@@ -194,11 +194,11 @@ impl<'a> HypercallPagesGuard<'a> {
     /// input/output pages.
     ///
     /// This method is safe because [`HypercallPage`] guarantees by construction
-    /// that the backing memory is valid and shared with the hypervisor. The type
-    /// is wrapped in a [`RefMut`], meaning that there is a runtime guarantee that
-    /// nobody else holds a reference to the same pages.
-    pub fn new(page_ref: RefMut<'a, (HypercallPage, HypercallPage)>) -> Self {
-        let (input, output) = RefMut::map_split(page_ref, |r| (&mut r.0, &mut r.1));
+    /// that the backing memory is valid and shared with the hypervisor. The
+    /// type is wrapped in a [`WriteLockGuard`], meaning that there is a runtime
+    /// guarantee that nobody else holds a reference to the same pages.
+    pub fn new(page_ref: WriteLockGuard<'a, (HypercallPage, HypercallPage)>) -> Self {
+        let (input, output) = WriteLockGuard::map_split(page_ref, |r| (&mut r.0, &mut r.1));
         Self {
             input,
             output,

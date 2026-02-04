@@ -246,6 +246,9 @@ impl<T: FromBytes + Sync> AsRef<T> for SharedBox<T> {
 // SAFETY: SharedBox can be Send when T is Send because the Sharedbox
 // implementation does not implement any !Send behavior around type T.
 unsafe impl<T> Send for SharedBox<T> where T: Send {}
+// SAFETY: SharedBox can be Sync when T is Sync because the implementation
+// does not have any !Sync behavior around T.
+unsafe impl<T> Sync for SharedBox<T> where T: Sync {}
 
 impl<T> Drop for SharedBox<T> {
     fn drop(&mut self) {
