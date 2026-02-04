@@ -17,8 +17,8 @@
             "features": "vtpm",
             "binary": false
         },
-        "stage2": {
-            "manifest": "kernel/Cargo.toml",
+        "bldr": {
+            "manifest": "boot/bldr/Cargo.toml",
             "binary": true,
             "objcopy": "binary"
         },
