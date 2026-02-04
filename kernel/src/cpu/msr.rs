@@ -6,8 +6,6 @@
 
 use core::arch::asm;
 
-pub const EFER: u32 = 0xC000_0080;
-pub const SEV_STATUS: u32 = 0xC001_0131;
 pub const SEV_GHCB: u32 = 0xC001_0130;
 pub const MSR_GS_BASE: u32 = 0xC000_0101;
 

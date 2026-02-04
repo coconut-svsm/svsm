@@ -8,7 +8,6 @@ extern crate alloc;
 
 use crate::acpi::tables::{ACPICPUInfo, ACPITable, load_acpi_cpu_info};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::efer::EFERFlags;
 use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
 use crate::mm::{GuestPtr, PAGE_SIZE, PerCPUPageMappingGuard};
@@ -24,6 +23,7 @@ use core::ops::Deref;
 use core::ptr;
 use core::slice;
 use cpuarch::vmsa::VMSA;
+use cpuarch::x86::EFERFlags;
 use igvm_defs::{IGVM_VHS_MEMORY_MAP_ENTRY, IgvmEnvironmentInfo, MemoryMapEntryType};
 
 const IGVM_MEMORY_ENTRIES_PER_PAGE: usize = PAGE_SIZE / size_of::<IGVM_VHS_MEMORY_MAP_ENTRY>();

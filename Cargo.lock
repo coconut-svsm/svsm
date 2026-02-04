@@ -485,6 +485,7 @@ name = "cpuarch"
 version = "0.1.0"
 dependencies = [
  "bitfield-struct 0.6.2",
+ "bitflags",
  "zerocopy",
 ]
 
