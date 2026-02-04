@@ -31,6 +31,9 @@ jobs:
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y build-essential cmake pkg-config
 
+      - name: Install cargo-hack
+        run: cargo install cargo-hack
+
       - name: Build (non-test) debug images
         run: cargo xbuild ./configs/*.json
 
@@ -49,8 +52,8 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy
-        run: make clippy
+      - name: Clippy with feature combinations
+        run: make clippy CARGO_HACK=1
 
       - name: Check documentation
         run: make doc
