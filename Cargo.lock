@@ -1959,7 +1959,7 @@ name = "syscall"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.10.0",
- "zerocopy 0.8.30",
+ "zerocopy",
 ]
 
 [[package]]
