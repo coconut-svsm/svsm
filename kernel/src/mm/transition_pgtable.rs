@@ -45,7 +45,7 @@ impl TransitionPageTable {
 
         // Map two pages to be used as initial page tables: one as a paging
         // root and one as the initial page directory page.  These are known
-        // to be usable because low memory was accepted by stage2.
+        // to be usable because low memory has already been accepted.
         let paging_root_paddr = PhysAddr::new(SIPI_STUB_PT_GPA as usize);
         let pdp_paddr = paging_root_paddr + PAGE_SIZE;
         // SAFETY: these physical addresses are known to be usable for

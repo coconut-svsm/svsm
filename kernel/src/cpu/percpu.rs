@@ -742,14 +742,6 @@ impl PerCpu {
             .set(IST_DF, double_fault_shadow_stack);
     }
 
-    pub fn map_self_stage2(&self) -> Result<(), SvsmError> {
-        let vaddr = VirtAddr::from(ptr::from_ref(self));
-        let paddr = virt_to_phys(vaddr);
-        let flags = PTEntryFlags::data();
-        self.get_pgtable()
-            .map_4k(SVSM_PERCPU_BASE, paddr, flags, false)
-    }
-
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);

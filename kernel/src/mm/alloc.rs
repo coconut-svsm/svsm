@@ -576,11 +576,6 @@ impl HeapMemoryRegion {
             broadcast use group_addr_proofs;
         }
         if paddr < self.start_phys || (paddr - self.start_phys) >= (self.page_count * PAGE_SIZE) {
-            // For the initial stage2 identity mapping, the root page table
-            // pages are static and outside of the heap memory region.
-            if VirtAddr::from(self.start_phys.bits()) == self.start_virt {
-                return Some(VirtAddr::from(paddr.bits()));
-            }
             return None;
         }
 

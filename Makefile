@@ -45,7 +45,6 @@ endif
 STAGE1_RUSTC_ARGS += -C panic=abort
 
 STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
-STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 BLDR_ELF = "target/x86_64-unknown-none/$(TARGET_PATH)/bldr"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
 FS_BIN=bin/svsm-fs.bin
@@ -149,10 +148,6 @@ bin/bldr.bin: bin
 	cargo build --package bldr $(CARGO_ARGS) --target=x86_64-unknown-none
 	objcopy -O binary $(BLDR_ELF) $@
 
-bin/stage2.bin: bin
-	cargo build --package svsm --bin stage2 ${CARGO_ARGS} --target=x86_64-unknown-none
-	objcopy -O binary ${STAGE2_ELF} $@
-
 bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
@@ -195,4 +190,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/bldr.bin bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/bldr.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)

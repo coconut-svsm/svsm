@@ -89,7 +89,7 @@ unsafe extern "C" {
 /*
  * Launch protocol:
  *
- * The stage2 loader will map and load the svsm binary image and jump to
+ * The boot loader will map and load the svsm binary image and jump to
  * startup_64.
  *
  * %rdi  Pointer to the KernelLaunchInfo structure
@@ -254,6 +254,11 @@ unsafe fn memory_init(
         heap_length,
         heap_allocated,
     );
+
+    // Now that all memory in teh kernel range has been validated, initialize
+    // the valid memory bitmap.
+    init_valid_bitmap(new_kernel_region(launch_info), true)
+        .expect("Failed to allocate valid-bitmap");
 }
 
 fn boot_stack_info() {
@@ -339,7 +344,11 @@ unsafe fn svsm_start(
         .expect("Early environment setup failed");
 
     // Load symbol info now that there is a console
-    init_symbols(&launch_info).expect("Could not initialize kernel symbols");
+    // SAFETY: the launch info here is the launch info passed by the boot
+    // environment.
+    unsafe {
+        init_symbols(&launch_info).expect("Could not initialize kernel symbols");
+    }
 
     paging_init(platform, false).expect("Failed to initialize paging");
 
@@ -349,13 +358,8 @@ unsafe fn svsm_start(
         memory_init(launch_info.as_mut(), platform, platform_type);
     }
 
-    // Initialize the valid bitmap as all valid, since stage2 guarantees that
-    // all memory in the kernel region is validated prior to kernel entry.
-    init_valid_bitmap(new_kernel_region(&launch_info), true)
-        .expect("Failed to allocate valid-bitmap");
-
-    // SAFETY: the current page table was allocated by stage2 from the kernel
-    // heap and therefore it can be built into a PageBox.
+    // SAFETY: the current page table was was placed into the kernel heap as
+    // part of the boot image and therefore it can be built into a PageBox.
     let init_pgtable: PageBox<PageTable> = unsafe {
         let page_table_ptr = (launch_info.kernel_page_table_vaddr as usize) as *mut PageTable;
         PageBox::from_raw(NonNull::new(page_table_ptr).unwrap())
@@ -479,7 +483,8 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
             .expect("failed to invalidate low-memory page tables");
     }
 
-    // Validate low memory if it was not validated in stage2.
+    // Validate low memory if the launch info indicates that it has not yet
+    // been validated.
     if !launch_info.lowmem_validated {
         // SAFETY: the launch information is trusted to represent the
         // validation state of memory, thus memory can safely be validated if

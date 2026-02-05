@@ -12,8 +12,6 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
-use bootdefs::kernel_launch::BLDR_STACK;
-use bootdefs::kernel_launch::BLDR_STACK_END;
 use core::arch::asm;
 use core::fmt;
 use core::fmt::Write;
@@ -49,12 +47,6 @@ struct StackUnwinder {
     stacks: StacksBounds,
 }
 
-fn is_stage2() -> bool {
-    // If the storage for the default BSP stack pointers lands under 16MB,
-    // we're in Stage2.
-    (&raw const bsp_stack_end as usize) < (16 << 20)
-}
-
 impl StackUnwinder {
     pub fn unwind_this_cpu() -> Self {
         let mut rbp: usize;
@@ -80,26 +72,17 @@ impl StackUnwinder {
             [current_stack, cs_stack, df_stack]
         } else {
             // Use default stack addresses.
-            if is_stage2() {
-                let bsp_init_stack = MemoryRegion::from_addresses(
-                    VirtAddr::from(BLDR_STACK_END as u64),
-                    VirtAddr::from(BLDR_STACK as u64),
-                );
-                let no_stack = MemoryRegion::new(VirtAddr::null(), 0);
-                [bsp_init_stack, no_stack, no_stack]
-            } else {
-                // SAFETY: the stack addresses are initialied early and can
-                // safely be used here.
-                let bsp_init_stack = unsafe {
-                    MemoryRegion::from_addresses(
-                        VirtAddr::from(bsp_stack),
-                        VirtAddr::from(bsp_stack_end),
-                    )
-                };
-                let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
-                let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
-                [bsp_init_stack, cs_stack, df_stack]
-            }
+            // SAFETY: the stack addresses are initialied early and can
+            // safely be used here.
+            let bsp_init_stack = unsafe {
+                MemoryRegion::from_addresses(
+                    VirtAddr::from(bsp_stack),
+                    VirtAddr::from(bsp_stack_end),
+                )
+            };
+            let cs_stack = MemoryRegion::new(SVSM_CONTEXT_SWITCH_STACK, STACK_TOTAL_SIZE);
+            let df_stack = MemoryRegion::new(SVSM_STACK_IST_DF_BASE, STACK_TOTAL_SIZE);
+            [bsp_init_stack, cs_stack, df_stack]
         };
 
         Self::new(VirtAddr::from(rbp), stacks)

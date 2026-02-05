@@ -21,7 +21,7 @@ pub const STAGE2_HEAP_END: u32 = LOWMEM_END; // 640 KB
 pub const BLDR_BASE: u32 = 0x800000; // Start of boot loader area excluding heap
 pub const BLDR_STACK_END: u32 = BLDR_BASE;
 pub const BLDR_STACK_PAGE: u32 = 0x806000;
-pub const BLDR_INFO_SZ: u32 = size_of::<Stage2LaunchInfo>() as u32;
+pub const BLDR_INFO_SZ: u32 = size_of::<BldrLaunchInfo>() as u32;
 pub const BLDR_STACK: u32 = BLDR_STACK_PAGE + 0x1000 - BLDR_INFO_SZ;
 pub const CPUID_PAGE: u32 = 0x807000;
 // Stage2 is loaded at 8 MB + 32 KB
@@ -73,33 +73,6 @@ pub struct InitialKernelStack {
     pub paging_root: u64,
     pub launch_info_vaddr: u64,
     pub stack_limit: u64,
-}
-
-// Stage 2 launch info from stage1
-// The layout has to match the order in which the parts are pushed to the stack
-// in stage1.rs
-#[derive(IntoBytes, Immutable, Default, Debug, Clone, Copy)]
-#[repr(C, packed)]
-pub struct Stage2LaunchInfo {
-    pub platform_type: u32,
-    pub cpuid_page: u32,
-
-    pub kernel_page_tables_base: u64,
-    pub kernel_pt_pages: u64,
-    pub kernel_boot_params_addr: u64,
-    pub kernel_cpuid_addr: u64,
-
-    pub kernel_entry: u64,
-    pub kernel_stack: u64,
-    pub kernel_pdpt_paddr: u64,
-    pub kernel_launch_info: u64,
-
-    pub stage2_end: u32,
-    pub kernel_fs_start: u32,
-    pub kernel_fs_end: u32,
-    pub boot_params: u32,
-    pub kernel_pml4e_index: u32,
-    pub _reserved: u32,
 }
 
 // This structure describes the parameters passed to the boot loader.

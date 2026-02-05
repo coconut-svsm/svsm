@@ -14,9 +14,9 @@ mod snp_fw;
 pub use snp_fw::SevFWMetaData;
 
 use capabilities::Caps;
-use native::{NativePlatform, NativeStage2Platform};
-use snp::{SnpPlatform, SnpStage2Platform};
-use tdp::{TdpPlatform, TdpStage2Platform};
+use native::NativePlatform;
+use snp::SnpPlatform;
+use tdp::TdpPlatform;
 
 use core::arch::asm;
 use core::fmt::Debug;
@@ -37,7 +37,6 @@ use crate::mm::alloc::free_page;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-use bootdefs::kernel_launch::Stage2LaunchInfo;
 use bootdefs::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
@@ -114,8 +113,8 @@ pub trait SvsmPlatform: Sync {
     /// the core system environment has been initialized.
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
 
-    /// Performs initialiation of the environment specfic to the SVSM kernel
-    /// (for services not used by stage2).
+    /// Performs initialiation of the kernel environment once the boot task
+    /// is running.
     fn env_setup_svsm(&self) -> Result<(), SvsmError>;
 
     /// Frees a platforms-specific page if it is not used by the underlying
@@ -213,7 +212,7 @@ pub trait SvsmPlatform: Sync {
     ) -> Result<(), SvsmError>;
 
     /// Marks a physical range of pages as valid or invalid for use as private
-    /// pages.  Not usable in stage2.
+    /// pages.
     ///
     /// # Safety
     ///
@@ -225,8 +224,8 @@ pub trait SvsmPlatform: Sync {
     ) -> Result<(), SvsmError>;
 
     /// Marks a virtual range of pages as valid or invalid for use as private
-    /// pages.  Provided primarily for use in stage2 where validation by
-    /// physical address cannot be supported.
+    /// pages.  Provided primarily for use when physical address cannot be
+    /// supported, prior to initialization of the per-CPU mapping range.
     /// # Safety
     /// The caller is required to ensure the safety of the validation operation
     /// on this memory range.
@@ -350,41 +349,6 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Native(_) => SvsmPlatformType::Native,
             SvsmPlatformCell::Snp(_) => SvsmPlatformType::Snp,
             SvsmPlatformCell::Tdp(_) => SvsmPlatformType::Tdp,
-        }
-    }
-}
-
-/// This defines a platform abstraction to permit stage2 to run on different
-/// underlying architectures.  It includes only functionality that is used
-/// only in stage2.
-pub trait Stage2Platform {
-    /// Obtains the virtual address of the CPUID page, if any.
-    fn get_cpuid_page(&self, _launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
-        None
-    }
-}
-
-#[derive(Debug)]
-pub enum Stage2PlatformCell {
-    Snp(SnpStage2Platform),
-    Tdp(TdpStage2Platform),
-    Native(NativeStage2Platform),
-}
-
-impl Stage2PlatformCell {
-    pub fn new(platform_type: SvsmPlatformType) -> Self {
-        match platform_type {
-            SvsmPlatformType::Native => Stage2PlatformCell::Native(NativeStage2Platform::new()),
-            SvsmPlatformType::Snp => Stage2PlatformCell::Snp(SnpStage2Platform::new()),
-            SvsmPlatformType::Tdp => Stage2PlatformCell::Tdp(TdpStage2Platform::new()),
-        }
-    }
-
-    pub fn platform(&self) -> &dyn Stage2Platform {
-        match self {
-            Stage2PlatformCell::Native(platform) => platform,
-            Stage2PlatformCell::Snp(platform) => platform,
-            Stage2PlatformCell::Tdp(platform) => platform,
         }
     }
 }
