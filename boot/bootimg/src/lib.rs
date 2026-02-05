@@ -163,7 +163,7 @@ where
         kernel_strtab_len: strtab.length,
         kernel_fs_start: boot_image_params.kernel_fs_start,
         kernel_fs_end: boot_image_params.kernel_fs_end,
-        stage2_start: boot_image_params.stage2_start,
+        bldr_start: boot_image_params.bldr_start,
         cpuid_page: cpuid_vaddr,
         secrets_page: secrets_vaddr,
         idt_vaddr,

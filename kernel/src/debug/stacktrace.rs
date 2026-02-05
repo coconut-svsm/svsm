@@ -12,8 +12,8 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
-use bootdefs::kernel_launch::STAGE2_STACK;
-use bootdefs::kernel_launch::STAGE2_STACK_END;
+use bootdefs::kernel_launch::BLDR_STACK;
+use bootdefs::kernel_launch::BLDR_STACK_END;
 use core::arch::asm;
 use core::fmt;
 use core::fmt::Write;
@@ -82,8 +82,8 @@ impl StackUnwinder {
             // Use default stack addresses.
             if is_stage2() {
                 let bsp_init_stack = MemoryRegion::from_addresses(
-                    VirtAddr::from(STAGE2_STACK_END as u64),
-                    VirtAddr::from(STAGE2_STACK as u64),
+                    VirtAddr::from(BLDR_STACK_END as u64),
+                    VirtAddr::from(BLDR_STACK as u64),
                 );
                 let no_stack = MemoryRegion::new(VirtAddr::null(), 0);
                 [bsp_init_stack, no_stack, no_stack]

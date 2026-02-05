@@ -18,15 +18,15 @@ pub const LOWMEM_END: u32 = 0xA0000;
 
 pub const STAGE2_HEAP_START: u32 = 0x10000; // 64 KB
 pub const STAGE2_HEAP_END: u32 = LOWMEM_END; // 640 KB
-pub const STAGE2_BASE: u32 = 0x800000; // Start of stage2 area excluding heap
-pub const STAGE2_STACK_END: u32 = STAGE2_BASE;
-pub const STAGE2_STACK_PAGE: u32 = 0x806000;
-pub const STAGE2_INFO_SZ: u32 = size_of::<Stage2LaunchInfo>() as u32;
-pub const STAGE2_STACK: u32 = STAGE2_STACK_PAGE + 0x1000 - STAGE2_INFO_SZ;
+pub const BLDR_BASE: u32 = 0x800000; // Start of boot loader area excluding heap
+pub const BLDR_STACK_END: u32 = BLDR_BASE;
+pub const BLDR_STACK_PAGE: u32 = 0x806000;
+pub const BLDR_INFO_SZ: u32 = size_of::<Stage2LaunchInfo>() as u32;
+pub const BLDR_STACK: u32 = BLDR_STACK_PAGE + 0x1000 - BLDR_INFO_SZ;
 pub const CPUID_PAGE: u32 = 0x807000;
 // Stage2 is loaded at 8 MB + 32 KB
-pub const STAGE2_START: u32 = 0x808000;
-pub const STAGE2_MAXLEN: u32 = 0x8D0000 - STAGE2_START;
+pub const BLDR_START: u32 = 0x808000;
+pub const BLDR_MAXLEN: u32 = 0x8D0000 - BLDR_START;
 
 #[derive(Copy, Clone, Debug, Immutable, IntoBytes)]
 #[repr(C)]
@@ -41,7 +41,7 @@ pub struct KernelLaunchInfo {
     pub kernel_direct_map_vaddr: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
-    pub stage2_start: u64,
+    pub bldr_start: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
     pub idt_vaddr: u64,

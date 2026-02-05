@@ -10,13 +10,13 @@
 pub mod boot_stage2;
 
 use bootdefs::boot_params::BootParamBlock;
+use bootdefs::kernel_launch::BLDR_STACK;
+use bootdefs::kernel_launch::BLDR_STACK_END;
+use bootdefs::kernel_launch::BLDR_START;
 use bootdefs::kernel_launch::KernelLaunchInfo;
 use bootdefs::kernel_launch::LOWMEM_END;
 use bootdefs::kernel_launch::STAGE2_HEAP_END;
 use bootdefs::kernel_launch::STAGE2_HEAP_START;
-use bootdefs::kernel_launch::STAGE2_STACK;
-use bootdefs::kernel_launch::STAGE2_STACK_END;
-use bootdefs::kernel_launch::STAGE2_START;
 use bootdefs::kernel_launch::Stage2LaunchInfo;
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
@@ -184,8 +184,8 @@ fn init_percpu(platform: &mut dyn SvsmPlatform) -> Result<(), SvsmError> {
     let percpu_shared = unsafe { PERCPU_AREAS.create_new(0) };
     let bsp_percpu = PerCpu::alloc(percpu_shared)?;
     bsp_percpu.set_current_stack(MemoryRegion::from_addresses(
-        VirtAddr::from(STAGE2_STACK_END as u64),
-        VirtAddr::from(STAGE2_STACK as u64),
+        VirtAddr::from(BLDR_STACK_END as u64),
+        VirtAddr::from(BLDR_STACK as u64),
     ));
     // SAFETY: pgtable is properly aligned and is never freed within the
     // lifetime of stage2. We go through a raw pointer to promote it to a
@@ -243,9 +243,9 @@ unsafe fn setup_env(
         .expect("Early environment setup failed");
 
     let kernel_mapping = FixedAddressMappingRange::new(
-        VirtAddr::from(u64::from(STAGE2_START)),
+        VirtAddr::from(u64::from(BLDR_START)),
         VirtAddr::from(u64::from(launch_info.stage2_end)),
-        PhysAddr::from(u64::from(STAGE2_START)),
+        PhysAddr::from(u64::from(BLDR_START)),
     );
 
     if let Some(cpuid_addr) = cpuid_vaddr {

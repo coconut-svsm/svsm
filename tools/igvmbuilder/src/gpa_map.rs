@@ -7,11 +7,11 @@
 use std::error::Error;
 use std::fs::metadata;
 
+use bootdefs::kernel_launch::BLDR_BASE;
+use bootdefs::kernel_launch::BLDR_MAXLEN;
+use bootdefs::kernel_launch::BLDR_STACK_PAGE;
+use bootdefs::kernel_launch::BLDR_START;
 use bootdefs::kernel_launch::CPUID_PAGE;
-use bootdefs::kernel_launch::STAGE2_BASE;
-use bootdefs::kernel_launch::STAGE2_MAXLEN;
-use bootdefs::kernel_launch::STAGE2_STACK_PAGE;
-use bootdefs::kernel_launch::STAGE2_START;
 
 use igvm_defs::PAGE_SIZE_4K;
 
@@ -68,8 +68,8 @@ impl GpaRange {
 
 #[derive(Debug)]
 struct GpaLayoutInfo {
-    stage2_image: GpaRange,
-    stage2_stack: GpaRange,
+    bldr_image: GpaRange,
+    bldr_stack: GpaRange,
     boot_param_block: GpaRange,
     kernel_fs_start: u64,
 }
@@ -78,8 +78,8 @@ struct GpaLayoutInfo {
 pub struct GpaMap {
     pub base_addr: u64,
     pub stage1_image: GpaRange,
-    pub stage2_stack: GpaRange,
-    pub stage2_image: GpaRange,
+    pub bldr_stack: GpaRange,
+    pub bldr_image: GpaRange,
     pub cpuid_page: GpaRange,
     pub kernel_fs: GpaRange,
     pub boot_param_block: GpaRange,
@@ -103,9 +103,9 @@ impl GpaMap {
         //   0x00D000-0x00EFFF: initial page tables for SIPI stub
         //   0x00F000-0x00FFFF: SIPI stub
         //   0x800000-0x805FFF: zero-filled (must be pre-validated)
-        //   0x806000-0x806FFF: initial stage 2 stack page
+        //   0x806000-0x806FFF: initial boot loader stack page
         //   0x807000-0x807FFF: CPUID page
-        //   0x808000-0x8nnnnn: stage 2 image
+        //   0x808000-0x8nnnnn: boot loader image
         //   0x8nnnnn-0x8nnnnn: IGVM parameter block
         //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
@@ -166,25 +166,25 @@ impl GpaMap {
         };
         let boot_param_layout = BootParamLayout::new(include_guest_context);
 
-        // If stage2 is present, then get its size and configure the data it
-        // requires.
+        // If a boot loader is present, then get its size and configure the
+        // data it requires.
         let gpa_layout_info = if let Some(stage2) = options.stage2.as_ref() {
             let stage2_len = Self::get_metadata(stage2)?.len() as usize;
-            if stage2_len > STAGE2_MAXLEN as usize {
+            if stage2_len > BLDR_MAXLEN as usize {
                 return Err(format!(
-                    "Stage2 binary size ({stage2_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+                    "Stage2 binary size ({stage2_len:#x}) exceeds limit: {BLDR_MAXLEN:#x}"
                 )
                 .into());
             }
 
-            let stage2_image = GpaRange::new(STAGE2_START.into(), stage2_len as u64)?;
+            let stage2_image = GpaRange::new(BLDR_START.into(), stage2_len as u64)?;
             let boot_param_block = GpaRange::new(
                 stage2_image.get_end(),
                 boot_param_layout.total_size() as u64,
             )?;
             GpaLayoutInfo {
-                stage2_image,
-                stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                bldr_image: stage2_image,
+                bldr_stack: GpaRange::new_page(BLDR_STACK_PAGE.into())?,
                 boot_param_block,
                 kernel_fs_start: boot_param_block.get_end(),
             }
@@ -193,30 +193,29 @@ impl GpaMap {
             // ranges.  Since the two are mutually exclusive, there is no
             // conflict.
             let bldr_len = Self::get_metadata(bldr)?.len() as usize;
-            if bldr_len > STAGE2_MAXLEN as usize {
+            if bldr_len > BLDR_MAXLEN as usize {
                 return Err(format!(
-                    "Boot loader binary size ({bldr_len:#x}) exceeds limit: {STAGE2_MAXLEN:#x}"
+                    "Boot loader binary size ({bldr_len:#x}) exceeds limit: {BLDR_MAXLEN:#x}"
                 )
                 .into());
             }
 
-            let bldr_image = GpaRange::new(STAGE2_START.into(), bldr_len as u64)?;
+            let bldr_image = GpaRange::new(BLDR_START.into(), bldr_len as u64)?;
             GpaLayoutInfo {
-                stage2_image: bldr_image,
-                stage2_stack: GpaRange::new_page(STAGE2_STACK_PAGE.into())?,
+                bldr_image,
+                bldr_stack: GpaRange::new_page(BLDR_STACK_PAGE.into())?,
                 boot_param_block: GpaRange::new(0, 0)?,
                 kernel_fs_start: bldr_image.get_end(),
             }
         } else {
-            let stage2_image = GpaRange::new(STAGE2_BASE.into(), 0)?;
+            let bldr_image = GpaRange::new(BLDR_BASE.into(), 0)?;
             GpaLayoutInfo {
-                stage2_image,
-                stage2_stack: stage2_image,
+                bldr_image,
+                bldr_stack: bldr_image,
                 boot_param_block: GpaRange::new(0, 0)?,
-                kernel_fs_start: stage2_image.get_end(),
+                kernel_fs_start: bldr_image.get_end(),
             }
         };
-
         // Obtain the length of the kernel filesystem.
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
@@ -240,10 +239,10 @@ impl GpaMap {
         };
 
         let gpa_map = Self {
-            base_addr: STAGE2_BASE.into(),
+            base_addr: BLDR_BASE.into(),
             stage1_image,
-            stage2_stack: gpa_layout_info.stage2_stack,
-            stage2_image: gpa_layout_info.stage2_image,
+            bldr_stack: gpa_layout_info.bldr_stack,
+            bldr_image: gpa_layout_info.bldr_image,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
             boot_param_block: gpa_layout_info.boot_param_block,

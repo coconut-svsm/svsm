@@ -382,7 +382,7 @@ impl IgvmBuilder {
             kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
             kernel_region_start: self.gpa_map.kernel.get_start(),
             kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
-            stage2_start: self.gpa_map.base_addr,
+            bldr_start: self.gpa_map.base_addr,
             vtom: self.vtom,
         };
         let boot_image_info = prepare_boot_image(
@@ -397,13 +397,13 @@ impl IgvmBuilder {
             },
         )?;
 
-        // Process stage2 data if present.
+        // Process boot loader data if present.
         let (start_context_info, image_layout) = if let Some(stage2) = self.options.stage2.as_ref()
         {
             // Populate the stage 2 binary.
             self.add_data_pages_from_file(
                 &stage2.clone(),
-                self.gpa_map.stage2_image.get_start(),
+                self.gpa_map.bldr_image.get_start(),
                 COMPATIBILITY_MASK.get(),
             )?;
 
@@ -420,7 +420,7 @@ impl IgvmBuilder {
             if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
                 stage2_stack.stack_data().platform_type = SvsmPlatformType::Snp as u32;
                 stage2_stack.add_directive(
-                    self.gpa_map.stage2_stack.get_start(),
+                    self.gpa_map.bldr_stack.get_start(),
                     SNP_COMPATIBILITY_MASK,
                     &mut self.directives,
                 );
@@ -428,7 +428,7 @@ impl IgvmBuilder {
             if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
                 stage2_stack.stack_data().platform_type = SvsmPlatformType::Tdp as u32;
                 stage2_stack.add_directive(
-                    self.gpa_map.stage2_stack.get_start(),
+                    self.gpa_map.bldr_stack.get_start(),
                     TDP_COMPATIBILITY_MASK,
                     &mut self.directives,
                 );
@@ -438,15 +438,15 @@ impl IgvmBuilder {
             if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
                 stage2_stack.stack_data().platform_type = SvsmPlatformType::Native as u32;
                 stage2_stack.add_directive(
-                    self.gpa_map.stage2_stack.get_start(),
+                    self.gpa_map.bldr_stack.get_start(),
                     ANY_NATIVE_COMPATIBILITY_MASK,
                     &mut self.directives,
                 )
             }
 
             // Construct a native context object to capture the start context.
-            let start_rip = self.gpa_map.stage2_image.get_start();
-            let start_rsp = self.gpa_map.stage2_stack.get_end() - size_of::<Stage2Stack>() as u64;
+            let start_rip = self.gpa_map.bldr_image.get_start();
+            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<Stage2Stack>() as u64;
             let start_context_info = StartContextInfo {
                 start_rip,
                 start_rsp,
@@ -463,7 +463,7 @@ impl IgvmBuilder {
             // Populate the boot loader binary.
             self.add_data_pages_from_file(
                 &bldr.clone(),
-                self.gpa_map.stage2_image.get_start(),
+                self.gpa_map.bldr_image.get_start(),
                 COMPATIBILITY_MASK.get(),
             )?;
 
@@ -478,15 +478,14 @@ impl IgvmBuilder {
             let bldr_stack =
                 BootLoaderStack::new(&self.gpa_map, &boot_image_info, &init_page_table_info);
             bldr_stack.add_directive(
-                self.gpa_map.stage2_stack.get_start(),
+                self.gpa_map.bldr_stack.get_start(),
                 COMPATIBILITY_MASK.get(),
                 &mut self.directives,
             );
 
             // Construct a native context object to capture the start context.
-            let start_rip = self.gpa_map.stage2_image.get_start();
-            let start_rsp =
-                self.gpa_map.stage2_stack.get_end() - size_of::<BootLoaderStack>() as u64;
+            let start_rip = self.gpa_map.bldr_image.get_start();
+            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BootLoaderStack>() as u64;
             let start_context_info = StartContextInfo {
                 start_rip,
                 start_rsp,
@@ -719,9 +718,9 @@ impl IgvmBuilder {
             )?;
         }
 
-        // Populate the empty region below the stage2 stack page.
-        // This region is used for stage2 stack at runtime.
-        let stack_base = self.gpa_map.stage2_stack.get_start();
+        // Populate the empty region below the boot loader stack page.  This
+        // region is used for the boot loader stack at runtime.
+        let stack_base = self.gpa_map.bldr_stack.get_start();
         if stack_base > self.gpa_map.base_addr {
             self.add_empty_pages(
                 self.gpa_map.base_addr,
