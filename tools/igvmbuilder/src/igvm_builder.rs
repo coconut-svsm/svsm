@@ -15,7 +15,6 @@ use std::mem::size_of;
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
-use bootdefs::platform::SvsmPlatformType;
 use bootimg::BootImageError;
 use bootimg::BootImageParams;
 use bootimg::prepare_boot_image;
@@ -40,8 +39,6 @@ use crate::context::construct_vmsa;
 use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{Firmware, parse_firmware};
 use crate::initial_stack::BootLoaderStack;
-use crate::initial_stack::InitialStack;
-use crate::initial_stack::Stage2Stack;
 use crate::paging::setup_init_page_tables;
 use crate::platform::PlatformMask;
 use crate::sipi::add_sipi_stub;
@@ -398,68 +395,7 @@ impl IgvmBuilder {
         )?;
 
         // Process boot loader data if present.
-        let (start_context_info, image_layout) = if let Some(stage2) = self.options.stage2.as_ref()
-        {
-            // Populate the stage 2 binary.
-            self.add_data_pages_from_file(
-                &stage2.clone(),
-                self.gpa_map.bldr_image.get_start(),
-                COMPATIBILITY_MASK.get(),
-            )?;
-
-            // Construct initial page tables if required.
-            let init_page_table_info = setup_init_page_tables(
-                self.gpa_map.init_page_tables.get_start(),
-                ANY_NATIVE_COMPATIBILITY_MASK,
-                &mut self.directives,
-            );
-
-            // Populate the stage 2 stack.  This has different contents on each
-            // platform.
-            let mut stage2_stack = Stage2Stack::new(&self.gpa_map, &boot_image_info);
-            if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
-                stage2_stack.stack_data().platform_type = SvsmPlatformType::Snp as u32;
-                stage2_stack.add_directive(
-                    self.gpa_map.bldr_stack.get_start(),
-                    SNP_COMPATIBILITY_MASK,
-                    &mut self.directives,
-                );
-            }
-            if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
-                stage2_stack.stack_data().platform_type = SvsmPlatformType::Tdp as u32;
-                stage2_stack.add_directive(
-                    self.gpa_map.bldr_stack.get_start(),
-                    TDP_COMPATIBILITY_MASK,
-                    &mut self.directives,
-                );
-            }
-            // Native must be added last because it changes the common contents
-            // of the stack data.
-            if COMPATIBILITY_MASK.contains(ANY_NATIVE_COMPATIBILITY_MASK) {
-                stage2_stack.stack_data().platform_type = SvsmPlatformType::Native as u32;
-                stage2_stack.add_directive(
-                    self.gpa_map.bldr_stack.get_start(),
-                    ANY_NATIVE_COMPATIBILITY_MASK,
-                    &mut self.directives,
-                )
-            }
-
-            // Construct a native context object to capture the start context.
-            let start_rip = self.gpa_map.bldr_image.get_start();
-            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<Stage2Stack>() as u64;
-            let start_context_info = StartContextInfo {
-                start_rip,
-                start_rsp,
-                initial_cr3: init_page_table_info.paging_root,
-                long_mode: false,
-            };
-            let image_layout = ImageLayout {
-                cpuid_addr: self.gpa_map.cpuid_page.get_start(),
-                boot_params_gpa: self.gpa_map.boot_param_block.get_start(),
-                stage2_boot_params: true,
-            };
-            (start_context_info, image_layout)
-        } else if let Some(ref bldr) = self.options.bldr {
+        let (start_context_info, image_layout) = if let Some(bldr) = self.options.bldr.as_ref() {
             // Populate the boot loader binary.
             self.add_data_pages_from_file(
                 &bldr.clone(),
@@ -499,12 +435,11 @@ impl IgvmBuilder {
             };
             (start_context_info, image_layout)
         } else {
-            // Either a boot loader or stage2 is required on TDP and on SNP
-            // when VTOM is not enabled.
+            // A boot loader is required on TDP and on SNP when VTOM is not enabled.
             if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK)
                 || (COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) && self.vtom == 0)
             {
-                return Err("--bldr or --stage2 required but not specified".into());
+                return Err("--bldr required but not specified".into());
             }
 
             // Generate a start context that describes the kernel entry point.
@@ -686,24 +621,17 @@ impl IgvmBuilder {
             )?;
         }
         if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
-            // Insert a zero page in place of the CPUID page.  If not using
-            // stage2, this should be placed at the kernel CPUID location and
-            // not the stage2 CPUID location since the boot loader will not
-            // take action to copy the empty page.  This means the page at the
-            // boot loader address will not be accepted, but it's not
-            // referenced in the boot loader so the lack of acceptance will
-            // not cause a problem.  When the boot loader range is invalidated
-            // later by the kernel, this page will already be invalidated,
-            // but since invalidation on TDX is a no-op, this will not create
-            // any problems.
-            let cpuid_addr = if self.options.stage2.is_some() {
-                image_layout.cpuid_addr
-            } else {
-                boot_image_info.cpuid_paddr
-            };
-
+            // Insert a zero page in place of the CPUID page.  This should be
+            // placed at the kernel CPUID location and not the boot loader
+            // CPUID location since the boot loader will not take action to
+            // copy the empty page.  This means the page at the boot loader
+            // address will not be accepted, but it's not referenced in the
+            // boot loader so the lack of acceptance will not cause a problem.
+            // When the boot loader range is invalidated later by the kernel,
+            // this page will already be invalidated, but since invalidation on
+            // TDX is a no-op, this will not create any problems.
             self.add_empty_pages(
-                cpuid_addr,
+                boot_image_info.cpuid_paddr,
                 PAGE_SIZE_4K,
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,

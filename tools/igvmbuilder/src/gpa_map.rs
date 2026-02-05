@@ -70,7 +70,6 @@ impl GpaRange {
 struct GpaLayoutInfo {
     bldr_image: GpaRange,
     bldr_stack: GpaRange,
-    boot_param_block: GpaRange,
     kernel_fs_start: u64,
 }
 
@@ -82,7 +81,6 @@ pub struct GpaMap {
     pub bldr_image: GpaRange,
     pub cpuid_page: GpaRange,
     pub kernel_fs: GpaRange,
-    pub boot_param_block: GpaRange,
     pub boot_param_layout: BootParamLayout,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
@@ -106,15 +104,8 @@ impl GpaMap {
         //   0x806000-0x806FFF: initial boot loader stack page
         //   0x807000-0x807FFF: CPUID page
         //   0x808000-0x8nnnnn: boot loader image
-        //   0x8nnnnn-0x8nnnnn: IGVM parameter block
-        //   0x8nnnnn-0x8nnnnn: general and memory map parameter pages
         //   0x8nnnnn-0x8nnnnn: filesystem
         //   0xFFnn0000-0xFFFFFFFF: [TDX stage 1 +] OVMF firmware (QEMU only, if specified)
-
-        // Only one of stage 2 and the boot loader can be specified.
-        if options.stage2.is_some() && options.bldr.is_some() {
-            return Err("Cannot specify both --bldr and --stage2".into());
-        }
 
         let stage1_image = if let Some(stage1) = &options.tdx_stage1 {
             if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
@@ -168,30 +159,7 @@ impl GpaMap {
 
         // If a boot loader is present, then get its size and configure the
         // data it requires.
-        let gpa_layout_info = if let Some(stage2) = options.stage2.as_ref() {
-            let stage2_len = Self::get_metadata(stage2)?.len() as usize;
-            if stage2_len > BLDR_MAXLEN as usize {
-                return Err(format!(
-                    "Stage2 binary size ({stage2_len:#x}) exceeds limit: {BLDR_MAXLEN:#x}"
-                )
-                .into());
-            }
-
-            let stage2_image = GpaRange::new(BLDR_START.into(), stage2_len as u64)?;
-            let boot_param_block = GpaRange::new(
-                stage2_image.get_end(),
-                boot_param_layout.total_size() as u64,
-            )?;
-            GpaLayoutInfo {
-                bldr_image: stage2_image,
-                bldr_stack: GpaRange::new_page(BLDR_STACK_PAGE.into())?,
-                boot_param_block,
-                kernel_fs_start: boot_param_block.get_end(),
-            }
-        } else if let Some(ref bldr) = options.bldr {
-            // For simplicity, the boot loader ranges are encoded as stage2
-            // ranges.  Since the two are mutually exclusive, there is no
-            // conflict.
+        let gpa_layout_info = if let Some(bldr) = options.bldr.as_ref() {
             let bldr_len = Self::get_metadata(bldr)?.len() as usize;
             if bldr_len > BLDR_MAXLEN as usize {
                 return Err(format!(
@@ -204,7 +172,6 @@ impl GpaMap {
             GpaLayoutInfo {
                 bldr_image,
                 bldr_stack: GpaRange::new_page(BLDR_STACK_PAGE.into())?,
-                boot_param_block: GpaRange::new(0, 0)?,
                 kernel_fs_start: bldr_image.get_end(),
             }
         } else {
@@ -212,7 +179,6 @@ impl GpaMap {
             GpaLayoutInfo {
                 bldr_image,
                 bldr_stack: bldr_image,
-                boot_param_block: GpaRange::new(0, 0)?,
                 kernel_fs_start: bldr_image.get_end(),
             }
         };
@@ -224,7 +190,7 @@ impl GpaMap {
         };
 
         // The kernel filesystem is placed after all other images so it can
-        // mark the end of the valid stage2 memory area.
+        // mark the end of the valid boot loader memory area.
         let kernel_fs = GpaRange::new(gpa_layout_info.kernel_fs_start, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
@@ -245,7 +211,6 @@ impl GpaMap {
             bldr_image: gpa_layout_info.bldr_image,
             cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
             kernel_fs,
-            boot_param_block: gpa_layout_info.boot_param_block,
             boot_param_layout,
             kernel: GpaRange::new(kernel_base, kernel_min_size)?,
             kernel_min_size: kernel_min_size.try_into().unwrap(),
