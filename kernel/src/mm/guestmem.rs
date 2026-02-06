@@ -418,13 +418,11 @@ impl<T> From<NonNull<T>> for GuestPtr<T> {
     }
 }
 
-impl<T: FromBytes + IntoBytes> InsnMachineMem for GuestPtr<T> {
-    type Item = T;
-
+impl<T: FromBytes + IntoBytes> InsnMachineMem<T> for GuestPtr<T> {
     /// # Safety
     ///
     /// See the GuestPtr's read() method documentation for safety requirements.
-    unsafe fn mem_read(&self) -> Result<Self::Item, InsnError> {
+    unsafe fn mem_read(&self) -> Result<T, InsnError> {
         // SAFETY: Safe when GuestPtr::read safety requirements are met.
         unsafe { self.read().map_err(|_| InsnError::MemRead) }
     }
@@ -432,7 +430,7 @@ impl<T: FromBytes + IntoBytes> InsnMachineMem for GuestPtr<T> {
     /// # Safety
     ///
     /// See the GuestPtr's write() method documentation for safety requirements.
-    unsafe fn mem_write(&mut self, data: Self::Item) -> Result<(), InsnError> {
+    unsafe fn mem_write(&mut self, data: T) -> Result<(), InsnError> {
         // SAFETY: Safe when GuestPtr::write safety requirements are met.
         unsafe { self.write(data).map_err(|_| InsnError::MemWrite) }
     }
