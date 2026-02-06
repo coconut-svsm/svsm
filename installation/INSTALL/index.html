@@ -1,0 +1,1339 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../..">
+      
+      
+        <link rel="next" href="../BUILD_RECIPES/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Installing the COCONUT-SVSM - COCONUT-SVSM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#installing-the-coconut-svsm" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="COCONUT-SVSM" class="md-header__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COCONUT-SVSM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Installing the COCONUT-SVSM
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="COCONUT-SVSM" class="md-nav__button md-logo" aria-label="COCONUT-SVSM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    COCONUT-SVSM
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building and launching
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Building and launching
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installing the COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#preparing-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preparing the Host
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-qemu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building QEMU
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-guest-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the guest firmware
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preparing-the-guest-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preparing the guest image
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-coconut-svsm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the COCONUT-SVSM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#putting-it-all-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting it all together
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launch Script
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debugging-using-gdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debugging using GDB
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build Recipe Documentation
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Build Recipe Documentation
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../BUILD_RECIPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT Build Recipes Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Information
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Information
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/DEVELOPMENT-PLAN/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Plan Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/RUSTDOC-GUIDELINES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rustdoc Guidelines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/FUZZING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fuzzing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing to COCONUT-SVSM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/VERIFICATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formal Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/ATTESTATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../rustdoc/svsm" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COCONUT-SVSM Rustdoc
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#preparing-the-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preparing the Host
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-qemu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building QEMU
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-guest-firmware" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the guest firmware
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#preparing-the-guest-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Preparing the guest image
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#building-the-coconut-svsm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the COCONUT-SVSM
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#putting-it-all-together" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Putting it all together
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#launch-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launch Script
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debugging-using-gdb" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Debugging using GDB
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="installing-the-coconut-svsm">Installing the COCONUT-SVSM</h1>
+<p>Installation of the COCONUT-SVSM requires some components that are not
+upstream in their respective repositories yet:</p>
+<ul>
+<li>Linux host kernel with SVSM support</li>
+<li>Linux guest kernel with SVSM support</li>
+<li>EDK2 with SVSM support</li>
+<li>A modified QEMU which supports launching guests configured using IGVM</li>
+<li>The SVSM source-code repository</li>
+</ul>
+<p>The next sections will guide through the process of installing these
+components and running the SVSM. All steps require a Linux environment
+on the host.</p>
+<h2 id="preparing-the-host">Preparing the Host</h2>
+<p>To run the SVSM a host machine with an AMD EPYC Generation 3 or newer
+processor is required. Also make sure that SEV-SNP is enabled in the
+BIOS settings.</p>
+<p>A patched kernel which has the SEV-SNP host patches as well as the SVSM
+support patches applied is needed on the host machine.</p>
+<p>A repository based on the SNP-host patches with support for
+<code>guest-memfd</code> and SVSM support on-top is available here:
+<a href="https://github.com/coconut-svsm/linux">https://github.com/coconut-svsm/linux</a>.
+It is based on kernel 6.5 and code written by AMD to support <a href="https://github.com/AMDESE/linux-svsm/">linux-svsm</a>.</p>
+<p>To use it, check out the svsm branch:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/linux
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>linux
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>svsm
+</span></code></pre></div>
+<p>Build, install and boot a kernel from that branch. For best chances of
+success use a kernel configuration provided by the distribution. Make
+sure the configuration includes support for AMD Secure Processor which is
+a requirement for SEV support (<code>CONFIG_KVM_AMD_SEV</code>). On openSUSE (other
+distributions may vary) the kernel configuration can be obtained by:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>gunzip<span class="w"> </span>-c<span class="w"> </span>/proc/config.gz<span class="w"> </span>&gt;<span class="w"> </span>.config
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>make<span class="w"> </span>olddefconfig
+</span></code></pre></div>
+<p>After the new kernel is booted, the kernel log contains SEV-SNP
+initialization messages:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>$ dmesg | grep SEV
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>[    4.224504] SEV-SNP: RMP table physical address [0x0000000064000000 - 0x00000000747fffff]
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>[    8.437424] ccp 0000:42:00.1: SEV firmware update successful
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>[    9.404744] ccp 0000:42:00.1: SEV API:1.51 build:3
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>[    9.410251] ccp 0000:42:00.1: SEV-SNP API:1.51 build:3
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>[   11.340252] kvm_amd: SEV supported: 382 ASIDs
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>[   11.340253] kvm_amd: SEV-ES and SEV-SNP supported: 127 ASIDs
+</span></code></pre></div>
+<p>If the kernel log contains messages similar to these, the host machine is ready
+to run AMD SEV-SNP guests.</p>
+<h2 id="building-qemu">Building QEMU</h2>
+<p>COCONUT-SVSM is packaged during the build into a file conforming to the
+<a href="https://docs.rs/igvm_defs/0.1.3/igvm_defs/index.html">Independent Guest Virtual Machine (IGVM)
+format</a>. Current versions
+of QEMU do not support launching guests using IGVM, but a branch is available
+that includes this capability. This will need to be built in order to be able to
+launch COCONUT-SVSM.</p>
+<p>First make sure to have all build requirements for QEMU installed. RPM
+and DEB based distributions provide ways to install build dependencies
+for a given package. On openSUSE the source repositories need to be
+enabled and then the packages can be installed by:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>sudo<span class="w"> </span>zypper<span class="w"> </span>refresh
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>sudo<span class="w"> </span>zypper<span class="w"> </span>si<span class="w"> </span>-d<span class="w"> </span>qemu-kvm
+</span></code></pre></div>
+<p>Support for IGVM within QEMU depends on the IGVM library. This needs to be
+built and installed prior to building QEMU. Newer versions of the IGVM library
+require <code>cargo-c</code> to build, install it with:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>cargo<span class="w"> </span>install<span class="w"> </span>cargo-c
+</span></code></pre></div>
+<p>When <code>cargo-c</code> is installed, a local IGVM library and header can be built:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/microsoft/igvm
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>igvm
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">DESTDIR</span><span class="o">=</span><span class="nv">$HOME</span>/igvminst<span class="w"> </span>make<span class="w"> </span>-f<span class="w"> </span>igvm_c/Makefile<span class="w"> </span>install
+</span></code></pre></div>
+<p>After the build dependencies are installed, clone the QEMU repository
+and switch to the branch that supports IGVM:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/qemu
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">cd</span><span class="w"> </span>qemu
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>svsm-igvm
+</span></code></pre></div>
+<p>Now the right branch is checked out and you can continue with the build.
+Feel free to adapt the installation directory to your needs:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nv">PKGCONFIG_PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PKGCONFIG_PATH</span><span class="si">}</span><span class="s2">:</span><span class="nv">$HOME</span><span class="s2">/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/&quot;</span><span class="w"> </span>./configure<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span>--prefix<span class="o">=</span><span class="nv">$HOME</span>/bin/qemu-svsm/<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span>--target-list<span class="o">=</span>x86_64-softmmu<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span>--enable-igvm
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nv">C_INCLUDE_PATH</span><span class="o">=</span><span class="nv">$HOME</span>/igvminst/usr/include/<span class="w"> </span><span class="nv">LIBRARY_PATH</span><span class="o">=</span><span class="nv">$HOME</span>/igvminst/usr/lib/x86_64-linux-gnu/<span class="w"> </span>ninja<span class="w"> </span>-C<span class="w"> </span>build/
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>make<span class="w"> </span>install
+</span></code></pre></div>
+<p>QEMU is now installed and ready to run an AMD SEV-SNP guest with an
+SVSM embedded in an IGVM file.</p>
+<h2 id="building-the-guest-firmware">Building the guest firmware</h2>
+<p>A special OVMF build is required to launch a guest on top of the
+COCONUT-SVSM. The changes also build on the EDK2 patches from AMD for
+linux-svsm. But these changes were re-based and enhanced to support the
+COCONUT-SVSM code base. To build the OVMF binary for the guest, checkout
+this repository:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/edk2.git
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">cd</span><span class="w"> </span>edk2/
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>svsm
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>git<span class="w"> </span>submodule<span class="w"> </span>init
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>git<span class="w"> </span>submodule<span class="w"> </span>update
+</span></code></pre></div>
+<p>Also make sure to have the build dependencies for OVMF installed. On
+openSUSE you can do this by:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>sudo<span class="w"> </span>zypper<span class="w"> </span>si<span class="w"> </span>-d<span class="w"> </span>qemu-ovmf-x86_64
+</span></code></pre></div>
+<p>Then go back to the EDK2 source directory and follow the steps below to
+build the firmware. <code>-D TPM2_ENABLE</code> is required only if you want to use
+the SVSM vTPM.</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHON3_ENABLE</span><span class="o">=</span>TRUE
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHON_COMMAND</span><span class="o">=</span>python3
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>make<span class="w"> </span>-j16<span class="w"> </span>-C<span class="w"> </span>BaseTools/
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="nb">source</span><span class="w"> </span>./edksetup.sh<span class="w"> </span>--reconfig
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>build<span class="w"> </span>-p<span class="w"> </span>OvmfPkg/OvmfPkgX64.dsc<span class="w"> </span>-a<span class="w"> </span>X64<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">      </span>-b<span class="w"> </span>DEBUG<span class="w"> </span>-t<span class="w"> </span>GCC<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">      </span>-D<span class="w"> </span>DEBUG_ON_SERIAL_PORT<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">      </span>-D<span class="w"> </span>DEBUG_VERBOSE<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span>-D<span class="w"> </span>TPM2_ENABLE<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">      </span>--pcd<span class="w"> </span><span class="nv">PcdUninstallMemAttrProtocol</span><span class="o">=</span>TRUE
+</span></code></pre></div>
+<p>This will build the OVMF binary that will be packaged into the IGVM file to use
+with QEMU.</p>
+<p>The switch <code>--pcd PcdUninstallMemAttrProtocol=TRUE</code> is required for booting
+guest images of distros that still ship shim/GRUB without proper support
+for the <code>EFI_MEMORY_ATTRIBUTE_PROTOCOL</code>.</p>
+<p>You can copy the firmware file to a known location after the build is complete:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>cp<span class="w"> </span>Build/OvmfX64/DEBUG_GCC5/FV/OVMF.fd<span class="w"> </span>/path/to/firmware/
+</span></code></pre></div>
+<h2 id="preparing-the-guest-image">Preparing the guest image</h2>
+<p>The guest image for the SEV-SNP SVSM guest needs to have a kernel
+installed that supports the SVSM request protocol and running in a
+lower-privileged VMPL than VMPL0. If you already experimented with the
+linux-svsm you can re-use the guest image.</p>
+<p>Otherwise you need to build a new guest kernel. From within the guest
+image, do:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/linux
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">cd</span><span class="w"> </span>linux
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>git<span class="w"> </span>checkout<span class="w"> </span>svsm
+</span></code></pre></div>
+<p>Build a kernel from that branch and install it in the guest image. For
+the guest kernel configuration you can follow the same steps as for the
+host kernel. Best results are achieved by re-using the kernel
+configuration from the distribution like for the host kernel.</p>
+<p>The <code>CONFIG_TCG_PLATFORM</code> is required in the guest kernel if you want to
+use the SVSM vTPM.</p>
+<h2 id="building-the-coconut-svsm">Building the COCONUT-SVSM</h2>
+<p>Building the SVSM itself requires:</p>
+<ul>
+<li>a recent Rust compiler and build environment installed. Please refer to
+  <a href="https://rustup.rs/">https://rustup.rs/</a> on how to get this environment installed.</li>
+<li><code>x86_64-unknown-none</code> target toolchain installed (<code>rustup target add x86_64-unknown-none</code>)</li>
+<li><code>binutils</code> &gt;= 2.39</li>
+</ul>
+<p>You may also need to install the TPM 2.0 Reference Implementation build
+dependencies. On OpenSUSE you can do this by:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>sudo<span class="w"> </span>zypper<span class="w"> </span><span class="k">in</span><span class="w"> </span>system-user-mail<span class="w"> </span>make<span class="w"> </span>gcc<span class="w"> </span>gcc-c++<span class="w"> </span>curl<span class="w"> </span>patterns-devel-base-devel_basis<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">      </span>glibc-devel-static<span class="w"> </span>git<span class="w"> </span>libclang13<span class="w"> </span>cmake<span class="w"> </span>pkg-config<span class="w"> </span>perl
+</span></code></pre></div>
+<p>Then checkout the SVSM repository and build the SVSM binary:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/coconut-svsm/svsm
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="nb">cd</span><span class="w"> </span>svsm
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+</span></code></pre></div>
+<p>That checks out the SVSM which can be built by</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-15-1"><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nv">FW_FILE</span><span class="o">=</span>/path/to/firmware/OVMF.fd<span class="w"> </span>cargo<span class="w"> </span>xbuild<span class="w"> </span>configs/qemu-target.json
+</span></code></pre></div>
+<p>to get a debug build of the SVSM, or</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nv">FW_FILE</span><span class="o">=</span>/path/to/firmware/OVMF.fd<span class="w"> </span>cargo<span class="w"> </span>xbuild<span class="w"> </span>--release<span class="w"> </span>configs/qemu-target.json
+</span></code></pre></div>
+<p>to build the SVSM with the release target. When the build is finished
+there is the <code>svsm.bin</code> file in the <code>bin</code> directory at the top level of the
+repository. This is the file which needs to be passed to QEMU.</p>
+<p>The project also contains a number of unit-tests which can be run by</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>make<span class="w"> </span><span class="nb">test</span>
+</span></code></pre></div>
+<p>Unit tests can be run inside the SVSM by</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nv">QEMU</span><span class="o">=</span>/path/to/qemu<span class="w"> </span>make<span class="w"> </span>test-in-svsm
+</span></code></pre></div>
+<p>Note: to compile the test kernel used for unit tests, we use the nightly
+toolchain, so if the test kernel build fails, try installing the
+<code>x86_64-unknown-none</code> target for the nightly toolchain via your distro or
+using rustup:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-19-1"><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>rustup<span class="w"> </span>+nightly<span class="w"> </span>target<span class="w"> </span>add<span class="w"> </span>x86_64-unknown-none
+</span></code></pre></div>
+<p>Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
+different paths. If this is the case, they can be provided as environment
+variables, e.g.</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">ACPI_RSDP_PATH</span><span class="o">=</span>path/to/acpi/rsdp<span class="w"> </span><span class="nv">ACPI_TABLES_PATH</span><span class="o">=</span>path/to/acpi/tables<span class="w"> </span><span class="nv">FW_FILE</span><span class="o">=</span>/path/to/firmware/OVMF.fd<span class="w"> </span>make
+</span></code></pre></div>
+<p>This should only be necessary if using an alternate hypervisor and if SVSM panics
+with an error such as <code>Failed to load ACPI tables: FwCfg(FileNotFound)</code>. The default
+values are <code>etc/acpi/rsdp</code> and <code>etc/acpi/tables</code>, respectively.</p>
+<h2 id="putting-it-all-together">Putting it all together</h2>
+<p>The guest is launched using the QEMU built in the previous step. It
+needs to run as root because it accesses the /dev/sev device, which is
+limited to the root user.</p>
+<p>There are a couple of parameters required to launch an AMD SEV-SNP
+guest:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-21-1"><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>  -cpu EPYC-v4 \
+</span><span id="__span-21-2"><a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>  -machine q35,confidential-guest-support=sev0,memory-backend=ram1,igvm-cfg=igvm0 \
+</span><span id="__span-21-3"><a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>  -object memory-backend-memfd,id=ram1,size=8G,share=true,prealloc=false,reserve=false \
+</span><span id="__span-21-4"><a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>  -object sev-snp-guest,id=sev0,cbitpos=51,reduced-phys-bits=1 \
+</span><span id="__span-21-5"><a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>  -object igvm-cfg,id=igvm0,file=/path/to/coconut-qemu.igvm
+</span></code></pre></div>
+<p>This selects the <code>EPYC-v4</code> CPU type which will pass the CPUID validation
+done by the AMD security processor. It also allocates memory from the
+<code>memory-backend-memfd-private</code> backend, which is a requirement to run
+SEV-SNP guests. An <code>sev-snp-guest</code> object needs to be defined to enable
+SEV-SNP protection for the guest. The <code>igvm-file</code> parameter informs QEMU to load
+and configure the guest using directives in the specified IGVM file, which
+contains both the COCONUT-SVSM and OVMF binary images.</p>
+<p>With these extensions QEMU will launch an SEV-SNP protected guest with
+the COCONUT-SVSM.</p>
+<p>A complete QEMU command-line may look like this:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">IGVM</span><span class="o">=</span>/path/to/coconut-qemu.igvm
+</span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>sudo<span class="w"> </span><span class="nv">$HOME</span>/bin/qemu-svsm/bin/qemu-system-x86_64<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span>-enable-kvm<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-4"><a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">  </span>-cpu<span class="w"> </span>EPYC-v4<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-5"><a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">  </span>-machine<span class="w"> </span>q35,confidential-guest-support<span class="o">=</span>sev0,memory-backend<span class="o">=</span>ram1,igvm-cfg<span class="o">=</span>igvm0<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-6"><a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="w">  </span>-object<span class="w"> </span>memory-backend-memfd,id<span class="o">=</span>ram1,size<span class="o">=</span>8G,share<span class="o">=</span>true,prealloc<span class="o">=</span>false,reserve<span class="o">=</span><span class="nb">false</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-7"><a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="w">  </span>-object<span class="w"> </span>sev-snp-guest,id<span class="o">=</span>sev0,cbitpos<span class="o">=</span><span class="m">51</span>,reduced-phys-bits<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-8"><a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="w">  </span>-object<span class="w"> </span>igvm-cfg,id<span class="o">=</span>igvm0,file<span class="o">=</span><span class="nv">$IGVM</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-9"><a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="w">  </span>-smp<span class="w"> </span><span class="m">8</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-10"><a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="w">  </span>-no-reboot<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-11"><a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a><span class="w">  </span>-netdev<span class="w"> </span>user,id<span class="o">=</span>vmnic<span class="w"> </span>-device<span class="w"> </span>e1000,netdev<span class="o">=</span>vmnic,romfile<span class="o">=</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-12"><a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a><span class="w">  </span>-drive<span class="w"> </span><span class="nv">file</span><span class="o">=</span>/path/to/guest/image.qcow2,if<span class="o">=</span>none,id<span class="o">=</span>disk0,format<span class="o">=</span>qcow2,snapshot<span class="o">=</span>off<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-13"><a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a><span class="w">  </span>-device<span class="w"> </span>virtio-scsi-pci,id<span class="o">=</span>scsi0,disable-legacy<span class="o">=</span>on,iommu_platform<span class="o">=</span>on<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-14"><a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a><span class="w">  </span>-device<span class="w"> </span>scsi-hd,drive<span class="o">=</span>disk0,bootindex<span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-15"><a id="__codelineno-22-15" name="__codelineno-22-15" href="#__codelineno-22-15"></a><span class="w">  </span>-vga<span class="w"> </span>none<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-16"><a id="__codelineno-22-16" name="__codelineno-22-16" href="#__codelineno-22-16"></a><span class="w">  </span>-serial<span class="w"> </span>stdio<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-22-17"><a id="__codelineno-22-17" name="__codelineno-22-17" href="#__codelineno-22-17"></a><span class="w">  </span>-serial<span class="w"> </span>pty
+</span></code></pre></div>
+<p>Note: With QEMU 10.1 (which includes IGVM support), guests may fail to boot
+during VGA initialization. The <code>-vga none</code> option is added temporarily to
+disable VGA init until this issue is resolved.</p>
+<p>If everything works, initialization messages of the SVSM should appear
+in the terminal:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-23-1"><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>[Stage2] COCONUT Secure Virtual Machine Service Module (SVSM) Stage 2 Loader
+</span><span id="__span-23-2"><a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>[Stage2] Mapping kernel region 0xffffff8000000000-0xffffff8010000000 to 0x0000008000000000
+</span><span id="__span-23-3"><a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>[Stage2] Order-00: total pages:    11 free pages:     1
+</span><span id="__span-23-4"><a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>[Stage2] Order-01: total pages:     2 free pages:     1
+</span><span id="__span-23-5"><a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>[Stage2] Order-02: total pages:     0 free pages:     0
+</span><span id="__span-23-6"><a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>[Stage2] Order-03: total pages:     1 free pages:     1
+</span><span id="__span-23-7"><a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>[Stage2] Order-04: total pages:     2 free pages:     2
+</span><span id="__span-23-8"><a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>[Stage2] Order-05: total pages:     2 free pages:     2
+</span><span id="__span-23-9"><a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a>[Stage2] Total memory: 476KiB free memory: 428KiB
+</span><span id="__span-23-10"><a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a>[Stage2]   kernel_physical_start = 0x0000008000000000
+</span><span id="__span-23-11"><a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a>[Stage2]   kernel_physical_end   = 0x0000008010000000
+</span><span id="__span-23-12"><a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a>[Stage2]   kernel_virtual_base   = 0xffffff8000000000
+</span><span id="__span-23-13"><a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a>[Stage2]   cpuid_page            = 0x000000000009f000
+</span><span id="__span-23-14"><a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a>[Stage2]   secrets_page          = 0x000000000009e000
+</span><span id="__span-23-15"><a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a>[Stage2] Launching SVSM kernel...
+</span><span id="__span-23-16"><a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a>[SVSM] COCONUT Secure Virtual Machine Service Module (SVSM)
+</span><span id="__span-23-17"><a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a>[SVSM] Order-00: total pages:    22 free pages:     0
+</span><span id="__span-23-18"><a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a>[SVSM] Order-01: total pages:     2 free pages:     1
+</span><span id="__span-23-19"><a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a>[SVSM] Order-02: total pages:     0 free pages:     0
+</span><span id="__span-23-20"><a id="__codelineno-23-20" name="__codelineno-23-20" href="#__codelineno-23-20"></a>[SVSM] Order-03: total pages:     1 free pages:     1
+</span><span id="__span-23-21"><a id="__codelineno-23-21" name="__codelineno-23-21" href="#__codelineno-23-21"></a>[SVSM] Order-04: total pages:     0 free pages:     0
+</span><span id="__span-23-22"><a id="__codelineno-23-22" name="__codelineno-23-22" href="#__codelineno-23-22"></a>[SVSM] Order-05: total pages:  2042 free pages:  2042
+</span><span id="__span-23-23"><a id="__codelineno-23-23" name="__codelineno-23-23" href="#__codelineno-23-23"></a>[SVSM] Total memory: 261512KiB free memory: 261416KiB
+</span><span id="__span-23-24"><a id="__codelineno-23-24" name="__codelineno-23-24" href="#__codelineno-23-24"></a>[SVSM] Boot stack starts        @ 0xffffff800001b000
+</span><span id="__span-23-25"><a id="__codelineno-23-25" name="__codelineno-23-25" href="#__codelineno-23-25"></a>[SVSM] BSP Runtime stack starts @ 0xffffff0000204000
+</span><span id="__span-23-26"><a id="__codelineno-23-26" name="__codelineno-23-26" href="#__codelineno-23-26"></a>[SVSM] Guest Memory Regions:
+</span><span id="__span-23-27"><a id="__codelineno-23-27" name="__codelineno-23-27" href="#__codelineno-23-27"></a>[SVSM]   000000000000000000-000000000080000000
+</span><span id="__span-23-28"><a id="__codelineno-23-28" name="__codelineno-23-28" href="#__codelineno-23-28"></a>[SVSM]   000000000100000000-000000000270000000
+</span><span id="__span-23-29"><a id="__codelineno-23-29" name="__codelineno-23-29" href="#__codelineno-23-29"></a>[SVSM] 8 CPU(s) present
+</span><span id="__span-23-30"><a id="__codelineno-23-30" name="__codelineno-23-30" href="#__codelineno-23-30"></a>...
+</span></code></pre></div>
+<h2 id="launch-script">Launch Script</h2>
+<p>A script is provided in <code>scripts/launch_guest.sh</code> that makes it easy to launch a
+guest that supports SEV-SNP with COCONUT-SVSM. If the QEMU built in the previous
+step is installed and in your PATH then you can start the guest by running the
+script from the root of the repository:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>scripts/launch_guest.sh
+</span></code></pre></div>
+<p>The path to QEMU can also be specified either by setting the <code>QEMU</code> variable, or
+by passing the path as a parameter:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nv">QEMU</span><span class="o">=</span>/path/to/qemu-system-x86_64<span class="w"> </span>scripts/launch_guest.sh
+</span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>
+</span><span id="__span-25-3"><a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>scripts/launch_guest.sh<span class="w"> </span>--qemu<span class="w"> </span>/path/to/qemu-system-x86_64
+</span></code></pre></div>
+<p>The script supports a number of other options described in the table below</p>
+<table>
+<thead>
+<tr>
+<th>Command-line</th>
+<th>Variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--qemu [path]</code></td>
+<td>QEMU</td>
+<td>qemu-system-x86_64</td>
+<td>Path to QEMU binary to use.</td>
+</tr>
+<tr>
+<td><code>--igvm [path]</code></td>
+<td>IGVM</td>
+<td>bin/coconut-qemu.igvm</td>
+<td>Path to the IGVM binary to launch.</td>
+</tr>
+<tr>
+<td><code>--image [path]</code></td>
+<td>IMAGE</td>
+<td>[None]</td>
+<td>The QEMU disk image to use. If unset then no disk is provided on the guest.</td>
+</tr>
+<tr>
+<td><code>--debugserial</code></td>
+<td>N/A</td>
+<td>not set</td>
+<td>Define a second serial port that can be used with the COCONUT-SVSM GDB stub.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="debugging-using-gdb">Debugging using GDB</h2>
+<p>The SVSM can be built to incorporate a GDB stub that can be used to provide full
+source-level debugging of the SVSM kernel code. To enable the GDB stub pass
+<code>FEATURES=enable-gdb</code> to the <code>make</code> command line:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-26-1"><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nv">FW_FILE</span><span class="o">=</span>/path/to/firmware/OVMF.fd<span class="w"> </span>make<span class="w"> </span><span class="nv">FEATURES</span><span class="o">=</span>enable-gdb
+</span></code></pre></div>
+<p>The GDB stub remains dormant until a CPU exception occurs, either through a
+kernel panic or via a debug breakpoint, at which time the GDB stub will await a
+serial port connection and display this message in the console:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>[SVSM] ***********************************
+</span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>[SVSM] * Waiting for connection from GDB *
+</span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>[SVSM] ***********************************
+</span></code></pre></div>
+<p>The GDB stub uses a hardware serial port at IO port 0x2f8, which is the second
+simulated serial port in the QEMU configuration. Using the example configuration
+above, the serial port is configured using <code>-serial pty</code>.</p>
+<p>QEMU will create a virtual serial port on the host at <code>/dev/pts/[n]</code> where <code>[n]</code>
+is the device index. This index will be reported by QEMU in the console when the
+virtual machine is started. You can then connect GDB to the waiting SVSM using
+the command, replacing <code>[n]</code> with the correct device index:</p>
+<div class="language-shell highlight"><pre><span></span><code><span id="__span-28-1"><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>sudo<span class="w"> </span>gdb<span class="w"> </span>--ex<span class="w"> </span><span class="s2">&quot;target extended-remote /dev/pts/[n]`</span>
+</span></code></pre></div>
+<p>If you have the source code available on the host system then you can add the
+debug symbols and use source-level debugging:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-29-1"><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>(gdb) symbol-file target/x86_64-unknown-none/debug/svsm
+</span></code></pre></div>
+<p>Note that some GDB features are not available for debugging the SVSM kernel due
+to limited debug capabilities inside an AMD SEV-SNP confidential container. Some
+of these limitations may be addressed in future updates.</p>
+<ul>
+<li>Hardware breakpoints and watchpoints are not yet supported.</li>
+<li>Interrupting a running kernel with Ctrl-C is not possible. You must insert a
+  forced breakpoint in the code to enter the debugger before stepping through
+  target code.</li>
+<li>Debugging is currently limited to the SVSM kernel itself. OVMF and the guest
+  OS cannot be debugged using the SVSM GDB stub.</li>
+</ul>
+<p>Have a lot of fun!</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
