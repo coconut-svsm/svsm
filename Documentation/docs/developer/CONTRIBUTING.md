@@ -52,6 +52,30 @@ from the projects root directory.
 For detailed instructions on documentation guidelines please have a look at
 [RUSTDOC-GUIDELINES.md](RUSTDOC-GUIDELINES.md).
 
+Linting
+-------
+
+In addition to ```rustfmt```, it is recommended to run ```clippy``` before
+submitting changes to catch common mistakes and improve code quality.
+The Makefile provides a ```clippy``` target that runs it with the
+appropriate target and options for each crate:
+
+```
+make clippy
+```
+
+To check all feature combinations using ```cargo-hack```:
+
+```
+make clippy CARGO_HACK=1
+```
+
+This requires ```cargo-hack``` to be installed:
+
+```
+cargo install cargo-hack
+```
+
 Fuzzing
 -------
 
