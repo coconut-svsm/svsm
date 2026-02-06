@@ -112,6 +112,8 @@ pub enum SvsmError {
     Console,
     /// Errors related to firmware configuration contents
     FwCfg(FwCfgError),
+    /// Errors related to IGVM parameter parsing.
+    Igvm,
     /// Errors related to ACPI parsing.
     Acpi,
     /// Errors from the filesystem.

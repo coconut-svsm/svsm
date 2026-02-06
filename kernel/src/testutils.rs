@@ -1,5 +1,5 @@
 use crate::platform::SVSM_PLATFORM;
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::platform::SvsmPlatformType;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 static HAS_QEMU_TESTDEV: AtomicBool = AtomicBool::new(false);

@@ -16,7 +16,7 @@ use crate::error::SvsmError;
 use crate::types::PAGE_SIZE;
 use crate::types::PAGE_SIZE_1G;
 
-use bootlib::kernel_launch::SIPI_STUB_PT_GPA;
+use bootdefs::kernel_launch::SIPI_STUB_PT_GPA;
 
 /// The `TransitionPageTable` structure represents a temporary set of page
 /// tables to be used by secondary processors as they are started.  It

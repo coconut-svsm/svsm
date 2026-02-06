@@ -7,18 +7,19 @@
 extern crate alloc;
 
 use crate::address::PhysAddr;
-use crate::config::SvsmConfig;
+use crate::boot_params::BootParams;
 use crate::error::SvsmError;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::types::PageSize;
 use crate::utils::{MemoryRegion, page_align_up};
-use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::kernel_launch::LOWMEM_END;
 
 use alloc::vec::Vec;
 
 fn invalidate_boot_memory_region(
     platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     // Caller must ensure the memory region's starting address is page-aligned
@@ -31,7 +32,7 @@ fn invalidate_boot_memory_region(
             platform.validate_physical_page_range(aligned_region, PageValidateOp::Invalidate)
         }?;
 
-        if config.page_state_change_required() {
+        if boot_params.page_state_change_required() {
             platform.page_state_change(
                 aligned_region,
                 PageSize::Regular,
@@ -44,7 +45,7 @@ fn invalidate_boot_memory_region(
 }
 
 pub fn enumerate_early_boot_regions(
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     launch_info: &KernelLaunchInfo,
 ) -> Vec<MemoryRegion<PhysAddr>> {
     let mut regions = Vec::new();
@@ -53,7 +54,7 @@ pub fn enumerate_early_boot_regions(
     // page table to avoid invalidating page tables currently in use.  Always
     // invalidate stage 2 memory, unless firmware is loaded into low memory.
     // Also invalidate the boot data if required.
-    if !config.fw_in_low_memory() {
+    if !boot_params.fw_in_low_memory() {
         regions.push(MemoryRegion::from_addresses(
             PhysAddr::from(0u64),
             PhysAddr::from(u64::from(LOWMEM_END)),
@@ -74,11 +75,11 @@ pub fn enumerate_early_boot_regions(
 
 pub fn invalidate_early_boot_memory(
     platform: &dyn SvsmPlatform,
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     regions: &[MemoryRegion<PhysAddr>],
 ) -> Result<(), SvsmError> {
     for region in regions {
-        invalidate_boot_memory_region(platform, config, *region)?;
+        invalidate_boot_memory_region(platform, boot_params, *region)?;
     }
 
     Ok(())

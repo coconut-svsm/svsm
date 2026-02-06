@@ -9,8 +9,10 @@ use std::fs::File;
 use std::io::Read;
 use std::mem::size_of;
 
-use bootlib::firmware::*;
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo, IgvmParamBlockFwMem};
+use bootdefs::boot_params::GuestFwInfoBlock;
+use bootdefs::boot_params::GuestFwMemInfo;
+use bootdefs::boot_params::InitialGuestContext;
+use bootdefs::firmware::*;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;
@@ -48,7 +50,7 @@ trait Metadata {
     fn parse<'a>(
         &mut self,
         data: &'a [u8],
-        fw_info: &mut IgvmParamBlockFwInfo,
+        fw_info: &mut GuestFwInfoBlock,
     ) -> Result<&'a [u8], Box<dyn Error>>;
 }
 
@@ -70,7 +72,7 @@ impl Metadata for SevMetadata {
     fn parse<'a>(
         &mut self,
         data: &'a [u8],
-        fw_info: &mut IgvmParamBlockFwInfo,
+        fw_info: &mut GuestFwInfoBlock,
     ) -> Result<&'a [u8], Box<dyn Error>> {
         let (entry, remainder) = SevMetadataEntry::read_from_prefix(data)
             .map_err(|e| format!("Cannot parse SEV metadata entry: {e}"))?;
@@ -108,7 +110,7 @@ impl Metadata for TdxMetadata {
     fn parse<'a>(
         &mut self,
         data: &'a [u8],
-        _fw_info: &mut IgvmParamBlockFwInfo,
+        _fw_info: &mut GuestFwInfoBlock,
     ) -> Result<&'a [u8], Box<dyn Error>> {
         let (_entry, remainder) = TdxMetadataEntry::read_from_prefix(data)
             .map_err(|e| format!("Cannot parse TDX metadata entry: {e}"))?;
@@ -143,7 +145,7 @@ impl Metadata for IgvmMetadata {
     fn parse<'a>(
         &mut self,
         data: &'a [u8],
-        fw_info: &mut IgvmParamBlockFwInfo,
+        fw_info: &mut GuestFwInfoBlock,
     ) -> Result<&'a [u8], Box<dyn Error>> {
         let (entry, remainder) = IgvmMetadataEntry::read_from_prefix(data)
             .map_err(|e| format!("Cannot parse IGVM metadata entry: {e}"))?;
@@ -217,7 +219,7 @@ fn region_merge(this: (u32, u32), that: (u32, u32)) -> Option<(u32, u32)> {
 }
 
 fn add_preval_region(
-    fw_info: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut GuestFwInfoBlock,
     base: u32,
     size: u32,
 ) -> Result<(), Box<dyn Error>> {
@@ -242,7 +244,7 @@ fn add_preval_region(
             merged.0,
             merged.0 as u64 + merged.1 as u64
         );
-        *preval = IgvmParamBlockFwMem {
+        *preval = GuestFwMemInfo {
             base: merged.0,
             size: merged.1,
         };
@@ -250,7 +252,7 @@ fn add_preval_region(
         if preval_count >= fw_info.prevalidated.len() {
             return Err("OVMF metadata defines too many memory regions".into());
         }
-        fw_info.prevalidated[preval_count] = IgvmParamBlockFwMem { base, size };
+        fw_info.prevalidated[preval_count] = GuestFwMemInfo { base, size };
         fw_info.prevalidated_count += 1;
     }
     Ok(())
@@ -277,7 +279,7 @@ fn parse_metadata(
     data: &[u8],
     fw_img: &[u8],
     metadata: &mut dyn Metadata,
-    fw_info: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut GuestFwInfoBlock,
 ) -> Result<(), Box<dyn Error>> {
     let offset_from_end = GuidBlockMetadata::read_from_bytes(data)
         .map_err(|e| format!("Cannot parse OVMF metadata descriptor: {e}"))?
@@ -300,17 +302,14 @@ fn parse_metadata(
 
 fn parse_sev_info_block(
     _data: &[u8],
-    _fw_info: &mut IgvmParamBlockFwInfo,
+    _fw_info: &mut GuestFwInfoBlock,
 ) -> Result<(), Box<dyn Error>> {
     // Not currently used
     //fw_info.reset_addr = read_u32(data)?;
     Ok(())
 }
 
-fn parse_reset_vector(
-    data: &[u8],
-    fw_info: &mut IgvmParamBlockFwInfo,
-) -> Result<u32, Box<dyn Error>> {
+fn parse_reset_vector(data: &[u8], fw_info: &mut GuestFwInfoBlock) -> Result<u32, Box<dyn Error>> {
     let rv_info = GuidBlockResetVector::read_from_bytes(data)
         .map_err(|e| format!("Cannot parse OVMF reset vector: {e}"))?;
     let vector_off = fw_info
@@ -327,7 +326,7 @@ fn parse_reset_vector(
 fn parse_inner_table<'a>(
     data: &'a [u8],
     fw_img: &[u8],
-    fw_info: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut GuestFwInfoBlock,
     compat_mask: &mut u32,
 ) -> Result<&'a [u8], Box<dyn Error>> {
     let (uuid, body, remainder) = read_table(data)?;
@@ -343,7 +342,7 @@ fn parse_inner_table<'a>(
     Ok(remainder)
 }
 
-fn check_regions(fw_info: &IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
+fn check_regions(fw_info: &GuestFwInfoBlock) -> Result<(), Box<dyn Error>> {
     let flash_range = {
         let one_gib = 1u32 << 30;
         (3 * one_gib, one_gib) // (start, size)
@@ -376,7 +375,7 @@ fn check_regions(fw_info: &IgvmParamBlockFwInfo) -> Result<(), Box<dyn Error>> {
 
 pub fn parse_ovmf(
     data: &[u8],
-    fw_info: &mut IgvmParamBlockFwInfo,
+    fw_info: &mut GuestFwInfoBlock,
     compat_mask: &mut u32,
 ) -> Result<(), Box<dyn Error>> {
     // The OVMF metadata UUID is stored at a specific offset from the end of the file.
@@ -395,7 +394,7 @@ pub fn parse_ovmf(
 }
 
 pub struct OvmfFirmware {
-    fw_info: IgvmParamBlockFwInfo,
+    fw_info: GuestFwInfoBlock,
     directives: Vec<IgvmDirectiveHeader>,
 }
 
@@ -418,7 +417,7 @@ impl OvmfFirmware {
         if in_file.read_to_end(&mut data)? != len {
             return Err("Failed to read OVMF file".into());
         }
-        let mut fw_info = IgvmParamBlockFwInfo {
+        let mut fw_info = GuestFwInfoBlock {
             // OVMF is located to end at 4GB by default.
             // len is guaranteed not to overflow or underflow the result.
             start: ((1usize << 32) - len) as u32,
@@ -461,7 +460,7 @@ impl Firmware for OvmfFirmware {
         &self.directives
     }
 
-    fn get_guest_context(&self) -> Option<IgvmGuestContext> {
+    fn get_guest_context(&self) -> Option<InitialGuestContext> {
         None
     }
 
@@ -469,7 +468,7 @@ impl Firmware for OvmfFirmware {
         0
     }
 
-    fn get_fw_info(&self) -> IgvmParamBlockFwInfo {
+    fn get_fw_info(&self) -> GuestFwInfoBlock {
         self.fw_info
     }
 }

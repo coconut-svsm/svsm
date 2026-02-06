@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::{platform::SvsmPlatformType, symbols::KSym};
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
@@ -30,7 +29,7 @@ pub const CPUID_PAGE: u32 = 0x807000;
 pub const STAGE2_START: u32 = 0x808000;
 pub const STAGE2_MAXLEN: u32 = 0x8D0000 - STAGE2_START;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Immutable, IntoBytes)]
 #[repr(C)]
 pub struct KernelLaunchInfo {
     /// Start of the kernel in physical memory.
@@ -47,17 +46,31 @@ pub struct KernelLaunchInfo {
     pub stage2_start: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
-    pub igvm_params_virt_addr: u64,
-    pub kernel_symtab_start: *const KSym,
+    pub boot_params_virt_addr: u64,
+    pub kernel_symtab_start: u64,
     pub kernel_symtab_len: u64,
-    pub kernel_strtab_start: *const u8,
+    pub kernel_strtab_start: u64,
     pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
     pub debug_serial_port: u16,
+    pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
-    pub platform_type: SvsmPlatformType,
+    pub _reserved: [bool; 3],
+}
+
+pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Immutable, IntoBytes)]
+pub struct InitialKernelStack {
+    // These fields are referenced by assembly and must remain in this order
+    // unless the kernel start function is updated to match.
+    pub _reserved: [u64; 512 - INITIAL_KERNEL_STACK_WORDS],
+    pub paging_root: u64,
+    pub launch_info_vaddr: u64,
+    pub stack_limit: u64,
 }
 
 // Stage 2 launch info from stage1
@@ -83,7 +96,7 @@ pub struct Stage2LaunchInfo {
     pub kernel_elf_end: u32,
     pub kernel_fs_start: u32,
     pub kernel_fs_end: u32,
-    pub igvm_params: u32,
+    pub boot_params: u32,
     pub _reserved: u32,
 }
 

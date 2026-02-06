@@ -20,7 +20,7 @@ pub mod address;
 pub mod attest;
 #[cfg(feature = "block")]
 pub mod block;
-pub mod config;
+pub mod boot_params;
 pub mod console;
 pub mod cpu;
 pub mod crypto;
@@ -30,7 +30,6 @@ pub mod fs;
 pub mod fw_cfg;
 pub mod greq;
 pub mod hyperv;
-pub mod igvm_params;
 pub mod insn_decode;
 pub mod io;
 pub mod kernel_region;
