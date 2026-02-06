@@ -179,6 +179,12 @@ fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
         initialize_block(&mut slots)?;
     }
 
+    #[cfg(feature = "vsock")]
+    {
+        use svsm::vsock::virtio_vsock::initialize_vsock;
+        initialize_vsock(&mut slots)?;
+    }
+
     Ok(())
 }
 
