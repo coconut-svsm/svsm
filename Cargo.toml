@@ -37,6 +37,8 @@ members = [
     "tools/aproxy",
     # Utility to get the C-bit location in a PTE
     "tools/cbit",
+    # Test support library
+    "test",
 ]
 
 [workspace.package]
