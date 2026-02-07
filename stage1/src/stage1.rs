@@ -8,8 +8,6 @@
 #![no_main]
 
 #[cfg(not(feature = "load-stage2"))]
-use bootdefs::boot_params::BootParamBlock;
-#[cfg(not(feature = "load-stage2"))]
 use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(feature = "load-stage2")]
 use bootdefs::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
@@ -166,32 +164,16 @@ global_asm!(
         xorl    %edx, %edx
 
         /* GPAW must be either 48 or 52 */
-    1:  xorl    %ecx, %ecx
+        xorl    %ecx, %ecx
         movl    %ecx, (%eax)
         addl    $4, %eax
         bts     %ebx, %ecx
         movl    %ecx, (%eax)
-
-        /* Jump if IgvmParamBlock.vtom has been fixed up */
-        test    %edx, %edx
-        jnz     .Lenter_stage2
-
-        movl    $({STAGE2_STACK} + {PARAM_OFF}), %edx
-        movl    (%edx), %edx
-        /* %edx: &IgvmParamBlock */
-        test    %edx, %edx
-        jz      .Lenter_stage2
-
-        /* Leave %edx intact to ensure we jump to .Lenter_stage2 */
-        mov     %edx, %eax
-        addl    ${VTOM_OFF_PARAM}, %eax
-        /* %eax: &IgvmParamBlock.vtom */
-        jmp     1b"#,
+        jmp     .Lenter_stage2
+        "#,
     STAGE2_STACK = const STAGE2_STACK,
     PLATFORM_TYPE_OFF = const offset_of!(Stage2LaunchInfo, platform_type) as u32,
-    PARAM_OFF = const offset_of!(Stage2LaunchInfo, boot_params) as u32,
     VTOM_OFF = const offset_of!(Stage2LaunchInfo, vtom) as u32,
-    VTOM_OFF_PARAM = const offset_of!(BootParamBlock, vtom) as u32,
     options(att_syntax)
 );
 
