@@ -158,22 +158,15 @@ global_asm!(
     .Lsetup_bsp_stack:
         /* Set up BSP stack for stage 2 */
         movl    $({STAGE2_STACK}), %esp
-        /* %ebx is initialized with GPAW - save (1u64 << (GPAW - 1)) to vtom */
+        /* %ebx is initialized with GPAW, so calculate the high 32 bits of
+         * VTOM as (1u32 << (GPAW - 33)) to vtom */
         subl    $33, %ebx
-        movl    $({STAGE2_STACK} + {VTOM_OFF}), %eax
-        xorl    %edx, %edx
-
-        /* GPAW must be either 48 or 52 */
-        xorl    %ecx, %ecx
-        movl    %ecx, (%eax)
-        addl    $4, %eax
-        bts     %ebx, %ecx
-        movl    %ecx, (%eax)
+        xorl    %esi, %esi
+        bts     %ebx, %esi
         jmp     .Lenter_stage2
         "#,
     STAGE2_STACK = const STAGE2_STACK,
     PLATFORM_TYPE_OFF = const offset_of!(Stage2LaunchInfo, platform_type) as u32,
-    VTOM_OFF = const offset_of!(Stage2LaunchInfo, vtom) as u32,
     options(att_syntax)
 );
 

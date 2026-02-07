@@ -289,6 +289,9 @@ pub fn construct_vmsa(
         }
     }
 
+    // RSI holds the high 32 bits of VTOM.
+    vmsa.rsi = vtom >> 32;
+
     // Include EFER.SVME on SNP platforms.
     vmsa.efer |= 0x1000;
 
