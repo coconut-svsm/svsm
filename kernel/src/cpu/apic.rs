@@ -5,7 +5,7 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use crate::cpu::idt::common::INT_INJ_VECTOR;
-use crate::cpu::percpu::{current_ghcb, this_cpu, PerCpuShared, PERCPU_AREAS};
+use crate::cpu::percpu::{PERCPU_AREAS, PerCpuShared, current_ghcb, this_cpu};
 use crate::cpu::x86::apic_post_irq;
 use crate::error::ApicError::Emulation;
 use crate::error::SvsmError;
@@ -227,11 +227,7 @@ impl LocalApic {
 
         // The PPR is the higher of the in-service interrupt priority and the
         // task priority.
-        if (ppr >> 4) > (tpr >> 4) {
-            ppr
-        } else {
-            tpr
-        }
+        if (ppr >> 4) > (tpr >> 4) { ppr } else { tpr }
     }
 
     fn get_ppr<T: GuestCpuState>(&self, cpu_state: &T) -> u8 {

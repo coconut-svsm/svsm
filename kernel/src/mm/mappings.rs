@@ -7,7 +7,7 @@
 use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::fs::FileHandle;
-use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMalloc, VMR};
+use crate::mm::vm::{Mapping, VMFileMapping, VMFileMappingFlags, VMR, VMalloc};
 use crate::task::current_task;
 
 use core::ops::Deref;

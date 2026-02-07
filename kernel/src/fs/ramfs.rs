@@ -464,7 +464,7 @@ impl Directory for RamDirectory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mm::alloc::{TestRootMem, DEFAULT_TEST_MEMORY_SIZE};
+    use crate::mm::alloc::{DEFAULT_TEST_MEMORY_SIZE, TestRootMem};
 
     #[test]
     #[cfg_attr(miri, ignore = "inline assembly")]

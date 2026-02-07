@@ -235,7 +235,12 @@ fn add_preval_region(
         ))?;
         println!(
             "Region [{:#x}-{:#x}] merged with existing pre-validated area [{:#x}-{:#x}] -> [{:#x}-{:#x}]",
-            base, base as u64 + size as u64, pstart, pstart as u64 + psize as u64, merged.0, merged.0 as u64 + merged.1 as u64
+            base,
+            base as u64 + size as u64,
+            pstart,
+            pstart as u64 + psize as u64,
+            merged.0,
+            merged.0 as u64 + merged.1 as u64
         );
         *preval = IgvmParamBlockFwMem {
             base: merged.0,

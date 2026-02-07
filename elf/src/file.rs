@@ -28,6 +28,8 @@ pub struct Elf64File<'a> {
     pub max_load_segment_align: Elf64Xword,
     /// THe section header string table may not be present
     pub sh_strtab: Option<Elf64Strtab<'a>>,
+    pub symtab: Option<Elf64Symtab<'a>>,
+    pub strtab: Option<Elf64Strtab<'a>>,
     pub dynamic: Option<Elf64Dynamic>,
 }
 
@@ -82,8 +84,7 @@ impl<'a> Elf64File<'a> {
         let mut max_load_segment_align = 0;
         let mut dynamic_file_range: Option<Elf64FileRange> = None;
         for i in 0..elf_hdr.e_phnum {
-            let phdr = Self::read_phdr_from_file(elf_file_buf, &elf_hdr, i);
-            Self::verify_phdr(&phdr, elf_file_buf.len())?;
+            let phdr = Self::read_verified_phdr(elf_file_buf, &elf_hdr, i)?;
             if phdr.p_type == Elf64Phdr::PT_LOAD {
                 let vaddr_range = phdr.vaddr_range();
                 if vaddr_range.vaddr_begin == vaddr_range.vaddr_end {
@@ -116,9 +117,7 @@ impl<'a> Elf64File<'a> {
 
         let mut sh_strtab = None;
         for i in 0..elf_hdr.e_shnum {
-            let shdr = Self::read_shdr_from_file(elf_file_buf, &elf_hdr, i);
-            Self::verify_shdr(&shdr, elf_file_buf.len(), elf_hdr.e_shnum)?;
-
+            let shdr = Self::read_verified_shdr(elf_file_buf, &elf_hdr, i)?;
             if elf_hdr.e_shstrndx != Elf64Shdr::SHN_UNDEF && i == elf_hdr.e_shstrndx {
                 if shdr.sh_type != Elf64Shdr::SHT_STRTAB {
                     return Err(ElfError::IncompatibleSectionType);
@@ -130,6 +129,9 @@ impl<'a> Elf64File<'a> {
                 sh_strtab = Some(Elf64Strtab::new(sh_strtab_buf));
             }
         }
+
+        let symtab = Self::find_symtab(elf_file_buf, &elf_hdr)?;
+        let strtab = Self::find_strtab(elf_file_buf, &elf_hdr, sh_strtab.as_ref())?;
 
         let dynamic = if let Some(dynamic_file_range) = dynamic_file_range {
             let dynamic_buf =
@@ -147,8 +149,56 @@ impl<'a> Elf64File<'a> {
             load_segments,
             max_load_segment_align,
             sh_strtab,
+            symtab,
+            strtab,
             dynamic,
         })
+    }
+
+    /// Locates and parses the `.symtab` section in the ELF file.
+    fn find_symtab(
+        elf_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+    ) -> Result<Option<Elf64Symtab<'a>>, ElfError> {
+        for i in 0..elf_hdr.e_shnum {
+            let shdr = Self::read_verified_shdr(elf_buf, elf_hdr, i)?;
+            if shdr.sh_type != Elf64Shdr::SHT_SYMTAB {
+                continue;
+            }
+            let range = shdr.file_range();
+            let buf = &elf_buf[range.offset_begin..range.offset_end];
+            return Ok(Some(Elf64Symtab::new(buf, shdr.sh_entsize)?));
+        }
+        Ok(None)
+    }
+
+    /// Locates and parses the `.strtab` section in the ELF file.
+    fn find_strtab(
+        elf_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        sh_strtab: Option<&Elf64Strtab<'a>>,
+    ) -> Result<Option<Elf64Strtab<'a>>, ElfError> {
+        let Some(shstr) = sh_strtab else {
+            return Ok(None);
+        };
+
+        for i in 0..elf_hdr.e_shnum {
+            let shdr = Self::read_verified_shdr(elf_buf, elf_hdr, i)?;
+            if shdr.sh_type != Elf64Shdr::SHT_STRTAB {
+                continue;
+            }
+
+            // `.sh_strtab` has the same `sh_type`, so look at the name as well
+            let name = shstr.get_str(shdr.sh_name)?;
+            if name != c".strtab" {
+                continue;
+            }
+
+            let range = shdr.file_range();
+            let buf = &elf_buf[range.offset_begin..range.offset_end];
+            return Ok(Some(Elf64Strtab::new(buf)));
+        }
+        Ok(None)
     }
 
     /// Reads an ELF Program Header (Phdr) from the ELF file buffer.
@@ -203,6 +253,19 @@ impl<'a> Elf64File<'a> {
         }
 
         Ok(())
+    }
+
+    /// Reads an ELF program header (Phdr) from the ELF file buffer and verifies it.
+    /// This essentially calls [`Self::read_phdr_from_file()`] and [`Self::verify_phdr()`]
+    /// in sequence.
+    fn read_verified_phdr(
+        buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        i: Elf64Half,
+    ) -> Result<Elf64Phdr, ElfError> {
+        let phdr = Self::read_phdr_from_file(buf, elf_hdr, i);
+        Self::verify_phdr(&phdr, buf.len())?;
+        Ok(phdr)
     }
 
     /// Reads an ELF Program Header (Phdr) from the ELF file.
@@ -317,6 +380,19 @@ impl<'a> Elf64File<'a> {
         }
 
         Ok(())
+    }
+
+    /// Reads an ELF section header (Shdr) from the ELF file buffer and verifies it.
+    /// This essentially calls [`Self::read_shdr_from_file()`] and [`Self::verify_shdr()`]
+    /// in sequence.
+    fn read_verified_shdr(
+        elf_file_buf: &'a [u8],
+        elf_hdr: &Elf64Hdr,
+        i: Elf64Word,
+    ) -> Result<Elf64Shdr, ElfError> {
+        let shdr = Self::read_shdr_from_file(elf_file_buf, elf_hdr, i);
+        Self::verify_shdr(&shdr, elf_file_buf.len(), elf_hdr.e_shnum)?;
+        Ok(shdr)
     }
 
     /// Reads an ELF Section Header (Shdr) from the ELF file.

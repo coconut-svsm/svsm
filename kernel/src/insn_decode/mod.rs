@@ -12,7 +12,7 @@ pub use decode::{DecodedInsnCtx, InsnMachineCtx, InsnMachineMem};
 #[cfg(any(test, fuzzing))]
 pub use insn::test_utils::TestCtx;
 pub use insn::{
-    DecodedInsn, Immediate, Instruction, Operand, Register, SegRegister, MAX_INSN_SIZE,
+    DecodedInsn, Immediate, Instruction, MAX_INSN_SIZE, Operand, Register, SegRegister,
 };
 
 /// An error that can occur during instruction decoding.

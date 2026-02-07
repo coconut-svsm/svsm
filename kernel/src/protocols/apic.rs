@@ -6,8 +6,8 @@
 
 use crate::cpu::percpu::this_cpu;
 use crate::platform::SVSM_PLATFORM;
-use crate::protocols::errors::SvsmReqError;
 use crate::protocols::RequestParams;
+use crate::protocols::errors::SvsmReqError;
 
 const SVSM_REQ_APIC_QUERY_FEATURES: u32 = 0;
 const SVSM_REQ_APIC_CONFIGURE: u32 = 1;

@@ -6,11 +6,11 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::types::*;
 use super::Elf64AddrRange;
 use super::Elf64File;
 use super::Elf64FileRange;
 use super::ElfError;
+use super::types::*;
 use bitflags::bitflags;
 
 bitflags! {
@@ -64,6 +64,9 @@ impl Elf64Shdr {
 
     /// Represents a null section type
     pub const SHT_NULL: Elf64Word = 0;
+
+    // Represents a symbol table
+    pub const SHT_SYMTAB: Elf64Word = 2;
 
     /// Represents a string table section type
     pub const SHT_STRTAB: Elf64Word = 3;

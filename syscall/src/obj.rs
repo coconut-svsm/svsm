@@ -4,8 +4,8 @@
 //
 // Author: Chuanxiao Dong <chuanxiao.dong@intel.com>
 
-use super::call::syscall1;
 use super::SYS_CLOSE;
+use super::call::syscall1;
 
 /// The object is exposed to the user mode via the object-opening related
 /// syscalls, which returns the id of the object created by the COCONUT-SVSM

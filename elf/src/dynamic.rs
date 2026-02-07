@@ -6,9 +6,9 @@
 //
 // vim: ts=4 sw=4 et
 
-use super::types::*;
 use super::Elf64AddrRange;
 use super::ElfError;
+use super::types::*;
 
 /// Represents an ELF64 dynamic relocation table
 #[derive(Debug, PartialEq, Copy, Clone)]

@@ -6,9 +6,9 @@
 
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
-use crate::cpu::msr::{write_msr, SEV_GHCB};
+use crate::cpu::msr::{SEV_GHCB, write_msr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::{flush_tlb_global_sync, IrqGuard, X86GeneralRegs};
+use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync};
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -17,18 +17,18 @@ use crate::mm::virt_to_phys;
 use crate::platform::PageStateChangeOp;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::utils::raw_vmgexit;
-use crate::types::{Bytes, PageSize, GUEST_VMPL, PAGE_SIZE_2M};
+use crate::types::{Bytes, GUEST_VMPL, PAGE_SIZE_2M, PageSize};
 use crate::utils::MemoryRegion;
 
 use crate::mm::PageBox;
 use core::arch::global_asm;
-use core::mem::{self, offset_of, MaybeUninit};
+use core::mem::{self, MaybeUninit, offset_of};
 use core::ops::Deref;
 use core::ptr;
-use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 
 use super::msr_protocol::{invalidate_page_msr, register_ghcb_gpa_msr, validate_page_msr};
-use super::{pvalidate, PvalidateOp};
+use super::{PvalidateOp, pvalidate};
 
 use zerocopy::{FromZeros, Immutable, IntoBytes};
 
@@ -828,7 +828,7 @@ impl GHCB {
     }
 }
 
-extern "C" {
+unsafe extern "C" {
     pub fn switch_to_vmpl_unsafe(hv_doorbell: *const HVDoorbell, vmpl: u32) -> bool;
 }
 

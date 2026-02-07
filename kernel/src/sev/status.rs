@@ -4,7 +4,7 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use crate::cpu::msr::{read_msr, SEV_STATUS};
+use crate::cpu::msr::{SEV_STATUS, read_msr};
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use bitflags::bitflags;
 use core::fmt::{self, Write};

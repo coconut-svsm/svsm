@@ -206,7 +206,7 @@ where
     /// assert_eq!(iter.next(), Some(VirtAddr::from(0xffffff1000u64)));
     /// assert_eq!(iter.next(), None);
     /// ```
-    pub fn iter_pages(&self, size: PageSize) -> impl Iterator<Item = A> {
+    pub fn iter_pages(&self, size: PageSize) -> impl Iterator<Item = A> + use<A> {
         let size = usize::from(size);
         (self.start().bits()..self.end().bits())
             .step_by(size)

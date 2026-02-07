@@ -17,24 +17,24 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use crate::address::{Address, VirtAddr};
 use crate::cpu::idt::svsm::return_new_task;
 use crate::cpu::irq_state::EFLAGS_IF;
-use crate::cpu::percpu::{current_task, PerCpu};
+use crate::cpu::percpu::{PerCpu, current_task};
 use crate::cpu::shadow_stack::{init_shadow_stack, is_cet_ss_supported};
 use crate::cpu::sse::{get_xsave_area_size, sse_restore_context};
-use crate::cpu::{irqs_enable, ShadowStackInit, X86ExceptionContext, X86GeneralRegs};
+use crate::cpu::{ShadowStackInit, X86ExceptionContext, X86GeneralRegs, irqs_enable};
 use crate::error::SvsmError;
-use crate::fs::{opendir, stdout_open, Directory, FileHandle};
+use crate::fs::{Directory, FileHandle, opendir, stdout_open};
 use crate::locking::{RWLock, SpinLock};
 use crate::mm::pagetable::{PTEntryFlags, PageTable};
 use crate::mm::vm::{Mapping, VMFileMappingFlags, VMKernelStack, VMR};
 use crate::mm::{
-    mappings::create_anon_mapping, mappings::create_file_mapping, PageBox, VMMappingGuard,
-    SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START,
+    PageBox, SVSM_PERTASK_BASE, SVSM_PERTASK_END, USER_MEM_END, USER_MEM_START, VMMappingGuard,
+    mappings::create_anon_mapping, mappings::create_file_mapping,
 };
 use crate::platform::SVSM_PLATFORM;
 use crate::syscall::{Obj, ObjError, ObjHandle};
 use crate::types::{SVSM_USER_CS, SVSM_USER_DS};
-use crate::utils::{is_aligned, MemoryRegion};
-use intrusive_collections::{intrusive_adapter, LinkedListAtomicLink};
+use crate::utils::{MemoryRegion, is_aligned};
+use intrusive_collections::{LinkedListAtomicLink, intrusive_adapter};
 
 use super::schedule::{after_task_switch, current_task_terminated, schedule};
 use super::task_mm::{TaskKernelMapping, TaskMM};
@@ -93,7 +93,7 @@ impl KernelThreadStartInfo {
         Self {
             entry: entry as usize,
             start_parameter: T::to_usize(start_parameter),
-            start_routine: run_kernel_task::<T> as usize,
+            start_routine: run_kernel_task::<T> as *const () as usize,
         }
     }
 
@@ -105,7 +105,7 @@ impl KernelThreadStartInfo {
         Self {
             entry: entry as usize,
             start_parameter,
-            start_routine: run_kernel_task::<usize> as usize,
+            start_routine: run_kernel_task::<usize> as *const () as usize,
         }
     }
 }
@@ -311,8 +311,10 @@ impl Task {
         // Determine which kernel-mode entry/exit routines will be used for
         // this task.
         let (entry_return, exit_return) = match args.start_info {
-            ThreadStartInfo::User(_) => (return_new_task as usize, None),
-            ThreadStartInfo::Kernel(ref info) => (info.start_routine, Some(task_exit as usize)),
+            ThreadStartInfo::User(_) => (return_new_task as *const () as usize, None),
+            ThreadStartInfo::Kernel(ref info) => {
+                (info.start_routine, Some(task_exit as *const () as usize))
+            }
         };
 
         let mut shadow_stack_offset = VirtAddr::null();
@@ -570,10 +572,12 @@ impl Task {
         // To ensure stack frames are 16b-aligned, ret_addr must be 16b-aligned
         // so that (%rsp + 8) is 16b-aligned after the ret instruction in
         // switch_context
-        debug_assert!(VirtAddr::from(stack_ptr)
-            .checked_sub(8)
-            .unwrap()
-            .is_aligned(16));
+        debug_assert!(
+            VirtAddr::from(stack_ptr)
+                .checked_sub(8)
+                .unwrap()
+                .is_aligned(16)
+        );
         // Make sure there is room for TaskContext
         debug_assert!(
             (percpu_mapping.virt_addr() + bounds.start().bits())
@@ -786,7 +790,7 @@ impl Task {
         let id = ObjHandle::new(if last_key != objs.len() as u32 {
             objs.keys()
                 .enumerate()
-                .find(|(i, &key)| *i as u32 != u32::from(key))
+                .find(|&(i, key)| i as u32 != u32::from(*key))
                 .unwrap()
                 .0 as u32
         } else {
@@ -890,7 +894,7 @@ fn task_attach_console() {
 /// needs to happen in its context must be done here.
 /// # Safety
 /// The caller is required to verify the correctness of the save area address.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe fn setup_user_task(xsa_addr: u64) {
     // SAFETY: caller needs to make sure xsa_addr is valid and points to a
     // memory region of sufficient size.
@@ -955,7 +959,7 @@ fn task_exit() {
 #[cfg(all(test, test_in_svsm))]
 mod tests {
     extern crate alloc;
-    use crate::task::{start_kernel_task, KernelThreadStartInfo};
+    use crate::task::{KernelThreadStartInfo, start_kernel_task};
     use alloc::string::String;
     use core::arch::asm;
     use core::arch::global_asm;

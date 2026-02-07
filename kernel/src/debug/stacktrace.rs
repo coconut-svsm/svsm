@@ -6,8 +6,9 @@
 
 use crate::{
     address::{Address, VirtAddr},
-    cpu::idt::common::{is_exception_handler_return_site, X86ExceptionContext},
+    cpu::idt::common::{X86ExceptionContext, is_exception_handler_return_site},
     cpu::percpu::try_this_cpu,
+    debug::symbols::resolve_symbol,
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
@@ -18,7 +19,7 @@ use core::{
     mem,
 };
 
-extern "C" {
+unsafe extern "C" {
     static bsp_stack: u64;
     static bsp_stack_end: u64;
 }
@@ -124,7 +125,9 @@ impl StackUnwinder {
         let Some(stack) = self.stacks.iter().find(|stack| {
             !stack.is_empty() && (stack.contains_inclusive(rsp) || stack.contains_inclusive(rbp))
         }) else {
-            log::info!("check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack");
+            log::info!(
+                "check_unwound_frame: rsp {rsp:#018x} and rbp {rbp:#018x} does not match any known stack"
+            );
             return UnwoundStackFrame::Invalid;
         };
 
@@ -302,9 +305,19 @@ fn print_stack_frame(frame: StackFrame) {
     if !frame.is_aligned {
         let _ = annotations.write_char('#');
     }
+
     let space = if annotations.is_empty() { "" } else { " " };
 
-    log::info!("  [{:016x}]{}{}", frame.rip, space, annotations.as_str());
+    if let Some(sym) = resolve_symbol(frame.rip) {
+        log::info!(
+            "  [{:016x}]{}{} {sym}",
+            frame.rip,
+            space,
+            annotations.as_str(),
+        );
+    } else {
+        log::info!("  [{:016x}]{}{} ??", frame.rip, space, annotations.as_str());
+    }
 }
 
 pub fn print_stack(skip: usize) {

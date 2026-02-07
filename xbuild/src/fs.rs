@@ -3,8 +3,8 @@
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
 use crate::{
-    features::Features, helpers::HELPERS, run_cmd_checked, Args, BuildResult, BuildTarget,
-    Component, ComponentConfig,
+    Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features,
+    helpers::HELPERS, run_cmd_checked,
 };
 use serde::Deserialize;
 use std::collections::HashMap;

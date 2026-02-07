@@ -12,17 +12,17 @@
 #[cfg(feature = "enable-gdb")]
 pub mod svsm_gdbstub {
     use crate::address::{Address, VirtAddr};
-    use crate::cpu::control_regs::read_cr3;
-    use crate::cpu::idt::common::{X86ExceptionContext, BP_VECTOR, DB_VECTOR, VC_VECTOR};
-    use crate::cpu::percpu::this_cpu;
     use crate::cpu::X86GeneralRegs;
+    use crate::cpu::control_regs::read_cr3;
+    use crate::cpu::idt::common::{BP_VECTOR, DB_VECTOR, VC_VECTOR, X86ExceptionContext};
+    use crate::cpu::percpu::this_cpu;
     use crate::error::SvsmError;
     use crate::locking::{LockGuard, SpinLock};
-    use crate::mm::guestmem::{read_u8, write_u8};
     use crate::mm::PerCPUPageMappingGuard;
+    use crate::mm::guestmem::{read_u8, write_u8};
     use crate::platform::SvsmPlatform;
     use crate::serial::{SerialPort, Terminal};
-    use crate::task::{is_current_task, TaskContext, TaskPointer, INITIAL_TASK_ID, TASKLIST};
+    use crate::task::{INITIAL_TASK_ID, TASKLIST, TaskContext, TaskPointer, is_current_task};
     use core::arch::asm;
     use core::fmt;
     use core::sync::atomic::{AtomicU32, Ordering};
@@ -30,16 +30,16 @@ pub mod svsm_gdbstub {
     use gdbstub::conn::Connection;
     use gdbstub::stub::state_machine::GdbStubStateMachine;
     use gdbstub::stub::{GdbStubBuilder, MultiThreadStopReason};
+    use gdbstub::target::ext::base::BaseOps;
     use gdbstub::target::ext::base::multithread::{
         MultiThreadBase, MultiThreadResume, MultiThreadResumeOps, MultiThreadSingleStep,
         MultiThreadSingleStepOps,
     };
-    use gdbstub::target::ext::base::BaseOps;
     use gdbstub::target::ext::breakpoints::{Breakpoints, SwBreakpoint};
     use gdbstub::target::ext::thread_extra_info::ThreadExtraInfo;
     use gdbstub::target::{Target, TargetError};
-    use gdbstub_arch::x86::reg::X86_64CoreRegs;
     use gdbstub_arch::x86::X86_64_SSE;
+    use gdbstub_arch::x86::reg::X86_64CoreRegs;
 
     const INT3_INSTR: u8 = 0xcc;
     const MAX_BREAKPOINTS: usize = 32;
@@ -48,14 +48,16 @@ pub mod svsm_gdbstub {
     #[allow(static_mut_refs)]
     pub fn gdbstub_start(platform: &'static dyn SvsmPlatform) -> Result<(), u64> {
         // Debugger initialization must only be attempted once.
-        assert!(GDB_INIT_STATE
-            .compare_exchange(
-                GdbInitState::Uninitialized as u32,
-                GdbInitState::Initializing as u32,
-                Ordering::SeqCst,
-                Ordering::Relaxed
-            )
-            .is_ok());
+        assert!(
+            GDB_INIT_STATE
+                .compare_exchange(
+                    GdbInitState::Uninitialized as u32,
+                    GdbInitState::Initializing as u32,
+                    Ordering::SeqCst,
+                    Ordering::Relaxed
+                )
+                .is_ok()
+        );
         // SAFETY: the use of mutable statics is acceptable because their use
         // is limited to the debugger package, which uses them only during
         // interactive debugging, at which time the runtime environment is
@@ -96,7 +98,7 @@ pub mod svsm_gdbstub {
 
     pub fn handle_debug_exception(ctx: &mut X86ExceptionContext, exception: usize) {
         let exception_type = ExceptionType::from(exception);
-        let id = this_cpu().runqueue().lock_read().current_task_id();
+        let id = this_cpu().runqueue().current_task_id();
         let mut task_ctx = TaskContext {
             regs: X86GeneralRegs {
                 r15: ctx.regs.r15,
@@ -268,7 +270,7 @@ pub mod svsm_gdbstub {
         }
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     fn handle_stop(
         ctx: &mut TaskContext,
         exception_type: ExceptionType,
@@ -289,7 +291,7 @@ pub mod svsm_gdbstub {
             ctx.ret_addr -= 1;
         }
 
-        let tid = Tid::new(this_cpu().runqueue().lock_read().current_task_id() as usize)
+        let tid = Tid::new(this_cpu().runqueue().current_task_id() as usize)
             .expect("Current task has invalid ID");
         let mut new_gdb = match gdb {
             GdbStubStateMachine::Running(gdb_inner) => {
@@ -616,7 +618,7 @@ pub mod svsm_gdbstub {
             // Get the current task. If this is the first request after the remote
             // GDB has connected then we need to report the current task first.
             // There is no harm in doing this every time the thread list is requested.
-            let current_task = this_cpu().runqueue().lock_read().current_task_id();
+            let current_task = this_cpu().runqueue().current_task_id();
             if current_task == INITIAL_TASK_ID {
                 thread_is_active(Tid::new(INITIAL_TASK_ID as usize).unwrap());
             } else {

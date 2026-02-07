@@ -120,7 +120,7 @@ mod tests {
         extern crate alloc;
 
         use crate::serial::Terminal;
-        use crate::testing::{assert_eq_warn, svsm_test_io, IORequest};
+        use crate::testing::{IORequest, assert_eq_warn, svsm_test_io};
         use crate::testutils::{has_test_iorequests, is_test_platform_type};
 
         use alloc::vec;

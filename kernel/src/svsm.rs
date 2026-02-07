@@ -13,7 +13,6 @@ use bootlib::kernel_launch::KernelLaunchInfo;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
-use core::slice;
 use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
@@ -24,16 +23,17 @@ use svsm::cpu::control_regs::{cr0_init, cr4_init};
 use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
-use svsm::cpu::idt::{IdtEntry, EARLY_IDT_ENTRIES, IDT};
-use svsm::cpu::percpu::{cpu_idle_loop, this_cpu, try_this_cpu, PerCpu, PERCPU_AREAS};
+use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
+use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_cpu};
 use svsm::cpu::shadow_stack::{
-    determine_cet_support, is_cet_ss_supported, set_cet_ss_enabled, shadow_stack_info, SCetFlags,
-    MODE_64BIT, S_CET,
+    MODE_64BIT, S_CET, SCetFlags, determine_cet_support, is_cet_ss_supported, set_cet_ss_enabled,
+    shadow_stack_info,
 };
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
 use svsm::debug::stacktrace::print_stack;
+use svsm::debug::symbols::init_symbols;
 use svsm::enable_shadow_stacks;
 #[cfg(feature = "virtio-drivers")]
 use svsm::error::SvsmError;
@@ -41,23 +41,27 @@ use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
 use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
+use svsm::mm::FixedAddressMappingRange;
+use svsm::mm::PageBox;
+use svsm::mm::TransitionPageTable;
 use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
+use svsm::mm::global_memory::init_global_ranges;
+use svsm::mm::init_kernel_mapping_info;
 use svsm::mm::memory::init_memory_map;
+use svsm::mm::pagetable::PageTable;
 use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::mm::{init_kernel_mapping_info, FixedAddressMappingRange, PageBox};
-use svsm::platform::{init_capabilities, init_platform_type, SvsmPlatformCell, SVSM_PLATFORM};
+use svsm::platform::{SVSM_PLATFORM, SvsmPlatformCell, init_capabilities, init_platform_type};
 use svsm::sev::secrets_page::initialize_secrets_page;
 use svsm::sev::secrets_page_mut;
-use svsm::svsm_paging::{
-    enumerate_early_boot_regions, init_page_table, invalidate_early_boot_memory,
-};
-use svsm::task::{schedule_init, start_kernel_task, KernelThreadStartInfo};
+use svsm::svsm_paging::enumerate_early_boot_regions;
+use svsm::svsm_paging::invalidate_early_boot_memory;
+use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{round_to_pages, MemoryRegion, ScopedRef};
-#[cfg(feature = "virtio-drivers")]
+use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
+#[cfg(all(feature = "virtio-drivers", feature = "block"))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
 use svsm::vtpm::vtpm_init;
@@ -68,7 +72,7 @@ use release::COCONUT_VERSION;
 #[cfg(feature = "attest")]
 use kbs_types::Tee;
 
-extern "C" {
+unsafe extern "C" {
     static bsp_stack: u64;
     static bsp_stack_end: u64;
 }
@@ -82,6 +86,7 @@ extern "C" {
  * %rdi  Pointer to the KernelLaunchInfo structure
  * %rsi  Kernel stack pointer
  * %rdx  Kernel stack limit
+ * %rcx  Kernel page tables
  */
 global_asm!(
     r#"
@@ -108,6 +113,9 @@ global_asm!(
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
+
+        /* Switch to the kernel page tables */
+        movq %rcx, %cr3
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
@@ -162,12 +170,12 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns Ok if initialization is successful or no virtio devices are found
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
-fn initialize_virtio_mmio() -> Result<(), SvsmError> {
-    let mut slots = probe_mmio_slots();
-
+fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
+
+        let mut slots = probe_mmio_slots(_config);
         initialize_block(&mut slots)?;
     }
 
@@ -246,6 +254,9 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
         .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
         .expect("Early environment setup failed");
 
+    // Load symbol info now that there is a console
+    init_symbols(&launch_info).expect("Could not initialize kernel symbols");
+
     memory_init(launch_info.as_ref());
 
     // Initialize the valid bitmap as all valid, since stage2 guarantees that
@@ -253,26 +264,16 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     init_valid_bitmap(new_kernel_region(&launch_info), true)
         .expect("Failed to allocate valid-bitmap");
 
-    let kernel_elf_len = (launch_info.kernel_elf_stage2_virt_end
-        - launch_info.kernel_elf_stage2_virt_start) as usize;
-    let kernel_elf_buf_ptr = launch_info.kernel_elf_stage2_virt_start as *const u8;
-    // SAFETY: we trust stage 2 to pass on a correct pointer and length. This
-    // cannot be aliased because we are on CPU 0 and other CPUs have not been
-    // brought up. The resulting slice is &[u8], so there are no alignment
-    // requirements.
-    let kernel_elf_buf = unsafe { slice::from_raw_parts(kernel_elf_buf_ptr, kernel_elf_len) };
-    let kernel_elf = match elf::Elf64File::read(kernel_elf_buf) {
-        Ok(kernel_elf) => kernel_elf,
-        Err(e) => panic!("error reading kernel ELF: {}", e),
+    paging_init(platform, false).expect("Failed to initialize paging");
+
+    // SAFETY: the current page table was allocated by stage2 from the kernel
+    // heap and therefore it can be built into a PageBox.
+    let init_pgtable: PageBox<PageTable> = unsafe {
+        let page_table_ptr = (launch_info.kernel_page_table_vaddr as usize) as *mut PageTable;
+        PageBox::from_raw(NonNull::new(page_table_ptr).unwrap())
     };
 
-    paging_init(platform, false).expect("Failed to initialize paging");
-    let init_pgtable =
-        init_page_table(&launch_info, &kernel_elf).expect("Could not initialize the page table");
-    // SAFETY: we are initializing the state, including stack and registers
-    unsafe {
-        init_pgtable.load();
-    }
+    init_global_ranges();
 
     // SAFETY: this is the first CPU, so there can be no other dependencies
     // on multi-threaded access to the per-cpu areas.
@@ -336,7 +337,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
 /// Thus function must only be called from the entry from stage 2, where
 /// the launch info parameter is known to have been allocated from the kernel
 /// heap.
-#[no_mangle]
+#[unsafe(no_mangle)]
 unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
     // SAFETY: the caller ensures that the launch info pointer is a valid
     // pointer.
@@ -405,7 +406,13 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
 
-    start_secondary_cpus(&**SVSM_PLATFORM, &cpus);
+    // Create a transition page table for use during CPU startup.
+    let transition_page_table =
+        // SAFETY: the address of the initial kernel page tables supplied in
+        // the launch info is trusted to be correct.
+        unsafe { TransitionPageTable::new() }.expect("Failed to create transition page table");
+
+    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, &transition_page_table);
 
     // Make ro_after_init section read-only
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
@@ -435,7 +442,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio().expect("Failed to initialize virtio-mmio drivers");
+    initialize_virtio_mmio(&config).expect("Failed to initialize virtio-mmio drivers");
 
     if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
         panic!("Failed to launch FW: {e:?}");
