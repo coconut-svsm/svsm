@@ -165,9 +165,6 @@ pub struct BootParamBlock {
     /// region in the memory map that starts at kernel_base and is larger, this maximum size will
     /// be used instead.
     pub kernel_max_size: u32,
-
-    /// The value of vTOM used by the guest, or zero if not used.
-    pub vtom: u64,
 }
 
 const _: () = {

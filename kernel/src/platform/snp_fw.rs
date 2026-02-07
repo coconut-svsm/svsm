@@ -308,13 +308,13 @@ pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn launch_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+pub fn launch_fw(boot_params: &BootParams<'_>, vtom: u64) -> Result<(), SvsmError> {
     let cpu = this_cpu();
     let mut vmsa_ref = cpu.guest_vmsa_ref();
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
     let vmsa = vmsa_ref.vmsa();
 
-    boot_params.initialize_guest_vmsa(vmsa)?;
+    boot_params.initialize_guest_vmsa(vmsa, vtom)?;
 
     log::info!("VMSA PA: {vmsa_pa:#x}");
 

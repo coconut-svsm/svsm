@@ -57,6 +57,7 @@ pub struct IgvmBuilder {
     use_igvm_v2: bool,
     firmware: Option<Box<dyn Firmware>>,
     gpa_map: GpaMap,
+    vtom: u64,
     platforms: Vec<IgvmPlatformHeader>,
     initialization: Vec<IgvmInitializationHeader>,
     directives: Vec<IgvmDirectiveHeader>,
@@ -101,10 +102,24 @@ impl IgvmBuilder {
             None => None,
         };
         let gpa_map = GpaMap::new(&options, &firmware)?;
+        let vtom = if let Some(fw) = &firmware {
+            fw.get_vtom()
+        } else {
+            match options.hypervisor {
+                Hypervisor::Qemu => 0,
+                Hypervisor::HyperV => {
+                    // Set the shared GPA boundary at bit 46, below the lowest possible
+                    // C-bit position.
+                    0x0000400000000000
+                }
+                Hypervisor::Vanadium => 0,
+            }
+        };
         Ok(Self {
             options,
             firmware,
             gpa_map,
+            vtom,
             platforms: vec![],
             initialization: vec![],
             directives: vec![],
@@ -143,7 +158,7 @@ impl IgvmBuilder {
 
         self.build_directives(&param_block, &start_context)?;
         self.build_initialization()?;
-        self.build_platforms(&param_block);
+        self.build_platforms();
 
         // Separate the directive pages out from the others so we can populate them last.
         let (mut pages, others): (Vec<_>, Vec<_>) = self
@@ -210,20 +225,10 @@ impl IgvmBuilder {
         };
 
         // Populate the firmware metadata.
-        let (fw_info, vtom) = if let Some(firmware) = &self.firmware {
-            (firmware.get_fw_info(), firmware.get_vtom())
+        let fw_info = if let Some(firmware) = &self.firmware {
+            firmware.get_fw_info()
         } else {
-            let fw_info = GuestFwInfoBlock::default();
-            let vtom = match self.options.hypervisor {
-                Hypervisor::Qemu => 0,
-                Hypervisor::HyperV => {
-                    // Set the shared GPA boundary at bit 46, below the lowest possible
-                    // C-bit position.
-                    0x0000400000000000
-                }
-                Hypervisor::Vanadium => 0,
-            };
-            (fw_info, vtom)
+            GuestFwInfoBlock::default()
         };
 
         let suppress_svsm_interrupts_on_snp = match self.options.hypervisor {
@@ -262,7 +267,6 @@ impl IgvmBuilder {
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,
             kernel_max_size: self.gpa_map.kernel_max_size,
-            vtom,
             use_alternate_injection: u8::from(self.options.alt_injection),
             suppress_svsm_interrupts_on_snp,
             has_qemu_testdev,
@@ -272,7 +276,7 @@ impl IgvmBuilder {
         })
     }
 
-    fn build_platforms(&mut self, param_block: &BootParamBlock) {
+    fn build_platforms(&mut self) {
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
@@ -280,7 +284,7 @@ impl IgvmBuilder {
                     highest_vtl: 2,
                     platform_type: IgvmPlatformType::SEV_SNP,
                     platform_version: 1,
-                    shared_gpa_boundary: param_block.vtom,
+                    shared_gpa_boundary: self.vtom,
                 },
             ));
         }
@@ -431,7 +435,7 @@ impl IgvmBuilder {
             self.directives.push(construct_vmsa(
                 start_context,
                 self.gpa_map.vmsa.get_start(),
-                param_block.vtom,
+                self.vtom,
                 SNP_COMPATIBILITY_MASK,
                 &self.options.sev_features,
                 self.options.hypervisor,
@@ -536,7 +540,7 @@ impl IgvmBuilder {
 
         // Populate the stage 2 stack.  This has different contents on each
         // platform.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map, param_block.vtom);
+        let stage2_stack = Stage2Stack::new(&self.gpa_map, self.vtom);
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
