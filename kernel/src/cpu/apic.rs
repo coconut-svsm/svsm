@@ -280,6 +280,12 @@ impl LocalApic {
         self.update_required = true;
     }
 
+    pub fn reinject_interrupt<T: GuestCpuState>(&mut self, cpu_state: &mut T, irq: u8) {
+        // Reinject the interrupt not injected by the guest because of the interception
+        cpu_state.queue_interrupt(irq);
+        self.interrupt_queued = true;
+    }
+
     pub fn present_interrupts<T: GuestCpuState>(
         &mut self,
         cpu_shared: &PerCpuShared,
