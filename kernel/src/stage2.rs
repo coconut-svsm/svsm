@@ -237,6 +237,7 @@ unsafe fn setup_env(
     boot_params: &BootParams<'_>,
     platform: &mut dyn SvsmPlatform,
     launch_info: &Stage2LaunchInfo,
+    vtom: usize,
     cpuid_vaddr: Option<VirtAddr>,
     idt: &mut IDT<'_>,
 ) {
@@ -249,7 +250,7 @@ unsafe fn setup_env(
     let debug_serial_port = boot_params.debug_serial_port();
     install_console_logger("Stage2").expect("Console logger already initialized");
     platform
-        .env_setup(debug_serial_port, launch_info.vtom.try_into().unwrap())
+        .env_setup(debug_serial_port, vtom)
         .expect("Early environment setup failed");
 
     let kernel_mapping = FixedAddressMappingRange::new(
@@ -429,7 +430,7 @@ fn prepare_kernel_image(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
+pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo, vtom: usize) -> ! {
     let platform_type = SvsmPlatformType::from(launch_info.platform_type);
 
     init_platform_type(platform_type);
@@ -453,7 +454,14 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
     // SAFETY: the IDT here will remain in scope until the full IDT is
     // initialized later, and thus can safely be used as the early IDT.
     unsafe {
-        setup_env(&boot_params, platform, launch_info, cpuid_page, &mut idt);
+        setup_env(
+            &boot_params,
+            platform,
+            launch_info,
+            vtom,
+            cpuid_page,
+            &mut idt,
+        );
     }
 
     // Get the available physical memory region for the kernel
@@ -472,7 +480,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         kernel_fs_start: u64::from(launch_info.kernel_fs_start),
         kernel_fs_end: u64::from(launch_info.kernel_fs_end),
         stage2_start: 0x800000u64,
-        vtom: launch_info.vtom,
+        vtom: vtom as u64,
     };
     let boot_image_info = prepare_kernel_image(
         stage2_platform,

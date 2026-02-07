@@ -540,7 +540,7 @@ impl IgvmBuilder {
 
         // Populate the stage 2 stack.  This has different contents on each
         // platform.
-        let stage2_stack = Stage2Stack::new(&self.gpa_map, self.vtom);
+        let stage2_stack = Stage2Stack::new(&self.gpa_map);
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             stage2_stack.add_directive(
                 self.gpa_map.stage2_stack.get_start(),
