@@ -10,16 +10,7 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	.stext = ALIGN(.sdata - SIZEOF(.text) - 4095, 4096);
-	. = .stext;
-	.text : { *(.startup.*) }
-
-	/*
-	 * Subtract an extra byte so that edata and the .init function
-	 * symbols don't alias, which would be confusing when
-	 * examining the resulting binary.
-	 */
-	.sdata = ALIGN(.sinit - SIZEOF(.data) - 4095 - 1, 4096);
+	.sdata = ALIGN(.sinit - SIZEOF(.data) - 4095, 4096);
 	. = .sdata;
 	.data : { *(.data) }
 	edata = .;
@@ -38,5 +29,3 @@ SECTIONS
 
 	/DISCARD/ : {*(.*)}
 }
-
-ENTRY(startup_32)

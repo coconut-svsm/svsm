@@ -27,13 +27,16 @@ use zerocopy::IntoBytes;
 
 use crate::GpaMap;
 use crate::cmd_options::{CmdOptions, Hypervisor};
+use crate::context::construct_native_start_context;
+use crate::context::construct_stage1_image;
+use crate::context::construct_start_context;
+use crate::context::construct_vmsa;
 use crate::cpuid::SnpCpuidPage;
 use crate::firmware::{Firmware, parse_firmware};
 use crate::paging::construct_init_page_tables;
 use crate::platform::PlatformMask;
 use crate::sipi::add_sipi_stub;
 use crate::stage2_stack::Stage2Stack;
-use crate::vmsa::{construct_native_start_context, construct_start_context, construct_vmsa};
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
@@ -456,6 +459,17 @@ impl IgvmBuilder {
             ));
         }
 
+        if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+            // The presence of stage1 was already confirmed when the GPA map
+            // was constructed, so it doesn't need to be tested again here.
+            self.directives.push(construct_stage1_image(
+                self.options.tdx_stage1.as_ref().unwrap(),
+                self.gpa_map.stage1_image.get_start(),
+                start_context,
+                TDP_COMPATIBILITY_MASK,
+            )?);
+        }
+
         // Add the boot parameter block
         self.add_param_block(param_block);
 
@@ -507,15 +521,6 @@ impl IgvmBuilder {
                 self.gpa_map.secrets_page.get_size(),
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
-            )?;
-        }
-
-        // Add optional stage 1 binary.
-        if let Some(stage1) = &self.options.tdx_stage1 {
-            self.add_data_pages_from_file(
-                &stage1.clone(),
-                self.gpa_map.stage1_image.get_start(),
-                TDP_COMPATIBILITY_MASK,
             )?;
         }
 

@@ -15,3 +15,4 @@ pub mod firmware;
 pub mod kernel_launch;
 pub mod platform;
 pub mod symbols;
+pub mod tdp_start;
