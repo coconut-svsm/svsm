@@ -261,8 +261,6 @@ impl IgvmBuilder {
             guest_context_offset,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
-            stage1_size: self.gpa_map.stage1_image.get_size() as u32,
-            stage1_base: self.gpa_map.stage1_image.get_start(),
             vmsa_in_kernel_range: self.gpa_map.vmsa_in_kernel_range as u8,
             kernel_base: self.gpa_map.kernel.get_start(),
             kernel_min_size: self.gpa_map.kernel_min_size,
@@ -272,7 +270,6 @@ impl IgvmBuilder {
             has_qemu_testdev,
             has_fw_cfg_port,
             has_test_iorequests,
-            ..Default::default()
         })
     }
 
