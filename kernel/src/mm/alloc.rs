@@ -1029,9 +1029,10 @@ impl HeapMemoryRegion {
         with Tracked(perm): Tracked<&mut Option<UnitDeallocPerm>>
         requires
             old(self).wf_next_pages(),
+            N as u64 <= PageStorageType::SLAB_MASK,
         ensures
             old(self).ens_allocate_pages_info(self, 0, PageInfo::Slab(SlabPageInfo {
-                item_size: item_size as u64,
+                item_size: N as u64,
             }) , ret, *perm),
     )]
     fn allocate_slab_page<const N: usize>(&mut self) -> Result<VirtAddr, AllocError> {
