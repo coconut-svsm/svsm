@@ -24,10 +24,18 @@ jobs:
         run: |
           verusfmt --check `find ./ -name *.verus.rs` --verus-only
 
+      # cargo-v doesn't propagate the `cargo build` exit code, so we need
+      # to check stderr for errors.
+      # When https://github.com/microsoft/verismo/issues/23 will be fixed
+      # we can remove it.
       - name: Verify svsm with verus
-        run: cargo verify
+        run: |
+          cargo verify 2>&1 | tee verify.log
+          ! grep -q 'cargo build failed' verify.log
         working-directory: kernel
 
       - name: Verify extra proof libs with verus
-        run: cargo verify
+        run: |
+          cargo verify 2>&1 | tee verify.log
+          ! grep -q 'cargo build failed' verify.log
         working-directory: verification/verify_proof
