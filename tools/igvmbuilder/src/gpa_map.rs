@@ -105,6 +105,9 @@ impl GpaMap {
                 return Err("TDP platform must be specified when using --tdx-stage1".into());
             }
         } else {
+            if COMPATIBILITY_MASK.contains(TDP_COMPATIBILITY_MASK) {
+                return Err("TDP platform requires --tdx-stage1".into());
+            }
             GpaRange::new(0, 0)?
         };
 
