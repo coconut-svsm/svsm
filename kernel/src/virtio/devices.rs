@@ -6,8 +6,6 @@
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 
 use super::hal::*;
-extern crate alloc;
-use alloc::boxed::Box;
 use virtio_drivers::device::blk::VirtIOBlk;
 use virtio_drivers::transport::mmio::MmioTransport;
 
@@ -29,12 +27,12 @@ impl core::fmt::Debug for VirtIOBlkDevice {
 }
 
 impl VirtIOBlkDevice {
-    pub fn new(slot: MmioSlot) -> Result<Box<Self>, SvsmError> {
+    pub fn new(slot: MmioSlot) -> Result<Self, SvsmError> {
         let blk = VirtIOBlk::new(slot.transport).map_err(|_| VirtioError::InvalidDevice)?;
 
-        Ok(Box::new(VirtIOBlkDevice {
+        Ok(VirtIOBlkDevice {
             device: SpinLock::new(blk),
             _mmio_space: slot.mmio_range,
-        }))
+        })
     }
 }

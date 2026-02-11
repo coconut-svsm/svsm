@@ -16,7 +16,7 @@ use virtio_drivers::transport::DeviceType::Block;
 
 extern crate alloc;
 use alloc::boxed::Box;
-pub struct VirtIOBlkDriver(Box<VirtIOBlkDevice>);
+pub struct VirtIOBlkDriver(VirtIOBlkDevice);
 
 impl core::fmt::Debug for VirtIOBlkDriver {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -25,8 +25,8 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 }
 
 impl VirtIOBlkDriver {
-    pub fn new(slot: MmioSlot) -> Result<Self, SvsmError> {
-        Ok(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?))
+    pub fn new(slot: MmioSlot) -> Result<Box<Self>, SvsmError> {
+        Ok(Box::new(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?)))
     }
 }
 
@@ -96,7 +96,7 @@ pub fn initialize_block(slots: &mut MmioSlots) -> Result<(), SvsmError> {
 
     let driver = VirtIOBlkDriver::new(slot)?;
 
-    BLOCK_DEVICE.init(Box::new(driver))?;
+    BLOCK_DEVICE.init(driver)?;
 
     Ok(())
 }
