@@ -9,10 +9,10 @@ use std::fs::File;
 use std::io::Read;
 use std::mem::size_of;
 
-use bootlib::boot_params::GuestFwInfoBlock;
-use bootlib::boot_params::GuestFwMemInfo;
-use bootlib::boot_params::InitialGuestContext;
-use bootlib::firmware::*;
+use bootdefs::boot_params::GuestFwInfoBlock;
+use bootdefs::boot_params::GuestFwMemInfo;
+use bootdefs::boot_params::InitialGuestContext;
+use bootdefs::firmware::*;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 use uuid::Uuid;

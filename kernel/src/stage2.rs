@@ -10,11 +10,15 @@
 pub mod boot_stage2;
 pub mod stage2_syms;
 
-use bootlib::kernel_launch::{
-    KernelLaunchInfo, LOWMEM_END, STAGE2_HEAP_END, STAGE2_HEAP_START, STAGE2_STACK,
-    STAGE2_STACK_END, STAGE2_START, Stage2LaunchInfo,
-};
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::kernel_launch::LOWMEM_END;
+use bootdefs::kernel_launch::STAGE2_HEAP_END;
+use bootdefs::kernel_launch::STAGE2_HEAP_START;
+use bootdefs::kernel_launch::STAGE2_STACK;
+use bootdefs::kernel_launch::STAGE2_STACK_END;
+use bootdefs::kernel_launch::STAGE2_START;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 use core::arch::asm;
 use core::fmt::Debug;
 use core::mem;
@@ -949,7 +953,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
         secrets_page: u64::from(kernel_secrets_page),
         boot_params_virt_addr: u64::from(params_vaddr),
         kernel_symtab_start: symtab.start().as_ptr(),
-        kernel_symtab_len: (symtab.len() / size_of::<bootlib::symbols::KSym>()) as u64,
+        kernel_symtab_len: (symtab.len() / size_of::<bootdefs::symbols::KSym>()) as u64,
         kernel_strtab_start: strtab.start().as_ptr(),
         kernel_strtab_len: strtab.len() as u64,
         vtom: launch_info.vtom,

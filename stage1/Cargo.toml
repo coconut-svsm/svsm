@@ -13,7 +13,7 @@ default = []
 load-stage2 = []
 
 [dependencies]
-bootlib.workspace = true
+bootdefs.workspace = true
 
 [lints]
 workspace = true

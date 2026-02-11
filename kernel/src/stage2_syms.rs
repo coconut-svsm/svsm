@@ -4,7 +4,7 @@
 //
 // Author: Carlos López <clopez@suse.de>
 
-use bootlib::symbols::KSym;
+use bootdefs::symbols::KSym;
 use elf::{Elf64Strtab, Elf64Symtab};
 use svsm::{
     address::VirtAddr,

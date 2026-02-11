@@ -4,7 +4,7 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
-use bootlib::kernel_launch::SIPI_STUB_GPA;
+use bootdefs::kernel_launch::SIPI_STUB_GPA;
 use igvm::IgvmDirectiveHeader;
 use igvm_defs::{IgvmPageDataFlags, IgvmPageDataType, PAGE_SIZE_4K};
 

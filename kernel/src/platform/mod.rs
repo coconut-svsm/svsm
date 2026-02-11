@@ -38,8 +38,8 @@ use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-use bootlib::kernel_launch::Stage2LaunchInfo;
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 static SVSM_PLATFORM_CELL: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();

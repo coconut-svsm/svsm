@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+use super::pagetable::LAUNCH_VMSA_ADDR;
+
 use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::percpu::PERCPU_VMSAS;
@@ -13,10 +15,10 @@ use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
-use alloc::vec::Vec;
-use bootlib::kernel_launch::{KernelLaunchInfo, LOWMEM_END};
 
-use super::pagetable::LAUNCH_VMSA_ADDR;
+use alloc::vec::Vec;
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::kernel_launch::LOWMEM_END;
 
 /// Global memory map containing various memory regions.
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());

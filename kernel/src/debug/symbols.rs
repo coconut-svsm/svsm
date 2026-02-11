@@ -7,8 +7,8 @@
 use core::slice;
 use core::{ffi::CStr, fmt};
 
-use bootlib::kernel_launch::KernelLaunchInfo;
-use bootlib::symbols::KSym;
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::symbols::KSym;
 use rustc_demangle::{Demangle, demangle};
 
 use crate::{address::VirtAddr, error::SvsmError, utils::immut_after_init::ImmutAfterInitCell};

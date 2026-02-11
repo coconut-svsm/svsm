@@ -8,12 +8,12 @@
 #![no_main]
 
 #[cfg(not(feature = "load-stage2"))]
-use bootlib::boot_params::BootParamBlock;
+use bootdefs::boot_params::BootParamBlock;
 #[cfg(not(feature = "load-stage2"))]
-use bootlib::kernel_launch::Stage2LaunchInfo;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(feature = "load-stage2")]
-use bootlib::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
-use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_START};
+use bootdefs::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
+use bootdefs::kernel_launch::{STAGE2_STACK, STAGE2_START};
 use core::arch::global_asm;
 #[cfg(not(feature = "load-stage2"))]
 use core::mem::offset_of;

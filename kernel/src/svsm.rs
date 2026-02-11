@@ -9,8 +9,8 @@
 
 extern crate alloc;
 
-use bootlib::kernel_launch::KernelLaunchInfo;
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;

@@ -12,12 +12,12 @@ use crate::{
     mm::{STACK_SIZE, STACK_TOTAL_SIZE, SVSM_CONTEXT_SWITCH_STACK, SVSM_STACK_IST_DF_BASE},
     utils::MemoryRegion,
 };
-use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_STACK_END};
-use core::{
-    arch::asm,
-    fmt::{self, Write},
-    mem,
-};
+use bootdefs::kernel_launch::STAGE2_STACK;
+use bootdefs::kernel_launch::STAGE2_STACK_END;
+use core::arch::asm;
+use core::fmt;
+use core::fmt::Write;
+use core::mem;
 
 unsafe extern "C" {
     static bsp_stack: u64;
