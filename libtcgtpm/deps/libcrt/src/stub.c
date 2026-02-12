@@ -194,3 +194,11 @@ time_t mktime(struct tm *tm) {
     NOT_IMPLEMENTED;
     return 0;
 }
+
+// string.h
+
+char *strpbrk(const char *s, const char *accept)
+{
+    NOT_IMPLEMENTED;
+    return NULL;
+}

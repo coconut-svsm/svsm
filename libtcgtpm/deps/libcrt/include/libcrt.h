@@ -344,6 +344,7 @@ int strncmp(const char *_l, const char *_r, size_t n);
 int strcasecmp(const char *_l, const char *_r);
 char *strcat(char *restrict dest, const char *restrict src);
 char *strncat (char *__restrict, const char *__restrict, size_t);
+char *strpbrk(const char *s, const char *accept);
 
 // ctype.h
 

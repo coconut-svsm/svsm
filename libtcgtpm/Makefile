@@ -106,11 +106,13 @@ $(OPENSSL_MAKEFILE):
 			no-dso \
 			no-dtls \
 			no-dtls1 \
+			no-dtls1-method \
 			no-dtls1_2 \
 			no-dtls1_2-method \
-			no-dtls1-method \
 			no-dynamic-engine \
 			no-ec2m \
+			no-ecdh \
+			no-ecdsa \
 			no-ecx  \
 			no-egd \
 			no-engine \
@@ -118,12 +120,13 @@ $(OPENSSL_MAKEFILE):
 			no-filenames \
 			no-gost \
 			no-http  \
-			no-hw \
 			no-idea \
 			no-ktls \
 			no-makedepend \
 			no-md4 \
 			no-mdc2 \
+			no-ml-dsa \
+			no-ml-kem \
 			no-module \
 			no-multiblock \
 			no-nextprotoneg \
@@ -146,26 +149,27 @@ $(OPENSSL_MAKEFILE):
 			no-siv \
 			no-sm2 \
 			no-sm2-precomp  \
+			no-sm3 \
 			no-sm4 \
 			no-sock \
 			no-srp \
 			no-srtp \
 			no-sse2 \
 			no-ssl \
-			no-ssl3-method \
 			no-ssl-trace \
+			no-ssl3-method \
 			no-static-engine \
 			no-stdio \
 			no-tests \
 			no-thread-pool \
 			no-threads \
 			no-tls1 \
+			no-tls1-method \
 			no-tls1_1 \
 			no-tls1_1-method \
 			no-tls1_2 \
 			no-tls1_2-method \
 			no-tls1_3 \
-			no-tls1-method \
 			no-ts \
 			no-ui-console \
 			no-uplink \
