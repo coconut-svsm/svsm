@@ -120,7 +120,6 @@ $(OPENSSL_MAKEFILE):
 			no-filenames \
 			no-gost \
 			no-http  \
-			no-hw \
 			no-idea \
 			no-ktls \
 			no-makedepend \
