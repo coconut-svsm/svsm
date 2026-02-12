@@ -57,9 +57,6 @@ startup:
         /* Perform a far jump to the SIPI entry point. */
         Ljmpl   $8, $0xF040
 
-        .section .sevmeta
-        .incbin "bin/meta.bin"
-
         .section .resetvector
         jmp     startup
         "#,
