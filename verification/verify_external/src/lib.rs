@@ -14,11 +14,14 @@
 #![no_std]
 #![allow(unused_braces)]
 #![allow(unexpected_cfgs)]
+#![cfg_attr(verus_keep_ghost, feature(sized_hierarchy))]
 
 // Add spec for convert traits
 pub mod convert;
 
 pub mod hw_spec;
+
+pub mod nonnull;
 
 pub mod ptr;
 

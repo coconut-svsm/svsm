@@ -527,7 +527,7 @@ impl<T> From<*mut T> for VirtAddr {
 
 #[verus_verify]
 impl<T> From<NonNull<T>> for VirtAddr {
-    #[verus_verify]
+    #[verus_verify(external_body)]
     #[inline]
     fn from(value: NonNull<T>) -> Self {
         Self::from(value.as_ptr())
