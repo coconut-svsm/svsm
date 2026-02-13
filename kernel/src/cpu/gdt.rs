@@ -189,14 +189,14 @@ impl Drop for GDT {
     fn drop(&mut self) {
         // Check to see whether the GDT being dropped is the one currently
         // loaded on this CPU.  If so, reload the global GDT.
-        let gdt_desc: GDTDesc = Default::default();
+        let mut gdt_desc: GDTDesc = Default::default();
         // SAFETY: assembly is required to obtain the current GDT descriptor.
         // The address of the returned descriptor is only used as a comparison
         // to `self` and not for data access, so memory safety is not affected
         // by the returned address.
         unsafe {
             asm!("sgdt ({0})",
-                 in(reg) &gdt_desc,
+                 in(reg) &raw mut gdt_desc,
                  options(att_syntax));
         }
 
