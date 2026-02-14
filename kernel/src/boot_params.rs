@@ -13,7 +13,6 @@ use crate::error::SvsmError;
 use crate::mm::alloc::free_multiple_pages;
 use crate::mm::{GuestPtr, PAGE_SIZE, PerCPUPageMappingGuard};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM, SevFWMetaData};
-use crate::types::PageSize;
 use crate::utils::{MemoryRegion, page_align_up, round_to_pages};
 use alloc::vec::Vec;
 use bootdefs::boot_params::BootParamBlock;
@@ -214,11 +213,7 @@ impl BootParams<'_> {
             // validated.  Since the memory was not declared as part of the
             // guest firmware image, the pages must be validated here.
             if self.page_state_change_required() {
-                SVSM_PLATFORM.page_state_change(
-                    mem_map_region,
-                    PageSize::Regular,
-                    PageStateChangeOp::Private,
-                )?;
+                SVSM_PLATFORM.page_state_change(mem_map_region, PageStateChangeOp::Private)?;
             }
 
             let mem_map_va_region = MemoryRegion::new(mem_map_va, mem_map_region.len());
