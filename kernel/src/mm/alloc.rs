@@ -2663,9 +2663,8 @@ mod test {
         }
 
         let page = root_mem.allocate_page();
-        if page.is_ok() {
-            panic!("unexpected page allocation success after memory exhaustion");
-        }
+        let err = page.expect_err("page allocation success after memory exhaustion");
+        assert_eq!(err, AllocError::OutOfMemory);
 
         for alloc in allocs.iter().take(MAX_ORDER) {
             for pages in &alloc[..] {
