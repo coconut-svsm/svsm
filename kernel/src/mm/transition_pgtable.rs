@@ -33,6 +33,13 @@ pub struct TransitionPageTable {}
 
 impl TransitionPageTable {
     /// # Safety
+    /// This must only be called on platforms that do not require the use of
+    /// a transition page table.
+    pub unsafe fn empty() -> Self {
+        Self {}
+    }
+
+    /// # Safety
     /// This must only be called during early boot when the SIPI stub page
     /// table is known not to be used for any other purpose.
     pub unsafe fn new() -> Result<Self, SvsmError> {

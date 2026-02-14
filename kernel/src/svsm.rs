@@ -45,7 +45,6 @@ use svsm::kernel_region::expand_kernel_heap;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
-use svsm::mm::TransitionPageTable;
 use svsm::mm::alloc::{free_multiple_pages, memory_info, print_memory_info, root_mem_init};
 use svsm::mm::global_memory::init_global_ranges;
 use svsm::mm::init_kernel_mapping_info;
@@ -538,10 +537,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         .expect("Failed to load ACPI tables");
 
     // Create a transition page table for use during CPU startup.
-    let transition_page_table =
-        // SAFETY: the address of the initial kernel page tables supplied in
-        // the launch info is trusted to be correct.
-        unsafe { TransitionPageTable::new() }.expect("Failed to create transition page table");
+    // SAFETY: the memory for the initial kernel page tables is known not to be
+    // in use at this point during boot.
+    let transition_page_table = unsafe { SVSM_PLATFORM.create_transition_page_table() };
 
     start_secondary_cpus(&**SVSM_PLATFORM, &cpus, &transition_page_table);
 

@@ -268,6 +268,16 @@ pub trait SvsmPlatform: Sync {
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
+    /// Creates a transition page table object as required by the platform.
+    /// # Safety
+    /// This must only be called during early boot when the SIPI stub page
+    /// table is known not to be used for any other purpose.
+    unsafe fn create_transition_page_table(&self) -> TransitionPageTable {
+        // SAFETY: the caller guarantees the safety of the transition page
+        // table address.
+        unsafe { TransitionPageTable::new() }.expect("Failed to create transition page table")
+    }
+
     /// Start an additional processor.
     fn start_cpu(
         &self,

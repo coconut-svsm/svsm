@@ -456,6 +456,14 @@ impl SvsmPlatform for SnpPlatform {
         false
     }
 
+    /// # Safety
+    /// This must only be called during early boot when the SIPI stub page
+    /// table is known not to be used for any other purpose.
+    unsafe fn create_transition_page_table(&self) -> TransitionPageTable {
+        // SAFETY: SNP does not use a transition page table for AP startup.
+        unsafe { TransitionPageTable::empty() }
+    }
+
     fn start_cpu(
         &self,
         cpu: &PerCpu,
