@@ -38,16 +38,11 @@ fn invalidate_boot_memory_region(
     Ok(())
 }
 
-pub fn enumerate_early_boot_regions(launch_info: &KernelLaunchInfo) -> Vec<MemoryRegion<PhysAddr>> {
+pub fn enumerate_early_boot_regions(
+    boot_params: &BootParams<'_>,
+    launch_info: &KernelLaunchInfo,
+) -> Vec<MemoryRegion<PhysAddr>> {
     let mut regions = Vec::new();
-
-    // Include low-memory page tables if they are present.
-    if launch_info.lowmem_page_table_size != 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::from(launch_info.lowmem_page_table_base as u64),
-            launch_info.lowmem_page_table_size as usize,
-        ));
-    }
 
     // Include the low-memory SIPI stub if present.
     if launch_info.sipi_stub_size != 0 {
@@ -57,11 +52,20 @@ pub fn enumerate_early_boot_regions(launch_info: &KernelLaunchInfo) -> Vec<Memor
         ));
     }
 
-    // All boot loader memory is contiguous, and is bounded by the boot loader
-    // image at the base and the filesystem at the end.
-    let bldr_area_base = PhysAddr::from(launch_info.bldr_start);
-    let bldr_area_end = PhysAddr::new(launch_info.kernel_fs_end.try_into().unwrap());
-    regions.push(MemoryRegion::from_addresses(bldr_area_base, bldr_area_end));
+    // Include boot loader memory if present, but only if firmware is not
+    // located in low memory.
+    if launch_info.bldr_end != 0 && !boot_params.fw_in_low_memory() {
+        let bldr_area_base = PhysAddr::from(launch_info.bldr_start);
+        let bldr_area_end = PhysAddr::from(launch_info.bldr_end);
+        regions.push(MemoryRegion::from_addresses(bldr_area_base, bldr_area_end));
+    }
+
+    // Include the initial filesystem if present.
+    if launch_info.kernel_fs_end > launch_info.kernel_fs_start {
+        let fs_base = PhysAddr::from(launch_info.kernel_fs_start);
+        let fs_end = PhysAddr::from(launch_info.kernel_fs_end);
+        regions.push(MemoryRegion::from_addresses(fs_base, fs_end));
+    }
 
     regions
 }

@@ -15,6 +15,7 @@ use std::mem::size_of;
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::GuestFwInfoBlock;
 use bootdefs::boot_params::InitialGuestContext;
+use bootdefs::kernel_launch::BldrLaunchInfo;
 use bootimg::BootImageError;
 use bootimg::BootImageParams;
 use bootimg::prepare_boot_image;
@@ -221,7 +222,7 @@ impl IgvmBuilder {
     fn create_param_block(&self) -> Result<BootParamBlock, Box<dyn Error>> {
         // Populate the firmware metadata.
         let fw_info = if let Some(firmware) = &self.firmware {
-            firmware.get_fw_info()
+            firmware.finalize_fw_info(&self.gpa_map)
         } else {
             GuestFwInfoBlock::default()
         };
@@ -385,16 +386,10 @@ impl IgvmBuilder {
             kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
             kernel_region_start: self.gpa_map.kernel.get_start(),
             kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
-            lowmem_page_table_base: self
-                .gpa_map
-                .init_page_tables
-                .get_start()
-                .try_into()
-                .unwrap(),
-            lowmem_page_table_size: self.gpa_map.init_page_tables.get_size().try_into().unwrap(),
             sipi_stub_base: self.gpa_map.sipi_stub.get_start().try_into().unwrap(),
             sipi_stub_size: self.gpa_map.sipi_stub.get_size().try_into().unwrap(),
-            bldr_start: self.gpa_map.base_addr,
+            bldr_start: self.gpa_map.bldr_image.get_start(),
+            bldr_end: self.gpa_map.bldr_end,
             vtom: self.vtom,
         };
         let boot_image_info = prepare_boot_image(
@@ -428,15 +423,25 @@ impl IgvmBuilder {
             // Populate the boot loader stack.
             let bldr_stack =
                 BootLoaderStack::new(&self.gpa_map, &boot_image_info, &init_page_table_info);
-            bldr_stack.add_directive(
-                self.gpa_map.bldr_stack.get_start(),
-                COMPATIBILITY_MASK.get(),
-                &mut self.directives,
-            );
+
+            // Add the contents of the stack page that includes the launch
+            // information.
+            let empty_stack_pages =
+                bldr_stack.add_directive(COMPATIBILITY_MASK.get(), &mut self.directives);
+
+            // Add any empty pages required for the stack.
+            if empty_stack_pages != 0 {
+                self.add_empty_pages(
+                    self.gpa_map.bldr_stack.get_start(),
+                    empty_stack_pages,
+                    COMPATIBILITY_MASK.get(),
+                    IgvmPageDataType::NORMAL,
+                )?;
+            }
 
             // Construct a native context object to capture the start context.
             let start_rip = self.gpa_map.bldr_image.get_start();
-            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BootLoaderStack>() as u64;
+            let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BldrLaunchInfo>() as u64;
             let start_context_info = StartContextInfo {
                 start_rip,
                 start_rsp,
@@ -444,7 +449,7 @@ impl IgvmBuilder {
                 long_mode: false,
             };
             let image_layout = ImageLayout {
-                cpuid_addr: self.gpa_map.cpuid_page.get_start(),
+                cpuid_addr: self.gpa_map.cpuid_page,
                 boot_params_gpa: boot_image_info.boot_params_paddr,
                 stage2_boot_params: false,
             };
@@ -657,18 +662,6 @@ impl IgvmBuilder {
                 boot_image_info.secrets_paddr,
                 PAGE_SIZE_4K,
                 TDP_COMPATIBILITY_MASK,
-                IgvmPageDataType::NORMAL,
-            )?;
-        }
-
-        // Populate the empty region below the boot loader stack page.  This
-        // region is used for the boot loader stack at runtime.
-        let stack_base = self.gpa_map.bldr_stack.get_start();
-        if stack_base > self.gpa_map.base_addr {
-            self.add_empty_pages(
-                self.gpa_map.base_addr,
-                stack_base - self.gpa_map.base_addr,
-                COMPATIBILITY_MASK.get(),
                 IgvmPageDataType::NORMAL,
             )?;
         }

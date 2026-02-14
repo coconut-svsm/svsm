@@ -10,8 +10,8 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	/* Base address is 8 MB + 32 KB */
-	. = 8m + 32k;
+	/* Base address is 64 KB */
+	. = 64k;
 	.stext = .;
 	.text : {
 		*(.startup.*)

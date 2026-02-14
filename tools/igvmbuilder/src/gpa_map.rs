@@ -8,10 +8,8 @@ use std::error::Error;
 use std::fs::metadata;
 
 use bootdefs::kernel_launch::BLDR_BASE;
-use bootdefs::kernel_launch::BLDR_MAXLEN;
-use bootdefs::kernel_launch::BLDR_STACK_PAGE;
-use bootdefs::kernel_launch::BLDR_START;
-use bootdefs::kernel_launch::CPUID_PAGE;
+use bootdefs::kernel_launch::BLDR_STACK_SIZE;
+use bootdefs::kernel_launch::KERNEL_FS_BASE;
 use bootdefs::kernel_launch::SIPI_STUB_GPA;
 use bootdefs::kernel_launch::SIPI_STUB_PT_GPA;
 
@@ -24,7 +22,6 @@ use crate::igvm_builder::ANY_NATIVE_COMPATIBILITY_MASK;
 use crate::igvm_builder::COMPATIBILITY_MASK;
 use crate::igvm_builder::TDP_COMPATIBILITY_MASK;
 
-pub const LOWMEM_PT_START: u64 = 0x10000;
 pub const LOWMEM_PT_COUNT: usize = 4;
 
 #[derive(Debug, Copy, Clone)]
@@ -75,16 +72,17 @@ struct GpaLayoutInfo {
     bldr_image: GpaRange,
     bldr_stack: GpaRange,
     init_page_tables: GpaRange,
-    kernel_fs_start: u64,
+    cpuid_page: u64,
+    bldr_end: u64,
 }
 
 #[derive(Debug)]
 pub struct GpaMap {
-    pub base_addr: u64,
     pub stage1_image: GpaRange,
     pub bldr_stack: GpaRange,
     pub bldr_image: GpaRange,
-    pub cpuid_page: GpaRange,
+    pub bldr_end: u64,
+    pub cpuid_page: u64,
     pub kernel_fs: GpaRange,
     pub boot_param_layout: BootParamLayout,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
@@ -107,11 +105,11 @@ impl GpaMap {
     ) -> Result<Self, Box<dyn Error>> {
         //   0x00D000-0x00EFFF: initial page tables for SIPI stub
         //   0x00F000-0x00FFFF: SIPI stub
-        //   0x800000-0x805FFF: zero-filled (must be pre-validated)
-        //   0x806000-0x806FFF: initial boot loader stack page
-        //   0x807000-0x807FFF: CPUID page
-        //   0x808000-0x8nnnnn: boot loader image
-        //   0x8nnnnn-0x8nnnnn: filesystem
+        //   0x010000-0x01nnnn: boot loader image
+        //   0x01nnnn-0x01nnnn: boot loader stack pages
+        //   0x01nnnn-0x01nnnn: boot loader page tables
+        //   0x01nnnn-0x01nnnn: CPUID page
+        //   0x800000-0x8nnnnn: filesystem
         //   0xFFnn0000-0xFFFFFFFF: [TDX stage 1 +] OVMF firmware (QEMU only, if specified)
 
         let stage1_image = if let Some(stage1) = &options.tdx_stage1 {
@@ -168,32 +166,37 @@ impl GpaMap {
         // data it requires.
         let gpa_layout_info = if let Some(bldr) = options.bldr.as_ref() {
             let bldr_len = Self::get_metadata(bldr)?.len() as usize;
-            if bldr_len > BLDR_MAXLEN as usize {
-                return Err(format!(
-                    "Boot loader binary size ({bldr_len:#x}) exceeds limit: {BLDR_MAXLEN:#x}"
-                )
-                .into());
-            }
-
-            let bldr_image = GpaRange::new(BLDR_START.into(), bldr_len as u64)?;
+            let bldr_image = GpaRange::new(BLDR_BASE.into(), bldr_len as u64)?;
+            let bldr_stack = GpaRange::new(bldr_image.get_end(), BLDR_STACK_SIZE as u64)?;
+            let init_page_tables =
+                GpaRange::new(bldr_stack.get_end(), LOWMEM_PT_COUNT as u64 * PAGE_SIZE_4K)?;
+            let cpuid_page = init_page_tables.get_end();
             GpaLayoutInfo {
                 bldr_image,
-                bldr_stack: GpaRange::new_page(BLDR_STACK_PAGE.into())?,
-                kernel_fs_start: bldr_image.get_end(),
-                init_page_tables: GpaRange::new(
-                    LOWMEM_PT_START,
-                    LOWMEM_PT_COUNT as u64 * PAGE_SIZE_4K,
-                )?,
+                bldr_stack,
+                init_page_tables,
+                cpuid_page,
+                bldr_end: cpuid_page + PAGE_SIZE_4K,
             }
         } else {
-            let bldr_image = GpaRange::new(BLDR_BASE.into(), 0)?;
+            let empty_range = GpaRange::new(0, 0)?;
             GpaLayoutInfo {
-                bldr_image,
-                bldr_stack: bldr_image,
-                kernel_fs_start: bldr_image.get_end(),
-                init_page_tables: GpaRange::new(0, 0)?,
+                bldr_image: empty_range,
+                bldr_stack: empty_range,
+                init_page_tables: empty_range,
+                cpuid_page: 0,
+                bldr_end: 0,
             }
         };
+
+        if let Some(firmware) = firmware {
+            let fw_info = firmware.get_fw_info();
+            let fw_start = fw_info.start as u64;
+            if gpa_layout_info.bldr_end > fw_start {
+                return Err("Boot loader overlaps firmware image".into());
+            }
+        }
+
         // Obtain the length of the kernel filesystem.
         let kernel_fs_len = if let Some(fs) = &options.filesystem {
             metadata(fs)?.len() as usize
@@ -203,7 +206,7 @@ impl GpaMap {
 
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid boot loader memory area.
-        let kernel_fs = GpaRange::new(gpa_layout_info.kernel_fs_start, kernel_fs_len as u64)?;
+        let kernel_fs = GpaRange::new(KERNEL_FS_BASE as u64, kernel_fs_len as u64)?;
 
         let (vmsa, vmsa_in_kernel_range) = match options.hypervisor {
             Hypervisor::Qemu | Hypervisor::Vanadium => {
@@ -230,11 +233,11 @@ impl GpaMap {
         };
 
         let gpa_map = Self {
-            base_addr: BLDR_BASE.into(),
             stage1_image,
             bldr_stack: gpa_layout_info.bldr_stack,
             bldr_image: gpa_layout_info.bldr_image,
-            cpuid_page: GpaRange::new_page(CPUID_PAGE.into())?,
+            bldr_end: gpa_layout_info.bldr_end,
+            cpuid_page: gpa_layout_info.cpuid_page,
             kernel_fs,
             boot_param_layout,
             kernel: GpaRange::new(kernel_base, kernel_min_size)?,

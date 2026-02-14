@@ -18,9 +18,8 @@ use igvm_defs::{
 };
 use zerocopy::IntoBytes;
 
+use crate::GpaMap;
 use crate::firmware::Firmware;
-use crate::gpa_map::LOWMEM_PT_COUNT;
-use crate::gpa_map::LOWMEM_PT_START;
 
 struct IgvmParameter {
     pub parameter_type: IgvmVariableHeaderType,
@@ -95,10 +94,6 @@ impl IgvmFirmware {
         igvm_fw.fw_info.start = igvm_fw.lowest_gpa.try_into()?;
         igvm_fw.fw_info.size = (igvm_fw.highest_gpa - igvm_fw.lowest_gpa).try_into()?;
         igvm_fw.fw_info.in_low_memory = 1;
-        let lowmem_end = LOWMEM_PT_START as u32 + (LOWMEM_PT_COUNT as u32 * PAGE_SIZE_4K as u32);
-        if igvm_fw.fw_info.start < lowmem_end {
-            return Err("IGVM firmware base is lower than 640K".into());
-        }
 
         if let Some(guest_context) = &mut igvm_fw.guest_context {
             if let Some(start_rip) = igvm_fw.start_rip {
@@ -110,11 +105,7 @@ impl IgvmFirmware {
             return Err("IGVM firmware does not contain guest context".into());
         }
 
-        // Mark the range between the top of the stage 2 heap and the base
-        // of memory as a range that needs to be validated.
-        igvm_fw.fw_info.prevalidated_count = 1;
-        igvm_fw.fw_info.prevalidated[0].base = 0;
-        igvm_fw.fw_info.prevalidated[0].size = igvm_fw.fw_info.start;
+        // Prevalidated regions will be calculated once the GPA map is known.
 
         Ok(Box::new(igvm_fw))
     }
@@ -511,7 +502,28 @@ impl Firmware for IgvmFirmware {
         self.vtom
     }
 
-    fn get_fw_info(&self) -> GuestFwInfoBlock {
-        self.fw_info
+    fn get_fw_info(&self) -> &GuestFwInfoBlock {
+        &self.fw_info
+    }
+
+    fn finalize_fw_info(&self, gpa_map: &GpaMap) -> GuestFwInfoBlock {
+        // Construct the prevalidated region(s) based on whether a boot loader
+        // is present.
+        let mut fw_info = self.fw_info;
+        if gpa_map.bldr_end == 0 {
+            // Mark the range between the the base of memory and the start of
+            // the firmware as a range that needs to be validated.
+            fw_info.prevalidated_count = 1;
+            fw_info.prevalidated[0].base = 0;
+            fw_info.prevalidated[0].size = fw_info.start;
+        } else {
+            fw_info.prevalidated_count = 2;
+            fw_info.prevalidated[0].base = 0;
+            fw_info.prevalidated[0].size = gpa_map.bldr_image.get_start().try_into().unwrap();
+            fw_info.prevalidated[1].base = u32::try_from(gpa_map.bldr_end).unwrap();
+            fw_info.prevalidated[1].size = fw_info.start - fw_info.prevalidated[1].base;
+        }
+
+        fw_info
     }
 }

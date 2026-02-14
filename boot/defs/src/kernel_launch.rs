@@ -4,7 +4,6 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
-use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 // The SIPI stub is placed immediately below the stage 2 heap.
@@ -13,15 +12,9 @@ pub const SIPI_STUB_GPA: u32 = 0xF000;
 // Two pages below the SIPI stub are used for low memory page tables.
 pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
 
-pub const BLDR_BASE: u32 = 0x800000; // Start of boot loader area excluding heap
-pub const BLDR_STACK_END: u32 = BLDR_BASE;
-pub const BLDR_STACK_PAGE: u32 = 0x806000;
-pub const BLDR_INFO_SZ: u32 = size_of::<BldrLaunchInfo>() as u32;
-pub const BLDR_STACK: u32 = BLDR_STACK_PAGE + 0x1000 - BLDR_INFO_SZ;
-pub const CPUID_PAGE: u32 = 0x807000;
-// Stage2 is loaded at 8 MB + 32 KB
-pub const BLDR_START: u32 = 0x808000;
-pub const BLDR_MAXLEN: u32 = 0x8D0000 - BLDR_START;
+pub const BLDR_BASE: u32 = 0x10000; // Start of boot loader area: 64 KB
+pub const BLDR_STACK_SIZE: u32 = 0x6000; // Size of boot loader stack: 24 KB
+pub const KERNEL_FS_BASE: u32 = 0x800000; // start of kernel filesystem: 8 MB
 
 #[derive(Copy, Clone, Debug, Immutable, IntoBytes)]
 #[repr(C)]
@@ -37,6 +30,7 @@ pub struct KernelLaunchInfo {
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
     pub bldr_start: u64,
+    pub bldr_end: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
     pub idt_vaddr: u64,
@@ -47,8 +41,6 @@ pub struct KernelLaunchInfo {
     pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
-    pub lowmem_page_table_base: u32,
-    pub lowmem_page_table_size: u32,
     pub sipi_stub_base: u32,
     pub sipi_stub_size: u32,
     pub debug_serial_port: u16,

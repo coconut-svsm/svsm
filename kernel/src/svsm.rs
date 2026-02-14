@@ -523,7 +523,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     let kernel_region = new_kernel_region(launch_info);
-    let early_boot_regions = enumerate_early_boot_regions(launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(&boot_params, launch_info);
 
     invalidate_early_boot_memory(&**SVSM_PLATFORM, &boot_params, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");
