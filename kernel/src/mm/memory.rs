@@ -19,7 +19,6 @@ use crate::utils::MemoryRegion;
 
 use alloc::vec::Vec;
 use bootdefs::kernel_launch::KernelLaunchInfo;
-use bootdefs::kernel_launch::LOWMEM_END;
 
 /// Global memory map containing various memory regions.
 static MEMORY_MAP: RWLock<Vec<MemoryRegion<PhysAddr>>> = RWLock::new(Vec::new());
@@ -135,7 +134,7 @@ pub fn valid_phys_region(region: &MemoryRegion<PhysAddr>) -> bool {
 }
 
 /// The starting address of the ISA range.
-const ISA_RANGE_START: PhysAddr = PhysAddr::new(LOWMEM_END as usize);
+const ISA_RANGE_START: PhysAddr = PhysAddr::new(0xA0000);
 
 /// The ending address of the ISA range.
 const ISA_RANGE_END: PhysAddr = PhysAddr::new(0x100000);

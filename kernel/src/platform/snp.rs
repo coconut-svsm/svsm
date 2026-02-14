@@ -326,12 +326,6 @@ impl SvsmPlatform for SnpPlatform {
         &GHCB_IO_DRIVER
     }
 
-    fn invalidate_lowmem_page_tables(&self, paddr: u32, count: usize) -> Result<(), SvsmError> {
-        let region = MemoryRegion::new(PhysAddr::from(paddr as usize), count * PAGE_SIZE);
-        // SAFETY: invalidation is always safe.
-        unsafe { self.validate_physical_page_range(region, PageValidateOp::Invalidate) }
-    }
-
     /// The caller is required to ensure that it is safe to validate low
     /// memory.
     unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError> {

@@ -385,6 +385,15 @@ impl IgvmBuilder {
             kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
             kernel_region_start: self.gpa_map.kernel.get_start(),
             kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
+            lowmem_page_table_base: self
+                .gpa_map
+                .init_page_tables
+                .get_start()
+                .try_into()
+                .unwrap(),
+            lowmem_page_table_size: self.gpa_map.init_page_tables.get_size().try_into().unwrap(),
+            sipi_stub_base: self.gpa_map.sipi_stub.get_start().try_into().unwrap(),
+            sipi_stub_size: self.gpa_map.sipi_stub.get_size().try_into().unwrap(),
             bldr_start: self.gpa_map.base_addr,
             vtom: self.vtom,
         };
@@ -664,12 +673,28 @@ impl IgvmBuilder {
             )?;
         }
 
-        // If the target includes a non-isolated platform, then insert the
-        // SIPI startup stub.  Also include the SIPI stub with TDX since it is
-        // used for AP startup.
-        let sipi_compat_mask = ANY_NATIVE_COMPATIBILITY_MASK | TDP_COMPATIBILITY_MASK;
-        if COMPATIBILITY_MASK.contains(sipi_compat_mask) {
-            add_sipi_stub(sipi_compat_mask, &mut self.directives);
+        if self.gpa_map.sipi_stub.get_size() != 0 {
+            // Add empty pages for the SIPI page tables.
+            self.add_empty_pages(
+                self.gpa_map.sipi_stub.get_start(),
+                self.gpa_map.sipi_stub.get_size() - PAGE_SIZE_4K,
+                COMPATIBILITY_MASK.get(),
+                IgvmPageDataType::NORMAL,
+            )?;
+
+            // The SIPI stub will be added on any platform that requires it.
+            // On every other platform, an empty page will be added in its
+            // place so that the set of accepted pages is the same on all
+            // platforms.
+            add_sipi_stub(self.gpa_map.sipi_compat_mask, &mut self.directives);
+            if COMPATIBILITY_MASK.contains(!self.gpa_map.sipi_compat_mask) {
+                self.add_empty_pages(
+                    self.gpa_map.sipi_stub.get_end() - PAGE_SIZE_4K,
+                    PAGE_SIZE_4K,
+                    COMPATIBILITY_MASK.get() & !self.gpa_map.sipi_compat_mask,
+                    IgvmPageDataType::NORMAL,
+                )?;
+            }
         }
 
         Ok(())

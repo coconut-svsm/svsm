@@ -17,7 +17,6 @@ use alloc::vec::Vec;
 use bootdefs::boot_params::BootParamBlock;
 use bootdefs::boot_params::IgvmParamPage;
 use bootdefs::boot_params::InitialGuestContext;
-use bootdefs::kernel_launch::LOWMEM_END;
 use core::mem::size_of;
 use core::ops::Deref;
 use core::ptr;
@@ -348,7 +347,7 @@ impl BootParams<'_> {
             // permissions can be granted to the guest VMPL for that range.
             regions.push(MemoryRegion::from_addresses(
                 PhysAddr::from(0u64),
-                PhysAddr::from(u64::from(LOWMEM_END)),
+                PhysAddr::from(fw_info.start as u64),
             ));
         }
 

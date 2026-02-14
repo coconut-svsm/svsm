@@ -13,11 +13,6 @@ pub const SIPI_STUB_GPA: u32 = 0xF000;
 // Two pages below the SIPI stub are used for low memory page tables.
 pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
 
-// The first 640 KB of RAM (low memory)
-pub const LOWMEM_END: u32 = 0xA0000;
-
-pub const STAGE2_HEAP_START: u32 = 0x10000; // 64 KB
-pub const STAGE2_HEAP_END: u32 = LOWMEM_END; // 640 KB
 pub const BLDR_BASE: u32 = 0x800000; // Start of boot loader area excluding heap
 pub const BLDR_STACK_END: u32 = BLDR_BASE;
 pub const BLDR_STACK_PAGE: u32 = 0x806000;
@@ -52,14 +47,15 @@ pub struct KernelLaunchInfo {
     pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
-    pub lowmem_page_table_paddr: u32,
-    pub lowmem_page_table_count: u32,
+    pub lowmem_page_table_base: u32,
+    pub lowmem_page_table_size: u32,
+    pub sipi_stub_base: u32,
+    pub sipi_stub_size: u32,
     pub debug_serial_port: u16,
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
-    pub lowmem_validated: bool,
-    pub _reserved: [bool; 2],
+    pub _reserved: [bool; 3],
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;

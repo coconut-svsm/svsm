@@ -10,7 +10,6 @@
 extern crate alloc;
 
 use bootdefs::kernel_launch::KernelLaunchInfo;
-use bootdefs::kernel_launch::LOWMEM_END;
 use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -472,29 +471,6 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     // a remote GDB connection
     //debug_break();
 
-    // Invalidate low-memory page tables if required for consistency.
-    if launch_info.lowmem_page_table_count != 0 {
-        SVSM_PLATFORM
-            .invalidate_lowmem_page_tables(
-                launch_info.lowmem_page_table_paddr,
-                launch_info.lowmem_page_table_count as usize,
-            )
-            .expect("failed to invalidate low-memory page tables");
-    }
-
-    // Validate low memory if the launch info indicates that it has not yet
-    // been validated.
-    if !launch_info.lowmem_validated {
-        // SAFETY: the launch information is trusted to represent the
-        // validation state of memory, thus memory can safely be validated if
-        // the launch info declares that it is necessary.
-        unsafe {
-            SVSM_PLATFORM
-                .validate_low_memory(LOWMEM_END.into(), false)
-                .expect("failed to validate low 640 KB");
-        }
-    }
-
     // Free the BSP stack that was allocated for early initialization.
     free_init_bsp_stack();
 
@@ -547,7 +523,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     let kernel_region = new_kernel_region(launch_info);
-    let early_boot_regions = enumerate_early_boot_regions(&boot_params, launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(launch_info);
 
     invalidate_early_boot_memory(&**SVSM_PLATFORM, &boot_params, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");

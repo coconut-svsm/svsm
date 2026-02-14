@@ -169,13 +169,14 @@ where
         boot_params_virt_addr: boot_params_vaddr,
         vtom: boot_image_params.vtom,
         debug_serial_port: boot_image_params.boot_params.debug_serial_port,
+        lowmem_page_table_base: boot_image_params.lowmem_page_table_base,
+        lowmem_page_table_size: boot_image_params.lowmem_page_table_size,
+        sipi_stub_base: boot_image_params.sipi_stub_base,
+        sipi_stub_size: boot_image_params.sipi_stub_size,
         use_alternate_injection: boot_image_params.boot_params.use_alternate_injection != 0,
         kernel_page_table_vaddr: kernel_page_tables.root_vaddr(),
         suppress_svsm_interrupts: false,
         vmsa_in_kernel_heap,
-        lowmem_validated: false,
-        lowmem_page_table_paddr: 0,
-        lowmem_page_table_count: 0,
         _reserved: Default::default(),
     };
     add_page_contents(add_page_data, launch_info_paddr, launch_info.as_bytes())?;

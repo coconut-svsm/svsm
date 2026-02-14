@@ -12,7 +12,6 @@ use crate::error::SvsmError;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
 use crate::utils::{MemoryRegion, page_align_up};
 use bootdefs::kernel_launch::KernelLaunchInfo;
-use bootdefs::kernel_launch::LOWMEM_END;
 
 use alloc::vec::Vec;
 
@@ -39,20 +38,22 @@ fn invalidate_boot_memory_region(
     Ok(())
 }
 
-pub fn enumerate_early_boot_regions(
-    boot_params: &BootParams<'_>,
-    launch_info: &KernelLaunchInfo,
-) -> Vec<MemoryRegion<PhysAddr>> {
+pub fn enumerate_early_boot_regions(launch_info: &KernelLaunchInfo) -> Vec<MemoryRegion<PhysAddr>> {
     let mut regions = Vec::new();
 
-    // Early boot memory must be invalidated after changing to the SVSM page
-    // page table to avoid invalidating page tables currently in use.  Always
-    // invalidate stage 2 memory, unless firmware is loaded into low memory.
-    // Also invalidate the boot data if required.
-    if !boot_params.fw_in_low_memory() {
-        regions.push(MemoryRegion::from_addresses(
-            PhysAddr::from(0u64),
-            PhysAddr::from(u64::from(LOWMEM_END)),
+    // Include low-memory page tables if they are present.
+    if launch_info.lowmem_page_table_size != 0 {
+        regions.push(MemoryRegion::new(
+            PhysAddr::from(launch_info.lowmem_page_table_base as u64),
+            launch_info.lowmem_page_table_size as usize,
+        ));
+    }
+
+    // Include the low-memory SIPI stub if present.
+    if launch_info.sipi_stub_size != 0 {
+        regions.push(MemoryRegion::new(
+            PhysAddr::from(launch_info.sipi_stub_base as u64),
+            launch_info.sipi_stub_size as usize,
         ));
     }
 
