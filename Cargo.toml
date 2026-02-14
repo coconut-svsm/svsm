@@ -8,6 +8,7 @@ members = [
     # internal library crates
     "boot/bootimg",
     "boot/defs",
+    "cpuarch",
     # binary targets
     "stage1",
     "kernel",
