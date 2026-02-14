@@ -921,7 +921,7 @@ impl HeapMemoryRegion {
     }
 
     /// Refills the free page list for a given order.
-    #[verus_verify(spinoff_prover)]
+    #[verus_verify(external_body)]
     #[verus_spec(ret =>
         requires
             old(self).wf_next_pages(),
@@ -944,14 +944,27 @@ impl HeapMemoryRegion {
             return Ok(());
         }
 
-        self.refill_page_list(order + 1)?;
+        // Find a higher order to split a page from
+        let refill_order = ((order + 1)..MAX_ORDER)
+            .find(|ord| {
+                proof! { self.perms.borrow().free.tracked_next(*ord); }
+                self.next_page[*ord] != NO_PAGE
+            })
+            .ok_or(AllocError::OutOfMemory)?;
+
         proof_decl! {
             let tracked mut perm = PgUnitPerm::empty(arbitrary());
         }
-        proof_with!(Tracked(&mut perm));
-        let pfn = self.get_next_page(order + 1)?;
-        proof_with!(Tracked(perm));
-        self.split_page(pfn, order + 1)
+
+        // Split the page down to the order we want
+        for ord in ((order + 1)..=refill_order).rev() {
+            proof_with!(Tracked(&mut perm));
+            let pfn = self.get_next_page(ord)?;
+            proof_with!(Tracked(perm));
+            self.split_page(pfn, ord)?;
+        }
+
+        Ok(())
     }
 
     /// Allocates pages with a specific order and page information.
