@@ -8,12 +8,12 @@
 #![no_main]
 
 #[cfg(not(feature = "load-stage2"))]
-use bootlib::igvm_params::IgvmParamBlock;
+use bootdefs::boot_params::BootParamBlock;
 #[cfg(not(feature = "load-stage2"))]
-use bootlib::kernel_launch::Stage2LaunchInfo;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
 #[cfg(feature = "load-stage2")]
-use bootlib::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
-use bootlib::kernel_launch::{STAGE2_STACK, STAGE2_START};
+use bootdefs::kernel_launch::{CPUID_PAGE, SECRETS_PAGE, STAGE2_INFO_SZ, STAGE2_MAXLEN};
+use bootdefs::kernel_launch::{STAGE2_STACK, STAGE2_START};
 use core::arch::global_asm;
 #[cfg(not(feature = "load-stage2"))]
 use core::mem::offset_of;
@@ -176,7 +176,7 @@ global_asm!(
         test    %edx, %edx
         jnz     .Lenter_stage2
 
-        movl    $({STAGE2_STACK} + {IGVM_OFF}), %edx
+        movl    $({STAGE2_STACK} + {PARAM_OFF}), %edx
         movl    (%edx), %edx
         /* %edx: &IgvmParamBlock */
         test    %edx, %edx
@@ -184,14 +184,14 @@ global_asm!(
 
         /* Leave %edx intact to ensure we jump to .Lenter_stage2 */
         mov     %edx, %eax
-        addl    ${VTOM_OFF_IGVM}, %eax
+        addl    ${VTOM_OFF_PARAM}, %eax
         /* %eax: &IgvmParamBlock.vtom */
         jmp     1b"#,
     STAGE2_STACK = const STAGE2_STACK,
     PLATFORM_TYPE_OFF = const offset_of!(Stage2LaunchInfo, platform_type) as u32,
-    IGVM_OFF = const offset_of!(Stage2LaunchInfo, igvm_params) as u32,
+    PARAM_OFF = const offset_of!(Stage2LaunchInfo, boot_params) as u32,
     VTOM_OFF = const offset_of!(Stage2LaunchInfo, vtom) as u32,
-    VTOM_OFF_IGVM = const offset_of!(IgvmParamBlock, vtom) as u32,
+    VTOM_OFF_PARAM = const offset_of!(BootParamBlock, vtom) as u32,
     options(att_syntax)
 );
 

@@ -1,10 +1,12 @@
 [package]
-name = "bootlib"
+name = "bootimg"
 version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
-uuid.workspace = true
+bootdefs.workspace = true
+elf.workspace = true
+igvm_defs.workspace = true
 zerocopy.workspace = true
 
 [lints]

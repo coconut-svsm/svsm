@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use crate::address::PhysAddr;
-use crate::config::SvsmConfig;
+use crate::boot_params::BootParams;
 use crate::cpu::cpuid::copy_cpuid_table_to;
 use crate::cpu::percpu::{current_ghcb, this_cpu, this_cpu_shared};
 use crate::error::SvsmError;
@@ -46,7 +46,7 @@ impl SevFWMetaData {
 /// The caller must have verified that the given physical memory region is
 /// private to the CVM and that it does not alias SVSM memory.
 unsafe fn validate_fw_mem_region(
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     region: MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
     let pstart = region.start();
@@ -54,7 +54,7 @@ unsafe fn validate_fw_mem_region(
 
     log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
 
-    if config.page_state_change_required() {
+    if boot_params.page_state_change_required() {
         current_ghcb()
             .page_state_change(region, PageSize::Regular, PageStateChangeOp::Private)
             .expect("GHCB PSC call failed to validate firmware memory");
@@ -88,7 +88,7 @@ unsafe fn validate_fw_mem_region(
 /// The caller must have verified that the given physical memory regions are
 /// private to the CVM and that they do not alias SVSM memory.
 unsafe fn validate_fw_memory_vec(
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     regions: Vec<MemoryRegion<PhysAddr>>,
 ) -> Result<(), SvsmError> {
     if regions.is_empty() {
@@ -107,13 +107,13 @@ unsafe fn validate_fw_memory_vec(
     }
     // SAFETY: the caller must uphold the safety requirements
     unsafe {
-        validate_fw_mem_region(config, region)?;
-        validate_fw_memory_vec(config, next_vec)
+        validate_fw_mem_region(boot_params, region)?;
+        validate_fw_memory_vec(boot_params, next_vec)
     }
 }
 
 pub fn validate_fw_memory(
-    config: &SvsmConfig<'_>,
+    boot_params: &BootParams<'_>,
     fw_meta: &SevFWMetaData,
     kernel_region: &MemoryRegion<PhysAddr>,
 ) -> Result<(), SvsmError> {
@@ -147,7 +147,7 @@ pub fn validate_fw_memory(
 
     // SAFETY: we've just checked that the firmware regions do not overlap with
     // the SVSM kernel
-    unsafe { validate_fw_memory_vec(config, regions) }
+    unsafe { validate_fw_memory_vec(boot_params, regions) }
 }
 
 pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
@@ -269,9 +269,10 @@ pub unsafe fn copy_tables_to_fw(
 /// # Safety
 ///
 /// The caller must have verified that the firmware physical memory regions in
-/// `config` are private to the CVM and that they do not alias SVSM memory.
-pub unsafe fn validate_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
-    let fw_regions = config.get_fw_regions();
+/// `boot_params` are private to the CVM and that they do not alias SVSM
+/// memory.
+pub unsafe fn validate_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+    let fw_regions = boot_params.get_fw_regions();
 
     for (i, region) in fw_regions.into_iter().enumerate() {
         log::info!("Firmware region {i} at {region:#018x}");
@@ -307,13 +308,13 @@ pub fn prepare_fw_launch(fw_meta: &SevFWMetaData) -> Result<(), SvsmError> {
     Ok(())
 }
 
-pub fn launch_fw(config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+pub fn launch_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
     let cpu = this_cpu();
     let mut vmsa_ref = cpu.guest_vmsa_ref();
     let vmsa_pa = vmsa_ref.vmsa_phys().unwrap();
     let vmsa = vmsa_ref.vmsa();
 
-    config.initialize_guest_vmsa(vmsa)?;
+    boot_params.initialize_guest_vmsa(vmsa)?;
 
     log::info!("VMSA PA: {:#x}", vmsa_pa);
 

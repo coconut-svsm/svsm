@@ -4,16 +4,22 @@
 //
 // Author: Jon Lange <jlange@microsoft.com>
 
+use super::PageEncryptionMasks;
+use super::PageStateChangeOp;
+use super::PageValidateOp;
+use super::PlatformPageType;
+use super::Stage2Platform;
+use super::SvsmPlatform;
 use super::capabilities::Caps;
 use super::snp_fw::{
     copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
 };
-use super::{PageEncryptionMasks, PageStateChangeOp, PageValidateOp, Stage2Platform, SvsmPlatform};
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::config::SvsmConfig;
+use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
-use crate::cpu::IrqGuard;
-use crate::cpu::cpuid::{CpuidResult, cpuid_table};
+use crate::cpu::cpuid::CpuidResult;
+use crate::cpu::cpuid::cpuid_table;
+use crate::cpu::cpuid::init_cpuid_table;
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::{PerCpu, current_ghcb, this_cpu};
 use crate::cpu::tlb::TlbFlushScope;
@@ -28,11 +34,13 @@ use crate::mm::PAGE_SIZE_2M;
 use crate::mm::PerCPUPageMappingGuard;
 use crate::mm::TransitionPageTable;
 use crate::mm::memory::write_guest_memory_map;
+use crate::platform::IrqGuard;
 use crate::sev::ghcb::GHCBIOSize;
 use crate::sev::hv_doorbell::HVDoorbell;
 use crate::sev::msr_protocol::{
     GHCBHvFeatures, hypervisor_ghcb_features, request_termination_msr, verify_ghcb_version,
 };
+use crate::sev::secrets_page::initialize_secrets_page;
 use crate::sev::status::vtom_enabled;
 use crate::sev::tlb::flush_tlb_scope;
 use crate::sev::{
@@ -44,13 +52,12 @@ use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use syscall::GlobalFeatureFlags;
 
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+#[cfg(test)]
+use bootdefs::platform::SvsmPlatformType;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, Ordering};
-
-use bootlib::kernel_launch::Stage2LaunchInfo;
-#[cfg(test)]
-use bootlib::platform::SvsmPlatformType;
 
 static GHCB_IO_DRIVER: GHCBIOPort = GHCBIOPort::new();
 
@@ -139,6 +146,28 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
+    /// # Safety
+    /// The caller must specify a valid virtual address for the specified type
+    /// of page.
+    unsafe fn initialize_platform_page(&self, page_type: PlatformPageType, vaddr: VirtAddr) {
+        match page_type {
+            PlatformPageType::Cpuid => {
+                // SAFETY: the caller takes responsibility for the correctness
+                // of the virtual address.
+                unsafe {
+                    init_cpuid_table(vaddr);
+                }
+            }
+            PlatformPageType::Secrets => {
+                // SAFETY: the caller takes responsibility for the correctness
+                // of the virtual address.
+                unsafe {
+                    initialize_secrets_page(vaddr);
+                }
+            }
+        }
+    }
+
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError> {
         init_svsm_console(&GHCB_IO_DRIVER, debug_serial_port)?;
         sev_status_verify();
@@ -155,30 +184,38 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
+    /// # Safety
+    /// The caller must specify a valid virtual address for the specified type
+    /// of page.
+    unsafe fn free_unused_platform_page(&self, _page_type: PlatformPageType, _vaddr: VirtAddr) {
+        // All platform page types are used on SNP, so no platform pages should
+        // be freed.
+    }
+
     fn prepare_fw(
         &self,
-        config: &SvsmConfig<'_>,
+        boot_params: &BootParams<'_>,
         kernel_region: MemoryRegion<PhysAddr>,
     ) -> Result<(), SvsmError> {
-        if let Some(fw_meta) = &config.get_fw_metadata() {
+        if let Some(fw_meta) = &boot_params.get_fw_metadata() {
             print_fw_meta(fw_meta);
-            validate_fw_memory(config, fw_meta, &kernel_region)?;
-            write_guest_memory_map(config)?;
+            validate_fw_memory(boot_params, fw_meta, &kernel_region)?;
+            write_guest_memory_map(boot_params)?;
             // SAFETY: we've verified the firmware memory addresses above.
             // This is called from CPU 0, so the underlying physical address
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                validate_fw(config)?;
+                validate_fw(boot_params)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
         Ok(())
     }
 
-    fn launch_fw(&self, config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
-        if config.should_launch_fw() {
-            launch_fw(config)
+    fn launch_fw(&self, boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+        if boot_params.should_launch_fw() {
+            launch_fw(boot_params)
         } else {
             Ok(())
         }

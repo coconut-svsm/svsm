@@ -21,6 +21,30 @@ pub fn register_cpuid_table(table: &'static SnpCpuidTable) {
         .expect("Could not initialize CPUID page");
 }
 
+/// # Safety
+/// The caller must specify a valid virtual address to use for CPUID table
+/// initialization.
+///
+/// # Panics
+///
+/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
+pub unsafe fn init_cpuid_table(addr: VirtAddr) {
+    // SAFETY: the caller takes responsibility for the correctness of the
+    // virtual address.
+    let table = unsafe {
+        addr.aligned_mut::<SnpCpuidTable>()
+            .expect("Misaligned SNP CPUID table address")
+    };
+
+    for func in table.func.iter_mut().take(table.count as usize) {
+        if func.eax_in == 0x8000001f {
+            func.eax_out |= 1 << 28;
+        }
+    }
+
+    register_cpuid_table(table);
+}
+
 /// Copy a CPUID page's content to memory pointed to by a [`VirtAddr`]
 ///
 /// # Safety
@@ -132,29 +156,31 @@ pub fn cpuid_table(eax: u32, ecx: u32) -> Option<CpuidResult> {
 }
 
 pub fn dump_cpuid_table() {
-    let count = CPUID_PAGE.count as usize;
+    if let Ok(table) = CPUID_PAGE.try_get_inner() {
+        let count = table.count as usize;
 
-    log::trace!("CPUID Table entry count: {}", count);
+        log::trace!("CPUID Table entry count: {}", count);
 
-    for i in 0..count {
-        let eax_in = CPUID_PAGE.func[i].eax_in;
-        let ecx_in = CPUID_PAGE.func[i].ecx_in;
-        let xcr0_in = CPUID_PAGE.func[i].xcr0_in;
-        let xss_in = CPUID_PAGE.func[i].xss_in;
-        let eax_out = CPUID_PAGE.func[i].eax_out;
-        let ebx_out = CPUID_PAGE.func[i].ebx_out;
-        let ecx_out = CPUID_PAGE.func[i].ecx_out;
-        let edx_out = CPUID_PAGE.func[i].edx_out;
-        log::trace!(
-            "EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
-            eax_in,
-            ecx_in,
-            xcr0_in,
-            xss_in,
-            eax_out,
-            ebx_out,
-            ecx_out,
-            edx_out
-        );
+        for i in 0..count {
+            let eax_in = table.func[i].eax_in;
+            let ecx_in = table.func[i].ecx_in;
+            let xcr0_in = table.func[i].xcr0_in;
+            let xss_in = table.func[i].xss_in;
+            let eax_out = table.func[i].eax_out;
+            let ebx_out = table.func[i].ebx_out;
+            let ecx_out = table.func[i].ecx_out;
+            let edx_out = table.func[i].edx_out;
+            log::trace!(
+                "EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
+                eax_in,
+                ecx_in,
+                xcr0_in,
+                xss_in,
+                eax_out,
+                ebx_out,
+                ecx_out,
+                edx_out
+            );
+        }
     }
 }

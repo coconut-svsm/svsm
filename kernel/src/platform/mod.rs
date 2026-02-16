@@ -23,7 +23,7 @@ use core::fmt::Debug;
 use core::mem::MaybeUninit;
 
 use crate::address::{PhysAddr, VirtAddr};
-use crate::config::SvsmConfig;
+use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::percpu::PerCpu;
@@ -33,12 +33,13 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::TransitionPageTable;
+use crate::mm::alloc::free_page;
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
-use bootlib::kernel_launch::Stage2LaunchInfo;
-use bootlib::platform::SvsmPlatformType;
+use bootdefs::kernel_launch::Stage2LaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 
 static SVSM_PLATFORM_TYPE: ImmutAfterInitCell<SvsmPlatformType> = ImmutAfterInitCell::uninit();
 static SVSM_PLATFORM_CELL: ImmutAfterInitCell<SvsmPlatformCell> = ImmutAfterInitCell::uninit();
@@ -65,6 +66,12 @@ pub enum PageStateChangeOp {
 pub enum PageValidateOp {
     Validate,
     Invalidate,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum PlatformPageType {
+    Cpuid,
+    Secrets,
 }
 
 /// This defines a platform abstraction to permit the SVSM to run on different
@@ -96,6 +103,14 @@ pub trait SvsmPlatform: Sync {
     /// Performs basic early initialization of the runtime environment.
     fn env_setup(&mut self, debug_serial_port: u16, vtom: usize) -> Result<(), SvsmError>;
 
+    /// Initializes a platform-specific page.
+    /// # Safety
+    /// The caller must specify a valid virtual address for the specified type
+    /// of page.
+    unsafe fn initialize_platform_page(&self, _page_type: PlatformPageType, _vaddr: VirtAddr) {
+        // By default, no action is required.
+    }
+
     /// Performs initialization of the platform runtime environment after
     /// the core system environment has been initialized.
     fn env_setup_late(&mut self, debug_serial_port: u16) -> Result<(), SvsmError>;
@@ -104,17 +119,26 @@ pub trait SvsmPlatform: Sync {
     /// (for services not used by stage2).
     fn env_setup_svsm(&self) -> Result<(), SvsmError>;
 
+    /// Frees a platforms-specific page if it is not used by the underlying
+    /// platform.
+    /// # Safety
+    /// The caller must specify a valid virtual address for the specified type
+    /// of page.
+    unsafe fn free_unused_platform_page(&self, _page_type: PlatformPageType, vaddr: VirtAddr) {
+        free_page(vaddr);
+    }
+
     /// Performs the necessary preparations for launching guest boot firmware.
     fn prepare_fw(
         &self,
-        _config: &SvsmConfig<'_>,
+        _boot_params: &BootParams<'_>,
         _kernel_region: MemoryRegion<PhysAddr>,
     ) -> Result<(), SvsmError> {
         Ok(())
     }
 
     /// Launches guest boot firmware.
-    fn launch_fw(&self, _config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+    fn launch_fw(&self, _boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
         Ok(())
     }
 
@@ -322,6 +346,14 @@ impl SvsmPlatformCell {
             SvsmPlatformCell::Native(platform) => platform,
             SvsmPlatformCell::Snp(platform) => platform,
             SvsmPlatformCell::Tdp(platform) => platform,
+        }
+    }
+
+    pub fn platform_type(&self) -> SvsmPlatformType {
+        match self {
+            SvsmPlatformCell::Native(_) => SvsmPlatformType::Native,
+            SvsmPlatformCell::Snp(_) => SvsmPlatformType::Snp,
+            SvsmPlatformCell::Tdp(_) => SvsmPlatformType::Tdp,
         }
     }
 }

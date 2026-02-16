@@ -229,10 +229,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "bootlib"
+name = "bootdefs"
 version = "0.1.0"
 dependencies = [
  "uuid",
+ "zerocopy",
+]
+
+[[package]]
+name = "bootimg"
+version = "0.1.0"
+dependencies = [
+ "bootdefs",
+ "elf",
+ "igvm_defs",
  "zerocopy",
 ]
 
@@ -1083,7 +1093,7 @@ dependencies = [
 name = "igvmbuilder"
 version = "0.1.0"
 dependencies = [
- "bootlib",
+ "bootdefs",
  "clap",
  "igvm",
  "igvm_defs",
@@ -1829,7 +1839,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "stage1"
 version = "0.1.0"
 dependencies = [
- "bootlib",
+ "bootdefs",
 ]
 
 [[package]]
@@ -1879,7 +1889,8 @@ dependencies = [
  "aes-kw",
  "bitfield-struct 0.6.2",
  "bitflags 2.10.0",
- "bootlib",
+ "bootdefs",
+ "bootimg",
  "cocoon-tpm-crypto",
  "cocoon-tpm-tpm2-interface",
  "cocoon-tpm-utils-common",

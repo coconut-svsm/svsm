@@ -89,7 +89,7 @@ fn init_encrypt_mask(platform: &dyn SvsmPlatform) -> ImmutAfterInitResult<()> {
 }
 
 /// Returns the private encrypt mask value.
-fn private_pte_mask() -> usize {
+pub fn private_pte_mask() -> usize {
     *PRIVATE_PTE_MASK
 }
 
@@ -367,6 +367,13 @@ impl PTEntry {
     /// constrained to the supported feature flags.
     pub fn set(&mut self, addr: PhysAddr, flags: PTEntryFlags) {
         self.set_unrestricted(addr, supported_flags(flags));
+    }
+
+    /// Inserts the private address mask if the page is present.
+    pub fn make_private_if_present(&mut self) {
+        if self.flags().contains(PTEntryFlags::PRESENT) {
+            self.0 = make_private_address(self.0);
+        }
     }
 
     /// Get the address from the page table entry, including the shared bit.

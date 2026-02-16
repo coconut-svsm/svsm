@@ -124,7 +124,7 @@ mod tests {
         use crate::testutils::{has_test_iorequests, is_test_platform_type};
 
         use alloc::vec;
-        use bootlib::platform::SvsmPlatformType;
+        use bootdefs::platform::SvsmPlatformType;
 
         if has_test_iorequests() && is_test_platform_type(SvsmPlatformType::Snp) {
             let sp = svsm_test_io().unwrap();

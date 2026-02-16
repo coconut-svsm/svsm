@@ -9,18 +9,20 @@
 
 extern crate alloc;
 
-use bootlib::kernel_launch::KernelLaunchInfo;
+use bootdefs::kernel_launch::KernelLaunchInfo;
+use bootdefs::platform::SvsmPlatformType;
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 use core::ptr::NonNull;
-use cpuarch::snp_cpuid::SnpCpuidTable;
 use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
-use svsm::config::SvsmConfig;
+use svsm::boot_params::BootParamBox;
+#[cfg(feature = "virtio-drivers")]
+use svsm::boot_params::BootParams;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
-use svsm::cpu::cpuid::{dump_cpuid_table, register_cpuid_table};
+use svsm::cpu::cpuid::dump_cpuid_table;
 use svsm::cpu::gdt::GLOBAL_GDT;
 use svsm::cpu::idt::svsm::{early_idt_init, idt_init};
 use svsm::cpu::idt::{EARLY_IDT_ENTRIES, IDT, IdtEntry};
@@ -39,7 +41,6 @@ use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
-use svsm::igvm_params::IgvmBox;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
@@ -53,8 +54,13 @@ use svsm::mm::pagetable::paging_init;
 use svsm::mm::ro_after_init::make_ro_after_init;
 use svsm::mm::validate::init_valid_bitmap;
 use svsm::mm::virtualrange::virt_log_usage;
-use svsm::platform::{SVSM_PLATFORM, SvsmPlatformCell, init_capabilities, init_platform_type};
-use svsm::sev::secrets_page::initialize_secrets_page;
+use svsm::platform::PageValidateOp;
+use svsm::platform::PlatformPageType;
+use svsm::platform::SVSM_PLATFORM;
+use svsm::platform::SvsmPlatform;
+use svsm::platform::SvsmPlatformCell;
+use svsm::platform::init_capabilities;
+use svsm::platform::init_platform_type;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
@@ -96,26 +102,29 @@ global_asm!(
 
         .globl startup_64
     startup_64:
-        /*
-         * Setup stack.
-         *
-         * The initial stack is always mapped across all page tables because it
-         * uses the shared PML4E, making it accessible after switching to the
-         * first task's page table.
-         *
-         * See switch_to() for details.
-         */
-        movq %rsi, %rsp
-        leaq bsp_stack_end(%rip), %rsi
-        movq %rsp, (%rsi)
-        leaq bsp_stack(%rip), %rsi
-        movq %rdx, (%rsi)
+        /* Upon entry, the stack pointer is correctly set but the initial page
+         * tables are not guaranteed to be set correctly.  Switch to the
+         * correct page tables */
+        popq %r15
+        movq %r15, %cr3
 
         /* Mark the next stack frame as the bottom frame */
         xor %rbp, %rbp
 
-        /* Switch to the kernel page tables */
-        movq %rcx, %cr3
+        /* Capture the start parameter registers from the stack.  The platform
+         * type is in rax and not the stack. */
+        popq %rdi
+        movq %rax, %rsi
+
+        /* Capture the stack bounds into global variables.  The stack limit
+         * (the low address) is the last value popped off the stack, and once
+         * it has been popped, the stack pointer will represent the stack base
+         * (the high address) */
+        leaq bsp_stack(%rip), %r15
+        popq %r14
+        movq %r14, (%r15)
+        leaq bsp_stack_end(%rip), %r15
+        movq %rsp, (%r15)
 
         /*
          * Make sure (%rsp + 8) is 16b-aligned when control is transferred
@@ -138,12 +147,49 @@ global_asm!(
     options(att_syntax)
 );
 
-pub fn memory_init(launch_info: &KernelLaunchInfo) {
+/// # Safety
+/// The launch info block must correctly specify the initial state of the
+/// heap.
+unsafe fn memory_init(
+    launch_info: &KernelLaunchInfo,
+    platform: &dyn SvsmPlatform,
+    platform_type: SvsmPlatformType,
+) {
+    // Unallocated heap memory has not already been accepted so it must be
+    // accepted here.
+    let heap_vaddr = VirtAddr::from(launch_info.heap_area_virt_start);
+    let heap_allocated = launch_info.heap_area_allocated as usize;
+    let mut heap_length = launch_info.heap_area_page_count as usize;
+
+    // On an SNP system, the VMSA might be located within the kernel heap area.
+    // If so, it is at the last page within the heap range, so the heap range
+    // must be reduced so there is no attempt to validate the VMSA page and so
+    // that the VMSA page is not reallocated
+    if launch_info.vmsa_in_kernel_heap && (platform_type == SvsmPlatformType::Snp) {
+        heap_length -= 1;
+        assert!(heap_length >= heap_allocated);
+    }
+
+    if heap_allocated < heap_length {
+        // SAFETY: the launch info is assumed to correctly reflect the set of
+        // pages that were accepted in stage2.
+        unsafe {
+            platform
+                .validate_virtual_page_range(
+                    MemoryRegion::new(
+                        heap_vaddr + heap_allocated * PAGE_SIZE,
+                        (heap_length - heap_allocated) * PAGE_SIZE,
+                    ),
+                    PageValidateOp::Validate,
+                )
+                .expect("Failed to validate heap memory");
+        }
+    }
     root_mem_init(
         PhysAddr::from(launch_info.heap_area_phys_start),
-        VirtAddr::from(launch_info.heap_area_virt_start),
-        launch_info.heap_area_page_count as usize,
-        launch_info.heap_area_allocated as usize,
+        heap_vaddr,
+        heap_length,
+        heap_allocated,
     );
 }
 
@@ -170,47 +216,29 @@ fn mapping_info_init(launch_info: &KernelLaunchInfo) {
 /// Returns Ok if initialization is successful or no virtio devices are found
 /// Returns an error when a virtio device is found but its driver initialization fails.
 #[cfg(feature = "virtio-drivers")]
-fn initialize_virtio_mmio(_config: &SvsmConfig<'_>) -> Result<(), SvsmError> {
+fn initialize_virtio_mmio(_boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
     #[cfg(feature = "block")]
     {
         use svsm::block::virtio_blk::initialize_block;
 
-        let mut slots = probe_mmio_slots(_config);
+        let mut slots = probe_mmio_slots(_boot_params);
         initialize_block(&mut slots)?;
     }
 
     Ok(())
 }
 
-/// # Panics
-///
-/// Panics if the provided address is not aligned to a [`SnpCpuidTable`].
-fn init_cpuid_table(addr: VirtAddr) {
-    // SAFETY: this is called from the main function for the SVSM and no other
-    // CPUs have been brought up, so the pointer cannot be aliased.
-    // `aligned_mut()` will check alignment for us.
-    let table = unsafe {
-        addr.aligned_mut::<SnpCpuidTable>()
-            .expect("Misaligned SNP CPUID table address")
-    };
-
-    for func in table.func.iter_mut().take(table.count as usize) {
-        if func.eax_in == 0x8000001f {
-            func.eax_out |= 1 << 28;
-        }
-    }
-
-    register_cpuid_table(table);
-}
-
 /// # Safety
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
-unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
+unsafe fn svsm_start(
+    li: *const KernelLaunchInfo,
+    platform_type: SvsmPlatformType,
+) -> Option<VirtAddr> {
     // SAFETY: the caller guarantees the correctness of the launch info
     // pointer.
     let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
-    init_platform_type(launch_info.platform_type);
+    init_platform_type(platform_type);
 
     mapping_info_init(&launch_info);
 
@@ -231,18 +259,17 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     let mut platform_cell = SvsmPlatformCell::new(launch_info.suppress_svsm_interrupts);
     let platform = platform_cell.platform_mut();
 
-    if launch_info.cpuid_page != 0 {
-        init_cpuid_table(VirtAddr::from(launch_info.cpuid_page));
-    }
-
-    if launch_info.secrets_page != 0 {
-        let secrets_page_virt = VirtAddr::from(launch_info.secrets_page);
-
-        // SAFETY: the secrets page address was allocated by stage 2 in the kernel
-        // heap and the address is trusted if it is non-zero.
-        unsafe {
-            initialize_secrets_page(secrets_page_virt);
-        }
+    // SAFETY: the CPUID and secrets page addresses were allocated in the
+    // kernel heap and the addresses in the loader block are trusted.
+    unsafe {
+        platform.initialize_platform_page(
+            PlatformPageType::Cpuid,
+            VirtAddr::from(launch_info.cpuid_page),
+        );
+        platform.initialize_platform_page(
+            PlatformPageType::Secrets,
+            VirtAddr::from(launch_info.secrets_page),
+        );
     }
 
     cr0_init();
@@ -257,14 +284,18 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
     // Load symbol info now that there is a console
     init_symbols(&launch_info).expect("Could not initialize kernel symbols");
 
-    memory_init(launch_info.as_ref());
+    paging_init(platform, false).expect("Failed to initialize paging");
+
+    // SAFETY: THe launch info is assumed to correctly specify the initial
+    // state of memory.
+    unsafe {
+        memory_init(launch_info.as_ref(), platform, platform_type);
+    }
 
     // Initialize the valid bitmap as all valid, since stage2 guarantees that
     // all memory in the kernel region is validated prior to kernel entry.
     init_valid_bitmap(new_kernel_region(&launch_info), true)
         .expect("Failed to allocate valid-bitmap");
-
-    paging_init(platform, false).expect("Failed to initialize paging");
 
     // SAFETY: the current page table was allocated by stage2 from the kernel
     // heap and therefore it can be built into a PageBox.
@@ -313,9 +344,7 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
         .env_setup_late(debug_serial_port)
         .expect("Late environment setup failed");
 
-    if launch_info.cpuid_page != 0 {
-        dump_cpuid_table();
-    }
+    dump_cpuid_table();
 
     let mem_info = memory_info();
     print_memory_info(&mem_info);
@@ -338,10 +367,10 @@ unsafe fn svsm_start(li: *const KernelLaunchInfo) -> Option<VirtAddr> {
 /// the launch info parameter is known to have been allocated from the kernel
 /// heap.
 #[unsafe(no_mangle)]
-unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo) -> ! {
+unsafe extern "C" fn svsm_entry(li: *mut KernelLaunchInfo, platform_type: SvsmPlatformType) -> ! {
     // SAFETY: the caller ensures that the launch info pointer is a valid
     // pointer.
-    let ssp_token = unsafe { svsm_start(li) };
+    let ssp_token = unsafe { svsm_start(li, platform_type) };
 
     // Shadow stacks must be enabled once no further function returns are
     // possible.
@@ -382,29 +411,46 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     // Free the BSP stack that was allocated for early initialization.
     free_init_bsp_stack();
 
+    // Free platform pages that were allocated but are not needed by the
+    // current platform.
+    // SAFETY: the virtual addresses of these pages are guaranteed to be
+    // correct in the loader block, and the platform guarantees that freeing
+    // the page is safe if the underlying page is not needed.
+    unsafe {
+        SVSM_PLATFORM.free_unused_platform_page(
+            PlatformPageType::Cpuid,
+            VirtAddr::from(launch_info.cpuid_page),
+        );
+        SVSM_PLATFORM.free_unused_platform_page(
+            PlatformPageType::Secrets,
+            VirtAddr::from(launch_info.secrets_page),
+        );
+    }
+
     SVSM_PLATFORM
         .env_setup_svsm()
         .expect("SVSM platform environment setup failed");
 
     hyperv_setup().expect("failed to complete Hyper-V setup");
 
-    // SAFETY: the address in the launch info is known to be correct.
-    let igvm_params = unsafe { IgvmBox::new(VirtAddr::from(launch_info.igvm_params_virt_addr)) }
-        .expect("Invalid IGVM parameters");
-    if (launch_info.vtom != 0) && (launch_info.vtom != igvm_params.get_vtom()) {
-        panic!("Launch VTOM does not match VTOM from IGVM parameters");
+    let boot_params =
+        // SAFETY: the address in the launch info is known to be correct.
+        unsafe { BootParamBox::new(VirtAddr::from(launch_info.boot_params_virt_addr)) }
+            .expect("Invalid boot parameters");
+    if (launch_info.vtom != 0) && (launch_info.vtom != boot_params.get_vtom()) {
+        panic!("Launch VTOM does not match VTOM from boot parameters");
     }
 
-    let config = SvsmConfig::new(&igvm_params);
-
-    init_memory_map(&config, launch_info).expect("Failed to init guest memory map");
+    init_memory_map(&boot_params, launch_info).expect("Failed to init guest memory map");
 
     populate_ram_fs(launch_info.kernel_fs_start, launch_info.kernel_fs_end)
         .expect("Failed to unpack FS archive");
 
     init_capabilities();
 
-    let cpus = config.load_cpu_info().expect("Failed to load ACPI tables");
+    let cpus = boot_params
+        .load_cpu_info()
+        .expect("Failed to load ACPI tables");
 
     // Create a transition page table for use during CPU startup.
     let transition_page_table =
@@ -418,12 +464,12 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
 
     let kernel_region = new_kernel_region(launch_info);
-    let early_boot_regions = enumerate_early_boot_regions(&config, launch_info);
+    let early_boot_regions = enumerate_early_boot_regions(&boot_params, launch_info);
 
-    invalidate_early_boot_memory(&**SVSM_PLATFORM, &config, &early_boot_regions)
+    invalidate_early_boot_memory(&**SVSM_PLATFORM, &boot_params, &early_boot_regions)
         .expect("Failed to invalidate early boot memory");
 
-    if let Err(e) = SVSM_PLATFORM.prepare_fw(&config, kernel_region) {
+    if let Err(e) = SVSM_PLATFORM.prepare_fw(&boot_params, kernel_region) {
         panic!("Failed to prepare guest FW: {e:#?}");
     }
 
@@ -442,18 +488,18 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     virt_log_usage();
 
     #[cfg(feature = "virtio-drivers")]
-    initialize_virtio_mmio(&config).expect("Failed to initialize virtio-mmio drivers");
+    initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
-    if let Err(e) = SVSM_PLATFORM.launch_fw(&config) {
+    if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params) {
         panic!("Failed to launch FW: {e:?}");
     }
 
     #[cfg(test)]
     {
-        if config.has_qemu_testdev() {
+        if boot_params.has_qemu_testdev() {
             crate::testutils::set_has_qemu_testdev();
         }
-        if config.has_test_iorequests() {
+        if boot_params.has_test_iorequests() {
             crate::testutils::set_has_test_iorequests();
         }
         let _ = start_kernel_task(

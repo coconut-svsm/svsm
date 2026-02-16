@@ -8,8 +8,10 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 
-use bootlib::igvm_params::{IgvmGuestContext, IgvmParamBlockFwInfo};
-use bootlib::kernel_launch::{LOWMEM_END, STAGE2_HEAP_END};
+use bootdefs::boot_params::GuestFwInfoBlock;
+use bootdefs::boot_params::InitialGuestContext;
+use bootdefs::kernel_launch::LOWMEM_END;
+use bootdefs::kernel_launch::STAGE2_HEAP_END;
 use igvm::snp_defs::SevVmsa;
 use igvm::{IgvmDirectiveHeader, IgvmFile};
 use igvm_defs::{
@@ -36,9 +38,9 @@ struct IgvmParameterArea {
 #[derive(Default)]
 pub struct IgvmFirmware {
     directives: Vec<IgvmDirectiveHeader>,
-    fw_info: IgvmParamBlockFwInfo,
+    fw_info: GuestFwInfoBlock,
     start_rip: Option<u64>,
-    guest_context: Option<IgvmGuestContext>,
+    guest_context: Option<InitialGuestContext>,
     vtom: u64,
     lowest_gpa: u64,
     highest_gpa: u64,
@@ -48,7 +50,7 @@ impl IgvmFirmware {
     pub fn new() -> Self {
         Self {
             directives: Vec::new(),
-            fw_info: IgvmParamBlockFwInfo::default(),
+            fw_info: GuestFwInfoBlock::default(),
             start_rip: None,
             guest_context: None,
             vtom: 0,
@@ -122,7 +124,7 @@ impl IgvmFirmware {
     }
 
     fn set_guest_context(&mut self, vmsa: &SevVmsa) {
-        self.guest_context = Some(IgvmGuestContext {
+        self.guest_context = Some(InitialGuestContext {
             cr0: vmsa.cr0,
             cr3: vmsa.cr3,
             cr4: vmsa.cr4,
@@ -499,7 +501,7 @@ impl Firmware for IgvmFirmware {
         &self.directives
     }
 
-    fn get_guest_context(&self) -> Option<IgvmGuestContext> {
+    fn get_guest_context(&self) -> Option<InitialGuestContext> {
         self.guest_context
     }
 
@@ -507,7 +509,7 @@ impl Firmware for IgvmFirmware {
         self.vtom
     }
 
-    fn get_fw_info(&self) -> IgvmParamBlockFwInfo {
+    fn get_fw_info(&self) -> GuestFwInfoBlock {
         self.fw_info
     }
 }
