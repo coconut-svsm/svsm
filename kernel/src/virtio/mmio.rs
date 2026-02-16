@@ -66,7 +66,7 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         let phys_addr = PhysAddr::from(addr);
 
         let Ok(mem) = map_global_range_4k_shared(phys_addr, PAGE_SIZE, PTEntryFlags::data()) else {
-            log::warn!("MmioSlots: Failed to map MMIO region at {:x}", addr);
+            log::warn!("MmioSlots: Failed to map MMIO region at {addr:x}");
             continue;
         };
 
@@ -77,15 +77,11 @@ pub fn probe_mmio_slots(boot_params: &BootParams<'_>) -> MmioSlots {
         // The memory region has the same lifetime of the MmioSlot structure which will be consumed by the driver.
         let Ok(transport) = (unsafe { MmioTransport::<SvsmHal>::new(header) }) else {
             // Currently QEMU advertises _all_ slots, regardless they are empty or not.
-            log::debug!("MmioSlots: {:x} empty", addr);
+            log::debug!("MmioSlots: {addr:x} empty");
             continue;
         };
 
-        log::info!(
-            "MmioSlots: Found {:?} at {:x}",
-            transport.device_type(),
-            addr
-        );
+        log::info!("MmioSlots: Found {:?} at {addr:x}", transport.device_type());
 
         let slot_type = MmioSlot {
             mmio_range: mem,

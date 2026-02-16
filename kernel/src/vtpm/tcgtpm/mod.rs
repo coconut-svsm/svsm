@@ -54,7 +54,7 @@ impl TcgTpm {
         match result {
             0 => Ok(()),
             rc => {
-                log::error!("TPM_Teardown failed rc={}", rc);
+                log::error!("TPM_Teardown failed rc={rc}");
                 Err(SvsmReqError::incomplete())
             }
         }
@@ -70,7 +70,7 @@ impl TcgTpm {
             1 => Ok(1),
             // TPM failed to manufacture
             rc => {
-                log::error!("TPM_Manufacture failed rc={}", rc);
+                log::error!("TPM_Manufacture failed rc={rc}");
                 Err(SvsmReqError::incomplete())
             }
         }
@@ -137,7 +137,7 @@ impl TcgTpmSimulatorInterface for TcgTpm {
             // SAFETY: FFI call. No parameter, return value is checked.
             let result = unsafe { _plat__Signal_PowerOn() };
             if result != 0 {
-                log::error!("_plat__Signal_PowerOn failed rc={}", result);
+                log::error!("_plat__Signal_PowerOn failed rc={result}");
                 return Err(SvsmReqError::incomplete());
             }
         }
@@ -145,7 +145,7 @@ impl TcgTpmSimulatorInterface for TcgTpm {
         // SAFETY: FFI call. No parameter, return value is checked.
         let result = unsafe { _plat__Signal_Reset() };
         if result != 0 {
-            log::error!("_plat__Signal_Reset failed rc={}", result);
+            log::error!("_plat__Signal_Reset failed rc={result}");
             return Err(SvsmReqError::incomplete());
         }
         self.is_powered_on = true;
@@ -189,7 +189,7 @@ impl VtpmInterface for TcgTpm {
         // SAFETY: FFI call. Parameters and return values are checked.
         let mut rc = unsafe { _plat__NVEnable(VirtAddr::null().as_mut_ptr::<c_void>(), 0) };
         if rc != 0 {
-            log::error!("_plat__NVEnable failed rc={}", rc);
+            log::error!("_plat__NVEnable failed rc={rc}");
             return Err(SvsmReqError::incomplete());
         }
 

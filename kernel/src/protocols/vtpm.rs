@@ -38,7 +38,7 @@ impl TryFrom<u32> for TpmPlatformCommand {
         let cmd = match value {
             x if x == TpmPlatformCommand::SendCommand as u32 => TpmPlatformCommand::SendCommand,
             other => {
-                log::warn!("Failed to convert {} to a TPM platform command", other);
+                log::warn!("Failed to convert {other} to a TPM platform command");
                 return Err(SvsmReqError::invalid_parameter());
             }
         };

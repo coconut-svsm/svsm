@@ -113,7 +113,7 @@ pub unsafe extern "C" fn serial_out(s: *const c_char, size: c_int) {
     // [`core::slice::from_raw_parts`]
     let str_slice: &[u8] = unsafe { from_raw_parts(s as *const u8, size as usize) };
     if let Ok(rust_str) = from_utf8(str_slice) {
-        _print(format_args!("[SVSM] {}", rust_str));
+        _print(format_args!("[SVSM] {rust_str}"));
     } else {
         log::error!("ERR: BUG: serial_out arg1 is not a valid utf8 string");
     }

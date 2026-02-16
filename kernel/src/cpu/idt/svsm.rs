@@ -205,10 +205,7 @@ extern "C" fn ex_handler_double_fault(ctxt: &mut X86ExceptionContext) {
 
     if user_mode(ctxt) {
         log::error!(
-            "Double-Fault at RIP {:#018x} RSP: {:#018x} CR2: {:#018x} - Terminating task",
-            rip,
-            rsp,
-            cr2
+            "Double-Fault at RIP {rip:#018x} RSP: {rsp:#018x} CR2: {cr2:#018x} - Terminating task"
         );
         terminate();
     } else {
@@ -228,10 +225,7 @@ extern "C" fn ex_handler_general_protection(ctxt: &mut X86ExceptionContext) {
 
     if user_mode(ctxt) {
         log::error!(
-            "Unhandled General-Protection-Fault at RIP {:#018x} error code: {:#018x} rsp: {:#018x} - Terminating task",
-            rip,
-            err,
-            rsp
+            "Unhandled General-Protection-Fault at RIP {rip:#018x} error code: {err:#018x} rsp: {rsp:#018x} - Terminating task"
         );
         terminate();
     } else if !handle_exception_table(ctxt) {
@@ -276,10 +270,7 @@ extern "C" fn ex_handler_page_fault(ctxt: &mut X86ExceptionContext, vector: usiz
 
         if kill_task {
             log::error!(
-                "Unexpected user-mode page-fault at RIP {:#018x} CR2: {:#018x} error code: {:#018x} - Terminating task",
-                rip,
-                cr2,
-                err
+                "Unexpected user-mode page-fault at RIP {rip:#018x} CR2: {cr2:#018x} error code: {err:#018x} - Terminating task"
             );
             terminate();
         }
@@ -363,12 +354,10 @@ extern "C" fn ex_handler_ve(ctxt: &mut X86ExceptionContext) {
     let code = ctxt.error_code;
 
     if let Err(err) = handle_virtualization_exception(ctxt) {
-        log::error!("#VE handling error: {:?}", err);
+        log::error!("#VE handling error: {err:?}");
         if user_mode(ctxt) {
             log::error!(
-                "Failed to handle #VE from user-mode at RIP {:#018x} code: {:#018x} - Terminating task",
-                rip,
-                code
+                "Failed to handle #VE from user-mode at RIP {rip:#018x} code: {code:#018x} - Terminating task"
             );
             terminate();
         } else {
@@ -387,12 +376,10 @@ extern "C" fn ex_handler_vmm_communication(ctxt: &mut X86ExceptionContext, vecto
     let code = ctxt.error_code;
 
     if let Err(err) = handle_vc_exception(ctxt, vector) {
-        log::error!("#VC handling error: {:?}", err);
+        log::error!("#VC handling error: {err:?}");
         if user_mode(ctxt) {
             log::error!(
-                "Failed to handle #VC from user-mode at RIP {:#018x} code: {:#018x} - Terminating task",
-                rip,
-                code
+                "Failed to handle #VC from user-mode at RIP {rip:#018x} code: {code:#018x} - Terminating task"
             );
             terminate();
         } else {

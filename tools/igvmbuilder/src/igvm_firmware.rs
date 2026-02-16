@@ -67,7 +67,7 @@ impl IgvmFirmware {
         // Read and parse Hyper-V firmware.
         let mut igvm_fw = IgvmFirmware::new();
         let igvm_buffer = fs::read(filename).inspect_err(|_| {
-            eprintln!("Failed to open firmware file {}", filename);
+            eprintln!("Failed to open firmware file {filename}");
         })?;
         let igvm = IgvmFile::new_from_binary(igvm_buffer.as_bytes(), None)?;
         let mut parameters = IgvmParameterList::new();

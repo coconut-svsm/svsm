@@ -201,9 +201,7 @@ impl BootParams<'_> {
         let mem_map_region =
             MemoryRegion::new(mem_map_gpa.page_align(), page_align_up(mem_map_size));
         log::info!(
-            "Filling guest IGVM memory map at {:#018x} size {:#018x}",
-            mem_map_gpa,
-            mem_map_size,
+            "Filling guest IGVM memory map at {mem_map_gpa:#018x} size {mem_map_size:#018x}"
         );
 
         let mem_map_mapping =

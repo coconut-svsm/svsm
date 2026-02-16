@@ -59,12 +59,7 @@ fn get_svsm_request_message(vmsa_ref: &mut GuestVmsaRef) -> Option<GuestExitMess
             }
         }
         Err(SvsmReqError::RequestError(code)) => {
-            log::debug!(
-                "Soft error handling protocol {} request {}: {:?}",
-                protocol,
-                request,
-                code
-            );
+            log::debug!("Soft error handling protocol {protocol} request {request}: {code:?}");
         }
         Err(SvsmReqError::FatalError(err)) => {
             panic!(

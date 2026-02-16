@@ -77,7 +77,7 @@ pub trait Transport {
         self.set_status(DeviceStatus::ACKNOWLEDGE | DeviceStatus::DRIVER);
 
         let device_features = F::from_bits_truncate(self.read_device_features());
-        debug!("Device features: {:?}", device_features);
+        debug!("Device features: {device_features:?}");
         let negotiated_features = device_features & supported_features;
         self.write_driver_features(negotiated_features.bits());
 

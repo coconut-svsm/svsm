@@ -83,10 +83,7 @@ fn measure_command(
         print!("igvmmeasure '{}'\nLaunch Digest: ", options.input);
     }
 
-    measure
-        .digest()
-        .iter()
-        .for_each(|val| print!("{:02X}", val));
+    measure.digest().iter().for_each(|val| print!("{val:02X}"));
     println!();
 
     if !bare {
@@ -128,12 +125,12 @@ fn sign_command(
     signed_file.serialize(&mut binary_file)?;
 
     let mut file = File::create(output).inspect_err(|_| {
-        eprintln!("Failed to create output file {}", output);
+        eprintln!("Failed to create output file {output}");
     })?;
     file.write_all(binary_file.as_slice()).inspect_err(|_| {
-        eprintln!("Failed to write output file {}", output);
+        eprintln!("Failed to write output file {output}");
     })?;
 
-    println!("Successfully created signed file: {}", output);
+    println!("Successfully created signed file: {output}");
     Ok(())
 }

@@ -108,7 +108,7 @@ fn request_loop_main(cpu_index: usize) {
     // Send this task to the correct CPU.
     set_affinity(cpu_index);
 
-    log::info!("Launching request-processing task on CPU {}", cpu_index);
+    log::info!("Launching request-processing task on CPU {cpu_index}");
 
     // Suppress the use of IPIs before entering the guest, and ensure that all
     // other CPUs have done the same.
@@ -138,12 +138,7 @@ fn process_request(protocol: u32, request: u32, params: &mut RequestParams) -> V
     let rax: Option<u64> = match request_loop_once(params, protocol, request) {
         Ok(()) => Some(SvsmResultCode::SUCCESS.into()),
         Err(SvsmReqError::RequestError(code)) => {
-            log::debug!(
-                "Soft error handling protocol {} request {}: {:?}",
-                protocol,
-                request,
-                code
-            );
+            log::debug!("Soft error handling protocol {protocol} request {request}: {code:?}");
             Some(code.into())
         }
         Err(SvsmReqError::FatalError(err)) => {

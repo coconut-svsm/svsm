@@ -174,7 +174,7 @@ pub fn sev_status_verify() {
     }
 
     if !not_supported_check.is_empty() {
-        log::error!("Unsupported features enabled: {}", not_supported_check);
+        log::error!("Unsupported features enabled: {not_supported_check}");
         panic!("Unsupported SEV features enabled");
     }
 }

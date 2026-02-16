@@ -405,7 +405,7 @@ impl OvmfFirmware {
         compatibility_mask: u32,
     ) -> Result<Box<dyn Firmware>, Box<dyn Error>> {
         let mut in_file = File::open(filename).inspect_err(|_| {
-            eprintln!("Failed to open firmware file {}", filename);
+            eprintln!("Failed to open firmware file {filename}");
         })?;
         // Must fit within the 32-bit address space.
         let len = u32::try_from(in_file.metadata()?.len())
