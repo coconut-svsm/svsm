@@ -196,7 +196,7 @@ impl VtpmInterface for TcgTpm {
         rc = self.manufacture(1)?;
         if rc != 0 {
             // SAFETY: FFI call. Parameter checked, no return value.
-            unsafe { _plat__NVDisable(1 as *mut c_void, 0) };
+            unsafe { _plat__NVDisable(core::ptr::without_provenance_mut::<c_void>(1), 0) };
             return Err(SvsmReqError::incomplete());
         }
 
