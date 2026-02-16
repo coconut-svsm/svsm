@@ -371,7 +371,7 @@ impl<'a> IDT<'a> {
         // SAFETY: Inline assembly to load an IDT. `'static` lifetime ensures
         // that address is always available for the CPU.
         unsafe {
-            asm!("lidt (%rax)", in("rax") &desc, options(att_syntax));
+            asm!("lidt (%rax)", in("rax") &raw const desc, options(att_syntax));
         }
     }
 
@@ -410,7 +410,7 @@ pub fn triple_fault() {
     // safety is not an issue.
     unsafe {
         asm!("lidt (%rax)
-              int3", in("rax") &desc, options(att_syntax));
+              int3", in("rax") &raw const desc, options(att_syntax));
     }
 }
 

@@ -135,7 +135,7 @@ impl GDT {
         // valid.
         unsafe {
             asm!("lgdt ({0})",
-                 in(reg) &gdt_desc,
+                 in(reg) &raw const gdt_desc,
                  options(att_syntax));
         }
     }

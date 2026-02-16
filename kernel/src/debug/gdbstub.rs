@@ -150,8 +150,8 @@ pub mod svsm_gdbstub {
                         movq    %rax, %rsp
                     "#,
                     in("rsi") exception_type as u64,
-                    in("rdi") &mut task_ctx,
-                    in("rdx") &mut gdb_state,
+                    in("rdi") &raw mut task_ctx,
+                    in("rdx") &raw mut gdb_state,
                     in("rax") GDB_STACK_TOP.expose_provenance(),
                     options(att_syntax));
             }

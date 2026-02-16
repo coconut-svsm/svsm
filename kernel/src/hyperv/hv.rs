@@ -118,7 +118,7 @@ impl<'a, 'b, H, T> HypercallInput<'a, 'b, H, T> {
         // the destination pointer is guaranteed by the address calculation
         // at the time the input object was created, plus the bounds check
         // above.
-        unsafe { unsafe_copy_bytes(&item, dst, 1) }
+        unsafe { unsafe_copy_bytes(&raw const item, dst, 1) }
     }
 }
 
