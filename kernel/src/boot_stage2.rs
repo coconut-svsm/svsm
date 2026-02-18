@@ -25,6 +25,8 @@ global_asm!(
         .globl startup_32
         startup_32:
 
+        /* Upon entry, ESI holds the high 32 bits of VTOM. */
+
         /* Save pointer to startup structure in EBP */
         movl %esp, %ebp
 
@@ -231,10 +233,12 @@ global_asm!(
          * Follow the C calling convention for x86-64:
          *
          * - Pass &Stage2LaunchInfo as the first argument (%rdi)
+         * - Pass VTOM as the second argument (%rsi)
          * - Make sure (%rsp + 8) is 16b-aligned when control is transferred
          *   to stage2_main
          */
         movl %ebp, %edi
+        shlq $32, %rsi
         andq $~0xf, %rsp
 
         /* Mark the next stack frame as the bottom frame */
