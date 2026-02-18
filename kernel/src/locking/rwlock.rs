@@ -41,7 +41,7 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
         // SAFETY: we are really reading from a reference, so the source
         // pointer is safe. The original guard is behind `ManuallyDrop`,
         // so only the copy we just make will invoke drop.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
         let value = f(&*orig);
         RawReadLockGuard {
             rwlock,
@@ -69,7 +69,7 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
         // SAFETY: we are really reading from a reference, so the source is
         // valid. The original guard will not be dropped since is is behind
         // `ManuallyDrop`, so `drop` will only happen once.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
 
         Ok(RawReadLockGuard {
             rwlock: orig.rwlock,
@@ -93,7 +93,7 @@ impl<'a, T, I: IrqLocking> RawReadLockGuard<'a, T, I> {
         // SAFETY: we are really reading from a reference, so the source
         // pointer is safe. The original guard is behind `ManuallyDrop`,
         // so only the copy we just make will invoke drop.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
 
         // Increase the reader count by 1.
         let rwlock = orig.rwlock;
@@ -172,7 +172,7 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
         // SAFETY: we are really reading from a reference, so the source
         // pointer is safe. The original guard is behind `ManuallyDrop`,
         // so only the copy we just make will invoke drop.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
 
         let value = f(&mut *orig);
         RawWriteLockGuard {
@@ -201,7 +201,7 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
         // this function, we'll pass the new copy of the guard to forget()
         // to avoid dropping it, ensuring only the original guard invokes
         // drop.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
 
         let Some(value) = f(&mut *orig) else {
             // Do not drop the new IRQ guard, since we keep the old one.
@@ -233,7 +233,7 @@ impl<'a, T, I: IrqLocking> RawWriteLockGuard<'a, T, I> {
         // SAFETY: we are really reading from a reference, so the source
         // pointer is safe. The original guard is behind `ManuallyDrop`,
         // so only the copy we just make will invoke drop.
-        let _irq_state = unsafe { core::ptr::read(&orig._irq_state) };
+        let _irq_state = unsafe { core::ptr::read(&raw const orig._irq_state) };
 
         // Increase the writer count by 1.
         let rwlock = orig.rwlock;

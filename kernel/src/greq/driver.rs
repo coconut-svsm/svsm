@@ -271,7 +271,7 @@ impl SnpGuestRequestDriver {
                     // Failed for unknown reason. Status codes can be found in
                     // the AMD SEV-SNP spec or in the linux kernel include/uapi/linux/psp-sev.h
                     _ => {
-                        log::error!("SNP_GUEST_REQUEST failed, unknown error code={}\n", info2);
+                        log::error!("SNP_GUEST_REQUEST failed, unknown error code={info2}");
                         secrets_page_mut().unwrap().clear_vmpck(0);
                         return Err(e);
                     }

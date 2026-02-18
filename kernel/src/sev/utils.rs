@@ -173,7 +173,7 @@ pub unsafe fn pvalidate(
         1 => Err(SevSnpError::FAIL_INPUT(ret).into()),
         6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
         _ => {
-            log::error!("PVALIDATE: unexpected return value: {}", ret);
+            log::error!("PVALIDATE: unexpected return value: {ret}");
             unreachable!();
         }
     }
@@ -296,7 +296,7 @@ pub unsafe fn rmp_adjust(addr: VirtAddr, flags: RMPFlags, size: PageSize) -> Res
         2 => Err(SevSnpError::FAIL_PERMISSION(ret).into()),
         6 => Err(SevSnpError::FAIL_SIZEMISMATCH(ret).into()),
         _ => {
-            log::error!("RMPADJUST: Unexpected return value: {:#x}", ret);
+            log::error!("RMPADJUST: Unexpected return value: {ret:#x}");
             unreachable!();
         }
     }

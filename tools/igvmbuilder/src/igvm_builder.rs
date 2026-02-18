@@ -600,7 +600,7 @@ impl IgvmBuilder {
     ) -> Result<(), Box<dyn Error>> {
         let mut gpa = gpa_start;
         let mut in_file = File::open(path).inspect_err(|_| {
-            eprintln!("Could not open input file {}", path);
+            eprintln!("Could not open input file {path}");
         })?;
         let mut buf = vec![0; 4096];
 

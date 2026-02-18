@@ -377,7 +377,7 @@ impl<T> GuestPtr<T> {
     {
         // SAFETY: Safe when self.ptr does not point to SVSM memory because
         // then the write can not harm memory safety.
-        unsafe { do_movsb(&buf, self.ptr) }
+        unsafe { do_movsb(&raw const buf, self.ptr) }
     }
 
     /// # Safety

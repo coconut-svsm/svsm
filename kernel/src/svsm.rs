@@ -564,14 +564,13 @@ fn panic(info: &PanicInfo<'_>) -> ! {
 
     if let Some(cpu) = try_this_cpu() {
         log::error!(
-            "Panic on CPU[{}]! COCONUT-SVSM Version: {}",
+            "Panic on CPU[{}]! COCONUT-SVSM Version: {COCONUT_VERSION}",
             cpu.get_cpu_index(),
-            COCONUT_VERSION
         );
     } else {
-        log::error!("Panic on CPU[?]! COCONUT-SVSM Version: {}", COCONUT_VERSION);
+        log::error!("Panic on CPU[?]! COCONUT-SVSM Version: {COCONUT_VERSION}");
     }
-    log::error!("Info: {}", info);
+    log::error!("Info: {info}");
 
     print_stack(3);
 

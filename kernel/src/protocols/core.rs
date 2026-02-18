@@ -65,7 +65,7 @@ unsafe fn core_create_vcpu_error_restore(paddr: Option<PhysAddr>, vaddr: Option<
     if let Some(v) = vaddr {
         // SAFETY: the caller guarantees the safety of this address.
         if let Err(err) = unsafe { rmp_clear_guest_vmsa(v) } {
-            log::error!("Failed to restore page permissions: {:#?}", err);
+            log::error!("Failed to restore page permissions: {err:#?}");
         }
     }
     // In case mappings have been changed
@@ -290,7 +290,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     }
 
     if !valid_phys_address(paddr) {
-        log::debug!("Invalid phys address: {:#x}", paddr);
+        log::debug!("Invalid phys address: {paddr:#x}");
         return Err(SvsmReqError::invalid_address());
     }
 
@@ -351,7 +351,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
                 zero_mem_region(vaddr, vaddr + page_size_bytes);
             }
         } else {
-            log::warn!("Not clearing possible read-only page at PA {:#x}", paddr);
+            log::warn!("Not clearing possible read-only page at PA {paddr:#x}");
         }
         // SAFETY: the address was validated earlier as a guest page and thus
         // memory safety is not affected.

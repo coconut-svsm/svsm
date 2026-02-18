@@ -673,9 +673,7 @@ impl GHCB {
                         let info_high: u32 = (info2 >> 32) as u32;
                         let info_low: u32 = (info2 & 0xffff_ffffu64) as u32;
                         log::error!(
-                            "GHCB SnpPageStateChange failed err_high: {:#x} err_low: {:#x}",
-                            info_high,
-                            info_low
+                            "GHCB SnpPageStateChange failed err_high: {info_high:#x} err_low: {info_low:#x}"
                         );
                     }
                     return Err(e.into());

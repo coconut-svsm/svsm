@@ -122,10 +122,7 @@ pub fn init_hypervisor_ghcb_features() -> Result<(), GhcbMsrError> {
         let missing = !features & required;
         if !missing.is_empty() {
             log::error!(
-                "Required hypervisor GHCB features not available: present={:#x}, required={:#x}, missing={:#x}",
-                features,
-                required,
-                missing
+                "Required hypervisor GHCB features not available: present={features:#x}, required={required:#x}, missing={missing:#x}"
             );
             // FIXME - enforce this panic once KVM advertises the required
             // features.

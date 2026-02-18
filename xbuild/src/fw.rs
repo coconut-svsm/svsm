@@ -22,7 +22,7 @@ impl FirmwareConfig {
             return Ok(());
         };
         if args.verbose {
-            println!("{:?}", command);
+            println!("{command:?}");
         }
         let prog = command.first().ok_or("firmware: empty command")?;
         let mut cmd = Command::new(prog);

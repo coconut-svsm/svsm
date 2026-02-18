@@ -33,7 +33,7 @@ impl fmt::Display for SvsmVersion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         #[allow(clippy::const_is_empty)]
         if !GIT_VERSION.is_empty() {
-            write!(f, "{}", GIT_VERSION)
+            write!(f, "{GIT_VERSION}")
         } else {
             match self.release_type {
                 ReleaseType::Development => {

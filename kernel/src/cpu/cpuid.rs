@@ -159,7 +159,7 @@ pub fn dump_cpuid_table() {
     if let Ok(table) = CPUID_PAGE.try_get_inner() {
         let count = table.count as usize;
 
-        log::trace!("CPUID Table entry count: {}", count);
+        log::trace!("CPUID Table entry count: {count}");
 
         for i in 0..count {
             let eax_in = table.func[i].eax_in;
@@ -171,15 +171,7 @@ pub fn dump_cpuid_table() {
             let ecx_out = table.func[i].ecx_out;
             let edx_out = table.func[i].edx_out;
             log::trace!(
-                "EAX_IN: {:#010x} ECX_IN: {:#010x} XCR0_IN: {:#010x} XSS_IN: {:#010x} EAX_OUT: {:#010x} EBX_OUT: {:#010x} ECX_OUT: {:#010x} EDX_OUT: {:#010x}",
-                eax_in,
-                ecx_in,
-                xcr0_in,
-                xss_in,
-                eax_out,
-                ebx_out,
-                ecx_out,
-                edx_out
+                "EAX_IN: {eax_in:#010x} ECX_IN: {ecx_in:#010x} XCR0_IN: {xcr0_in:#010x} XSS_IN: {xss_in:#010x} EAX_OUT: {eax_out:#010x} EBX_OUT: {ebx_out:#010x} ECX_OUT: {ecx_out:#010x} EDX_OUT: {edx_out:#010x}"
             );
         }
     }

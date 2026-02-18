@@ -52,7 +52,7 @@ unsafe fn validate_fw_mem_region(
     let pstart = region.start();
     let pend = region.end();
 
-    log::info!("Validating {:#018x}-{:#018x}", pstart, pend);
+    log::info!("Validating {pstart:#018x}-{pend:#018x}");
 
     if boot_params.page_state_change_required() {
         current_ghcb()
@@ -154,17 +154,17 @@ pub fn print_fw_meta(fw_meta: &SevFWMetaData) {
     log::info!("FW Meta Data");
 
     match fw_meta.cpuid_page {
-        Some(addr) => log::info!("  CPUID Page   : {:#010x}", addr),
+        Some(addr) => log::info!("  CPUID Page   : {addr:#010x}"),
         None => log::info!("  CPUID Page   : None"),
     };
 
     match fw_meta.secrets_page {
-        Some(addr) => log::info!("  Secrets Page : {:#010x}", addr),
+        Some(addr) => log::info!("  Secrets Page : {addr:#010x}"),
         None => log::info!("  Secrets Page : None"),
     };
 
     match fw_meta.caa_page {
-        Some(addr) => log::info!("  CAA Page     : {:#010x}", addr),
+        Some(addr) => log::info!("  CAA Page     : {addr:#010x}"),
         None => log::info!("  CAA Page     : None"),
     };
 
@@ -316,7 +316,7 @@ pub fn launch_fw(boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
 
     boot_params.initialize_guest_vmsa(vmsa)?;
 
-    log::info!("VMSA PA: {:#x}", vmsa_pa);
+    log::info!("VMSA PA: {vmsa_pa:#x}");
 
     let sev_features = vmsa.sev_features;
 

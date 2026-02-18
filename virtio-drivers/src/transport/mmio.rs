@@ -68,11 +68,10 @@ impl Display for MmioError {
         match self {
             Self::BadMagic(magic) => write!(
                 f,
-                "Invalid magic value {:#010x} (expected 0x74726976).",
-                magic
+                "Invalid magic value {magic:#010x} (expected 0x74726976)."
             ),
             Self::UnsupportedVersion(version) => {
-                write!(f, "Unsupported Virtio MMIO version {}.", version)
+                write!(f, "Unsupported Virtio MMIO version {version}.")
             }
             Self::ZeroDeviceId => write!(f, "Device ID was zero."),
         }

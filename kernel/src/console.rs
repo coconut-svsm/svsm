@@ -45,10 +45,7 @@ pub fn init_svsm_console(writer: &'static dyn IOPort, port: u16) -> Result<(), S
 
     let console = SpinLock::new(Console::Serial(serial));
     WRITER.init(console).map_err(|_| SvsmError::Console)?;
-    log::info!(
-        "COCONUT Secure Virtual Machine Service Module Version {}",
-        COCONUT_VERSION
-    );
+    log::info!("COCONUT Secure Virtual Machine Service Module Version {COCONUT_VERSION}");
     Ok(())
 }
 
@@ -134,8 +131,7 @@ pub fn install_console_logger(component: &'static str) -> ImmutAfterInitResult<(
         // installed another logger before. No logs will appear at the console.
         // Print an error string.
         _print(format_args!(
-            "[{}]: ERROR: failed to install console logger: {:?}",
-            component, e,
+            "[{component}]: ERROR: failed to install console logger: {e:?}"
         ));
     }
 

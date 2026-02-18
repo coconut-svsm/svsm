@@ -515,14 +515,11 @@ pub fn load_acpi_cpu_info(apic_table: &ACPITable) -> Result<Vec<ACPICPUInfo>, Sv
                 });
             }
             madt_type if entry_len == 0 => {
-                log::warn!(
-                    "Found zero-length MADT entry with type {}, stopping",
-                    madt_type
-                );
+                log::warn!("Found zero-length MADT entry with type {madt_type}, stopping");
                 break;
             }
             madt_type => {
-                log::info!("Ignoring MADT entry with type {}", madt_type);
+                log::info!("Ignoring MADT entry with type {madt_type}");
             }
         }
 

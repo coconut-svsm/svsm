@@ -144,7 +144,7 @@ impl<'a> Stage2BootLoader<'a> {
         // physical address.
         let map_region = MemoryRegion::new(self.phys_to_virt(paddr), total_size);
         map_page_range(map_region, PhysAddr::from(paddr)).map_err(|e| {
-            log::error!("Failed to map kernel memory: {:?}", e);
+            log::error!("Failed to map kernel memory: {e:?}");
             BootImageError::Host
         })?;
         // SAFETY: the virtual address used for mapping is in a portion of the
@@ -152,7 +152,7 @@ impl<'a> Stage2BootLoader<'a> {
         // used for mapping here.
         unsafe {
             validate_mapped_region(self.platform, self.boot_params, map_region).map_err(|e| {
-                log::error!("Failed to validate kernel memory: {:?}", e);
+                log::error!("Failed to validate kernel memory: {e:?}");
                 BootImageError::Host
             })?;
 
@@ -546,8 +546,8 @@ global_asm!(
 
 #[panic_handler]
 fn panic(info: &PanicInfo<'_>) -> ! {
-    log::error!("Panic! COCONUT-SVSM Version: {}", COCONUT_VERSION);
-    log::error!("Info: {}", info);
+    log::error!("Panic! COCONUT-SVSM Version: {COCONUT_VERSION}");
+    log::error!("Info: {info}");
 
     print_stack(3);
 

@@ -72,14 +72,14 @@ impl std::fmt::Display for IgvmMeasureError {
                         measurement in the ID block. \n\
                         Expected: "
                 )?;
-                expected.iter().try_for_each(|val| write!(f, "{:02X}", val))
+                expected.iter().try_for_each(|val| write!(f, "{val:02X}"))
             }
         }
     }
 }
 impl std::fmt::Debug for IgvmMeasureError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 impl Error for IgvmMeasureError {}
