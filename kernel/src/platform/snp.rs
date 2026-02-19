@@ -11,9 +11,12 @@ use super::PageValidateOp;
 use super::PlatformPageType;
 use super::SvsmPlatform;
 use super::capabilities::Caps;
-use super::snp_fw::{
-    copy_tables_to_fw, launch_fw, prepare_fw_launch, print_fw_meta, validate_fw, validate_fw_memory,
-};
+use super::snp_fw::adjust_fw_mem;
+use super::snp_fw::copy_tables_to_fw;
+use super::snp_fw::launch_fw;
+use super::snp_fw::prepare_fw_launch;
+use super::snp_fw::print_fw_meta;
+use super::snp_fw::validate_fw_memory;
 use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::console::init_svsm_console;
@@ -209,7 +212,7 @@ impl SvsmPlatform for SnpPlatform {
             // is not being aliased.
             unsafe {
                 copy_tables_to_fw(fw_meta, &kernel_region)?;
-                validate_fw(boot_params)?;
+                adjust_fw_mem(boot_params)?;
             }
             prepare_fw_launch(fw_meta)?;
         }
