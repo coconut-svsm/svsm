@@ -74,7 +74,7 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 # libcrt
 $(LIBCRT):
 	mkdir -p $(LIBCRT_BUILD_DIR)
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR)
+	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) CC=$(CC)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
