@@ -5,8 +5,11 @@
 // Author: Oliver Steffen <osteffen@redhat.com>
 // Author: Stefano Garzarella <sgarzare@redhat.com>
 
+use core::sync::atomic::AtomicU32;
+
 use super::hal::*;
 use virtio_drivers::device::blk::VirtIOBlk;
+use virtio_drivers::device::socket::{VirtIOSocket, VsockConnectionManager};
 use virtio_drivers::transport::mmio::MmioTransport;
 
 use super::error::*;
@@ -34,5 +37,30 @@ impl VirtIOBlkDevice {
             device: SpinLock::new(blk),
             _mmio_space: slot.mmio_range,
         })
+    }
+}
+
+pub struct VirtIOVsockDevice {
+    pub device: SpinLock<VsockConnectionManager<SvsmHal, MmioTransport<SvsmHal>>>,
+    pub first_free_port: AtomicU32,
+    _mmio_space: GlobalRangeGuard,
+}
+
+impl core::fmt::Debug for VirtIOVsockDevice {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("VirtIOVsockDevice").finish()
+    }
+}
+
+impl VirtIOVsockDevice {
+    pub fn new(slot: MmioSlot) -> Result<Box<Self>, SvsmError> {
+        let vsk = VirtIOSocket::new(slot.transport).map_err(|_| VirtioError::InvalidDevice)?;
+        let mgr = VsockConnectionManager::new(vsk);
+
+        Ok(Box::new(VirtIOVsockDevice {
+            device: SpinLock::new(mgr),
+            first_free_port: AtomicU32::new(1024),
+            _mmio_space: slot.mmio_range,
+        }))
     }
 }
