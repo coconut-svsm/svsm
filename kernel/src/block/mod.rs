@@ -16,4 +16,4 @@ use crate::{block::api::BlockDriver, utils::immut_after_init::ImmutAfterInitCell
 use alloc::boxed::Box;
 
 // Currently only one block device is supported.
-static BLOCK_DEVICE: ImmutAfterInitCell<Box<dyn BlockDriver>> = ImmutAfterInitCell::uninit();
+pub static BLOCK_DEVICE: ImmutAfterInitCell<Box<dyn BlockDriver>> = ImmutAfterInitCell::uninit();
