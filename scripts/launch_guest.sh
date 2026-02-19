@@ -109,39 +109,27 @@ QEMU_BUILD=${QEMU_VERSION##*.}
 QEMU_MINOR=${QEMU_VERSION##"$QEMU_MAJOR".}
 QEMU_MINOR=${QEMU_MINOR%%."$QEMU_BUILD"}
 
-if (( QEMU_MAJOR < 9)) && [ "$CGS" = "nocc" ]; then
-  echo "Error: --nocc requires Qemu 9 or newer (with patches)." >&2
+if (( QEMU_MAJOR < 10 || (QEMU_MAJOR == 10 && QEMU_MINOR < 1) )); then
+  echo "Error: SVSM requires QEMU 10.1 or newer (with patches)." >&2
   exit 1
 fi
 
-# The QEMU machine and memory command line changed after QEMU 8.2.0 from
-# the coconut-svsm git repository.
-if (( QEMU_MAJOR >= 9 )); then
-  case "$CGS" in
-    nocc)
-      SNP_GUEST="-object nocc,id=cgs0"
-      CPU=max,smep=on
-      ACCEL=tcg
-      ;;
-    sev)
-      SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
-      ;;
-    *)
-      echo "Error: Unexpected CGS value '$CGS'"
-      exit 1
-  esac
-  MACHINE=q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
-  MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
-  IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
-elif (( (QEMU_MAJOR > 8) || ((QEMU_MAJOR == 8) && (QEMU_MINOR >= 2)) )); then
-  MACHINE=q35,confidential-guest-support=sev0,memory-backend=mem0,accel=$ACCEL
-  MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
-  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS,init-flags=5,igvm-file=$IGVM"
-else
-  MACHINE=q35,confidential-guest-support=sev0,memory-backend=mem0,kvm-type=protected,accel=$ACCEL
-  MEMORY=memory-backend-memfd-private,size=8G,id=mem0,share=true
-  SNP_GUEST="-object sev-snp-guest,id=sev0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS,init-flags=5,igvm-file=$IGVM"
-fi
+case "$CGS" in
+  nocc)
+    SNP_GUEST="-object nocc,id=cgs0"
+    CPU=max,smep=on
+    ACCEL=tcg
+    ;;
+  sev)
+    SNP_GUEST="-object sev-snp-guest,id=cgs0,cbitpos=$C_BIT_POS,reduced-phys-bits=$REDUCED_PHYS_BITS"
+    ;;
+  *)
+    echo "Error: Unexpected CGS value '$CGS'"
+    exit 1
+esac
+MACHINE=q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
+MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
+IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
 
 # Setup a disk if an image has been specified
 if [ ! -z "$IMAGE" ]; then
