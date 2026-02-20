@@ -19,7 +19,7 @@ use crate::mm::validate::{
 use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::protocols::errors::SvsmReqError;
-use crate::types::{PAGE_SIZE, PageSize};
+use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
 
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
@@ -54,7 +54,6 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Ask the hypervisor to make the page shared.
     SVSM_PLATFORM.page_state_change(
         MemoryRegion::new(paddr, PAGE_SIZE),
-        PageSize::Regular,
         PageStateChangeOp::Shared,
     )?;
 
@@ -88,7 +87,6 @@ pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     let paddr = virt_to_phys(vaddr);
     SVSM_PLATFORM.page_state_change(
         MemoryRegion::new(paddr, PAGE_SIZE),
-        PageSize::Regular,
         PageStateChangeOp::Private,
     )?;
 

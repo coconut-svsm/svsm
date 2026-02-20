@@ -621,7 +621,6 @@ impl GHCB {
     pub fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
-        size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         // Maximum entries (8 bytes each_ minus 8 bytes for header
@@ -639,10 +638,7 @@ impl GHCB {
         self.clear();
 
         while paddr < end {
-            let size = if size == PageSize::Huge
-                && paddr.is_aligned(PAGE_SIZE_2M)
-                && paddr + PAGE_SIZE_2M <= end
-            {
+            let size = if paddr.is_aligned(PAGE_SIZE_2M) && paddr + PAGE_SIZE_2M <= end {
                 PageSize::Huge
             } else {
                 PageSize::Regular

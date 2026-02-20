@@ -10,7 +10,6 @@ use crate::address::PhysAddr;
 use crate::boot_params::BootParams;
 use crate::error::SvsmError;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::PageSize;
 use crate::utils::{MemoryRegion, page_align_up};
 use bootdefs::kernel_launch::KernelLaunchInfo;
 use bootdefs::kernel_launch::LOWMEM_END;
@@ -33,11 +32,7 @@ fn invalidate_boot_memory_region(
         }?;
 
         if boot_params.page_state_change_required() {
-            platform.page_state_change(
-                aligned_region,
-                PageSize::Regular,
-                PageStateChangeOp::Shared,
-            )?;
+            platform.page_state_change(aligned_region, PageStateChangeOp::Shared)?;
         }
     }
 

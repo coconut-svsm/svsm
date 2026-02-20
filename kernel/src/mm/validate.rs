@@ -15,7 +15,8 @@ use crate::mm::pagetable::PageFrame;
 use crate::mm::virt_to_frame;
 use crate::mm::virt_to_phys;
 use crate::platform::{PageStateChangeOp, PageValidateOp, SvsmPlatform};
-use crate::types::{PAGE_SIZE, PAGE_SIZE_2M, PageSize};
+use crate::types::PAGE_SIZE;
+use crate::types::PAGE_SIZE_2M;
 use crate::utils::MemoryRegion;
 use core::num::NonZeroUsize;
 
@@ -244,7 +245,6 @@ pub unsafe fn validate_mapped_region(
                 let paddr_start = PhysAddr::new((paddr_next - paddr_len as u64) as usize);
                 platform.page_state_change(
                     MemoryRegion::new(paddr_start, paddr_len),
-                    PageSize::Huge,
                     PageStateChangeOp::Private,
                 )?;
                 paddr_len = 0;
@@ -258,7 +258,6 @@ pub unsafe fn validate_mapped_region(
             let paddr_start = PhysAddr::new((paddr_next - paddr_len as u64) as usize);
             platform.page_state_change(
                 MemoryRegion::new(paddr_start, paddr_len),
-                PageSize::Huge,
                 PageStateChangeOp::Private,
             )?;
         }

@@ -34,7 +34,6 @@ use crate::hyperv;
 use crate::io::IOPort;
 use crate::mm::TransitionPageTable;
 use crate::mm::alloc::free_page;
-use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 
@@ -212,7 +211,6 @@ pub trait SvsmPlatform: Sync {
     fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
-        size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError>;
 
