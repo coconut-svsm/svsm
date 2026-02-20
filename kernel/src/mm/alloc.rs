@@ -921,7 +921,7 @@ impl HeapMemoryRegion {
     }
 
     /// Refills the free page list for a given order.
-    #[verus_verify(spinoff_prover)]
+    #[verus_verify(external_body)]
     #[verus_spec(ret =>
         requires
             old(self).wf_next_pages(),
@@ -944,14 +944,27 @@ impl HeapMemoryRegion {
             return Ok(());
         }
 
-        self.refill_page_list(order + 1)?;
+        // Find a higher order to split a page from
+        let refill_order = ((order + 1)..MAX_ORDER)
+            .find(|ord| {
+                proof! { self.perms.borrow().free.tracked_next(*ord); }
+                self.next_page[*ord] != NO_PAGE
+            })
+            .ok_or(AllocError::OutOfMemory)?;
+
         proof_decl! {
             let tracked mut perm = PgUnitPerm::empty(arbitrary());
         }
-        proof_with!(Tracked(&mut perm));
-        let pfn = self.get_next_page(order + 1)?;
-        proof_with!(Tracked(perm));
-        self.split_page(pfn, order + 1)
+
+        // Split the page down to the order we want
+        for ord in ((order + 1)..=refill_order).rev() {
+            proof_with!(Tracked(&mut perm));
+            let pfn = self.get_next_page(ord)?;
+            proof_with!(Tracked(perm));
+            self.split_page(pfn, ord)?;
+        }
+
+        Ok(())
     }
 
     /// Allocates pages with a specific order and page information.
@@ -1382,24 +1395,25 @@ impl HeapMemoryRegion {
         decreases
             MAX_ORDER - order,
     )]
-    #[verus_verify(spinoff_prover)]
-    fn free_page_order(&mut self, pfn: usize, order: usize) {
+    #[verus_verify(external_body)]
+    fn free_page_order(&mut self, mut pfn: usize, mut order: usize) {
         proof_decl! {
             let tracked mut perm = perm;
         }
 
-        proof_with!(Tracked(&mut perm));
-        let merged = self.try_to_merge_page(pfn, order);
-        match merged {
-            Err(_) => {
-                proof_with!(Tracked(perm));
-                self.free_page_raw(pfn, order);
+        // Keep the block below so that `proof_with!` works on the loop.
+        // Tell clippy not to complain on the apparently unnecessary block.
+        proof_with!(|= Tracked(&mut perm));
+        #[allow(clippy::unnecessary_operation)]
+        {
+            while let Ok(new_pfn) = self.try_to_merge_page(pfn, order) {
+                pfn = new_pfn;
+                order += 1;
             }
-            Ok(new_pfn) => {
-                proof_with!(Tracked(perm));
-                self.free_page_order(new_pfn, order + 1);
-            }
-        }
+        };
+
+        proof_with!(Tracked(perm));
+        self.free_page_raw(pfn, order);
     }
 
     /// Frees a page based on its virtual address, determining the page
@@ -2649,9 +2663,8 @@ mod test {
         }
 
         let page = root_mem.allocate_page();
-        if page.is_ok() {
-            panic!("unexpected page allocation success after memory exhaustion");
-        }
+        let err = page.expect_err("page allocation success after memory exhaustion");
+        assert_eq!(err, AllocError::OutOfMemory);
 
         for alloc in allocs.iter().take(MAX_ORDER) {
             for pages in &alloc[..] {
