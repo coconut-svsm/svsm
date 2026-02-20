@@ -137,7 +137,7 @@ pub mod test_utils {
         pub ioport: u16,
         pub iodata: u64,
 
-        pub mmio_reg: u64,
+        pub mmio_reg: *mut u64,
     }
 
     impl Default for TestCtx {
@@ -166,7 +166,7 @@ pub mod test_utils {
                 flags: 0,
                 ioport: TEST_PORT,
                 iodata: u64::MAX,
-                mmio_reg: 0,
+                mmio_reg: core::ptr::null_mut(),
             }
         }
     }
@@ -298,7 +298,7 @@ pub mod test_utils {
             _shared: bool,
             size: Bytes,
         ) -> Result<u64, InsnError> {
-            if pa != &raw const self.mmio_reg as usize {
+            if pa != self.mmio_reg as usize {
                 return Ok(0);
             }
 
@@ -325,7 +325,7 @@ pub mod test_utils {
             size: Bytes,
             data: u64,
         ) -> Result<(), InsnError> {
-            if pa != &raw const self.mmio_reg as usize {
+            if pa != self.mmio_reg as usize {
                 return Ok(());
             }
 
@@ -792,7 +792,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: testdata.as_ptr() as usize,
+            rdi: testdata.as_mut_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -864,7 +864,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: testdata.as_ptr() as usize,
+            rdi: testdata.as_mut_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -936,7 +936,7 @@ mod tests {
         let mut testctx = TestCtx {
             rdx: TEST_PORT as usize,
             rcx: testdata.len(),
-            rdi: testdata.as_ptr() as usize,
+            rdi: testdata.as_mut_ptr() as usize,
             ..Default::default()
         };
         loop {
@@ -1215,37 +1215,41 @@ mod tests {
             0x88, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0;
 
         let mut testctx = TestCtx {
             rax: 0xab,
+            rdi: &raw mut mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 2);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
 
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0x48, 0x89, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0;
 
         let mut testctx = TestCtx {
             rax: 0x1234567890abcdef,
+            rdi: &raw mut mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 3);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
     }
 
     #[test]
@@ -1254,37 +1258,39 @@ mod tests {
             0x8A, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0xab;
 
         let mut testctx = TestCtx {
-            mmio_reg: 0xab,
+            rdi: &raw const mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 2);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
 
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0x48, 0x8B, 0x07, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0x1234567890abcdef;
 
         let mut testctx = TestCtx {
-            mmio_reg: 0x1234567890abcdef,
+            rdi: &raw const mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 3);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
     }
 
     #[test]
@@ -1293,12 +1299,13 @@ mod tests {
             0xA1, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0x12345678;
 
         let mut testctx = TestCtx {
-            mmio_reg: 0x12345678,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        let addr = (&raw const testctx.mmio_reg as usize).to_le_bytes();
+        let addr = (&raw const mmio_reg as usize).to_le_bytes();
         raw_insn[1..9].copy_from_slice(&addr);
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
@@ -1306,7 +1313,7 @@ mod tests {
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 9);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
     }
 
     #[test]
@@ -1315,12 +1322,14 @@ mod tests {
             0xA3, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0;
 
         let mut testctx = TestCtx {
             rax: 0x12345678,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        let addr = (&raw const testctx.mmio_reg as usize).to_le_bytes();
+        let addr = (&raw const mmio_reg as usize).to_le_bytes();
         raw_insn[1..9].copy_from_slice(&addr);
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
@@ -1328,7 +1337,7 @@ mod tests {
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 9);
-        assert_eq!(testctx.mmio_reg, testctx.rax as u64);
+        assert_eq!(mmio_reg, testctx.rax as u64);
     }
 
     #[test]
@@ -1337,35 +1346,39 @@ mod tests {
             0xC6, 0x07, 0xab, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0;
 
         let mut testctx = TestCtx {
+            rdi: &raw mut mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 3);
-        assert_eq!(testctx.mmio_reg, 0xab);
+        assert_eq!(mmio_reg, 0xab);
 
         let raw_insn: [u8; MAX_INSN_SIZE] = [
             0x48, 0xC7, 0x07, 0x78, 0x56, 0x34, 0x12, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41, 0x41,
             0x41,
         ];
+        let mut mmio_reg = 0;
 
         let mut testctx = TestCtx {
+            rdi: &raw mut mmio_reg as usize,
+            mmio_reg: &raw mut mmio_reg,
             ..Default::default()
         };
-        testctx.rdi = &raw const testctx.mmio_reg as usize;
 
         let decoded = Instruction::new(raw_insn).decode(&testctx).unwrap();
         decoded.emulate(&mut testctx).unwrap();
 
         assert_eq!(decoded.insn().unwrap(), DecodedInsn::Mov);
         assert_eq!(decoded.size(), 7);
-        assert_eq!(testctx.mmio_reg, 0x12345678);
+        assert_eq!(mmio_reg, 0x12345678);
     }
 
     #[test]

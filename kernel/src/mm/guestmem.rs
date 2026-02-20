@@ -831,6 +831,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore = "inline assembly")]
     fn test_read_invalid_bit_pattern() {
         // Invalid bit pattern for `bool`
         let mut buffer = [2u8];
