@@ -13,6 +13,11 @@ pub use console::*;
 pub use locking::*;
 pub use syscall::*;
 
+#[cfg(feature = "test_runner")]
+pub mod testing;
+#[cfg(feature = "test_runner")]
+pub use testing::*;
+
 #[macro_export]
 macro_rules! declare_main {
     ($path:path) => {

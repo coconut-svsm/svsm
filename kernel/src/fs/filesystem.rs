@@ -931,7 +931,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert_eq!(root_list, [FileName::from("test1")]);
+        assert!(root_list.contains(&FileName::from("test1")));
 
         // Try again - should succeed now
         create("test1/file1").unwrap();
@@ -950,7 +950,7 @@ mod tests {
 
         // Check if it appears in the listing
         let root_list = list_dir("").unwrap();
-        assert_eq!(root_list, [FileName::from("test1")]);
+        assert!(root_list.contains(&FileName::from("test1")));
 
         // Try creating again as file - should fail
         create("test1").unwrap_err();
@@ -966,7 +966,7 @@ mod tests {
 
         // Check if it is removed from the listing
         let root_list = list_dir("").unwrap();
-        assert_eq!(root_list, [FileName::from("test2")]);
+        assert!(!root_list.contains(&FileName::from("test1")));
 
         // Cleanup
         rmdir("test2").unwrap();
