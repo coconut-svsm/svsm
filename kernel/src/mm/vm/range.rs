@@ -13,7 +13,7 @@ use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
 use crate::utils::{align_down, align_up};
 
-use core::cmp::max;
+use core::cmp::{Ordering, max};
 
 use intrusive_collections::Bound;
 use intrusive_collections::rbtree::{CursorMut, RBTree};
@@ -217,18 +217,26 @@ impl VMR {
         )
     }
 
-    /// Map a [`VMM`] into the [`PageTablePart`]s of this region
+    /// Map a range of the [`VMM`] into the [`PageTablePart`]s of this region.
     ///
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to map into the page-table
+    /// - `vmm_offset` - Offset into the [`VMM`] to start mapping from
+    /// - `range` - Tuple of `(VirtAddr, VirtAddr)` describing the start and
+    ///   end virtual addresses to map the [`VMM`] to.
     ///
     /// # Returns
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
+    fn map_range(
+        &self,
+        vmm: &VMM,
+        vmm_offset: usize,
+        range: (VirtAddr, VirtAddr),
+    ) -> Result<(), SvsmError> {
         let (rstart, _) = self.virt_range();
-        let (vmm_start, vmm_end) = vmm.range();
+        let (vmm_start, vmm_end) = range;
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let mut offset: usize = 0;
@@ -242,7 +250,7 @@ impl VMR {
 
         while vmm_start + offset < vmm_end {
             let idx = PageTable::index::<3>(VirtAddr::from(vmm_start - rstart));
-            if let Some(paddr) = mapping.map(offset) {
+            if let Some(paddr) = mapping.map(offset + vmm_offset) {
                 let pt_flags = self.pt_flags | mapping.pt_flags(offset) | PTEntryFlags::PRESENT;
                 match page_size {
                     PageSize::Regular => {
@@ -259,14 +267,30 @@ impl VMR {
         Ok(())
     }
 
-    /// Unmap a [`VMM`] from the [`PageTablePart`]s of this region
+    /// Map a [`VMM`] into the [`PageTablePart`]s of this region
+    ///
+    /// # Arguments
+    ///
+    /// - `vmm` - Reference to a [`VMM`] instance to map into the page-table
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
+    fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
+        self.map_range(vmm, 0, vmm.range())
+    }
+
+    /// Unmap part of a  [`VMM`] from the [`PageTablePart`]s of this region.
     ///
     /// # Arguments
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
-    fn unmap_vmm(&self, vmm: &VMM) {
+    /// - `vmm_offset` - Offset into the [`VMM`] to start unmapping from
+    /// - `range` - Tuple of `(VirtAddr, VirtAddr)` describing the start and
+    ///   end virtual addresses to unmap.
+    fn unmap_range(&self, vmm: &VMM, vmm_offset: usize, range: (VirtAddr, VirtAddr)) {
         let (rstart, _) = self.virt_range();
-        let (vmm_start, vmm_end) = vmm.range();
+        let (vmm_start, vmm_end) = range;
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
         let page_size = mapping.page_size();
@@ -280,11 +304,20 @@ impl VMR {
             };
 
             if result.is_some() {
-                mapping.unmap(offset);
+                mapping.unmap(offset + vmm_offset);
             }
 
             offset += usize::from(page_size);
         }
+    }
+
+    /// Unmap a [`VMM`] from the [`PageTablePart`]s of this region
+    ///
+    /// # Arguments
+    ///
+    /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
+    fn unmap_vmm(&self, vmm: &VMM) {
+        self.unmap_range(vmm, 0, vmm.range())
     }
 
     fn do_insert(
@@ -448,6 +481,15 @@ impl VMR {
         self.insert_hint(VirtAddr::new(0), mapping)
     }
 
+    /// Flush the TLB after unmapping operations
+    fn flush_tlb(&self) {
+        if self.per_cpu {
+            flush_tlb_global_percpu();
+        } else {
+            flush_tlb_global_sync();
+        }
+    }
+
     /// Removes the mapping from a given base address from the RBTree
     ///
     /// # Arguments
@@ -464,13 +506,54 @@ impl VMR {
         let mut cursor = tree.find_mut(&addr);
         if let Some(node) = cursor.get() {
             self.unmap_vmm(node);
-            if self.per_cpu {
-                flush_tlb_global_percpu();
-            } else {
-                flush_tlb_global_sync();
-            }
+            self.flush_tlb();
         }
         cursor.remove().ok_or(SvsmError::Mem)
+    }
+
+    pub fn resize_vmm(&self, base: VirtAddr, new_size: usize) -> Result<usize, SvsmError> {
+        let tree = self.tree.lock_write();
+        let addr = base.pfn();
+        let cursor = tree.find(&addr);
+        let vmm = cursor.get().ok_or(SvsmError::Mem)?;
+        let mut mapping = vmm.get_mapping_mut();
+        let old_size = mapping.mapping_size();
+
+        match new_size.cmp(&old_size) {
+            Ordering::Greater => {
+                // Check if mapping can be made bigger
+                let next_cursor = cursor.peek_next();
+                let limit = if next_cursor.is_null() {
+                    let (_, max_end) = self.virt_range();
+                    max_end - base
+                } else {
+                    let next_vmm = cursor.get().unwrap();
+                    let (next_start, _) = next_vmm.range();
+                    next_start - base
+                };
+                if new_size > limit {
+                    return Err(SvsmError::Mem);
+                }
+                mapping.resize(new_size)?;
+                let map_range = (base + old_size, base + new_size);
+                // FIXME: Undo resize operation when map_range fails.
+                self.map_range(vmm, old_size, map_range)?;
+
+                Ok(new_size)
+            }
+            Ordering::Less => {
+                let unmap_range = (base + new_size, base + old_size);
+                mapping.resize(new_size)?;
+                self.unmap_range(vmm, new_size, unmap_range);
+                // Flush TLB after memory has been unmapped
+                self.flush_tlb();
+                // Tell VMM to free unmapped memory
+                mapping.flush();
+
+                Ok(new_size)
+            }
+            _ => Ok(new_size),
+        }
     }
 
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for
