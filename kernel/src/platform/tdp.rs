@@ -15,13 +15,14 @@ use crate::console::init_svsm_console;
 use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::percpu::PerCpu;
-use crate::cpu::smp::create_ap_start_context;
+use crate::cpu::smp::ApStartContextRef;
+use crate::cpu::smp::set_ap_start_context;
 use crate::cpu::x86::{apic_in_service, apic_initialize, apic_sw_enable};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::IOPort;
-use crate::mm::{PerCPUMapping, TransitionPageTable};
+use crate::mm::PerCPUMapping;
 use crate::platform::IrqGuard;
 use crate::tdx::apic::TDX_APIC_ACCESSOR;
 use crate::tdx::tdcall::{
@@ -33,10 +34,7 @@ use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{MemoryRegion, is_aligned};
 
-use bootdefs::kernel_launch::ApStartContext;
-use bootdefs::kernel_launch::SIPI_STUB_GPA;
 use bootdefs::tdp_start::TdpStartContext;
-use core::mem;
 use core::mem::MaybeUninit;
 use core::sync::atomic::Ordering;
 use syscall::GlobalFeatureFlags;
@@ -143,38 +141,6 @@ impl SvsmPlatform for TdpPlatform {
         &GHCI_IO_DRIVER
     }
 
-    /// # Safety
-    /// The caller is required to ensure that it is safe to validate low
-    /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64, _vaddr_valid: bool) -> Result<(), SvsmError> {
-        // The page at the SIPI stub address was validated because it contains
-        // valid data.  Make sure it is not validated again.
-        // SAFETY: the caller taks responsibility for the safety of the
-        // validation operations here.
-        unsafe {
-            if addr <= SIPI_STUB_GPA as u64 {
-                self.validate_physical_page_range(
-                    MemoryRegion::new(PhysAddr::from(0u64), addr as usize),
-                    PageValidateOp::Validate,
-                )
-            } else {
-                self.validate_physical_page_range(
-                    MemoryRegion::new(PhysAddr::from(0u64), SIPI_STUB_GPA as usize),
-                    PageValidateOp::Validate,
-                )?;
-                if addr as usize > SIPI_STUB_GPA as usize + PAGE_SIZE {
-                    let paddr_start = PhysAddr::from(SIPI_STUB_GPA as usize + PAGE_SIZE);
-                    let paddr_end = PhysAddr::from(addr);
-                    self.validate_physical_page_range(
-                        MemoryRegion::from_addresses(paddr_start, paddr_end),
-                        PageValidateOp::Validate,
-                    )?;
-                }
-                Ok(())
-            }
-        }
-    }
-
     fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
@@ -262,7 +228,7 @@ impl SvsmPlatform for TdpPlatform {
         &self,
         cpu: &PerCpu,
         start_rip: u64,
-        transition_page_table: &TransitionPageTable,
+        ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         // Translate this context into an AP start context and place it in the
         // AP startup transition page.
@@ -273,16 +239,8 @@ impl SvsmPlatform for TdpPlatform {
         // when running in the L1.
         context.efer = 0;
 
-        // The context page was pre-accepted by the IGVM file and therefore it
-        // is available for use.
-        let context_pa = SIPI_STUB_GPA as usize + PAGE_SIZE - mem::size_of::<ApStartContext>();
-        // SAFETY: the physical address is known to point to the location where
-        // the start context is to be created.
-        let mut context_mapping = unsafe {
-            PerCPUMapping::<MaybeUninit<ApStartContext>>::create(PhysAddr::new(context_pa))?
-        };
-
-        context_mapping.write(create_ap_start_context(&context, transition_page_table));
+        // Set up the AP start context.
+        set_ap_start_context(&context, ap_start_context_ref.unwrap());
 
         // Map the reset page to populate the TDP start context consumed
         // by stage1, including the VP index of the CPU being started.  This
@@ -309,8 +267,6 @@ impl SvsmPlatform for TdpPlatform {
             let ctx = hyperv::HvInitialVpContext::default();
             hyperv_start_cpu(cpu, &ctx)?;
         }
-
-        drop(context_mapping);
 
         Ok(())
     }

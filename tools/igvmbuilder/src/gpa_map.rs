@@ -10,19 +10,16 @@ use std::fs::metadata;
 use bootdefs::kernel_launch::BLDR_BASE;
 use bootdefs::kernel_launch::BLDR_STACK_SIZE;
 use bootdefs::kernel_launch::KERNEL_FS_BASE;
-use bootdefs::kernel_launch::SIPI_STUB_GPA;
-use bootdefs::kernel_launch::SIPI_STUB_PT_GPA;
 
 use igvm_defs::PAGE_SIZE_4K;
 
 use crate::boot_params::BootParamLayout;
 use crate::cmd_options::{CmdOptions, Hypervisor};
 use crate::firmware::Firmware;
-use crate::igvm_builder::ANY_NATIVE_COMPATIBILITY_MASK;
 use crate::igvm_builder::COMPATIBILITY_MASK;
 use crate::igvm_builder::TDP_COMPATIBILITY_MASK;
 
-pub const LOWMEM_PT_COUNT: usize = 4;
+pub const INIT_PT_COUNT: usize = 4;
 
 #[derive(Debug, Copy, Clone)]
 pub struct GpaRange {
@@ -91,11 +88,10 @@ pub struct GpaMap {
     pub kernel: GpaRange,
     pub kernel_min_size: u32,
     pub kernel_max_size: u32,
+    pub ap_start_context_addr: u32,
     pub vmsa: GpaRange,
     pub vmsa_in_kernel_range: bool,
     pub init_page_tables: GpaRange,
-    pub sipi_stub: GpaRange,
-    pub sipi_compat_mask: u32,
 }
 
 impl GpaMap {
@@ -169,7 +165,7 @@ impl GpaMap {
             let bldr_image = GpaRange::new(BLDR_BASE.into(), bldr_len as u64)?;
             let bldr_stack = GpaRange::new(bldr_image.get_end(), BLDR_STACK_SIZE as u64)?;
             let init_page_tables =
-                GpaRange::new(bldr_stack.get_end(), LOWMEM_PT_COUNT as u64 * PAGE_SIZE_4K)?;
+                GpaRange::new(bldr_stack.get_end(), INIT_PT_COUNT as u64 * PAGE_SIZE_4K)?;
             let cpuid_page = init_page_tables.get_end();
             GpaLayoutInfo {
                 bldr_image,
@@ -219,19 +215,6 @@ impl GpaMap {
             ),
         };
 
-        // If the target includes a non-isolated platform, then insert the
-        // SIPI startup stub.  Also include the SIPI stub with TDX since it is
-        // used for AP startup.
-        let sipi_compat_mask = ANY_NATIVE_COMPATIBILITY_MASK | TDP_COMPATIBILITY_MASK;
-        let sipi_stub = if COMPATIBILITY_MASK.contains(sipi_compat_mask) {
-            GpaRange::new(
-                SIPI_STUB_PT_GPA as u64,
-                SIPI_STUB_GPA as u64 + PAGE_SIZE_4K - SIPI_STUB_PT_GPA as u64,
-            )?
-        } else {
-            GpaRange::new(0, 0)?
-        };
-
         let gpa_map = Self {
             stage1_image,
             bldr_stack: gpa_layout_info.bldr_stack,
@@ -243,11 +226,13 @@ impl GpaMap {
             kernel: GpaRange::new(kernel_base, kernel_min_size)?,
             kernel_min_size: kernel_min_size.try_into().unwrap(),
             kernel_max_size,
-            sipi_stub,
-            sipi_compat_mask,
             vmsa,
             vmsa_in_kernel_range,
             init_page_tables: gpa_layout_info.init_page_tables,
+            // The first page of the boot loader stack can be used as an AP
+            // start context location.  If there is no boot loader stack, then
+            // zero signifies the lack of an AP start context.
+            ap_start_context_addr: gpa_layout_info.bldr_stack.get_start().try_into().unwrap(),
         };
         if options.verbose {
             println!("GPA Map: {gpa_map:#X?}");

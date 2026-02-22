@@ -64,8 +64,7 @@ pub struct BootImageParams<'a> {
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
     pub vtom: u64,
-    pub sipi_stub_base: u32,
-    pub sipi_stub_size: u32,
+    pub ap_start_context_addr: u32,
     pub boot_params: &'a BootParamBlock,
 }
 

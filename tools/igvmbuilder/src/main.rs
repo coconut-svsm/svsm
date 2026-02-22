@@ -20,7 +20,6 @@ mod initial_stack;
 mod ovmf_firmware;
 mod paging;
 mod platform;
-mod sipi;
 
 fn build_igvm() -> Result<(), Box<dyn Error>> {
     let builder = IgvmBuilder::new()?;

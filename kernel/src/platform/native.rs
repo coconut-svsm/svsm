@@ -20,7 +20,8 @@ use crate::cpu::features::{Feature, cpu_get_feat, cpu_has_feat};
 use crate::cpu::irq_state::raw_irqs_disable;
 use crate::cpu::msr::write_msr;
 use crate::cpu::percpu::PerCpu;
-use crate::cpu::smp::create_ap_start_context;
+use crate::cpu::smp::ApStartContextRef;
+use crate::cpu::smp::set_ap_start_context;
 use crate::cpu::x86::{
     X2APIC_ACCESSOR, apic_enable, apic_initialize, apic_post_irq, apic_sw_enable,
 };
@@ -28,19 +29,14 @@ use crate::error::SvsmError;
 use crate::hyperv;
 use crate::hyperv::hyperv_start_cpu;
 use crate::io::{DEFAULT_IO_DRIVER, IOPort};
-use crate::mm::PerCPUMapping;
-use crate::mm::TransitionPageTable;
-use crate::types::PAGE_SIZE;
 #[cfg(debug_assertions)]
 use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use cpuarch::x86apic::ApicIcr;
 use cpuarch::x86apic::IcrMessageType;
 
-use bootdefs::kernel_launch::ApStartContext;
-use bootdefs::kernel_launch::SIPI_STUB_GPA;
+use bootdefs::kernel_launch::BLDR_BASE;
 use core::arch::asm;
-use core::mem;
 use core::mem::MaybeUninit;
 use syscall::GlobalFeatureFlags;
 
@@ -159,10 +155,6 @@ impl SvsmPlatform for NativePlatform {
         &DEFAULT_IO_DRIVER
     }
 
-    unsafe fn validate_low_memory(&self, _addr: u64, _vaddr_valid: bool) -> Result<(), SvsmError> {
-        Ok(())
-    }
-
     fn page_state_change(
         &self,
         _region: MemoryRegion<PhysAddr>,
@@ -229,23 +221,15 @@ impl SvsmPlatform for NativePlatform {
         &self,
         cpu: &PerCpu,
         start_rip: u64,
-        transition_page_table: &TransitionPageTable,
+        ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError> {
         let context = cpu.get_initial_context(start_rip);
         if cpu_has_feat(Feature::HyperV) {
             return hyperv_start_cpu(cpu, &context);
         }
 
-        // Translate this context into an AP start context and place it it in
-        // the AP startup transition page.
-
-        let context_pa = SIPI_STUB_GPA as usize + PAGE_SIZE - mem::size_of::<ApStartContext>();
-        // SAFETY: the physical address is known to point to the location where
-        // the start context is to be created.
-        let mut context_mapping = unsafe {
-            PerCPUMapping::<MaybeUninit<ApStartContext>>::create(PhysAddr::new(context_pa))?
-        };
-        context_mapping.write(create_ap_start_context(&context, transition_page_table));
+        // Initialize the AP start context.
+        set_ap_start_context(&context, ap_start_context_ref.unwrap());
 
         // Now that the AP startup transition page has been configured, send
         // INIT-SIPI to start the processor.  No second SIPI is required when
@@ -253,7 +237,7 @@ impl SvsmPlatform for NativePlatform {
         let icr = ApicIcr::new().with_destination(cpu.shared().apic_id());
         let init_icr = icr.with_message_type(IcrMessageType::Init);
         apic_post_irq(init_icr.into());
-        let sipi_vector = SIPI_STUB_GPA >> 12;
+        let sipi_vector = BLDR_BASE >> 12;
         let sipi_icr = icr
             .with_message_type(IcrMessageType::Sipi)
             .with_vector(sipi_vector.try_into().unwrap());

@@ -27,11 +27,11 @@ use crate::address::{PhysAddr, VirtAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::IrqGuard;
 use crate::cpu::percpu::PerCpu;
+use crate::cpu::smp::ApStartContextRef;
 use crate::cpu::tlb::{TlbFlushScope, flush_tlb};
 use crate::error::SvsmError;
 use crate::hyperv;
 use crate::io::IOPort;
-use crate::mm::TransitionPageTable;
 use crate::mm::alloc::free_page;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
@@ -200,14 +200,6 @@ pub trait SvsmPlatform: Sync {
     /// platform.
     fn get_io_port(&self) -> &'static dyn IOPort;
 
-    /// Validates low memory below the specified physical address, with the
-    /// exception of addresses reserved for use by the platform object which
-    /// may pre-validated.  Intended only for use during early boot.
-    /// # Safety
-    /// The caller is required to ensure that it is safe to validate low
-    /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError>;
-
     /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
@@ -261,22 +253,12 @@ pub trait SvsmPlatform: Sync {
     /// interrupt.
     fn is_external_interrupt(&self, vector: usize) -> bool;
 
-    /// Creates a transition page table object as required by the platform.
-    /// # Safety
-    /// This must only be called during early boot when the SIPI stub page
-    /// table is known not to be used for any other purpose.
-    unsafe fn create_transition_page_table(&self) -> TransitionPageTable {
-        // SAFETY: the caller guarantees the safety of the transition page
-        // table address.
-        unsafe { TransitionPageTable::new() }.expect("Failed to create transition page table")
-    }
-
     /// Start an additional processor.
     fn start_cpu(
         &self,
         cpu: &PerCpu,
         start_rip: u64,
-        transition_page_table: &TransitionPageTable,
+        ap_start_context_ref: Option<&ApStartContextRef>,
     ) -> Result<(), SvsmError>;
 
     /// Indicates whether this platform should invoke the SVSM request loop.

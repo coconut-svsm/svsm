@@ -42,7 +42,6 @@ use crate::firmware::{Firmware, parse_firmware};
 use crate::initial_stack::BootLoaderStack;
 use crate::paging::setup_init_page_tables;
 use crate::platform::PlatformMask;
-use crate::sipi::add_sipi_stub;
 
 pub const SNP_COMPATIBILITY_MASK: u32 = 1u32 << 0;
 pub const NATIVE_COMPATIBILITY_MASK: u32 = 1u32 << 1;
@@ -53,8 +52,6 @@ pub const FULL_COMPATIBILITY_MASK: u32 = SNP_COMPATIBILITY_MASK
     | TDP_COMPATIBILITY_MASK
     | VSM_COMPATIBILITY_MASK;
 pub static COMPATIBILITY_MASK: PlatformMask = PlatformMask::new();
-
-pub const ANY_NATIVE_COMPATIBILITY_MASK: u32 = NATIVE_COMPATIBILITY_MASK | VSM_COMPATIBILITY_MASK;
 
 // Parameter area indices
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
@@ -386,10 +383,9 @@ impl IgvmBuilder {
             kernel_fs_end: self.gpa_map.kernel_fs.get_start() + self.gpa_map.kernel_fs.get_size(),
             kernel_region_start: self.gpa_map.kernel.get_start(),
             kernel_region_page_count: self.gpa_map.kernel.get_page_count(),
-            sipi_stub_base: self.gpa_map.sipi_stub.get_start().try_into().unwrap(),
-            sipi_stub_size: self.gpa_map.sipi_stub.get_size().try_into().unwrap(),
             bldr_start: self.gpa_map.bldr_image.get_start(),
             bldr_end: self.gpa_map.bldr_end,
+            ap_start_context_addr: self.gpa_map.ap_start_context_addr,
             vtom: self.vtom,
         };
         let boot_image_info = prepare_boot_image(
@@ -440,7 +436,10 @@ impl IgvmBuilder {
             }
 
             // Construct a native context object to capture the start context.
-            let start_rip = self.gpa_map.bldr_image.get_start();
+            // The start of the image is the 16-bit SIPI entry point, and
+            // the 32-bit BSP entry point is two bytes after that.  Refer to
+            // the comments in the boot loader entry point for details.
+            let start_rip = self.gpa_map.bldr_image.get_start() + 2;
             let start_rsp = self.gpa_map.bldr_stack.get_end() - size_of::<BldrLaunchInfo>() as u64;
             let start_context_info = StartContextInfo {
                 start_rip,
@@ -664,30 +663,6 @@ impl IgvmBuilder {
                 TDP_COMPATIBILITY_MASK,
                 IgvmPageDataType::NORMAL,
             )?;
-        }
-
-        if self.gpa_map.sipi_stub.get_size() != 0 {
-            // Add empty pages for the SIPI page tables.
-            self.add_empty_pages(
-                self.gpa_map.sipi_stub.get_start(),
-                self.gpa_map.sipi_stub.get_size() - PAGE_SIZE_4K,
-                COMPATIBILITY_MASK.get(),
-                IgvmPageDataType::NORMAL,
-            )?;
-
-            // The SIPI stub will be added on any platform that requires it.
-            // On every other platform, an empty page will be added in its
-            // place so that the set of accepted pages is the same on all
-            // platforms.
-            add_sipi_stub(self.gpa_map.sipi_compat_mask, &mut self.directives);
-            if COMPATIBILITY_MASK.contains(!self.gpa_map.sipi_compat_mask) {
-                self.add_empty_pages(
-                    self.gpa_map.sipi_stub.get_end() - PAGE_SIZE_4K,
-                    PAGE_SIZE_4K,
-                    COMPATIBILITY_MASK.get() & !self.gpa_map.sipi_compat_mask,
-                    IgvmPageDataType::NORMAL,
-                )?;
-            }
         }
 
         Ok(())

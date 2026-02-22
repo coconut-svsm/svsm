@@ -6,12 +6,6 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 
-// The SIPI stub is placed immediately below the stage 2 heap.
-pub const SIPI_STUB_GPA: u32 = 0xF000;
-
-// Two pages below the SIPI stub are used for low memory page tables.
-pub const SIPI_STUB_PT_GPA: u32 = 0xD000;
-
 pub const BLDR_BASE: u32 = 0x10000; // Start of boot loader area: 64 KB
 pub const BLDR_STACK_SIZE: u32 = 0x6000; // Size of boot loader stack: 24 KB
 pub const KERNEL_FS_BASE: u32 = 0x800000; // start of kernel filesystem: 8 MB
@@ -41,13 +35,12 @@ pub struct KernelLaunchInfo {
     pub kernel_strtab_len: u64,
     pub vtom: u64,
     pub kernel_page_table_vaddr: u64,
-    pub sipi_stub_base: u32,
-    pub sipi_stub_size: u32,
+    pub ap_start_context_addr: u32,
     pub debug_serial_port: u16,
     pub vmsa_in_kernel_heap: bool,
     pub use_alternate_injection: bool,
     pub suppress_svsm_interrupts: bool,
-    pub _reserved: [bool; 3],
+    pub _reserved: [bool; 7],
 }
 
 pub const INITIAL_KERNEL_STACK_WORDS: usize = 3;
@@ -81,14 +74,12 @@ pub struct BldrLaunchInfo {
     pub platform_type: u32,
     pub c_bit_position: u32,
     pub kernel_pml4e_index: u32,
-    pub _reserved: u32,
+    pub ap_start_context_addr: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, FromBytes, IntoBytes)]
 pub struct ApStartContext {
-    // All fields of this context must remain in the same order because they
-    // are referenced from assembly.
     pub cr0: usize,
     pub cr3: usize,
     pub cr4: usize,
@@ -96,6 +87,4 @@ pub struct ApStartContext {
     pub start_rip: usize,
     pub rsp: usize,
     pub initial_rip: usize,
-    pub transition_cr3: u32,
-    pub context_size: u32,
 }

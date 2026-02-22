@@ -44,7 +44,7 @@ impl BootLoaderStack {
             cpuid_addr: gpa_map.cpuid_page as u32,
             c_bit_position: 0,
             platform_type: 0,
-            _reserved: Default::default(),
+            ap_start_context_addr: gpa_map.ap_start_context_addr,
         };
         Self {
             bldr_stack,

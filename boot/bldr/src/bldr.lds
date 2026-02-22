@@ -48,4 +48,4 @@ SECTIONS
 	.rodata : { *(.rodata) }
 }
 
-ENTRY(startup_32)
+ENTRY(base_entry)

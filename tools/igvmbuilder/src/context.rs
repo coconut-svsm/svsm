@@ -386,6 +386,12 @@ pub fn construct_stage1_image(
         }
     }
 
+    // Advise the stage1 code where to find the AP entry point in the boot
+    // loader.  The RIP of the 32-bit AP entry point is two bytes after the RIP
+    // of the 32-bit BSP entry point.  Refer to the comments in the boot loader
+    // entry point for details.
+    tdp_context.ap_entry = tdp_context.rip + 2;
+
     // Load the stage1 image.  It must be exactly one page in size.
     let mut stage1_image = fs::read(stage1_path)?;
     if stage1_image.len() != PAGE_SIZE_4K as usize {

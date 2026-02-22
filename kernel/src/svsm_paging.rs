@@ -44,14 +44,6 @@ pub fn enumerate_early_boot_regions(
 ) -> Vec<MemoryRegion<PhysAddr>> {
     let mut regions = Vec::new();
 
-    // Include the low-memory SIPI stub if present.
-    if launch_info.sipi_stub_size != 0 {
-        regions.push(MemoryRegion::new(
-            PhysAddr::from(launch_info.sipi_stub_base as u64),
-            launch_info.sipi_stub_size as usize,
-        ));
-    }
-
     // Include boot loader memory if present, but only if firmware is not
     // located in low memory.
     if launch_info.bldr_end != 0 && !boot_params.fw_in_low_memory() {

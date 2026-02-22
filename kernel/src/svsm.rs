@@ -30,6 +30,7 @@ use svsm::cpu::percpu::{PERCPU_AREAS, PerCpu, cpu_idle_loop, this_cpu, try_this_
 use svsm::cpu::shadow_stack::{
     MODE_64BIT, S_CET, SCetFlags, set_cet_ss_enabled, shadow_stack_info,
 };
+use svsm::cpu::smp::ApStartContextRef;
 use svsm::cpu::smp::start_secondary_cpus;
 use svsm::cpu::sse::sse_init;
 use svsm::debug::gdbstub::svsm_gdbstub::{debug_break, gdbstub_start};
@@ -512,12 +513,20 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         .load_cpu_info()
         .expect("Failed to load ACPI tables");
 
-    // Create a transition page table for use during CPU startup.
-    // SAFETY: the memory for the initial kernel page tables is known not to be
-    // in use at this point during boot.
-    let transition_page_table = unsafe { SVSM_PLATFORM.create_transition_page_table() };
+    // Map the AP start context area if one has been provided.
+    let ap_start_context_ref = if launch_info.ap_start_context_addr != 0 {
+        // SAFETY: the AP start context pointer specified in the launch context
+        // is trusted to be correct.
+        let context = unsafe { ApStartContextRef::new(launch_info.ap_start_context_addr) }
+            .expect("Failed to map AP start context area");
+        Some(context)
+    } else {
+        None
+    };
 
-    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, &transition_page_table);
+    start_secondary_cpus(&**SVSM_PLATFORM, &cpus, ap_start_context_ref.as_ref());
+
+    drop(ap_start_context_ref);
 
     // Make ro_after_init section read-only
     make_ro_after_init().expect("Failed to make ro_after_init region read-only");
