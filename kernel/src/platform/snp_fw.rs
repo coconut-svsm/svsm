@@ -56,7 +56,7 @@ unsafe fn validate_fw_mem_region(
 
     if boot_params.page_state_change_required() {
         current_ghcb()
-            .page_state_change(region, PageSize::Regular, PageStateChangeOp::Private)
+            .page_state_change(region, PageStateChangeOp::Private)
             .expect("GHCB PSC call failed to validate firmware memory");
     }
 

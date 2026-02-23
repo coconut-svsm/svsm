@@ -25,7 +25,7 @@ use crate::tdx::tdcall::{
     tdcall_vm_read, tdvmcall_halt, tdvmcall_hyperv_hypercall, tdvmcall_io_read, tdvmcall_io_write,
     tdvmcall_map_gpa, tdvmcall_report_fatal_error, tdvmcall_wrmsr,
 };
-use crate::types::{PAGE_SIZE, PageSize};
+use crate::types::PAGE_SIZE;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use crate::utils::{MemoryRegion, is_aligned};
 
@@ -173,7 +173,6 @@ impl SvsmPlatform for TdpPlatform {
     fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
-        _size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
         if !region.start().is_aligned(PAGE_SIZE) || !is_aligned(region.len(), PAGE_SIZE) {

@@ -47,7 +47,6 @@ use crate::sev::{
     GHCB_APIC_ACCESSOR, PvalidateOp, init_hypervisor_ghcb_features, pvalidate_range,
     sev_status_init, sev_status_verify,
 };
-use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use syscall::GlobalFeatureFlags;
@@ -339,10 +338,9 @@ impl SvsmPlatform for SnpPlatform {
     fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
-        size: PageSize,
         op: PageStateChangeOp,
     ) -> Result<(), SvsmError> {
-        current_ghcb().page_state_change(region, size, op)
+        current_ghcb().page_state_change(region, op)
     }
 
     unsafe fn validate_physical_page_range(
