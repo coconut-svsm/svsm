@@ -30,6 +30,12 @@
     },
     "firmware": {},
     "fs": {
-        "modules": {}
+        "modules": {
+            "userinit": {
+                "path": "/init",
+                "type": "make",
+                "output_file": "bin/test-userinit.elf"
+            }
+        }
     }
 }
