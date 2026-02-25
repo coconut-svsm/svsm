@@ -27,7 +27,9 @@ use crate::hyperv::hyperv_start_cpu;
 use crate::io::{DEFAULT_IO_DRIVER, IOPort};
 use crate::mm::PerCPUMapping;
 use crate::mm::TransitionPageTable;
-use crate::types::{PAGE_SIZE, PageSize};
+use crate::types::PAGE_SIZE;
+#[cfg(debug_assertions)]
+use crate::types::PageSize;
 use crate::utils::MemoryRegion;
 
 use bootdefs::kernel_launch::ApStartContext;
