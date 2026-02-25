@@ -101,6 +101,7 @@ unsafe extern "C" {
 
 global_asm!(
     r#"
+        .section .text
         .globl start_ap_indirect
     start_ap_indirect:
         /*
