@@ -79,7 +79,7 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
     pub fn new<T: Transport>(
         transport: &mut T,
         idx: u16,
-        indirect: bool,
+        _indirect: bool,
         event_idx: bool,
     ) -> Result<Self> {
         #[allow(clippy::let_unit_value)]
@@ -138,7 +138,7 @@ impl<H: Hal, const SIZE: usize> VirtQueue<H, SIZE> {
             last_used_idx: 0,
             event_idx,
             #[cfg(feature = "alloc")]
-            indirect,
+            indirect: _indirect,
             #[cfg(feature = "alloc")]
             indirect_lists: [NONE; SIZE],
         })
