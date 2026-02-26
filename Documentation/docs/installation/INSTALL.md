@@ -398,6 +398,7 @@ The script supports a number of other options described in the table below
 | `--igvm [path]`  | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
 | `--image [path]` | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
 | `--debugserial`  | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |
+| `--no-netdev`    | N/A      | not set               | Do not attach a network device to QEMU.                                      |
 
 Debugging using GDB
 -------------------
