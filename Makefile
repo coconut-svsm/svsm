@@ -4,7 +4,7 @@ SVSM_ARGS += --features ${FEATURES}
 XBUILD_ARGS += -f ${FEATURES}
 endif
 
-FEATURES_TEST ?= vtpm,virtio-drivers,block
+FEATURES_TEST ?= vtpm,virtio-drivers,block,vsock
 SVSM_ARGS_TEST += --no-default-features
 ifneq ($(FEATURES_TEST),)
 SVSM_ARGS_TEST += --features ${FEATURES_TEST}
