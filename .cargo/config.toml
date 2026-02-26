@@ -3,7 +3,6 @@
 [target.x86_64-unknown-none]
 rustflags = [
 	"-C", "force-frame-pointers",
-	"-C", "linker-flavor=ld",
 	"--cfg", "aes_force_soft",
 	"--cfg", "polyval_force_soft",
 ]
