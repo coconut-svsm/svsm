@@ -96,7 +96,7 @@ unsafe extern "C" {
  */
 global_asm!(
     r#"
-        .text
+        .section .text
         .section ".startup.text","ax"
         .code64
 

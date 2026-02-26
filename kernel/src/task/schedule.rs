@@ -606,7 +606,7 @@ pub fn schedule_task(task: TaskPointer) {
 
 global_asm!(
     r#"
-        .text
+        .section .text
 
     switch_context:
         // Save the current context. The layout must match the TaskContext structure.

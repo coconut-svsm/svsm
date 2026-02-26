@@ -17,7 +17,7 @@ use svsm::{
 
 global_asm!(
     r#"
-        .text
+        .section .text
         .section ".startup.text","ax"
         .code32
 
@@ -295,6 +295,7 @@ global_asm!(
 // between SVSM and Stage2.
 global_asm!(
     r#"
+        .data
         .globl bsp_stack
         bsp_stack:
         .globl bsp_stack_end

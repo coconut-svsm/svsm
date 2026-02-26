@@ -107,7 +107,7 @@ unsafe extern "C" {
 
 global_asm!(
     r#"
-        .text
+        .section .text
 
     generic_idt_handler_return:
         addq    $8, %rsp /* Skip ssp */

@@ -528,6 +528,7 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo) -> ! {
 
 global_asm!(
     r#"
+        .section .text
         .globl switch_to_kernel
         switch_to_kernel:
 

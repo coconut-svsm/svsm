@@ -977,7 +977,7 @@ mod tests {
 
     global_asm!(
         r#"
-    .text
+    .section .text
     test_fpu:
         movq $0x3ff, %rax
         shl $52, %rax
@@ -999,7 +999,7 @@ mod tests {
 
     global_asm!(
         r#"
-    .text
+    .section .text
     check_fpu:
         movq $1, %rax
         movq $0x3ff, %rbx
@@ -1029,7 +1029,7 @@ mod tests {
 
     global_asm!(
         r#"
-    .text
+    .section .text
     alter_fpu:
         movq $0x400, %rax
         shl $52, %rax

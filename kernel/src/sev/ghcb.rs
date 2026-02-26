@@ -845,6 +845,7 @@ pub fn switch_to_vmpl(vmpl: u32) {
 
 global_asm!(
     r#"
+        .section .text
         .globl hv_redirect_window_start
     hv_redirect_window_start:
 
