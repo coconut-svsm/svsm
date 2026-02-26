@@ -28,8 +28,6 @@ SECTIONS
 	.sinit = .;
 	.init : {
 		*(.init);
-		. = 512 - 32 - 256;
-		*(.sevmeta);
 		. = 512 - 16;
 		*(.resetvector);
 		. = 512;
