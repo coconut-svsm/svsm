@@ -245,26 +245,8 @@ to build the SVSM with the release target. When the build is finished
 there is the ```svsm.bin``` file in the `bin` directory at the top level of the
 repository. This is the file which needs to be passed to QEMU.
 
-The project also contains a number of unit-tests which can be run by
-
-```shell
-make test
-```
-
-Unit tests can be run inside the SVSM by
-
-```shell
-QEMU=/path/to/qemu make test-in-svsm
-```
-
-Note: to compile the test kernel used for unit tests, we use the nightly
-toolchain, so if the test kernel build fails, try installing the
-`x86_64-unknown-none` target for the nightly toolchain via your distro or
-using rustup:
-
-```shell
-rustup +nightly target add x86_64-unknown-none
-```
+The project also contains a number of unit-tests that can be run by following
+the instructions in the [TESTING.md](../developer/TESTING.md) document.
 
 Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
 different paths. If this is the case, they can be provided as environment
@@ -398,6 +380,7 @@ The script supports a number of other options described in the table below
 | `--igvm [path]`  | IGVM     | bin/coconut-qemu.igvm | Path to the IGVM binary to launch.                                           |
 | `--image [path]` | IMAGE    | [None]                | The QEMU disk image to use. If unset then no disk is provided on the guest.  |
 | `--debugserial`  | N/A      | not set               | Define a second serial port that can be used with the COCONUT-SVSM GDB stub. |
+| `--no-netdev`    | N/A      | not set               | Do not attach a network device to QEMU.                                      |
 
 Debugging using GDB
 -------------------

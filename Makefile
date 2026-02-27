@@ -119,6 +119,10 @@ bin/coconut-test-vanadium.igvm:
 test:
 	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
 
+miri:
+	MIRIFLAGS=-Zmiri-permissive-provenance \
+		cargo +nightly miri test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
+
 test-igvm: $(IGVM_TEST_FILES)
 
 test-in-svsm: bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
@@ -210,4 +214,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
