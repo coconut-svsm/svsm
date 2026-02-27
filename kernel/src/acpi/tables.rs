@@ -170,6 +170,10 @@ impl ACPITable {
         let size = raw_header.len as usize;
         let content = ptr.get(..size).ok_or(SvsmError::Acpi)?;
 
+        if !Self::verify_checksum(content) {
+            return Err(SvsmError::Acpi);
+        }
+
         let mut buf = Vec::<u8>::new();
         // Allow for a failable allocation before copying
         buf.try_reserve(size).map_err(|_| SvsmError::Mem)?;
@@ -178,6 +182,19 @@ impl ACPITable {
         let header = ACPITableHeader::new(raw_header);
 
         Ok(Self { header, buf })
+    }
+
+    /// Calculate and verify the ACPI table checksum of a raw data chunk
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - Array containing the raw binary data of an ACPI table
+    ///
+    /// # Returns
+    ///
+    /// True, if the checksum is correct, False otherwise.
+    fn verify_checksum(data: &[u8]) -> bool {
+        data.iter().copied().fold(0, u8::wrapping_add) == 0
     }
 
     /// Get the signature of the ACPI table.
