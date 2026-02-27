@@ -8,15 +8,23 @@
 use super::api::BlockDriver;
 use crate::block::{BLOCK_DEVICE, BlockDeviceError};
 use crate::error::SvsmError;
+use crate::locking::SpinLock;
+use crate::mm::GlobalRangeGuard;
 use crate::types::PAGE_SIZE;
-use crate::virtio::devices::VirtIOBlkDevice;
+use crate::virtio::VirtioError;
+use crate::virtio::hal::SvsmHal;
 use crate::virtio::mmio::{MmioSlot, MmioSlots};
-use virtio_drivers::device::blk::SECTOR_SIZE;
+use virtio_drivers::device::blk::{SECTOR_SIZE, VirtIOBlk};
 use virtio_drivers::transport::DeviceType::Block;
+use virtio_drivers::transport::mmio::MmioTransport;
 
 extern crate alloc;
 use alloc::boxed::Box;
-pub struct VirtIOBlkDriver(VirtIOBlkDevice);
+
+pub struct VirtIOBlkDriver {
+    device: SpinLock<VirtIOBlk<SvsmHal, MmioTransport<SvsmHal>>>,
+    _mmio_space: GlobalRangeGuard,
+}
 
 impl core::fmt::Debug for VirtIOBlkDriver {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -26,13 +34,18 @@ impl core::fmt::Debug for VirtIOBlkDriver {
 
 impl VirtIOBlkDriver {
     pub fn new(slot: MmioSlot) -> Result<Box<Self>, SvsmError> {
-        Ok(Box::new(VirtIOBlkDriver(VirtIOBlkDevice::new(slot)?)))
+        let blk = VirtIOBlk::new(slot.transport).map_err(|_| VirtioError::InvalidDevice)?;
+
+        Ok(Box::new(VirtIOBlkDriver {
+            device: SpinLock::new(blk),
+            _mmio_space: slot.mmio_range,
+        }))
     }
 }
 
 impl BlockDriver for VirtIOBlkDriver {
     fn read_blocks(&self, block_id: usize, buf: &mut [u8]) -> Result<(), SvsmError> {
-        self.0.device.locked_do(|dev| {
+        self.device.locked_do(|dev| {
             buf.chunks_mut(PAGE_SIZE)
                 .zip((block_id..).step_by(PAGE_SIZE / SECTOR_SIZE))
                 .try_for_each(|(chunk, pos)| {
@@ -43,7 +56,7 @@ impl BlockDriver for VirtIOBlkDriver {
     }
 
     fn write_blocks(&self, block_id: usize, buf: &[u8]) -> Result<(), SvsmError> {
-        self.0.device.locked_do(|dev| {
+        self.device.locked_do(|dev| {
             buf.chunks(PAGE_SIZE)
                 .zip((block_id..).step_by(PAGE_SIZE / SECTOR_SIZE))
                 .try_for_each(|(chunk, pos)| {
@@ -58,12 +71,11 @@ impl BlockDriver for VirtIOBlkDriver {
     }
 
     fn size(&self) -> usize {
-        self.0.device.lock().capacity() as usize * SECTOR_SIZE
+        self.device.lock().capacity() as usize * SECTOR_SIZE
     }
 
     fn flush(&self) -> Result<(), SvsmError> {
-        self.0
-            .device
+        self.device
             .lock()
             .flush()
             .map_err(|_| SvsmError::Block(BlockDeviceError::Failed))
