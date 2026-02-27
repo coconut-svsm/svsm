@@ -61,6 +61,8 @@ use svsm::platform::SvsmPlatform;
 use svsm::platform::SvsmPlatformCell;
 use svsm::platform::init_capabilities;
 use svsm::platform::init_platform_type;
+#[cfg(all(feature = "uefivars", not(test)))]
+use svsm::protocols::uefivars::uefi_mm_protocol_init;
 use svsm::sev::secrets_page_mut;
 use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
@@ -484,6 +486,9 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
 
     #[cfg(all(feature = "vtpm", not(test)))]
     vtpm_init().expect("vTPM failed to initialize");
+
+    #[cfg(all(feature = "uefivars", not(test)))]
+    uefi_mm_protocol_init().expect("uefi mm protocol failed to initialize");
 
     virt_log_usage();
 
