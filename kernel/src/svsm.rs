@@ -437,9 +437,6 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
         // SAFETY: the address in the launch info is known to be correct.
         unsafe { BootParamBox::new(VirtAddr::from(launch_info.boot_params_virt_addr)) }
             .expect("Invalid boot parameters");
-    if (launch_info.vtom != 0) && (launch_info.vtom != boot_params.get_vtom()) {
-        panic!("Launch VTOM does not match VTOM from boot parameters");
-    }
 
     init_memory_map(&boot_params, launch_info).expect("Failed to init guest memory map");
 
@@ -490,7 +487,7 @@ fn svsm_init(launch_info: &KernelLaunchInfo) {
     #[cfg(feature = "virtio-drivers")]
     initialize_virtio_mmio(&boot_params).expect("Failed to initialize virtio-mmio drivers");
 
-    if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params) {
+    if let Err(e) = SVSM_PLATFORM.launch_fw(&boot_params, launch_info.vtom) {
         panic!("Failed to launch FW: {e:?}");
     }
 

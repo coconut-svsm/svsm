@@ -142,15 +142,6 @@ docsite:
 docsite-serve:
 	mkdocs serve -f Documentation/mkdocs.yml
 
-bin/gen_meta: tools/gen_meta.c bin
-	cc -O3 -Wall -o $@ $<
-
-bin/print-meta: tools/print-meta.c bin
-	cc -O3 -Wall -o $@ $<
-
-bin/meta.bin: bin/gen_meta bin/print-meta bin
-	./bin/gen_meta $@
-
 bin/stage2.bin: bin
 	cargo build --package svsm --bin stage2 ${CARGO_ARGS} --target=x86_64-unknown-none
 	objcopy -O binary ${STAGE2_ELF} $@
@@ -172,18 +163,8 @@ ifneq ($(FS_FILE), none)
 endif
 	touch ${FS_BIN}
 
-stage1_elf_full: bin/stage2.bin bin/svsm-fs.bin bin/svsm-kernel.elf bin/meta.bin
-	ln -sf svsm-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
-	rm -f bin/kernel.elf
-
-stage1_elf_trampoline: bin/meta.bin
+stage1_elf_trampoline:
 	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --bin stage1 -- ${STAGE1_RUSTC_ARGS}
-
-stage1_elf_test: bin/stage2.bin bin/svsm-fs.bin bin/test-kernel.elf bin/meta.bin
-	ln -sf test-kernel.elf bin/kernel.elf
-	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --features load-stage2 --bin stage1 -- ${STAGE1_RUSTC_ARGS}
-	rm -f bin/kernel.elf
 
 bin/svsm: stage1_elf_full
 	cp -f $(STAGE1_ELF) $@
@@ -214,4 +195,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)

@@ -144,15 +144,6 @@ pub struct BootParamBlock {
     /// IGVM file.
     pub firmware: GuestFwInfoBlock,
 
-    /// The number of bytes for the stage1 bootloader
-    pub stage1_size: u32,
-
-    #[doc(hidden)]
-    pub _reserved2: u32,
-
-    /// The guest physical address of the base of the stage1 bootloader
-    pub stage1_base: u64,
-
     /// The guest physical address of the base of the kernel memory region.
     pub kernel_base: u64,
 
@@ -165,15 +156,12 @@ pub struct BootParamBlock {
     /// region in the memory map that starts at kernel_base and is larger, this maximum size will
     /// be used instead.
     pub kernel_max_size: u32,
-
-    /// The value of vTOM used by the guest, or zero if not used.
-    pub vtom: u64,
 }
 
 const _: () = {
     // Assert that the reserved fields are properly aligning the rest of the fields.
     assert!(core::mem::offset_of!(BootParamBlock, firmware) % 4 == 0);
-    assert!(core::mem::offset_of!(BootParamBlock, stage1_base) % 8 == 0);
+    assert!(core::mem::offset_of!(BootParamBlock, kernel_base) % 8 == 0);
 };
 
 /// The initial guest context page is a measured page that is used to specify
