@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["read_efer","write_efer"],"struct":["EFERFlags"]};

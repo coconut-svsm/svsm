@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TlbFlushScope"],"fn":["flush_address_percpu","flush_tlb","flush_tlb_global_percpu","flush_tlb_global_sync","flush_tlb_percpu","set_tlb_flush_smp"],"static":["FLUSH_SMP"]};

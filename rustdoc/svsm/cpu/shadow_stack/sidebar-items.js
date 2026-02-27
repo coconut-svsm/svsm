@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BUSY","ISST_ADDR","MODE_64BIT","PL0_SSP","S_CET"],"enum":["ShadowStackInit"],"fn":["determine_cet_support","determine_cet_support_from_cpuid","init_shadow_stack","is_cet_ss_enabled","is_cet_ss_supported","read_s_cet","set_cet_ss_enabled","shadow_stack_info"],"static":["IS_CET_ENABLED","IS_CET_SUPPORTED"],"struct":["SCetFlags"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_cpuid_table_to_fw","copy_secrets_page_to_fw","copy_tables_to_fw","launch_fw","prepare_fw_launch","print_fw_meta","validate_fw","validate_fw_mem_region","validate_fw_memory","validate_fw_memory_vec","zero_caa_page"],"struct":["SevFWMetaData"]};

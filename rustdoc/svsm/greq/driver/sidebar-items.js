@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SNP_GUEST_REQ_ERR_BUSY","SNP_GUEST_REQ_INVALID_LEN"],"enum":["SnpGuestRequestClass"],"fn":["guest_request_driver_init","send_extended_guest_request","send_regular_guest_request"],"static":["GREQ_DRIVER"],"struct":["SnpGuestRequestDriver"]};

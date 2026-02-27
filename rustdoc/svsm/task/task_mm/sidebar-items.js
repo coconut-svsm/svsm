@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"static":["KTASK_VADDR_BITMAP"],"struct":["TaskKernelMapping","TaskMM","TaskVirtualRegionGuard"]};

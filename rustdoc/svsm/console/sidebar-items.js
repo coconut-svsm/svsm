@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Console"],"fn":["console_write","init_svsm_console","install_console_logger"],"static":["CONSOLE_LOGGER","WRITER"],"struct":["ConsoleLogger"]};

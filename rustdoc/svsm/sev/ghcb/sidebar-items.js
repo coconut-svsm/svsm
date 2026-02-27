@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GHCB_BUFFER_SIZE","PSC_FLAG_HUGE","PSC_FLAG_HUGE_SHIFT","PSC_GFN_MASK","PSC_OP_PRIVATE","PSC_OP_PSMASH","PSC_OP_SHARED","PSC_OP_SHIFT","PSC_OP_UNSMASH"],"enum":["GHCBExitCode","GHCBIOSize","GhcbError"],"fn":["switch_to_vmpl","switch_to_vmpl_unsafe"],"macro":["ghcb_getter","ghcb_setter"],"struct":["GHCB","GhcbPage","PageStateChangeHeader"]};
