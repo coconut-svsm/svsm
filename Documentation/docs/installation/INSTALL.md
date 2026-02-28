@@ -113,7 +113,7 @@ Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
 ```shell
-PKGCONFIG_PATH="${PKGCONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
+PKG_CONFIG_PATH="${PKG_CONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
     --prefix=$HOME/bin/qemu-svsm/ \
     --target-list=x86_64-softmmu \
     --enable-igvm
