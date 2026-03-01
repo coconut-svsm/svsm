@@ -883,7 +883,7 @@ pub fn is_task_fault(vaddr: VirtAddr) -> bool {
 
 fn task_attach_console() {
     let file_handle = stdout_open();
-    let obj_handle = ObjHandle::new(0);
+    let obj_handle = ObjHandle::new(1);
     current_task()
         .add_obj_at(file_handle, obj_handle)
         .expect("Failed to attach console");

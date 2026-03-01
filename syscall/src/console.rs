@@ -6,7 +6,7 @@
 
 use crate::{FsObjHandle, ObjHandle, SysCallError, write};
 
-static CONSOLE_HANDLE: FsObjHandle = FsObjHandle::new(ObjHandle::new(0));
+static CONSOLE_HANDLE: FsObjHandle = FsObjHandle::new(ObjHandle::new(1));
 
 pub fn write_console(buf: &[u8]) -> Result<usize, SysCallError> {
     write(&CONSOLE_HANDLE, buf)
