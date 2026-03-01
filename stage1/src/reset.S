@@ -7,7 +7,7 @@
  */
 
 	.code16gcc
-	.section .init
+	.section .init, "ax"
 /* to_pm_mode must be at 0xfffffe00 */
 	.globl	to_pm_mode
 to_pm_mode:
@@ -70,7 +70,7 @@ end_to_pm_mode:
 	.incbin "bin/meta.bin"
 
 	.code16gcc
-	.section .resetvector
+	.section .resetvector, "ax"
 	mov	%cr0, %eax
 	test	$1, %al
 	// "JZ rel8" is compatible with both 16-bit and 32-bit mode
