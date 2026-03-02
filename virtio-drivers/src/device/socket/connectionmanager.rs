@@ -152,6 +152,9 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     /// Sends the buffer to the destination.
     pub fn send(&mut self, destination: VsockAddr, src_port: u32, buffer: &[u8]) -> Result {
         let (_, connection) = get_connection(&mut self.connections, destination, src_port)?;
+        if connection.peer_requested_shutdown {
+            return Err(SocketError::NotConnected.into());
+        }
 
         self.driver.send(buffer, &mut connection.info)
     }
@@ -281,6 +284,10 @@ impl<H: Hal, T: Transport, const RX_BUFFER_SIZE: usize>
     /// Sends a credit update to the given peer.
     pub fn update_credit(&mut self, peer: VsockAddr, src_port: u32) -> Result {
         let (_, connection) = get_connection(&mut self.connections, peer, src_port)?;
+        if connection.peer_requested_shutdown {
+            return Err(SocketError::NotConnected.into());
+        }
+
         self.driver.credit_update(&connection.info)
     }
 
