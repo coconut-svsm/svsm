@@ -390,7 +390,7 @@ impl BootParams<'_> {
         self.boot_param_block.firmware.in_low_memory != 0
     }
 
-    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA) -> Result<(), SvsmError> {
+    pub fn initialize_guest_vmsa(&self, vmsa: &mut VMSA, vtom: u64) -> Result<(), SvsmError> {
         let Some(guest_context) = self.guest_context else {
             return Ok(());
         };
@@ -449,16 +449,12 @@ impl BootParams<'_> {
         }
 
         // Configure vTOM if requested.
-        if self.boot_param_block.vtom != 0 {
-            vmsa.vtom = self.boot_param_block.vtom;
+        if vtom != 0 {
+            vmsa.vtom = vtom;
             vmsa.sev_features |= 2; // VTOM feature
         }
 
         Ok(())
-    }
-
-    pub fn get_vtom(&self) -> u64 {
-        self.boot_param_block.vtom
     }
 
     pub fn use_alternate_injection(&self) -> bool {

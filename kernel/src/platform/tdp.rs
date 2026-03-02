@@ -31,9 +31,10 @@ use crate::utils::{MemoryRegion, is_aligned};
 
 use bootdefs::kernel_launch::ApStartContext;
 use bootdefs::kernel_launch::SIPI_STUB_GPA;
+use bootdefs::tdp_start::TdpStartContext;
 use core::mem;
 use core::mem::MaybeUninit;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 use syscall::GlobalFeatureFlags;
 
 #[cfg(test)]
@@ -279,20 +280,22 @@ impl SvsmPlatform for TdpPlatform {
 
         context_mapping.write(create_ap_start_context(&context, transition_page_table));
 
-        // Map the reset page to write the VP index of the CPU being started.
-        // This will release the target CPU from its initial spin loop and
-        // permit it to jump into the SIPI stub.  The VP index gate is at an
-        // offset of 0x800 bytes into the reset page located at 0xFFFFF000.
-        let vp_index_pa = PhysAddr::new(0xFFFFF800);
-        // SAFETY: The physical address of the VP Index gate is known to
-        // be correct.
-        let vp_index_mapping = unsafe { PerCPUMapping::<AtomicU32>::create(vp_index_pa)? };
+        // Map the reset page to populate the TDP start context consumed
+        // by stage1, including the VP index of the CPU being started.  This
+        // will release the target CPU from its initial spin loop and
+        // permit it to jump into the SIPI stub.
+        let tdp_context_pa = PhysAddr::new(0xFFFFF000);
+        // SAFETY: The physical address of the start context is known to be
+        // correct.
+        let tdp_context = unsafe { PerCPUMapping::<TdpStartContext>::create(tdp_context_pa)? };
 
         // Once the VP index has been written, the target processor will be
         // free to begin execution.  The context must be fully established by
         // this point.
-        vp_index_mapping.store(cpu.get_cpu_index() as u32, Ordering::Release);
-        drop(vp_index_mapping);
+        tdp_context
+            .vp_index
+            .store(cpu.get_cpu_index() as u32, Ordering::Release);
+        drop(tdp_context);
 
         // When running under Hyper-V, the target vCPU does not begin running
         // until a start hypercall is issued, so make that hypercall now.

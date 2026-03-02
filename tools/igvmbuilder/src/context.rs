@@ -4,13 +4,19 @@
 //
 // Author: Roy Hopkins <roy.hopkins@suse.com>
 
+use crate::cmd_options::{Hypervisor, SevExtraFeatures};
+use bootdefs::tdp_start::TdpStartContextLayout;
 use igvm::IgvmDirectiveHeader;
 use igvm::registers::{SegmentRegister, X86Register};
 use igvm::snp_defs::{SevFeatures, SevSelector, SevVmsa};
 use igvm_defs::IgvmNativeVpContextX64;
+use igvm_defs::IgvmPageDataFlags;
+use igvm_defs::IgvmPageDataType;
+use igvm_defs::PAGE_SIZE_4K;
+use std::error::Error;
+use std::fs;
 use zerocopy::FromZeros;
-
-use crate::cmd_options::{Hypervisor, SevExtraFeatures};
+use zerocopy::IntoBytes;
 
 pub fn construct_start_context(
     start_rip: u64,
@@ -289,6 +295,9 @@ pub fn construct_vmsa(
         }
     }
 
+    // RSI holds the high 32 bits of VTOM.
+    vmsa.rsi = vtom >> 32;
+
     // Include EFER.SVME on SNP platforms.
     vmsa.efer |= 0x1000;
 
@@ -339,4 +348,40 @@ pub fn construct_vmsa(
         vp_index: 0,
         vmsa: vmsa_box,
     }
+}
+
+pub fn construct_stage1_image(
+    stage1_path: &String,
+    gpa: u64,
+    regs: &[X86Register],
+    compatibility_mask: u32,
+) -> Result<IgvmDirectiveHeader, Box<dyn Error>> {
+    // Construct a TDP start context structure based on the supplied registers.
+    let mut tdp_context = TdpStartContextLayout::default();
+    for reg in regs {
+        if let X86Register::Rip(r) = reg {
+            tdp_context.rip = *r as u32;
+        } else if let X86Register::Rsp(r) = reg {
+            tdp_context.rsp = *r as u32;
+        }
+    }
+
+    // Load the stage1 image.  It must be exactly one page in size.
+    let mut stage1_image = fs::read(stage1_path)?;
+    if stage1_image.len() != PAGE_SIZE_4K as usize {
+        return Err("Stage1 image is too big".into());
+    }
+
+    // Copy the context into the beginning of the slice.
+    let context_slice = tdp_context.as_bytes();
+    let context_len = context_slice.len();
+    stage1_image[..context_len].copy_from_slice(context_slice);
+
+    Ok(IgvmDirectiveHeader::PageData {
+        gpa,
+        compatibility_mask,
+        flags: IgvmPageDataFlags::new(),
+        data_type: IgvmPageDataType::NORMAL,
+        data: stage1_image,
+    })
 }

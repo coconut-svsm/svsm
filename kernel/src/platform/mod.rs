@@ -137,7 +137,7 @@ pub trait SvsmPlatform: Sync {
     }
 
     /// Launches guest boot firmware.
-    fn launch_fw(&self, _boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+    fn launch_fw(&self, _boot_params: &BootParams<'_>, _vtom: u64) -> Result<(), SvsmError> {
         Ok(())
     }
 

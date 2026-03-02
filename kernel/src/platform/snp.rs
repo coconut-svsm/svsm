@@ -212,9 +212,9 @@ impl SvsmPlatform for SnpPlatform {
         Ok(())
     }
 
-    fn launch_fw(&self, boot_params: &BootParams<'_>) -> Result<(), SvsmError> {
+    fn launch_fw(&self, boot_params: &BootParams<'_>, vtom: u64) -> Result<(), SvsmError> {
         if boot_params.should_launch_fw() {
-            launch_fw(boot_params)
+            launch_fw(boot_params, vtom)
         } else {
             Ok(())
         }

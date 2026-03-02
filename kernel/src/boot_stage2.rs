@@ -4,7 +4,9 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use bootdefs::kernel_launch::Stage2LaunchInfo;
 use core::arch::global_asm;
+use core::mem::offset_of;
 
 use svsm::{
     cpu::{
@@ -24,6 +26,8 @@ global_asm!(
         .org 0
         .globl startup_32
         startup_32:
+
+        /* Upon entry, ESI holds the high 32 bits of VTOM. */
 
         /* Save pointer to startup structure in EBP */
         movl %esp, %ebp
@@ -122,7 +126,7 @@ global_asm!(
         /*
          * Check if this is an SNP platform.  If not, there is no C bit.
          */
-        cmpl $1, 8(%ebp)
+        cmpl $1, {PLATFORM_TYPE_OFF}(%ebp)
         jnz .Lvtom
 
         /*
@@ -144,7 +148,7 @@ global_asm!(
 
         /* Locate the table.  The pointer to the CPUID page is 12 bytes into
          * the stage2 startup structure. */
-        movl 12(%ebp), %ecx
+        movl {CPUID_OFF}(%ebp), %ecx
         /* Read the number of entries. */
         movl (%ecx), %eax
         /* Create a pointer to the first entry. */
@@ -231,10 +235,12 @@ global_asm!(
          * Follow the C calling convention for x86-64:
          *
          * - Pass &Stage2LaunchInfo as the first argument (%rdi)
+         * - Pass VTOM as the second argument (%rsi)
          * - Make sure (%rsp + 8) is 16b-aligned when control is transferred
          *   to stage2_main
          */
         movl %ebp, %edi
+        shlq $32, %rsi
         andq $~0xf, %rsp
 
         /* Mark the next stack frame as the bottom frame */
@@ -288,6 +294,8 @@ global_asm!(
     LME = const EFERFlags::LME.bits(),
     NXE = const EFERFlags::NXE.bits(),
     SEV_STATUS = const SEV_STATUS,
+    PLATFORM_TYPE_OFF = const offset_of!(Stage2LaunchInfo, platform_type) as u32,
+    CPUID_OFF = const offset_of!(Stage2LaunchInfo, cpuid_page) as u32,
     options(att_syntax)
 );
 
