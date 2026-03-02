@@ -20,7 +20,7 @@ global_asm!(
         .byte 0
 
         .code32
-        .section .init
+        .section .init, "ax"
 startup:
         movl    $0xFFFFF000, %edx
 
@@ -55,7 +55,7 @@ startup:
         /* Perform a far jump to the SIPI entry point. */
         ljmpl   $8, $0xF040
 
-        .section .resetvector
+        .section .resetvector, "ax"
         jmp     startup
         "#,
     VP_INDEX = const offset_of!(TdpStartContext, vp_index),
