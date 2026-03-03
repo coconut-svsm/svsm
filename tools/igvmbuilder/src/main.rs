@@ -22,8 +22,12 @@ mod platform;
 mod sipi;
 mod stage2_stack;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn build_igvm() -> Result<(), Box<dyn Error>> {
     let builder = IgvmBuilder::new()?;
     builder.build()?;
     Ok(())
+}
+
+fn main() -> Result<(), String> {
+    build_igvm().map_err(|e| e.to_string())
 }
