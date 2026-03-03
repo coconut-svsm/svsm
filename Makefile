@@ -142,10 +142,6 @@ docsite:
 docsite-serve:
 	mkdocs serve -f Documentation/mkdocs.yml
 
-bin/stage2.bin: bin
-	cargo build --package svsm --bin stage2 ${CARGO_ARGS} --target=x86_64-unknown-none
-	objcopy -O binary ${STAGE2_ELF} $@
-
 bin/svsm-kernel.elf: bin
 	cargo build --package svsm --bin svsm ${CARGO_ARGS} ${SVSM_ARGS} --target=x86_64-unknown-none
 	objcopy -O elf64-x86-64 ${OBJCOPY_ELF_ARGS} ${SVSM_KERNEL_ELF} $@
@@ -195,4 +191,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
+.PHONY: test miri clean clippy bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_trampoline distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES)
