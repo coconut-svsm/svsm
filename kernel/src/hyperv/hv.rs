@@ -303,6 +303,7 @@ pub fn setup_hypercall_page() -> Result<(), SvsmError> {
         hypercall_va,
         virt_to_page_frame(page),
         PTEntryFlags::exec(),
+        false,
     )?;
 
     HYPERV_HYPERCALL_CODE_PAGE

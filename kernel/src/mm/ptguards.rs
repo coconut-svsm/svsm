@@ -111,10 +111,7 @@ impl PerCPUPageMappingGuard {
             .zip(pages.iter().copied())
         {
             assert!(paddr.is_page_aligned());
-            pgtable.map_4k(vaddr, paddr, flags)?;
-            if shared {
-                pgtable.set_shared_4k(vaddr)?;
-            }
+            pgtable.map_4k(vaddr, paddr, flags, shared)?;
         }
 
         Ok(Self { mapping })
