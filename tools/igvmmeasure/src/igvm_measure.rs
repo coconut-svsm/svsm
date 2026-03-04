@@ -18,7 +18,7 @@ use crate::page_info::PageInfo;
 pub enum IgvmMeasureError {
     InvalidVmsaCount,
     InvalidVmsaGpa,
-    InvalidVmsaCr0,
+    InvalidVmsaCr0(u64),
     InvalidVmsaOrder,
     IDBlockMismatch([u8; 48]),
 }
@@ -43,13 +43,14 @@ impl std::fmt::Display for IgvmMeasureError {
                     the GPA for the VMSA to this address."
                 )
             }
-            IgvmMeasureError::InvalidVmsaCr0 => {
+            IgvmMeasureError::InvalidVmsaCr0(value) => {
                 write!(
                     f,
                     "KVM check failure: CR0 in the VMSA in the IGVM file is \
-                    not set to 0x31. The value of CR0 is overridden by KVM \
-                    during initial measurement. Therefore the IGVM file must \
-                    be configured to match the value set by KVM."
+                    set to 0x{value:02x} instead of 0x31. The value of CR0 \
+                    is overridden by KVM during initial measurement. \
+                    Therefore the IGVM file must be configured to match the \
+                    value set by KVM."
                 )
             }
             IgvmMeasureError::InvalidVmsaOrder => {
@@ -364,7 +365,7 @@ impl IgvmMeasure {
                 return Err(IgvmMeasureError::InvalidVmsaGpa);
             }
             if vmsa.cr0 != 0x31 {
-                return Err(IgvmMeasureError::InvalidVmsaCr0);
+                return Err(IgvmMeasureError::InvalidVmsaCr0(vmsa.cr0));
             }
         }
         Ok(())
