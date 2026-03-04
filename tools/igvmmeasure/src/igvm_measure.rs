@@ -17,7 +17,7 @@ use crate::page_info::PageInfo;
 #[derive(Copy, Clone)]
 pub enum IgvmMeasureError {
     InvalidVmsaCount,
-    InvalidVmsaGpa,
+    InvalidVmsaGpa(u64),
     InvalidVmsaCr0(u64),
     InvalidVmsaOrder,
     IDBlockMismatch([u8; 48]),
@@ -34,13 +34,13 @@ impl std::fmt::Display for IgvmMeasureError {
                     VMSA for the first virtual CPU."
                 )
             }
-            IgvmMeasureError::InvalidVmsaGpa => {
+            IgvmMeasureError::InvalidVmsaGpa(addr) => {
                 write!(
                     f,
-                    "KVM check failure: The GPA for the VMSA does not match \
-                    the address hardcoded in KVM. KVM will always populate \
-                    the VMSA at GPA 0xFFFFFFFFF000. The IGVM file must set \
-                    the GPA for the VMSA to this address."
+                    "KVM check failure: The GPA for the VMSA (0x{addr:016X}) \
+                    does not match the address hardcoded in KVM. KVM will \
+                    always populate the VMSA at GPA 0xFFFFFFFFF000. The IGVM \
+                    file must set the GPA for the VMSA to this address."
                 )
             }
             IgvmMeasureError::InvalidVmsaCr0(value) => {
@@ -362,7 +362,7 @@ impl IgvmMeasure {
                 return Err(IgvmMeasureError::InvalidVmsaCount);
             }
             if gpa != 0xFFFFFFFFF000 {
-                return Err(IgvmMeasureError::InvalidVmsaGpa);
+                return Err(IgvmMeasureError::InvalidVmsaGpa(gpa));
             }
             if vmsa.cr0 != 0x31 {
                 return Err(IgvmMeasureError::InvalidVmsaCr0(vmsa.cr0));
