@@ -109,6 +109,9 @@ where
     // boot image.
     let (paging_root, total_pt_pages) = kernel_page_tables.add_to_image(add_page_data)?;
 
+    // Allocate a page to use as the kernel IDT.
+    let (_, idt_vaddr) = kernel_heap.allocate_pages(1)?;
+
     // Allocate memory to hold the kernel launch info block.
     let (launch_info_paddr, launch_info_vaddr) =
         kernel_heap.allocate_pages(round_to_pages(size_of::<KernelLaunchInfo>() as u64))?;
@@ -131,6 +134,7 @@ where
         stage2_start: boot_image_params.stage2_start,
         cpuid_page: cpuid_vaddr,
         secrets_page: secrets_vaddr,
+        idt_vaddr,
         boot_params_virt_addr: boot_params_vaddr,
         vtom: boot_image_params.vtom,
         debug_serial_port: boot_image_params.boot_params.debug_serial_port,

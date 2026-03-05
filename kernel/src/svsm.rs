@@ -328,7 +328,11 @@ unsafe fn svsm_start(
         ));
     }
 
-    idt_init().expect("Failed to allocate IDT");
+    // SAFETY: the boot loader is trusted to allocate an appropriate virtual
+    // address for the IDT page.
+    unsafe {
+        idt_init(VirtAddr::from(launch_info.idt_vaddr), platform).expect("Failed to set up IDT");
+    }
 
     initialize_fs();
 

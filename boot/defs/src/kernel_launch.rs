@@ -46,6 +46,7 @@ pub struct KernelLaunchInfo {
     pub stage2_start: u64,
     pub cpuid_page: u64,
     pub secrets_page: u64,
+    pub idt_vaddr: u64,
     pub boot_params_virt_addr: u64,
     pub kernel_symtab_start: u64,
     pub kernel_symtab_len: u64,
