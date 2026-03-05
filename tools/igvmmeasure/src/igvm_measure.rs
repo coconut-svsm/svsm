@@ -16,54 +16,15 @@ use crate::page_info::PageInfo;
 
 #[derive(Copy, Clone)]
 pub enum IgvmMeasureError {
-    InvalidVmsaCount,
-    InvalidVmsaGpa(u64),
-    InvalidVmsaCr0(u64),
-    InvalidVmsaOrder,
+    KvmCheckFailed(KvmCheckError),
     IDBlockMismatch([u8; 48]),
 }
 
 impl std::fmt::Display for IgvmMeasureError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            IgvmMeasureError::InvalidVmsaCount => {
-                write!(
-                    f,
-                    "KVM check failure: More than one VMSA has been provided \
-                    in the IGVM file. QEMU/KVM only supports setting of the \
-                    VMSA for the first virtual CPU."
-                )
-            }
-            IgvmMeasureError::InvalidVmsaGpa(addr) => {
-                write!(
-                    f,
-                    "KVM check failure: The GPA for the VMSA (0x{addr:016X}) \
-                    does not match the address hardcoded in KVM. KVM will \
-                    always populate the VMSA at GPA 0xFFFFFFFFF000. The IGVM \
-                    file must set the GPA for the VMSA to this address."
-                )
-            }
-            IgvmMeasureError::InvalidVmsaCr0(value) => {
-                write!(
-                    f,
-                    "KVM check failure: CR0 in the VMSA in the IGVM file is \
-                    set to 0x{value:02x} instead of 0x31 (protected-mode) or \
-                    0x30 (real-mode). The value of CR0 is overridden by KVM \
-                    during initial measurement. Therefore the IGVM file must \
-                    be configured to match the value set by KVM."
-                )
-            }
-            IgvmMeasureError::InvalidVmsaOrder => {
-                write!(
-                    f,
-                    "KVM check failure: The VMSA must be the final page \
-                        directive in the IGVM file. \
-                        This is because QEMU/KVM measures the VMSA page \
-                        when the measurement is finalized and not in the \
-                        order specified in the IGVM file. Make sure your \
-                        IGVM file places the VMSA directive after any other \
-                        measured or unmeasured page directives."
-                )
+            IgvmMeasureError::KvmCheckFailed(kvm_error) => {
+                write!(f, "KVM Check failed: {kvm_error}")
             }
             IgvmMeasureError::IDBlockMismatch(expected) => {
                 write!(
@@ -78,12 +39,81 @@ impl std::fmt::Display for IgvmMeasureError {
         }
     }
 }
+
 impl std::fmt::Debug for IgvmMeasureError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
 impl Error for IgvmMeasureError {}
+
+impl From<KvmCheckError> for IgvmMeasureError {
+    fn from(e: KvmCheckError) -> Self {
+        IgvmMeasureError::KvmCheckFailed(e)
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum KvmCheckError {
+    InvalidVmsaCount,
+    InvalidVmsaGpa(u64),
+    InvalidVmsaCr0(u64),
+    InvalidVmsaOrder,
+}
+
+impl std::fmt::Display for KvmCheckError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            KvmCheckError::InvalidVmsaCount => {
+                write!(
+                    f,
+                    "More than one VMSA has been provided \
+                    in the IGVM file. QEMU/KVM only supports setting of the \
+                    VMSA for the first virtual CPU."
+                )
+            }
+            KvmCheckError::InvalidVmsaGpa(addr) => {
+                write!(
+                    f,
+                    "The GPA for the VMSA (0x{addr:016X}) \
+                    does not match the address hardcoded in KVM. KVM will \
+                    always populate the VMSA at GPA 0xFFFFFFFFF000. The IGVM \
+                    file must set the GPA for the VMSA to this address."
+                )
+            }
+            KvmCheckError::InvalidVmsaCr0(value) => {
+                write!(
+                    f,
+                    "CR0 in the VMSA in the IGVM file is \
+                    set to 0x{value:02x} instead of 0x31 (protected-mode) or \
+                    0x30 (real-mode). The value of CR0 is overridden by KVM \
+                    during initial measurement. Therefore the IGVM file must \
+                    be configured to match the value set by KVM."
+                )
+            }
+            KvmCheckError::InvalidVmsaOrder => {
+                write!(
+                    f,
+                    "The VMSA must be the final page \
+                    directive in the IGVM file. \
+                    This is because QEMU/KVM measures the VMSA page \
+                    when the measurement is finalized and not in the \
+                    order specified in the IGVM file. Make sure your \
+                    IGVM file places the VMSA directive after any other \
+                    measured or unmeasured page directives."
+                )
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for KvmCheckError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl Error for KvmCheckError {}
 
 #[derive(PartialEq, Debug)]
 enum SnpPageType {
@@ -208,7 +238,9 @@ impl IgvmMeasure {
                 IgvmDirectiveHeader::ParameterInsert(param) => {
                     if (param.compatibility_mask & self.compatibility_mask) != 0 {
                         if self.check_kvm && (self.vmsa_count > 0) {
-                            return Err(IgvmMeasureError::InvalidVmsaOrder.into());
+                            return Err(
+                                IgvmMeasureError::from(KvmCheckError::InvalidVmsaOrder).into()
+                            );
                         }
                         self.measure_page(
                             &mut ctx,
@@ -356,17 +388,17 @@ impl IgvmMeasure {
         }
     }
 
-    fn check_vmsa(&self, gpa: u64, vmsa: &SevVmsa) -> Result<(), IgvmMeasureError> {
+    fn check_vmsa(&self, gpa: u64, vmsa: &SevVmsa) -> Result<(), KvmCheckError> {
         if self.check_kvm {
             if self.vmsa_count > 0 {
-                return Err(IgvmMeasureError::InvalidVmsaCount);
+                return Err(KvmCheckError::InvalidVmsaCount);
             }
             if gpa != 0xFFFFFFFFF000 {
-                return Err(IgvmMeasureError::InvalidVmsaGpa(gpa));
+                return Err(KvmCheckError::InvalidVmsaGpa(gpa));
             }
             // Allow protected and real mode, both with NE enabled
             if vmsa.cr0 != 0x31 && vmsa.cr0 != 0x30 {
-                return Err(IgvmMeasureError::InvalidVmsaCr0(vmsa.cr0));
+                return Err(KvmCheckError::InvalidVmsaCr0(vmsa.cr0));
             }
         }
         Ok(())
