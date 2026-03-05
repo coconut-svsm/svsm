@@ -10,20 +10,14 @@ use std::fs::{self, File};
 use std::io::Write;
 
 use clap::Parser;
-use cmd_options::{CmdOptions, Commands, Platform};
 use igvm::IgvmFile;
 use igvm_defs::IgvmPlatformType;
-use igvm_measure::IgvmMeasure;
-use utils::get_compatibility_mask;
 use zerocopy::IntoBytes;
 
-use crate::id_block::SevIdBlockBuilder;
-
-mod cmd_options;
-mod id_block;
-mod igvm_measure;
-mod page_info;
-mod utils;
+use igvmmeasure::cmd_options::{CmdOptions, Commands, Platform};
+use igvmmeasure::id_block::SevIdBlockBuilder;
+use igvmmeasure::igvm_measure::IgvmMeasure;
+use igvmmeasure::utils::get_compatibility_mask;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let options = CmdOptions::parse();
