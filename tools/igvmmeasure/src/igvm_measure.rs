@@ -30,9 +30,9 @@ impl std::fmt::Display for IgvmMeasureError {
                 write!(
                     f,
                     "An ID block has been provided in the IGVM file but the \
-                        calculated measurement does not match the expected \
-                        measurement in the ID block. \n\
-                        Expected: "
+                    calculated measurement does not match the expected \
+                    measurement in the ID block. \n\
+                    Expected: "
                 )?;
                 expected.iter().try_for_each(|val| write!(f, "{val:02X}"))
             }
