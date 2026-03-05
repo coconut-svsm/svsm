@@ -8,32 +8,26 @@ use crate::BootImageError;
 use crate::BootImageSpan;
 use crate::add_page_contents;
 use crate::elf::ElfSizes;
-use crate::page_tables::KernelPageTables;
-use crate::page_tables::PteType;
-use crate::page_tables::is_page_aligned;
 use crate::round_to_pages;
 
 use igvm_defs::PAGE_SIZE_4K;
 
 #[derive(Debug)]
 pub struct KernelPageHeap {
-    pub virt_base: u64,
-    pub phys_base: u64,
-    pub page_count: u64,
-    pub usable_pages: u64,
-    pub next_free: u64,
+    virt_base: u64,
+    phys_base: u64,
+    page_count: u64,
+    usable_pages: u64,
+    next_free: u64,
 }
 
 impl KernelPageHeap {
-    fn create(phys_base: u64, page_count: u64, virt_base: u64, vmsa_reserve: bool) -> Self {
-        // If the VMSA will reside in the kernel heap area, then reserve one
-        // page from the total heap size.
-        let reserve_pages = vmsa_reserve as u64;
+    fn create(phys_base: u64, page_count: u64, virt_base: u64) -> Self {
         Self {
             virt_base,
             phys_base,
             page_count,
-            usable_pages: page_count - reserve_pages,
+            usable_pages: page_count,
             next_free: 0,
         }
     }
@@ -85,15 +79,6 @@ impl KernelPageHeap {
         add_page_contents(add_page_data, paddr, data)?;
         Ok(BootImageSpan::new(vaddr, len))
     }
-
-    pub fn map(&self, page_tables: &mut KernelPageTables) -> Result<(), BootImageError> {
-        page_tables.map_range(
-            self.virt_base,
-            self.page_count * PAGE_SIZE_4K,
-            self.phys_base,
-            PteType::RwData,
-        )
-    }
 }
 
 /// Creates a structure used to describe the kernel heap and the associated
@@ -104,13 +89,10 @@ pub fn create_kernel_heap(
     kernel_phys_base: u64,
     kernel_page_count: u64,
     kernel_elf_sizes: &ElfSizes,
-    virtual_reserve: u64,
-    vmsa_reserve: bool,
+    direct_map_base: u64,
 ) -> Result<KernelPageHeap, BootImageError> {
-    assert!(is_page_aligned(virtual_reserve));
-
-    // Calculate the base and size of the heap by subtracting the kernel
-    // region.
+    // Calculate the base and size of the heap as the region that follows the
+    // kernel image.
     let kernel_size = kernel_elf_sizes.phys_page_count * PAGE_SIZE_4K;
     let heap_pstart = kernel_phys_base + kernel_size;
 
@@ -120,8 +102,8 @@ pub fn create_kernel_heap(
         .ok_or(BootImageError::KernelTooBig)?;
 
     // Calculate the base virtual address of the heap.
-    let heap_vstart = kernel_elf_sizes.virt_base + kernel_elf_sizes.virt_len + virtual_reserve;
-    let heap = KernelPageHeap::create(heap_pstart, heap_size, heap_vstart, vmsa_reserve);
+    let heap_vstart = direct_map_base + kernel_size;
+    let heap = KernelPageHeap::create(heap_pstart, heap_size, heap_vstart);
 
     Ok(heap)
 }
