@@ -47,10 +47,10 @@ impl std::fmt::Display for IgvmMeasureError {
                 write!(
                     f,
                     "KVM check failure: CR0 in the VMSA in the IGVM file is \
-                    set to 0x{value:02x} instead of 0x31. The value of CR0 \
-                    is overridden by KVM during initial measurement. \
-                    Therefore the IGVM file must be configured to match the \
-                    value set by KVM."
+                    set to 0x{value:02x} instead of 0x31 (protected-mode) or \
+                    0x30 (real-mode). The value of CR0 is overridden by KVM \
+                    during initial measurement. Therefore the IGVM file must \
+                    be configured to match the value set by KVM."
                 )
             }
             IgvmMeasureError::InvalidVmsaOrder => {
@@ -364,7 +364,8 @@ impl IgvmMeasure {
             if gpa != 0xFFFFFFFFF000 {
                 return Err(IgvmMeasureError::InvalidVmsaGpa(gpa));
             }
-            if vmsa.cr0 != 0x31 {
+            // Allow protected and real mode, both with NE enabled
+            if vmsa.cr0 != 0x31 && vmsa.cr0 != 0x30 {
                 return Err(IgvmMeasureError::InvalidVmsaCr0(vmsa.cr0));
             }
         }
