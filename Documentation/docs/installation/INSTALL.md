@@ -97,7 +97,7 @@ When `cargo-c` is installed, a local IGVM library and header can be built:
 ```shell
 git clone https://github.com/microsoft/igvm
 cd igvm
-DESTDIR=$HOME/igvminst make -f igvm_c/Makefile install
+PREFIX=$HOME/igvminst make -f igvm_c/Makefile install
 ```
 
 After the build dependencies are installed, clone the QEMU repository
@@ -113,13 +113,15 @@ Now the right branch is checked out and you can continue with the build.
 Feel free to adapt the installation directory to your needs:
 
 ```shell
-PKG_CONFIG_PATH="${PKG_CONFIG_PATH}:$HOME/igvminst/usr/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
+PKG_CONFIG_PATH="${PKG_CONFIG_PATH}:$HOME/igvminst/lib/x86_64-linux-gnu/pkgconfig/" ./configure \
     --prefix=$HOME/bin/qemu-svsm/ \
     --target-list=x86_64-softmmu \
     --enable-igvm
-C_INCLUDE_PATH=$HOME/igvminst/usr/include/ LIBRARY_PATH=$HOME/igvminst/usr/lib/x86_64-linux-gnu/ ninja -C build/
+make -j$(nproc)
 make install
 ```
+Note: The `PKG_CONFIG_PATH` value may vary depending on your Linux
+distribution and where igvm was installed.
 
 QEMU is now installed and ready to run an AMD SEV-SNP guest with an
 SVSM embedded in an IGVM file.
