@@ -3,12 +3,12 @@
 // Copyright (c) 2023 SUSE LLC
 //
 // Author: Roy Hopkins <rhopkins@suse.de>
-#![forbid(unsafe_code)]
 
 use gpa_map::GpaMap;
 use igvm_builder::IgvmBuilder;
 use std::error::Error;
 
+mod boot_params;
 mod cmd_options;
 mod context;
 mod cpuid;

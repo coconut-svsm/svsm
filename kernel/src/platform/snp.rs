@@ -335,6 +335,27 @@ impl SvsmPlatform for SnpPlatform {
         &GHCB_IO_DRIVER
     }
 
+    /// The caller is required to ensure that it is safe to validate low
+    /// memory.
+    unsafe fn validate_low_memory(&self, addr: u64, vaddr_valid: bool) -> Result<(), SvsmError> {
+        // SAFETY: the caller takes responsibility for the safety of the
+        // validation operation.
+        unsafe {
+            if vaddr_valid {
+                self.validate_virtual_page_range(
+                    MemoryRegion::new(VirtAddr::from(0u64), addr as usize),
+                    PageValidateOp::Validate,
+                )
+            } else {
+                self.validate_physical_page_range(
+                    MemoryRegion::new(PhysAddr::from(0u64), addr as usize),
+                    PageValidateOp::Validate,
+                )
+            }
+        }
+    }
+
+    /// Performs a page state change between private and shared states.
     fn page_state_change(
         &self,
         region: MemoryRegion<PhysAddr>,
@@ -562,9 +583,5 @@ impl SnpStage2Platform {
 impl Stage2Platform for SnpStage2Platform {
     fn get_cpuid_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
         Some(VirtAddr::from(launch_info.cpuid_page as usize))
-    }
-
-    fn get_secrets_page(&self, launch_info: &Stage2LaunchInfo) -> Option<VirtAddr> {
-        Some(VirtAddr::from(launch_info.secrets_page as usize))
     }
 }
