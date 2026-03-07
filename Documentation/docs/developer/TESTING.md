@@ -47,7 +47,9 @@ The Makefile target will (re)build the relevant code for you before launching
 qemu, whereas the script will simply pick up `bin/coconut-test-qemu.igvm` as
 the IGVM file to launch.
 
-Tests may even be run in environments without confidential computing support:
+Tests may even be run in environments without confidential computing support
+(native mode) by passing `--nocc` which uses TCG (Emulation) instead of KVM, for
+example:
 
 ```shell
 QEMU=/path/to/qemu ./scripts/test-in-svsm.sh --nocc
