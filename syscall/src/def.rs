@@ -14,6 +14,9 @@ const CLASS3: u64 = 3 << 32;
 
 // Syscall number in class0
 pub const SYS_EXIT: u64 = CLASS0;
+pub const SYS_MMAP: u64 = CLASS0 + 1;
+pub const SYS_MUNMAP: u64 = CLASS0 + 2;
+pub const SYS_MRESIZE: u64 = CLASS0 + 3;
 pub const SYS_EXEC: u64 = CLASS0 + 4;
 pub const SYS_CLOSE: u64 = CLASS0 + 10;
 
@@ -43,6 +46,27 @@ pub const F_NAME_SIZE: usize = 256;
 pub enum FileType {
     File,
     Directory,
+}
+
+//
+// Memory mapping flags for MMAP system call
+//
+bitflags! {
+    #[derive(Debug, Copy, Clone, Default)]
+    pub struct MMFlags: usize {
+        /// Mapping is readable
+        const MAP_READ =  1 << 0;
+        /// Mapping is writable
+        const MAP_WRITE = 1 << 1;
+        /// Mapping is executable
+        const MAP_EXEC = 1 << 2;
+        /// File mapping is private
+        const MAP_PRIVATE = 1 << 3;
+        /// Anonymous mapping
+        const MAP_ANONYMOUS = 1 << 4;
+        /// Mapping at fixed address
+        const MAP_FIXED = 1 << 5;
+    }
 }
 
 //
