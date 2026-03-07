@@ -1,3 +1,10 @@
+ifeq ($(shell uname -m),x86_64)
+CROSS_PREFIX :=
+else
+CROSS_PREFIX := x86_64-linux-gnu-
+endif
+CC := $(CROSS_PREFIX)gcc
+
 ifdef RELEASE
 OPENSSL_CONFIG_TYPE = --release
 TCGTPM_CFLAGS = -O3 -DDEBUG=NO
@@ -67,7 +74,7 @@ $(OUT_DIR)/libtcgtpm.a: $(LIBS)
 # libcrt
 $(LIBCRT):
 	mkdir -p $(LIBCRT_BUILD_DIR)
-	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR)
+	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) CC=$(CC)
 
 # openssl
 $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
@@ -77,6 +84,7 @@ $(OPENSSL_MAKEFILE):
 	mkdir -p $(OPENSSL_BUILD_DIR)
 	(cd $(OPENSSL_BUILD_DIR) && \
 		$(OPENSSL_SRC_DIR)/Configure \
+			--cross-compile-prefix=$(CROSS_PREFIX) \
 			--config=$(DEPS_DIR)/openssl_svsm.conf \
 			--api=1.1.1 \
 			SVSM \
@@ -203,6 +211,8 @@ $(TCGTPM_MAKEFILE): $(LIBCRYPTO) $(LIBCRT)
 	(cd $(TCGTPM_BUILD_DIR) && \
 		cmake \
 			-DCMAKE_SYSTEM_NAME=Generic	\
+			-DCMAKE_C_COMPILER="$(CC)"	\
+			-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
 			-DCMAKE_C_FLAGS="${TCGTPM_CFLAGS}" \
 			-DOPENSSL_CRYPTO_LIBRARY="$(LIBCRYPTO)" \
 			-DOPENSSL_INCLUDE_DIR="$(OPENSSL_BUILD_DIR)/include" \
