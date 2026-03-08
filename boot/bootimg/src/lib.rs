@@ -150,11 +150,10 @@ where
         kernel_region_phys_start: boot_image_params.kernel_region_start,
         kernel_region_phys_end: boot_image_params.kernel_region_start
             + (boot_image_params.kernel_region_page_count * PAGE_SIZE_4K),
-        heap_area_phys_start: kernel_heap.phys_base(),
-        heap_area_virt_start: kernel_heap.virt_base(),
-        heap_area_page_count: kernel_heap.page_count(),
+        heap_area_offset: kernel_heap.phys_base() - boot_image_params.kernel_region_start,
         heap_area_allocated: kernel_heap.next_free(),
         kernel_region_virt_start: kernel_elf_sizes.virt_base,
+        kernel_direct_map_vaddr: direct_map_base,
         kernel_symtab_start: symtab.start,
         kernel_symtab_len: symtab.length,
         kernel_strtab_start: strtab.start,

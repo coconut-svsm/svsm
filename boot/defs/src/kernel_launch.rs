@@ -36,11 +36,10 @@ pub struct KernelLaunchInfo {
     pub kernel_region_phys_start: u64,
     /// Exclusive end of the kernel in physical memory.
     pub kernel_region_phys_end: u64,
-    pub heap_area_phys_start: u64, // Start of trailing heap area within the physical memory region.
-    pub heap_area_page_count: u64,
+    pub heap_area_offset: u64, // physical offset to kernel heap
     pub heap_area_allocated: u64,
     pub kernel_region_virt_start: u64,
-    pub heap_area_virt_start: u64, // Start of virtual heap area mapping.
+    pub kernel_direct_map_vaddr: u64,
     pub kernel_fs_start: u64,
     pub kernel_fs_end: u64,
     pub stage2_start: u64,
