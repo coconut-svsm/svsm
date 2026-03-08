@@ -155,21 +155,29 @@ unsafe fn memory_init(
     platform: &dyn SvsmPlatform,
     platform_type: SvsmPlatformType,
 ) {
-    // Unallocated heap memory has not already been accepted so it must be
-    // accepted here.
-    let heap_vaddr = VirtAddr::from(launch_info.heap_area_virt_start);
-    let heap_allocated = launch_info.heap_area_allocated as usize;
-    let mut heap_length = launch_info.heap_area_page_count as usize;
+    // Calculate the physical and virtual bounds of the kernel heap, which sits
+    // within the direct map.
+    let heap_vstart = launch_info.kernel_direct_map_vaddr + launch_info.heap_area_offset;
+    let heap_pstart = launch_info.kernel_region_phys_start + launch_info.heap_area_offset;
+    let heap_pregion = MemoryRegion::from_addresses(
+        PhysAddr::from(heap_pstart),
+        PhysAddr::from(launch_info.kernel_region_phys_end),
+    );
+    let heap_vregion = MemoryRegion::new(VirtAddr::from(heap_vstart), heap_pregion.len());
 
     // On an SNP system, the VMSA might be located within the kernel heap area.
     // If so, it is at the last page within the heap range, so the heap range
     // must be reduced so there is no attempt to validate the VMSA page and so
     // that the VMSA page is not reallocated
+    let heap_allocated = launch_info.heap_area_allocated as usize;
+    let mut heap_length = heap_vregion.len() / PAGE_SIZE;
     if launch_info.vmsa_in_kernel_heap && (platform_type == SvsmPlatformType::Snp) {
         heap_length -= 1;
         assert!(heap_length >= heap_allocated);
     }
 
+    // Unallocated heap memory has not already been accepted so it must be
+    // accepted here.
     if heap_allocated < heap_length {
         // SAFETY: the launch info is assumed to correctly reflect the set of
         // pages that were accepted in stage2.
@@ -177,7 +185,7 @@ unsafe fn memory_init(
             platform
                 .validate_virtual_page_range(
                     MemoryRegion::new(
-                        heap_vaddr + heap_allocated * PAGE_SIZE,
+                        heap_vregion.start() + heap_allocated * PAGE_SIZE,
                         (heap_length - heap_allocated) * PAGE_SIZE,
                     ),
                     PageValidateOp::Validate,
@@ -185,9 +193,19 @@ unsafe fn memory_init(
                 .expect("Failed to validate heap memory");
         }
     }
+
+    // Establish the heap region as the fixed kernel mapping region.
+    let kernel_mapping = FixedAddressMappingRange::new(
+        heap_vregion.start(),
+        heap_vregion.end(),
+        heap_pregion.start(),
+    );
+    init_kernel_mapping_info(kernel_mapping, None);
+
+    // Initialize the page heap itself.
     root_mem_init(
-        PhysAddr::from(launch_info.heap_area_phys_start),
-        heap_vaddr,
+        heap_pregion.start(),
+        heap_vregion.start(),
         heap_length,
         heap_allocated,
     );
@@ -196,17 +214,6 @@ unsafe fn memory_init(
 fn boot_stack_info() {
     let bs = this_cpu().get_current_stack();
     log::info!("Boot stack @ {bs:#018x}");
-}
-
-fn mapping_info_init(launch_info: &KernelLaunchInfo) {
-    let heap_start = VirtAddr::from(launch_info.heap_area_virt_start);
-    let heap_size = launch_info.heap_area_page_count as usize * PAGE_SIZE;
-    let kernel_mapping = FixedAddressMappingRange::new(
-        heap_start,
-        heap_start + heap_size,
-        PhysAddr::from(launch_info.heap_area_phys_start),
-    );
-    init_kernel_mapping_info(kernel_mapping, None);
 }
 
 /// Probes for VirtIO MMIO devices and initializes them.
@@ -239,8 +246,6 @@ unsafe fn svsm_start(
     // pointer.
     let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(platform_type);
-
-    mapping_info_init(&launch_info);
 
     GLOBAL_GDT.load_selectors();
 

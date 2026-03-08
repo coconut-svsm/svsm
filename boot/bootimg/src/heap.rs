@@ -17,7 +17,6 @@ pub struct KernelPageHeap {
     virt_base: u64,
     phys_base: u64,
     page_count: u64,
-    usable_pages: u64,
     next_free: u64,
 }
 
@@ -27,21 +26,12 @@ impl KernelPageHeap {
             virt_base,
             phys_base,
             page_count,
-            usable_pages: page_count,
             next_free: 0,
         }
     }
 
-    pub fn virt_base(&self) -> u64 {
-        self.virt_base
-    }
-
     pub fn phys_base(&self) -> u64 {
         self.phys_base
-    }
-
-    pub fn page_count(&self) -> u64 {
-        self.page_count
     }
 
     pub fn next_free(&self) -> u64 {
@@ -54,7 +44,7 @@ impl KernelPageHeap {
     pub fn allocate_pages(&mut self, page_count: u64) -> Result<(u64, u64), BootImageError> {
         // Allocation can only be successful if the heap is large enough to
         // accommodate the allocation request.
-        if self.next_free + page_count <= self.usable_pages {
+        if self.next_free + page_count <= self.page_count {
             let offset = self.next_free * PAGE_SIZE_4K;
             let (phys, virt) = (self.phys_base + offset, self.virt_base + offset);
             self.next_free += page_count;
