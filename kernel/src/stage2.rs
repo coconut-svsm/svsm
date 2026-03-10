@@ -464,12 +464,11 @@ pub extern "C" fn stage2_main(launch_info: &Stage2LaunchInfo, vtom: usize) -> ! 
         );
     }
 
-    // Get the available physical memory region for the kernel
-    let kernel_region = boot_params
-        .find_kernel_region()
-        .expect("Failed to find memory region for SVSM kernel");
+    // Get the minimum available physical memory region for the kernel.  Any
+    // dynamic resizing will occur in the kernel itself.
+    let kernel_region = boot_params.min_kernel_region();
 
-    log::info!("SVSM memory region: {kernel_region:#018x}");
+    log::info!("SVSM boot memory region: {kernel_region:#018x}");
 
     // Invoke the boot image builder to assemble the kernel image.
     let mut boot_image_loader = Stage2BootLoader::new(&kernel_region, platform, &boot_params);
