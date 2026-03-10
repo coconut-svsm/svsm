@@ -18,7 +18,6 @@ use svsm::address::{Address, PhysAddr, VirtAddr};
 #[cfg(feature = "attest")]
 use svsm::attest::AttestationDriver;
 use svsm::boot_params::BootParamBox;
-#[cfg(feature = "virtio-drivers")]
 use svsm::boot_params::BootParams;
 use svsm::console::install_console_logger;
 use svsm::cpu::control_regs::{cr0_init, cr4_init};
@@ -41,6 +40,7 @@ use svsm::enable_shadow_stacks;
 use svsm::error::SvsmError;
 use svsm::fs::{initialize_fs, populate_ram_fs};
 use svsm::hyperv::hyperv_setup;
+use svsm::kernel_region::expand_kernel_heap;
 use svsm::kernel_region::new_kernel_region;
 use svsm::mm::FixedAddressMappingRange;
 use svsm::mm::PageBox;
@@ -66,7 +66,9 @@ use svsm::svsm_paging::enumerate_early_boot_regions;
 use svsm::svsm_paging::invalidate_early_boot_memory;
 use svsm::task::{KernelThreadStartInfo, schedule_init, start_kernel_task};
 use svsm::types::PAGE_SIZE;
-use svsm::utils::{MemoryRegion, ScopedRef, round_to_pages};
+use svsm::utils::MemoryRegion;
+use svsm::utils::ScopedMut;
+use svsm::utils::round_to_pages;
 #[cfg(all(feature = "virtio-drivers", feature = "block"))]
 use svsm::virtio::probe_mmio_slots;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -151,28 +153,52 @@ global_asm!(
 /// The launch info block must correctly specify the initial state of the
 /// heap.
 unsafe fn memory_init(
-    launch_info: &KernelLaunchInfo,
+    launch_info: &mut KernelLaunchInfo,
     platform: &dyn SvsmPlatform,
     platform_type: SvsmPlatformType,
 ) {
+    let mut full_kernel_region = None;
+
+    // Determine the size of the full kernel region as determined from the
+    // boot parameters, including the initial memory map.
+    let heap_adjust_pages: isize = if launch_info.vmsa_in_kernel_heap
+        && (platform_type == SvsmPlatformType::Snp)
+    {
+        // On an SNP system, the VMSA might be located within the kernel heap
+        // area.  If so, it is at the last page within the heap range, so the
+        // heap range must be reduced so there is no attempt to validate the
+        // VMSA page and so that the VMSA page is not reallocated.  If this
+        // VMSA is present, then the heap cannot be dynamically expanded.
+        -1
+    } else {
+        // SAFETY: The launch info block is trusted to hold a valid virtual
+        // address for the boot parameters.
+        let boot_params =
+            unsafe { BootParams::new(VirtAddr::from(launch_info.boot_params_virt_addr)).unwrap() };
+        let kernel_region = boot_params
+            .find_kernel_region()
+            .expect("Failed to find memory region for SVSM kernel");
+        full_kernel_region = Some(kernel_region);
+
+        let region_end = u64::from(kernel_region.end());
+        ((region_end - launch_info.kernel_region_phys_end) as usize / PAGE_SIZE) as isize
+    };
+
     // Calculate the physical and virtual bounds of the kernel heap, which sits
     // within the direct map.
     let heap_vstart = launch_info.kernel_direct_map_vaddr + launch_info.heap_area_offset;
+    let heap_vaddr = VirtAddr::from(heap_vstart);
     let heap_pstart = launch_info.kernel_region_phys_start + launch_info.heap_area_offset;
-    let heap_pregion = MemoryRegion::from_addresses(
+    let initial_heap_pregion = MemoryRegion::from_addresses(
         PhysAddr::from(heap_pstart),
         PhysAddr::from(launch_info.kernel_region_phys_end),
     );
-    let heap_vregion = MemoryRegion::new(VirtAddr::from(heap_vstart), heap_pregion.len());
+    let mut heap_allocated = launch_info.heap_area_allocated as usize;
+    let mut heap_length = initial_heap_pregion.len() / PAGE_SIZE;
 
-    // On an SNP system, the VMSA might be located within the kernel heap area.
-    // If so, it is at the last page within the heap range, so the heap range
-    // must be reduced so there is no attempt to validate the VMSA page and so
-    // that the VMSA page is not reallocated
-    let heap_allocated = launch_info.heap_area_allocated as usize;
-    let mut heap_length = heap_vregion.len() / PAGE_SIZE;
-    if launch_info.vmsa_in_kernel_heap && (platform_type == SvsmPlatformType::Snp) {
-        heap_length -= 1;
+    // Reduce the heap size if required.
+    if heap_adjust_pages < 0 {
+        heap_length -= (-heap_adjust_pages) as usize;
         assert!(heap_length >= heap_allocated);
     }
 
@@ -185,7 +211,7 @@ unsafe fn memory_init(
             platform
                 .validate_virtual_page_range(
                     MemoryRegion::new(
-                        heap_vregion.start() + heap_allocated * PAGE_SIZE,
+                        heap_vaddr + heap_allocated * PAGE_SIZE,
                         (heap_length - heap_allocated) * PAGE_SIZE,
                     ),
                     PageValidateOp::Validate,
@@ -194,17 +220,36 @@ unsafe fn memory_init(
         }
     }
 
+    // Expand the heap if required.
+    if heap_adjust_pages > 0 {
+        // Call out to perform the expansion.  Memory may be consumed from the
+        // heap as part of the expansion
+        // SAFETY: The caller guarantees that the inital state of the kernel
+        // heap is accurately captured by the launch information.
+        heap_allocated = unsafe {
+            expand_kernel_heap(
+                launch_info,
+                full_kernel_region.as_ref().unwrap().end(),
+                platform,
+            )
+        };
+
+        heap_length += heap_adjust_pages as usize;
+    }
+
+    let heap_vregion = MemoryRegion::new(heap_vaddr, heap_length * PAGE_SIZE);
+
     // Establish the heap region as the fixed kernel mapping region.
     let kernel_mapping = FixedAddressMappingRange::new(
         heap_vregion.start(),
         heap_vregion.end(),
-        heap_pregion.start(),
+        initial_heap_pregion.start(),
     );
     init_kernel_mapping_info(kernel_mapping, None);
 
     // Initialize the page heap itself.
     root_mem_init(
-        heap_pregion.start(),
+        initial_heap_pregion.start(),
         heap_vregion.start(),
         heap_length,
         heap_allocated,
@@ -239,12 +284,12 @@ fn initialize_virtio_mmio(_boot_params: &BootParams<'_>) -> Result<(), SvsmError
 /// The caller must pass a valid pointer from the kernel heap as the launch
 /// info pointer.
 unsafe fn svsm_start(
-    li: *const KernelLaunchInfo,
+    li: *mut KernelLaunchInfo,
     platform_type: SvsmPlatformType,
 ) -> Option<VirtAddr> {
     // SAFETY: the caller guarantees the correctness of the launch info
     // pointer.
-    let launch_info = unsafe { ScopedRef::<KernelLaunchInfo>::new(li).unwrap() };
+    let mut launch_info = unsafe { ScopedMut::<KernelLaunchInfo>::new(li).unwrap() };
     init_platform_type(platform_type);
 
     GLOBAL_GDT.load_selectors();
@@ -294,7 +339,7 @@ unsafe fn svsm_start(
     // SAFETY: THe launch info is assumed to correctly specify the initial
     // state of memory.
     unsafe {
-        memory_init(launch_info.as_ref(), platform, platform_type);
+        memory_init(launch_info.as_mut(), platform, platform_type);
     }
 
     // Initialize the valid bitmap as all valid, since stage2 guarantees that
