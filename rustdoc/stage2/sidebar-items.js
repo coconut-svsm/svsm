@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_kernel_elf","init_percpu","map_page_range","panic","prepare_kernel_image","setup_env","setup_stage2_allocator","shutdown_percpu","stage2_main","switch_to_kernel"],"mod":["boot_stage2"],"static":["pgtable"],"struct":["KernelPageTablePage","Stage2BootLoader"]};
