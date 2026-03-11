@@ -35,7 +35,7 @@ use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserv
 use crate::mm::{
     PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
     SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K,
-    SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE,
+    SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
@@ -762,13 +762,11 @@ impl PerCpu {
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
-        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
+        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K));
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
 
-        let size_2m = SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M;
-        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m));
+        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M));
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
 
@@ -1135,16 +1133,16 @@ impl PerCpu {
 
     fn virt_range_init(&self) {
         // Initialize 4k range
-        let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-        assert!(page_count <= VirtualRange::CAPACITY);
+        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
+        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
         self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
+            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
 
         // Initialize 2M range
-        let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-        assert!(page_count <= VirtualRange::CAPACITY);
+        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
+        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
         self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
+            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
     }
 
     /// Create a new virtual memory mapping in the PerCpu VMR
