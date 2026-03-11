@@ -749,7 +749,8 @@ impl PerCpu {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
         let flags = PTEntryFlags::data();
-        self.get_pgtable().map_4k(SVSM_PERCPU_BASE, paddr, flags)
+        self.get_pgtable()
+            .map_4k(SVSM_PERCPU_BASE, paddr, flags, false)
     }
 
     pub fn map_self(&self) -> Result<(), SvsmError> {

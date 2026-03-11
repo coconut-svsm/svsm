@@ -971,6 +971,7 @@ impl PageTable {
     /// - `vaddr`: The virtual address to map.
     /// - `paddr`: The physical address to map to.
     /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
     ///
     /// # Returns
     /// A result indicating success or failure ([`SvsmError`]).
@@ -982,14 +983,20 @@ impl PageTable {
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: PTEntryFlags,
+        shared: bool,
     ) -> Result<(), SvsmError> {
         assert!(vaddr.is_aligned(PAGE_SIZE_2M));
         assert!(paddr.is_aligned(PAGE_SIZE_2M));
 
         let mapping = self.alloc_pte_2m(vaddr);
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
 
         if let Mapping::Level1(entry) = mapping {
-            entry.set(make_private_address(paddr), flags | PTEntryFlags::HUGE);
+            entry.set(addr, flags | PTEntryFlags::HUGE);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1022,6 +1029,7 @@ impl PageTable {
     /// - `vaddr`: The virtual address to map.
     /// - `paddr`: The physical address to map to.
     /// - `flags`: The flags to apply to the mapping.
+    /// - `shared`: Indicates whether the mapping is shared.
     ///
     /// # Returns
     /// A result indicating success or failure ([`SvsmError`]).
@@ -1030,11 +1038,17 @@ impl PageTable {
         vaddr: VirtAddr,
         paddr: PhysAddr,
         flags: PTEntryFlags,
+        shared: bool,
     ) -> Result<(), SvsmError> {
         let mapping = self.alloc_pte_4k(vaddr);
+        let addr = if !shared {
+            make_private_address(paddr)
+        } else {
+            make_shared_address(paddr)
+        };
 
         if let Mapping::Level0(entry) = mapping {
-            entry.set(make_private_address(paddr), flags);
+            entry.set(addr, flags);
             Ok(())
         } else {
             Err(SvsmError::Mem)
@@ -1109,12 +1123,7 @@ impl PageTable {
     ) -> Result<(), SvsmError> {
         for addr in vregion.iter_pages(PageSize::Regular) {
             let offset = addr - vregion.start();
-            let phys_final = if shared {
-                make_shared_address(phys + offset)
-            } else {
-                make_private_address(phys + offset)
-            };
-            self.map_4k(addr, phys_final, flags)?;
+            self.map_4k(addr, phys + offset, flags, shared)?;
         }
         Ok(())
     }
@@ -1148,12 +1157,7 @@ impl PageTable {
     ) -> Result<(), SvsmError> {
         for addr in vregion.iter_pages(PageSize::Huge) {
             let offset = addr - vregion.start();
-            let phys_final = if shared {
-                make_shared_address(phys + offset)
-            } else {
-                make_private_address(phys + offset)
-            };
-            self.map_2m(addr, phys_final, flags)?;
+            self.map_2m(addr, phys + offset, flags, shared)?;
         }
         Ok(())
     }
@@ -1189,14 +1193,14 @@ impl PageTable {
             if vaddr.is_aligned(PAGE_SIZE_2M)
                 && paddr.is_aligned(PAGE_SIZE_2M)
                 && vaddr + PAGE_SIZE_2M <= end
-                && self.map_2m(vaddr, paddr, flags).is_ok()
+                && self.map_2m(vaddr, paddr, flags, false).is_ok()
             {
                 vaddr = vaddr + PAGE_SIZE_2M;
                 paddr = paddr + PAGE_SIZE_2M;
                 continue;
             }
 
-            self.map_4k(vaddr, paddr, flags)?;
+            self.map_4k(vaddr, paddr, flags, false)?;
             vaddr = vaddr + PAGE_SIZE;
             paddr = paddr + PAGE_SIZE;
         }
