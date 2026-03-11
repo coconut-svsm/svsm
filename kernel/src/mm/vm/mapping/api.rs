@@ -144,10 +144,6 @@ pub struct VMM {
     link: AtomicLink,
 
     /// The virtual memory range covered by this mapping
-    /// It is stored in a RefCell to check borrowing rules at runtime.
-    /// This is safe as any modification to `range` is protected by a lock in
-    /// the parent data structure. This is required because changes here also
-    /// need changes in the parent data structure.
     range: Range<usize>,
 
     /// Pointer to the actual mapping
