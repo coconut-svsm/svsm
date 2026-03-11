@@ -456,17 +456,17 @@ impl VMR {
         let addr = base.pfn();
 
         let mut cursor = tree.find_mut(&addr);
-        if let Some(node) = cursor.get() {
-            self.unmap_vmm(node);
-            if self.per_cpu {
-                flush_tlb_global_percpu();
-            } else {
-                let range = node.range();
-                let region = MemoryRegion::from_addresses(range.0, range.1);
-                flush_tlb_global_sync_range(region, node.get_mapping().page_size());
-            }
+        let node = cursor.remove().ok_or(SvsmError::Mem)?;
+
+        self.unmap_vmm(&node);
+        if self.per_cpu {
+            flush_tlb_global_percpu();
+        } else {
+            let range = node.range();
+            let region = MemoryRegion::from_addresses(range.0, range.1);
+            flush_tlb_global_sync_range(region, node.get_mapping().page_size());
         }
-        cursor.remove().ok_or(SvsmError::Mem)
+        Ok(node)
     }
 
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for
