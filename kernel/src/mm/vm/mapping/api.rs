@@ -6,7 +6,6 @@
 
 use crate::address::{PhysAddr, VirtAddr};
 use crate::error::SvsmError;
-use crate::locking::{RWLock, ReadLockGuard, WriteLockGuard};
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::vm::VMR;
 use crate::types::{PAGE_SHIFT, PageSize};
@@ -136,29 +135,7 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     }
 }
 
-#[derive(Debug)]
-pub struct Mapping {
-    mapping: RWLock<Box<dyn VirtualMapping>>,
-}
-
-impl Mapping {
-    pub fn new<T>(mapping: T) -> Self
-    where
-        T: VirtualMapping + 'static,
-    {
-        Mapping {
-            mapping: RWLock::new(Box::new(mapping)),
-        }
-    }
-
-    pub fn get(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
-        self.mapping.lock_read()
-    }
-
-    pub fn get_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
-        self.mapping.lock_write()
-    }
-}
+pub type Mapping = Arc<dyn VirtualMapping>;
 
 /// A single mapping of virtual memory in a virtual memory range
 #[derive(Debug)]
@@ -174,8 +151,7 @@ pub struct VMM {
     range: Range<usize>,
 
     /// Pointer to the actual mapping
-    /// It is protected by an RWLock to serialize concurent accesses.
-    mapping: Arc<Mapping>,
+    mapping: Mapping,
 }
 
 intrusive_adapter!(pub VMMAdapter = Box<VMM>: VMM { link: AtomicLink });
@@ -198,8 +174,8 @@ impl VMM {
     /// # Returns
     ///
     /// New instance of VMM
-    pub fn new(start_pfn: usize, mapping: Arc<Mapping>) -> Self {
-        let size = mapping.get().mapping_size() >> PAGE_SHIFT;
+    pub fn new(start_pfn: usize, mapping: Mapping) -> Self {
+        let size = mapping.mapping_size() >> PAGE_SHIFT;
         VMM {
             link: AtomicLink::new(),
             range: Range {
@@ -232,15 +208,11 @@ impl VMM {
         )
     }
 
-    pub fn get_mapping(&self) -> ReadLockGuard<'_, Box<dyn VirtualMapping>> {
-        self.mapping.get()
+    pub fn get_mapping(&self) -> &Mapping {
+        &self.mapping
     }
 
-    pub fn get_mapping_mut(&self) -> WriteLockGuard<'_, Box<dyn VirtualMapping>> {
-        self.mapping.get_mut()
-    }
-
-    pub fn get_mapping_clone(&self) -> Arc<Mapping> {
+    pub fn get_mapping_clone(&self) -> Mapping {
         self.mapping.clone()
     }
 }
