@@ -143,7 +143,7 @@ impl TaskKernelMapping {
     /// # Returns
     ///
     /// `Some(TaskKernelMapping)` on success, `Err(SvsmError)` on failure.
-    pub fn new(mm: Arc<TaskMM>, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+    pub fn new(mm: Arc<TaskMM>, mapping: Mapping) -> Result<Self, SvsmError> {
         let va = mm.kernel_range().insert(mapping)?;
         Ok(Self { mm, va })
     }

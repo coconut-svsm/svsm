@@ -650,9 +650,8 @@ impl PerCpu {
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
         let top_of_stack = (base + stack.top_of_stack()).align_down(16);
-        let mapping = Arc::new(Mapping::new(stack));
 
-        self.vm_range.insert_at(base, mapping)?;
+        self.vm_range.insert_at(base, Arc::new(stack))?;
 
         Ok(top_of_stack)
     }
@@ -665,9 +664,7 @@ impl PerCpu {
         let shadow_stack = VMKernelStack::new_shadow()?;
         let offset = shadow_stack.top_of_stack();
         let shadow_stack_page = shadow_stack.shadow_page();
-        let shadow_stack_base = self
-            .vm_range
-            .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
+        let shadow_stack_base = self.vm_range.insert_at(base, Arc::new(shadow_stack))?;
         let (_, ssp) = init_shadow_stack(&shadow_stack_page, shadow_stack_base + offset, init);
         Ok(ssp)
     }
@@ -756,7 +753,7 @@ impl PerCpu {
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
-        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let self_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
         Ok(())
     }
@@ -765,7 +762,7 @@ impl PerCpu {
         const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
         const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
 
-        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K));
+        let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
         self.vrange_4k_mut()
@@ -774,7 +771,7 @@ impl PerCpu {
         const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
         const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
 
-        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M));
+        let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
         self.vrange_2m_mut()
@@ -960,7 +957,7 @@ impl PerCpu {
 
     fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
-        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let vmsa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
 
@@ -1019,7 +1016,7 @@ impl PerCpu {
     fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let caa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
@@ -1150,7 +1147,7 @@ impl PerCpu {
     /// the mapping which remains valid until the ['VRMapping'] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&self, mapping: Arc<Mapping>) -> Result<VMRMapping<'_>, SvsmError> {
+    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<'_>, SvsmError> {
         VMRMapping::new(&self.vm_range, mapping)
     }
 

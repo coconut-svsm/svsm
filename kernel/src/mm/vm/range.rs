@@ -22,7 +22,6 @@ use super::{Mapping, VMM, VMMAdapter};
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// Granularity of ranges mapped by [`struct VMR`]. The mapped region of a
@@ -289,7 +288,7 @@ impl VMR {
 
     fn do_insert(
         &self,
-        mapping: Arc<Mapping>,
+        mapping: Mapping,
         start_pfn: usize,
         cursor: &mut CursorMut<'_, VMMAdapter>,
     ) -> Result<(), SvsmError> {
@@ -309,14 +308,14 @@ impl VMR {
     /// # Arguments
     ///
     /// * `vaddr` - Virtual base address to map the [`VMM`] at
-    /// * `mapping` - `Rc` pointer to the VMM to insert
+    /// * `mapping` - `Arc` pointer to the VMM to insert
     ///
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert_at(&self, vaddr: VirtAddr, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
+    pub fn insert_at(&self, vaddr: VirtAddr, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
         // mapping-size needs to be page-aligned
-        let size = mapping.get().mapping_size() >> PAGE_SHIFT;
+        let size = mapping.mapping_size() >> PAGE_SHIFT;
         let start_pfn = vaddr.pfn();
         let mut tree = self.tree.lock_write();
         let mut cursor = tree.upper_bound_mut(Bound::Included(&start_pfn));
@@ -351,7 +350,7 @@ impl VMR {
     ///
     /// # Arguments
     ///
-    /// * `mapping` - `Rc` pointer to the VMM to insert
+    /// * `mapping` - `Arc` pointer to the VMM to insert
     /// * `align` - Alignment to use for tha mapping
     ///
     /// # Returns
@@ -360,13 +359,12 @@ impl VMR {
     pub fn insert_aligned(
         &self,
         hint: VirtAddr,
-        mapping: Arc<Mapping>,
+        mapping: Mapping,
         align: usize,
     ) -> Result<VirtAddr, SvsmError> {
         assert!(align.is_power_of_two());
 
         let size = mapping
-            .get()
             .mapping_size()
             .checked_next_power_of_two()
             .unwrap_or(0)
@@ -425,12 +423,8 @@ impl VMR {
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert_hint(
-        &self,
-        addr: VirtAddr,
-        mapping: Arc<Mapping>,
-    ) -> Result<VirtAddr, SvsmError> {
-        let align = mapping.get().mapping_size().next_power_of_two();
+    pub fn insert_hint(&self, addr: VirtAddr, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
+        let align = mapping.mapping_size().next_power_of_two();
         self.insert_aligned(addr, mapping, align)
     }
 
@@ -444,7 +438,7 @@ impl VMR {
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert(&self, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
+    pub fn insert(&self, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
         self.insert_hint(VirtAddr::new(0), mapping)
     }
 
@@ -528,7 +522,7 @@ pub struct VMRMapping<'a> {
 }
 
 impl<'a> VMRMapping<'a> {
-    pub fn new(vmr: &'a VMR, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+    pub fn new(vmr: &'a VMR, mapping: Mapping) -> Result<Self, SvsmError> {
         let va = vmr.insert(mapping)?;
         Ok(Self { vmr, va })
     }

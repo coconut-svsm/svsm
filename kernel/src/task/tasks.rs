@@ -328,8 +328,7 @@ impl Task {
             let base_token_addr;
 
             // Map shadow stack into virtual address range
-            let mapping =
-                TaskKernelMapping::new(task_mm.clone(), Arc::new(Mapping::new(shadow_stack)))?;
+            let mapping = TaskKernelMapping::new(task_mm.clone(), Arc::new(shadow_stack))?;
             let stack_base = mapping.virt_addr();
 
             // Initialize shadow stack
@@ -540,11 +539,11 @@ impl Task {
         }
     }
 
-    fn allocate_stack_common() -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>), SvsmError> {
+    fn allocate_stack_common() -> Result<(Mapping, MemoryRegion<VirtAddr>), SvsmError> {
         let stack = VMKernelStack::new()?;
         let bounds = stack.bounds(VirtAddr::from(0u64));
 
-        let mapping = Arc::new(Mapping::new(stack));
+        let mapping = Arc::new(stack);
 
         Ok((mapping, bounds))
     }
@@ -555,7 +554,7 @@ impl Task {
         start_routine: usize,
         xsa_addr: usize,
         start_parameter: usize,
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
 
         let percpu_mapping = cpu.new_mapping(mapping.clone())?;
@@ -618,7 +617,7 @@ impl Task {
         cpu: &PerCpu,
         user_entry: usize,
         xsa_addr: usize,
-    ) -> Result<(Arc<Mapping>, MemoryRegion<VirtAddr>, usize), SvsmError> {
+    ) -> Result<(Mapping, MemoryRegion<VirtAddr>, usize), SvsmError> {
         let (mapping, bounds) = Task::allocate_stack_common()?;
         // Do not run user-mode with IRQs enabled on platforms which are not
         // ready for it.

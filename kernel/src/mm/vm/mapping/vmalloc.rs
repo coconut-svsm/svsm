@@ -11,6 +11,9 @@ use crate::mm::pagetable::PTEntryFlags;
 use super::rawalloc::RawAllocMapping;
 use super::{Mapping, VMFileMappingFlags, VirtualMapping};
 
+extern crate alloc;
+use alloc::sync::Arc;
+
 /// Virtual mapping backed by allocated pages. This can be used for memory
 /// allocation if there is no need for the memory to be physically contiguous.
 ///
@@ -61,7 +64,7 @@ impl VMalloc {
     ///
     /// New [`Mapping`] on success, Err(SvsmError::Mem) on error
     pub fn new_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
-        Ok(Mapping::new(Self::new(size, flags)?))
+        Ok(Arc::new(Self::new(size, flags)?))
     }
 
     fn alloc_pages(&mut self) -> Result<(), SvsmError> {
