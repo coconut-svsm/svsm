@@ -36,7 +36,7 @@ pub fn get_elf_sizes(elf: &Elf64File<'_>) -> ElfSizes {
 
     ElfSizes {
         virt_base: vaddr_alloc_base,
-        virt_len: vaddr_alloc_info.range.vaddr_end - vaddr_alloc_base,
+        virt_len: page_align_up(vaddr_alloc_info.range.vaddr_end - vaddr_alloc_base),
         phys_page_count: page_count,
     }
 }
