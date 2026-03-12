@@ -163,7 +163,7 @@ impl VirtualMapping for VMFileMapping {
     }
 
     fn handle_page_fault(
-        &mut self,
+        &self,
         _vmr: &VMR,
         _offset: usize,
         _write: bool,
