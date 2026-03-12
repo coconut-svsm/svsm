@@ -498,7 +498,7 @@ impl VMR {
     /// '()' if the page fault was successfully handled.
     ///
     /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
-    pub fn handle_page_fault(&self, vaddr: VirtAddr, _write: bool) -> Result<(), SvsmError> {
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         // Get the mapping that contains the faulting address and check if the
         // fault happened on a mapped part of the range.
 
@@ -511,6 +511,8 @@ impl VMR {
             return Err(SvsmError::Mem);
         }
 
+        let off = vaddr - start;
+        node.get_mapping().handle_page_fault(self, off, write)?;
         Ok(())
     }
 }
