@@ -12,8 +12,8 @@ use crate::address::VirtAddr;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
-use crate::mm::vm::{Mapping, VMR};
-use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, alloc::AllocError};
+use crate::mm::vm::{Mapping, VMR, VMReserved};
+use crate::mm::{SIZE_LEVEL3, SVSM_PERTASK_BASE, SVSM_PERTASK_END, alloc::AllocError};
 use crate::utils::MemoryRegion;
 use crate::utils::bitmap_allocator::{BitmapAllocator, BitmapAllocator1024};
 
@@ -75,12 +75,29 @@ impl TaskMM {
     /// `Ok(TaskMM)` on success, `Err(SvsmError)` on failure.
     pub fn create(user_vmr: Option<VMR>) -> Result<Self, SvsmError> {
         let ktask_region = TaskVirtualRegionGuard::alloc()?;
-        let vaddr_region = ktask_region.vaddr_region();
-        let vm_kernel_range = VMR::new(
-            vaddr_region.start(),
-            vaddr_region.end(),
-            PTEntryFlags::empty(),
-        );
+        let kvregion = ktask_region.vaddr_region();
+
+        // A VMR must have a size of exactly one VMR_GRANULE, so use the whole
+        // per-TASK virtual address space
+        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+
+        // Now limit the usable virtual address space by inserting `VMReserved`
+        // mappings. These mappings are empty, but prevent the VMR from
+        // inserting new mappings in the address space covered by them.
+        if kvregion.start() > SVSM_PERTASK_BASE {
+            let size = kvregion.start() - SVSM_PERTASK_BASE;
+            let mapping = VMReserved::new_mapping(size);
+            vm_kernel_range
+                .insert_at(SVSM_PERTASK_BASE, mapping)
+                .unwrap();
+        }
+
+        if kvregion.end() < SVSM_PERTASK_END {
+            let size = SVSM_PERTASK_END - kvregion.end();
+            let mapping = VMReserved::new_mapping(size);
+            vm_kernel_range.insert_at(kvregion.end(), mapping).unwrap();
+        }
+
         // SAFETY: The selected kernel mode task address range is the only
         // range that will live within the top-level entry associated with the
         // task address space.
