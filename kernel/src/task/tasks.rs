@@ -420,7 +420,7 @@ impl Task {
         root: Arc<dyn Directory>,
         name: String,
     ) -> Result<TaskPointer, SvsmError> {
-        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER);
+        let vm_user_range = VMR::new(USER_MEM_START, USER_MEM_END, PTEntryFlags::USER)?;
         // SAFETY: the user address range is fully aligned to top-level paging
         // boundaries.
         unsafe {

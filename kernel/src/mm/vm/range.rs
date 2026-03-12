@@ -78,16 +78,20 @@ impl VMR {
     /// # Returns
     ///
     /// A new instance of [`struct VMR`].
-    pub fn new(start: VirtAddr, end: VirtAddr, flags: PTEntryFlags) -> Self {
+    pub fn new(start: VirtAddr, end: VirtAddr, flags: PTEntryFlags) -> Result<Self, SvsmError> {
+        if start >= end || !start.is_aligned(VMR_GRANULE) || !end.is_aligned(VMR_GRANULE) {
+            log::warn!("Attempted to create an invalid VMR {start:#018x}-{start:#018x}");
+            return Err(SvsmError::Mem);
+        }
         // Global and User are per VMR flags
-        VMR {
+        Ok(Self {
             start_pfn: start.pfn(),
             end_pfn: end.pfn(),
             tree: RWLock::new(RBTree::new(VMMAdapter::new())),
             pgtbl_parts: RWLock::new(Vec::new()),
             pt_flags: flags,
             per_cpu: false,
-        }
+        })
     }
 
     /// Marks a [`struct VMR`] as being associated with only a single CPU
@@ -144,30 +148,6 @@ impl VMR {
         pgtbl.populate_pgtbl_part(&parts[idx]);
     }
 
-    /// Initialize this [`VMR`] by checking the `start` and `end` values and
-    /// allocating the [`PageTablePart`]s required for the mappings.
-    ///
-    /// # Safety
-    /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibility that adjacent address
-    /// ranges may attempt to share top-level paging entries.  If any overlap
-    /// is attempted, page tables may be corrupted.
-    ///
-    /// # Arguments
-    ///
-    /// * `lazy` - When `true`, use lazy allocation of [`PageTablePart`] pages.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    unsafe fn initialize_common(&self, lazy: bool) -> Result<(), SvsmError> {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(start < end);
-
-        self.alloc_page_tables(lazy)
-    }
-
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = false`
     ///
     /// # Safety
@@ -180,10 +160,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibility for ensuring that the address
-        // bounds of the range have appropriate alignment with respect to
-        // the page table alignment boundaries.
-        unsafe { self.initialize_common(false) }
+        self.alloc_page_tables(false)
     }
 
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = true`
@@ -198,10 +175,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize_lazy(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibility for ensuring that the address
-        // bounds of the range have appropriate alignment with respect to
-        // the page table alignment boundaries.
-        unsafe { self.initialize_common(true) }
+        self.alloc_page_tables(true)
     }
 
     /// Returns the virtual start and end addresses for this region

@@ -79,7 +79,7 @@ impl TaskMM {
 
         // A VMR must have a size of exactly one VMR_GRANULE, so use the whole
         // per-TASK virtual address space
-        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty());
+        let vm_kernel_range = VMR::new(SVSM_PERTASK_BASE, SVSM_PERTASK_END, PTEntryFlags::empty())?;
 
         // Now limit the usable virtual address space by inserting `VMReserved`
         // mappings. These mappings are empty, but prevent the VMR from
