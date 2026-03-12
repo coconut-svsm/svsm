@@ -138,7 +138,7 @@ if [ ! -z "$IMAGE" ]; then
     -device scsi-hd,drive=disk0"
 fi
 
-if [ "$EUID" -ne 0 ]; then
+if [ "$EUID" -ne 0 ] && [ "$ACCEL" != "tcg" ]; then
 	SUDO_CMD="sudo"
 else
 	SUDO_CMD=""
