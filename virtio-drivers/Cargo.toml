@@ -16,7 +16,6 @@ categories = ["hardware-support", "no-std"]
 [dependencies]
 log = { workspace = true }
 bitflags = { workspace = true }
-enumn = "0.1.14"
 zerocopy = { workspace = true, features = ["derive"] }
 
 [features]
