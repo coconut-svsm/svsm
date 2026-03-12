@@ -516,7 +516,7 @@ impl VMR {
         &self,
         pgtable: &mut PageTable,
         vaddr: VirtAddr,
-        _write: bool,
+        write: bool,
     ) -> Result<(), SvsmError> {
         // Check first if the fault is solved by populating the page table
         if let Ok(()) = self.populate_addr(pgtable, vaddr) {
@@ -534,6 +534,8 @@ impl VMR {
             return Err(SvsmError::Mem);
         }
 
+        let off = vaddr - start;
+        node.get_mapping().handle_page_fault(self, off, write)?;
         Ok(())
     }
 }
