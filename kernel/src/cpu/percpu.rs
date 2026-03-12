@@ -421,8 +421,8 @@ where
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
-    fn new(shared: &'static PerCpuShared) -> Self {
-        Self {
+    fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
+        Ok(Self {
             pgtbl: RWLock::new(None),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
@@ -431,7 +431,7 @@ impl PerCpu {
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
-                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
+                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
                 vmr
             },
@@ -449,13 +449,13 @@ impl PerCpu {
             context_switch_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
             current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
-        }
+        })
     }
 
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(shared: &'static PerCpuShared) -> Result<&'static Self, SvsmError> {
-        let page = PageBox::try_new(Self::new(shared))?;
+        let page = PageBox::try_new(Self::new(shared)?)?;
         let percpu = PageBox::leak(page);
         Ok(percpu)
     }
