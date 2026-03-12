@@ -102,11 +102,11 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn alloc_page_tables(&self, lazy: bool) -> Result<(), SvsmError> {
-        let first = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let first_idx = first.to_pgtbl_idx::<3>();
+        let vregion = self.virt_range();
+
+        let first_idx = vregion.start().to_pgtbl_idx::<3>();
         let start = virt_from_idx(first_idx);
-        let last = VirtAddr::from(self.end_pfn << PAGE_SHIFT) - 1;
-        let last_idx = last.to_pgtbl_idx::<3>();
+        let last_idx = (vregion.end() - 1).to_pgtbl_idx::<3>();
         let count = last_idx + 1 - first_idx;
         let mut vec = self.pgtbl_parts.lock_write();
 
@@ -135,11 +135,10 @@ impl VMR {
     }
 
     pub fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(vaddr >= start && vaddr < end);
+        let vregion = self.virt_range();
+        assert!(vregion.contains(vaddr));
 
-        let idx = vaddr.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
+        let idx = vaddr.to_pgtbl_idx::<3>() - vregion.start().to_pgtbl_idx::<3>();
         let parts = self.pgtbl_parts.lock_read();
         pgtbl.populate_pgtbl_part(&parts[idx]);
     }
@@ -209,8 +208,8 @@ impl VMR {
     /// # Returns
     ///
     /// Tuple containing `start` and `end` virtual address of the memory region
-    fn virt_range(&self) -> (VirtAddr, VirtAddr) {
-        (
+    fn virt_range(&self) -> MemoryRegion<VirtAddr> {
+        MemoryRegion::from_addresses(
             VirtAddr::from(self.start_pfn << PAGE_SHIFT),
             VirtAddr::from(self.end_pfn << PAGE_SHIFT),
         )
@@ -226,7 +225,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
-        let (rstart, _) = self.virt_range();
+        let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
@@ -264,7 +263,7 @@ impl VMR {
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
     fn unmap_vmm(&self, vmm: &VMM) {
-        let (rstart, _) = self.virt_range();
+        let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
