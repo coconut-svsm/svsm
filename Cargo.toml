@@ -20,8 +20,6 @@ members = [
     "libtcgtpm",
     # syscall interface definitions
     "syscall",
-    # PackIt library and command line utility
-    "packit",
     # verification libraries for svsm
     "verification/verify_proof",
     "verification/verify_external",
@@ -61,7 +59,6 @@ verus_macro_stub = { path = "verification/verus_macro_stub" }
 libtcgtpm = { path = "libtcgtpm" }
 libaproxy = { path = "libaproxy" }
 syscall = { path = "syscall" }
-packit = { path = "packit" }
 userlib = { path = "user/lib" }
 userinit = { path = "user/init" }
 release = { path = "release" }
@@ -95,6 +92,9 @@ sha2 = { version = "0.10.8", default-features = false }
 uuid = { version = "1.6.1", default-features = false }
 # Add the derive feature by default because all crates use it.
 zerocopy = { version = "0.8.2", features = ["derive"] }
+
+# Git dependencies
+packit = { git = "https://github.com/coconut-svsm/packit.git", rev = "b52e47c", version = "0.1.1", default-features = false }
 
 # Verus repos
 verus_builtin = { version = "=0.0.0-2025-12-07-0054", default-features = false }

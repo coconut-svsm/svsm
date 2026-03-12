@@ -1409,8 +1409,8 @@ dependencies = [
 [[package]]
 name = "packit"
 version = "0.1.1"
+source = "git+https://github.com/coconut-svsm/packit.git?rev=b52e47c#b52e47c70c80447234906a30388bab6090163389"
 dependencies = [
- "clap",
  "memmap2",
  "zerocopy",
 ]
@@ -2513,6 +2513,7 @@ name = "xbuild"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "packit",
  "serde",
  "serde_json",
 ]
