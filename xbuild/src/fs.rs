@@ -2,14 +2,11 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{
-    Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features,
-    helpers::HELPERS, run_cmd_checked,
-};
+use crate::{Args, BuildResult, BuildTarget, Component, ComponentConfig, features::Features};
+use packit::PackItArchiveEncoder;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// Components for the filesystem image.
 #[derive(Debug, Clone, Deserialize)]
@@ -42,7 +39,11 @@ impl FsConfig {
             return Ok(None);
         }
 
-        // Build all components and copy them to the output path
+        let fs_path = PathBuf::from("bin/svsm-fs.bin");
+        let mut fs = std::fs::File::create(&fs_path)?;
+        let mut enc = PackItArchiveEncoder::new(&mut fs)?;
+
+        // Build all components and add them to the archive
         for comp in self.components() {
             let bin = comp.build(args, BuildTarget::svsm_user(), cmd_feats)?;
             let mut dst_file = comp
@@ -57,19 +58,12 @@ impl FsConfig {
             }
             dst.push(dst_file);
             comp.config.objcopy.copy(&bin, &dst, args)?;
+
+            let filename = dst_file.to_str().expect("invalid file name");
+            enc.load_file(filename, &std::fs::File::open(&dst)?)?;
             dst.pop();
         }
 
-        // Now build filesystem image from all components
-        let fs = PathBuf::from("bin/svsm-fs.bin");
-        let mut cmd = Command::new(HELPERS.packit(args, cmd_feats));
-        cmd.arg("pack")
-            .arg("--input")
-            .arg(&dst)
-            .arg("--output")
-            .arg(&fs);
-        run_cmd_checked(cmd, args)?;
-
-        Ok(Some(fs))
+        Ok(Some(fs_path))
     }
 }
