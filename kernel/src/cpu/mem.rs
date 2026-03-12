@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+
 use core::arch::asm;
 
 /// Copy `size` bytes from `src` to `dst`.

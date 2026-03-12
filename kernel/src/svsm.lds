@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT OR Apache-2.0 */
+
 OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
