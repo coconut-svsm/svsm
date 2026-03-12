@@ -142,7 +142,7 @@ impl SvsmPlatform for TdpPlatform {
     /// # Safety
     /// The caller is required to ensure that it is safe to validate low
     /// memory.
-    unsafe fn validate_low_memory(&self, addr: u64) -> Result<(), SvsmError> {
+    unsafe fn validate_low_memory(&self, addr: u64, _vaddr_valid: bool) -> Result<(), SvsmError> {
         // The page at the SIPI stub address was validated because it contains
         // valid data.  Make sure it is not validated again.
         // SAFETY: the caller taks responsibility for the safety of the
