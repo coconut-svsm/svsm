@@ -126,7 +126,7 @@ pub trait VirtualMapping: core::fmt::Debug + Send + Sync {
     /// * 'write' - `true` if the fault was due to a write to the memory
     ///   location, or 'false' if the fault was due to a read.
     fn handle_page_fault(
-        &mut self,
+        &self,
         _vmr: &VMR,
         _offset: usize,
         _write: bool,
