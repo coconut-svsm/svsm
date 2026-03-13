@@ -76,7 +76,7 @@ $(LIBCRYPTO): $(OPENSSL_MAKEFILE) $(LIBCRT)
 $(OPENSSL_MAKEFILE):
 	mkdir -p $(OPENSSL_BUILD_DIR)
 	(cd $(OPENSSL_BUILD_DIR) && \
-		$(OPENSSL_SRC_DIR)/Configure \
+		perl $(OPENSSL_SRC_DIR)/Configure \
 			--config=$(DEPS_DIR)/openssl_svsm.conf \
 			--api=1.1.1 \
 			SVSM \

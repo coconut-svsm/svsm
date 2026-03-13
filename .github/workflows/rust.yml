@@ -10,23 +10,73 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: Check
+  checkout:
+    name: Checkout
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code
+          path: .
+          retention-days: 1
+          # Make sure .cargo/ is uploaded as well
+          include-hidden-files: true
+
+  check:
+    name: Format / Clippy / Documentation
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Checkout
+        uses: actions/download-artifact@v4
+        with:
+          name: source-code
 
       - name: Install rust toolchain
         run: rustup toolchain install --profile minimal
 
-      - name: Add rust components
-        run: rustup component add rustfmt rust-src clippy
+      - name: Add clippy
+        run: rustup component add clippy rustfmt
 
-      - name: Check that Cargo.lock is up to date.
+      - name: Install TPM 2.0 Reference Implementation build dependencies
+        run: sudo apt install -y build-essential cmake pkg-config
+
+      # release/src/git_version.rs is auto-generated via a build.rs file. Touch
+      # it here to avoid CI failures.
+      - name: Touch release/src/git_version.rs
+        run: echo "" > release/src/git_version.rs
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: make clippy
+
+      - name: Documentation
+        run: make doc
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: Check that Cargo.lock is up to date
         run: cargo update --workspace --locked
+
+  build-test-debug:
+    name: Build & test (debug)
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Checkout
+        uses: actions/download-artifact@v4
+        with:
+          name: source-code
+
+      - name: Install rust toolchain
+        run: rustup toolchain install --profile minimal
 
       - name: Install TPM 2.0 Reference Implementation build dependencies
         run: sudo apt install -y build-essential cmake pkg-config
@@ -37,34 +87,40 @@ jobs:
       - name: Build (non-test) debug images with all features
         run: cargo xbuild --all-features ./configs/*.json
 
-      - name: Build (non-test) release images
-        run: cargo xbuild --release ./configs/*.json
-
       - name: Run tests
         run: make test
+
+  build-test-release:
+    name: Build & test (release)
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Checkout
+        uses: actions/download-artifact@v4
+        with:
+          name: source-code
+
+      - name: Install rust toolchain
+        run: rustup toolchain install --profile minimal
+
+      - name: Install TPM 2.0 Reference Implementation build dependencies
+        run: sudo apt install -y build-essential cmake pkg-config
+
+      - name: Build (non-test) release images
+        run: cargo xbuild --release ./configs/*.json
 
       - name: Run tests on release image
         run: make test RELEASE=1
 
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: make clippy
-
-      - name: Check documentation
-        run: make doc
-        env:
-          RUSTDOCFLAGS: -D warnings
-
   nightly-check:
     runs-on: ubuntu-latest
+    needs: checkout
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/download-artifact@v4
         with:
-          submodules: recursive
+          name: source-code
 
       - name: Install latest nightly
         run: rustup toolchain install nightly -t x86_64-unknown-none --profile minimal --force -c rustfmt
