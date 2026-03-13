@@ -23,7 +23,7 @@ jobs:
         run: rustup toolchain install --profile minimal
 
       - name: Add rust components
-        run: rustup component add rustfmt rust-src clippy
+        run: rustup component add rustfmt clippy
 
       - name: Check that Cargo.lock is up to date.
         run: cargo update --workspace --locked
