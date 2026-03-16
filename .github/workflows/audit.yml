@@ -1,0 +1,30 @@
+name: Security Audit
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  schedule:
+    - cron: "0 7 * * 1" # Every monday at 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
