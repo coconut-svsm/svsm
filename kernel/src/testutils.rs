@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+
 use crate::platform::SVSM_PLATFORM;
 use bootdefs::platform::SvsmPlatformType;
 use core::sync::atomic::{AtomicBool, Ordering};

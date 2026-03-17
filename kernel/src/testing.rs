@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+
 use log::info;
 use test::ShouldPanic;
 

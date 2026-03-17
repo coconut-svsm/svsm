@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
 //! This crate contains a very stripped down copy of the `test` crate.
 //! `test` usually requires full `std` support, but we need to use it from a
 //! `no_std` target.
