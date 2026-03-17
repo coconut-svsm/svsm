@@ -570,7 +570,7 @@ pub mod svsm_gdbstub {
             start_addr: <Self::Arch as gdbstub::arch::Arch>::Usize,
             data: &mut [u8],
             tid: Tid,
-        ) -> gdbstub::target::TargetResult<(), Self> {
+        ) -> gdbstub::target::TargetResult<usize, Self> {
             // Switch to the task pagetable if necessary. The switch back will
             // happen automatically when the variable falls out of scope
             // SAFETY: the debugger knows it is safe to operate in the context
@@ -584,7 +584,7 @@ pub mod svsm_gdbstub {
                 };
                 *dst = val;
             }
-            Ok(())
+            Ok(data.len())
         }
 
         fn write_addrs(
