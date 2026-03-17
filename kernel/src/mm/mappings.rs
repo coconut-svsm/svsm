@@ -48,17 +48,14 @@ pub fn create_file_mapping(
     offset: usize,
     size: usize,
     flags: VMFileMappingFlags,
-) -> Result<Arc<Mapping>, SvsmError> {
+) -> Result<Mapping, SvsmError> {
     let file_mapping = VMFileMapping::new(file, offset, size, flags)?;
-    Ok(Arc::new(Mapping::new(file_mapping)))
+    Ok(Arc::new(file_mapping))
 }
 
-pub fn create_anon_mapping(
-    size: usize,
-    flags: VMFileMappingFlags,
-) -> Result<Arc<Mapping>, SvsmError> {
+pub fn create_anon_mapping(size: usize, flags: VMFileMappingFlags) -> Result<Mapping, SvsmError> {
     let alloc = VMalloc::new(size, flags)?;
-    Ok(Arc::new(Mapping::new(alloc)))
+    Ok(Arc::new(alloc))
 }
 
 pub fn mmap_user(
