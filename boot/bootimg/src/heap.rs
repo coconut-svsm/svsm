@@ -10,6 +10,7 @@ use crate::add_page_contents;
 use crate::elf::ElfSizes;
 use crate::page_tables::KernelPageTables;
 use crate::page_tables::PteType;
+use crate::page_tables::is_page_aligned;
 use crate::round_to_pages;
 
 use igvm_defs::PAGE_SIZE_4K;
@@ -106,6 +107,8 @@ pub fn create_kernel_heap(
     virtual_reserve: u64,
     vmsa_reserve: bool,
 ) -> Result<KernelPageHeap, BootImageError> {
+    assert!(is_page_aligned(virtual_reserve));
+
     // Calculate the base and size of the heap by subtracting the kernel
     // region.
     let kernel_size = kernel_elf_sizes.phys_page_count * PAGE_SIZE_4K;
