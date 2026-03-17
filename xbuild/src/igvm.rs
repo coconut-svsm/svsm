@@ -120,12 +120,13 @@ impl IgvmTargetConfig {
             .arg("--output")
             .arg(&output)
             .args(["--policy", &self.policy])
-            .arg("--stage2")
-            .arg(&parts.stage2)
             .arg("--kernel")
             .arg(&parts.kernel);
         if let Some(s1) = parts.stage1.as_ref() {
             cmd.arg("--tdx-stage1").arg(s1);
+        }
+        if let Some(s2) = parts.stage2.as_ref() {
+            cmd.arg("--stage2").arg(s2);
         }
         if let Some(fw) = parts.firmware.as_ref() {
             cmd.arg("--firmware").arg(fw);
