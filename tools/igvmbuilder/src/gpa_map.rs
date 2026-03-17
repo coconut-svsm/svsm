@@ -153,7 +153,8 @@ impl GpaMap {
             Some(fw) => fw.get_guest_context().is_some(),
             None => false,
         };
-        let boot_param_layout = BootParamLayout::new(include_guest_context);
+        let include_device_tree = matches!(options.hypervisor, Hypervisor::Qemu);
+        let boot_param_layout = BootParamLayout::new(include_guest_context, include_device_tree);
 
         // If a boot loader is present, then get its size and configure the
         // data it requires.
