@@ -584,3 +584,382 @@ pub fn attest_protocol_request(
         _ => Err(SvsmReqError::unsupported_protocol()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocols::errors::SvsmResultCode;
+    use alloc::vec;
+    use core::mem::{offset_of, size_of};
+    use zerocopy::FromZeros;
+
+    fn is_invalid_parameter(err: &SvsmReqError) -> bool {
+        matches!(
+            err,
+            SvsmReqError::RequestError(SvsmResultCode::INVALID_PARAMETER)
+        )
+    }
+
+    fn is_unsupported_protocol(err: &SvsmReqError) -> bool {
+        matches!(
+            err,
+            SvsmReqError::RequestError(SvsmResultCode::UNSUPPORTED_PROTOCOL)
+        )
+    }
+
+    mod attest_services {
+        use super::*;
+
+        fn base_op() -> AttestServicesOp {
+            AttestServicesOp::new_zeroed()
+        }
+
+        #[test]
+        fn op_layout() {
+            assert_eq!(offset_of!(AttestServicesOp, report_gpa), 0x00);
+            assert_eq!(offset_of!(AttestServicesOp, report_size), 0x08);
+            assert_eq!(offset_of!(AttestServicesOp, reserved_1), 0x0c);
+            assert_eq!(offset_of!(AttestServicesOp, nonce_gpa), 0x10);
+            assert_eq!(offset_of!(AttestServicesOp, nonce_size), 0x18);
+            assert_eq!(offset_of!(AttestServicesOp, reserved_2), 0x1a);
+            assert_eq!(offset_of!(AttestServicesOp, manifest_gpa), 0x20);
+            assert_eq!(offset_of!(AttestServicesOp, manifest_size), 0x28);
+            assert_eq!(offset_of!(AttestServicesOp, reserved_3), 0x2c);
+            assert_eq!(offset_of!(AttestServicesOp, certificate_gpa), 0x30);
+            assert_eq!(offset_of!(AttestServicesOp, certificate_size), 0x38);
+            assert_eq!(offset_of!(AttestServicesOp, reserved_4), 0x3c);
+            assert_eq!(size_of::<AttestServicesOp>(), 0x40);
+        }
+
+        #[test]
+        fn reserved_clear_valid() {
+            let op = base_op();
+            assert!(op.is_reserved_clear());
+        }
+
+        #[test]
+        fn reserved_clear_invalid() {
+            for offset in [
+                offset_of!(AttestServicesOp, reserved_1),
+                offset_of!(AttestServicesOp, reserved_2),
+                offset_of!(AttestServicesOp, reserved_3),
+                offset_of!(AttestServicesOp, reserved_4),
+            ] {
+                let mut bytes = base_op().as_bytes().to_vec();
+                bytes[offset] = 0xff;
+                let op = AttestServicesOp::ref_from_bytes(&bytes).unwrap();
+                assert!(
+                    !op.is_reserved_clear(),
+                    "reserved check should fail for byte at offset {offset:#x}"
+                );
+            }
+        }
+
+        #[test]
+        fn try_from_as_ref_valid() {
+            let op = base_op();
+            let bytes = op.as_bytes();
+            assert!(AttestServicesOp::try_from_as_ref(bytes).is_ok());
+        }
+
+        #[test]
+        fn try_from_as_ref_short_buffer() {
+            let op = base_op();
+            let bytes = op.as_bytes();
+            let err = AttestServicesOp::try_from_as_ref(&bytes[..bytes.len() - 1]).unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn try_from_as_ref_nonzero_reserved() {
+            for offset in [
+                offset_of!(AttestServicesOp, reserved_1),
+                offset_of!(AttestServicesOp, reserved_2),
+                offset_of!(AttestServicesOp, reserved_3),
+                offset_of!(AttestServicesOp, reserved_4),
+            ] {
+                let mut bytes = base_op().as_bytes().to_vec();
+                bytes[offset] = 1;
+                let err = AttestServicesOp::try_from_as_ref(&bytes).unwrap_err();
+                assert!(
+                    is_invalid_parameter(&err),
+                    "should reject nonzero reserved at offset {offset:#x}"
+                );
+            }
+        }
+
+        #[test]
+        fn get_report_region_aligned() {
+            let mut op = base_op();
+            op.report_gpa = 0x1000;
+            op.report_size = 0x2000;
+            let region = op.get_report_region().unwrap();
+            assert_eq!(region.start(), PhysAddr::from(0x1000u64));
+            assert_eq!(region.len(), 0x2000);
+        }
+
+        #[test]
+        fn get_report_region_unaligned() {
+            let mut op = base_op();
+            op.report_gpa = 0x1001;
+            op.report_size = 0x1000;
+            let err = op.get_report_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn get_manifest_region_aligned() {
+            let mut op = base_op();
+            op.manifest_gpa = 0x2000;
+            op.manifest_size = 0x1000;
+            let region = op.get_manifest_region().unwrap();
+            assert_eq!(region.start(), PhysAddr::from(0x2000u64));
+            assert_eq!(region.len(), 0x1000);
+        }
+
+        #[test]
+        fn get_manifest_region_unaligned() {
+            let mut op = base_op();
+            op.manifest_gpa = 0x2001;
+            op.manifest_size = 0x1000;
+            let err = op.get_manifest_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn get_certificate_region_none_when_size_zero() {
+            let op = base_op();
+            assert!(op.get_certificate_region().unwrap().is_none());
+        }
+
+        #[test]
+        fn get_certificate_region_some_when_valid() {
+            let mut op = base_op();
+            op.certificate_gpa = 0x4000;
+            op.certificate_size = 0x1000;
+            let region = op.get_certificate_region().unwrap().unwrap();
+            assert_eq!(region.start(), PhysAddr::from(0x4000u64));
+            assert_eq!(region.len(), 0x1000);
+        }
+
+        #[test]
+        fn get_certificate_region_accepts_max_size() {
+            let mut op = base_op();
+            op.certificate_gpa = 0x4000;
+            op.certificate_size = MAX_CERTIFICATE_SIZE as u32;
+            assert!(op.get_certificate_region().unwrap().is_some());
+        }
+
+        #[test]
+        fn get_certificate_region_rejects_oversize() {
+            let mut op = base_op();
+            op.certificate_gpa = 0x4000;
+            op.certificate_size = (MAX_CERTIFICATE_SIZE + 1) as u32;
+            let err = op.get_certificate_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn get_certificate_region_rejects_unaligned() {
+            let mut op = base_op();
+            op.certificate_gpa = 0x4001;
+            op.certificate_size = 0x1000;
+            let err = op.get_certificate_region().unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn is_extended_report() {
+            let mut op = base_op();
+            assert!(!op.is_extended_report().unwrap());
+
+            op.certificate_size = 0x1000;
+            assert!(op.is_extended_report().unwrap());
+        }
+    }
+
+    mod attest_single_service {
+        use super::*;
+
+        fn base_op() -> AttestSingleServiceOp {
+            AttestSingleServiceOp::new_zeroed()
+        }
+
+        #[test]
+        fn op_layout() {
+            assert_eq!(offset_of!(AttestSingleServiceOp, op), 0x00);
+            assert_eq!(offset_of!(AttestSingleServiceOp, guid), 0x40);
+            assert_eq!(offset_of!(AttestSingleServiceOp, manifest_ver), 0x50);
+            assert_eq!(offset_of!(AttestSingleServiceOp, reserved_5), 0x54);
+            assert_eq!(size_of::<AttestSingleServiceOp>(), 0x58);
+        }
+
+        #[test]
+        fn reserved_clear_valid() {
+            let op = base_op();
+            assert!(op.is_reserved_clear());
+        }
+
+        #[test]
+        fn reserved_clear_invalid_reserved_5() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, reserved_5)] = 0xff;
+            let op = AttestSingleServiceOp::ref_from_bytes(&bytes).unwrap();
+            assert!(!op.is_reserved_clear());
+        }
+
+        #[test]
+        fn reserved_clear_invalid_inner() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestServicesOp, reserved_1)] = 0xff;
+            let op = AttestSingleServiceOp::ref_from_bytes(&bytes).unwrap();
+            assert!(!op.is_reserved_clear());
+        }
+
+        #[test]
+        fn try_from_as_ref_valid() {
+            let op = base_op();
+            let bytes = op.as_bytes();
+            assert!(AttestSingleServiceOp::try_from_as_ref(bytes).is_ok());
+        }
+
+        #[test]
+        fn try_from_as_ref_rejects_manifest_version() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, manifest_ver)] = 1;
+            let err = AttestSingleServiceOp::try_from_as_ref(&bytes).unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn try_from_as_ref_rejects_reserved_5() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, reserved_5)] = 1;
+            let err = AttestSingleServiceOp::try_from_as_ref(&bytes).unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn try_from_as_ref_rejects_inner_reserved() {
+            let mut bytes = base_op().as_bytes().to_vec();
+            bytes[offset_of!(AttestServicesOp, reserved_1)] = 1;
+            let err = AttestSingleServiceOp::try_from_as_ref(&bytes).unwrap_err();
+            assert!(is_invalid_parameter(&err));
+        }
+
+        #[test]
+        fn get_guid_round_trip() {
+            let expected = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+            let mut op = base_op();
+            op.guid = expected.to_bytes_le();
+            assert_eq!(op.get_guid(), expected);
+        }
+
+        #[test]
+        fn manifest_version_validation() {
+            let op = base_op();
+            assert!(op.is_manifest_version_valid());
+
+            let mut bytes = op.as_bytes().to_vec();
+            bytes[offset_of!(AttestSingleServiceOp, manifest_ver)] = 1;
+            let op2 = AttestSingleServiceOp::ref_from_bytes(&bytes).unwrap();
+            assert!(!op2.is_manifest_version_valid());
+        }
+
+        #[test]
+        fn is_extended_report() {
+            let mut op = base_op();
+            assert!(!op.op.is_extended_report().unwrap());
+
+            op.op.certificate_size = 0x1000;
+            assert!(op.op.is_extended_report().unwrap());
+        }
+    }
+
+    mod guid_table {
+        use super::*;
+
+        #[test]
+        fn empty() {
+            let table = GuidTable::new();
+            assert_eq!(table.header_size(), GUID_HEADER_ENTRY_SIZE);
+            assert_eq!(table.len(), GUID_HEADER_ENTRY_SIZE);
+
+            let data = table.to_vec().unwrap();
+            assert_eq!(data.len(), GUID_HEADER_ENTRY_SIZE);
+
+            assert_eq!(&data[..16], &SERVICES_MANIFEST_GUID.to_bytes_le());
+            let total_len = u32::from_le_bytes(data[16..20].try_into().unwrap());
+            assert_eq!(total_len as usize, GUID_HEADER_ENTRY_SIZE);
+            let entry_count = u32::from_le_bytes(data[20..24].try_into().unwrap());
+            assert_eq!(entry_count, 0);
+        }
+
+        #[test]
+        fn single_entry() {
+            let guid = uuid!("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+            let payload = vec![0x01, 0x02, 0x03, 0x04];
+
+            let mut table = GuidTable::new();
+            table.push(guid, payload.clone());
+
+            assert_eq!(table.header_size(), 48);
+            assert_eq!(table.len(), 48 + payload.len());
+
+            let data = table.to_vec().unwrap();
+            assert_eq!(data.len(), 48 + payload.len());
+
+            let entry_count = u32::from_le_bytes(data[20..24].try_into().unwrap());
+            assert_eq!(entry_count, 1);
+
+            assert_eq!(&data[24..40], &guid.to_bytes_le());
+            let entry_offset = u32::from_le_bytes(data[40..44].try_into().unwrap());
+            assert_eq!(entry_offset, 48);
+            let entry_size = u32::from_le_bytes(data[44..48].try_into().unwrap());
+            assert_eq!(entry_size as usize, payload.len());
+
+            assert_eq!(&data[48..], &payload);
+        }
+
+        #[test]
+        fn multiple_entries() {
+            let guid1 = uuid!("11111111-1111-1111-1111-111111111111");
+            let guid2 = uuid!("22222222-2222-2222-2222-222222222222");
+            let payload1 = vec![0xaa; 10];
+            let payload2 = vec![0xbb; 20];
+
+            let mut table = GuidTable::new();
+            table.push(guid1, payload1.clone());
+            table.push(guid2, payload2.clone());
+
+            assert_eq!(table.header_size(), 72);
+            assert_eq!(table.len(), 72 + 10 + 20);
+
+            let data = table.to_vec().unwrap();
+            assert_eq!(data.len(), 72 + 30);
+
+            let entry_count = u32::from_le_bytes(data[20..24].try_into().unwrap());
+            assert_eq!(entry_count, 2);
+
+            let offset1 = u32::from_le_bytes(data[40..44].try_into().unwrap());
+            assert_eq!(offset1, 72);
+
+            let offset2 = u32::from_le_bytes(data[64..68].try_into().unwrap());
+            assert_eq!(offset2, 82);
+
+            assert_eq!(&data[72..82], &payload1);
+            assert_eq!(&data[82..102], &payload2);
+        }
+    }
+
+    mod protocol_routing {
+        use super::*;
+
+        #[test]
+        fn rejects_unknown_request() {
+            let mut params = RequestParams::default();
+            let err = attest_protocol_request(99, &mut params).unwrap_err();
+            assert!(is_unsupported_protocol(&err));
+        }
+    }
+}
