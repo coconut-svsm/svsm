@@ -415,6 +415,14 @@ extern "C" fn ex_handler_system_call(
     ctxt.regs.rax = match input {
         // Class 0 SysCalls.
         SYS_EXIT => sys_exit(ctxt.regs.rdi as u32),
+        SYS_MMAP => sys_mmap(
+            ctxt.regs.rdi as u32,
+            ctxt.regs.rsi,
+            ctxt.regs.r8,
+            ctxt.regs.r9,
+            ctxt.regs.r10,
+        ),
+        SYS_MUNMAP => sys_munmap(ctxt.regs.rdi, ctxt.regs.rsi),
         SYS_EXEC => sys_exec(ctxt.regs.rdi, ctxt.regs.rsi, ctxt.regs.r8),
         SYS_CLOSE => sys_close(ctxt.regs.rdi as u32),
         // Class 1 SysCalls.
