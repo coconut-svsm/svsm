@@ -250,6 +250,15 @@ repository. This is the file which needs to be passed to QEMU.
 The project also contains a number of unit-tests that can be run by following
 the instructions in the [TESTING.md](../developer/TESTING.md) document.
 
+Note: to compile the test kernel used for unit tests, we use the nightly
+toolchain, so if the test kernel build fails, try installing the
+`x86_64-unknown-none` target for the nightly toolchain via your distro or
+using rustup:
+
+```shell
+rustup +nightly target add x86_64-unknown-none
+```
+
 Different (non-QEMU) hypervisors may provide the ACPI tables and ACPI RSDP at
 different paths. If this is the case, they can be provided as environment
 variables, e.g.

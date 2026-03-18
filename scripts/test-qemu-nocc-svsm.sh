@@ -8,12 +8,34 @@ set -u
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
-# When we see this string on the serial output, consider
-# SVSM booted and the test passed.
-SUCCESS="All tests passed"
+# Default mode is regular testing
+MODE="regular"
 
-# Fail the test after this timeout
-TIMEOUT=180s
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --attest)
+            MODE="attest"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--attest]"
+            exit 1
+            ;;
+    esac
+done
+
+# Set test parameters based on mode
+if [[ "$MODE" == "attest" ]]; then
+    TEST_SCRIPT="test-in-svsm-attest.sh"
+    SUCCESS="Attestation test passed"
+    TIMEOUT=240s
+else
+    TEST_SCRIPT="test-in-svsm.sh"
+    SUCCESS="All tests passed"
+    TIMEOUT=180s
+fi
 
 # Clone STDOUT for live log reporting
 exec 3>&1
@@ -21,7 +43,7 @@ exec 3>&1
 echo "================================================================================"
 timeout $TIMEOUT \
   grep -q -m 1 "$SUCCESS" \
-  <("$SCRIPT_DIR/test-in-svsm.sh" --nocc </dev/null 2>&1 | tee /proc/self/fd/3)
+  <("$SCRIPT_DIR/$TEST_SCRIPT" --nocc </dev/null 2>&1 | tee /proc/self/fd/3)
 RES=$?
 echo "================================================================================"
 
