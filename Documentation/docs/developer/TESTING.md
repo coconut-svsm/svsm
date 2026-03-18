@@ -10,8 +10,6 @@ have no additional requirements, as they use your host's target triple with the
 same toolchain version as the rest of the codebase.
 
 ```shell
-cargo test --workspace
-# or
 make test
 ```
 
