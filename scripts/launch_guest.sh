@@ -35,6 +35,12 @@ STATE_DEVICE=""
 VSOCK_DEVICE=""
 VIRTIO=0
 
+# Must match SVSM_VMPL in kernel/src/types.rs
+SVSM_VMPL=0
+
+# Check for support for device-plane property
+QEMU_PLANES=$($QEMU -h | grep -o "device-plane=" || true)
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     -q|--qemu)
@@ -55,7 +61,9 @@ while [[ $# -gt 0 ]]; do
     --state)
       VIRTIO=1
       STATE_DEVICE+="-drive file=$2,format=raw,if=none,id=svsm_storage,cache=none "
-      STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage "
+      STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage"
+      [ -n "$QEMU_PLANES" ] && STATE_DEVICE+=",plane=$SVSM_VMPL"
+      STATE_DEVICE+=" "
       shift
       shift
       ;;
@@ -90,7 +98,9 @@ while [[ $# -gt 0 ]]; do
       ;;
     --vsock)
       VIRTIO=1
-      VSOCK_DEVICE="-device vhost-vsock-device,guest-cid=$2 "
+      VSOCK_DEVICE="-device vhost-vsock-device,guest-cid=$2"
+      [ -n "$QEMU_PLANES" ] && VSOCK_DEVICE+=",plane=$SVSM_VMPL"
+      VSOCK_DEVICE+=" "
       shift
       shift
       ;;
@@ -134,9 +144,6 @@ if (( QEMU_MAJOR < 11 )); then
   echo "Error: SVSM requires QEMU 11.0 or newer (with patches)." >&2
   exit 1
 fi
-
-# Check for support for device-plane property
-QEMU_PLANES=$($QEMU -h | grep -o "device-plane=" || true)
 
 case "$CGS" in
   nocc)
