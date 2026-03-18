@@ -71,6 +71,7 @@ pub struct GpaMap {
     pub general_params: GpaRange,
     pub memory_map: GpaRange,
     pub madt: GpaRange,
+    pub device_tree: GpaRange,
     pub guest_context: GpaRange,
     // The kernel region represents the maximum allowable size. The hypervisor may request that it
     // be smaller to save memory on smaller machine shapes. However, the entire region should not
@@ -173,10 +174,15 @@ impl GpaMap {
         let general_params = GpaRange::new_page(boot_param_block.get_end())?;
         let madt = GpaRange::new_page(general_params.get_end())?;
         let memory_map = GpaRange::new_page(madt.get_end())?;
+        let dt_size = match options.hypervisor {
+            Hypervisor::HyperV | Hypervisor::Vanadium => 0,
+            Hypervisor::Qemu => PAGE_SIZE_4K,
+        };
+        let device_tree = GpaRange::new(memory_map.get_end(), dt_size)?;
         let guest_context = if let Some(firmware) = firmware {
             if firmware.get_guest_context().is_some() {
-                // Locate the guest context after the memory map parameter page
-                GpaRange::new_page(memory_map.get_end())?
+                // Locate the guest context after the device tree
+                GpaRange::new_page(device_tree.get_end())?
             } else {
                 GpaRange::new(0, 0)?
             }
@@ -184,7 +190,7 @@ impl GpaMap {
             GpaRange::new(0, 0)?
         };
 
-        let next_addr = memory_map.get_end() + guest_context.get_size();
+        let next_addr = device_tree.get_end() + guest_context.get_size();
 
         // The kernel filesystem is placed after all other images so it can
         // mark the end of the valid stage2 memory area.
@@ -211,6 +217,7 @@ impl GpaMap {
             general_params,
             memory_map,
             madt,
+            device_tree,
             guest_context,
             kernel,
             kernel_min_size,

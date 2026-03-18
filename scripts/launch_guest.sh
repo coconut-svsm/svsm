@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
       STATE_ENABLE="x-svsm-virtio-mmio=on"
       STATE_DEVICE+="-global virtio-mmio.force-legacy=false "
       STATE_DEVICE+="-drive file=$2,format=raw,if=none,id=svsm_storage,cache=none "
-      STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage "
+      STATE_DEVICE+="-device virtio-blk-device,drive=svsm_storage,plane=1 "
       shift
       shift
       ;;
@@ -127,7 +127,7 @@ case "$CGS" in
     echo "Error: Unexpected CGS value '$CGS'"
     exit 1
 esac
-MACHINE=q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL
+MACHINE=q35,confidential-guest-support=cgs0,memory-backend=mem0,igvm-cfg=igvm0,accel=$ACCEL,device-plane=2
 MEMORY=memory-backend-memfd,size=8G,id=mem0,share=true,prealloc=false,reserve=false
 IGVM_OBJ="-object igvm-cfg,id=igvm0,file=$IGVM"
 
