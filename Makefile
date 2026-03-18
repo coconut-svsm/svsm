@@ -117,11 +117,14 @@ bin/coconut-test-vanadium.igvm:
 	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/test/vanadium-test-target.json
 
 test:
-	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
+	cargo test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm
+	cargo test ${CARGO_ARGS} --workspace --exclude svsm
 
 miri:
 	MIRIFLAGS=-Zmiri-permissive-provenance \
-		cargo +nightly miri test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --workspace
+		cargo +nightly miri test ${CARGO_ARGS} ${SVSM_ARGS_TEST} --package svsm
+	MIRIFLAGS=-Zmiri-permissive-provenance \
+		cargo +nightly miri test ${CARGO_ARGS} --workspace
 
 test-igvm: $(IGVM_TEST_FILES)
 
@@ -186,7 +189,8 @@ clippy:
 	RUSTFLAGS="--cfg fuzzing" ${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm-fuzz -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm --target x86_64-unknown-none -- ${CLIPPY_ARGS}
 	${CARGO} clippy ${CLIPPY_OPTIONS} --package stage1 --target x86_64-unknown-none -- ${CLIPPY_ARGS} ${STAGE1_RUSTC_ARGS}
-	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --tests --exclude packit -- ${CLIPPY_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --workspace --tests --exclude svsm -- ${CLIPPY_ARGS}
+	${CARGO} clippy ${CLIPPY_OPTIONS} --package svsm ${SVSM_ARGS_TEST} --tests -- ${CLIPPY_ARGS}
 
 clean:
 	cargo clean
