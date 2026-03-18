@@ -2,7 +2,7 @@
 //
 // Author: Carlos López <carlos.lopezr4096@gmail.com>
 
-use crate::{Args, BuildTarget, Component, ComponentConfig, features::Features};
+use crate::{Args, BuildTarget, Component, features::Features};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
@@ -11,7 +11,6 @@ use std::sync::OnceLock;
 pub struct Helpers {
     igvmbuilder: OnceLock<PathBuf>,
     igvmmeasure: OnceLock<PathBuf>,
-    packit: OnceLock<PathBuf>,
 }
 
 impl Helpers {
@@ -19,7 +18,6 @@ impl Helpers {
         Self {
             igvmbuilder: OnceLock::new(),
             igvmmeasure: OnceLock::new(),
-            packit: OnceLock::new(),
         }
     }
 
@@ -36,20 +34,6 @@ impl Helpers {
             Component::new_default("igvmmeasure")
                 .build(args, BuildTarget::Host, cmd_feats)
                 .expect("failed to build igvmmeasure")
-        })
-    }
-
-    pub fn packit(&self, args: &Args, cmd_feats: &mut Features) -> &PathBuf {
-        self.packit.get_or_init(|| {
-            Component::new(
-                "packit",
-                ComponentConfig {
-                    features: Some("cli".into()),
-                    ..Default::default()
-                },
-            )
-            .build(args, BuildTarget::Host, cmd_feats)
-            .expect("failed to build packit")
         })
     }
 }
