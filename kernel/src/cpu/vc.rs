@@ -5,12 +5,9 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use super::idt::common::X86ExceptionContext;
-use crate::address::Address;
 use crate::address::VirtAddr;
-use crate::cpu::X86GeneralRegs;
 use crate::cpu::cpuid::cpuid_table_raw;
 use crate::cpu::percpu::current_ghcb;
-use crate::cpu::percpu::this_cpu;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
 use crate::insn_decode::DecodedInsn;
@@ -34,8 +31,6 @@ pub const SVM_EXIT_RDTSCP: usize = 0x87;
 pub const SVM_EXIT_PAGE_NOT_VALIDATED: usize = 0x404;
 pub const X86_TRAP_DB: usize = 0x01;
 pub const X86_TRAP: usize = SVM_EXIT_EXCP_BASE + X86_TRAP_DB;
-
-const MSR_SVSM_CAA: u64 = 0xc001f000;
 
 #[derive(Clone, Copy, Debug)]
 pub struct VcError {
@@ -137,41 +132,14 @@ pub fn handle_vc_exception(ctx: &mut X86ExceptionContext, vector: usize) -> Resu
     Ok(())
 }
 
-#[inline]
-const fn get_msr(regs: &X86GeneralRegs) -> u64 {
-    ((regs.rdx as u64) << 32) | regs.rax as u64 & u32::MAX as u64
-}
-
-/// Handles a read from the SVSM-specific MSR defined the in SVSM spec.
-fn handle_svsm_caa_rdmsr(ctx: &mut X86ExceptionContext) -> Result<(), SvsmError> {
-    let caa = this_cpu()
-        .guest_vmsa_ref()
-        .caa_phys()
-        .ok_or(SvsmError::MissingCAA)?
-        .bits();
-    ctx.regs.rdx = (caa >> 32) & 0xffffffff;
-    ctx.regs.rax = caa & 0xffffffff;
-    Ok(())
-}
-
 fn handle_msr(
     ctx: &mut X86ExceptionContext,
     ghcb: &GHCB,
     ins: DecodedInsn,
 ) -> Result<(), SvsmError> {
     match ins {
-        DecodedInsn::Wrmsr => {
-            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
-                return Ok(());
-            }
-            ghcb.wrmsr_regs(&ctx.regs)
-        }
-        DecodedInsn::Rdmsr => {
-            if get_msr(&ctx.regs) == MSR_SVSM_CAA {
-                return handle_svsm_caa_rdmsr(ctx);
-            }
-            ghcb.rdmsr_regs(&mut ctx.regs)
-        }
+        DecodedInsn::Wrmsr => ghcb.wrmsr_regs(&ctx.regs),
+        DecodedInsn::Rdmsr => ghcb.rdmsr_regs(&mut ctx.regs),
         _ => Err(VcError::new(ctx, VcErrorType::DecodeFailed).into()),
     }
 }
