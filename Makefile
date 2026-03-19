@@ -47,7 +47,6 @@ STAGE1_RUSTC_ARGS += -C panic=abort
 STAGE1_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage1"
 STAGE2_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/stage2"
 SVSM_KERNEL_ELF = "target/x86_64-unknown-none/${TARGET_PATH}/svsm"
-TEST_KERNEL_ELF = target/x86_64-unknown-none/${TARGET_PATH}/svsm-test
 FS_BIN=bin/svsm-fs.bin
 FS_FILE ?= none
 
@@ -166,19 +165,10 @@ endif
 stage1_elf_trampoline:
 	cargo rustc --manifest-path stage1/Cargo.toml ${CARGO_ARGS} --target=x86_64-unknown-none --bin stage1 -- ${STAGE1_RUSTC_ARGS}
 
-bin/svsm: stage1_elf_full
-	cp -f $(STAGE1_ELF) $@
-
 bin/stage1-trampoline: stage1_elf_trampoline
 	cp -f $(STAGE1_ELF) $@
 
-bin/svsm-test: stage1_elf_test
-	cp -f $(STAGE1_ELF) $@
-
 bin/stage1-trampoline.bin: bin/stage1-trampoline
-	objcopy -O binary $< $@
-
-bin/svsm-test.bin: bin/svsm-test
 	objcopy -O binary $< $@
 
 clippy:
