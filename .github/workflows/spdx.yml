@@ -1,0 +1,28 @@
+name: SPDX
+
+on: [pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check SPDX headers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Check new files for SPDX headers
+        run: |
+          git fetch
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+          ${GITHUB_WORKSPACE}/scripts/check-spdx.sh ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}
