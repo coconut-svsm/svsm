@@ -92,7 +92,11 @@ git clone https://github.com/coconut-svsm/kbs-test.git ../kbs-test
 Run attestation tests:
 
 ```shell
-KBS_TEST_DIR=../kbs-test QEMU=/path/to/qemu make test-in-svsm-attest TEST_ARGS=--nocc
+KBS_TEST_DIR=../kbs-test QEMU=/path/to/qemu \
+make FEATURES_TEST=vtpm,virtio-drivers,block,attest \
+     TEST_IN_SVSM_SCRIPT=./scripts/test-in-svsm-attest.sh \
+     TEST_IN_SVSM_DEPS=aproxy \
+     test-in-svsm
 ```
 
 You can replace `KBS_TEST_DIR` with `KBS_TEST_BIN=/path/to/kbs-test` if you

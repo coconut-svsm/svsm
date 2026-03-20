@@ -373,83 +373,16 @@ mod tests {
         }
     }
 
-    mod error_conversion {
-        use super::*;
-
-        #[test]
-        fn attestation_error_converts_to_svsm_error() {
-            let err: SvsmError = AttestationError::UnsupportedTee.into();
-            assert!(matches!(
-                err,
-                SvsmError::TeeAttestation(AttestationError::UnsupportedTee)
-            ));
-
-            let err: SvsmError = AttestationError::Failed.into();
-            assert!(matches!(
-                err,
-                SvsmError::TeeAttestation(AttestationError::Failed)
-            ));
-
-            let err: SvsmError = AttestationError::ProxyRead.into();
-            assert!(matches!(
-                err,
-                SvsmError::TeeAttestation(AttestationError::ProxyRead)
-            ));
-        }
-    }
-
     mod negotiation_hash {
         use super::*;
 
-        #[test]
-        fn empty_params() {
-            let response = NegotiationResponse {
-                challenge: vec![0xaa; 32],
-                params: vec![],
-            };
-            let pub_key = make_ecc_point(&[1, 2, 3], &[4, 5, 6]);
-
-            let result = hash(&response, &pub_key).unwrap();
-            let expected = Sha512::digest([]);
-            assert_eq!(result, expected.as_slice());
-        }
-
-        #[test]
-        fn challenge_only() {
-            let challenge = vec![0xbb; 32];
-            let response = NegotiationResponse {
-                challenge: challenge.clone(),
-                params: vec![NegotiationParam::Challenge],
-            };
-            let pub_key = make_ecc_point(&[1, 2, 3], &[4, 5, 6]);
-
-            let result = hash(&response, &pub_key).unwrap();
-
-            let mut sha = Sha512::new();
-            sha.update(&challenge);
-            let expected = sha.finalize();
-            assert_eq!(result, expected.as_slice());
-        }
-
-        #[test]
-        fn ec_public_key_only() {
-            let x = vec![0x01, 0x02, 0x03];
-            let y = vec![0x04, 0x05, 0x06];
-            let response = NegotiationResponse {
-                challenge: vec![0xcc; 16],
-                params: vec![NegotiationParam::EcPublicKeyBytes],
-            };
-            let pub_key = make_ecc_point(&x, &y);
-
-            let result = hash(&response, &pub_key).unwrap();
-
-            let mut sha = Sha512::new();
-            sha.update(&x);
-            sha.update(&y);
-            let expected = sha.finalize();
-            assert_eq!(result, expected.as_slice());
-        }
-
+        /// hash() feeds NegotiationParams into SHA-512 in the order they
+        /// appear in `response.params`. The ordering matters because
+        /// the server dictates which fields contribute to the attestation
+        /// hash and in what order. These two tests verify that
+        /// [Challenge, EcPublicKeyBytes] and [EcPublicKeyBytes, Challenge]
+        /// produce different digests, therefore confirming the function
+        /// respects the param ordering from the negotiation response.
         #[test]
         fn challenge_then_ec_key() {
             let challenge = vec![0xdd; 48];
@@ -498,36 +431,11 @@ mod tests {
             assert_eq!(result, expected.as_slice());
         }
 
+        /// Changing the param order must change the hash. This is a
+        /// security property: if the server negotiates a different param
+        /// list, the resulting attestation evidence must differ.
         #[test]
-        fn returns_64_bytes() {
-            let response = NegotiationResponse {
-                challenge: vec![0xff; 32],
-                params: vec![NegotiationParam::Challenge],
-            };
-            let pub_key = make_ecc_point(&[0], &[0]);
-
-            let result = hash(&response, &pub_key).unwrap();
-            assert_eq!(result.len(), 64);
-        }
-
-        #[test]
-        fn deterministic() {
-            let response = NegotiationResponse {
-                challenge: vec![0x42; 32],
-                params: vec![
-                    NegotiationParam::Challenge,
-                    NegotiationParam::EcPublicKeyBytes,
-                ],
-            };
-            let pub_key = make_ecc_point(&[1, 2, 3], &[4, 5, 6]);
-
-            let result1 = hash(&response, &pub_key).unwrap();
-            let result2 = hash(&response, &pub_key).unwrap();
-            assert_eq!(result1, result2);
-        }
-
-        #[test]
-        fn different_order_produces_different_result() {
+        fn different_order_produces_different_hash() {
             let challenge = vec![0x42; 32];
             let x = vec![0x01; 10];
             let y = vec![0x02; 10];

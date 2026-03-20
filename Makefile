@@ -11,9 +11,9 @@ SVSM_ARGS_TEST += --features ${FEATURES_TEST}
 XBUILD_ARGS_TEST += --feature ${FEATURES_TEST}
 endif
 
-
-
 TEST_ARGS ?=
+TEST_IN_SVSM_SCRIPT ?= ./scripts/test-in-svsm.sh
+TEST_IN_SVSM_DEPS ?=
 
 CARGO ?= cargo
 CLIPPY_OPTIONS ?= --all-features
@@ -112,8 +112,6 @@ bin/coconut-vanadium.igvm:
 bin/coconut-test-qemu.igvm:
 	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/test/qemu-test-target.json
 
-
-
 bin/coconut-test-hyperv.igvm:
 	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/test/hyperv-test-target.json
 
@@ -129,12 +127,9 @@ miri:
 
 test-igvm: $(IGVM_TEST_FILES)
 
-test-in-svsm: bin/coconut-test-qemu.igvm $(IGVMMEASUREBIN)
-	./scripts/test-in-svsm.sh $(TEST_ARGS)
-
-test-in-svsm-attest: $(IGVMMEASUREBIN) $(APROXYBIN)
-	$(MAKE) FEATURES_TEST=$(FEATURES_TEST),attest bin/coconut-test-qemu.igvm
-	TEST_IGVM=$(CURDIR)/bin/coconut-test-qemu.igvm ./scripts/test-in-svsm-attest.sh $(TEST_ARGS)
+test-in-svsm: $(IGVMMEASUREBIN) $(TEST_IN_SVSM_DEPS)
+	cargo xbuild $(XBUILD_ARGS_TEST) ./configs/test/qemu-test-target.json
+	TEST_IGVM=$(CURDIR)/bin/coconut-test-qemu.igvm $(TEST_IN_SVSM_SCRIPT) $(TEST_ARGS)
 
 test-in-hyperv: bin/coconut-test-hyperv.igvm
 
@@ -203,4 +198,4 @@ clean:
 
 distclean: clean
 
-.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES) test-in-svsm-attest
+.PHONY: test miri clean clippy bin/stage2.bin bin/svsm-kernel.elf bin/test-kernel.elf stage1_elf_full stage1_elf_trampoline stage1_elf_test distclean $(APROXYBIN) $(IGVM_FILES) $(IGVM_TEST_FILES) test-in-svsm

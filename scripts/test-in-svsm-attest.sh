@@ -11,26 +11,24 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 SVSM_DIR="$SCRIPT_DIR/.."
 
-: "${TEST_IGVM:=$SVSM_DIR/bin/coconut-test-qemu-attest.igvm}"
+: "${TEST_IGVM:=$SVSM_DIR/bin/coconut-test-qemu.igvm}"
 : "${KBS_TEST_URL:=http://127.0.0.1:8080}"
 # Test-only placeholder secret; not used in production.
 : "${KBS_TEST_SECRET:=00112233445566778899aabbccddeeff}"
 : "${KBS_TEST_STARTUP_TIMEOUT:=300}"
 : "${APROXY_STARTUP_TIMEOUT:=30}"
 
-declare -a TEST_IN_SVSM_ARGS
 declare -a LAUNCH_GUEST_ARGS
 declare -a KBS_TEST_CMD
 
-TEST_IN_SVSM_ARGS=()
 LAUNCH_GUEST_ARGS=()
 KBS_TEST_CMD=()
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --nocc)
-            TEST_IN_SVSM_ARGS+=("--nocc")
-            shift
+            echo "Attestation tests require SEV-SNP hardware and do not support --nocc."
+            exit 1
             ;;
         --)
             shift
@@ -151,7 +149,6 @@ fi
 set +e
 TEST_IGVM="$TEST_IGVM" \
     "$SCRIPT_DIR/test-in-svsm.sh" \
-    ${TEST_IN_SVSM_ARGS[@]+"${TEST_IN_SVSM_ARGS[@]}"} \
     -- \
     --aproxy "$APROXY_SOCKET" \
     ${LAUNCH_GUEST_ARGS[@]+"${LAUNCH_GUEST_ARGS[@]}"} 2>&1 | tee "$SVSM_LOG"
