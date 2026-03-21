@@ -5,6 +5,8 @@
 // Author: Jon Lange <jlange@microsoft.com>
 
 use crate::BootImageError;
+use crate::BootImageSpan;
+use crate::PAGE_SIZE_2M;
 use crate::PGTABLE_LVL3_IDX_PTE_SELFMAP;
 use crate::defs::add_page_contents;
 use crate::heap::KernelPageHeap;
@@ -34,6 +36,17 @@ pub fn round_to_pages(size: u64) -> u64 {
     (size + (PAGE_SIZE_4K - 1)) / PAGE_SIZE_4K
 }
 
+// This uses an explicit divide implementation because the compiler can
+// optimize the divide because the page size is a power of two.
+#[allow(clippy::manual_div_ceil)]
+fn round_to_large_pages(size: u64) -> u64 {
+    (size + (PAGE_SIZE_2M - 1)) / PAGE_SIZE_2M
+}
+
+pub fn align_up_2m(addr: u64) -> u64 {
+    (addr + (PAGE_SIZE_2M - 1)) & !(PAGE_SIZE_2M - 1)
+}
+
 fn pte_index(vaddr: u64, level: u64) -> u64 {
     vaddr >> (PTE_SHIFT * level + 12)
 }
@@ -42,6 +55,7 @@ fn pte_index(vaddr: u64, level: u64) -> u64 {
 pub enum PteType {
     SelfMap,
     Pxe,
+    RwLarge,
     RwData,
     RoData,
     Executable,
@@ -65,6 +79,10 @@ impl X64Pte {
             // NX = 8000000000000000
             PteType::SelfMap => 0x80000000_00000063,
             PteType::Pxe => 0x063,
+            PteType::RwLarge => {
+                assert_eq!(paddr & (PAGE_SIZE_2M - 1), 0);
+                0x80000000_000001e3
+            }
             PteType::RwData => 0x80000000_00000163,
             PteType::RoData => 0x80000000_00000121,
             PteType::Executable => 0x00000000_00000121,
@@ -221,6 +239,8 @@ impl KernelPageTables {
 }
 
 pub fn setup_kernel_page_tables<F>(
+    kernel_region_span: &BootImageSpan,
+    direct_map_base: u64,
     kernel_virt_base: u64,
     kernel_heap: &mut KernelPageHeap,
     add_page_data: &mut F,
@@ -228,10 +248,10 @@ pub fn setup_kernel_page_tables<F>(
 where
     F: FnMut(u64, Option<&[u8]>, u64) -> Result<(), BootImageError>,
 {
-    // Calculate the virtual span of the kernel region.  This extends from the
-    // base of the kernel virtual address region through the end of the heap.
-    let heap_end = kernel_heap.virt_base() + (kernel_heap.page_count() * PAGE_SIZE_4K);
-    let kernel_virt_len = heap_end - kernel_virt_base;
+    // Calculate the virtual span of the kernel mapping region.  This extends
+    // from the base of the kernel virtual address region through the start of
+    // the direct map.
+    let kernel_virt_len = direct_map_base - kernel_virt_base;
     let pte_count: usize = round_to_pages(kernel_virt_len)
         .try_into()
         .map_err(|_| BootImageError::KernelRangeTooLarge)?;
@@ -242,12 +262,14 @@ where
     let end_pte_index = start_pte_index + pte_count;
     let pde_count = round_to_pages((end_pte_index * size_of::<X64Pte>()) as u64) as usize;
 
-    // Calculate the number of PDEs that will be required to map the page
-    // tables.  This page table construction logic requires all PDEs to fit
-    // within a single page in order to ensure that only one PML4E and only
-    // one PDPE need to be allocated.
+    // Calculate the number of PDEs that will be required to map the direct map
+    // using large pages.
+    let large_page_count = round_to_large_pages(kernel_region_span.length) as usize;
+
+    // Calculate the bounds of the PDEs and large page PTEs that will be
+    // required.  This must fit within a single gigabyte.
     let start_pde_index = (pte_index(kernel_virt_base, 1) & (PTE_PER_PAGE - 1)) as usize;
-    let end_pde_index = start_pde_index + pde_count;
+    let end_pde_index = start_pde_index + pde_count + large_page_count;
     if end_pde_index as u64 > PTE_PER_PAGE {
         return Err(BootImageError::KernelRangeTooLarge);
     }
@@ -255,7 +277,7 @@ where
     // Allocate a physical address range to hold the entire page table
     // hierarchy.  This is one page for each of the leaf page table pages,
     // plus one page each for the page directory, the PDPE, and the PML4E.
-    let total_pt_pages = end_pde_index as u64 + 3;
+    let total_pt_pages = pde_count as u64 + 3;
     let (paging_root, root_vaddr) = kernel_heap.allocate_pages(total_pt_pages)?;
 
     // Allocate memory to describe the page tables.
@@ -287,10 +309,25 @@ where
     paddr += PAGE_SIZE_4K;
     let pte_paddr = paddr + PAGE_SIZE_4K;
     pxe_allocation.reset();
-    for pde_index in start_pde_index..end_pde_index {
-        let offset = (pde_index - start_pde_index) * PAGE_SIZE_4K as usize;
-        let pt_addr = pte_paddr + offset as u64;
-        pxe_allocation.set_entry(pde_index, pt_addr, PteType::Pxe);
+
+    // Fill in the PDEs that map the page tables.
+    for pde_index in 0..pde_count {
+        let offset = pde_index as u64 * PAGE_SIZE_4K;
+        pxe_allocation.set_entry(
+            start_pde_index + pde_index,
+            pte_paddr + offset,
+            PteType::Pxe,
+        );
+    }
+
+    // Fill in the PDEs that are actually large page PTEs.
+    for pde_index in 0..large_page_count {
+        let offset = pde_index as u64 * PAGE_SIZE_2M;
+        pxe_allocation.set_entry(
+            start_pde_index + pde_count + pde_index,
+            kernel_region_span.start + offset,
+            PteType::RwLarge,
+        );
     }
     add_page_contents(add_page_data, paddr, pxe_allocation.as_bytes())?;
 

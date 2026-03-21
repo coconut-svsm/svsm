@@ -456,7 +456,16 @@ impl PTPage {
         let address = phys_to_virt(entry.address());
         // SAFETY: Every PTEntry points to a previously allocated page-table
         // page, so this pointer dereference is safe.
-        Some(unsafe { &mut *address.as_mut_ptr::<PTPage>() })
+        Some(unsafe { Self::from_vaddr(address) })
+    }
+
+    /// Generates a `PTPage` from a virtual address.
+    /// # Safety
+    /// The caller must ensure that the virtual address is a valid page table.
+    pub unsafe fn from_vaddr(vaddr: VirtAddr) -> &'static mut Self {
+        // SAFETY: the caller guarantees the correctness of the virtual
+        // address.
+        unsafe { &mut *vaddr.as_mut_ptr::<PTPage>() }
     }
 }
 
