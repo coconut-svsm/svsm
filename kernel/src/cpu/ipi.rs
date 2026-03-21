@@ -5,7 +5,6 @@
 // Author: Jon Lange (jlange@microsoft.com)
 
 use super::TprGuard;
-use super::apic::{ApicIcr, IcrDestFmt};
 use super::cpuset::{AtomicCpuSet, CpuSet};
 use super::idt::common::IPI_VECTOR;
 use super::percpu::{PERCPU_AREAS, PerCpuShared, this_cpu};
@@ -20,6 +19,8 @@ use core::mem;
 use core::mem::MaybeUninit;
 use core::ptr;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use cpuarch::x86apic::ApicIcr;
+use cpuarch::x86apic::IcrDestFmt;
 
 /// This module implements inter-processor interrupt support, including the
 /// ability to send and receive messages across CPUs.  Two types of IPI

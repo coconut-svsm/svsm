@@ -15,89 +15,23 @@ use crate::requests::SvsmCaa;
 use crate::sev::hv_doorbell::HVExtIntStatus;
 use crate::types::GUEST_VMPL;
 
-use bitfield_struct::bitfield;
 use core::ptr::NonNull;
 use core::sync::atomic::Ordering;
-
-const APIC_REGISTER_APIC_ID: u64 = 0x802;
-const APIC_REGISTER_TPR: u64 = 0x808;
-const APIC_REGISTER_PPR: u64 = 0x80A;
-const APIC_REGISTER_EOI: u64 = 0x80B;
-const APIC_REGISTER_ISR_0: u64 = 0x810;
-const APIC_REGISTER_ISR_7: u64 = 0x817;
-const APIC_REGISTER_TMR_0: u64 = 0x818;
-const APIC_REGISTER_TMR_7: u64 = 0x81F;
-const APIC_REGISTER_IRR_0: u64 = 0x820;
-const APIC_REGISTER_IRR_7: u64 = 0x827;
-const APIC_REGISTER_ICR: u64 = 0x830;
-const APIC_REGISTER_SELF_IPI: u64 = 0x83F;
-
-#[derive(Debug, PartialEq)]
-pub enum IcrDestFmt {
-    Dest = 0,
-    OnlySelf = 1,
-    AllWithSelf = 2,
-    AllButSelf = 3,
-}
-
-impl IcrDestFmt {
-    const fn into_bits(self) -> u64 {
-        self as _
-    }
-    const fn from_bits(value: u64) -> Self {
-        match value {
-            3 => Self::AllButSelf,
-            2 => Self::AllWithSelf,
-            1 => Self::OnlySelf,
-            _ => Self::Dest,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum IcrMessageType {
-    Fixed = 0,
-    Unknown = 3,
-    Nmi = 4,
-    Init = 5,
-    Sipi = 6,
-    ExtInt = 7,
-}
-
-impl IcrMessageType {
-    const fn into_bits(self) -> u64 {
-        self as _
-    }
-    const fn from_bits(value: u64) -> Self {
-        match value {
-            7 => Self::ExtInt,
-            6 => Self::Sipi,
-            5 => Self::Init,
-            4 => Self::Nmi,
-            0 => Self::Fixed,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-#[bitfield(u64)]
-pub struct ApicIcr {
-    pub vector: u8,
-    #[bits(3)]
-    pub message_type: IcrMessageType,
-    pub destination_mode: bool,
-    pub delivery_status: bool,
-    rsvd_13: bool,
-    pub assert: bool,
-    pub trigger_mode: bool,
-    #[bits(2)]
-    pub remote_read_status: usize,
-    #[bits(2)]
-    pub destination_shorthand: IcrDestFmt,
-    #[bits(12)]
-    rsvd_31_20: u64,
-    pub destination: u32,
-}
+use cpuarch::x86apic::APIC_REGISTER_APIC_ID;
+use cpuarch::x86apic::APIC_REGISTER_EOI;
+use cpuarch::x86apic::APIC_REGISTER_ICR;
+use cpuarch::x86apic::APIC_REGISTER_IRR_0;
+use cpuarch::x86apic::APIC_REGISTER_IRR_7;
+use cpuarch::x86apic::APIC_REGISTER_ISR_0;
+use cpuarch::x86apic::APIC_REGISTER_ISR_7;
+use cpuarch::x86apic::APIC_REGISTER_PPR;
+use cpuarch::x86apic::APIC_REGISTER_SELF_IPI;
+use cpuarch::x86apic::APIC_REGISTER_TMR_0;
+use cpuarch::x86apic::APIC_REGISTER_TMR_7;
+use cpuarch::x86apic::APIC_REGISTER_TPR;
+use cpuarch::x86apic::ApicIcr;
+use cpuarch::x86apic::IcrDestFmt;
+use cpuarch::x86apic::IcrMessageType;
 
 // This structure must never be copied because a silent copy will cause APIC
 // state to be lost.
