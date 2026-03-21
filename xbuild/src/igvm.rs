@@ -92,6 +92,9 @@ struct IgvmTargetConfig {
     /// See help for `igvmmeasure --check_kvm`.
     #[serde(default)]
     check_kvm: bool,
+    /// See help for `igvmbuilder --no_vtom`.
+    #[serde(default)]
+    no_vtom: bool,
 }
 
 impl IgvmTargetConfig {
@@ -138,6 +141,9 @@ impl IgvmTargetConfig {
         }
         if args.verbose {
             cmd.arg("--verbose");
+        }
+        if self.no_vtom {
+            cmd.arg("--no-vtom");
         }
         for plat in self.platforms.iter() {
             cmd.arg(plat.as_arg());

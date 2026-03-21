@@ -68,6 +68,10 @@ pub struct CmdOptions {
     #[arg(long, default_value_t = false)]
     pub vsm: bool,
 
+    /// Inhibit the use of VTOM in the SVSM.
+    #[arg(long, default_value_t = false)]
+    pub no_vtom: bool,
+
     /// Enable debug features (e.g. SNP debug_swap)
     #[arg(short, long, default_value_t = false)]
     pub debug: bool,
