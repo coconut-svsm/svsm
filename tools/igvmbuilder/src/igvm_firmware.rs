@@ -286,6 +286,7 @@ impl IgvmFirmware {
                     self.set_guest_context(vmsa);
                     if vmsa.sev_features.vtom() {
                         self.vtom = vmsa.virtual_tom;
+                        self.fw_info.vtom = self.vtom;
                     }
                 }
                 None

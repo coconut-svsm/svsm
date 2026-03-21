@@ -50,6 +50,10 @@ pub struct GuestFwInfoBlock {
     /// no firmware is launched after initialization is complete.
     pub size: u32,
 
+    /// The value of VTOM expected by guest firmware, or zero if VTOM is not
+    /// used.
+    pub vtom: u64,
+
     /// Indicates that the initial location of firmware is at the base of
     /// memory and will not be loaded into the ROM range.
     pub in_low_memory: u8,
