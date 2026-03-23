@@ -431,11 +431,13 @@ impl IgvmBuilder {
         ));
 
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
+            // Suppress the use of VTOM if requested.
+            let vtom = if self.options.no_vtom { 0 } else { self.vtom };
             // Add the VMSA.
             self.directives.push(construct_vmsa(
                 start_context,
                 self.gpa_map.vmsa.get_start(),
-                self.vtom,
+                vtom,
                 SNP_COMPATIBILITY_MASK,
                 &self.options.sev_features,
                 self.options.hypervisor,
