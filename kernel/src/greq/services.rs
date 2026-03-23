@@ -8,25 +8,23 @@
 
 use zerocopy::FromBytes;
 
-use crate::{
-    greq::{
-        driver::{send_extended_guest_request, send_regular_guest_request},
-        msg::SnpGuestRequestMsgType,
-        pld_report::{SnpReportRequest, SnpReportResponse},
-    },
-    protocols::errors::SvsmReqError,
+use crate::error::SvsmError;
+use crate::greq::{
+    driver::{send_extended_guest_request, send_regular_guest_request},
+    msg::SnpGuestRequestMsgType,
+    pld_report::{SnpReportRequest, SnpReportResponse},
 };
 use core::mem::size_of;
 
 const REPORT_REQUEST_SIZE: usize = size_of::<SnpReportRequest>();
 const REPORT_RESPONSE_SIZE: usize = size_of::<SnpReportResponse>();
 
-fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, SvsmReqError> {
+fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, SvsmError> {
     let request: &SnpReportRequest = SnpReportRequest::try_from_as_ref(buffer)?;
     // Non-VMPL0 attestation reports can be requested by the guest kernel
     // directly to the PSP.
     if !request.is_vmpl0() {
-        return Err(SvsmReqError::invalid_parameter());
+        return Err(SvsmError::InvalidParameter);
     }
     let response_len = if certs.is_none() {
         send_regular_guest_request(
@@ -43,10 +41,10 @@ fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, Svsm
         )?
     };
     if REPORT_RESPONSE_SIZE > response_len {
-        return Err(SvsmReqError::invalid_request());
+        return Err(SvsmError::InvalidParameter);
     }
-    let (response, _rest) = SnpReportResponse::ref_from_prefix(buffer)
-        .map_err(|_| SvsmReqError::invalid_parameter())?;
+    let (response, _rest) =
+        SnpReportResponse::ref_from_prefix(buffer).map_err(|_| SvsmError::InvalidParameter)?;
     response.validate()?;
 
     Ok(response_len)
@@ -72,8 +70,8 @@ fn get_report(buffer: &mut [u8], certs: Option<&mut [u8]>) -> Result<usize, Svsm
 ///     * `usize`: Number of bytes written to `buffer`. It should match the
 ///       [`MSG_REPORT_RESP`](SnpReportResponse) size.
 /// * Error
-///     * [`SvsmReqError`]
-pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmReqError> {
+///     * [`SvsmError`]
+pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmError> {
     get_report(buffer, None)
 }
 
@@ -99,12 +97,12 @@ pub fn get_regular_report(buffer: &mut [u8]) -> Result<usize, SvsmReqError> {
 ///     * `usize`: Number of bytes written to `buffer`. It should match
 ///       the [`MSG_REPORT_RESP`](SnpReportResponse) size.
 /// * Error
-///     * [`SvsmReqError`]
-///     * `SvsmReqError::FatalError(SvsmError::Ghcb(GhcbError::VmgexitError(certs_buffer_size, psp_rc)))`:
+///     * [`SvsmError`]
+///     * `SvsmError::Ghcb(GhcbError::VmgexitError(certs_buffer_size, psp_rc))`:
 ///         * `certs` is not large enough to hold the certificates.
 ///             * `certs_buffer_size`: number of bytes required.
 ///             * `psp_rc`: PSP return code
-pub fn get_extended_report(buffer: &mut [u8], certs: &mut [u8]) -> Result<usize, SvsmReqError> {
+pub fn get_extended_report(buffer: &mut [u8], certs: &mut [u8]) -> Result<usize, SvsmError> {
     get_report(buffer, Some(certs))
 }
 

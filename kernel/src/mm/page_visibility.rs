@@ -18,7 +18,6 @@ use crate::mm::validate::{
 };
 use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
-use crate::protocols::errors::SvsmReqError;
 use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
 
@@ -190,12 +189,12 @@ impl<T> SharedBox<T> {
 
 impl<T, const N: usize> SharedBox<[T; N]> {
     /// Clear the first `n` elements.
-    pub fn nclear(&mut self, n: usize) -> Result<(), SvsmReqError>
+    pub fn nclear(&mut self, n: usize) -> Result<(), SvsmError>
     where
         T: FromZeros,
     {
         if n > N {
-            return Err(SvsmReqError::invalid_parameter());
+            return Err(SvsmError::InvalidParameter);
         }
 
         // SAFETY: `self.ptr` is valid and we did a bounds check on `n`.
@@ -207,12 +206,12 @@ impl<T, const N: usize> SharedBox<[T; N]> {
     }
 
     /// Fill up the `outbuf` slice provided with bytes from data
-    pub fn copy_to_slice(&self, outbuf: &mut [T]) -> Result<(), SvsmReqError>
+    pub fn copy_to_slice(&self, outbuf: &mut [T]) -> Result<(), SvsmError>
     where
         T: FromBytes + Copy,
     {
         if outbuf.len() > N {
-            return Err(SvsmReqError::invalid_parameter());
+            return Err(SvsmError::InvalidParameter);
         }
 
         // SAFETY: `self.ptr` is valid.

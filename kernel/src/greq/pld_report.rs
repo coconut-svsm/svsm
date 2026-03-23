@@ -10,7 +10,7 @@ use core::mem::{offset_of, size_of};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::protocols::errors::SvsmReqError;
+use crate::error::SvsmError;
 
 /// Size of the `SnpReportRequest.user_data`
 pub const USER_DATA_SIZE: usize = 64;
@@ -47,12 +47,12 @@ impl SnpReportRequest {
     }
 
     /// Take a slice and return a reference for Self
-    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmReqError> {
+    pub fn try_from_as_ref(buffer: &[u8]) -> Result<&Self, SvsmError> {
         Self::ref_from_prefix(buffer)
             .ok()
             .map(|(request, _rest)| request)
             .filter(|request| request.is_reserved_clear())
-            .ok_or_else(SvsmReqError::invalid_parameter)
+            .ok_or(SvsmError::InvalidParameter)
     }
 
     pub fn is_vmpl0(&self) -> bool {
@@ -90,13 +90,13 @@ pub enum SnpReportResponseStatus {
 
 impl SnpReportResponse {
     /// Validate the [SnpReportResponse] fields
-    pub fn validate(&self) -> Result<(), SvsmReqError> {
+    pub fn validate(&self) -> Result<(), SvsmError> {
         if self.status != SnpReportResponseStatus::Success as u32 {
-            return Err(SvsmReqError::invalid_request());
+            return Err(SvsmError::SnpGuestRequest(self.status));
         }
 
         if self.report_size != size_of::<AttestationReport>() as u32 {
-            return Err(SvsmReqError::invalid_format());
+            return Err(SvsmError::InvalidFormat);
         }
 
         Ok(())

@@ -9,7 +9,8 @@
 pub mod aead {
     //! API for authentication encryption with associated data
 
-    use crate::{protocols::errors::SvsmReqError, sev::secrets_page::VMPCK_SIZE};
+    use crate::error::SvsmError;
+    use crate::sev::secrets_page::VMPCK_SIZE;
 
     // Message Header Format (AMD SEV-SNP spec. table 98)
 
@@ -38,14 +39,14 @@ pub mod aead {
         /// * Success
         ///     * `usize`: Number of bytes written to `outbuf`
         /// * Error
-        ///     * [SvsmReqError]
+        ///     * [SvsmError]
         fn encrypt(
             iv: &[u8; IV_SIZE],
             key: &[u8; KEY_SIZE],
             aad: &[u8],
             inbuf: &[u8],
             outbuf: &mut [u8],
-        ) -> Result<usize, SvsmReqError>;
+        ) -> Result<usize, SvsmError>;
 
         /// Decrypt the provided buffer using AES-256 GCM
         ///
@@ -62,14 +63,14 @@ pub mod aead {
         /// * Success
         ///     * `usize`: Number of bytes written to `outbuf`
         /// * Error
-        ///     * [SvsmReqError]
+        ///     * [SvsmError]
         fn decrypt(
             iv: &[u8; IV_SIZE],
             key: &[u8; KEY_SIZE],
             aad: &[u8],
             inbuf: &[u8],
             outbuf: &mut [u8],
-        ) -> Result<usize, SvsmReqError>;
+        ) -> Result<usize, SvsmError>;
     }
 
     /// Aes256Gcm type
