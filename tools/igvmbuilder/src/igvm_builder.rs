@@ -50,7 +50,8 @@ pub const ANY_NATIVE_COMPATIBILITY_MASK: u32 = NATIVE_COMPATIBILITY_MASK | VSM_C
 const IGVM_GENERAL_PARAMS_PA: u32 = 0;
 const IGVM_MEMORY_MAP_PA: u32 = 1;
 const IGVM_MADT_PA: u32 = 2;
-const IGVM_PARAMETER_COUNT: u32 = 3;
+const IGVM_DT_PA: u32 = 3;
+const IGVM_PARAMETER_COUNT: u32 = 4;
 
 const _: () = assert!(size_of::<BootParamBlock>() as u64 <= PAGE_SIZE_4K);
 const _: () = assert!(size_of::<InitialGuestContext>() as u64 <= PAGE_SIZE_4K);
@@ -215,15 +216,15 @@ impl IgvmBuilder {
         let param_page_offset = PAGE_SIZE_4K as u32;
         let madt_offset = param_page_offset + PAGE_SIZE_4K as u32;
         let memory_map_offset = madt_offset + self.gpa_map.madt.get_size() as u32;
+        let dt_offset = memory_map_offset + self.gpa_map.memory_map.get_size() as u32;
+        let after_dt = dt_offset + self.gpa_map.device_tree.get_size() as u32;
         let (guest_context_offset, param_area_size) = if self.gpa_map.guest_context.get_size() == 0
         {
-            (0, memory_map_offset + PAGE_SIZE_4K as u32)
+            (0, after_dt)
         } else {
             (
-                memory_map_offset + PAGE_SIZE_4K as u32,
-                memory_map_offset
-                    + PAGE_SIZE_4K as u32
-                    + self.gpa_map.guest_context.get_size() as u32,
+                after_dt,
+                after_dt + self.gpa_map.guest_context.get_size() as u32,
             )
         };
 
@@ -261,6 +262,8 @@ impl IgvmBuilder {
             memory_map_offset,
             madt_offset,
             madt_size: self.gpa_map.madt.get_size().try_into().unwrap(),
+            dt_offset,
+            dt_size: self.gpa_map.device_tree.get_size() as u32,
             guest_context_offset,
             debug_serial_port: self.options.get_port_address(),
             firmware: fw_info,
@@ -383,6 +386,13 @@ impl IgvmBuilder {
             parameter_area_index: IGVM_MADT_PA,
             initial_data: vec![],
         });
+        if self.gpa_map.device_tree.get_size() != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterArea {
+                number_of_bytes: PAGE_SIZE_4K,
+                parameter_area_index: IGVM_DT_PA,
+                initial_data: vec![],
+            });
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterArea {
             number_of_bytes: PAGE_SIZE_4K,
             parameter_area_index: IGVM_GENERAL_PARAMS_PA,
@@ -403,6 +413,13 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MADT_PA,
                 byte_offset: 0,
             }));
+        if self.gpa_map.device_tree.get_size() != 0 {
+            self.directives
+                .push(IgvmDirectiveHeader::DeviceTree(IGVM_VHS_PARAMETER {
+                    parameter_area_index: IGVM_DT_PA,
+                    byte_offset: 0,
+                }));
+        }
         self.directives
             .push(IgvmDirectiveHeader::MemoryMap(IGVM_VHS_PARAMETER {
                 parameter_area_index: IGVM_MEMORY_MAP_PA,
@@ -422,6 +439,15 @@ impl IgvmBuilder {
                 parameter_area_index: IGVM_MADT_PA,
             },
         ));
+        if self.gpa_map.device_tree.get_size() != 0 {
+            self.directives.push(IgvmDirectiveHeader::ParameterInsert(
+                IGVM_VHS_PARAMETER_INSERT {
+                    gpa: self.gpa_map.device_tree.get_start(),
+                    compatibility_mask: COMPATIBILITY_MASK.get(),
+                    parameter_area_index: IGVM_DT_PA,
+                },
+            ));
+        }
         self.directives.push(IgvmDirectiveHeader::ParameterInsert(
             IGVM_VHS_PARAMETER_INSERT {
                 gpa: self.gpa_map.general_params.get_start(),

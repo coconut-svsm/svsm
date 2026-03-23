@@ -81,6 +81,7 @@ cocoon-tpm-utils-common = { version = "0.1.0", default-features = false }
 concat-kdf = "0.1.0"
 gdbstub = { version = "0.7.10", default-features = false }
 gdbstub_arch = { version = "0.3.3" }
+fdt = { version = "0.1.5" }
 igvm = { version = "0.4.0", default-features = false }
 igvm_defs = { version = "0.4.0", default-features = false }
 intrusive-collections = "0.9.6"

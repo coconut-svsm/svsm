@@ -25,6 +25,7 @@ libaproxy = { workspace = true, optional = true }
 elf.workspace = true
 syscall.workspace = true
 
+fdt = { workspace = true, features = ["pretty-printing"] }
 aes-gcm = { workspace = true, features = ["aes", "alloc"] }
 aes-kw = { workspace = true, optional = true }
 bitfield-struct.workspace = true

@@ -207,6 +207,9 @@ impl IgvmFirmware {
             IgvmDirectiveHeader::Madt(p) => {
                 parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_MADT, p)
             }
+            IgvmDirectiveHeader::DeviceTree(p) => {
+                parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_DEVICE_TREE, p)
+            }
             IgvmDirectiveHeader::Srat(p) => {
                 parameters.parameter_type(IgvmVariableHeaderType::IGVM_VHT_SRAT, p)
             }
@@ -349,6 +352,9 @@ impl IgvmFirmware {
                             IgvmDirectiveHeader::CommandLine(p)
                         }
                         IgvmVariableHeaderType::IGVM_VHT_MADT => IgvmDirectiveHeader::Madt(p),
+                        IgvmVariableHeaderType::IGVM_VHT_DEVICE_TREE => {
+                            IgvmDirectiveHeader::DeviceTree(p)
+                        }
                         IgvmVariableHeaderType::IGVM_VHT_SRAT => IgvmDirectiveHeader::Srat(p),
                         _ => {
                             panic!(

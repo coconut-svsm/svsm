@@ -115,6 +115,13 @@ pub struct BootParamBlock {
     pub madt_size: u32,
 
     /// The offset, in bytes, from the base of the parameter block to the base
+    /// of the host-supplied device tree.
+    pub dt_offset: u32,
+
+    /// The size, in bytes, of the DT area.
+    pub dt_size: u32,
+
+    /// The offset, in bytes, from the base of the parameter block to the base
     /// of the memory map (which is in IGVM format).
     pub memory_map_offset: u32,
 
