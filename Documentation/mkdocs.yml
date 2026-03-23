@@ -30,4 +30,5 @@ nav:
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
     - Formal Verification: 'developer/VERIFICATION.md'
     - Attestation: 'developer/ATTESTATION.md'
+    - GitHub Workflows: 'developer/GH_WORKFLOWS.md'
   - 'COCONUT-SVSM Rustdoc': 'rustdoc/svsm'
