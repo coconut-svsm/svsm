@@ -12,6 +12,7 @@ use crate::address::{Address, PhysAddr};
 use crate::boot_params::BootParams;
 use crate::cpu::percpu::PERCPU_VMSAS;
 use crate::error::SvsmError;
+use crate::kernel_region::new_kernel_region;
 use crate::locking::RWLock;
 use crate::types::PAGE_SIZE;
 use crate::utils::MemoryRegion;
@@ -42,9 +43,7 @@ pub fn init_memory_map(
     launch_info: &KernelLaunchInfo,
 ) -> Result<(), SvsmError> {
     let mut regions = boot_params.get_memory_regions()?;
-    let kernel_start = PhysAddr::from(launch_info.kernel_region_phys_start);
-    let kernel_end = PhysAddr::from(launch_info.kernel_region_phys_end);
-    let kernel_region = MemoryRegion::from_addresses(kernel_start, kernel_end);
+    let kernel_region = new_kernel_region(launch_info);
 
     // Remove SVSM memory from guest memory map
     let mut i = 0;

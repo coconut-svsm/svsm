@@ -24,14 +24,17 @@ use crate::cpu::registers::RFlags;
 use crate::cpu::shadow_stack::IS_CET_ENABLED;
 use crate::debug::gdbstub::svsm_gdbstub::handle_debug_exception;
 use crate::error::SvsmError;
-use crate::mm::{GuestPtr, PAGE_SIZE, PageBox};
+use crate::mm::GuestPtr;
+use crate::mm::PAGE_SIZE;
+use crate::platform::PageValidateOp;
+use crate::platform::SvsmPlatform;
 use crate::task::{is_task_fault, terminate};
 use crate::tdx::ve::handle_virtualization_exception;
+use crate::utils::MemoryRegion;
 use crate::utils::immut_after_init::ImmutAfterInitCell;
 use core::arch::global_asm;
-use core::mem;
 use core::mem::offset_of;
-use core::num::NonZero;
+use core::slice;
 
 use crate::syscall::*;
 use syscall::*;
@@ -118,11 +121,24 @@ pub unsafe fn early_idt_init(idt: &mut IDT<'_>) {
     }
 }
 
-pub fn idt_init() -> Result<(), SvsmError> {
-    // Allocate a page of memory to use as the IDT.
-    let count = NonZero::new(PAGE_SIZE / mem::size_of::<IdtEntry>()).unwrap();
-    let idt_page = PageBox::<[IdtEntry]>::try_new_slice(IdtEntry::no_handler(), count)?;
-    let mut idt = IDT::new_from_page(idt_page);
+/// # Safety
+/// The caller is expected to provide a valid virtual address for use as the
+/// IDT.
+pub unsafe fn idt_init(idt_vaddr: VirtAddr, platform: &dyn SvsmPlatform) -> Result<(), SvsmError> {
+    // Configure the pre-allocated page for use as the IDT.
+    // SAFETY: the caller guarantees the safety of the supplied virtual
+    // address.
+    let idt_page = unsafe {
+        // The IDT allocation is not validated as part of the boot image, so
+        // validate it here.
+        platform.validate_virtual_page_range(
+            MemoryRegion::new(idt_vaddr, PAGE_SIZE),
+            PageValidateOp::Validate,
+        )?;
+        let idt_ptr = idt_vaddr.as_mut_ptr::<IdtEntry>();
+        slice::from_raw_parts_mut(idt_ptr, PAGE_SIZE / size_of::<IdtEntry>())
+    };
+    let mut idt = IDT::new(idt_page);
 
     // Configure the exception vectors
     init_idt_exceptions(&mut idt);

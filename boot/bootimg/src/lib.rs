@@ -15,6 +15,8 @@ mod symbols;
 use crate::elf::get_elf_sizes;
 use crate::elf::load_kernel_elf;
 use crate::heap::create_kernel_heap;
+use crate::page_tables::PteType;
+use crate::page_tables::align_up_2m;
 use crate::page_tables::round_to_pages;
 use crate::page_tables::setup_kernel_page_tables;
 use crate::symbols::load_kernel_symbols;
@@ -49,28 +51,45 @@ where
     // freed during heap initialization.
     let vmsa_in_kernel_heap = boot_image_params.boot_params.vmsa_in_kernel_range != 0;
 
+    // Reserve 32 KB for the initial stack.
+    let stack_page_count = 8;
+    let stack_size = stack_page_count * PAGE_SIZE_4K;
+
+    // Determine the amount of virtual address reserve.  This is the space
+    // required to map the kernel image, plus the boot stack (including a guard
+    // page), plus one page for the the IDT.
+    let virtual_span = kernel_elf_sizes.virt_len + stack_size + (2 * PAGE_SIZE_4K);
+
+    // Calculate the base address of the kernel direct map.
+    let direct_map_base = align_up_2m(kernel_elf_sizes.virt_base + virtual_span);
+
     // Initialize the kernel page heap so it can be used to manage physical
     // allocations for the boot image.  The page heap starts at the first
-    // physical address after the loaded kernel ELF image, and at a virtual
-    // address following the end of the kernel ELF image.  A gap of one page
-    // is chosen to serve as a guard page for the initial stack.
+    // physical address after the loaded kernel ELF image,  The virtual address
+    // of the direct map is chosen to start on a 2 MB boundary following the
+    // virtual mapping reserve, and the base virtual address of the heap is
+    // the direct map address of the physical page following the end of the
+    // kernel ELF image.
     let mut kernel_heap = create_kernel_heap(
         boot_image_params.kernel_region_start,
         boot_image_params.kernel_region_page_count,
         &kernel_elf_sizes,
-        PAGE_SIZE_4K,
-        vmsa_in_kernel_heap,
+        direct_map_base,
     )?;
 
-    // Alloacte 32 KB for the intiial stack.  This must come at the base of
-    // the kernel heap so it is preceded by a guard page.
-    let stack_page_count = 8;
-    let stack_size = stack_page_count * PAGE_SIZE_4K;
-    let (initial_stack_paddr, initial_stack_base) = kernel_heap.allocate_pages(stack_page_count)?;
-
     // Initialize the page tables that will be used for mapping kernel data.
-    let mut kernel_page_tables =
-        setup_kernel_page_tables(kernel_elf_sizes.virt_base, &mut kernel_heap, add_page_data)?;
+    let kernel_region_span = BootImageSpan::new(
+        boot_image_params.kernel_region_start,
+        boot_image_params.kernel_region_page_count * PAGE_SIZE_4K,
+    );
+
+    let mut kernel_page_tables = setup_kernel_page_tables(
+        &kernel_region_span,
+        direct_map_base,
+        kernel_elf_sizes.virt_base,
+        &mut kernel_heap,
+        add_page_data,
+    )?;
 
     // Load the kernel image and map it into the kernel page tables.
     let kernel_entry = load_kernel_elf(
@@ -81,8 +100,22 @@ where
         add_page_data,
     )?;
 
-    // Map the heap into the page tables.
-    kernel_heap.map(&mut kernel_page_tables)?;
+    // Allocate space for the initial stack and map it following the kernel
+    // image, and following a guard page.
+    let (initial_stack_paddr, _) = kernel_heap.allocate_pages(stack_page_count)?;
+    let initial_stack_base = kernel_elf_sizes.virt_base + kernel_elf_sizes.virt_len + PAGE_SIZE_4K;
+    kernel_page_tables.map_range(
+        initial_stack_base,
+        stack_size,
+        initial_stack_paddr,
+        PteType::RwData,
+    )?;
+
+    // Allocate space for the kernel IDT and map it following the initial
+    // stack.
+    let (idt_paddr, _) = kernel_heap.allocate_pages(1)?;
+    let idt_vaddr = initial_stack_base + stack_size;
+    kernel_page_tables.map_range(idt_vaddr, PAGE_SIZE_4K, idt_paddr, PteType::RwData)?;
 
     // Allocate space in the kernel heap to hold the parameters.  This must be
     // large enough to include both the measured boot parameters and the
@@ -117,11 +150,10 @@ where
         kernel_region_phys_start: boot_image_params.kernel_region_start,
         kernel_region_phys_end: boot_image_params.kernel_region_start
             + (boot_image_params.kernel_region_page_count * PAGE_SIZE_4K),
-        heap_area_phys_start: kernel_heap.phys_base(),
-        heap_area_virt_start: kernel_heap.virt_base(),
-        heap_area_page_count: kernel_heap.page_count(),
+        heap_area_offset: kernel_heap.phys_base() - boot_image_params.kernel_region_start,
         heap_area_allocated: kernel_heap.next_free(),
         kernel_region_virt_start: kernel_elf_sizes.virt_base,
+        kernel_direct_map_vaddr: direct_map_base,
         kernel_symtab_start: symtab.start,
         kernel_symtab_len: symtab.length,
         kernel_strtab_start: strtab.start,
@@ -131,6 +163,7 @@ where
         stage2_start: boot_image_params.stage2_start,
         cpuid_page: cpuid_vaddr,
         secrets_page: secrets_vaddr,
+        idt_vaddr,
         boot_params_virt_addr: boot_params_vaddr,
         vtom: boot_image_params.vtom,
         debug_serial_port: boot_image_params.boot_params.debug_serial_port,

@@ -12,8 +12,9 @@ use crate::cpu::registers::{X86GeneralRegs, X86InterruptFrame};
 use crate::cpu::shadow_stack::is_cet_ss_enabled;
 use crate::error::SvsmError;
 use crate::insn_decode::{InsnError, InsnMachineCtx, Register, SegRegister};
+use crate::mm::GuestPtr;
+use crate::mm::PAGE_SIZE;
 use crate::mm::ro_after_init::make_ro;
-use crate::mm::{GuestPtr, PAGE_SIZE, PageBox};
 use crate::platform::SVSM_PLATFORM;
 use crate::types::{Bytes, SVSM_CS};
 use crate::utils::{MemoryRegion, is_aligned};
@@ -323,15 +324,6 @@ pub struct IDT<'a> {
 impl<'a> IDT<'a> {
     pub const fn new(entries: &'a mut [IdtEntry]) -> Self {
         Self { entries }
-    }
-
-    /// # Safety
-    /// The caller is required to supply the virtual address of a freshly
-    /// allocated page.
-    pub fn new_from_page(page: PageBox<[IdtEntry]>) -> Self {
-        Self {
-            entries: PageBox::leak(page),
-        }
     }
 
     pub fn init(&mut self, handler_array: *const u8, size: usize) -> &mut Self {

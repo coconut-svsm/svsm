@@ -102,6 +102,14 @@ impl BootParams<'_> {
         self.boot_param_block.param_area_size.try_into().unwrap()
     }
 
+    pub fn min_kernel_region(&self) -> MemoryRegion<PhysAddr> {
+        let kernel_base = PhysAddr::from(self.boot_param_block.kernel_base);
+        MemoryRegion::new(
+            kernel_base,
+            self.boot_param_block.kernel_min_size.try_into().unwrap(),
+        )
+    }
+
     pub fn find_kernel_region(&self) -> Result<MemoryRegion<PhysAddr>, SvsmError> {
         let kernel_base = PhysAddr::from(self.boot_param_block.kernel_base);
         let mut kernel_size = self.boot_param_block.kernel_min_size;
