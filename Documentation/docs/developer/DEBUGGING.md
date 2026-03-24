@@ -8,6 +8,15 @@ source-level debugging of the SVSM kernel code. To enable the GDB stub pass
 FW_FILE=/path/to/firmware/OVMF.fd make FEATURES=enable-gdb
 ```
 
+To launch SVSM you can use the following command:
+
+```shell
+QEMU=/path/to/qemu scripts/launch_guest.sh --debugserial
+```
+
+If you don't have access to confidential hardware (e.g., SEV-SNP), you can
+pass the ```--nocc``` option to the script.
+
 The GDB stub remains dormant until a CPU exception occurs, either through a
 kernel panic or via a debug breakpoint, at which time the GDB stub will await a
 serial port connection and display this message in the console:
@@ -18,9 +27,18 @@ serial port connection and display this message in the console:
 [SVSM] ***********************************
 ```
 
+Debug breakpoint can be inserted using the `debug_break` function defined in
+[svsm_gdbstub](../../rustdoc/svsm/debug/gdbstub/svsm_gdbstub) module.
+Make sure that feature `enable-gdb` is enabled, otherwise a call to that function
+will not have any effect.
+
+**Note**: Currently, there is a call to `debug_break` in the `svsm_init` function in
+[svsm.rs](https://github.com/coconut-svsm/svsm/blob/main/kernel/src/svsm.rs), but it is
+commented out. In order to generate an exception, you should uncomment it.
+
 The GDB stub uses a hardware serial port at IO port 0x2f8, which is the second
-simulated serial port in the QEMU configuration. Using the example configuration
-above, the serial port is configured using `-serial pty`.
+simulated serial port in the QEMU configuration. Using the `launch_guest` script,
+the serial port is configured with the `--debugserial` option.
 
 QEMU will create a virtual serial port on the host at `/dev/pts/[n]` where `[n]`
 is the device index. This index will be reported by QEMU in the console when the
