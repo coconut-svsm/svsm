@@ -46,8 +46,11 @@ virtual machine is started. You can then connect GDB to the waiting SVSM using
 the command, replacing `[n]` with the correct device index:
 
 ```shell
-sudo gdb --ex "target extended-remote /dev/pts/[n]`
+sudo gdb --ex "target extended-remote /dev/pts/[n]"
 ```
+
+**Note**: If you don't have acces to confidential hardware, you don't need to use
+```sudo```.
 
 If you have the source code available on the host system then you can add the
 debug symbols and use source-level debugging:
