@@ -49,7 +49,7 @@ jobs:
         id: qemu_cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
-          path: tools
+          path: citests/qemu
           key: qemu-${{ env.QEMU_SHA }}--config-${{ env.QEMU_YML_SHA }}
 
       - if: ${{ steps.qemu_cache.outputs.cache-hit != 'true' }}
@@ -66,7 +66,7 @@ jobs:
           # TODO: Find a minimal set of dependencies to install
           sudo apt-get build-dep --yes qemu
 
-          OUT="$PWD/tools"
+          OUT="$PWD/citests/qemu"
           mkdir -p "$OUT"
 
           # Set up a build directory outside the coconut-svsm checkout
@@ -132,5 +132,5 @@ jobs:
 
       - name: Run test-in-svsm in QEMU
         run: |
-          QEMU=./tools/bin/qemu-system-x86_64 scripts/test-qemu-nocc-svsm.sh
+          QEMU=./citests/qemu/bin/qemu-system-x86_64 scripts/test-qemu-nocc-svsm.sh
 
