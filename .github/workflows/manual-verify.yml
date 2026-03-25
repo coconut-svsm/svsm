@@ -30,7 +30,7 @@ jobs:
           submodules: recursive
 
       - name: Install verus toolchains
-        run: ./scripts/vinstall.sh --prebuilt-verusfmt
+        run: ./scripts/vinstall.sh
 
       - name: Format spec/proof code
         run: |
