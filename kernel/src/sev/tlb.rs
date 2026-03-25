@@ -72,7 +72,7 @@ fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
              in("rax") rax,
              in("rcx") rcx,
              in("rdx") rdx,
-             options(att_syntax));
+             options(att_syntax, nostack, preserves_flags));
     }
 }
 
@@ -81,7 +81,7 @@ fn do_tlbsync() {
     // SAFETY: Inline assembly to synchronize TLB invalidations. It does not
     // change any state.
     unsafe {
-        asm!("tlbsync", options(att_syntax));
+        asm!("tlbsync", options(att_syntax, nomem, preserves_flags));
     }
 }
 
