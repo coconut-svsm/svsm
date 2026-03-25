@@ -5,18 +5,9 @@
 #
 # Author: Ziqiao Zhou <ziqiaozhou@microsoft.com>
 # A script to install verus tools
-VERISMO_REV=4f504b7
+VERISMO_REV=4f504b72ddd7a6d5b194b65db159e55a41831ab9
 VERUS_RUST_VERSION=1.91.0
-VERUSFMT_REV=0.5.7
-PREBUILT_VERUSFMT=""
-
-for arg in "$@"; do
-  case "$arg" in
-    --prebuilt-verusfmt)
-      PREBUILT_VERUSFMT="https://github.com/verus-lang/verusfmt/releases/download/v$VERUSFMT_REV/verusfmt-installer.sh"
-      ;;
-    esac
-done
+VERUSFMT_REV=beff2fa686d856d5e60df368fd027d94ead11ac5 # v0.5.7
 
 # Install x86_64-unknown-none target for verus-compatible Rust version
 export RUSTUP_TOOLCHAIN=$VERUS_RUST_VERSION
@@ -27,13 +18,4 @@ cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV car
 cargo install --git https://github.com/microsoft/verismo/ --rev $VERISMO_REV verus-rustc
 cargo v install-verus
 
-# Install verusfmt
-if [ -n $PREBUILT_VERUSFMT ]; then
-    if ! verusfmt --version 2>/dev/null | grep -q "$VERUSFMT_REV$"; then
-        curl --proto '=https' --tlsv1.2 -LsSf "$PREBUILT_VERUSFMT" | sh
-    else
-        echo "verusfmt is already at version $VERUSFMT_REV"
-    fi
-else
-  cargo install --git https://github.com/verus-lang/verusfmt  --rev v$VERUSFMT_REV
-fi
+cargo install --git https://github.com/verus-lang/verusfmt  --rev $VERUSFMT_REV
