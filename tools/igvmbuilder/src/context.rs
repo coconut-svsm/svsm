@@ -330,7 +330,6 @@ pub fn construct_vmsa(
         match extra_f {
             SevExtraFeatures::ReflectVc => features.set_reflect_vc(true),
             SevExtraFeatures::AlternateInjection => features.set_alternate_injection(true),
-            SevExtraFeatures::DebugSwap => features.set_debug_swap(true),
             SevExtraFeatures::PreventHostIBS => features.set_prevent_host_ibs(true),
             SevExtraFeatures::SNPBTBIsolation => features.set_snp_btb_isolation(true),
             SevExtraFeatures::VmplSSS => features.set_vmpl_supervisor_shadow_stack(true),
