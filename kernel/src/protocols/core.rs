@@ -269,7 +269,9 @@ fn core_configure_vtom(params: &mut RequestParams) -> Result<(), SvsmReqError> {
     }
 }
 
-fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> {
+fn core_pvalidate_one(entry: u64) -> Result<(), SvsmReqError> {
+    let mut flush = false;
+
     let (page_size_bytes, valign, huge) = match entry & 3 {
         0 => (PAGE_SIZE, VIRT_ALIGN_4K, PageSize::Regular),
         1 => (PAGE_SIZE_2M, VIRT_ALIGN_2M, PageSize::Huge),
@@ -300,7 +302,7 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
     let lock = PVALIDATE_LOCK.lock_read();
 
     if valid == PvalidateOp::Invalid {
-        *flush |= true;
+        flush = true;
         rmp_revoke_guest_access(vaddr, huge)?;
     }
 
@@ -359,6 +361,10 @@ fn core_pvalidate_one(entry: u64, flush: &mut bool) -> Result<(), SvsmReqError> 
         }
     }
 
+    if flush {
+        flush_tlb_global_sync_page(vaddr, huge);
+    }
+
     Ok(())
 }
 
@@ -393,7 +399,6 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     }
 
     let mut loop_result = Ok(());
-    let mut flush = false;
 
     let guest_entries = guest_page.offset(1).cast::<u64>();
     for i in next..entries {
@@ -409,7 +414,7 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
             }
         };
 
-        loop_result = core_pvalidate_one(entry, &mut flush);
+        loop_result = core_pvalidate_one(entry);
         match loop_result {
             Ok(()) => request.next += 1,
             Err(SvsmReqError::RequestError(..)) => break,
@@ -423,10 +428,6 @@ fn core_pvalidate(params: &RequestParams) -> Result<(), SvsmReqError> {
     // called at the beginning of SVSM_CORE_PVALIDATE handler (this one).
     if let Err(e) = unsafe { guest_page.write_ref(&request) } {
         loop_result = Err(e.into());
-    }
-
-    if flush {
-        flush_tlb_global_sync();
     }
 
     loop_result
