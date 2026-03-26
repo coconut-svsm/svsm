@@ -121,20 +121,6 @@ pub unsafe fn expand_kernel_heap(
                 let new_pdpe_vaddr = VirtAddr::from(u64::from(new_pdpe_paddr) + phys_virt_diff);
                 allocated_pages += 1;
 
-                // Prior to full heap initialization, unallocated heap pages
-                // are not validated.  Since this page is now allocated, it
-                // must be validated before it can be used.
-                // SAFETY: the newly mapped page is being used for the first
-                // time, so it can be validated safely.
-                unsafe {
-                    platform
-                        .validate_virtual_page_range(
-                            MemoryRegion::new(new_pdpe_vaddr, PAGE_SIZE),
-                            PageValidateOp::Validate,
-                        )
-                        .expect("Failed to validate heap memory");
-                }
-
                 // Ensure that the newly allocated page is filled with zeroes.
                 // SAFETY: the newly allocated page is known to be unused
                 // because it is outside the bounds of allocated hep pages, and
@@ -155,6 +141,20 @@ pub unsafe fn expand_kernel_heap(
 
         // Fill in the PDE for the next direct map address in sequence.
         pdt[pde_index].set(make_private_address(paddr), pte_flags);
+
+        // By the time kernel region expansion is performed, the heap area has
+        // been fully validated.  Now that a new large page has been added,
+        // that memory must be validated as well.
+        // SAFETY: the newly mapped page is being used for the first
+        // time, so it can be validated safely.
+        unsafe {
+            platform
+                .validate_virtual_page_range(
+                    MemoryRegion::new(vaddr, PAGE_SIZE_2M),
+                    PageValidateOp::Validate,
+                )
+                .expect("Failed to validate heap memory");
+        }
 
         paddr = paddr + PAGE_SIZE_2M;
         vaddr = vaddr + PAGE_SIZE_2M;

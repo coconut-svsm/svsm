@@ -188,13 +188,11 @@ unsafe fn memory_init(
     // within the direct map.
     let heap_vstart = launch_info.kernel_direct_map_vaddr + launch_info.heap_area_offset;
     let heap_vaddr = VirtAddr::from(heap_vstart);
-    let heap_pstart = launch_info.kernel_region_phys_start + launch_info.heap_area_offset;
-    let initial_heap_pregion = MemoryRegion::from_addresses(
-        PhysAddr::from(heap_pstart),
-        PhysAddr::from(launch_info.kernel_region_phys_end),
-    );
+    let heap_pstart =
+        PhysAddr::from(launch_info.kernel_region_phys_start + launch_info.heap_area_offset);
+    let mut heap_pend = PhysAddr::from(launch_info.kernel_region_phys_end);
     let mut heap_allocated = launch_info.heap_area_allocated as usize;
-    let mut heap_length = initial_heap_pregion.len() / PAGE_SIZE;
+    let mut heap_length = (heap_pend - heap_pstart) / PAGE_SIZE;
 
     // Reduce the heap size if required.
     if heap_adjust_pages < 0 {
@@ -234,22 +232,23 @@ unsafe fn memory_init(
             )
         };
 
-        heap_length += heap_adjust_pages as usize;
+        // Recalculate the heap size based on hoe much the kernel region
+        // was actually expanded.  This may be less than the requested size
+        // if it was rounded down to a 2 MB boundary.
+        heap_pend = PhysAddr::from(launch_info.kernel_region_phys_end);
+        heap_length = (heap_pend - heap_pstart) / PAGE_SIZE;
     }
 
     let heap_vregion = MemoryRegion::new(heap_vaddr, heap_length * PAGE_SIZE);
 
     // Establish the heap region as the fixed kernel mapping region.
-    let kernel_mapping = FixedAddressMappingRange::new(
-        heap_vregion.start(),
-        heap_vregion.end(),
-        initial_heap_pregion.start(),
-    );
+    let kernel_mapping =
+        FixedAddressMappingRange::new(heap_vregion.start(), heap_vregion.end(), heap_pstart);
     init_kernel_mapping_info(kernel_mapping, None);
 
     // Initialize the page heap itself.
     root_mem_init(
-        initial_heap_pregion.start(),
+        heap_pstart,
         heap_vregion.start(),
         heap_length,
         heap_allocated,
