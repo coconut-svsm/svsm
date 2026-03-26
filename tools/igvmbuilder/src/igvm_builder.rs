@@ -284,11 +284,17 @@ impl IgvmBuilder {
     }
 
     fn build_platforms(&mut self) {
+        // Set the highest supported VTL based on whether guest firmware is
+        // present.
+        let highest_vtl = match self.firmware {
+            Some(_) => 2,
+            None => 0,
+        };
         if COMPATIBILITY_MASK.contains(SNP_COMPATIBILITY_MASK) {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
                     compatibility_mask: SNP_COMPATIBILITY_MASK,
-                    highest_vtl: 2,
+                    highest_vtl,
                     platform_type: IgvmPlatformType::SEV_SNP,
                     platform_version: 1,
                     shared_gpa_boundary: self.vtom,
@@ -299,7 +305,7 @@ impl IgvmBuilder {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
                     compatibility_mask: TDP_COMPATIBILITY_MASK,
-                    highest_vtl: 2,
+                    highest_vtl,
                     platform_type: IgvmPlatformType::TDX,
                     platform_version: 1,
                     shared_gpa_boundary: 0,
@@ -310,7 +316,7 @@ impl IgvmBuilder {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
                     compatibility_mask: VSM_COMPATIBILITY_MASK,
-                    highest_vtl: 2,
+                    highest_vtl,
                     platform_type: IgvmPlatformType::VSM_ISOLATION,
                     platform_version: 1,
                     shared_gpa_boundary: 0,
@@ -321,7 +327,7 @@ impl IgvmBuilder {
             self.platforms.push(IgvmPlatformHeader::SupportedPlatform(
                 IGVM_VHS_SUPPORTED_PLATFORM {
                     compatibility_mask: NATIVE_COMPATIBILITY_MASK,
-                    highest_vtl: 0,
+                    highest_vtl,
                     platform_type: IgvmPlatformType::NATIVE,
                     platform_version: 1,
                     shared_gpa_boundary: 0,
