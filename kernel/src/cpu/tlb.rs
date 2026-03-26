@@ -16,6 +16,11 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 static FLUSH_SMP: AtomicBool = AtomicBool::new(false);
 
+/// When a partial TLB flush is requested, if the amount of PTEs that
+/// need to be flushed exceeds this value, a complete TLB flush will
+/// be performed instead.
+const TLB_FLUSH_ALL_THRESHOLD: usize = 256;
+
 /// Defines the scope of a TLB flush.
 #[derive(Copy, Clone, Debug)]
 pub enum TlbFlushRange {
@@ -40,6 +45,25 @@ pub struct TlbFlushScope {
 impl TlbFlushScope {
     /// Flushes the TLB for the current CPU.
     pub fn flush_percpu(&self) {
+        match self.range {
+            TlbFlushRange::All => self.flush_percpu_all(),
+            TlbFlushRange::Range { region, pgsize } => {
+                let page_count = region.len().div_ceil(usize::from(pgsize));
+                // Perform a complete flush if the number of PTEs exceeds the
+                // threshold.
+                if page_count > TLB_FLUSH_ALL_THRESHOLD {
+                    self.flush_percpu_all();
+                } else {
+                    for page in region.iter_pages(pgsize) {
+                        flush_address_percpu(page);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Flushes all the entries in the TLB for the current CPU.
+    fn flush_percpu_all(&self) {
         match self.global {
             true => flush_tlb_global_percpu(),
             false => flush_tlb_percpu(),
