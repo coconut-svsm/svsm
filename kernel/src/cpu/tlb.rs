@@ -27,6 +27,7 @@ pub enum TlbFlushScope {
 }
 
 impl TlbFlushScope {
+    /// Flushes the TLB for the current CPU.
     pub fn flush_percpu(&self) {
         match self {
             Self::AllGlobal => flush_tlb_global_percpu(),
@@ -34,7 +35,8 @@ impl TlbFlushScope {
         }
     }
 
-    pub fn flush_all(&self) {
+    /// Flushes the TLB for all CPUs.
+    pub fn flush_all_cpus(&self) {
         // If SMP has not yet been started, then perform all flushes as local only.
         // Prior to SMP startup, there is no need to reach into other processors,
         // and the SVSM platform object may not even exist when flushes are
@@ -65,7 +67,7 @@ pub fn set_tlb_flush_smp() {
 
 pub fn flush_tlb_global_sync() {
     let flush_scope = TlbFlushScope::AllGlobal;
-    flush_scope.flush_all();
+    flush_scope.flush_all_cpus();
 }
 
 pub fn flush_tlb_global_percpu() {
