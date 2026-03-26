@@ -5,8 +5,8 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
 use crate::cpu::percpu::{PERCPU_AREAS, PERCPU_VMSAS, this_cpu, this_cpu_shared};
+use crate::cpu::{flush_tlb_global_sync, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::virtualrange::{VIRT_ALIGN_2M, VIRT_ALIGN_4K};
@@ -138,8 +138,8 @@ fn core_create_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
         }
     })?;
 
-    // TLB flush needed to propagate new permissions
-    flush_tlb_global_sync();
+    // TLB flush needed to propagate new permissions for the VMSA page
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     let svme_mask: u64 = 1u64 << 12;
 
@@ -184,18 +184,17 @@ fn core_delete_vcpu(params: &RequestParams) -> Result<(), SvsmReqError> {
     // Clear EFER.SVME on deleted VMSA. If the VMSA is executing
     // disable() will loop until that is not the case
     del_vmsa.disable();
+    let vaddr = del_vmsa.virt_addr();
 
     // Do not return early here, as we need to do a TLB flush
     // SAFETY: this page is known to already be in use as a guest VMSA.
-    let res = unsafe {
-        rmp_clear_guest_vmsa(del_vmsa.virt_addr()).map_err(|_| SvsmReqError::invalid_address())
-    };
+    let res = unsafe { rmp_clear_guest_vmsa(vaddr).map_err(|_| SvsmReqError::invalid_address()) };
 
     // Unmap the page
     drop(del_vmsa);
 
     // Tell everyone the news and flush temporary mapping
-    flush_tlb_global_sync();
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     res
 }

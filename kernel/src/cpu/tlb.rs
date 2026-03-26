@@ -108,6 +108,18 @@ pub fn flush_tlb_global_sync() {
     flush_scope.flush_all_cpus();
 }
 
+pub fn flush_tlb_global_sync_range(region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    let flush_scope = TlbFlushScope {
+        global: true,
+        range: TlbFlushRange::Range { region, pgsize },
+    };
+    flush_scope.flush_all_cpus();
+}
+
+pub fn flush_tlb_global_sync_page(vaddr: VirtAddr, pgsize: PageSize) {
+    flush_tlb_global_sync_range(MemoryRegion::new(vaddr, pgsize.into()), pgsize);
+}
+
 pub fn flush_tlb_global_percpu() {
     let cr4 = read_cr4();
 

@@ -9,7 +9,7 @@ use core::ops::Deref;
 use core::ptr::NonNull;
 
 use crate::address::VirtAddr;
-use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::flush_tlb_global_sync_page;
 use crate::cpu::mem::{unsafe_copy_bytes, write_bytes};
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
@@ -19,7 +19,7 @@ use crate::mm::validate::{
 use crate::mm::{PageBox, virt_to_phys};
 use crate::platform::{PageStateChangeOp, PageValidateOp, SVSM_PLATFORM};
 use crate::protocols::errors::SvsmReqError;
-use crate::types::PAGE_SIZE;
+use crate::types::{PAGE_SIZE, PageSize};
 use crate::utils::MemoryRegion;
 
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes};
@@ -62,7 +62,7 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
         .get_pgtable()
         .set_shared_4k(vaddr)
         .expect("Failed to remap shared page in page tables");
-    flush_tlb_global_sync();
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     Ok(())
 }
@@ -81,7 +81,7 @@ pub unsafe fn make_page_shared(vaddr: VirtAddr) -> Result<(), SvsmError> {
 pub unsafe fn make_page_private(vaddr: VirtAddr) -> Result<(), SvsmError> {
     // Update the page tables to map the page as private.
     this_cpu().get_pgtable().set_encrypted_4k(vaddr)?;
-    flush_tlb_global_sync();
+    flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
     // Ask the hypervisor to make the page private.
     let paddr = virt_to_phys(vaddr);
