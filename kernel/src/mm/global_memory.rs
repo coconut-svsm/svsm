@@ -5,14 +5,14 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, PhysAddr, VirtAddr};
-use crate::cpu::flush_tlb_global_sync;
+use crate::cpu::flush_tlb_global_sync_range;
 use crate::cpu::percpu::this_cpu;
 use crate::error::SvsmError;
 use crate::locking::SpinLock;
 use crate::mm::pagetable::PTEntryFlags;
 use crate::mm::virtualrange::VirtualRange;
 use crate::mm::{SIZE_LEVEL1, SVSM_GLOBAL_MAPPING_BASE, SVSM_GLOBAL_MAPPING_END};
-use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M};
+use crate::types::{PAGE_SHIFT, PAGE_SHIFT_2M, PAGE_SIZE, PAGE_SIZE_2M, PageSize};
 use crate::utils::{MemoryRegion, align_up};
 
 struct GlobalRanges {
@@ -149,7 +149,12 @@ impl Drop for GlobalRangeGuard {
     fn drop(&mut self) {
         self.unmap();
         // Flush TLB before allowing to re-use addresses
-        flush_tlb_global_sync();
+        let pgsize = if self.huge {
+            PageSize::Huge
+        } else {
+            PageSize::Regular
+        };
+        flush_tlb_global_sync_range(self.region(), pgsize);
         GLOBAL_RANGES
             .lock()
             .free(self.vstart, self.pages, self.huge);

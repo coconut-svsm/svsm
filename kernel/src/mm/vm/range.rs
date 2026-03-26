@@ -5,13 +5,13 @@
 // Author: Joerg Roedel <jroedel@suse.de>
 
 use crate::address::{Address, VirtAddr};
-use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync};
+use crate::cpu::{flush_tlb_global_percpu, flush_tlb_global_sync_range};
 use crate::error::SvsmError;
 use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
 use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
-use crate::utils::{align_down, align_up};
+use crate::utils::{MemoryRegion, align_down, align_up};
 
 use core::cmp::max;
 
@@ -467,7 +467,9 @@ impl VMR {
             if self.per_cpu {
                 flush_tlb_global_percpu();
             } else {
-                flush_tlb_global_sync();
+                let range = node.range();
+                let region = MemoryRegion::from_addresses(range.0, range.1);
+                flush_tlb_global_sync_range(region, node.get_mapping().page_size());
             }
         }
         cursor.remove().ok_or(SvsmError::Mem)

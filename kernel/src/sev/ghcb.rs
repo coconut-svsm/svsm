@@ -8,7 +8,7 @@ use crate::address::{Address, PhysAddr, VirtAddr};
 use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::msr::{SEV_GHCB, write_msr};
 use crate::cpu::percpu::this_cpu;
-use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync};
+use crate::cpu::{IrqGuard, X86GeneralRegs, flush_tlb_global_sync_page};
 use crate::error::SvsmError;
 use crate::mm::validate::{
     valid_bitmap_clear_valid_4k, valid_bitmap_set_valid_4k, valid_bitmap_valid_addr,
@@ -159,7 +159,7 @@ impl GhcbPage {
 
         // Map page unencrypted
         this_cpu().get_pgtable().set_shared_4k(vaddr)?;
-        flush_tlb_global_sync();
+        flush_tlb_global_sync_page(vaddr, PageSize::Regular);
 
         // SAFETY: all zeros is a valid representation for the GHCB.
         Ok(Self(page))
