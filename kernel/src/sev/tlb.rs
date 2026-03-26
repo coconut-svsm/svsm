@@ -4,15 +4,26 @@
 //
 // Author: Joerg Roedel <jroedel@suse.de>
 
+use bitfield_struct::bitfield;
+
 use crate::address::{Address, VirtAddr};
 use crate::cpu::tlb::TlbFlushScope;
 
 use core::arch::asm;
 
-const INVLPGB_VALID_VA: u64 = 1u64 << 0;
-//const INVLPGB_VALID_PCID: u64 = 1u64 << 1;
-const INVLPGB_VALID_ASID: u64 = 1u64 << 2;
-const INVLPGB_VALID_GLOBAL: u64 = 1u64 << 3;
+#[bitfield(u64)]
+struct InvlpgbRax {
+    valid_va: bool,
+    valid_pcid: bool,
+    valid_asid: bool,
+    global: bool,
+    final_translation_only: bool,
+    nested: bool,
+    #[bits(6)]
+    _rsvd: u8,
+    #[bits(52)]
+    va: usize,
+}
 
 #[inline]
 fn do_invlpgb(rax: u64, rcx: u64, rdx: u64) {
@@ -37,8 +48,8 @@ fn do_tlbsync() {
 }
 
 pub fn flush_tlb() {
-    let rax: u64 = INVLPGB_VALID_ASID;
-    do_invlpgb(rax, 0, 0);
+    let rax = InvlpgbRax::new().with_valid_asid(true);
+    do_invlpgb(rax.into_bits(), 0, 0);
 }
 
 pub fn flush_tlb_sync() {
@@ -47,8 +58,8 @@ pub fn flush_tlb_sync() {
 }
 
 pub fn flush_tlb_global() {
-    let rax: u64 = INVLPGB_VALID_ASID | INVLPGB_VALID_GLOBAL;
-    do_invlpgb(rax, 0, 0);
+    let rax = InvlpgbRax::new().with_valid_asid(true).with_global(true);
+    do_invlpgb(rax.into_bits(), 0, 0);
 }
 
 pub fn flush_tlb_global_sync() {
@@ -57,11 +68,12 @@ pub fn flush_tlb_global_sync() {
 }
 
 pub fn flush_address(va: VirtAddr) {
-    let rax: u64 = (va.page_align().bits() as u64)
-        | INVLPGB_VALID_VA
-        | INVLPGB_VALID_ASID
-        | INVLPGB_VALID_GLOBAL;
-    do_invlpgb(rax, 0, 0);
+    let rax = InvlpgbRax::new()
+        .with_valid_asid(true)
+        .with_global(true)
+        .with_valid_va(true)
+        .with_va(va.pfn());
+    do_invlpgb(rax.into_bits(), 0, 0);
 }
 
 pub fn flush_address_sync(va: VirtAddr) {
