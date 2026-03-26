@@ -47,17 +47,17 @@ fn do_tlbsync() {
     }
 }
 
-pub fn flush_tlb(global: bool) {
+fn flush_tlb(global: bool) {
     let rax = InvlpgbRax::new().with_valid_asid(true).with_global(global);
     do_invlpgb(rax.into_bits(), 0, 0);
 }
 
-pub fn flush_tlb_sync(global: bool) {
+fn flush_tlb_sync(global: bool) {
     flush_tlb(global);
     do_tlbsync();
 }
 
-pub fn flush_address(va: VirtAddr) {
+fn flush_address(va: VirtAddr) {
     let rax = InvlpgbRax::new()
         .with_valid_asid(true)
         .with_global(true)
