@@ -7,7 +7,12 @@
 use bitfield_struct::bitfield;
 
 use crate::address::{Address, VirtAddr};
+use crate::cpu::TlbFlushRange;
+use crate::cpu::cpuid::CpuidResult;
 use crate::cpu::tlb::TlbFlushScope;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
+use crate::utils::immut_after_init::ImmutAfterInitCell;
 
 use core::arch::asm;
 
@@ -23,6 +28,39 @@ struct InvlpgbRax {
     _rsvd: u8,
     #[bits(52)]
     va: usize,
+}
+
+#[bitfield(u32)]
+struct InvlpgbEcx {
+    count: u16,
+    #[bits(15)]
+    _rsvd: u16,
+    huge: bool,
+}
+
+/// Determines the maximum amount of pages that may be flushed with
+/// a single INVLPGB instruction by querying CPUID.
+fn __invlpgb_max_count() -> u32 {
+    let cpuid = CpuidResult::get(0x80000008, 0);
+    // EDX[15:0] contains the maximum number of pages that can be
+    // invalidated in one instruction. A value of 0 indicates a
+    // single page.
+    (cpuid.edx & ((1 << 16) - 1)) + 1
+}
+
+/// Determines the maximum amount of pages that may be flushed with
+/// a single INVLPGB instruction, by lazily querying CPUID if the
+/// value has not been cached from a previous query.
+fn invlpgb_max_count() -> u32 {
+    static MAX_COUNT: ImmutAfterInitCell<u32> = ImmutAfterInitCell::uninit();
+    if let Ok(count) = MAX_COUNT.try_get_inner() {
+        return *count;
+    }
+    let count = __invlpgb_max_count();
+    // If this fails, someone else initialized the cell, which is not an issue,
+    // as probing CPUID multiple times is benign.
+    let _ = MAX_COUNT.init(count);
+    count
 }
 
 #[inline]
@@ -57,6 +95,34 @@ fn flush_tlb_sync(global: bool) {
     do_tlbsync();
 }
 
+fn flush_tlb_sync_range(global: bool, region: MemoryRegion<VirtAddr>, pgsize: PageSize) {
+    let max_count = invlpgb_max_count() as usize;
+
+    for start in region.iter_pages(pgsize).step_by(max_count) {
+        // Take up to `max_count` pages
+        let end = region
+            .end()
+            .min(start + usize::from(pgsize) * max_count)
+            .page_align_up();
+        let subregion = MemoryRegion::from_addresses(start, end);
+        let page_count = u16::try_from(subregion.len() / usize::from(pgsize)).unwrap();
+
+        let ecx = InvlpgbEcx::new()
+            .with_count(page_count)
+            .with_huge(pgsize == PageSize::Huge);
+
+        let rax = InvlpgbRax::new()
+            .with_valid_asid(true)
+            .with_global(global)
+            .with_valid_va(true)
+            .with_va(start.pfn());
+
+        do_invlpgb(rax.into_bits(), ecx.into_bits() as u64, 0);
+    }
+
+    do_tlbsync();
+}
+
 fn flush_address(va: VirtAddr) {
     let rax = InvlpgbRax::new()
         .with_valid_asid(true)
@@ -72,5 +138,10 @@ pub fn flush_address_sync(va: VirtAddr) {
 }
 
 pub fn flush_tlb_scope(flush_scope: &TlbFlushScope) {
-    flush_tlb_sync(flush_scope.global);
+    match flush_scope.range {
+        TlbFlushRange::All => flush_tlb_sync(flush_scope.global),
+        TlbFlushRange::Range { region, pgsize } => {
+            flush_tlb_sync_range(flush_scope.global, region, pgsize)
+        }
+    }
 }
