@@ -47,23 +47,13 @@ fn do_tlbsync() {
     }
 }
 
-pub fn flush_tlb() {
-    let rax = InvlpgbRax::new().with_valid_asid(true);
+pub fn flush_tlb(global: bool) {
+    let rax = InvlpgbRax::new().with_valid_asid(true).with_global(global);
     do_invlpgb(rax.into_bits(), 0, 0);
 }
 
-pub fn flush_tlb_sync() {
-    flush_tlb();
-    do_tlbsync();
-}
-
-pub fn flush_tlb_global() {
-    let rax = InvlpgbRax::new().with_valid_asid(true).with_global(true);
-    do_invlpgb(rax.into_bits(), 0, 0);
-}
-
-pub fn flush_tlb_global_sync() {
-    flush_tlb_global();
+pub fn flush_tlb_sync(global: bool) {
+    flush_tlb(global);
     do_tlbsync();
 }
 
@@ -82,8 +72,5 @@ pub fn flush_address_sync(va: VirtAddr) {
 }
 
 pub fn flush_tlb_scope(flush_scope: &TlbFlushScope) {
-    match flush_scope.global {
-        true => flush_tlb_global_sync(),
-        false => flush_tlb_sync(),
-    }
+    flush_tlb_sync(flush_scope.global);
 }
