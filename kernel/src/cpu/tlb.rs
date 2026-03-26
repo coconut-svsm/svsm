@@ -8,6 +8,8 @@ use crate::address::{Address, VirtAddr};
 use crate::cpu::control_regs::{CR4Flags, read_cr3, read_cr4, write_cr3, write_cr4};
 use crate::cpu::ipi::{IpiMessage, IpiTarget, send_multicast_ipi};
 use crate::platform::SVSM_PLATFORM;
+use crate::types::PageSize;
+use crate::utils::MemoryRegion;
 
 use core::arch::asm;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -16,22 +18,31 @@ static FLUSH_SMP: AtomicBool = AtomicBool::new(false);
 
 /// Defines the scope of a TLB flush.
 #[derive(Copy, Clone, Debug)]
-pub enum TlbFlushScope {
-    /// Indicates that all addresses must be flushed on all processors,
-    /// including global addresses.
-    AllGlobal,
+pub enum TlbFlushRange {
+    All,
+    Range {
+        /// The range of addresses to be flush.
+        region: MemoryRegion<VirtAddr>,
+        /// The size of the PTEs used to map the region being flushed.
+        pgsize: PageSize,
+    },
+}
 
-    /// Indicates that all addresses must be flushed on all processors,
-    /// excluding global addresses.
-    AllNonGlobal,
+/// Defines the scope of a TLB flush.
+#[derive(Copy, Clone, Debug)]
+pub struct TlbFlushScope {
+    /// Indicates whether global addresses should be flushed or not.
+    pub global: bool,
+    /// Indicates the range of virtual addresses that should be flushed.
+    pub range: TlbFlushRange,
 }
 
 impl TlbFlushScope {
     /// Flushes the TLB for the current CPU.
     pub fn flush_percpu(&self) {
-        match self {
-            Self::AllGlobal => flush_tlb_global_percpu(),
-            Self::AllNonGlobal => flush_tlb_percpu(),
+        match self.global {
+            true => flush_tlb_global_percpu(),
+            false => flush_tlb_percpu(),
         }
     }
 
@@ -66,7 +77,10 @@ pub fn set_tlb_flush_smp() {
 }
 
 pub fn flush_tlb_global_sync() {
-    let flush_scope = TlbFlushScope::AllGlobal;
+    let flush_scope = TlbFlushScope {
+        global: true,
+        range: TlbFlushRange::All,
+    };
     flush_scope.flush_smp();
 }
 

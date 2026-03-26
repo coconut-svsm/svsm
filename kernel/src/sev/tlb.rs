@@ -70,8 +70,8 @@ pub fn flush_address_sync(va: VirtAddr) {
 }
 
 pub fn flush_tlb_scope(flush_scope: &TlbFlushScope) {
-    match flush_scope {
-        TlbFlushScope::AllGlobal => flush_tlb_global_sync(),
-        TlbFlushScope::AllNonGlobal => flush_tlb_sync(),
+    match flush_scope.global {
+        true => flush_tlb_global_sync(),
+        false => flush_tlb_sync(),
     }
 }
