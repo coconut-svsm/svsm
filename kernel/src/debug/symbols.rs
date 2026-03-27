@@ -107,7 +107,10 @@ pub fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
     // SAFETY: we trust the `KernelLaunchInfo` passed by stage2 to contain valid addresses.
     let (symtab, strtab) = unsafe {
         (
-            slice::from_raw_parts(symtab_start, li.kernel_symtab_len as usize),
+            slice::from_raw_parts(
+                symtab_start,
+                li.kernel_symtab_len as usize / size_of::<KSym>(),
+            ),
             slice::from_raw_parts(strtab_start, li.kernel_strtab_len as usize),
         )
     };
