@@ -26,3 +26,6 @@ verus*.log
 **/fuzz/corpus
 **/fuzz/artifacts
 **/fuzz/coverage
+
+# local GDB history
+.gdb_history

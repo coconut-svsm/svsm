@@ -27,6 +27,7 @@ nav:
     - Rustdoc Guidelines: 'developer/RUSTDOC-GUIDELINES.md'
     - Testing: 'developer/TESTING.md'
     - Fuzzing: 'developer/FUZZING.md'
+    - Debugging: 'developer/DEBUGGING.md'
     - Contributing to COCONUT-SVSM: 'developer/CONTRIBUTING.md'
     - Formal Verification: 'developer/VERIFICATION.md'
     - Attestation: 'developer/ATTESTATION.md'
