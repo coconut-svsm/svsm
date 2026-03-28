@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HW_INFO_FILE","TYPE_SVSM_VIRTIO_MMIO"],"struct":["Header","SimpleDevice"]};
