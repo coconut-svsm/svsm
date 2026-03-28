@@ -17,6 +17,8 @@ use crate::greq::{
     services::get_regular_report,
 };
 use crate::mm::guestmem::{copy_slice_to_guest, read_bytes_from_guest, read_from_guest};
+#[cfg(all(feature = "uefivars", not(test)))]
+use crate::protocols::uefivars::uefi_mm_get_manifest;
 use crate::protocols::{RequestParams, errors::SvsmReqError};
 use crate::utils::MemoryRegion;
 #[cfg(all(feature = "vtpm", not(test)))]
@@ -39,6 +41,8 @@ const SVSM_ATTEST_SINGLE_SERVICE: u32 = 1;
 
 #[cfg(all(feature = "vtpm", not(test)))]
 const SVSM_ATTEST_VTPM_GUID: Uuid = uuid!("c476f1eb-0123-45a5-9641-b4e7dde5bfe3");
+#[cfg(all(feature = "uefivars", not(test)))]
+const SVSM_ATTEST_UEFI_MM_GUID: Uuid = uuid!("a4453a59-9e1b-4787-a033-1986d6adbe55");
 
 // According to
 // https://github.com/torvalds/linux/blob/155a3c003e555a7300d156a5252c004c392ec6b0/drivers/virt/coco/sev-guest/sev-guest.c#L370
@@ -542,6 +546,10 @@ fn attest_multiple_services(params: &mut RequestParams) -> Result<(), SvsmReqErr
 
     #[cfg(all(feature = "vtpm", not(test)))]
     services.push(SVSM_ATTEST_VTPM_GUID, vtpm_get_manifest()?);
+
+    #[cfg(all(feature = "uefivars", not(test)))]
+    services.push(SVSM_ATTEST_UEFI_MM_GUID, uefi_mm_get_manifest()?);
+
     let manifest = services.to_vec()?;
     let mut nonce_and_manifest = attest_op.get_nonce()?;
     nonce_and_manifest.extend_from_slice(manifest.as_slice());
