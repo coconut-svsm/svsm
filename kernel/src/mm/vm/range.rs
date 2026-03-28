@@ -11,7 +11,7 @@ use crate::locking::RWLock;
 use crate::mm::pagetable::{PTEntryFlags, PageTable, PageTablePart};
 use crate::mm::virt_from_idx;
 use crate::types::{PAGE_SHIFT, PAGE_SIZE, PageSize};
-use crate::utils::{align_down, align_up};
+use crate::utils::{MemoryRegion, align_down, align_up};
 
 use core::cmp::max;
 
@@ -22,7 +22,6 @@ use super::{Mapping, VMM, VMMAdapter};
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// Granularity of ranges mapped by [`struct VMR`]. The mapped region of a
@@ -79,16 +78,20 @@ impl VMR {
     /// # Returns
     ///
     /// A new instance of [`struct VMR`].
-    pub fn new(start: VirtAddr, end: VirtAddr, flags: PTEntryFlags) -> Self {
+    pub fn new(start: VirtAddr, end: VirtAddr, flags: PTEntryFlags) -> Result<Self, SvsmError> {
+        if start >= end || !start.is_aligned(VMR_GRANULE) || !end.is_aligned(VMR_GRANULE) {
+            log::warn!("Attempted to create an invalid VMR {start:#018x}-{start:#018x}");
+            return Err(SvsmError::Mem);
+        }
         // Global and User are per VMR flags
-        VMR {
+        Ok(Self {
             start_pfn: start.pfn(),
             end_pfn: end.pfn(),
             tree: RWLock::new(RBTree::new(VMMAdapter::new())),
             pgtbl_parts: RWLock::new(Vec::new()),
             pt_flags: flags,
             per_cpu: false,
-        }
+        })
     }
 
     /// Marks a [`struct VMR`] as being associated with only a single CPU
@@ -103,11 +106,11 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn alloc_page_tables(&self, lazy: bool) -> Result<(), SvsmError> {
-        let first = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let first_idx = first.to_pgtbl_idx::<3>();
+        let vregion = self.virt_range();
+
+        let first_idx = vregion.start().to_pgtbl_idx::<3>();
         let start = virt_from_idx(first_idx);
-        let last = VirtAddr::from(self.end_pfn << PAGE_SHIFT) - 1;
-        let last_idx = last.to_pgtbl_idx::<3>();
+        let last_idx = (vregion.end() - 1).to_pgtbl_idx::<3>();
         let count = last_idx + 1 - first_idx;
         let mut vec = self.pgtbl_parts.lock_write();
 
@@ -136,37 +139,12 @@ impl VMR {
     }
 
     pub fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(vaddr >= start && vaddr < end);
+        let vregion = self.virt_range();
+        assert!(vregion.contains(vaddr));
 
-        let idx = vaddr.to_pgtbl_idx::<3>() - start.to_pgtbl_idx::<3>();
+        let idx = vaddr.to_pgtbl_idx::<3>() - vregion.start().to_pgtbl_idx::<3>();
         let parts = self.pgtbl_parts.lock_read();
         pgtbl.populate_pgtbl_part(&parts[idx]);
-    }
-
-    /// Initialize this [`VMR`] by checking the `start` and `end` values and
-    /// allocating the [`PageTablePart`]s required for the mappings.
-    ///
-    /// # Safety
-    /// Callers must ensure that the bounds of the address range are
-    /// appropriately aligned to prevent the possibility that adjacent address
-    /// ranges may attempt to share top-level paging entries.  If any overlap
-    /// is attempted, page tables may be corrupted.
-    ///
-    /// # Arguments
-    ///
-    /// * `lazy` - When `true`, use lazy allocation of [`PageTablePart`] pages.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
-    unsafe fn initialize_common(&self, lazy: bool) -> Result<(), SvsmError> {
-        let start = VirtAddr::from(self.start_pfn << PAGE_SHIFT);
-        let end = VirtAddr::from(self.end_pfn << PAGE_SHIFT);
-        assert!(start < end);
-
-        self.alloc_page_tables(lazy)
     }
 
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = false`
@@ -181,10 +159,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibility for ensuring that the address
-        // bounds of the range have appropriate alignment with respect to
-        // the page table alignment boundaries.
-        unsafe { self.initialize_common(false) }
+        self.alloc_page_tables(false)
     }
 
     /// Initialize this [`VMR`] by calling `VMR::initialize_common` with `lazy = true`
@@ -199,10 +174,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     pub unsafe fn initialize_lazy(&self) -> Result<(), SvsmError> {
-        // SAFETY: The caller takes responsibility for ensuring that the address
-        // bounds of the range have appropriate alignment with respect to
-        // the page table alignment boundaries.
-        unsafe { self.initialize_common(true) }
+        self.alloc_page_tables(true)
     }
 
     /// Returns the virtual start and end addresses for this region
@@ -210,8 +182,8 @@ impl VMR {
     /// # Returns
     ///
     /// Tuple containing `start` and `end` virtual address of the memory region
-    fn virt_range(&self) -> (VirtAddr, VirtAddr) {
-        (
+    fn virt_range(&self) -> MemoryRegion<VirtAddr> {
+        MemoryRegion::from_addresses(
             VirtAddr::from(self.start_pfn << PAGE_SHIFT),
             VirtAddr::from(self.end_pfn << PAGE_SHIFT),
         )
@@ -227,7 +199,7 @@ impl VMR {
     ///
     /// `Ok(())` on success, Err(SvsmError::Mem) on allocation error
     fn map_vmm(&self, vmm: &VMM) -> Result<(), SvsmError> {
-        let (rstart, _) = self.virt_range();
+        let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
@@ -265,7 +237,7 @@ impl VMR {
     ///
     /// - `vmm` - Reference to a [`VMM`] instance to unmap from the page-table
     fn unmap_vmm(&self, vmm: &VMM) {
-        let (rstart, _) = self.virt_range();
+        let rstart = self.virt_range().start();
         let (vmm_start, vmm_end) = vmm.range();
         let mut pgtbl_parts = self.pgtbl_parts.lock_write();
         let mapping = vmm.get_mapping();
@@ -289,7 +261,7 @@ impl VMR {
 
     fn do_insert(
         &self,
-        mapping: Arc<Mapping>,
+        mapping: Mapping,
         start_pfn: usize,
         cursor: &mut CursorMut<'_, VMMAdapter>,
     ) -> Result<(), SvsmError> {
@@ -309,14 +281,14 @@ impl VMR {
     /// # Arguments
     ///
     /// * `vaddr` - Virtual base address to map the [`VMM`] at
-    /// * `mapping` - `Rc` pointer to the VMM to insert
+    /// * `mapping` - `Arc` pointer to the VMM to insert
     ///
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert_at(&self, vaddr: VirtAddr, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
+    pub fn insert_at(&self, vaddr: VirtAddr, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
         // mapping-size needs to be page-aligned
-        let size = mapping.get().mapping_size() >> PAGE_SHIFT;
+        let size = mapping.mapping_size() >> PAGE_SHIFT;
         let start_pfn = vaddr.pfn();
         let mut tree = self.tree.lock_write();
         let mut cursor = tree.upper_bound_mut(Bound::Included(&start_pfn));
@@ -351,7 +323,7 @@ impl VMR {
     ///
     /// # Arguments
     ///
-    /// * `mapping` - `Rc` pointer to the VMM to insert
+    /// * `mapping` - `Arc` pointer to the VMM to insert
     /// * `align` - Alignment to use for tha mapping
     ///
     /// # Returns
@@ -360,13 +332,12 @@ impl VMR {
     pub fn insert_aligned(
         &self,
         hint: VirtAddr,
-        mapping: Arc<Mapping>,
+        mapping: Mapping,
         align: usize,
     ) -> Result<VirtAddr, SvsmError> {
         assert!(align.is_power_of_two());
 
         let size = mapping
-            .get()
             .mapping_size()
             .checked_next_power_of_two()
             .unwrap_or(0)
@@ -425,12 +396,8 @@ impl VMR {
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert_hint(
-        &self,
-        addr: VirtAddr,
-        mapping: Arc<Mapping>,
-    ) -> Result<VirtAddr, SvsmError> {
-        let align = mapping.get().mapping_size().next_power_of_two();
+    pub fn insert_hint(&self, addr: VirtAddr, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
+        let align = mapping.mapping_size().next_power_of_two();
         self.insert_aligned(addr, mapping, align)
     }
 
@@ -444,7 +411,7 @@ impl VMR {
     /// # Returns
     ///
     /// Base address where the [`VMM`] was inserted on success or SvsmError::Mem on error
-    pub fn insert(&self, mapping: Arc<Mapping>) -> Result<VirtAddr, SvsmError> {
+    pub fn insert(&self, mapping: Mapping) -> Result<VirtAddr, SvsmError> {
         self.insert_hint(VirtAddr::new(0), mapping)
     }
 
@@ -462,15 +429,15 @@ impl VMR {
         let addr = base.pfn();
 
         let mut cursor = tree.find_mut(&addr);
-        if let Some(node) = cursor.get() {
-            self.unmap_vmm(node);
-            if self.per_cpu {
-                flush_tlb_global_percpu();
-            } else {
-                flush_tlb_global_sync();
-            }
+        let node = cursor.remove().ok_or(SvsmError::Mem)?;
+
+        self.unmap_vmm(&node);
+        if self.per_cpu {
+            flush_tlb_global_percpu();
+        } else {
+            flush_tlb_global_sync();
         }
-        cursor.remove().ok_or(SvsmError::Mem)
+        Ok(node)
     }
 
     /// Dump all [`VMM`] mappings in the RBTree. This function is included for
@@ -504,7 +471,7 @@ impl VMR {
     /// '()' if the page fault was successfully handled.
     ///
     /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
-    pub fn handle_page_fault(&self, vaddr: VirtAddr, _write: bool) -> Result<(), SvsmError> {
+    pub fn handle_page_fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         // Get the mapping that contains the faulting address and check if the
         // fault happened on a mapped part of the range.
 
@@ -517,6 +484,8 @@ impl VMR {
             return Err(SvsmError::Mem);
         }
 
+        let off = vaddr - start;
+        node.get_mapping().handle_page_fault(self, off, write)?;
         Ok(())
     }
 }
@@ -528,7 +497,7 @@ pub struct VMRMapping<'a> {
 }
 
 impl<'a> VMRMapping<'a> {
-    pub fn new(vmr: &'a VMR, mapping: Arc<Mapping>) -> Result<Self, SvsmError> {
+    pub fn new(vmr: &'a VMR, mapping: Mapping) -> Result<Self, SvsmError> {
         let va = vmr.insert(mapping)?;
         Ok(Self { vmr, va })
     }

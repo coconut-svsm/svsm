@@ -35,7 +35,7 @@ use crate::mm::vm::{Mapping, VMKernelStack, VMPhysMem, VMR, VMRMapping, VMReserv
 use crate::mm::{
     PageBox, SVSM_CONTEXT_SWITCH_SHADOW_STACK, SVSM_CONTEXT_SWITCH_STACK, SVSM_PERCPU_BASE,
     SVSM_PERCPU_CAA_BASE, SVSM_PERCPU_END, SVSM_PERCPU_TEMP_BASE_2M, SVSM_PERCPU_TEMP_BASE_4K,
-    SVSM_PERCPU_TEMP_END_2M, SVSM_PERCPU_TEMP_END_4K, SVSM_PERCPU_VMSA_BASE,
+    SVSM_PERCPU_TEMP_SIZE_2M, SVSM_PERCPU_TEMP_SIZE_4K, SVSM_PERCPU_VMSA_BASE,
     SVSM_SHADOW_STACK_ISST_DF_BASE, SVSM_SHADOW_STACKS_INIT_TASK, SVSM_STACK_IST_DF_BASE,
     virt_to_phys,
 };
@@ -421,8 +421,8 @@ where
 
 impl PerCpu {
     /// Creates a new default [`PerCpu`] struct.
-    fn new(shared: &'static PerCpuShared) -> Self {
-        Self {
+    fn new(shared: &'static PerCpuShared) -> Result<Self, SvsmError> {
+        Ok(Self {
             pgtbl: RWLock::new(None),
             apic: X86Apic::default(),
             irq_state: IrqState::new(),
@@ -431,7 +431,7 @@ impl PerCpu {
             svsm_vmsa: ImmutAfterInitCell::uninit(),
             reset_ip: AtomicU64::new(0xffff_fff0),
             vm_range: {
-                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL);
+                let mut vmr = VMR::new(SVSM_PERCPU_BASE, SVSM_PERCPU_END, PTEntryFlags::GLOBAL)?;
                 vmr.set_per_cpu(true);
                 vmr
             },
@@ -449,13 +449,13 @@ impl PerCpu {
             context_switch_stack: ImmutAfterInitCell::uninit(),
             ist: IstStacks::new(),
             current_stack: RWLock::new(MemoryRegion::new(VirtAddr::null(), 0)),
-        }
+        })
     }
 
     /// Creates a new default [`PerCpu`] struct, allocates it via the page
     /// allocator and adds it to the global per-cpu area list.
     pub fn alloc(shared: &'static PerCpuShared) -> Result<&'static Self, SvsmError> {
-        let page = PageBox::try_new(Self::new(shared))?;
+        let page = PageBox::try_new(Self::new(shared)?)?;
         let percpu = PageBox::leak(page);
         Ok(percpu)
     }
@@ -650,9 +650,8 @@ impl PerCpu {
     fn allocate_stack(&self, base: VirtAddr) -> Result<VirtAddr, SvsmError> {
         let stack = VMKernelStack::new()?;
         let top_of_stack = (base + stack.top_of_stack()).align_down(16);
-        let mapping = Arc::new(Mapping::new(stack));
 
-        self.vm_range.insert_at(base, mapping)?;
+        self.vm_range.insert_at(base, Arc::new(stack))?;
 
         Ok(top_of_stack)
     }
@@ -665,9 +664,7 @@ impl PerCpu {
         let shadow_stack = VMKernelStack::new_shadow()?;
         let offset = shadow_stack.top_of_stack();
         let shadow_stack_page = shadow_stack.shadow_page();
-        let shadow_stack_base = self
-            .vm_range
-            .insert_at(base, Arc::new(Mapping::new(shadow_stack)))?;
+        let shadow_stack_base = self.vm_range.insert_at(base, Arc::new(shadow_stack))?;
         let (_, ssp) = init_shadow_stack(&shadow_stack_page, shadow_stack_base + offset, init);
         Ok(ssp)
     }
@@ -756,21 +753,29 @@ impl PerCpu {
     pub fn map_self(&self) -> Result<(), SvsmError> {
         let vaddr = VirtAddr::from(ptr::from_ref(self));
         let paddr = virt_to_phys(vaddr);
-        let self_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let self_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range.insert_at(SVSM_PERCPU_BASE, self_mapping)?;
         Ok(())
     }
 
     fn initialize_vm_ranges(&self) -> Result<(), SvsmError> {
-        let size_4k = SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K;
-        let temp_mapping_4k = Arc::new(VMReserved::new_mapping(size_4k));
+        const PAGE_COUNT_4K: usize = SVSM_PERCPU_TEMP_SIZE_4K / PAGE_SIZE;
+        const { assert!(PAGE_COUNT_4K < VirtualRange::CAPACITY) };
+
+        let temp_mapping_4k = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_4K);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_4K, temp_mapping_4k)?;
+        self.vrange_4k_mut()
+            .init(SVSM_PERCPU_TEMP_BASE_4K, PAGE_COUNT_4K, PAGE_SHIFT);
 
-        let size_2m = SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M;
-        let temp_mapping_2m = Arc::new(VMReserved::new_mapping(size_2m));
+        const PAGE_COUNT_2M: usize = SVSM_PERCPU_TEMP_SIZE_2M / PAGE_SIZE_2M;
+        const { assert!(PAGE_COUNT_2M < VirtualRange::CAPACITY) };
+
+        let temp_mapping_2m = VMReserved::new_mapping(SVSM_PERCPU_TEMP_SIZE_2M);
         self.vm_range
             .insert_at(SVSM_PERCPU_TEMP_BASE_2M, temp_mapping_2m)?;
+        self.vrange_2m_mut()
+            .init(SVSM_PERCPU_TEMP_BASE_2M, PAGE_COUNT_2M, PAGE_SHIFT_2M);
 
         Ok(())
     }
@@ -794,7 +799,7 @@ impl PerCpu {
         // Map PerCpu data in own page-table
         self.map_self()?;
 
-        // Reserve ranges for temporary mappings
+        // Reserve ranges and initialize allocator for temporary mappings
         self.initialize_vm_ranges()?;
 
         if is_cet_ss_supported() {
@@ -821,9 +826,6 @@ impl PerCpu {
             // Setup ISST
             self.setup_isst();
         }
-
-        // Initialize allocator for temporary mappings
-        self.virt_range_init();
 
         self.finish_page_table();
 
@@ -955,7 +957,7 @@ impl PerCpu {
 
     fn map_guest_vmsa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         assert!(self.shared().cpu_index == this_cpu().get_cpu_index());
-        let vmsa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let vmsa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range
             .insert_at(SVSM_PERCPU_VMSA_BASE, vmsa_mapping)?;
 
@@ -1014,7 +1016,7 @@ impl PerCpu {
     fn map_guest_caa(&self, paddr: PhysAddr) -> Result<(), SvsmError> {
         self.unmap_caa();
 
-        let caa_mapping = Arc::new(VMPhysMem::new_mapping(paddr, PAGE_SIZE, true));
+        let caa_mapping = VMPhysMem::new_mapping(paddr, PAGE_SIZE, true);
         self.vm_range.insert_at(SVSM_PERCPU_CAA_BASE, caa_mapping)?;
 
         Ok(())
@@ -1133,20 +1135,6 @@ impl PerCpu {
         }
     }
 
-    fn virt_range_init(&self) {
-        // Initialize 4k range
-        let page_count = (SVSM_PERCPU_TEMP_END_4K - SVSM_PERCPU_TEMP_BASE_4K) / PAGE_SIZE;
-        assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_4k_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_4K, page_count, PAGE_SHIFT);
-
-        // Initialize 2M range
-        let page_count = (SVSM_PERCPU_TEMP_END_2M - SVSM_PERCPU_TEMP_BASE_2M) / PAGE_SIZE_2M;
-        assert!(page_count <= VirtualRange::CAPACITY);
-        self.vrange_2m_mut()
-            .init(SVSM_PERCPU_TEMP_BASE_2M, page_count, PAGE_SHIFT_2M);
-    }
-
     /// Create a new virtual memory mapping in the PerCpu VMR
     ///
     /// # Arguments
@@ -1159,7 +1147,7 @@ impl PerCpu {
     /// the mapping which remains valid until the ['VRMapping'] is dropped.
     ///
     /// On error, an ['SvsmError'].
-    pub fn new_mapping(&self, mapping: Arc<Mapping>) -> Result<VMRMapping<'_>, SvsmError> {
+    pub fn new_mapping(&self, mapping: Mapping) -> Result<VMRMapping<'_>, SvsmError> {
         VMRMapping::new(&self.vm_range, mapping)
     }
 
