@@ -7,7 +7,7 @@ edition.workspace = true
 # see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification
 [target.'cfg(all(target_os = "linux"))'.dependencies]
 bootdefs.workspace = true
-
+bootimg.workspace = true
 clap = { workspace = true, default-features = true, features = ["derive"] }
 igvm_defs.workspace = true
 igvm.workspace = true
