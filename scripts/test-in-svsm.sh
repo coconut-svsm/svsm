@@ -8,6 +8,7 @@
 set -e
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+: "${TEST_IGVM:=$SCRIPT_DIR/../bin/coconut-test-qemu.igvm}"
 
 test_io(){
     PIPE_IN=$1
@@ -21,7 +22,7 @@ test_io(){
             # 0x01: return SEV-SNP pre-calculated launch measurement (48 bytes)
             "01")
                 $SCRIPT_DIR/../bin/igvmmeasure \
-                    $SCRIPT_DIR/../bin/coconut-test-qemu.igvm measure -b \
+                    "$TEST_IGVM" measure -b \
                     | xxd -r -p > $PIPE_IN
                 ;;
             # 0x02 Virtio-blk test: send md5 sum of svsm state image to SVSM.
@@ -67,7 +68,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 
-$SCRIPT_DIR/launch_guest.sh --igvm $SCRIPT_DIR/../bin/coconut-test-qemu.igvm \
+$SCRIPT_DIR/launch_guest.sh --igvm "$TEST_IGVM" \
     --state "$TEST_DIR/svsm_state.raw" \
     --unit-tests $TEST_DIR/pipe \
     $LAUNCH_GUEST_ARGS "$@" || svsm_exit_code=$?
