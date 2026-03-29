@@ -10,20 +10,24 @@ OUTPUT_ARCH(i386:x86-64)
 
 SECTIONS
 {
-	.sdata = ALIGN(.sinit - SIZEOF(.data) - 4095, 4096);
-	. = .sdata;
-	.data : { *(.data) }
-	edata = .;
-
-	. = 0xfffffe00;
-	.sinit = .;
-	.init : {
-		*(.init);
-		. = 512 - 16;
-		*(.resetvector);
-		. = 512;
+	.data ALIGN(.sinit - SIZEOF(.data) - 4095, 4096) : {
+		.sdata = .;
+		*(.data)
+		edata = .;
 	}
-	einit = .;
 
-	/DISCARD/ : {*(.*)}
+	.init 0xfffffe00 : {
+		.sinit = .;
+		*(.init);
+	}
+	.reset 0xfffffff0 : {
+		*(.resetvector);
+		. = 0x100000000;
+		einit = .;
+	}
+
+	/DISCARD/ : {
+		*(.eh_frame*)
+		*(.text*)
+	}
 }
