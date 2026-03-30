@@ -1161,7 +1161,8 @@ impl PerCpu {
     }
 
     pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        self.vm_range.handle_page_fault(vaddr, write)
+        let mut pgtable = self.get_pgtable();
+        self.vm_range.handle_page_fault(&mut pgtable, vaddr, write)
     }
 
     pub fn schedule_init(&self) -> TaskPointer {

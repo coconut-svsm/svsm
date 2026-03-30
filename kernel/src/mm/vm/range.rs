@@ -134,13 +134,18 @@ impl VMR {
         }
     }
 
-    pub fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) {
+    fn populate_addr(&self, pgtbl: &mut PageTable, vaddr: VirtAddr) -> Result<(), SvsmError> {
         let vregion = self.virt_range();
-        assert!(vregion.contains(vaddr));
+        if !vregion.contains(vaddr) {
+            return Err(SvsmError::Mem);
+        }
 
         let idx = vaddr.to_pgtbl_idx::<3>() - vregion.start().to_pgtbl_idx::<3>();
         let parts = self.pgtbl_parts.lock_read();
-        pgtbl.populate_pgtbl_part(&parts[idx]);
+        if !pgtbl.populate_pgtbl_part(&parts[idx]) {
+            return Err(SvsmError::Mem);
+        }
+        Ok(())
     }
 
     /// Initialize this [`VMR`] by checking the `start` and `end` values and
@@ -482,16 +487,24 @@ impl VMR {
         }
     }
 
-    /// Notify the range that a page fault has occurred. This should be called from
-    /// the page fault handler. The mappings withing this virtual memory region are
-    /// examined and if they overlap with the page fault address then
-    /// [`VMR::handle_page_fault()`] is called to handle the page fault within that
-    /// range.
+    /// Handle a page fault for an address corresponding to this VMR.
+    ///
+    /// The fault is first handled by attemping to populate the provided page table
+    /// with the page table parts corresponding to the faulting address. If that
+    /// does not solve the fault, notify the backing mapping that a page fault has
+    /// occurred.
+    ///
+    /// This should be called from the page fault handler. The mappings within this
+    /// virtual memory region are examined and if they overlap with the page fault
+    /// address then [`VirtualMapping::handle_page_fault`] is called to handle the
+    /// page fault within that range.
+    ///
+    /// [`VirtualMapping::handle_page_fault`]: super::mapping::api::VirtualMapping::handle_page_fault
     ///
     /// # Arguments
     ///
+    /// * `pgtable`: The page table to update with the faulted-in mapping, if applicable.
     /// * `vaddr` - Virtual memory address that was the subject of the page fault
-    ///
     /// * 'write' - 'true' if a write was attempted. 'false' if a read was attempted.
     ///
     /// # Returns
@@ -499,10 +512,19 @@ impl VMR {
     /// '()' if the page fault was successfully handled.
     ///
     /// 'SvsmError::Mem' if the page fault should propogate to the next handler.
-    pub fn handle_page_fault(&self, vaddr: VirtAddr, _write: bool) -> Result<(), SvsmError> {
+    pub fn handle_page_fault(
+        &self,
+        pgtable: &mut PageTable,
+        vaddr: VirtAddr,
+        _write: bool,
+    ) -> Result<(), SvsmError> {
+        // Check first if the fault is solved by populating the page table
+        if let Ok(()) = self.populate_addr(pgtable, vaddr) {
+            return Ok(());
+        }
+
         // Get the mapping that contains the faulting address and check if the
         // fault happened on a mapped part of the range.
-
         let tree = self.tree.lock_read();
         let pfn = vaddr.pfn();
         let cursor = tree.upper_bound(Bound::Included(&pfn));

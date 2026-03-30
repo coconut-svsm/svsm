@@ -530,8 +530,7 @@ impl Task {
             .filter(|vmr| vmr.virt_range().contains(vaddr))
             .ok_or(SvsmError::Mem)?;
         let mut pgtbl = self.page_table.lock();
-        vmr.populate_addr(&mut pgtbl, vaddr);
-        vmr.handle_page_fault(vaddr, write)?;
+        vmr.handle_page_fault(&mut pgtbl, vaddr, write)?;
         Ok(())
     }
 
