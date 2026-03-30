@@ -123,3 +123,33 @@ pub fn init_symbols(li: &KernelLaunchInfo) -> Result<(), SvsmError> {
 pub fn resolve_symbol(addr: VirtAddr) -> Option<ResolvedSym> {
     SYM_RESOLVER.try_get_inner().ok()?.resolve_symbol(addr)
 }
+
+#[cfg(test)]
+pub fn symbols_enabled() -> bool {
+    SYM_RESOLVER.try_get_inner().is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate alloc;
+
+    use super::*;
+    use core::any::type_name_of_val;
+
+    #[test]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_simple_resolution() {
+        // Can't do anything without symbols
+        if !symbols_enabled() {
+            return;
+        }
+
+        // Resolve the symbol for the current function
+        let ptr = test_simple_resolution as *const ();
+        let res = resolve_symbol(VirtAddr::from(ptr)).unwrap();
+
+        assert_eq!(res.off, 0);
+        let demangled = alloc::format!("{:#}", res.demangled_name());
+        assert_eq!(demangled, type_name_of_val(&test_simple_resolution));
+    }
+}
