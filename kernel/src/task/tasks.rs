@@ -523,10 +523,6 @@ impl Task {
         old_cpu_index
     }
 
-    pub fn handle_pf(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        self.mm.kernel_range().handle_page_fault(vaddr, write)
-    }
-
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
         let vmr = self
             .mm
