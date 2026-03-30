@@ -112,15 +112,6 @@ impl TaskMM {
     pub fn user_range(&self) -> Option<&VMR> {
         self.vm_user_range.as_ref()
     }
-
-    /// Checks whether the task has a user-mode `[VMR]`.
-    ///
-    /// # Returns
-    ///
-    /// `True` if user-mode `[VMR]` is present, `False` otherwise.
-    pub fn has_user(&self) -> bool {
-        self.vm_user_range.is_some()
-    }
 }
 
 /// Guard a per-task kernel mapping and unmap it when going out of scope.

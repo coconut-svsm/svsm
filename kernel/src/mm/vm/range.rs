@@ -208,7 +208,7 @@ impl VMR {
     /// # Returns
     ///
     /// Tuple containing `start` and `end` virtual address of the memory region
-    fn virt_range(&self) -> MemoryRegion<VirtAddr> {
+    pub fn virt_range(&self) -> MemoryRegion<VirtAddr> {
         MemoryRegion::from_addresses(
             VirtAddr::from(self.start_pfn << PAGE_SHIFT),
             VirtAddr::from(self.end_pfn << PAGE_SHIFT),

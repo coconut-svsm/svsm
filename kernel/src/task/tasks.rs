@@ -528,15 +528,15 @@ impl Task {
     }
 
     pub fn fault(&self, vaddr: VirtAddr, write: bool) -> Result<(), SvsmError> {
-        if vaddr >= USER_MEM_START && vaddr < USER_MEM_END && self.mm.has_user() {
-            let vmr = self.mm.user_range().unwrap();
-            let mut pgtbl = self.page_table.lock();
-            vmr.populate_addr(&mut pgtbl, vaddr);
-            vmr.handle_page_fault(vaddr, write)?;
-            Ok(())
-        } else {
-            Err(SvsmError::Mem)
-        }
+        let vmr = self
+            .mm
+            .user_range()
+            .filter(|vmr| vmr.virt_range().contains(vaddr))
+            .ok_or(SvsmError::Mem)?;
+        let mut pgtbl = self.page_table.lock();
+        vmr.populate_addr(&mut pgtbl, vaddr);
+        vmr.handle_page_fault(vaddr, write)?;
+        Ok(())
     }
 
     fn allocate_stack_common() -> Result<(Mapping, MemoryRegion<VirtAddr>), SvsmError> {
