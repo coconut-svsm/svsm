@@ -331,3 +331,69 @@ pub fn print_stack(skip: usize) {
     }
     log::info!("---END---");
 }
+
+#[cfg(all(test, test_in_svsm))]
+mod tests {
+    extern crate alloc;
+
+    use super::*;
+    use crate::debug::symbols::symbols_enabled;
+    use alloc::string::ToString;
+
+    #[inline(never)]
+    fn test_callee() {
+        let expected = VirtAddr::from(test_caller as *const ());
+
+        // Unwind the frame, skipping the current one
+        let mut unwinder = StackUnwinder::unwind_this_cpu().skip(1);
+        let caller = unwinder.next().unwrap();
+        let UnwoundStackFrame::Valid(frame) = caller else {
+            panic!("Unexpected invalid stack frame");
+        };
+
+        // The unwound frame's RIP should be a few instructions after the
+        // beginning of the actual calling function. Make a generous assumption
+        // regarding the offset within the frame to avoid having unstable tests.
+        assert!(expected <= frame.rip);
+        assert!(expected + 32 > frame.rip);
+
+        if !symbols_enabled() {
+            return;
+        }
+
+        let expected_sym = resolve_symbol(expected).unwrap();
+        let caller_sym = resolve_symbol(frame.rip).unwrap();
+
+        // Offset and symbol name should match
+        assert_eq!(frame.rip - expected, caller_sym.off - expected_sym.off);
+        assert_eq!(
+            expected_sym.demangled_name().to_string(),
+            caller_sym.demangled_name().to_string()
+        );
+    }
+
+    #[inline(never)]
+    fn test_caller() {
+        // Prevent this function or the call it makes from being optimized
+        // away (which apparently can happen even without inlining).
+        core::hint::black_box(test_callee());
+    }
+
+    #[test]
+    #[inline(never)]
+    #[cfg_attr(not(test_in_svsm), ignore = "Can only be run inside guest")]
+    fn test_simple_unwind() {
+        // Use two levels of indirection so that the caller of the unwinding
+        // function is `test_caller()`.
+        //
+        // This is needed because the test itself is called as a closure,
+        // which means that RIP in the unwound frame won't match the address
+        // of the function itself. I.e. we would get something like:
+        //
+        // Regular function: ffffff8000063910 svsm::debug::stacktrace::tests::test_simple_unwind+0x0
+        // Closure:          ffffff8000076d09 <svsm::debug::stacktrace::tests::test_simple_unwind::{closure#0} as core::ops::function::FnOnce<()>>::call_once+0x9
+        //
+        // However, the address of `test_caller()` will match if we call it normally.
+        test_caller();
+    }
+}
