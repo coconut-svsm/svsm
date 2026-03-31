@@ -7,6 +7,7 @@
 use super::gdt::GDTEntry;
 use crate::address::VirtAddr;
 use core::arch::asm;
+use core::mem::offset_of;
 use core::num::NonZeroU8;
 use core::ptr::addr_of;
 
@@ -99,19 +100,12 @@ impl X86Tss {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use core::mem::offset_of;
-
-    #[test]
-    fn test_tss_offsets() {
-        assert_eq!(offset_of!(X86Tss, reserved0), 0x0);
-        assert_eq!(offset_of!(X86Tss, stacks), 0x4);
-        assert_eq!(offset_of!(X86Tss, reserved1), 0x1c);
-        assert_eq!(offset_of!(X86Tss, ist_stacks), 0x24);
-        assert_eq!(offset_of!(X86Tss, reserved2), 0x5c);
-        assert_eq!(offset_of!(X86Tss, reserved3), 0x64);
-        assert_eq!(offset_of!(X86Tss, io_bmp_base), 0x66);
-    }
-}
+const _: () = assert!(
+    offset_of!(X86Tss, reserved0) == 0x0
+        && offset_of!(X86Tss, stacks) == 0x4
+        && offset_of!(X86Tss, reserved1) == 0x1c
+        && offset_of!(X86Tss, ist_stacks) == 0x24
+        && offset_of!(X86Tss, reserved2) == 0x5c
+        && offset_of!(X86Tss, reserved3) == 0x64
+        && offset_of!(X86Tss, io_bmp_base) == 0x66
+);

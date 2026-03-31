@@ -932,29 +932,23 @@ global_asm!(
     options(att_syntax)
 );
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ghcb_layout() {
-        assert_eq!(offset_of!(GHCB, cpl), 0x0cb);
-        assert_eq!(offset_of!(GHCB, xss), 0x140);
-        assert_eq!(offset_of!(GHCB, dr7), 0x160);
-        assert_eq!(offset_of!(GHCB, rax), 0x1f8);
-        assert_eq!(offset_of!(GHCB, rcx), 0x308);
-        assert_eq!(offset_of!(GHCB, rdx), 0x310);
-        assert_eq!(offset_of!(GHCB, rbx), 0x318);
-        assert_eq!(offset_of!(GHCB, sw_exit_code), 0x390);
-        assert_eq!(offset_of!(GHCB, sw_exit_info_1), 0x398);
-        assert_eq!(offset_of!(GHCB, sw_exit_info_2), 0x3a0);
-        assert_eq!(offset_of!(GHCB, sw_scratch), 0x3a8);
-        assert_eq!(offset_of!(GHCB, xcr0), 0x3e8);
-        assert_eq!(offset_of!(GHCB, valid_bitmap), 0x3f0);
-        assert_eq!(offset_of!(GHCB, x87_state_gpa), 0x400);
-        assert_eq!(offset_of!(GHCB, buffer), 0x800);
-        assert_eq!(offset_of!(GHCB, version), 0xffa);
-        assert_eq!(offset_of!(GHCB, usage), 0xffc);
-        assert_eq!(mem::size_of::<GHCB>(), 0x1000);
-    }
-}
+const _: () = assert!(
+    offset_of!(GHCB, cpl) == 0x0cb
+        && offset_of!(GHCB, xss) == 0x140
+        && offset_of!(GHCB, dr7) == 0x160
+        && offset_of!(GHCB, rax) == 0x1f8
+        && offset_of!(GHCB, rcx) == 0x308
+        && offset_of!(GHCB, rdx) == 0x310
+        && offset_of!(GHCB, rbx) == 0x318
+        && offset_of!(GHCB, sw_exit_code) == 0x390
+        && offset_of!(GHCB, sw_exit_info_1) == 0x398
+        && offset_of!(GHCB, sw_exit_info_2) == 0x3a0
+        && offset_of!(GHCB, sw_scratch) == 0x3a8
+        && offset_of!(GHCB, xcr0) == 0x3e8
+        && offset_of!(GHCB, valid_bitmap) == 0x3f0
+        && offset_of!(GHCB, x87_state_gpa) == 0x400
+        && offset_of!(GHCB, buffer) == 0x800
+        && offset_of!(GHCB, version) == 0xffa
+        && offset_of!(GHCB, usage) == 0xffc
+        && mem::size_of::<GHCB>() == 0x1000
+);
