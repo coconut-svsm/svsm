@@ -53,9 +53,26 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .unwrap_or_else(|_| panic!("Unable to write bindings.rs"));
 
-    // Tell cargo to link libtcgtpm and where to find it.
-    println!("cargo:rustc-link-search={out_dir}");
-    println!("cargo:rustc-link-lib=tcgtpm");
+    // 'static=...' is needed because core lib + platform lib have
+    // circular dependencies.
+    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/tpm/src");
+    println!("cargo:rustc-link-lib=static=Tpm_CoreLib");
+    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/Platform");
+    println!("cargo:rustc-link-lib=static=Tpm_PlatformLib");
+
+    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/tpm/cryptolibs/TpmBigNum");
+    println!("cargo:rustc-link-lib=Tpm_CryptoLib_TpmBigNum");
+
+    println!("cargo:rustc-link-search={out_dir}/tcgtpm-build/cryptolib_Ossl");
+    println!("cargo:rustc-link-lib=Tpm_CryptoLib_Math_Ossl");
+
+    println!("cargo:rustc-link-search={out_dir}/openssl-build");
+    println!("cargo:rustc-link-lib=crypto");
+
+    if target_os == "none" {
+        println!("cargo:rustc-link-search={out_dir}/libcrt-build");
+        println!("cargo:rustc-link-lib=crt");
+    }
 
     // Tell cargo not to rerun the build-script unless anything in this
     // directory changes.

@@ -56,8 +56,6 @@ LIBBNMATH = $(TCGTPM_BUILD_DIR)/cryptolib_Ossl/lib$(LIBBNMATH_TARGET).a
 OPENSSL_MAKEFILE = $(OPENSSL_BUILD_DIR)/Makefile
 TCGTPM_MAKEFILE = $(TCGTPM_BUILD_DIR)/Makefile
 
-LIBS = $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
-
 ifeq ($(USE_LIBCRT),1)
 LIBCRT_INCLUDE = -I$(LIBCRT_SRC_DIR)/include
 LIBCRT_LINK = -Wl,rpath=$(LIBCRT_BUILD_DIR) -lcrt
@@ -74,11 +72,7 @@ endif
 # Parallel builds are still used inside the sub-targets (-j flag)
 .NOTPARALLEL:
 
-all: $(OUT_DIR)/libtcgtpm.a
-
-$(OUT_DIR)/libtcgtpm.a: $(LIBS)
-	rm -f $@
-	ar rcsTPD $@ $^
+all: $(LIBCRT) $(LIBCRYPTO) $(LIBBNMATH) $(LIBTPMBIGNUM) $(LIBTPM) $(LIBPLATFORM)
 
 .PHONY: $(LIBCRT)
 
@@ -232,7 +226,6 @@ clean:
 	$(MAKE) -C $(LIBCRT_SRC_DIR) OUT_DIR=$(LIBCRT_BUILD_DIR) clean
 	[ ! -f $(OPENSSL_MAKEFILE) ] || $(MAKE) -C $(OPENSSL_BUILD_DIR) clean
 	[ ! -f $(TCGTPM_MAKEFILE) ] || $(MAKE) -C $(TCGTPM_BUILD_DIR) clean
-	rm -f $(OUT_DIR)/libtcgtpm.a
 
 distclean: clean
 	rm -rf $(LIBCRT_BUILD_DIR)
@@ -241,9 +234,8 @@ distclean: clean
 
 .PHONY: all clean distclean
 
-.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto tcgtpm
+.PHONY: libcrt configure_openssl configure_tcgtpm libcrypto
 libcrt: $(LIBCRT)
 configure_openssl: $(OPENSSL_MAKEFILE)
 libcrypto: $(LIBCRYPTO)
 configure_tcgtpm: $(TCGTPM_MAKEFILE)
-tcgtpm: $(OUT_DIR)/libtcgtpm.a
